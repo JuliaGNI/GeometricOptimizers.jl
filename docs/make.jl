@@ -20,6 +20,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/JuliaGNI/GeometricOptimizers.jl",
-    devbranch="main",
+    repo   = "github.com/JuliaGNI/GeometricOptimizers.jl",
+    devurl = "latest",
+    devbranch = "main",
 )
