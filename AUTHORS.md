@@ -1,6 +1,6 @@
 # Authors
 
-GeometricOptimizers' development is coordinated by a group of *principal developers*, who are also its main contributors and who can be contacted in case of questions about GeometricOptimizers. In addition, there are *contributors* who have provided substantial additions or modifications. Together, these two groups form "The GeometricOptimizers Authors" as mentioned in the [LICENSE](LICENSE.md) file.
+`GeometricOptimizers`' development is coordinated by a group of *principal developers*, who are also its main contributors and who can be contacted in case of questions about `GeometricOptimizers`. In addition, there are *contributors* who have provided substantial additions or modifications. Together, these two groups form "The GeometricOptimizers Authors" as mentioned in the [LICENSE](LICENSE.md) file.
 
 ## Principal Developers
 
@@ -11,7 +11,7 @@ GeometricOptimizers' development is coordinated by a group of *principal develop
 
 ## Contributors
 
-The following people contributed to SymbolicNetworks and are listed in alphabetical order:
+The following people contributed to `GeometricOptimizers` and are listed in alphabetical order:
 
 * Benedikt Brantner
 * Michael Kraus
