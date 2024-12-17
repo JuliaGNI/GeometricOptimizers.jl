@@ -1,7 +1,7 @@
 using Test 
 using LinearAlgebra
-using GeometricMachineLearning
-using GeometricMachineLearning: Ω
+using GeometricOptimizers
+using GeometricOptimizers: Ω, metric, geodesic
 import Random
 
 Random.seed!(123)
@@ -37,7 +37,7 @@ end
 function Ω_test(N::Integer, n::Integer, T::Type=Float32)
     Y = rand(StiefelManifold{Float32}, 5, 3)
     Δ = rgrad(Y, rand(Float32, 5, 3))
-    @test GeometricMachineLearning.Ω(Y, Δ) * Y.A ≈ Δ
+    @test GeometricOptimizers.Ω(Y, Δ) * Y.A ≈ Δ
 end
 
 function retraction_test(N::Integer, n::Integer, T::Type=Float32)

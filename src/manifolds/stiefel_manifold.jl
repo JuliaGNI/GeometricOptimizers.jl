@@ -7,7 +7,7 @@ An implementation of the Stiefel manifold [hairer2006geometric](@cite). The Stie
     St(n, N) = \{Y: Y^TY = \mathbb{I}_n \}.
 ```
 
-The Stiefel manifold can be shown to have manifold structure (as the name suggests) and this is heavily used in `GeometricMachineLearning`. It is further a compact space. 
+The Stiefel manifold can be shown to have manifold structure (as the name suggests) and this is heavily used in `GeometricOptimizers`. It is further a compact space. 
 More information can be found in the docstrings for [`rgrad(::StiefelManifold, ::AbstractMatrix)`](@ref) and [`metric(::StiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref).
 """
 mutable struct StiefelManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
@@ -49,7 +49,7 @@ Note the property ``Y^T\mathtt{rgrad}(Y, \nabla{}L)\in\mathcal{S}_\mathrm{skew}(
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 
 Y = StiefelManifold([1 0 ; 0 1 ; 0 0; 0 0])
 Δ = [1 2; 3 4; 5 6; 7 8]
@@ -96,8 +96,8 @@ This matrix is also called ``Y_\perp`` [absil2004riemannian, absil2008optimizati
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
-using GeometricMachineLearning: global_section
+using GeometricOptimizers
+using GeometricOptimizers: global_section
 import Random
 
 Random.seed!(123)
@@ -129,53 +129,11 @@ qr!(A).Q
 """
 function global_section(Y::StiefelManifold{T}) where T
     N, n = size(Y)
-    backend = networkbackend(Y)
+    backend = KernelAbstractions.get_backend(Y)
     A = KernelAbstractions.allocate(backend, T, N, N-n)
     randn!(A)
     A = A - Y.A * (Y.A' * A)
     typeof(Y.A)(qr!(A).Q)
-end
-
-@doc raw"""
-    Ω(Y::StiefelManifold{T}, Δ::AbstractMatrix{T}) where T
-
-Perform *canonical horizontal lift* for the Stiefel manifold:
-
-```math
-    \Delta \mapsto (\mathbb{I} - \frac{1}{2}YY^T)\Delta{}Y^T - Y\Delta^T(\mathbb{I} - \frac{1}{2}YY^T).
-```
-
-Internally this performs 
-
-```julia
-SkewSymMatrix(2 * (I(n) - .5 * Y * Y') * Δ * Y')
-```
-
-It uses [`SkewSymMatrix`](@ref) to save memory. 
-
-# Examples 
-
-```jldoctest
-using GeometricMachineLearning
-E = StiefelManifold(StiefelProjection(5, 2))
-Δ = [0. -1.; 1. 0.; 2. 3.; 4. 5.; 6. 7.]
-GeometricMachineLearning.Ω(E, Δ)
-
-# output
-
-5×5 SkewSymMatrix{Float64, Vector{Float64}}:
- 0.0  -1.0  -2.0  -4.0  -6.0
- 1.0   0.0  -3.0  -5.0  -7.0
- 2.0   3.0   0.0  -0.0  -0.0
- 4.0   5.0   0.0   0.0  -0.0
- 6.0   7.0   0.0   0.0   0.0
-```
-
-Note that the output of `Ω` is a skew-symmetric matrix, i.e. an element of ``\mathfrak{g}``.
-"""
-function Ω(Y::StiefelManifold{T}, Δ::AbstractMatrix{T}) where T
-    YY = Y * Y'
-    SkewSymMatrix(2 * (one(YY) - T(.5) * Y * Y') * Δ * Y')
 end
 
 function Base.copyto!(A::StiefelManifold, B::StiefelManifold)

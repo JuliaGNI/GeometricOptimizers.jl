@@ -1,7 +1,7 @@
 @doc raw"""
     Manifold <: AbstractMatrix
 
-A manifold in `GeometricMachineLearning` is a sutype of `AbstractMatrix`. All manifolds are matrix manifolds and therefore stored as matrices. More details can be found in the docstrings for the [`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref).
+A manifold in `GeometricOptimizers` is a sutype of `AbstractMatrix`. All manifolds are matrix manifolds and therefore stored as matrices. More details can be found in the docstrings for the [`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref).
 """
 abstract type Manifold{T} <: AbstractMatrix{T} end
 
@@ -11,7 +11,7 @@ abstract type Manifold{T} <: AbstractMatrix{T} end
 end
 
 function assign_columns(Q::AbstractMatrix{T}, N::Integer, n::Integer) where T
-    backend = networkbackend(Q)
+    backend = KernelAbstractions.get_backend(Q)
     Y = KernelAbstractions.allocate(backend, T, N, n)
     assign_columns! = assign_columns_kernel!(backend)
     assign_columns!(Y, Q, ndrange=size(Y))
@@ -82,8 +82,8 @@ Because both of these manifolds are compact spaces we can sample them uniformly 
 When we call ...
 
 ```jldoctest
-using GeometricMachineLearning
-using GeometricMachineLearning: _round # hide
+using GeometricOptimizers
+using GeometricOptimizers: _round # hide
 import Random
 Random.seed!(123)
 

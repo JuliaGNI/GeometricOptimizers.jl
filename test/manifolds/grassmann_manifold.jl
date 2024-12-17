@@ -4,9 +4,9 @@ Warning: all these tests seem to be fine for double precision, but require a rid
 
 using Test 
 using LinearAlgebra
-using GeometricMachineLearning
-using GeometricMachineLearning: Ω
-using GeometricMachineLearning: global_section
+using GeometricOptimizers
+using GeometricOptimizers: Ω, metric
+using GeometricOptimizers: global_section, global_rep
 import Random 
 
 Random.seed!(1234)

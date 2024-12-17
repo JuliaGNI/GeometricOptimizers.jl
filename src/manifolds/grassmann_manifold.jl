@@ -28,7 +28,7 @@ Also see [`rgrad(::StiefelManifold, ::AbstractMatrix)`](@ref).
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 
 Y = GrassmannManifold([1 0 ; 0 1 ; 0 0; 0 0])
 Δ = [1 2; 3 4; 5 6; 7 8]
@@ -76,45 +76,9 @@ See the documentation for [`global_section(Y::StiefelManifold{T}) where T`](@ref
 """
 function global_section(Y::GrassmannManifold{T}) where T
     N, n = size(Y)
-    backend = networkbackend(Y)
+    backend = KernelAbstractions.get_backend(Y)
     A = KernelAbstractions.allocate(backend, T, N, N-n)
     randn!(A)
     A = A - Y.A * (Y.A' * A)
     typeof(Y.A)(qr!(A).Q)
-end
-
-@doc raw"""
-    Ω(Y::GrassmannManifold{T}, Δ::AbstractMatrix{T}) where T
-
-Perform the *canonical horizontal lift* for the Grassmann manifold:
-
-```math
-    \Delta \mapsto \Omega^{St}(\Delta),
-```
-
-where ``\Omega^{St}`` is the canonical horizontal lift for the Stiefel manifold.
-
-```jldoctest
-using GeometricMachineLearning
-E = GrassmannManifold(StiefelProjection(5, 2))
-Δ = [0. 0.; 0. 0.; 2. 3.; 4. 5.; 6. 7.]
-GeometricMachineLearning.Ω(E, Δ)
-
-# output
-
-5×5 SkewSymMatrix{Float64, Vector{Float64}}:
- 0.0  -0.0  -2.0  -4.0  -6.0
- 0.0   0.0  -3.0  -5.0  -7.0
- 2.0   3.0   0.0  -0.0  -0.0
- 4.0   5.0   0.0   0.0  -0.0
- 6.0   7.0   0.0   0.0   0.0
-```
-"""
-function Ω(Y::GrassmannManifold{T}, Δ::AbstractMatrix{T}) where T
-    YY = Y * Y'
-
-    ΩSt = 2 * (one(YY) - T(.5) * Y * Y') * Δ * Y'
-    # E = StiefelProjection(Y)
-    # SkewSymMatrix(ΩSt - E * E' * ΩSt * E * E')
-    SkewSymMatrix(ΩSt)
 end
