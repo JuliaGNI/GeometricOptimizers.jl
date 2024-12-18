@@ -27,10 +27,10 @@ module GeometricOptimizers
     include("horizontal_component_for_homogeneous_spaces/constructor_for_stiefel_projection.jl")
 
     export GlobalSection
-    include("manifold_related_operations/global_sections.jl")
-    include("manifold_related_operations/omega_functions.jl")
-    include("manifold_related_operations/modified_exponential.jl")
+    include("global_sections/global_sections.jl")
+    include("global_sections/omega_functions.jl")
 
+    include("retractions/modified_exponential.jl")
     include("retractions/retraction_types.jl")
     include("retractions/retractions.jl")
 end

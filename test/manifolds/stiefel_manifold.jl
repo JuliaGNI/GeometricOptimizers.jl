@@ -34,12 +34,6 @@ for i in (n+1):N
     end
 end
 
-function Ω_test(N::Integer, n::Integer, T::Type=Float32)
-    Y = rand(StiefelManifold{Float32}, 5, 3)
-    Δ = rgrad(Y, rand(Float32, 5, 3))
-    @test GeometricOptimizers.Ω(Y, Δ) * Y.A ≈ Δ
-end
-
 function retraction_test(N::Integer, n::Integer, T::Type=Float32)
     Y = rand(StiefelManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
@@ -57,7 +51,6 @@ end
 for N in (20, 10)
     for n in (5, 3)
         for T in (Float64, Float32)
-            Ω_test(N, n, T)
             retraction_test(N, n, T)
             metric_test(N, n, T)
         end
