@@ -34,13 +34,6 @@ for i in (n+1):N
     end
 end
 
-function retraction_test(N::Integer, n::Integer, T::Type=Float32)
-    Y = rand(StiefelManifold{T}, N, n)
-    Δ = rgrad(Y, rand(T, N, n))
-    Y₁ = geodesic(Y, Δ / 1000)
-    @test norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
-end
-
 function metric_test(N, n, T)
     Y = rand(StiefelManifold{T}, N, n)
     Δ₁ = rgrad(Y, rand(T, N, n))
@@ -51,7 +44,6 @@ end
 for N in (20, 10)
     for n in (5, 3)
         for T in (Float64, Float32)
-            retraction_test(N, n, T)
             metric_test(N, n, T)
         end
     end

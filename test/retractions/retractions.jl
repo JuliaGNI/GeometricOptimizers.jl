@@ -6,6 +6,8 @@ import Random
 
 Random.seed!(123)
 
+include("../grassmann_test_help.jl")
+
 function geodesic_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Type=Float32)
     Y = rand(StiefelManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
@@ -35,16 +37,6 @@ function cayley_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::Typ
 end
 
 T = Float32
-
-function grassmann_test_help(result::Bool, N::Integer, n::Integer)
-    if N > n
-        @test result
-    elseif N == n 
-        @test !result
-    else
-        error("N has to be greater than n")
-    end
-end
 
 for N ∈ 3:5
     for n ∈ 1:N
