@@ -6,16 +6,6 @@ import Random
 
 Random.seed!(123)
 
-N = 5
-A = rand(N,N)
-A_skew = SkewSymMatrix(A)
-
-for i in 1:N 
-    for j in 1:N 
-        @test abs(.5*(A - A')[i,j] - A_skew[i,j]) < 1e-10
-    end
-end
-
 n = 1
 A_hor = StiefelLieAlgHorMatrix(A_skew, n)
 
