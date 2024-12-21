@@ -6,6 +6,8 @@ module GeometricOptimizers
     import LinearAlgebra
     import ChainRulesCore
     using ChainRulesCore: ProjectTo
+    # we use the Vcat function from LazyArrays
+    import LazyArrays
 
     include("utils.jl")
 

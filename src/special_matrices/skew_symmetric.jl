@@ -36,7 +36,7 @@ mutable struct SkewSymMatrix{T, AT <: AbstractVector{T}} <: AbstractMatrix{T}
     n::Int
 
     function SkewSymMatrix(S::AbstractVector{T},n::Int) where {T}
-        @assert length(S) == n*(n-1)÷2
+        @assert length(S) == n * (n-1) ÷ 2
         new{T,typeof(S)}(S,n)
     end
 end 
@@ -87,12 +87,12 @@ end
 
 function return_element(S::AbstractVector{T}, i::Int, j::Int) where T
     if j == i
-        return zero(T)
+        zero(T)
+    elseif i > j
+        S[(i - 2) * (i - 1) ÷ 2 + j]
+    else
+        -S[ (j - 2) * (j - 1) ÷ 2 + i]
     end
-    if i > j
-        return S[(i-2) * (i-1) ÷ 2 + j]
-    end
-    return - S[ (j-2) * (j-1) ÷ 2 + i]
 end
 
 function Base.getindex(A::SkewSymMatrix, i::Int, j::Int)
@@ -101,11 +101,12 @@ end
 
 
 Base.parent(A::SkewSymMatrix) = A.S
-Base.size(A::SkewSymMatrix) = (A.n,A.n)
+Base.size(A::SkewSymMatrix) = (A.n, A.n)
 
 @kernel function addition_kernel!(C::AbstractMatrix, S::AbstractVector, B::AbstractMatrix)
     i, j = @index(Global, NTuple)
     C[i, j] = return_element(S, i, j) + B[i, j]
+    nothing
 end
 
 function Base.:+(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where T
@@ -118,7 +119,7 @@ function Base.:+(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where T
     C
 end
 
-Base.:+(B::AbstractMatrix, A::SkewSymMatrix) = B + A
+Base.:+(B::AbstractMatrix, A::SkewSymMatrix) = A + B
 
 function Base.:+(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n 

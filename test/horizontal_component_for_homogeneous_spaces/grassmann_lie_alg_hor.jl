@@ -24,10 +24,30 @@ function add_and_sub(n::Int, N::Int, T::Type)
     @test typeof(CD_glahm2_sub) <: GrassmannLieAlgHorMatrix{T}
 end
 
+function scalar_multiplication(n::Integer, N::Integer, T::DataType)
+    C = rand(T, N, N)
+    α = rand(T)
+
+    # GrassmannLieAlgHorMatrix
+    Cα_glahm = GrassmannLieAlgHorMatrix(α * C, n)
+    Cα_glahm2 = α * GrassmannLieAlgHorMatrix(C, n)
+    @test Cα_glahm ≈ Cα_glahm2
+    @test typeof(Cα_glahm) <: GrassmannLieAlgHorMatrix{T}
+    @test typeof(Cα_glahm2) <: GrassmannLieAlgHorMatrix{T}
+end
+
+function random_array_generation(n::Integer, N::Integer, T::DataType)
+    A_Grassmann_hor = rand(GrassmannLieAlgHorMatrix{T}, N, n)
+    @test typeof(A_Grassmann_hor) <: GrassmannLieAlgHorMatrix{T}
+    @test eltype(A_Grassmann_hor) == T
+end
+
 for T ∈ (Float32, Float64)
     for N ∈ 3:5
         for n ∈ 1:N
             add_and_sub(n, N, T)
+            scalar_multiplication(n, N, T)
+            random_array_generation(n, N, T)
         end
     end
 end
