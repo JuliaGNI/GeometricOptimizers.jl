@@ -1,9 +1,9 @@
 @doc raw"""
-    MomentumOptimizer(η, α)
+    Momentum(η, α)
 
 Make an instance of the momentum optimizer.
 
-The momentum optimizer is similar to the [`GradientOptimizer`](@ref).
+The momentum optimizer is similar to the [`Gradient`](@ref).
 It however has a nontrivial cache that stores past history (see [`MomentumCache`](@ref)).
 The cache is updated via:
 ```math
@@ -17,16 +17,16 @@ and then the final velocity is computed as
 # Implementation
 
 To save memory the *velocity* is stored in the input ``\nabla_WL``.
-This is similar to the case of the [`GradientOptimizer`](@ref).
+This is similar to the case of the [`Gradient`](@ref).
 """
-struct MomentumOptimizer{T<:Real} <: OptimizerMethod{T}
+struct Momentum{T<:Real} <: OptimizerMethod{T}
     η::T
     α::T
-    MomentumOptimizer(η = 1e-3, α = 1e-2) = new{typeof(η)}(η, α)
+    Momentum(η = 1e-3, α = 1e-2) = new{typeof(η)}(η, α)
 end
 
 #update for weights
-function update!(o::Optimizer{<:MomentumOptimizer}, C::MomentumCache, B::AbstractVecOrMat)
+function update!(o::Optimizer{<:Momentum}, C::MomentumCache, B::AbstractVecOrMat)
     add!(C.B, o.method.α*C.B, B)
     mul!(B, -o.method.η, C.B)
 end

@@ -1,5 +1,5 @@
 @doc raw"""
-    AdamOptimizer(η, ρ₁, ρ₂, δ)
+    Adam(η, ρ₁, ρ₂, δ)
 
 Make an instance of the Adam Optimizer.
 
@@ -30,20 +30,20 @@ where `B` is the input to the [`update!`] function.
 
 The algorithm and suggested defaults are taken from [goodfellow2016deep; page 301](@cite).
 """
-struct AdamOptimizer{T<:Real} <: OptimizerMethod{T}
+struct Adam{T<:Real} <: OptimizerMethod{T}
     η::T
     ρ₁::T
     ρ₂::T
     δ::T
 
-    AdamOptimizer(η = 1f-3, ρ₁ = 9f-1, ρ₂ = 9.9f-1, δ = 3f-7; T=typeof(η)) = new{T}(T(η), T(ρ₁), T(ρ₂), T(δ))
+    Adam(η = 1f-3, ρ₁ = 9f-1, ρ₂ = 9.9f-1, δ = 3f-7; T=typeof(η)) = new{T}(T(η), T(ρ₁), T(ρ₂), T(δ))
 end
 
-function AdamOptimizer(T::Type)
-    AdamOptimizer(T(1f-3))
+function Adam(T::Type)
+    Adam(T(1f-3))
 end
 
-function update!(o::Optimizer{<:AdamOptimizer{T}}, C::AdamCache, B::AbstractArray) where T
+function update!(o::Optimizer{<:Adam{T}}, C::AdamCache, B::AbstractArray) where T
     add!(C.B₁, ((o.method.ρ₁ - o.method.ρ₁^o.step)/(T(1.) - o.method.ρ₁^o.step))*C.B₁, ((T(1.) - o.method.ρ₁)/(T(1.) - o.method.ρ₁^o.step))*B)
     add!(C.B₂, ((o.method.ρ₂ - o.method.ρ₂^o.step)/(T(1.) - o.method.ρ₂^o.step))*C.B₂, ((T(1.) - o.method.ρ₂)/(T(1.) - o.method.ρ₂^o.step))*⊙²(B))
     mul!(B, -o.method.η, /ᵉˡᵉ(C.B₁, scalar_add(racᵉˡᵉ(C.B₂), o.method.δ)))

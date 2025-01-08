@@ -81,7 +81,7 @@ end
 
 Do not store anything.
 
-The cache for the [`GradientOptimizer`](@ref) does not consider past information.
+The cache for the [`Gradient`](@ref) does not consider past information.
 """
 struct GradientCache{T} <: AbstractCache{T} end
 GradientCache(::AbstractArray{T}) where T = GradientCache{T}()
@@ -92,16 +92,6 @@ GradientCache(::AbstractArray{T}) where T = GradientCache{T}()
 setup_adam_cache(ps::NamedTuple) = apply_toNT(setup_adam_cache, ps)
 setup_momentum_cache(ps::NamedTuple) = apply_toNT(setup_momentum_cache, ps)
 setup_gradient_cache(ps::NamedTuple) = apply_toNT(setup_gradient_cache, ps)
-
-function setup_cache(_setup_cache_function, ps::NeuralNetworkParameters)
-    ps_keys = keys(ps)
-    values = Tuple([_setup_cache_function(ps[key]) for key in ps_keys])
-    NamedTuple{ps_keys}(values)
-end
-
-setup_adam_cache(ps::NeuralNetworkParameters) = setup_cache(setup_adam_cache, ps)
-setup_momentum_cache(ps::NeuralNetworkParameters) = setup_cache(setup_momentum_cache, ps)
-setup_gradient_cache(ps::NeuralNetworkParameters) = setup_cache(setup_gradient_cache, ps)
 
 setup_adam_cache(B::AbstractArray{<:Number}) = AdamCache(B)
 setup_momentum_cache(B::AbstractArray{<:Number}) = MomentumCache(B)

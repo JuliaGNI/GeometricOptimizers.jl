@@ -1,34 +1,11 @@
 @doc raw"""
     Optimizer(method, cache, step, retraction)
 
-Store the `method` (e.g. [`AdamOptimizer`](@ref) with corresponding hyperparameters), the `cache` (e.g. [`AdamCache`](@ref)), the optimization step and the retraction.
+Store the `method` (e.g. [`Adam`](@ref) with corresponding hyperparameters), the `cache` (e.g. [`AdamCache`](@ref)), the optimization step and the retraction.
 
 It takes as input an optimization method and the parameters of a network. 
 
 Before one can call `Optimizer` a [`OptimizerMethod`](@ref) that stores all the hyperparameters of the optimizer needs to be specified. 
-
-# Functor 
-
-For an instance `o` of `Optimizer`, we can call the corresponding functor as:
-
-```julia
-o(nn, dl, batch, n_epochs, loss)
-```
-
-The arguments are:
-1. `nn::NeuralNetwork`
-2. `dl::`[`DataLoader`](@ref)
-3. `batch::`[`Batch`](@ref)
-4. `n_epochs::Integer`
-5. `loss::NetworkLoss`
-
-The last argument is optional for many neural network architectures. We have the following defaults:
-- A [`TransformerIntegrator`](@ref) uses [`TransformerLoss`](@ref).
-- A [`NeuralNetworkIntegrator`](@ref) uses [`FeedForwardLoss`](@ref).
-- An [`AutoEncoder`](@ref) uses [`AutoEncoderLoss`](@ref).
-
-In addition there is an optional keyword argument that can be supplied to the functor:
-- `show_progress=true`: This specifies whether a progress bar should be shown during training.
 
 # Implementation
 
@@ -41,7 +18,7 @@ mutable struct Optimizer{MT<:OptimizerMethod, CT, RT}
     retraction::RT
 end
 
-eltype(::Optimizer{<:OptimizerMethod{T}}) where T = T
+Base.eltype(::Optimizer{<:OptimizerMethod{T}}) where T = T
 
 @doc raw"""
     Optimizer(method, nn_params)
@@ -60,15 +37,9 @@ Optimizer(method, nn::NeuralNetwork)
 
 The optional keyword argument is the retraction. By default this is [`cayley`](@ref).
 """
-function Optimizer(method::OptimizerMethod, nn_params::Union{NeuralNetworkParameters, NamedTuple}; retraction = cayley)
-    Optimizer(method, init_optimizer_cache(method, nn_params), 0, retraction)
+function Optimizer(method::OptimizerMethod, params::NamedTuple; retraction = cayley)
+    Optimizer(method, init_optimizer_cache(method, params), 0, retraction)
 end
-
-function Optimizer(method::OptimizerMethod, nn::NeuralNetwork; kwargs...)
-    Optimizer(method, nn.params; kwargs...)
-end
-
-Optimizer(nn::NeuralNetwork, m::OptimizerMethod; kwargs...) = Optimizer(m, nn; kwargs...)
 
 @doc raw"""
     update!(o, cache, B)
@@ -95,23 +66,6 @@ function _optimization_step!(o::Optimizer, λY::NamedTuple, ps::NamedTuple, cach
     nothing
 end
 
-function optimization_step!(o::Optimizer, λY::NamedTuple, ps::NeuralNetworkParameters, dx::NamedTuple)
-    @assert keys(o.cache) == keys(λY) == keys(ps) == keys(dx)
-    o.step += 1
-    for key in keys(o.cache)
-        cache = o.cache[key]
-        λY_temp = λY[key]
-        ps_temp = ps[key]
-        dx_temp = dx[key]
-        _optimization_step!(o, λY_temp, ps_temp, cache, dx_temp)
-    end
-end
-
-# take care of Zygote idiosyncrasies
-function optimization_step!(o::Optimizer, λY::NamedTuple, ps::NeuralNetworkParameters, dx::NamedTuple{(:params,), Tuple{NT}}) where {NT <: NamedTuple}
-    optimization_step!(o, λY, ps, dx.params)
-end
-
 @doc raw"""
     optimization_step!(o, λY, ps, dx)
 
@@ -136,7 +90,7 @@ using GeometricMachineLearning
 l = StiefelLayer(3, 5)
 ps = NeuralNetwork(Chain(l), Float32).params.L1
 cache = apply_toNT(MomentumCache, ps)
-o = Optimizer(MomentumOptimizer(), cache, 0, geodesic)
+o = Optimizer(Momentum(), cache, 0, geodesic)
 λY = GlobalSection(ps)
 dx = (weight = rand(Float32, 5, 3), )
 

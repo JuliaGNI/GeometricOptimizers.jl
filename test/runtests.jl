@@ -12,3 +12,4 @@ begin @safetestset "Stiefel Lie Alg Hor          " include("horizontal_component
 begin @safetestset "Retractions                  " include("retractions/retractions.jl") end
 begin @safetestset "Ω functions                  " include("global_sections/omega_functions.jl") end
 begin @safetestset "Global global_sections       " include("global_sections/global_sections.jl") end
+begin @safetestset "Optimizer Convergence        " include("optimizer_convergence/svd_optim.jl") end

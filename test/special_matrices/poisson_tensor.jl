@@ -1,4 +1,4 @@
-using GeometricMachineLearning
+using GeometricOptimizers
 using LinearAlgebra: I
 using Test
 import Random 

@@ -1,5 +1,5 @@
 @doc raw"""
-    GradientOptimizer(η)
+    Gradient(η)
 
 Make an instance of a gradient optimizer. 
 
@@ -16,11 +16,11 @@ This means the provided ``\nabla_WL`` is mutated via:
 rmul!(∇L, -method.η)
 ```
 """
-struct GradientOptimizer{T<:Real} <: OptimizerMethod{T}
+struct Gradient{T<:Real} <: OptimizerMethod{T}
     η::T
-    GradientOptimizer(η = 1e-2) = new{typeof(η)}(η)
+    Gradient(η = 1e-2) = new{typeof(η)}(η)
 end
 
-function update!(o::Optimizer{<:GradientOptimizer}, ::GradientCache, B::AbstractVecOrMat)
+function update!(o::Optimizer{<:Gradient}, ::GradientCache, B::AbstractVecOrMat)
     rmul!(B, -o.method.η)
 end

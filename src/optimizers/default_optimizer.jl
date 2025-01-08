@@ -1,3 +1,3 @@
-default_optimizer() = GradientOptimizer()
+default_optimizer() = Gradient()
 
-default_optimizer(arch::Architecture) = GradientOptimizer()
+default_optimizer(arch::Architecture) = Gradient()

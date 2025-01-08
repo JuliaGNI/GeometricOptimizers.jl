@@ -5,11 +5,11 @@ Each `Optimizer` has to be called with an `OptimizerMethod`. This specifies how 
 """
 abstract type OptimizerMethod{T} end
 
-# @doc raw"""
-#     init_optimizer_cache(method, x)
-# 
-# Initialize the optimizer cache based on input `x` for the given `method`.
-# """
-function init_optimizer_cache(::OptimizerMethod, x) end
+@doc raw"""
+    init_optimizer_cache(method, x)
 
-eltype(::OptimizerMethod{T}) where T = T
+Initialize the optimizer cache based on input `x` for the given `method`.
+"""
+init_optimizer_cache(om::OptimizerMethod, x) = error("`init_optimizer_cache` not implemented for $(typeof(om))")
+
+Base.eltype(::OptimizerMethod{T}) where T = T
