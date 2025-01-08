@@ -1,4 +1,6 @@
-using GeometricOptimizers
+using GeometricOptimizers: StiefelProjection
+using LinearAlgebra: I
+using Test
 
 # test Stiefel manifold projection test 
 function stiefel_proj(N::Integer, n::Integer, T::DataType=Flaot32)
