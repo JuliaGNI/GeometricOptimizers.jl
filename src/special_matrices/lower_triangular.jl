@@ -11,7 +11,7 @@ The struct two fields: `S` and `n`. The first stores all the entries of the matr
 
 # Examples 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 S = [1, 2, 3, 4, 5, 6]
 LowerTriangular(S, 4)
 
@@ -38,7 +38,7 @@ This is done by taking the lower left of that matrix.
 
 # Examples 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
 LowerTriangular(M)
 

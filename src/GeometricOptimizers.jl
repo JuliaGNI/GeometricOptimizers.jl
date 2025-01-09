@@ -17,10 +17,13 @@ module GeometricOptimizers
     include("manifolds/stiefel_manifold.jl")
     include("manifolds/grassmann_manifold.jl")
 
-    export SkewSymMatrix, SymmetricMatrix
+    export SkewSymMatrix, SymmetricMatrix, LowerTriangular, UpperTriangular
     include("special_matrices/skew_symmetric.jl")
     include("special_matrices/symmetric.jl")
     include("special_matrices/stiefel_projection.jl")
+    include("special_matrices/triangular.jl")
+    include("special_matrices/lower_triangular.jl")
+    include("special_matrices/upper_triangular.jl")
 
     export StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix
     include("horizontal_component_for_homogeneous_spaces/abstract_lie_algebra_horizontal.jl")
@@ -28,7 +31,7 @@ module GeometricOptimizers
     include("horizontal_component_for_homogeneous_spaces/grassmann_lie_algebra_horizontal.jl")
     include("horizontal_component_for_homogeneous_spaces/constructor_for_stiefel_projection.jl")
 
-    export GlobalSection
+    export GlobalSection, global_rep
     include("global_sections/global_sections.jl")
     include("global_sections/omega_functions.jl")
 

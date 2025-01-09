@@ -6,10 +6,6 @@ Store the `method` (e.g. [`Adam`](@ref) with corresponding hyperparameters), the
 It takes as input an optimization method and the parameters of a network. 
 
 Before one can call `Optimizer` a [`OptimizerMethod`](@ref) that stores all the hyperparameters of the optimizer needs to be specified. 
-
-# Implementation
-
-Internally the functor for `Optimizer` calls [`GlobalSection`](@ref) once at the start and then [`optimize_for_one_epoch!`](@ref) for each epoch.
 """
 mutable struct Optimizer{MT<:OptimizerMethod, CT, RT}
     method::MT
@@ -85,10 +81,10 @@ All arguments into `optimization_step!` are mandatory:
 All the arguments are given as `NamedTuple`s  as the neural network weights are stores in that format.
 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
+using GeometricOptimizers: MomentumCache, Momentum, apply_toNT, geodesic, optimization_step!
 
-l = StiefelLayer(3, 5)
-ps = NeuralNetwork(Chain(l), Float32).params.L1
+ps = (weight = rand(StiefelManifold{Float32}, 5, 3), )
 cache = apply_toNT(MomentumCache, ps)
 o = Optimizer(Momentum(), cache, 0, geodesic)
 λY = GlobalSection(ps)
@@ -107,6 +103,7 @@ true
 ```
 
 # Extended help
+
 The derivatives `dx` here are usually obtained via an AD routine by differentiating a loss function, i.e. `dx` is ``\nabla_xL``.
 """
 function optimization_step!(o::Optimizer, λY::NamedTuple, ps::NamedTuple, dx::NamedTuple)

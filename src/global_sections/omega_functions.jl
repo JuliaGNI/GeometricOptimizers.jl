@@ -19,6 +19,8 @@ It uses [`SkewSymMatrix`](@ref) to save memory.
 
 ```jldoctest
 using GeometricOptimizers
+using GeometricOptimizers: StiefelProjection
+
 E = StiefelManifold(StiefelProjection(5, 2))
 Δ = [0. -1.; 1. 0.; 2. 3.; 4. 5.; 6. 7.]
 GeometricOptimizers.Ω(E, Δ)
@@ -53,6 +55,8 @@ where ``\Omega^{St}`` is the canonical horizontal lift for the Stiefel manifold.
 
 ```jldoctest
 using GeometricOptimizers
+using GeometricOptimizers: StiefelProjection
+
 E = GrassmannManifold(StiefelProjection(5, 2))
 Δ = [0. 0.; 0. 0.; 2. 3.; 4. 5.; 6. 7.]
 GeometricOptimizers.Ω(E, Δ)
@@ -71,7 +75,5 @@ function Ω(Y::GrassmannManifold{T}, Δ::AbstractMatrix{T}) where T
     YY = Y * Y'
 
     ΩSt = 2 * (one(YY) - T(.5) * Y * Y') * Δ * Y'
-    # E = StiefelProjection(Y)
-    # SkewSymMatrix(ΩSt - E * E' * ΩSt * E * E')
     SkewSymMatrix(ΩSt)
 end

@@ -22,10 +22,10 @@ If the cache is called with an instance of a homogeneous space, e.g. the [`Stief
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 
 Y = rand(StiefelManifold, 5, 3)
-AdamCache(Y).B₁
+GeometricOptimizers.AdamCache(Y).B₁
 
 # output
 

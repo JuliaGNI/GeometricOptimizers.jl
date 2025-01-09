@@ -14,11 +14,11 @@ In different notation: take as input an element ``x`` of ``\mathcal{M}`` and an 
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 
 Y = StiefelManifold([1. 0. 0.;]' |> Matrix)
 Δ = [0. .5 0.;]' |> Matrix
-Y₂ = geodesic(Y, Δ)
+Y₂ = GeometricOptimizers.geodesic(Y, Δ)
 
 Y₂' * Y₂ ≈ [1.;]
 
@@ -63,7 +63,7 @@ with
 
 This is using a computationally efficient version of the matrix exponential ``\mathfrak{A}``. 
 
-See [`GeometricMachineLearning.𝔄`](@ref).
+See [`GeometricOptimizers.𝔄`](@ref).
 """
 function geodesic(B::StiefelLieAlgHorMatrix)
     T = eltype(B)
@@ -106,11 +106,11 @@ In different notation: take as input an element ``x`` of ``\mathcal{M}`` and an 
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 
 Y = StiefelManifold([1. 0. 0.;]' |> Matrix)
 Δ = [0. .5 0.;]' |> Matrix
-Y₂ = cayley(Y, Δ)
+Y₂ = GeometricOptimizers.cayley(Y, Δ)
 
 Y₂' * Y₂ ≈ [1.;]
 

@@ -10,7 +10,8 @@ The size is queried through `B.N` and `B.n`.
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
+using GeometricOptimizers: StiefelProjection
 
 B₁ = rand(StiefelLieAlgHorMatrix, 5, 2)
 B₂ = rand(GrassmannLieAlgHorMatrix, 5, 2)

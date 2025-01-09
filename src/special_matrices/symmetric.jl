@@ -17,7 +17,7 @@ Also see [`SkewSymMatrix`](@ref), [`LowerTriangular`](@ref) and [`UpperTriangula
 
 # Examples 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 S = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 SymmetricMatrix(S, 4)
 
@@ -52,7 +52,7 @@ A \mapsto \frac{1}{2}(A + A^T).
 
 # Examples
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
 SymmetricMatrix(M)
 

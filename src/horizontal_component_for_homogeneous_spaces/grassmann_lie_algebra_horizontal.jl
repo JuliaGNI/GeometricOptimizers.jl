@@ -67,7 +67,7 @@ This can also be seen as the operation:
 D \mapsto \Omega(E, DE - EE^TDE),
 ```
 
-where ``\Omega`` is the horizontal lift [`GeometricMachineLearning.Ω`](@ref).
+where ``\Omega`` is the horizontal lift [`GeometricOptimizers.Ω`](@ref).
 """
 function GrassmannLieAlgHorMatrix(D::AbstractMatrix, n::Int)
     N = size(D, 1)

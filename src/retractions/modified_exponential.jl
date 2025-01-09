@@ -54,8 +54,8 @@ This expression has the property ``\mathbb{I} +  B'\mathfrak{A}(B', B'')(B'')^T 
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
-using GeometricMachineLearning: 𝔄
+using GeometricOptimizers
+using GeometricOptimizers: 𝔄
 import Random
 Random.seed!(123)
 

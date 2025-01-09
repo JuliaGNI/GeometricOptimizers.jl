@@ -9,7 +9,7 @@ An element of StiefelLieAlgMatrix takes the form:
 A & B^T \\ B & \mathbb{O}
 \end{pmatrix},
 ```
-where ``A`` is skew-symmetric (this is [`SkewSymMatrix`](@ref) in `GeometricMachineLearning`).
+where ``A`` is skew-symmetric (this is [`SkewSymMatrix`](@ref) in `GeometricOptimizers`).
 
 Also see [`GrassmannLieAlgHorMatrix`](@ref).
 
@@ -21,7 +21,7 @@ The projection here is: ``\pi:S \to SE`` where
 ```math
 E = \begin{bmatrix} \mathbb{I}_{n} \\ \mathbb{O}_{(N-n)\times{}n}  \end{bmatrix}.
 ```
-The matrix ``E`` is implemented under [`StiefelProjection`](@ref) in `GeometricMachineLearning`.
+The matrix ``E`` is implemented under [`StiefelProjection`](@ref) in `GeometricOptimizers`.
 """
 mutable struct StiefelLieAlgHorMatrix{T, AT <: SkewSymMatrix{T}, ST <: AbstractMatrix{T}} <: AbstractLieAlgHorMatrix{T}
     A::AT
@@ -67,7 +67,7 @@ This can also be seen as the operation:
 D \mapsto \Omega(E, DE) = \mathrm{skew}\left(2 \left(\mathbb{I} - \frac{1}{2} E E^T \right) DE E^T\right).
 ```
 
-Also see [`GeometricMachineLearning.Ω`](@ref).
+Also see [`GeometricOptimizers.Ω`](@ref).
 """
 function StiefelLieAlgHorMatrix(D::AbstractMatrix, n::Integer)
     N = size(D, 1)
@@ -227,7 +227,7 @@ Vectorize `A`.
 # Examples
 
 ```jldoctest
-using GeometricMachineLearning
+using GeometricOptimizers
 
 A = SkewSymMatrix([1, ], 2)
 B = [2 3; ]
