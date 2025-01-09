@@ -1,9 +1,15 @@
 using GeometricOptimizers
 using Documenter
+using DocumenterCitations
+import Bibliography
+
+bib = CitationBibliography(joinpath(@__DIR__, "src", "GeometricOptimizers.bib"))
+Bibliography.sort_bibliography!(bib.entries, :nyt)  # name-year-title
 
 DocMeta.setdocmeta!(GeometricOptimizers, :DocTestSetup, :(using GeometricOptimizers); recursive=true)
 
 makedocs(;
+    plugins = [bib],
     modules=[GeometricOptimizers],
     authors="Michael Kraus",
     repo="https://github.com/JuliaGNI/GeometricOptimizers.jl/blob/{commit}{path}#{line}",
@@ -16,6 +22,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "References" => "references.md",
     ],
 )
 
