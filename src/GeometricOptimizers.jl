@@ -26,10 +26,10 @@ module GeometricOptimizers
     include("special_matrices/upper_triangular.jl")
 
     export StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix
-    include("horizontal_component_for_homogeneous_spaces/abstract_lie_algebra_horizontal.jl")
-    include("horizontal_component_for_homogeneous_spaces/stiefel_lie_algebra_horizontal.jl")
-    include("horizontal_component_for_homogeneous_spaces/grassmann_lie_algebra_horizontal.jl")
-    include("horizontal_component_for_homogeneous_spaces/constructor_for_stiefel_projection.jl")
+    include("lie_algebras/abstract_lie_algebra_horizontal.jl")
+    include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
+    include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
+    include("lie_algebras/stiefel_projection.jl")
 
     export GlobalSection, global_rep
     include("global_sections/global_sections.jl")
@@ -54,7 +54,7 @@ module GeometricOptimizers
     include("optimizers/gradient_optimizer.jl")
     include("optimizers/momentum_optimizer.jl")
     include("optimizers/adam_optimizer.jl")
-    include("optimizers/adam_optimizer_with_learning_rate_decay.jl")
+    include("optimizers/adam_optimizer_with_decay.jl")
     include("optimizers/bfgs_optimizer.jl")
 
     include("optimizers/init_optimizer_cache.jl")
