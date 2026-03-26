@@ -62,7 +62,7 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     rxₐ = norm(direction(cache))
     rxᵣ = rxₐ / norm(cache.x)
 
-    Δf  = f - state.f̄
+    Δf = f - state.f̄
     Δf̃ = state.ḡ ⋅ direction(cache)
 
     rfₐ = norm(Δf)
@@ -71,7 +71,7 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     cache.Δg .= cache.g - state.ḡ
 
     rgₐ = norm(cache.Δg)
-    rg  = norm(cache.g)
+    rg = norm(cache.g)
 
     f_increased = abs(f) > abs(state.f̄)
 
@@ -90,12 +90,12 @@ function Base.show(io::IO, s::OptimizerStatus)
 
     @printf io " * Convergence measures\n"
     @printf io "\n"
-    @printf io "    |x - x'|               = %.2e\n"  x_abschange(s)
-    @printf io "    |x - x'|/|x'|          = %.2e\n"  x_relchange(s)
-    @printf io "    |f(x) - f(x')|         = %.2e\n"  f_abschange(s)
-    @printf io "    |f(x) - f(x')|/|f(x')| = %.2e\n"  f_relchange(s)
-    @printf io "    |g(x) - g(x')|         = %.2e\n"  g_abschange(s)
-    @printf io "    |g(x)|                 = %.2e\n"  g_residual(s)
+    @printf io "    |x - x'|               = %.2e\n" x_abschange(s)
+    @printf io "    |x - x'|/|x'|          = %.2e\n" x_relchange(s)
+    @printf io "    |f(x) - f(x')|         = %.2e\n" f_abschange(s)
+    @printf io "    |f(x) - f(x')|/|f(x')| = %.2e\n" f_relchange(s)
+    @printf io "    |g(x) - g(x')|         = %.2e\n" g_abschange(s)
+    @printf io "    |g(x)|                 = %.2e\n" g_residual(s)
 
 end
 
@@ -149,12 +149,12 @@ function meets_stopping_criteria(status::OptimizerStatus, config::Options, itera
         @error "x, f or g in the OptimizerStatus you provided are NaNs."
     end
 
-    ( converged && iterations ≥ config.min_iterations ) ||
-    ( status.f_increased && !config.allow_f_increases ) ||
-      iterations ≥ config.max_iterations ||
-      status.rxₐ > config.x_abstol_break ||
-      status.rxᵣ > config.x_reltol_break ||
-      status.rfₐ > config.f_abstol_break ||
-      status.rfᵣ > config.f_reltol_break ||
-      status.rg  > config.g_restol_break
+    (converged && iterations ≥ config.min_iterations) ||
+        (status.f_increased && !config.allow_f_increases) ||
+        iterations ≥ config.max_iterations ||
+        status.rxₐ > config.x_abstol_break ||
+        status.rxᵣ > config.x_reltol_break ||
+        status.rfₐ > config.f_abstol_break ||
+        status.rfᵣ > config.f_reltol_break ||
+        status.rg > config.g_restol_break
 end

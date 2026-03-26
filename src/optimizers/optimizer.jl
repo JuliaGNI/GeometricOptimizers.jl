@@ -3,18 +3,18 @@
 
 Store the `method` (e.g. [`Adam`](@ref) with corresponding hyperparameters), the `cache` (e.g. [`AdamCache`](@ref)), the optimization step and the retraction.
 
-It takes as input an optimization method and the parameters of a network. 
+It takes as input an optimization method and the parameters of a network.
 
-Before one can call `Optimizer` a [`OptimizerMethod`](@ref) that stores all the hyperparameters of the optimizer needs to be specified. 
+Before one can call `Optimizer` a [`OptimizerMethod`](@ref) that stores all the hyperparameters of the optimizer needs to be specified.
 """
-mutable struct Optimizer{MT<:OptimizerMethod, CT, RT}
+mutable struct Optimizer{MT<:OptimizerMethod,CT,RT}
     method::MT
     cache::CT
     step::Int
     retraction::RT
 end
 
-Base.eltype(::Optimizer{<:OptimizerMethod{T}}) where T = T
+Base.eltype(::Optimizer{<:OptimizerMethod{T}}) where {T} = T
 
 @doc raw"""
     Optimizer(method, nn_params)
@@ -33,7 +33,7 @@ Optimizer(method, nn::NeuralNetwork)
 
 The optional keyword argument is the retraction. By default this is [`cayley`](@ref).
 """
-function Optimizer(method::OptimizerMethod, params::NamedTuple; retraction = cayley)
+function Optimizer(method::OptimizerMethod, params::NamedTuple; retraction=cayley)
     Optimizer(method, init_optimizer_cache(method, params), 0, retraction)
 end
 
@@ -46,7 +46,7 @@ Note that ``B\in\mathfrak{g}^\mathrm{hor}`` in general.
 
 In the manifold case the final velocity is the input to a retraction.
 """
-function update!(o::Optimizer, ::AbstractCache, ::AbstractArray) 
+function update!(o::Optimizer, ::AbstractCache, ::AbstractArray)
     error("No update rule implemented for method", o.method)
 end
 
@@ -67,7 +67,7 @@ end
 
 Update the weights `ps` based on an [`Optimizer`](@ref), a `cache` and first-order derivatives `dx`.
 
-`optimization_step!` is calling [`update!`](@ref) internally. 
+`optimization_step!` is calling [`update!`](@ref) internally.
 `update!` has to be implemented for every [`OptimizerMethod`](@ref).
 
 # Arguments
