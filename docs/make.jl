@@ -33,6 +33,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Linesearch" => "linesearch.md",
         "References" => "references.md",
     ],
 )
