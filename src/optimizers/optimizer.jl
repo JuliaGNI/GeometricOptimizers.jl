@@ -122,7 +122,6 @@ function rgrad(Y::AbstractVecOrMat, dx::AbstractVecOrMat)
     dx
 end
 
-# do we need those two? 
 function update!(m::Optimizer, C::NamedTuple, B::NamedTuple)
     apply_toNT(m, C, B, update!)
 end
