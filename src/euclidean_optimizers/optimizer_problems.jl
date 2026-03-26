@@ -1,7 +1,7 @@
 """
     AbstractOptimizerProblem
 
-See [`LinesearchProblem`](@ref) and [`OptimizerProblem`](@ref).
+See [`SimpleSolvers.LinesearchProblem`](@extref) and [`OptimizerProblem`](@ref).
 """
 abstract type AbstractOptimizerProblem{T<:Number} <: AbstractProblem end
 

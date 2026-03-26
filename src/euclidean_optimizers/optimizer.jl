@@ -11,11 +11,11 @@ This problem can be solved by calling [`solve!(::AbstractVector, ::Optimizer)`](
 # Keys
 - `algorithm::`[`OptimizerState`](@ref),
 - `problem::`[`OptimizerProblem`](@ref),
-- `gradient::`[`Gradient`](@ref),
-- `hessian::`[`Hessian`](@ref),
-- `config::`[`Options`](@ref),
+- `gradient::`[`SimpleSolvers.Gradient`](@extref),
+- `hessian::`[`SimpleSolvers.Hessian`](@extref),
+- `config::`[`SimpleSolvers.Options`](@extref),
 - `cache::`[`OptimizerCache`](@ref),
-- `linesearch::`[`Linesearch`](@ref).
+- `linesearch::`[`SimpleSolvers.Linesearch`](@extref).
 
 # Examples
 

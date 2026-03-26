@@ -66,7 +66,7 @@ gradient(cache::NewtonOptimizerState) = cache.ḡ
 """
     update!(state::NewtonOptimizerState, gradient, x)
 
-Update an instance of [`NewtonOptimizerState`](@ref) based on `x` and `gradient`, where `g` is of type [`Gradient`](@ref).
+Update an instance of [`NewtonOptimizerState`](@ref) based on `x` and `gradient`, where `g` is of type [`SimpleSolvers.Gradient`](@extref).
 
 # Examples
 

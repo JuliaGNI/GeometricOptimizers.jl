@@ -1,7 +1,7 @@
 @doc raw"""
     linesearch_problem(problem, cache)
 
-Create [`LinesearchProblem`](@ref) for linesearch algorithm.
+Create [`SimpleSolvers.LinesearchProblem`](@extref) for linesearch algorithm.
 
 The variable on which this problem depends is ``\alpha``.
 
@@ -41,7 +41,7 @@ julia> ls_obj.D(0., params)
 ```
 
 !!! info
-    Note that in the example above calling [`update!`](@ref) on the [`NewtonOptimizerCache`](@ref) requires a [`Hessian`](@ref).
+    Note that in the example above calling [`update!`](@ref) on the [`NewtonOptimizerCache`](@ref) requires a [`SimpleSolvers.Hessian`](@extref).
 """
 function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gradient, cache::OptimizerCache{T}) where {T}
     function f(α, params)

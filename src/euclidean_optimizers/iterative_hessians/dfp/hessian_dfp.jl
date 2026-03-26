@@ -1,7 +1,7 @@
 """
     HessianDFP <: Hessian
 
-The [`Hessian`](@ref) corresponding to the [`DFP`](@ref) method.
+The [`SimpleSolvers.Hessian`](@extref) corresponding to the [`_DFP`](@ref) method.
 """
 struct HessianDFP{T,FT<:Callable} <: IterativeHessian{T}
     F::FT

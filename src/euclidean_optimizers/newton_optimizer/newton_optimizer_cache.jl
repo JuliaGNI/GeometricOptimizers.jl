@@ -10,7 +10,7 @@
 - `rhs`: the right hand side used to compute the update,
 - `H`: the Hessian matrix evaluated at `x`,
 
-Also compare this to [`NonlinearSolverCache`](@ref).
+Also compare this to [`SimpleSolvers.NonlinearSolverCache`](@extref).
 """
 struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T}} <: OptimizerCache{T}
     x::AT

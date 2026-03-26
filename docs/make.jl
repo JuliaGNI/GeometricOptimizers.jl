@@ -9,7 +9,7 @@ Bibliography.sort_bibliography!(bib.entries, :nyt)  # name-year-title
 DocMeta.setdocmeta!(GeometricOptimizers, :DocTestSetup, :(using GeometricOptimizers); recursive=true)
 
 makedocs(;
-    plugins = [bib],
+    plugins=[bib, links],
     modules=[GeometricOptimizers],
     authors="Michael Kraus",
     repo="https://github.com/JuliaGNI/GeometricOptimizers.jl/blob/{commit}{path}#{line}",

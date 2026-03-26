@@ -81,7 +81,7 @@ end
 
 Do not store anything.
 
-The cache for the [`Gradient`](@ref) does not consider past information.
+The cache for the [`SimpleSolvers.Gradient`](@extref) does not consider past information.
 """
 struct GradientCache{T} <: AbstractCache{T} end
 GradientCache(::AbstractArray{T}) where T = GradientCache{T}()
