@@ -95,8 +95,6 @@ H^\mathtt{cache} & \gets H(x), \\
 \end{aligned}
 ```
 where we wrote ``H`` for the Hessian (i.e. the input argument `hes`).
-
-Also see [`update!(::NonlinearSolverCache, ::AbstractVector)`](@ref).
 """
 function update!(cache::NewtonOptimizerCache, state::OptimizerState, g::Gradient, ∇²f::Hessian, x::AbstractVector)
     update!(cache, state, g, x)
