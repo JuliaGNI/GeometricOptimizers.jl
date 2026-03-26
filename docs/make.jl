@@ -1,4 +1,5 @@
 using GeometricOptimizers
+using GeometricOptimizers: HessianBFGS, linesearch_problem
 using Documenter
 using DocumenterCitations
 using DocumenterInterLinks
