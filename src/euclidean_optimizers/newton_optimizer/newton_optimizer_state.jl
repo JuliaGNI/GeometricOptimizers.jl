@@ -3,7 +3,7 @@
 
 The optimizer state is needed to update the [`Optimizer`](@ref). This is different from [`OptimizerStatus`](@ref) and [`OptimizerResult`](@ref) which serve as diagnostic tools.
 
-We note that this is also used for the [`BFGS`](@ref) and the [`DFP`](@ref) optimizer.
+We note that this is also used for the [`_BFGS`](@ref) and the [`_DFP`](@ref) optimizer.
 
 # Keys
 

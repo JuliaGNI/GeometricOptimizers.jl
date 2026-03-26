@@ -1,7 +1,7 @@
 """
     BFGSState <: OptimizerState
 
-The [`OptimizerState`](@ref) corresponding to the [`BFGS`](@ref) method.
+The [`OptimizerState`](@ref) corresponding to the [`_BFGS`](@ref) method.
 
 # Keys
 - `x̄`

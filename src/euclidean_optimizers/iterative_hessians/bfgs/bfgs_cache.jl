@@ -1,7 +1,7 @@
 """
     BFGSCache
 
-The [`OptimizerCache`](@ref) for the [`BFGS`](@ref) algorithm. Also see [`update!(::BFGSCache, ::OptimizerState, ::AbstractVector, ::AbstractVector`)](@ref).
+The [`OptimizerCache`](@ref) for the [`_BFGS`](@ref) algorithm. Also see [`update!(::BFGSCache, ::OptimizerState, ::AbstractVector, ::AbstractVector`)](@ref).
 """
 struct BFGSCache{T,VT,MT} <: OptimizerCache{T}
     x::VT    # current solution

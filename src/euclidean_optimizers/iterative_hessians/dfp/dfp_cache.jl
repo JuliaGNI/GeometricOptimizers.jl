@@ -1,7 +1,7 @@
 """
     DFPCache <: OptimizerCache
 
-The [`OptimizerCache`](@ref) corresponding to the [`DFP`](@ref) method.
+The [`OptimizerCache`](@ref) corresponding to the [`_DFP`](@ref) method.
 """
 struct DFPCache{T,VT,MT} <: OptimizerCache{T}
     x::VT    # current solution
