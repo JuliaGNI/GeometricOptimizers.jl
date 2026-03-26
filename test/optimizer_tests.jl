@@ -2,7 +2,7 @@ using LinearAlgebra
 using NaNMath: log
 using GeometricOptimizers
 using GeometricOptimizers: Newton, _DFP, _BFGS
-using GeometricOptimizers: gradient, hessian, linesearch, l2norm, problem, initialize!, update!, solver_step!
+using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
 using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, GradientAutodiff, GradientFunction
 using Test
 using Random
