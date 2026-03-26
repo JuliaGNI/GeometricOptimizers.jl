@@ -24,7 +24,7 @@ F(x) = sum(sin.(x) .^ 2)
 x = ones(3)
 algorithm = Newton()
 state = OptimizerState(algorithm, x)
-optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Bisection())
+optimizer = EuclideanOptimizer(x, F; algorithm = algorithm, linesearch = Bisection())
 
 solve!(x, state, optimizer)
 x
@@ -42,7 +42,7 @@ We note that this same problem may have trouble converging with other line searc
 x = ones(3)
 algorithm = Newton()
 state = OptimizerState(algorithm, x)
-optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Backtracking())
+optimizer = EuclideanOptimizer(x, F; algorithm = algorithm, linesearch = Backtracking())
 
 solve!(x, state, optimizer)
 x
@@ -210,7 +210,7 @@ end
 """
     solve!(x, state, opt)
 
-Solve the optimization problem described by `opt::`[`Optimizer`](@ref) and store the result in `x`.
+Solve the optimization problem described by `opt::`[`EuclideanOptimizer`](@ref) and store the result in `x`.
 
 # Examples
 

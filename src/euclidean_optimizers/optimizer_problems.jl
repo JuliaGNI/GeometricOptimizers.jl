@@ -19,7 +19,7 @@ end
 """
     OptimizerProblem <: AbstractOptimizerProblem
 
-Used in [`Optimizer`](@ref). Also compare this to [`NonlinearProblem`](@ref).
+Used in [`EuclideanOptimizer`](@ref). Also compare this to [`SimpleSolvers.NonlinearProblem`](@extref).
 
 # Examples
 

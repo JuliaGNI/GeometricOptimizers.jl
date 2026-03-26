@@ -65,7 +65,7 @@ end
 @doc raw"""
     optimization_step!(o, λY, ps, dx)
 
-Update the weights `ps` based on an [`Optimizer`](@ref), a `cache` and first-order derivatives `dx`.
+Update the weights `ps` based on an [`EuclideanOptimizer`](@ref), a `cache` and first-order derivatives `dx`.
 
 `optimization_step!` is calling [`update!`](@ref) internally.
 `update!` has to be implemented for every [`OptimizerMethod`](@ref).

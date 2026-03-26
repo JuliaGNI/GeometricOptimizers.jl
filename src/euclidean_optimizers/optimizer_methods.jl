@@ -1,7 +1,7 @@
 """
     OptimizerMethod <: SolverMethod
 
-The `OptimizerMethod` is used in [`Optimizer`](@ref) and determines the algorithm that is used.
+The `OptimizerMethod` is used in [`EuclideanOptimizer`](@ref) and determines the algorithm that is used.
 """
 abstract type OptimizerMethod <: SolverMethod end
 
