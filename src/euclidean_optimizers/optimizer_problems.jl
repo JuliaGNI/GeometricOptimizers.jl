@@ -23,7 +23,7 @@ Used in [`Optimizer`](@ref). Also compare this to [`NonlinearProblem`](@ref).
 
 # Examples
 
-```jldoctest; setup = :(using SimpleSolvers)
+```jldoctest; setup = :(using GeometricOptimizers)
 julia> x = ones(3); F(x) = sum(sin.(x) .^ 2)
 F (generic function with 1 method)
 

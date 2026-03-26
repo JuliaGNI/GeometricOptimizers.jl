@@ -7,7 +7,7 @@ This is also used in [`OptimizerResult`](@ref).
 
 # Examples
 
-```jldoctest; setup = :(using SimpleSolvers; using SimpleSolvers: NewtonOptimizerCache, OptimizerStatus)
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: NewtonOptimizerCache, OptimizerStatus)
 x = ones(3)
 state = NewtonOptimizerState(x)
 cache = NewtonOptimizerCache(x)

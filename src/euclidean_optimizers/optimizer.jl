@@ -19,7 +19,7 @@ This problem can be solved by calling [`solve!(::AbstractVector, ::Optimizer)`](
 
 # Examples
 
-```jldoctest; setup = :(using SimpleSolvers)
+```jldoctest; setup = :(using GeometricOptimizers)
 F(x) = sum(sin.(x) .^ 2)
 x = ones(3)
 algorithm = Newton()
@@ -38,7 +38,7 @@ x
 ```
 We note that this same problem may have trouble converging with other line searches:
 
-```jldoctest; setup = :(using SimpleSolvers; F(x) = sum(sin.(x) .^ 2))
+```jldoctest; setup = :(using GeometricOptimizers; F(x) = sum(sin.(x) .^ 2))
 x = ones(3)
 algorithm = Newton()
 state = OptimizerState(algorithm, x)
@@ -141,7 +141,7 @@ Compute a full iterate for an [`EuclideanOptimizer`](@ref).
 
 # Examples
 
-```jldoctest; setup = :(using SimpleSolvers; using SimpleSolvers: solver_step!, NewtonOptimizerState)
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: solver_step!, NewtonOptimizerState)
 julia> f(x) = sum(x .^ 2 + x .^ 3 / 3);
 
 julia> x = [1f0, 2f0]
@@ -214,7 +214,7 @@ Solve the optimization problem described by `opt::`[`Optimizer`](@ref) and store
 
 # Examples
 
-```jldoctest; setup = :(using SimpleSolvers; using SimpleSolvers: solve!, NewtonOptimizerState, update!, iteration_number; using Random: seed!; seed!(123))
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: solve!, NewtonOptimizerState, update!, iteration_number; using Random: seed!; seed!(123))
 julia> f(x) = sum(x .^ 2 + x .^ 3 / 3);
 
 julia> x = [1f0, 2f0]
@@ -227,7 +227,7 @@ julia> opt = EuclideanOptimizer(x, f; algorithm = Newton());
 julia> state = NewtonOptimizerState(x);
 
 julia> solve!(x, state, opt)
-SimpleSolvers.OptimizerResult{Float32, Float32, Vector{Float32}, SimpleSolvers.OptimizerStatus{Float32, Float32}}( * Convergence measures
+GeometricOptimizers.OptimizerResult{Float32, Float32, Vector{Float32}, GeometricOptimizers.OptimizerStatus{Float32, Float32}}( * Convergence measures
 
     |x - x'|               = 7.82e-03
     |x - x'|/|x'|          = 2.56e+02

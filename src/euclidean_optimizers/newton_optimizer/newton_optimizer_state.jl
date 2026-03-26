@@ -71,7 +71,7 @@ Update an instance of [`NewtonOptimizerState`](@ref) based on `x` and `gradient`
 # Examples
 
 If we only call `update!` once there are still `NaN`s for x̄, ḡ and f̄.
-```jldoctest; setup = :(using SimpleSolvers; using SimpleSolvers: NewtonOptimizerState)
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: NewtonOptimizerState)
 f(x) = sum(x.^2)
 x = [1., 2.]
 state = NewtonOptimizerState(x)
