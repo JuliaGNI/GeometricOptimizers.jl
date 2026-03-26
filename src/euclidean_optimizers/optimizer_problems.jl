@@ -32,7 +32,7 @@ OptimizerProblem{Float64, typeof(F), Missing, Missing}(F, missing, missing)
 ```
 
 !!! info
-    If `OptimizerProblem` is called on a single function, the fields for [`Gradient`](@ref) and [`Hessian`](@ref) are `missing`.
+    If `OptimizerProblem` is called on a single function, the fields for [`SimpleSolvers.Gradient`](@extref) and [`SimpleSolvers.Hessian`](@extref) are `missing`.
 """
 mutable struct OptimizerProblem{T,TF<:Callable,TG<:Union{Callable,Missing},TH<:Union{Callable,Missing}} <: AbstractOptimizerProblem{T}
     F::TF
