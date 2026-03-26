@@ -6,8 +6,19 @@ using SimpleSolvers: Options
 using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem, alloc_h, LU
 using SimpleSolvers: compute_new_iterate!, outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_mindec, g_restol
-using SimpleSolvers: Gradient, GradientAutodiff, GradientFunction, GradientFiniteDifferences
-using SimpleSolvers: Hessian, HessianAutodiff, HessianFunction
+using SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
+using SimpleSolvers: HessianAutodiff, HessianFunction
+
+import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff
+export GradientAutodiff, GradientFunction, GradientFiniteDifferences
+
+using SimpleSolvers: Backtracking, Quadratic, BierlaireQuadratic, Bisection
+export Backtracking, Quadratic, BierlaireQuadratic, Bisection
+
+export Options
+
+import SimpleSolvers: update!, direction, linesearch_problem
+export update!
 
 using Printf
 

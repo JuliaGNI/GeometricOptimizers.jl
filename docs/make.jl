@@ -1,7 +1,17 @@
 using GeometricOptimizers
 using Documenter
 using DocumenterCitations
+using DocumenterInterLinks
+using SimpleSolvers
 import Bibliography
+
+links = InterLinks(
+    "SimpleSolvers" => (
+        "https://juliagni.github.io/SimpleSolvers.jl/stable",
+        "https://juliagni.github.io/SimpleSolvers.jl/stable/objects.inv",
+        joinpath(@__DIR__, "inventories", "SimpleSolvers.toml")
+    ),
+)
 
 bib = CitationBibliography(joinpath(@__DIR__, "src", "GeometricOptimizers.bib"))
 Bibliography.sort_bibliography!(bib.entries, :nyt)  # name-year-title
