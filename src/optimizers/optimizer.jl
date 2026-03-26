@@ -127,6 +127,6 @@ function update!(m::Optimizer, C::NamedTuple, B::NamedTuple)
     apply_toNT(m, C, B, update!)
 end
 
-function apply_toNT(m::Optimizer, ps₁::NamedTuple, ps₂::NamedTuple, fun_name)    
+function apply_toNT(m::Optimizer, ps₁::NamedTuple, ps₂::NamedTuple, fun_name)
     apply_toNT((ps₁, ps₂) -> fun_name(m, ps₁, ps₂), ps₁, ps₂)
 end

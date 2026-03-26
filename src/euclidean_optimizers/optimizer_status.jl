@@ -58,7 +58,7 @@ f_change_approx(status::OptimizerStatus) = status.Δf̃
 g_abschange(status::OptimizerStatus) = status.rgₐ
 g_residual(status::OptimizerStatus) = status.rg
 
-function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T, OST <: OptimizerState{T}, OCT <: OptimizerCache{T}}
+function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T,OST<:OptimizerState{T},OCT<:OptimizerCache{T}}
     rxₐ = norm(direction(cache))
     rxᵣ = rxₐ / norm(cache.x)
 
