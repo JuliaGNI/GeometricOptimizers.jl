@@ -73,7 +73,7 @@ Update the weights `ps` based on an [`EuclideanOptimizer`](@ref), a `cache` and 
 # Arguments
 
 All arguments into `optimization_step!` are mandatory:
-1. `o::`[`Optimizer`](@ref),
+1. `o::Optimizer`,
 2. `λY::NamedTuple`: this named tuple has the same keys as `ps`, but contains [`GlobalSection`](@ref)s,
 3. `ps::NamedTuple`: the neural network parameters,
 5. `dx::NamedTuple`: the gradients stores as a NamedTuple.
