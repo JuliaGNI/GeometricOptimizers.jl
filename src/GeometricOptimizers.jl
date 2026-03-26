@@ -94,8 +94,8 @@ export EuclideanOptimizer,
     HessianBFGS,
     HessianDFP
 
-import SimpleSolvers: solve!, solve, value, gradient
-export solve!, solve, value, gradient
+import SimpleSolvers: solve!, solve
+export solve!, solve, value, gradient, Newton
 
 include("euclidean_optimizers/optimizer_methods.jl")
 
