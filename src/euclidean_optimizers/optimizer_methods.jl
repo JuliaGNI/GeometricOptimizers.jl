@@ -1,18 +1,18 @@
 """
-    OptimizerMethod <: SolverMethod
+    EuclideanOptimizerMethod <: SolverMethod
 
-The `OptimizerMethod` is used in [`EuclideanOptimizer`](@ref) and determines the algorithm that is used.
+The `EuclideanOptimizerMethod` is used in [`EuclideanOptimizer`](@ref) and determines the algorithm that is used.
 """
-abstract type OptimizerMethod <: SolverMethod end
+abstract type EuclideanOptimizerMethod <: SolverMethod end
 
 """
-    QuasiNewtonOptimizerMethod <: OptimizerMethod
+    QuasiNewtonOptimizerMethod <: EuclideanOptimizerMethod
 
 Includes [`_BFGS`](@ref) and [`_DFP`](@ref).
 """
-abstract type QuasiNewtonOptimizerMethod <: OptimizerMethod end
+abstract type QuasiNewtonOptimizerMethod <: EuclideanOptimizerMethod end
 
-struct Newton <: OptimizerMethod end
+struct Newton <: EuclideanOptimizerMethod end
 
 Hessian(::Newton, ForOBJ::Union{Callable,OptimizerProblem}, x::AbstractVector) = HessianAutodiff(ForOBJ, x)
 HessianAutodiff(F::OptimizerProblem, x) = HessianAutodiff(F.F, x)

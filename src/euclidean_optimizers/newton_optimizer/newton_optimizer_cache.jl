@@ -35,7 +35,7 @@ struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T}} <: Opt
     end
 end
 
-OptimizerCache(::OptimizerMethod, x::AbstractVector) = NewtonOptimizerCache(x)
+OptimizerCache(::EuclideanOptimizerMethod, x::AbstractVector) = NewtonOptimizerCache(x)
 
 """
     rhs(cache)

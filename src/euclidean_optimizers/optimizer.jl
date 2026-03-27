@@ -57,7 +57,7 @@ x
 
 """
 struct EuclideanOptimizer{T,
-    ALG<:OptimizerMethod,
+    ALG<:EuclideanOptimizerMethod,
     OBJ<:OptimizerProblem{T},
     GT<:Gradient{T},
     HT<:Hessian{T},
@@ -71,7 +71,7 @@ struct EuclideanOptimizer{T,
     cache::OCT
     linesearch::LST
 
-    function EuclideanOptimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=GradientAutodiff{T}(problem.F, length(cache.x)), options_kwargs...) where {T}
+    function EuclideanOptimizer(algorithm::EuclideanOptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=GradientAutodiff{T}(problem.F, length(cache.x)), options_kwargs...) where {T}
         config = Options(T; options_kwargs...)
         ls_problem = linesearch_problem(problem, gradient, cache)
         ls = Linesearch(ls_problem, linesearch)
@@ -79,7 +79,7 @@ struct EuclideanOptimizer{T,
     end
 end
 
-function EuclideanOptimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:AbstractVector{T}}
+function EuclideanOptimizer(x::VT, problem::OptimizerProblem; algorithm::EuclideanOptimizerMethod=BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:AbstractVector{T}}
     cache = OptimizerCache(algorithm, x)
     hes = Hessian(algorithm, problem, x)
     EuclideanOptimizer(algorithm, problem, hes, cache, linesearch; options_kwargs...)

@@ -26,7 +26,7 @@ See [`NewtonOptimizerState`](@ref) for a `struct` that was derived from `Optimiz
 """
 abstract type OptimizerState{T} <: AbstractSolverState end
 
-OptimizerState(alg::OptimizerMethod, args...; kwargs...) = error("OptimizerState not implemented for $(typeof(alg))")
+OptimizerState(alg::EuclideanOptimizerMethod, args...; kwargs...) = error("OptimizerState not implemented for $(typeof(alg))")
 
 """
     isaOptimizerState(alg)

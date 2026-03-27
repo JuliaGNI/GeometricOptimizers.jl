@@ -35,10 +35,10 @@ end
 
 # @doc raw"""
 #     initialize_hessian_inverse(B)
-# 
-# Initialize the inverse of the Hessian for various arrays. 
-# 
-# # Implementation 
+#
+# Initialize the inverse of the Hessian for various arrays.
+#
+# # Implementation
 # This requires an implementation of a *vectorization operation* `vec`. This is important for custom arrays.
 # """
 function initialize_hessian_inverse(B::AbstractArray{T}) where T
