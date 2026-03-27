@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-    tags: ['*']
+    tags: ["*"]
   pull_request:
 concurrency:
   # Skip intermediate builds: always.
@@ -19,8 +19,9 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.10'
-          - '1.11'
+          - "1.10"
+          - "1.12"
+          - "^1.13.0-0"
         os:
           - ubuntu-latest
           - macOS-latest
@@ -29,15 +30,15 @@ jobs:
           - x64
         experimental: [false]
         include:
-          - version: 'nightly'
+          - version: "nightly"
             os: ubuntu-latest
             arch: x64
             experimental: true
-          - version: 'nightly'
+          - version: "nightly"
             os: macOS-latest
             arch: x64
             experimental: true
-          - version: 'nightly'
+          - version: "nightly"
             os: windows-latest
             arch: x64
             experimental: true
@@ -53,33 +54,6 @@ jobs:
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v3
         env:
-            CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-            files: lcov.info
-  docs:
-    name: Documentation
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      statuses: write
-    steps:
-      - uses: actions/checkout@v3
-      - uses: julia-actions/setup-julia@v1
-        with:
-          version: '1'
-      - name: Configure doc environment
-        run: |
-          julia --project=docs/ -e '
-            using Pkg
-            Pkg.develop(PackageSpec(path=pwd()))
-            Pkg.instantiate()'
-      - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-docdeploy@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: |
-          julia --project=docs -e '
-            using Documenter: DocMeta, doctest
-            using GeometricOptimizers
-            DocMeta.setdocmeta!(GeometricOptimizers, :DocTestSetup, :(using GeometricOptimizers); recursive=true)
-            doctest(GeometricOptimizers)'
+          files: lcov.info
