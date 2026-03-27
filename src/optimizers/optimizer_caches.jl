@@ -1,7 +1,7 @@
 @doc raw"""
     AbstractCache
 
-`AbstractCache` has subtypes: [`AdamCache`](@ref), [`MomentumCache`](@ref), [`GradientCache`](@ref) and [`BFGSCache`](@ref).
+`AbstractCache` has subtypes: [`AdamCache`](@ref), [`MomentumCache`](@ref), [`GradientCache`](@ref) and [`_BFGSCache`](@ref).
 
 All of them can be initialized with providing an array (also supporting manifold types).
 """
