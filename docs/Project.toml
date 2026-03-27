@@ -1,5 +1,8 @@
 [deps]
 Bibliography = "f1be7e48-bf82-45af-a471-ae754a193061"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
+DocumenterInterLinks = "d12716ef-a0f6-4df4-a9f1-a5a34e75c656"
 GeometricOptimizers = "fc236c15-5557-4942-aa65-b650f329279e"
+SimpleSolvers = "36b790f5-6434-4fbe-b711-1f64a1e2f6a2"

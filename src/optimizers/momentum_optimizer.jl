@@ -3,7 +3,7 @@
 
 Make an instance of the momentum optimizer.
 
-The momentum optimizer is similar to the [`Gradient`](@ref).
+The momentum optimizer is similar to the [`SimpleSolvers.Gradient`](@extref).
 It however has a nontrivial cache that stores past history (see [`MomentumCache`](@ref)).
 The cache is updated via:
 ```math
@@ -17,7 +17,7 @@ and then the final velocity is computed as
 # Implementation
 
 To save memory the *velocity* is stored in the input ``\nabla_WL``.
-This is similar to the case of the [`Gradient`](@ref).
+This is similar to the case of the [`SimpleSolvers.Gradient`](@extref).
 """
 struct Momentum{T<:Real} <: OptimizerMethod{T}
     η::T
