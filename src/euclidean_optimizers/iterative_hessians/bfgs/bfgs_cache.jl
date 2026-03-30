@@ -96,10 +96,10 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::AbstractVector{T},
     if !iszero(ΔxΔg) && !isnan(ΔxΔg)
         outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
         outer!(cache.ΔxΔg, cache.Δx, cache.Δg)
-        mul!(cache.T1, cache.ΔxΔg, state.Q)
-        mul!(cache.T2, state.Q, cache.ΔxΔg')
-        γQγ = cache.Δg' * state.Q * cache.Δg
-        cache.T3 .= (one(T) + γQγ ./ ΔxΔg) .* cache.ΔxΔx
+        mul!(cache.T1, cache.ΔxΔg, inverse_hessian(state))
+        mul!(cache.T2, inverse_hessian(state), cache.ΔxΔg')
+        γQγ = cache.Δg' * inverse_hessian(state) * cache.Δg
+        cache.T3 .= (one(T) .+ γQγ ./ ΔxΔg) .* cache.ΔxΔx
         inverse_hessian(state) .-= (cache.T1 .+ cache.T2 .- cache.T3) ./ ΔxΔg
     end
 
