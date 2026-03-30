@@ -10,7 +10,7 @@ struct BFGS{T<:Real} <: OptimizerMethod{T}
     η::T
     δ::T
 
-    function BFGS(η::T = 1f-2, δ=1f-8) where T
+    function BFGS(η::T=1.0f-2, δ=1.0f-8) where {T}
         new{T}(η, T(δ))
     end
 end
