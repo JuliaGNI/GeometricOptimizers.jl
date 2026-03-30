@@ -73,7 +73,9 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::AbstractVector{T}, g
     update!(cache, state, x)
     gradient(cache) .= g
     rhs(cache) .= -g
-    cache.Δx .= cache.x - state.x̄
+    # cache.Δx .= cache.x .- state.x̄
+    cache.Δx .= state.s
+
     cache.Δg .= gradient(cache) - state.ḡ
 
     ΔxΔg = cache.Δx ⋅ cache.Δg
@@ -89,6 +91,7 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::AbstractVector{T}, g
     end
 
     direction(cache) .= inverse_hessian(state) * rhs(cache)
+    state.s .= direction(cache)
 
     cache
 end

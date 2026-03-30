@@ -56,7 +56,7 @@ inverse_hessian(::BFGSCache) = error("The inverse Hessian is stored in the state
 
 function update!(cache::BFGSCache, state::OptimizerState, x::AbstractVector)
     cache.x .= x
-    direction(cache) .= cache.x - state.x̄
+    direction(cache) .= state.s
     outer!(cache.ΔxΔx, direction(cache), direction(cache))
     cache
 end
@@ -87,12 +87,13 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::AbstractVector{T},
     update!(cache, state, x)
     gradient(cache) .= g
     rhs(cache) .= -g
-    cache.Δx .= cache.x - state.x̄
-    cache.Δg .= gradient(cache) - state.ḡ
+    # cache.Δx .= cache.x .- state.x̄
+    cache.Δx .= state.s
+    cache.Δg .= gradient(cache) .- state.ḡ
 
     ΔxΔg = cache.Δx ⋅ cache.Δg
 
-    if !iszero(ΔxΔg)
+    if !iszero(ΔxΔg) && !isnan(ΔxΔg)
         outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
         outer!(cache.ΔxΔg, cache.Δx, cache.Δg)
         mul!(cache.T1, cache.ΔxΔg, state.Q)
@@ -103,6 +104,7 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::AbstractVector{T},
     end
 
     direction(cache) .= inverse_hessian(state) * rhs(cache)
+    state.s .= direction(cache)
 
     cache
 end

@@ -11,19 +11,20 @@ The [`OptimizerState`](@ref) corresponding to the [`_BFGS`](@ref) method.
 """
 mutable struct BFGSState{T,AT<:AbstractArray{T},GT<:AbstractArray{T},MT<:AbstractMatrix{T}} <: OptimizerState{T}
     x̄::AT
+    s::GT
     ḡ::GT
     f̄::T
     Q::MT
     iterations::Int
 
-    function BFGSState(x̄::AT, ḡ::GT, f̄::T, Q::MT) where {T,AT<:AbstractArray{T},GT<:AbstractArray{T},MT<:AbstractMatrix{T}}
-        state = new{T,AT,GT,MT}(x̄, ḡ, f̄, Q, 0)
+    function BFGSState(x̄::AT, s::GT, ḡ::GT, f̄::T, Q::MT) where {T,AT<:AbstractArray{T},GT<:AbstractArray{T},MT<:AbstractMatrix{T}}
+        state = new{T,AT,GT,MT}(x̄, s, ḡ, f̄, Q, 0)
         initialize!(state, x̄)
         state
     end
 end
 
-BFGSState(x̄::AbstractVector{T}, ḡ::AbstractVector{T}, f̄::T) where {T} = BFGSState(copy(x̄), copy(ḡ), f̄, alloc_h(x̄))
+BFGSState(x̄::AbstractVector{T}, ḡ::AbstractVector{T}, f̄::T) where {T} = BFGSState(copy(x̄), similar(ḡ), copy(ḡ), f̄, alloc_h(x̄))
 BFGSState(x̄::AbstractVector{T}, ḡ::AbstractVector{T}) where {T} = BFGSState(copy(x̄), copy(ḡ), zero(T))
 BFGSState(x̄::AbstractVector) = BFGSState(copy(x̄), copy(x̄))
 
@@ -33,6 +34,7 @@ inverse_hessian(state::BFGSState) = state.Q
 
 function initialize!(state::BFGSState{T}, ::AbstractVector{T}) where {T}
     state.x̄ .= NaN
+    state.s .= NaN
     state.ḡ .= NaN
     state.f̄ = NaN
     inverse_hessian(state) .= one(inverse_hessian(state))
