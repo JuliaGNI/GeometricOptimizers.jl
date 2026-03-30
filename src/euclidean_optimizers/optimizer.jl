@@ -168,7 +168,7 @@ function solver_step!(x::VT, state::OptimizerState{T}, opt::EuclideanOptimizer{T
 
     # solve H δx = - ∇f
     # rhs is -g
-    compute_direction(opt, state)
+    compute_direction!(opt, state)
 
     for _ in 1:config(opt).nan_max_iterations
         compute_new_iterate!(solution(cache(opt)), x, direction(cache(opt)))
