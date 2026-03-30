@@ -81,7 +81,7 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::AbstractVector{T}, g
     ΔxΔg = cache.Δx ⋅ cache.Δg
     γQγ = cache.Δg' * state.Q * cache.Δg
 
-    if !iszero(ΔxΔg) & !iszero(γQγ)
+    if !iszero(ΔxΔg) & !iszero(γQγ) & !isnan(ΔxΔg)
         outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
         outer!(cache.ΔgΔg, cache.Δg, cache.Δg)
         mul!(cache.T1, cache.ΔxΔx, state.Q)
