@@ -190,20 +190,20 @@ function solver_step!(x::VT, state::OptimizerState{T}, opt::EuclideanOptimizer{T
     x
 end
 
-function compute_direction(direction::AbstractVector{T}, cache::OptimizerCache{T}) where {T}
+function compute_direction!(direction::AbstractVector{T}, cache::OptimizerCache{T}) where {T}
     direction .= solve(LU(), hessian(cache), rhs(cache))
 end
 
-function compute_direction(cache::OptimizerCache{T}) where {T}
-    compute_direction(direction(cache), cache)
+function compute_direction!(cache::OptimizerCache{T}) where {T}
+    compute_direction!(direction(cache), cache)
 end
 
-function compute_direction(opt::EuclideanOptimizer)
-    compute_direction(cache(opt))
+function compute_direction!(opt::EuclideanOptimizer)
+    compute_direction!(cache(opt))
 end
-compute_direction(opt::EuclideanOptimizer, ::OptimizerState) = compute_direction(opt)
+compute_direction!(opt::EuclideanOptimizer, ::OptimizerState) = compute_direction!(opt)
 
-function compute_direction(opt::EuclideanOptimizer{T,IOM}, state::Union{BFGSState,DFPState}) where {T,IOM<:QuasiNewtonOptimizerMethod}
+function compute_direction!(opt::EuclideanOptimizer{T,IOM}, state::Union{BFGSState,DFPState}) where {T,IOM<:QuasiNewtonOptimizerMethod}
     direction(opt) .= inverse_hessian(state) * rhs(opt)
 end
 

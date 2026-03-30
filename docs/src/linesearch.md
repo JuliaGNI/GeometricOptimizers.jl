@@ -38,7 +38,7 @@ We hence use [`linesearch_problem`](@ref) not for a [`SimpleSolvers.NewtonSolver
 
 ```@example quadratic
 using GeometricOptimizers # hide
-using GeometricOptimizers: NewtonOptimizerCache, initialize!, gradient, compute_direction, linesearch_problem # hide
+using GeometricOptimizers: NewtonOptimizerCache, initialize!, gradient, compute_direction!, linesearch_problem # hide
 x₀ = [0., .1, .2]
 x = copy(x₀)
 obj = OptimizerProblem(sum∘f, x₀)
