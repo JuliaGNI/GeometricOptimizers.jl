@@ -121,17 +121,6 @@ function initialize!(opt::EuclideanOptimizer, x::AbstractVector)
 end
 
 """
-    update!(opt, x)
-
-Update the `cache` contained in the optimizer `opt`.See e.g. [`update!(::NewtonOptimizerCache, ::OptimizerState, ::Gradient, ::Hessian, ::AbstractVector)`](@ref).
-"""
-function update!(opt::EuclideanOptimizer, state::OptimizerState, x::AbstractVector)
-    update!(cache(opt), state, gradient(opt), hessian(opt), x)
-
-    opt
-end
-
-"""
     solver_step!(x, state, opt)
 
 Compute a full iterate for an [`EuclideanOptimizer`](@ref).
@@ -161,9 +150,9 @@ julia> solver_step!(x, state, opt)
  0.6666666
 ```
 """
-function solver_step!(x::VT, state::OptimizerState{T}, opt::EuclideanOptimizer{T}) where {T,VT<:AbstractVector{T}}
-    # update problem, hessian, state and status
-    update!(opt, state, x)
+function solver_step!(x::VT, state::OptimizerState{T}, opt::EuclideanOptimizer{T}) where {T,VT<:Union{AbstractVector{T},Manifold{T}}}
+    # update cache
+    update!(cache(opt), state, gradient(opt), hessian(opt), x)
     typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
 
     # solve H δx = - ∇f
