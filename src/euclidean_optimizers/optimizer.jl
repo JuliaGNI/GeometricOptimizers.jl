@@ -179,22 +179,12 @@ function solver_step!(x::VT, state::OptimizerState{T}, opt::EuclideanOptimizer{T
     x
 end
 
-function compute_direction!(direction::AbstractVector{T}, cache::OptimizerCache{T}) where {T}
-    direction .= solve(LU(), hessian(cache), rhs(cache))
-end
+"""
+    compute_direction!(opt, state)
 
-function compute_direction!(cache::OptimizerCache{T}) where {T}
-    compute_direction!(direction(cache), cache)
-end
-
-function compute_direction!(opt::EuclideanOptimizer)
-    compute_direction!(cache(opt))
-end
-compute_direction!(opt::EuclideanOptimizer, ::OptimizerState) = compute_direction!(opt)
-
-function compute_direction!(opt::EuclideanOptimizer{T,IOM}, state::Union{BFGSState,DFPState}) where {T,IOM<:QuasiNewtonOptimizerMethod}
-    direction(opt) .= inverse_hessian(state) * rhs(opt)
-end
+Compute the search direction for the optimization problem described by `opt` and store the result in `state`.
+"""
+compute_direction!(::EuclideanOptimizer, ::OptimizerState)
 
 """
     solve!(x, state, opt)
