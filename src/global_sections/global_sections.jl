@@ -253,3 +253,14 @@ function update_section!(Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::NamedTup
 
     nothing
 end
+
+function Base.copyto!(dest::GlobalSection{T, MT}, src::GlobalSection{T, MT}) where {T, MT <: Manifold}
+    copyto!(dest.Y, src.Y)
+    copyto!(dest.λ, src.λ)
+    dest
+end
+
+# auxiliary function
+function global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) where {T}
+    gx
+end
