@@ -160,7 +160,9 @@ function solver_step!(x::VT, state::OptimizerState{T}, opt::EuclideanOptimizer{T
     compute_direction!(opt, state)
 
     for _ in 1:config(opt).nan_max_iterations
-        compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)))
+        update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+        solution(cache(opt)) .= section(cache(opt)).Y
+        # compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)), cache(opt), opt.retraction)
         f = value(problem(opt), solution(cache(opt)))
         if isnan(f) || isinf(f)
             (opt.config.verbosity ≥ 2 && @warn "NaN or Inf detected in optimizer. Reducing length of direction vector.")

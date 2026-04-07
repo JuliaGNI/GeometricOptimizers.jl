@@ -9,7 +9,7 @@ The [`OptimizerState`](@ref) corresponding to the [`_BFGS`](@ref) method.
 - `f̄`
 - `Q`
 """
-mutable struct BFGSState{T,AT<:AbstractArray{T},GT<:AbstractArray{T},MT<:AbstractMatrix{T}} <: OptimizerState{T}
+mutable struct BFGSState{T,AT<:AbstractArray{T},GT<:AbstractArray{T},MT<:AbstractMatrix{T},GS<:GlobalSection} <: OptimizerState{T}
     x̄::AT
     s::GT
     ḡ::GT
@@ -17,12 +17,17 @@ mutable struct BFGSState{T,AT<:AbstractArray{T},GT<:AbstractArray{T},MT<:Abstrac
     Q::MT
     iterations::Int
 
+    section::GS
+
     function BFGSState(x̄::AT, s::GT, ḡ::GT, f̄::T, Q::MT) where {T,AT<:AbstractArray{T},GT<:AbstractArray{T},MT<:AbstractMatrix{T}}
-        state = new{T,AT,GT,MT}(x̄, s, ḡ, f̄, Q, 0)
+        section = GlobalSection(x̄)
+        state = new{T,AT,GT,MT,typeof(section)}(x̄, s, ḡ, f̄, Q, 0, section)
         initialize!(state, x̄)
         state
     end
 end
+
+section(state::BFGSState) = state.section
 
 BFGSState(x̄::AbstractVector{T}, ḡ::AbstractVector{T}, f̄::T) where {T} = BFGSState(copy(x̄), similar(ḡ), copy(ḡ), f̄, alloc_h(x̄))
 BFGSState(x̄::AbstractVector{T}, ḡ::AbstractVector{T}) where {T} = BFGSState(copy(x̄), copy(ḡ), zero(T))
@@ -47,6 +52,7 @@ function update!(state::BFGSState, gradient::Gradient, x::AbstractVector)
     state.x̄ .= x
     gradient(state.ḡ, x)
     state.f̄ = gradient.F(x)
+    state.section.Y .= x
 
     state
 end

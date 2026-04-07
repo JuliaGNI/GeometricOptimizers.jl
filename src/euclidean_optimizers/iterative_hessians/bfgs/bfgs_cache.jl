@@ -3,7 +3,7 @@
 
 The [`OptimizerCache`](@ref) for the [`_BFGS`](@ref) algorithm. Also see [`update!(::BFGSCache, ::OptimizerState, ::AbstractVector, ::AbstractVector`)](@ref).
 """
-struct BFGSCache{T,VT,MT} <: OptimizerCache{T}
+struct BFGSCache{T,VT,MT,GS<:GlobalSection{T}} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::VT    # current gradient
@@ -18,15 +18,20 @@ struct BFGSCache{T,VT,MT} <: OptimizerCache{T}
     Δx::VT
     Δg::VT
 
+    section::GS
+
     function BFGSCache(x::AT) where {T,AT<:AbstractVector{T}}
         q = zeros(T, length(x), length(x))
-        cache = new{T,AT,typeof(q)}(similar(x), similar(x), similar(q), similar(q), similar(q), similar(q), similar(q), similar(x), similar(x), similar(x))
+        section = GlobalSection(x)
+        cache = new{T,AT,typeof(q),typeof(section)}(similar(x), similar(x), similar(q), similar(q), similar(q), similar(q), similar(q), similar(x), similar(x), similar(x), section)
         initialize!(cache, x)
         cache
     end
 end
 
 OptimizerCache(::_BFGS, x::AbstractVector) = BFGSCache(x)
+
+section(cache::BFGSCache) = cache.section
 
 """
     rhs(cache)

@@ -3,7 +3,7 @@
 
 The [`OptimizerCache`](@ref) corresponding to the [`_DFP`](@ref) method.
 """
-struct DFPCache{T,VT,MT} <: OptimizerCache{T}
+struct DFPCache{T,VT,MT,GS<:GlobalSection{T}} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::VT    # current gradient
@@ -17,15 +17,20 @@ struct DFPCache{T,VT,MT} <: OptimizerCache{T}
     Δx::VT
     Δg::VT
 
+    section::GS
+
     function DFPCache(x::AT) where {T,AT<:AbstractVector{T}}
         q = zeros(T, length(x), length(x))
-        cache = new{T,AT,typeof(q)}(similar(x), similar(x), similar(q), similar(q), similar(q), similar(q), similar(x), similar(x), similar(x))
+        section = GlobalSection(x)
+        cache = new{T,AT,typeof(q),typeof(section)}(similar(x), similar(x), similar(q), similar(q), similar(q), similar(q), similar(x), similar(x), similar(x), section)
         initialize!(cache, x)
         cache
     end
 end
 
 OptimizerCache(::_DFP, x::AbstractVector) = DFPCache(x)
+
+section(cache::DFPCache) = cache.section
 
 """
     rhs(cache)
