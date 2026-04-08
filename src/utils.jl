@@ -46,3 +46,5 @@ function compute_new_iterate!(xₖ::AbstractVector{T}, x::AbstractVector{T}, α:
     update_section!(section(cache), α * pₖ, _retraction)
     apply_section!(xₖ, section(cache), x)
 end
+
+global_section(::AbstractVecOrMat) = nothing
