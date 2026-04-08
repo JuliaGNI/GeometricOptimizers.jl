@@ -59,19 +59,19 @@ g_abschange(status::OptimizerStatus) = status.rgₐ
 g_residual(status::OptimizerStatus) = status.rg
 
 function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T,OST<:OptimizerState{T},OCT<:OptimizerCache{T}}
-    rxₐ = norm(direction(cache))
+    rxₐ = l2norm(direction(cache))
     rxᵣ = rxₐ / norm(cache.x)
 
     Δf = f - state.f̄
     Δf̃ = state.ḡ ⋅ direction(cache)
 
-    rfₐ = norm(Δf)
+    rfₐ = l2norm(Δf)
     rfᵣ = rfₐ / norm(f)
 
     cache.Δg .= cache.g - state.ḡ
 
-    rgₐ = norm(cache.Δg)
-    rg = norm(cache.g)
+    rgₐ = l2norm(cache.Δg)
+    rg = l2norm(cache.g)
 
     f_increased = abs(f) > abs(state.f̄)
 
