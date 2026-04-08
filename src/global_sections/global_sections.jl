@@ -80,7 +80,19 @@ This is the inplace version of [`apply_section`](@ref).
 function apply_section!(Y::AT, λY::GlobalSection{T, AT}, Y₂::MT) where {T, AT<:StiefelManifold{T}, MT<:StiefelManifold{T}}
     N, n = size(λY.Y)
 
-    @views Y.A .= λY.Y * Y₂.A[1:n, :] + λY.λ * Y₂.A[(n+1):N, :]
+    @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n+1):N, :]
+
+    Y
+end
+
+function apply_section!(Λᵗ::GlobalSection{T, MT}, λY::GlobalSection{T, MT}, Y₂::MT) where {T, MT<:StiefelManifold{T}}
+    N, n = size(Λᵗ.Y)
+    @assert size(Y₂) == size(Λᵗ) == size(λY)
+
+    @views apply_section!(Λᵗ.Y, λY, StiefelManifold(Y₂.A[:, 1:n]))
+    @views Λᵗ.λ .= λY.Y * Y₂.A[1:n, (n+1):N] .+ λY.λ * Y₂.A[(n+1):N, (n+1):N]
+
+    Λᵗ
 end
 
 function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {T, AT<:GrassmannManifold{T}}
