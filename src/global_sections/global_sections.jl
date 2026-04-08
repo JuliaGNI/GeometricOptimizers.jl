@@ -77,7 +77,7 @@ Apply `λY` to `Y₂` and store the result in `Y`.
 
 This is the inplace version of [`apply_section`](@ref).
 """
-function apply_section!(Y::AT, λY::GlobalSection{T, AT}, Y₂::AT) where {T, AT<:StiefelManifold{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T, AT}, Y₂::MT) where {T, AT<:StiefelManifold{T}, MT<:StiefelManifold{T}}
     N, n = size(λY.Y)
 
     @views Y.A .= λY.Y * Y₂.A[1:n, :] + λY.λ * Y₂.A[(n+1):N, :]
