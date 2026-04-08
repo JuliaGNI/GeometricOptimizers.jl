@@ -174,11 +174,13 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Eu
 
     # apply line search
     α = solve(linesearch(opt), one(T), (x=x,))
+    rmul!(direction(cache(opt)), α)
 
     # compute new minimizer
-    compute_new_iterate!(x, α, direction(opt))
+    update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+    copyto!(solution(cache(opt)), section(cache(opt)).Y)
 
-    x
+    copyto!(x, solution(cache(opt)))
 end
 
 """
