@@ -28,7 +28,7 @@ end
 function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::Integer) where {T,MT<:Manifold{T}}
     @assert N ≥ n
     A = KernelAbstractions.allocate(backend, T, N, n)
-    Random.randn!(rng, A)    
+    Random.randn!(rng, A)
     MT{typeof(A)}(assign_columns(typeof(A)(qr!(A).Q), N, n))
 end
 

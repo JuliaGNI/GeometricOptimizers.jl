@@ -22,7 +22,7 @@ struct GlobalSection{T, AT<:OptimizerSolution{T}, λT<:Union{AbstractArray{T}, N
 
     function GlobalSection(Y::AbstractVecOrMat)
         λ = global_section(Y)
-       new{eltype(Y), typeof(Y), typeof(λ)}(Y, λ) 
+        new{eltype(Y), typeof(Y), typeof(λ)}(copy(Y), λ)
     end
 end
 
