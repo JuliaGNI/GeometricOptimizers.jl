@@ -229,7 +229,15 @@ function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {T, 
     )
 end
 
-function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold}
+# function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold}
+#     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
+#     expB = retraction(B⁽ᵗ⁻¹⁾)
+#     apply_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, expB)
+#
+#     Λᵗ
+# end
+
+function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold{T}}
     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
     expB = retraction(B⁽ᵗ⁻¹⁾)
     apply_section!(expB, Λ⁽ᵗ⁻¹⁾, expB)
@@ -239,10 +247,12 @@ function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾
     nothing
 end
 
-function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T, AT}, B⁽ᵗ⁻¹⁾::AT, retraction) where {T, AT <: AbstractVecOrMat{T}}
+function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold{T}}
+    N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
     expB = retraction(B⁽ᵗ⁻¹⁾)
     apply_section!(expB, Λ⁽ᵗ⁻¹⁾, expB)
-    Λ⁽ᵗ⁻¹⁾.Y .= expB
+    Λᵗ.Y.A .= @view expB.A[:, 1:n]
+    Λᵗ.λ .= @view expB.A[:, (n+1):N]
 
     nothing
 end
