@@ -122,4 +122,8 @@ include("euclidean_optimizers/optimizer.jl")
 include("euclidean_optimizers/iterative_hessians/iterative_hessians_direction.jl")
 include("euclidean_optimizers/newton_optimizer/newton_optimizer_direction.jl")
 
+export GradientMethod, GradientState
+
+include("manifold_optimizers/gradient_optimizer.jl")
+
 end
