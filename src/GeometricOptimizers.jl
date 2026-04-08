@@ -31,8 +31,6 @@ using ChainRulesCore: ProjectTo
 # we use the Vcat function from LazyArrays
 import LazyArrays
 
-include("utils.jl")
-
 export Manifold, StiefelManifold, GrassmannManifold
 export rgrad
 include("manifolds/abstract_manifold.jl")
@@ -116,6 +114,9 @@ include("euclidean_optimizers/iterative_hessians/dfp/dfp_state.jl")
 
 include("euclidean_optimizers/iterative_hessians/bfgs/bfgs_cache.jl")
 include("euclidean_optimizers/iterative_hessians/dfp/dfp_cache.jl")
+
+# OptimizerSolution is defined in here for example. This should probably be moved to a separate file.
+include("utils.jl")
 
 include("euclidean_optimizers/optimizer.jl")
 include("euclidean_optimizers/iterative_hessians/iterative_hessians_direction.jl")
