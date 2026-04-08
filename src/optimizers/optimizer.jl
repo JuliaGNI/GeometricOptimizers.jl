@@ -58,6 +58,7 @@ function _optimization_step!(o::Optimizer, λY::NamedTuple, ps::NamedTuple, cach
     B = global_rep(λY, gx)
     update!(o, cache, B)
     update_section!(λY, B, o.retraction)
+    apply_toNT(copyto!, ps, λY)
 
     nothing
 end
