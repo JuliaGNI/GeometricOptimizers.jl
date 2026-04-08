@@ -203,7 +203,7 @@ function racᵉˡᵉ(A::SkewSymMatrix)
     SkewSymMatrix(sqrt.(A.S), A.n)
 end
 function /ᵉˡᵉ(A::SkewSymMatrix, B::SkewSymMatrix)
-    @assert A.n == B.n 
+    @assert A.n == B.n
     SkewSymMatrix(A.S ./ B.S, A.n)
 end
 
@@ -231,7 +231,7 @@ end
     for k = 1:(i-1)
         tmp_sum +=  S[(i-2)*(i-1)÷2+k] * B[k, j]
     end
-    for k = (i+1):n 
+    for k = (i+1):n
         tmp_sum += -S[(k-2)*(k-1)÷2+i] * B[k, j]
     end
     C[i,j] = tmp_sum
