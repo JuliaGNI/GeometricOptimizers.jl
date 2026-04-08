@@ -113,8 +113,8 @@ function apply_section(λY::GlobalSection{T}, Y₂::AbstractVecOrMat{T}) where {
     apply_section!(Y, λY, Y₂)
 end
 
-function apply_section!(Y::AT, λY::GlobalSection{T, AT}, Y₂::AbstractVecOrMat{T}) where {T, AT<:AbstractVecOrMat{T}}
-    Y .= Y₂ + λY.Y
+function apply_section!(Y::AT, λY::GlobalSection{T, AT, Nothing}, Y₂::AbstractVecOrMat{T}) where {T, AT<:AbstractVecOrMat{T}}
+    Y .= Y₂ .+ λY.Y
 end
 
 function apply_section(λY::NamedTuple, Y₂::NamedTuple)
