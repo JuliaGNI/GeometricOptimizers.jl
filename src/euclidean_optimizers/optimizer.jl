@@ -268,3 +268,10 @@ function warn_iteration_number(state::OptimizerState, config::Options)
         println("WARNING: Optimizer took ", iteration_number(state), " iterations.")
     end
 end
+
+# put this somewhere else eventually!
+function update!(state::NewtonOptimizerState, opt::EuclideanOptimizer, x::AbstractVector)
+    update!(state, gradient(opt), x)
+    update_section!(state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
+    state
+end

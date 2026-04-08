@@ -54,6 +54,7 @@ function initialize!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::Ab
     state.x̄ .= T(NaN)
     state.ḡ .= T(NaN)
     state.f̄ = T(NaN)
+    section(state).Y .= x
 end
 
 function update!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
@@ -63,6 +64,7 @@ function update!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::Abstra
     state.x .= x
     state.g .= g
     state.f = f
+    section(state).Y .= x
 end
 
 solution(cache::NewtonOptimizerState) = cache.x̄
@@ -85,7 +87,7 @@ update!(state, grad, x)
 
 # output
 
-NewtonOptimizerState{Float64, Vector{Float64}, Vector{Float64}}(0, [1.0, 2.0], [NaN, NaN], [2.0, 4.0], [NaN, NaN], 5.0, NaN)
+NewtonOptimizerState{Float64, Vector{Float64}, Vector{Float64}, GlobalSection{Float64, Vector{Float64}, Nothing}}(0, [1.0, 2.0], [NaN, NaN], [2.0, 4.0], [NaN, NaN], 5.0, NaN, GlobalSection{Float64, Vector{Float64}, Nothing}([1.0, 2.0], nothing))
 ```
 """
 function update!(state::NewtonOptimizerState, gradient::Gradient, x::AbstractVector)
