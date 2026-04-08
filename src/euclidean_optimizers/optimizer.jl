@@ -81,7 +81,7 @@ struct EuclideanOptimizer{T,
     end
 end
 
-function EuclideanOptimizer(x::VT, problem::OptimizerProblem; algorithm::EuclideanOptimizerMethod=BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:AbstractVector{T}}
+function EuclideanOptimizer(x::VT, problem::OptimizerProblem; algorithm::EuclideanOptimizerMethod=_BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
     cache = OptimizerCache(algorithm, x)
     hes = Hessian(algorithm, problem, x)
     EuclideanOptimizer(algorithm, problem, hes, cache, linesearch; options_kwargs...)
