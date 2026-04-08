@@ -71,7 +71,6 @@ export Optimizer
 include("optimizers/optimizer.jl")
 
 # optimizer methods II
-include("optimizers/gradient_optimizer.jl")
 include("optimizers/momentum_optimizer.jl")
 include("optimizers/adam_optimizer.jl")
 include("optimizers/adam_optimizer_with_decay.jl")

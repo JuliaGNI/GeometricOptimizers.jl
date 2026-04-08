@@ -88,6 +88,8 @@ end
 
 GradientState(x::OptimizerSolution) = GradientState(x, zero(x))
 
+OptimizerState(::GradientMethod, x...) = GradientState(x...)
+
 function update!(state::GradientState{T}, gradient_array::AbstractArray{T}, x::Manifold{T}, f::Callable, retraction) where {T}
     copyto!(previous_solution(state), solution(state))
     copyto!(previous_gradient(state), gradient(state))
