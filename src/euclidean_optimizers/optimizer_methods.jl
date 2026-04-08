@@ -27,6 +27,11 @@ Algorithm taken from [nocedal2006numerical](@cite).
 """
 struct _BFGS <: QuasiNewtonOptimizerMethod end
 
+"""
+The gradient descent algorithm.
+"""
+struct GradientMethod <: EuclideanOptimizerMethod end
+
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
 Base.show(io::IO, alg::_DFP) = print(io, "DFP")
 Base.show(io::IO, alg::_BFGS) = print(io, "BFGS")
