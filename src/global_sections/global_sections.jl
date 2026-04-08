@@ -15,7 +15,7 @@ Also see [`apply_section`](@ref) and [`global_rep`](@ref).
 
 For an implementation of `GlobalSection` for a custom array (especially manifolds), the function [`global_section`](@ref) has to be generalized.
 """
-struct GlobalSection{T, AT<:OptimizerSolution{T}, λT<:Union{AbstractArray{T}, Nothing}}
+struct GlobalSection{T, AT<:AbstractArray{T}, λT<:Union{AbstractArray{T}, Nothing}}
     Y::AT
     # for now the only lift that is implemented is the Stiefel one - these types will have to be expanded!
     λ::λT
