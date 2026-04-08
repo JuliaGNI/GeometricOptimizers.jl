@@ -87,7 +87,7 @@ function EuclideanOptimizer(x::VT, problem::OptimizerProblem; algorithm::Euclide
     EuclideanOptimizer(algorithm, problem, hes, cache, linesearch; options_kwargs...)
 end
 
-function EuclideanOptimizer(x::AbstractVector, F::Function; (∇F!)=nothing, mode=:autodiff, kwargs...)
+function EuclideanOptimizer(x::OptimizerSolution, F::Function; (∇F!)=nothing, mode=:autodiff, kwargs...)
     G = if (ismissing(∇F!) | isnothing(∇F!))
         if mode == :autodiff
             GradientAutodiff(F, x)
@@ -116,7 +116,7 @@ print_gradient(opt::EuclideanOptimizer) = print_gradient(gradient(problem(opt)))
 
 meets_stopping_criteria(status::OptimizerStatus, opt::EuclideanOptimizer, state::OptimizerState) = meets_stopping_criteria(status, config(opt), iteration_number(state))
 
-function initialize!(opt::EuclideanOptimizer, x::AbstractVector)
+function initialize!(opt::EuclideanOptimizer, x::OptimizerSolution)
     initialize!(cache(opt), x)
 
     opt
@@ -152,7 +152,7 @@ julia> solver_step!(x, state, opt)
  0.6666666
 ```
 """
-function solver_step!(x::VT, state::OptimizerState{T}, opt::EuclideanOptimizer{T}) where {T,VT<:Union{AbstractVector{T},Manifold{T}}}
+function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::EuclideanOptimizer{T}) where {T}
     # update cache
     update!(cache(opt), state, gradient(opt), hessian(opt), x)
     typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
@@ -232,7 +232,7 @@ julia> iteration_number(state)
 
 Also see [`solver_step!`](@ref).
 """
-function solve!(x::AbstractVector, state::OptimizerState, opt::EuclideanOptimizer)
+function solve!(x::OptimizerSolution, state::OptimizerState, opt::EuclideanOptimizer)
     initialize_state!(state)
 
     while true
