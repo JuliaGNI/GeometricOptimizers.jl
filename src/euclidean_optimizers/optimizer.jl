@@ -234,19 +234,22 @@ Also see [`solver_step!`](@ref).
 """
 function solve!(x::OptimizerSolution, state::OptimizerState, opt::EuclideanOptimizer)
     initialize_state!(state)
+    update!(state, opt, x)
 
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
         status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config=config(opt))
         meets_stopping_criteria(status, opt, state) && break
-        update!(state, gradient(opt), x)
+        update!(state, opt, x)
     end
 
     status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config=config(opt))
     warn_iteration_number(state, config(opt))
     OptimizerResult(status, x, value(problem(opt), x))
 end
+
+update!(state::OptimizerState, opt::EuclideanOptimizer, x::AbstractVector) = update!(state, gradient(opt), x)
 
 function initialize_state!(state::OptimizerState)
     state
