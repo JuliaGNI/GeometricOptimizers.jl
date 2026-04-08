@@ -62,7 +62,8 @@ struct EuclideanOptimizer{T,
     GT<:Gradient{T},
     HT<:Hessian{T},
     OCT<:OptimizerCache,
-    LST<:Linesearch} <: AbstractSolver
+    LST<:Linesearch,
+    RT<:AbstractRetraction} <: AbstractSolver
     algorithm::ALG
     problem::OBJ
     gradient::GT
@@ -70,12 +71,13 @@ struct EuclideanOptimizer{T,
     config::Options{T}
     cache::OCT
     linesearch::LST
+    retraction::RT
 
-    function EuclideanOptimizer(algorithm::EuclideanOptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=GradientAutodiff{T}(problem.F, length(cache.x)), options_kwargs...) where {T}
+    function EuclideanOptimizer(algorithm::EuclideanOptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=GradientAutodiff{T}(problem.F, length(cache.x)), retraction=Cayley(), options_kwargs...) where {T}
         config = Options(T; options_kwargs...)
         ls_problem = linesearch_problem(problem, gradient, cache)
         ls = Linesearch(ls_problem, linesearch)
-        new{T,typeof(algorithm),typeof(problem),typeof(gradient),typeof(hessian),typeof(cache),typeof(ls)}(algorithm, problem, gradient, hessian, config, cache, ls)
+        new{T,typeof(algorithm),typeof(problem),typeof(gradient),typeof(hessian),typeof(cache),typeof(ls),typeof(retraction)}(algorithm, problem, gradient, hessian, config, cache, ls, retraction)
     end
 end
 
