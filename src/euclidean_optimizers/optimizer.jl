@@ -234,7 +234,6 @@ Also see [`solver_step!`](@ref).
 """
 function solve!(x::OptimizerSolution, state::OptimizerState, opt::EuclideanOptimizer)
     initialize_state!(state)
-    update!(state, opt, x)
 
     while true
         increase_iteration_number!(state)
