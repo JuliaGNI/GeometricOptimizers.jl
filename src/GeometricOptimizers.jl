@@ -6,7 +6,7 @@ using SimpleSolvers: Options
 using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem, alloc_h, LU
 using SimpleSolvers: compute_new_iterate!, outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_mindec, g_restol
-using SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
+import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
 using SimpleSolvers: HessianAutodiff, HessianFunction
 
 import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff
