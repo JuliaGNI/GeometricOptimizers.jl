@@ -184,5 +184,12 @@ function cayley(B::GrassmannLieAlgHorMatrix)
     B̂ = hcat(vcat(𝕆, B.B), E)
     B̄ = hcat(vcat(𝕀_small, 𝕆), vcat(zero(B.B'), -B.B'))'
 
-    GrassmannManifold((𝕀_big + T(.5) * B̂ * inv(𝕀_small2 - T(.5) * B̄' * B̂) * B̄') * (𝕀_big + T(.5) * B))
+    GrassmannManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') * (𝕀_big + T(0.5) * B))
 end
+
+function retraction(::AbstractRetraction, ::AbstractArray) end
+
+retraction(::Cayley, x::AbstractArray) = cayley(x)
+retraction(::Geodesic, x::AbstractArray) = geodesic(x)
+
+(R::AbstractRetraction)(x::AbstractArray) = retraction(R, x)
