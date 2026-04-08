@@ -108,6 +108,7 @@ include("euclidean_optimizers/iterative_hessians/bfgs/hessian_bfgs.jl")
 include("euclidean_optimizers/iterative_hessians/dfp/hessian_dfp.jl")
 include("euclidean_optimizers/newton_optimizer/newton_optimizer_cache.jl")
 include("euclidean_optimizers/newton_optimizer/newton_optimizer_state.jl")
+
 include("euclidean_optimizers/linesearch_problem.jl")
 
 include("euclidean_optimizers/iterative_hessians/bfgs/bfgs_state.jl")

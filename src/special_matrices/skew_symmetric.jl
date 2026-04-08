@@ -5,10 +5,10 @@ Instantiate a skew-symmetric matrix with information stored in vector `S`.
 
 A skew-symmetric matrix ``A`` is a matrix ``A^T = -A``.
 
-Internally the `struct` saves a vector ``S`` of size ``n(n-1)\div2``. The conversion is done the following way: 
+Internally the `struct` saves a vector ``S`` of size ``n(n-1)\div2``. The conversion is done the following way:
 ```math
 [A]_{ij} = \begin{cases} 0                             & \text{if $i=j$} \\
-                         S[( (i-2) (i-1) ) \div 2 + j] & \text{if $i>j$}\\ 
+                         S[( (i-2) (i-1) ) \div 2 + j] & \text{if $i>j$}\\
                          S[( (j-2) (j-1) ) \div 2 + i] & \text{else}. \end{cases}
 ```
 
@@ -16,7 +16,7 @@ So ``S`` stores a string of vectors taken from ``A``: ``S = [\tilde{a}_1, \tilde
 
 Also see [`SymmetricMatrix`](@ref), [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref).
 
-# Examples 
+# Examples
 ```jldoctest
 using GeometricOptimizers
 S = [1, 2, 3, 4, 5, 6]
@@ -39,7 +39,7 @@ mutable struct SkewSymMatrix{T, AT <: AbstractVector{T}} <: AbstractMatrix{T}
         @assert length(S) == n * (n-1) ÷ 2
         new{T,typeof(S)}(S,n)
     end
-end 
+end
 
 @doc raw"""
     SkewSymMatrix(A::AbstractMatrix)
@@ -122,9 +122,9 @@ end
 Base.:+(B::AbstractMatrix, A::SkewSymMatrix) = A + B
 
 function Base.:+(A::SkewSymMatrix, B::SkewSymMatrix)
-    @assert A.n == B.n 
-    SkewSymMatrix(A.S + B.S, A.n) 
-end 
+    @assert A.n == B.n
+    SkewSymMatrix(A.S + B.S, A.n)
+end
 
 function add!(C::SkewSymMatrix, A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n == C.n
@@ -132,9 +132,9 @@ function add!(C::SkewSymMatrix, A::SkewSymMatrix, B::SkewSymMatrix)
 end
 
 function Base.:-(A::SkewSymMatrix, B::SkewSymMatrix)
-    @assert A.n == B.n 
-    SkewSymMatrix(A.S - B.S, A.n) 
-end 
+    @assert A.n == B.n
+    SkewSymMatrix(A.S - B.S, A.n)
+end
 
 function Base.:-(A::SkewSymMatrix)
     SkewSymMatrix(-A.S, A.n)
@@ -159,8 +159,8 @@ function Base.zeros(backend::KernelAbstractions.Backend, ::Type{SkewSymMatrix{T}
 	SkewSymMatrix(zero_vec, n)
 end
 
-function Base.zeros(::Type{SkewSymMatrix}, n::Int)
-    SkewSymMatrix(zeros(n*(n-1)÷2), n)
+function Base.zeros(::Type{SkewSymMatrix{T}}, n::Int) where {T}
+    SkewSymMatrix(zeros(T, n*(n-1)÷2), n)
 end
 
 function Base.rand(rng::Random.AbstractRNG, ::Type{SkewSymMatrix{T}}, n::Int) where T
@@ -180,13 +180,13 @@ function Base.rand(type::Type{SkewSymMatrix}, n::Integer)
     rand(Random.default_rng(), type, n)
 end
 
-function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend, type::Type{SkewSymMatrix{T}}, n::Integer) where T 
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend, type::Type{SkewSymMatrix{T}}, n::Integer) where T
     S = KernelAbstractions.allocate(backend, T, n*(n-1)÷2)
     Random.rand!(rng, S)
     SkewSymMatrix(S, n)
 end
 
-function Base.rand(backend::KernelAbstractions.Backend, type::Type{SkewSymMatrix{T}}, n::Integer) where T 
+function Base.rand(backend::KernelAbstractions.Backend, type::Type{SkewSymMatrix{T}}, n::Integer) where {T} 
     rand(Random.default_rng(), backend, type, n)
 end
 
@@ -237,7 +237,7 @@ end
     C[i,j] = tmp_sum
 end
 
-function Base.:*(B::AbstractMatrix{T}, A::SkewSymMatrix{T}) where T 
+function Base.:*(B::AbstractMatrix{T}, A::SkewSymMatrix{T}) where {T}
     (-A*B')'
 end
 
@@ -255,8 +255,8 @@ end
 
 
 # the first matrix is multiplied onto A2 in order for it to not be SkewSymMatrix!
-function Base.:*(A1::SkewSymMatrix{T}, A2::SkewSymMatrix{T}) where T 
-    A1 * (one(A2) * A2) 
+function Base.:*(A1::SkewSymMatrix{T}, A2::SkewSymMatrix{T}) where {T}
+    A1 * (one(A2) * A2)
 end
 
 @doc raw"""
@@ -295,8 +295,8 @@ function KernelAbstractions.get_backend(A::SkewSymMatrix)
     KernelAbstractions.get_backend(A.S)
 end
 
-function assign!(B::SkewSymMatrix{T}, C::SkewSymMatrix{T}) where T 
-    B.S .= C.S 
+function assign!(B::SkewSymMatrix{T}, C::SkewSymMatrix{T}) where {T}
+    B.S .= C.S
 end
 
 function Base.copy(A::SkewSymMatrix)
@@ -343,7 +343,7 @@ function _round(A::AbstractArray; kwargs...)
     round.(A; kwargs...)
 end
 
-# define routines for generalizing ChainRulesCore to SkewSymMatrix 
+# define routines for generalizing ChainRulesCore to SkewSymMatrix
 ChainRulesCore.ProjectTo(A::SkewSymMatrix) = ProjectTo{SkewSymMatrix}(; skew_sym = ProjectTo(A.S))
 (project::ProjectTo{SkewSymMatrix})(dA::AbstractMatrix) = SkewSymMatrix(project.skew_sym(map_to_Skew(dA)), size(dA, 2))
 (project::ProjectTo{SkewSymMatrix})(dA::SkewSymMatrix) = SkewSymMatrix(project.skew_sym(dA.S), dA.n)

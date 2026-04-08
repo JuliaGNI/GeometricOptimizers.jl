@@ -1,11 +1,11 @@
 @doc raw"""
     GlobalSection(Y)
 
-Construct a global section for `Y`.  
+Construct a global section for `Y`.
 
-A global section ``\lambda`` is a mapping from a homogeneous space ``\mathcal{M}`` to the corresponding Lie group ``G`` such that 
+A global section ``\lambda`` is a mapping from a homogeneous space ``\mathcal{M}`` to the corresponding Lie group ``G`` such that
 
-```math 
+```math
 \lambda(Y)E = Y,
 ```
 
@@ -33,7 +33,7 @@ end
 @doc raw"""
     Matrix(λY::GlobalSection)
 
-Put `λY` into matrix form. 
+Put `λY` into matrix form.
 
 This is not recommended if speed is important!
 
@@ -115,7 +115,7 @@ function global_rep(λY::NamedTuple, gx::NamedTuple)
     apply_toNT(global_rep, λY, gx)
 end
 
-##auxiliary function 
+##auxiliary function
 function global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) where {T}
     gx
 end
@@ -125,11 +125,11 @@ end
 
 Express `Δ` (an the tangent space of `Y`) as an instance of `StiefelLieAlgHorMatrix`.
 
-This maps an element from ``T_Y\mathcal{M}`` to an element of ``\mathfrak{g}^\mathrm{hor}``. 
+This maps an element from ``T_Y\mathcal{M}`` to an element of ``\mathfrak{g}^\mathrm{hor}``.
 
 These two spaces are isomorphic where the isomorphism where the isomorphism is established through ``\lambda(Y)\in{}G`` via:
 
-```math 
+```math
 T_Y\mathcal{M} \to \mathfrak{g}^{\mathrm{hor}}, \Delta \mapsto \lambda(Y)^{-1}\Omega(Y, \Delta)\lambda(Y).
 ```
 
@@ -140,7 +140,7 @@ Also see [`GeometricOptimizers.Ω`](@ref).
 ```jldoctest
 using GeometricOptimizers
 using GeometricOptimizers: _round
-import Random 
+import Random
 
 Random.seed!(123)
 
@@ -169,7 +169,7 @@ The function `global_rep` does in fact not perform the entire map ``\lambda(Y)^{
 \Delta \mapsto \mathrm{skew}(Y^T\Delta),
 ```
 
-to get the small skew-symmetric matrix ``A\in\mathcal{S}_\mathrm{skew}(n)`` and 
+to get the small skew-symmetric matrix ``A\in\mathcal{S}_\mathrm{skew}(n)`` and
 
 ```math
 \Delta \mapsto (\lambda(Y)_{[1:N, n:N]}^T \Delta)_{[1:(N-n), 1:n]},
@@ -181,8 +181,8 @@ function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {T, 
     N, n = size(λY.Y)
     StiefelLieAlgHorMatrix(
         SkewSymMatrix(λY.Y.A' * Δ),
-        λY.λ' * Δ, 
-        N, 
+        λY.λ' * Δ,
+        N,
         n
     )
 end
@@ -199,7 +199,7 @@ The method `global_rep` for [`GrassmannManifold`](@ref) is similar to that for [
 ```jldoctest
 using GeometricOptimizers
 using GeometricOptimizers: _round
-import Random 
+import Random
 
 Random.seed!(123)
 
