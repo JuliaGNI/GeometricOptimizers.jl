@@ -30,6 +30,8 @@ function GlobalSection(ps::NamedTuple)
     apply_toNT(GlobalSection, ps)
 end
 
+Base.size(λY::GlobalSection) = (size(λY.Y, 1), size(λY.Y, 2) + size(λY.λ, 2))
+
 @doc raw"""
     Matrix(λY::GlobalSection)
 
@@ -267,6 +269,11 @@ end
 function Base.copyto!(dest::GlobalSection{T, MT}, src::GlobalSection{T, MT}) where {T, MT <: Manifold}
     copyto!(dest.Y, src.Y)
     copyto!(dest.λ, src.λ)
+    dest
+end
+
+function Base.copyto!(dest::GlobalSection{T, AT, Nothing}, src::GlobalSection{T, AT, Nothing}) where {T, AT <: AbstractVecOrMat{T}}
+    copyto!(dest.Y, src.Y)
     dest
 end
 

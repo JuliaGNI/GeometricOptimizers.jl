@@ -335,6 +335,8 @@ function Base.copyto!(A::SkewSymMatrix, B::SkewSymMatrix)
     nothing
 end
 
+Base.fill!(A::SkewSymMatrix, val) = (fill!(A.S, val); A)
+
 function _round(A::SkewSymMatrix; kwargs...)
     SkewSymMatrix(_round(A.S; kwargs...), A.n)
 end

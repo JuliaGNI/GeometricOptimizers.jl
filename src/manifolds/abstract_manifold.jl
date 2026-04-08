@@ -112,5 +112,6 @@ function Base.rand(manifold_type::Type{MT}, N::Integer, n::Integer) where {MT<:M
 end
 
 Base.size(A::Manifold) = size(A.A)
-Base.parent(A::Manifold) = A.A 
-Base.getindex(A::Manifold, i::Int, j::Int) = A.A[i,j]
+Base.parent(A::Manifold) = A.A
+Base.getindex(A::Manifold, i::Int, j::Int) = A.A[i, j]
+Base.copy(A::MT) where {MT<:Manifold} = MT(copy(A.A))

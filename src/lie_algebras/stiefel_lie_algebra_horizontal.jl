@@ -318,3 +318,11 @@ function _round(B::StiefelLieAlgHorMatrix; kwargs...)
         B.n
     )
 end
+
+function Base.copyto!(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
+    copyto!(A.A, B.A)
+    copyto!(A.B, B.B)
+    A
+end
+
+Base.fill!(A::StiefelLieAlgHorMatrix, val) = (fill!(A.A, val); fill!(A.B, val); A)
