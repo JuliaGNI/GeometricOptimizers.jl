@@ -23,11 +23,11 @@ E = \begin{bmatrix} \mathbb{I}_{n} \\ \mathbb{O}_{(N-n)\times{}n}  \end{bmatrix}
 ```
 The matrix ``E`` is implemented under [`StiefelProjection`](@ref) in `GeometricOptimizers`.
 """
-mutable struct StiefelLieAlgHorMatrix{T, AT <: SkewSymMatrix{T}, ST <: AbstractMatrix{T}} <: AbstractLieAlgHorMatrix{T}
+mutable struct StiefelLieAlgHorMatrix{T,AT<:SkewSymMatrix{T},ST<:AbstractMatrix{T}} <: AbstractLieAlgHorMatrix{T}
     A::AT
     B::ST
     N::Int
-    n::Int 
+    n::Int
 
     #maybe modify this - you don't need N & n as inputs!
     function StiefelLieAlgHorMatrix(A::SkewSymMatrix{T}, B::AbstractMatrix{T}, N::Integer, n::Integer) where {T}
