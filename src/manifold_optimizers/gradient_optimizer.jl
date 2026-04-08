@@ -1,5 +1,5 @@
-OptimizerCache(::GradientMethod, x::AbstractVector) = Gradient2Cache(copy(x), similar(x), similar(x))
-OptimizerCache(::GradientMethod, x::Manifold) = Gradient2Cache(copy(x), zero(x), zero(x))
+OptimizerCache(::GradientMethod, x::AbstractVector) = GradientCache(copy(x), similar(x), similar(x))
+OptimizerCache(::GradientMethod, x::Manifold) = GradientCache(copy(x), zero(x), zero(x))
 Hessian(::GradientMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
 
 struct NoHessian{T} <: Hessian{T} end
@@ -16,7 +16,7 @@ Cache for the gradient optimizer.
 - `Δg`: difference in gradients,
 - `section`: the [`GlobalSection`](@ref).
 """
-struct Gradient2Cache{T,MT<:OptimizerSolution{T},VT<:AbstractArray{T},ST<:GlobalSection{T}} <: OptimizerCache{T}
+struct GradientCache{T,MT<:OptimizerSolution{T},VT<:AbstractArray{T},ST<:GlobalSection{T}} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT
@@ -24,34 +24,34 @@ struct Gradient2Cache{T,MT<:OptimizerSolution{T},VT<:AbstractArray{T},ST<:Global
     section::ST
 end
 
-function Gradient2Cache(x::Manifold{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:AbstractLieAlgHorMatrix}
+function GradientCache(x::Manifold{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:AbstractLieAlgHorMatrix}
     sec = GlobalSection(copy(x))
-    Gradient2Cache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, sec)
+    GradientCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, sec)
 end
 
-function Gradient2Cache(x::Manifold{T}, g::AT, δ::AT) where {T,AT<:AbstractLieAlgHorMatrix}
+function GradientCache(x::Manifold{T}, g::AT, δ::AT) where {T,AT<:AbstractLieAlgHorMatrix}
     Δg = similar(g)
     fill!(Δg, T(NaN))
-    Gradient2Cache(x, g, δ, Δg)
+    GradientCache(x, g, δ, Δg)
 end
 
-function Gradient2Cache(x::Manifold{T}, g::AbstractLieAlgHorMatrix{T}) where {T}
+function GradientCache(x::Manifold{T}, g::AbstractLieAlgHorMatrix{T}) where {T}
     δ = similar(g)
     fill!(δ, T(NaN))
-    Gradient2Cache(x, g, δ)
+    GradientCache(x, g, δ)
 end
 
-function Gradient2Cache(x::Manifold{T}) where {T}
+function GradientCache(x::Manifold{T}) where {T}
     g = zero(x)
     fill!(g, T(NaN))
-    Gradient2Cache(x, g)
+    GradientCache(x, g)
 end
 
-solution(cache::Gradient2Cache) = cache.x
-gradient_array(cache::Gradient2Cache) = cache.g
-direction(cache::Gradient2Cache) = cache.δ
-rhs(cache::Gradient2Cache) = direction(cache)
-section(cache::Gradient2Cache) = cache.section
+solution(cache::GradientCache) = cache.x
+gradient_array(cache::GradientCache) = cache.g
+direction(cache::GradientCache) = cache.δ
+rhs(cache::GradientCache) = direction(cache)
+section(cache::GradientCache) = cache.section
 
 """
     GradientState <: OptimizerState
@@ -111,7 +111,7 @@ end
 #     direction(opt) .= rhs(opt)
 # end
 
-function update!(cache::Gradient2Cache{T}, state::GradientState{T}, gradient::Gradient{T}, ::Hessian{T}, x::OptimizerSolution{T}) where {T}
+function update!(cache::GradientCache{T}, state::GradientState{T}, gradient::Gradient{T}, ::Hessian{T}, x::OptimizerSolution{T}) where {T}
     copyto!(section(cache), section(state))
     copyto!(gradient_array(cache), global_rep(section(state), gradient(x)))
     copyto!(solution(cache), x)

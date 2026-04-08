@@ -76,26 +76,14 @@ function Base.show(io::IO, ::MIME{Symbol("text/plain")}, C::MomentumCache)
     show(io, "text/plain", C.B)
 end
 
-@doc raw"""
-    GradientCache(Y)
-
-Do not store anything.
-
-The cache for the [`SimpleSolvers.Gradient`](@extref) does not consider past information.
-"""
-struct GradientCache{T} <: AbstractCache{T} end
-GradientCache(::AbstractArray{T}) where T = GradientCache{T}()
-
 #############################################################################
 # All the setup_cache functions
 
 setup_adam_cache(ps::NamedTuple) = apply_toNT(setup_adam_cache, ps)
 setup_momentum_cache(ps::NamedTuple) = apply_toNT(setup_momentum_cache, ps)
-setup_gradient_cache(ps::NamedTuple) = apply_toNT(setup_gradient_cache, ps)
 
 setup_adam_cache(B::AbstractArray{<:Number}) = AdamCache(B)
 setup_momentum_cache(B::AbstractArray{<:Number}) = MomentumCache(B)
-setup_gradient_cache(B::AbstractArray{<:Number}) = GradientCache(B)
 
 function Base.zero(Y::StiefelManifold{T}) where T
     N, n = size(Y)
