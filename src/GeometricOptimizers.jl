@@ -4,7 +4,7 @@ using Base: Callable
 using GeometricBase: AbstractProblem, SolverMethod, AbstractSolver
 using SimpleSolvers: Options
 using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem, alloc_h, LU
-using SimpleSolvers: compute_new_iterate!, outer!
+using SimpleSolvers: outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_mindec, g_restol
 import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
 using SimpleSolvers: HessianAutodiff, HessianFunction
@@ -17,7 +17,7 @@ export Backtracking, Quadratic, BierlaireQuadratic, Bisection
 
 export Options
 
-import SimpleSolvers: update!, direction, linesearch_problem
+import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache, l2norm
 export update!
 
 using Printf
