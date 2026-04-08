@@ -56,6 +56,7 @@ rhs(cache::NewtonOptimizerCache) = cache.rhs
 Return the stored gradient (array) of an instance of [`NewtonOptimizerCache`](@ref)
 """
 gradient(cache::NewtonOptimizerCache) = cache.g
+gradient_array(cache::NewtonOptimizerCache) = gradient(cache)
 
 """
     direction(cache)
