@@ -68,20 +68,6 @@ hessian(cache::NewtonOptimizerCache) = cache.H
 
 solution(cache::NewtonOptimizerCache) = cache.x
 
-"""
-    update!(cache, state, x, g)
-
-Update the [`NewtonOptimizerCache`](@ref) based on `x` and `g`.
-"""
-function update!(cache::NewtonOptimizerCache, state::OptimizerState, x::AbstractVector, g::AbstractVector)
-    solution(cache) .= x
-    gradient(cache) .= g
-    rhs(cache) .= -g
-    cache
-end
-
-update!(cache::NewtonOptimizerCache, state::OptimizerState, grad::Gradient, x::AbstractVector) = update!(cache, state, x, grad(x))
-
 @doc raw"""
     update!(cache::NewtonOptimizerCache, x, g, hes)
 
