@@ -35,8 +35,6 @@ for T in (Float64, Float32)
                 opt = EuclideanOptimizer(x, F; algorithm=method, linesearch=_linesearch)
                 state = OptimizerState(method, x)
 
-                method == _DFP() && _linesearch == BierlaireQuadratic(T) && T == Float64 && continue # for some reason BierlaireQuadratic linesearch for DFP fails in double precision!
-
                 @test typeof(gradient(opt)) <: GradientAutodiff
 
                 solve!(x, state, opt)
