@@ -125,6 +125,7 @@ include("euclidean_optimizers/newton_optimizer/newton_optimizer_direction.jl")
 include("euclidean_optimizers/named_tuple_wrapper.jl")
 
 export GradientMethod, GradientState
+export MomentumMethod, MomentumState
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")
