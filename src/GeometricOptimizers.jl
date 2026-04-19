@@ -31,6 +31,8 @@ using ChainRulesCore: ProjectTo
 # we use the Vcat function from LazyArrays
 import LazyArrays
 
+import ParameterHandling, ForwardDiff
+
 export Manifold, StiefelManifold, GrassmannManifold
 export rgrad
 include("manifolds/abstract_manifold.jl")
