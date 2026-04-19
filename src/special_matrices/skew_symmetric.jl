@@ -313,7 +313,7 @@ end
     S[((i-2)*(i-1)÷2+j)] = A_skew[i, j]
 end
 
-function map_to_Skew(A::AbstractMatrix{T}) where T
+function map_to_Skew(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
     A_skew = T(0.5) * (A - A')
