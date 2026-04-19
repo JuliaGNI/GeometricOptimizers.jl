@@ -83,28 +83,6 @@ All arguments into `optimization_step!` are mandatory:
 
 All the arguments are given as `NamedTuple`s  as the neural network weights are stores in that format.
 
-```jldoctest
-using GeometricOptimizers
-using GeometricOptimizers: MomentumCache, Momentum, apply_toNT, geodesic, optimization_step!
-
-ps = (weight = rand(StiefelManifold{Float32}, 5, 3), )
-cache = apply_toNT(MomentumCache, ps)
-o = Optimizer(Momentum(), cache, 0, geodesic)
-λY = GlobalSection(ps)
-dx = (weight = rand(Float32, 5, 3), )
-
-# call the optimizer
-optimization_step!(o, λY, ps, dx)
-
-_test_nt(x) = typeof(x) <: NamedTuple
-
-_test_nt(λY) & _test_nt(ps) & _test_nt(cache) & _test_nt(dx)
-
-# output
-
-true
-```
-
 # Extended help
 
 The derivatives `dx` here are usually obtained via an AD routine by differentiating a loss function, i.e. `dx` is ``\nabla_xL``.

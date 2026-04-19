@@ -32,6 +32,19 @@ The gradient descent algorithm.
 """
 struct GradientMethod <: EuclideanOptimizerMethod end
 
+"""
+    MomentumMethod
+
+Stores the *descent parameter*.
+"""
+struct MomentumMethod{T} <: EuclideanOptimizerMethod
+    α::T
+
+    MomentumMethod(α::T=DEFAULT_MOMENTUM_α) where {T} = new{T}(α)
+end
+
+const DEFAULT_MOMENTUM_α = 0.01
+
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
 Base.show(io::IO, alg::_DFP) = print(io, "DFP")
 Base.show(io::IO, alg::_BFGS) = print(io, "BFGS")

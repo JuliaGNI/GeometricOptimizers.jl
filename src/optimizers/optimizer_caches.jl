@@ -53,29 +53,6 @@ function Base.show(io::IO, ::MIME{Symbol("text/plain")}, C::AdamCache)
     show(io, "text/plain", C.B₂)
 end
 
-@doc raw"""
-    MomentumCache(Y)
-
-Store the moment for `Y` (initialized as zeros).
-
-The moment is called `B`.
-
-If the cache is called with an instance of a [`Manifold`](@ref) it initializes the moments as elements of ``\mathfrak{g}^\mathrm{hor}`` ([`AbstractLieAlgHorMatrix`](@ref)).
-
-See [`AdamCache`](@ref).
-"""
-struct MomentumCache{T, AT <: AbstractArray{T}} <:AbstractCache{T}
-    B::AT
-    function MomentumCache(Y::AbstractArray)
-        new{eltype(Y), typeof(zero(Y))}(zero(Y))
-    end
-end
-
-function Base.show(io::IO, ::MIME{Symbol("text/plain")}, C::MomentumCache)
-    println(io, raw"`MomentumCache` that currently stores `B`as  ...")
-    show(io, "text/plain", C.B)
-end
-
 #############################################################################
 # All the setup_cache functions
 
