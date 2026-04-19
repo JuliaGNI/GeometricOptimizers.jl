@@ -115,3 +115,7 @@ Base.size(A::Manifold) = size(A.A)
 Base.parent(A::Manifold) = A.A
 Base.getindex(A::Manifold, i::Int, j::Int) = A.A[i, j]
 Base.copy(A::MT) where {MT<:Manifold} = MT(copy(A.A))
+
+Base.similar(::Manifold) = error("The function `similar` does not make sense in this context. Consider using rand.")
+
+Base.fill!(::Manifold, b) = error("The function `fill!` does not make sense in this context.")
