@@ -20,13 +20,6 @@ function add!(dx₁::NamedTuple, dx₂::NamedTuple, dx₃::NamedTuple)
     apply_toNT(add!, dx₁, dx₂, dx₃)
 end
 
-"""
-    OptimizerSolution
-
-A type alias for the solution of an optimizer, which can be either an `AbstractVector` or a [`Manifold`](@ref).
-"""
-const OptimizerSolution{T} = Union{AbstractVector{T},Manifold{T}}
-
 (grad::Gradient{T})(x::Manifold{T}) where {T} = rgrad(x, reshape(grad(vec(x)), size(x)...))
 GradientAutodiff(F, x::StiefelManifold) = GradientAutodiff(_x -> F(StiefelManifold(reshape(_x, size(x)...))), vec(x))
 
