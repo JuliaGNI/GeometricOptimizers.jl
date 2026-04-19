@@ -60,12 +60,12 @@ g_residual(status::OptimizerStatus) = status.rg
 
 function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T,OST<:OptimizerState{T},OCT<:OptimizerCache{T}}
     rxₐ = l2norm(direction(cache))
-    rxᵣ = rxₐ / norm(cache.x)
+    rxᵣ = rxₐ / l2norm(cache.x)
 
     Δf = f - state.f̄
     Δf̃ = state.ḡ ⋅ direction(cache)
 
-    rfₐ = l2norm(Δf)
+    rfₐ = norm(Δf)
     rfᵣ = rfₐ / norm(f)
 
     cache.Δg .= cache.g - state.ḡ
