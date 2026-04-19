@@ -73,14 +73,11 @@ export Optimizer
 include("optimizers/optimizer.jl")
 
 # optimizer methods II
-include("optimizers/momentum_optimizer.jl")
 include("optimizers/adam_optimizer.jl")
 include("optimizers/adam_optimizer_with_decay.jl")
 include("optimizers/bfgs_optimizer.jl")
 
 include("optimizers/init_optimizer_cache.jl")
-
-include("euclidean_optimizers/optimizer_problems.jl")
 
 export EuclideanOptimizer,
     OptimizerProblem,
@@ -96,6 +93,8 @@ export EuclideanOptimizer,
 import SimpleSolvers: solve!, solve
 export solve!, solve, value, gradient, Newton
 
+include("optimizer_solution.jl")
+include("euclidean_optimizers/optimizer_problems.jl")
 include("euclidean_optimizers/optimizer_methods.jl")
 
 include("euclidean_optimizers/optimizer_state.jl")
@@ -123,8 +122,11 @@ include("euclidean_optimizers/optimizer.jl")
 include("euclidean_optimizers/iterative_hessians/iterative_hessians_direction.jl")
 include("euclidean_optimizers/newton_optimizer/newton_optimizer_direction.jl")
 
+include("euclidean_optimizers/named_tuple_wrapper.jl")
+
 export GradientMethod, GradientState
 
 include("manifold_optimizers/gradient_optimizer.jl")
+include("manifold_optimizers/momentum_optimizer.jl")
 
 end
