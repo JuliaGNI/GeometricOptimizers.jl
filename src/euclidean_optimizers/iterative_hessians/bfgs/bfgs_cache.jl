@@ -6,7 +6,7 @@ The [`OptimizerCache`](@ref) for the [`_BFGS`](@ref) algorithm. Also see [`updat
 struct BFGSCache{T,VT<:OptimizerSolution{T},GT,MT,GS<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
     x::VT    # current solution
 
-    g::VT    # current gradient
+    g::GT    # current gradient
 
     T1::MT
     T2::MT
@@ -14,9 +14,9 @@ struct BFGSCache{T,VT<:OptimizerSolution{T},GT,MT,GS<:GlobalSectionSingleOrNamed
     ΔxΔg::MT
     ΔxΔx::MT
 
-    rhs::VT
-    Δx::VT
-    Δg::VT
+    rhs::GT
+    Δx::GT
+    Δg::GT
 
     section::GS
 
@@ -24,7 +24,8 @@ struct BFGSCache{T,VT<:OptimizerSolution{T},GT,MT,GS<:GlobalSectionSingleOrNamed
         v, unflatten = ParameterHandling.flatten(_zero(x))
         q = zeros(T, length(v), length(v))
         section = GlobalSection(x)
-        cache = new{T,AT,typeof(q),typeof(section)}(similar(x), similar(x), similar(q), similar(q), similar(q), similar(q), similar(q), similar(x), similar(x), similar(x), section)
+        g = _zero(x)
+        cache = new{T,AT,typeof(g),typeof(q),typeof(section)}(_copy(x), _similar(g), _similar(q), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section)
         initialize!(cache, x)
         cache
     end
@@ -67,6 +68,13 @@ function update!(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     cache
 end
 
+# strictly speaking this constitutes type piracy (`outer!` is imported from `SimpleSolvers`.)
+function outer!(m::AbstractMatrix{T}, arr1::ArrayNamedTuple{T}, arr2::ArrayNamedTuple{T}) where {T}
+    v1, _ = ParameterHandling.flatten(arr1)
+    v2, _ = ParameterHandling.flatten(arr2)
+    outer!(m, v1, v2)
+end
+
 @doc raw"""
     update!(cache, x, g)
 
@@ -91,11 +99,11 @@ Q & \gets Q - (T_1 + T_2 - T_3)/{\delta^T\gamma}
 """
 function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
     update!(cache, state, x)
-    gradient(cache) .= g
-    rhs(cache) .= -g
-    # cache.Δx .= cache.x .- state.x̄
-    cache.Δx .= state.s
-    cache.Δg .= gradient(cache) .- state.ḡ
+    _copyto!(gradient(cache), g)
+    _copyto!(rhs(cache), g)
+    _rmul!(rhs(cache), -one(T))
+    _copyto!(direction(cache), state.s)
+    _difference!(cache.Δg, gradient(cache), state.ḡ)
 
     ΔxΔg = cache.Δx ⋅ cache.Δg
 
@@ -104,25 +112,28 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
         outer!(cache.ΔxΔg, cache.Δx, cache.Δg)
         mul!(cache.T1, cache.ΔxΔg, inverse_hessian(state))
         mul!(cache.T2, inverse_hessian(state), cache.ΔxΔg')
-        γQγ = cache.Δg' * inverse_hessian(state) * cache.Δg
+        Δg2 = ParameterHandling.flatten(cache.Δg)[1]
+        γQγ = Δg2' * inverse_hessian(state) * Δg2
         cache.T3 .= (one(T) .+ γQγ ./ ΔxΔg) .* cache.ΔxΔx
         inverse_hessian(state) .-= (cache.T1 .+ cache.T2 .- cache.T3) ./ ΔxΔg
     end
 
-    direction(cache) .= inverse_hessian(state) * rhs(cache)
-    state.s .= direction(cache)
+    _mul!(direction(cache), inverse_hessian(state), rhs(cache))
+    _copyto!(state.s, direction(cache))
 
     cache
 end
 
-update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, x::AbstractVector) = update!(cache, state, x, grad(x))
+function update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, x::OptimizerSolution)
+    update!(cache, state, x, global_rep(section(state), grad(x)))
+end
 
 update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, ::HessianBFGS, x::OptimizerSolution) = update!(cache, state, grad, x)
 
-function initialize!(cache::BFGSCache{T}, ::AbstractVector{T}) where {T}
-    cache.x .= T(NaN)
-    direction(cache) .= T(NaN)
-    cache.g .= T(NaN)
-    cache.rhs .= T(NaN)
+function initialize!(cache::BFGSCache{T}, ::OptimizerSolution{T}) where {T}
+    _fill!(solution(cache), T(NaN))
+    _fill!(direction(cache), T(NaN))
+    _fill!(gradient(cache), T(NaN))
+    _fill!(rhs(cache), T(NaN))
     cache
 end

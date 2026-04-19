@@ -5,6 +5,7 @@ The [`OptimizerState`](@ref) corresponding to the [`_BFGS`](@ref) method.
 
 # Keys
 - `x̄`
+- `s`: stores the previous direction. This needs to be stored in addition to the *previous solution* because of the manifold case.
 - `ḡ`
 - `f̄`
 - `Q`
@@ -21,7 +22,7 @@ mutable struct BFGSState{T,AT<:OptimizerSolution{T},GT<:GradientArrayOrNamedTupl
 
     function BFGSState(x̄::AT, ḡ::GT, f̄::T, Q::MT) where {T,AT<:OptimizerSolution{T},GT<:GradientArrayOrNamedTuple{T},MT<:AbstractMatrix{T}}
         section = GlobalSection(x̄)
-        state = new{T,AT,GT,MT,typeof(section)}(x̄, s, ḡ, f̄, Q, 0, section)
+        state = new{T,AT,GT,MT,typeof(section)}(x̄, _similar(ḡ), ḡ, f̄, Q, 0, section)
         initialize!(state, x̄)
         state
     end
