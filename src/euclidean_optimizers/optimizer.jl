@@ -61,7 +61,7 @@ struct EuclideanOptimizer{T,
     OBJ<:OptimizerProblem{T},
     GT<:Gradient{T},
     HT<:Hessian{T},
-    OCT<:OptimizerCache,
+    OCT<:Union{OptimizerCache,NamedTuple},
     LST<:Linesearch,
     RT<:AbstractRetraction} <: AbstractSolver
     algorithm::ALG
@@ -161,7 +161,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Eu
 
     for _ in 1:config(opt).nan_max_iterations
         update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
-        solution(cache(opt)) .= section(cache(opt)).Y
+        _copyto!(solution(cache(opt)), section(cache(opt)))
         # compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)), cache(opt), opt.retraction)
         f = value(problem(opt), solution(cache(opt)))
         if isnan(f) || isinf(f)
@@ -174,13 +174,13 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Eu
 
     # apply line search
     α = solve(linesearch(opt), one(T), (x=x,))
-    rmul!(direction(cache(opt)), α)
+    _rmul!(direction(cache(opt)), α)
 
     # compute new minimizer
     update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
-    copyto!(solution(cache(opt)), section(cache(opt)).Y)
+    _copyto!(solution(cache(opt)), section(cache(opt)))
 
-    copyto!(x, solution(cache(opt)))
+    _copyto!(x, solution(cache(opt)))
 end
 
 """
