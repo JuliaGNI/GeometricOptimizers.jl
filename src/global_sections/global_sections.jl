@@ -15,14 +15,14 @@ Also see [`apply_section`](@ref) and [`global_rep`](@ref).
 
 For an implementation of `GlobalSection` for a custom array (especially manifolds), the function [`global_section`](@ref) has to be generalized.
 """
-struct GlobalSection{T, AT<:AbstractArray{T}, λT<:Union{AbstractArray{T}, Nothing}}
+struct GlobalSection{T,AT<:AbstractArray{T},λT<:Union{AbstractArray{T},Nothing}}
     Y::AT
     # for now the only lift that is implemented is the Stiefel one - these types will have to be expanded!
     λ::λT
 
     function GlobalSection(Y::AbstractVecOrMat)
         λ = global_section(Y)
-        new{eltype(Y), typeof(Y), typeof(λ)}(copy(Y), λ)
+        new{eltype(Y),typeof(Y),typeof(λ)}(copy(Y), λ)
     end
 end
 
@@ -63,7 +63,7 @@ Mathematically this is the group action of the element ``\lambda{}Y\in{}G`` on t
 
 Internally it calls [`apply_section!`](@ref).
 """
-function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {T, AT<:StiefelManifold{T}}
+function apply_section(λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:StiefelManifold{T}}
     Y = StiefelManifold(zero(Y₂.A))
     apply_section!(Y, λY, Y₂)
 
@@ -77,7 +77,7 @@ Apply `λY` to `Y₂` and store the result in `Y`.
 
 This is the inplace version of [`apply_section`](@ref).
 """
-function apply_section!(Y::AT, λY::GlobalSection{T, AT}, Y₂::MT) where {T, AT<:StiefelManifold{T}, MT<:StiefelManifold{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::MT) where {T,AT<:StiefelManifold{T},MT<:StiefelManifold{T}}
     N, n = size(λY.Y)
 
     @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n+1):N, :]
@@ -85,7 +85,7 @@ function apply_section!(Y::AT, λY::GlobalSection{T, AT}, Y₂::MT) where {T, AT
     Y
 end
 
-function apply_section!(Λᵗ::GlobalSection{T, MT}, λY::GlobalSection{T, MT}, Y₂::MT) where {T, MT<:StiefelManifold{T}}
+function apply_section!(Λᵗ::GlobalSection{T,MT}, λY::GlobalSection{T,MT}, Y₂::MT) where {T,MT<:StiefelManifold{T}}
     N, n = size(Λᵗ.Y)
     @assert size(Y₂) == size(Λᵗ) == size(λY)
 
@@ -95,17 +95,17 @@ function apply_section!(Λᵗ::GlobalSection{T, MT}, λY::GlobalSection{T, MT}, 
     Λᵗ
 end
 
-function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {T, AT<:GrassmannManifold{T}}
+function apply_section(λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:GrassmannManifold{T}}
     Y = GrassmannManifold(zero(Y₂.A))
     apply_section!(Y, λY, Y₂)
 
     Y
 end
 
-function apply_section!(Y::AT, λY::GlobalSection{T, AT}, Y₂::AT) where {T, AT<:GrassmannManifold{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:GrassmannManifold{T}}
     N, n = size(λY.Y)
 
-    @views Y.A = λY.Y * Y₂.A[1:n, :] + λY.λ * Y₂.A[(n + 1):N, :]
+    @views Y.A = λY.Y * Y₂.A[1:n, :] + λY.λ * Y₂.A[(n+1):N, :]
 end
 
 function apply_section(λY::GlobalSection{T}, Y₂::AbstractVecOrMat{T}) where {T}
@@ -113,7 +113,7 @@ function apply_section(λY::GlobalSection{T}, Y₂::AbstractVecOrMat{T}) where {
     apply_section!(Y, λY, Y₂)
 end
 
-function apply_section!(Y::AT, λY::GlobalSection{T, AT, Nothing}, Y₂::AbstractVecOrMat{T}) where {T, AT<:AbstractVecOrMat{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T,AT,Nothing}, Y₂::AbstractVecOrMat{T}) where {T,AT<:AbstractVecOrMat{T}}
     Y .= Y₂ .+ λY.Y
 end
 
@@ -191,7 +191,7 @@ to get the small skew-symmetric matrix ``A\in\mathcal{S}_\mathrm{skew}(n)`` and
 
 to get the arbitrary matrix ``B\in\mathbb{R}^{(N-n)\times{}n}``.
 """
-function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {T, AT<:StiefelManifold{T}}
+function global_rep(λY::GlobalSection{T,AT}, Δ::AbstractMatrix{T}) where {T,AT<:StiefelManifold{T}}
     N, n = size(λY.Y)
     StiefelLieAlgHorMatrix(
         SkewSymMatrix(λY.Y.A' * Δ),
@@ -234,7 +234,7 @@ _round(global_rep(λY, Δ); digits = 3)
  -0.4     0.919  -1.085   0.0     0.0     0.0
 ```
 """
-function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {T, AT<:GrassmannManifold{T}}
+function global_rep(λY::GlobalSection{T,AT}, Δ::AbstractMatrix{T}) where {T,AT<:GrassmannManifold{T}}
     N, n = size(λY.Y)
     GrassmannLieAlgHorMatrix(
         λY.λ' * Δ,
@@ -251,7 +251,7 @@ end
 #     Λᵗ
 # end
 
-function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold{T}}
+function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T,MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T,MT<:Manifold{T}}
     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
     expB = retraction(B⁽ᵗ⁻¹⁾)
     apply_section!(expB, Λ⁽ᵗ⁻¹⁾, expB)
@@ -261,7 +261,7 @@ function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾
     nothing
 end
 
-function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold{T}}
+function update_section!(Λᵗ::GlobalSection{T,MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T,MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T,MT<:Manifold{T}}
     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
     expB = retraction(B⁽ᵗ⁻¹⁾)
     apply_section!(expB, Λ⁽ᵗ⁻¹⁾, expB)
@@ -271,7 +271,7 @@ function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSe
     nothing
 end
 
-function update_section!(Λᵗ::GlobalSection{T, AT, Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, AT}, B⁽ᵗ⁻¹⁾::AT, retraction) where {T, AT <: AbstractVecOrMat{T}}
+function update_section!(Λᵗ::GlobalSection{T,AT,Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T,AT}, B⁽ᵗ⁻¹⁾::AT, retraction) where {T,AT<:AbstractVecOrMat{T}}
     Λᵗ.Y .= Λ⁽ᵗ⁻¹⁾.Y .+ B⁽ᵗ⁻¹⁾
 
     Λᵗ
@@ -286,18 +286,18 @@ end
 
 update_section!(Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction) = update_section!(Λ⁽ᵗ⁻¹⁾, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
 
-function Base.copyto!(dest::GlobalSection{T, MT}, src::GlobalSection{T, MT}) where {T, MT <: Manifold}
+function Base.copyto!(dest::GlobalSection{T,MT}, src::GlobalSection{T,MT}) where {T,MT<:Manifold}
     copyto!(dest.Y, src.Y)
     copyto!(dest.λ, src.λ)
     dest
 end
 
-function Base.copyto!(dest::GlobalSection{T, AT, Nothing}, src::GlobalSection{T, AT, Nothing}) where {T, AT <: AbstractVecOrMat{T}}
+function Base.copyto!(dest::GlobalSection{T,AT,Nothing}, src::GlobalSection{T,AT,Nothing}) where {T,AT<:AbstractVecOrMat{T}}
     copyto!(dest.Y, src.Y)
     dest
 end
 
 # auxiliary function
-function global_rep(::GlobalSection{T, AT, Nothing}, gx::AbstractVecOrMat{T}) where {T, AT<:AbstractVecOrMat{T}}
+function global_rep(::GlobalSection{T,AT,Nothing}, gx::AbstractVecOrMat{T}) where {T,AT<:AbstractVecOrMat{T}}
     gx
 end

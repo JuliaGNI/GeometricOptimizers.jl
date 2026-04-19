@@ -5,7 +5,6 @@ See [`SimpleSolvers.LinesearchProblem`](@extref) and [`OptimizerProblem`](@ref).
 """
 abstract type AbstractOptimizerProblem{T<:Number} <: AbstractProblem end
 
-
 """
     value(obj::AbstractOptimizerProblem, x)
 
@@ -14,7 +13,6 @@ Evaluates the value at `x` (i.e. computes `obj.F(x)`).
 function value(obj::AbstractOptimizerProblem, x::OptimizerSolution)
     obj.F(x)
 end
-
 
 """
     OptimizerProblem <: AbstractOptimizerProblem
