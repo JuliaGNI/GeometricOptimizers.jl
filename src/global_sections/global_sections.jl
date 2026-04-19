@@ -297,6 +297,11 @@ function Base.copyto!(dest::GlobalSection{T,AT,Nothing}, src::GlobalSection{T,AT
     dest
 end
 
+function Base.copyto!(dest::GlobalSection{T,AT,Nothing}, src::AT) where {T,AT<:AbstractVecOrMat{T}}
+    copyto!(dest.Y, src)
+    dest
+end
+
 # auxiliary function
 function global_rep(::GlobalSection{T,AT,Nothing}, gx::AbstractVecOrMat{T}) where {T,AT<:AbstractVecOrMat{T}}
     gx
