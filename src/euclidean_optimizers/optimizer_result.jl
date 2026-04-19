@@ -11,7 +11,7 @@ Serves as a diagnostic tool for the [`EuclideanOptimizer`](@ref) and is the retu
 - `f`: function value at solution.
 
 """
-mutable struct OptimizerResult{T,YT,VT<:AbstractArray{T},OST<:OptimizerStatus{T,YT}}
+mutable struct OptimizerResult{T,YT,VT<:OptimizerSolution{T},OST<:OptimizerStatus{T,YT}}
     status::OST
 
     x::VT    # current solution

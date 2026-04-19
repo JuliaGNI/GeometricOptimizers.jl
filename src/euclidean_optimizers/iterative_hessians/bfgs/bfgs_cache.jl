@@ -3,7 +3,7 @@
 
 The [`OptimizerCache`](@ref) for the [`_BFGS`](@ref) algorithm. Also see [`update!(::BFGSCache, ::OptimizerState, ::AbstractVector, ::AbstractVector`)](@ref).
 """
-struct BFGSCache{T,VT,MT,GS<:GlobalSection{T}} <: OptimizerCache{T}
+struct BFGSCache{T,VT<:OptimizerSolution{T},GT,MT,GS<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::VT    # current gradient
@@ -20,8 +20,9 @@ struct BFGSCache{T,VT,MT,GS<:GlobalSection{T}} <: OptimizerCache{T}
 
     section::GS
 
-    function BFGSCache(x::AT) where {T,AT<:AbstractVector{T}}
-        q = zeros(T, length(x), length(x))
+    function BFGSCache(x::AT) where {T,AT<:OptimizerSolution{T}}
+        v, unflatten = ParameterHandling.flatten(_zero(x))
+        q = zeros(T, length(v), length(v))
         section = GlobalSection(x)
         cache = new{T,AT,typeof(q),typeof(section)}(similar(x), similar(x), similar(q), similar(q), similar(q), similar(q), similar(q), similar(x), similar(x), similar(x), section)
         initialize!(cache, x)
@@ -29,7 +30,7 @@ struct BFGSCache{T,VT,MT,GS<:GlobalSection{T}} <: OptimizerCache{T}
     end
 end
 
-OptimizerCache(::_BFGS, x::AbstractVector) = BFGSCache(x)
+OptimizerCache(::_BFGS, x::OptimizerSolution) = BFGSCache(x)
 
 section(cache::BFGSCache) = cache.section
 
@@ -59,9 +60,9 @@ solution(cache::BFGSCache) = cache.x
 hessian(::BFGSCache) = error("BFGSCache does not store the Hessian, but it's inverse! Call inverse_hessian.")
 inverse_hessian(::BFGSCache) = error("The inverse Hessian is stored in the state, not the cache!")
 
-function update!(cache::BFGSCache, state::OptimizerState, x::AbstractVector)
-    cache.x .= x
-    direction(cache) .= state.s
+function update!(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
+    _copyto!(cache.x, x)
+    _copyto!(direction(cache), state.s)
     outer!(cache.ΔxΔx, direction(cache), direction(cache))
     cache
 end
@@ -88,7 +89,7 @@ Q & \gets Q - (T_1 + T_2 - T_3)/{\delta^T\gamma}
 \end{aligned}
 ```
 """
-function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::AbstractVector{T}, g::AbstractVector{T}) where {T}
+function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
     update!(cache, state, x)
     gradient(cache) .= g
     rhs(cache) .= -g
@@ -116,7 +117,7 @@ end
 
 update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, x::AbstractVector) = update!(cache, state, x, grad(x))
 
-update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, ::HessianBFGS, x::AbstractVector) = update!(cache, state, grad, x)
+update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, ::HessianBFGS, x::OptimizerSolution) = update!(cache, state, grad, x)
 
 function initialize!(cache::BFGSCache{T}, ::AbstractVector{T}) where {T}
     cache.x .= T(NaN)

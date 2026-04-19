@@ -39,7 +39,7 @@ struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T},GS<:Glo
     end
 end
 
-OptimizerCache(::EuclideanOptimizerMethod, x::AbstractVector) = NewtonOptimizerCache(x)
+OptimizerCache(::EuclideanOptimizerMethod, x::OptimizerSolution) = NewtonOptimizerCache(x)
 
 section(cache::NewtonOptimizerCache) = cache.section
 

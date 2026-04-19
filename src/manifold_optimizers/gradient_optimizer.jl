@@ -24,26 +24,26 @@ struct GradientCache{T,MT<:OptimizerSolution{T},VT<:AbstractArray{T},ST<:GlobalS
     section::ST
 end
 
-function GradientCache(x::Manifold{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:AbstractLieAlgHorMatrix}
-    sec = GlobalSection(copy(x))
+function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+    sec = GlobalSection(_copy(x))
     GradientCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, sec)
 end
 
-function GradientCache(x::Manifold{T}, g::AT, δ::AT) where {T,AT<:AbstractLieAlgHorMatrix}
-    Δg = similar(g)
-    fill!(Δg, T(NaN))
+function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+    Δg = _similar(g)
+    _fill!(Δg, T(NaN))
     GradientCache(x, g, δ, Δg)
 end
 
-function GradientCache(x::Manifold{T}, g::AbstractLieAlgHorMatrix{T}) where {T}
-    δ = similar(g)
-    fill!(δ, T(NaN))
+function GradientCache(x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+    δ = _similar(g)
+    _fill!(δ, T(NaN))
     GradientCache(x, g, δ)
 end
 
-function GradientCache(x::Manifold{T}) where {T}
-    g = zero(x)
-    fill!(g, T(NaN))
+function GradientCache(x::OptimizerSolution{T}) where {T}
+    g = _zero(x)
+    _fill!(g, T(NaN))
     GradientCache(x, g)
 end
 
@@ -58,7 +58,7 @@ section(cache::GradientCache) = cache.section
 
 State for the gradient optimizer.
 """
-mutable struct GradientState{T,OT<:OptimizerSolution{T},GS<:GlobalSection{T,OT},VT<:AbstractArray{T}} <: OptimizerState{T}
+mutable struct GradientState{T,OT<:OptimizerSolution{T},GS<:GlobalSectionSingleOrNamedTuple{T},VT<:GradientArrayOrNamedTuple{T}} <: OptimizerState{T}
     section::GS
     iterations::Int
 
