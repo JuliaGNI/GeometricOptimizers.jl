@@ -119,3 +119,8 @@ function update!(cache::GradientCache{T}, state::GradientState{T}, gradient::Gra
 
     cache
 end
+
+# this should be moved to a different file
+function update!(state::BFGSState{T}, opt::EuclideanOptimizer{T}, x::OptimizerSolution{T}) where {T}
+    update!(state, direction(cache(opt)), gradient(opt), x, problem(opt).F(x), opt.retraction)
+end
