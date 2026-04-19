@@ -16,7 +16,7 @@ Cache for the gradient optimizer.
 - `Δg`: difference in gradients,
 - `section`: the [`GlobalSection`](@ref).
 """
-struct GradientCache{T,MT<:OptimizerSolution{T},VT<:AbstractArray{T},ST<:GlobalSection{T}} <: OptimizerCache{T}
+struct GradientCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT

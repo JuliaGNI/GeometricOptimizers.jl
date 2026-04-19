@@ -242,7 +242,7 @@ function solve!(x::OptimizerSolution, state::OptimizerState, opt::EuclideanOptim
     OptimizerResult(status, x, value(problem(opt), x))
 end
 
-update!(state::OptimizerState, opt::EuclideanOptimizer, x::AbstractVector) = update!(state, gradient(opt), x)
+update!(state::OptimizerState, opt::EuclideanOptimizer, x::OptimizerSolution) = update!(state, gradient(opt), x)
 
 function initialize_state!(state::OptimizerState)
     state
