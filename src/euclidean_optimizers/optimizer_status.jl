@@ -75,9 +75,9 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
 
     f_increased = abs(f) > abs(state.f̄)
 
-    x_isnan = any(isnan, cache.x)
-    f_isnan = any(isnan, f)
-    g_isnan = any(isnan, cache.g)
+    x_isnan = contains_nan(cache.x)
+    f_isnan = contains_nan(f)
+    g_isnan = contains_nan(cache.g)
 
     _status = OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false, f_increased, x_isnan, f_isnan, g_isnan)
 
