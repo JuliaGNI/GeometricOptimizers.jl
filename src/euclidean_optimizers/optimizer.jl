@@ -82,6 +82,8 @@ struct EuclideanOptimizer{T,
 end
 
 function EuclideanOptimizer(x::VT, problem::OptimizerProblem; algorithm::EuclideanOptimizerMethod=_BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
+    # translate to the correct type if we use the momentum method
+    algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) : algorithm
     cache = OptimizerCache(algorithm, x)
     hes = Hessian(algorithm, problem, x)
     EuclideanOptimizer(algorithm, problem, hes, cache, linesearch; options_kwargs...)
