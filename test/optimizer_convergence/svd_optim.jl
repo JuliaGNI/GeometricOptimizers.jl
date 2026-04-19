@@ -29,7 +29,6 @@ A = [0.06476993260924702 0.8369280855305259 0.6245358125914054 0.140729967064923
     0.7317681833003449 0.9051355184962627 0.3376918522349117 0.436545092402125 0.3462196925686055]
 
 error(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
-error(s::StiefelManifold) = error((w₁ = s, w₂ = s))
 
 function svd_test(n, train_steps=1500, tol=1e-1; retraction=Cayley())
     N = size(A, 1)
