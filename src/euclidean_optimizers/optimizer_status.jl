@@ -86,6 +86,20 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, x_converged, f_converged, g_converged, f_increased, x_isnan, f_isnan, g_isnan)
 end
 
+l2norm(a::StiefelLieAlgHorMatrix) = √(l2norm(a.A)^2 + l2norm(a.B)^2)
+
+l2norm(a::SkewSymMatrix) = l2norm(a.S)
+# type piracy!!! TODO: fix this
+l2norm(a::AbstractMatrix) = l2norm(vec(a))
+l2norm(a::AbstractFloat) = norm(a)
+function l2norm(a::ArrayNamedTuple)
+    norms = apply_toNT(l2norm, a)
+    +(values(norms)...)
+end
+
+contains_nan(a::Real) = isnan(a)
+contains_nan(a) = any(contains_nan, a)
+
 function Base.show(io::IO, s::OptimizerStatus)
 
     @printf io " * Convergence measures\n"
