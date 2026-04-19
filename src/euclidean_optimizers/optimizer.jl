@@ -186,13 +186,6 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Eu
 end
 
 """
-    compute_direction!(opt, state)
-
-Compute the search direction for the optimization problem described by `opt` and store the result in `state`.
-"""
-compute_direction!(::EuclideanOptimizer, ::OptimizerState)
-
-"""
     solve!(x, state, opt)
 
 Solve the optimization problem described by `opt::`[`EuclideanOptimizer`](@ref) and store the result in `x`.
