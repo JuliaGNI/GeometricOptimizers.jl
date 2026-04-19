@@ -57,10 +57,8 @@ end
 # All the setup_cache functions
 
 setup_adam_cache(ps::NamedTuple) = apply_toNT(setup_adam_cache, ps)
-setup_momentum_cache(ps::NamedTuple) = apply_toNT(setup_momentum_cache, ps)
 
 setup_adam_cache(B::AbstractArray{<:Number}) = AdamCache(B)
-setup_momentum_cache(B::AbstractArray{<:Number}) = MomentumCache(B)
 
 function Base.zero(Y::StiefelManifold{T}) where {T}
     N, n = size(Y)
