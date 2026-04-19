@@ -131,6 +131,11 @@ function add!(C::SkewSymMatrix, A::SkewSymMatrix, B::SkewSymMatrix)
     add!(C.S, A.S, B.S)
 end
 
+function _add!(A::SkewSymMatrix{T}, B::SkewSymMatrix{T}) where {T}
+    _add!(A.S, B.S)
+    A
+end
+
 function Base.:-(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
     SkewSymMatrix(A.S - B.S, A.n)

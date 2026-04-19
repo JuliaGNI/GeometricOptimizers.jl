@@ -68,7 +68,7 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     rfₐ = norm(Δf)
     rfᵣ = rfₐ / norm(f)
 
-    cache.Δg .= cache.g - state.ḡ
+    _difference!(cache.Δg, cache.g, state.ḡ)
 
     rgₐ = l2norm(cache.Δg)
     rg = l2norm(cache.g)

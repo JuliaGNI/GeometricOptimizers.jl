@@ -63,7 +63,8 @@ function _optimization_step!(o::Optimizer, λY::NamedTuple, ps::NamedTuple, cach
     nothing
 end
 
-Base.copyto!(dest::MT, src::GlobalSection{T, MT}) where {T, MT<:Manifold{T}} = copyto!(dest, src.Y)
+Base.copyto!(dest::AT, src::GlobalSection{T,AT}) where {T,AT<:AbstractArray{T}} = copyto!(dest, src.Y)
+_copyto!(dest, src::GlobalSection) = copyto!(dest, src)
 
 @doc raw"""
     optimization_step!(o, λY, ps, dx)

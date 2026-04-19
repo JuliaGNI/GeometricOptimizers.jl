@@ -141,6 +141,13 @@ end
 
 Base.:+(A::AbstractMatrix, B::StiefelLieAlgHorMatrix) = B + A
 
+function _add!(A::StiefelLieAlgHorMatrix{T}, B::StiefelLieAlgHorMatrix{T}) where {T}
+    _add!(A.A, B.A)
+    _add!(A.B, B.B)
+
+    A
+end
+
 Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
 
 function Base.zeros(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}

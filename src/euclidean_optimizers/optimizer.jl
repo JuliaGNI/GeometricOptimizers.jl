@@ -253,8 +253,8 @@ const INITIAL_BFGS_G = 0.54321
 const INITIAL_BFGS_F = 0.23456
 
 function initialize_state!(state::Union{BFGSState{T},DFPState{T}}) where {T}
-    state.x̄ .= T(INITIAL_BFGS_X)
-    state.ḡ .= T(INITIAL_BFGS_G)
+    _fill!(state.x̄, T(INITIAL_BFGS_X))
+    _fill!(state.ḡ, T(INITIAL_BFGS_G))
     state.f̄ = T(INITIAL_BFGS_F)
     state.Q .= one(state.Q)
 
