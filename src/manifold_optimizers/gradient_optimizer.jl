@@ -1,5 +1,4 @@
-OptimizerCache(::GradientMethod, x::AbstractVector) = GradientCache(copy(x), similar(x), similar(x))
-OptimizerCache(::GradientMethod, x::Manifold) = GradientCache(copy(x), zero(x), zero(x))
+OptimizerCache(::GradientMethod, x::OptimizerSolution) = GradientCache(_copy(x), _zero(x), _zero(x))
 Hessian(::GradientMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
 
 struct NoHessian{T} <: Hessian{T} end
