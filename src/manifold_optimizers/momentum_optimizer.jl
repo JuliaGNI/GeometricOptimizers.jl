@@ -10,7 +10,7 @@ Cache for the gradient optimizer.
 - `x::`[`Manifold`](@ref): the solution,
 - `g`: the gradient (for the *manifold case* this is in [`AbstractLieAlgHorMatrix`](@ref) form),
 - `δ`: the direction,
-- `Δg`: difference in gradients,
+- `Δg`: difference in gradients (used in [`OptimizerStatus`](@ref)),
 - `section`: the [`GlobalSection`](@ref).
 """
 struct MomentumCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
