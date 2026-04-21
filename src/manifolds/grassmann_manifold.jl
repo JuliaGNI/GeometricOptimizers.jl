@@ -82,3 +82,9 @@ function global_section(Y::GrassmannManifold{T}) where {T}
     A = A - Y.A * (Y.A' * A)
     typeof(Y.A)(qr!(A).Q)
 end
+
+function Base.zero(Y::GrassmannManifold{T}) where {T}
+    N, n = size(Y)
+    backend = KernelAbstractions.get_backend(Y.A)
+    zeros(backend, GrassmannLieAlgHorMatrix{T}, N, n)
+end

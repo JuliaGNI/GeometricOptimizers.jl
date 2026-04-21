@@ -148,3 +148,9 @@ function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::In
     A = randn(rng, T, N, n)
     MT(assign_columns(typeof(A)(qr!(A).Q), N, n))
 end
+
+function Base.zero(Y::StiefelManifold{T}) where {T}
+    N, n = size(Y)
+    backend = KernelAbstractions.get_backend(Y.A)
+    zeros(backend, StiefelLieAlgHorMatrix{T}, N, n)
+end
