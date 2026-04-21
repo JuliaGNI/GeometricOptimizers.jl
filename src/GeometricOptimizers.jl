@@ -61,24 +61,6 @@ include("retractions/modified_exponential.jl")
 include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")
 
-# optimizer methods I
-include("optimizers/optimizer_method.jl")
-
-# optimizer caches
-include("optimizers/optimizer_caches.jl")
-include("optimizers/bfgs_cache.jl")
-
-# optimizer
-export Optimizer
-include("optimizers/optimizer.jl")
-
-# optimizer methods II
-include("optimizers/adam_optimizer.jl")
-include("optimizers/adam_optimizer_with_decay.jl")
-include("optimizers/bfgs_optimizer.jl")
-
-include("optimizers/init_optimizer_cache.jl")
-
 export EuclideanOptimizer,
     OptimizerProblem,
     OptimizerState, isaOptimizerState,
