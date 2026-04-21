@@ -10,22 +10,22 @@ An implementation of the Stiefel manifold [hairer2006geometric](@cite). The Stie
 The Stiefel manifold can be shown to have manifold structure (as the name suggests) and this is heavily used in `GeometricOptimizers`. It is further a compact space.
 More information can be found in the docstrings for [`rgrad(::StiefelManifold, ::AbstractMatrix)`](@ref) and [`metric(::StiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref).
 """
-mutable struct StiefelManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
+mutable struct StiefelManifold{T,AT<:AbstractMatrix{T}} <: Manifold{T}
     A::AT
 end
 
-Base.:*(Y::StiefelManifold, B::AbstractMatrix) = Y.A*B
-Base.:*(B::AbstractMatrix, Y::StiefelManifold) = B*Y.A
+Base.:*(Y::StiefelManifold, B::AbstractMatrix) = Y.A * B
+Base.:*(B::AbstractMatrix, Y::StiefelManifold) = B * Y.A
 
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where {T, AT<:AbstractMatrix{T}}
-    Y.parent.A'*B
+function Base.:*(Y::Adjoint{T,StiefelManifold{T,AT}}, B::AbstractMatrix) where {T,AT<:AbstractMatrix{T}}
+    Y.parent.A' * B
 end
 
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::StiefelManifold{T, AT}) where {T, AT<:AbstractMatrix{T}}
+function Base.:*(Y::Adjoint{T,StiefelManifold{T,AT}}, B::StiefelManifold{T,AT}) where {T,AT<:AbstractMatrix{T}}
     Y.parent.A' * B.A
 end
 
-function Base.:*(Y::Adjoint{T, ST}, B::ST) where {T, AT<:AbstractMatrix{T}, ST<:StiefelManifold{T, AT}}
+function Base.:*(Y::Adjoint{T,ST}, B::ST) where {T,AT<:AbstractMatrix{T},ST<:StiefelManifold{T,AT}}
     Y.parent.A' * B.A
 end
 
@@ -79,11 +79,11 @@ g_Y: (\Delta_1, \Delta_2) \mapsto \mathrm{Tr}(\Delta_1^T(\mathbb{I} - \frac{1}{2
 ```
 """
 function metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
-    LinearAlgebra.tr(Δ₁'*(I - .5*Y.A*Y.A')*Δ₂)
+    LinearAlgebra.tr(Δ₁' * (I - 0.5 * Y.A * Y.A') * Δ₂)
 end
 
 function check(Y::StiefelManifold)
-    norm(Y.A'*Y.A - I)
+    norm(Y.A' * Y.A - I)
 end
 
 @doc raw"""
@@ -127,10 +127,10 @@ A = A - Y.A * (Y.A' * A)
 qr!(A).Q
 ```
 """
-function global_section(Y::StiefelManifold{T}) where T
+function global_section(Y::StiefelManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y)
-    A = KernelAbstractions.allocate(backend, T, N, N-n)
+    A = KernelAbstractions.allocate(backend, T, N, N - n)
     randn!(A)
     A = A - Y.A * (Y.A' * A)
     typeof(Y.A)(qr!(A).Q)
