@@ -117,7 +117,7 @@ function update!(state::AdamState{T}, gradient_array::GradientArrayOrNamedTuple{
     state
 end
 
-function update!(state::AdamState, opt::EuclideanOptimizer, x::OptimizerSolution)
+function update!(state::AdamState, opt::Optimizer, x::OptimizerSolution)
     update!(state, gradient_array(cache(opt)), direction(cache(opt)), first_moment(opt.cache), second_moment(opt.cache), x, problem(opt).F, opt.retraction)
 end
 

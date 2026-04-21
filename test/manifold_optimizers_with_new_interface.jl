@@ -15,7 +15,7 @@ const α = 0.1
 
 x = StiefelManifold([0.; sqrt(.5); sqrt(.5);;])
 
-opt = EuclideanOptimizer(x, f; algorithm=GradientMethod(), linesearch=Static(α))
+opt = Optimizer(x, f; algorithm=GradientMethod(), linesearch=Static(α))
 
 state = GradientState(x)
 

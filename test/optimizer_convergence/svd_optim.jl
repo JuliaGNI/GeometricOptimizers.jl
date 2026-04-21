@@ -36,9 +36,9 @@ function svd_test(n, train_steps=1500, tol=1e-1; retraction=Cayley())
     err_best = norm(A - U_result * U_result' * A)
     ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
 
-    o₁ = EuclideanOptimizer(ps, error; retraction=retraction, algorithm=GradientMethod(), linesearch=Static(0.01), max_iterations=train_steps)
-    o₂ = EuclideanOptimizer(ps, error; retraction=retraction, algorithm=MomentumMethod(), linesearch=Static(0.01), max_iterations=train_steps)
-    o₃ = EuclideanOptimizer(ps, error; retraction=retraction, algorithm=GeometricOptimizers.Adam(0.01), linesearch=Static(0.01), max_iterations=train_steps)
+    o₁ = Optimizer(ps, error; retraction=retraction, algorithm=GradientMethod(), linesearch=Static(0.01), max_iterations=train_steps)
+    o₂ = Optimizer(ps, error; retraction=retraction, algorithm=MomentumMethod(), linesearch=Static(0.01), max_iterations=train_steps)
+    o₃ = Optimizer(ps, error; retraction=retraction, algorithm=GeometricOptimizers.Adam(0.01), linesearch=Static(0.01), max_iterations=train_steps)
 
     ps_copy₁ = deepcopy(ps)
     state₁ = OptimizerState(GradientMethod(), ps_copy₁)

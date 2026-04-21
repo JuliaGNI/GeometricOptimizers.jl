@@ -102,11 +102,11 @@ function update!(state::GradientState{T}, gradient_array::GradientArrayOrNamedTu
     state
 end
 
-function update!(state::GradientState, opt::EuclideanOptimizer, x::OptimizerSolution)
+function update!(state::GradientState, opt::Optimizer, x::OptimizerSolution)
     update!(state, gradient_array(cache(opt)), direction(cache(opt)), x, problem(opt).F, opt.retraction)
 end
 
-# function compute_direction!(opt::EuclideanOptimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
+# function compute_direction!(opt::Optimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
 #     direction(opt) .= rhs(opt)
 # end
 
@@ -121,6 +121,6 @@ function update!(cache::GradientCache{T}, state::GradientState{T}, gradient::Gra
 end
 
 # this should be moved to a different file
-function update!(state::BFGSState{T}, opt::EuclideanOptimizer{T}, x::OptimizerSolution{T}) where {T}
+function update!(state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}) where {T}
     update!(state, direction(cache(opt)), gradient(opt), x, problem(opt).F(x), opt.retraction)
 end

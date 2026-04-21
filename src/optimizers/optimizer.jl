@@ -2,7 +2,7 @@
 const SOLUTION_MAX_PRINT_LENGTH = 10
 
 """
-    EuclideanOptimizer
+    Optimizer
 
 The optimizer that stores all the information needed for an optimization problem.
 
@@ -24,7 +24,7 @@ F(x) = sum(sin.(x) .^ 2)
 x = ones(3)
 algorithm = Newton()
 state = OptimizerState(algorithm, x)
-optimizer = EuclideanOptimizer(x, F; algorithm = algorithm, linesearch = Bisection())
+optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Bisection())
 
 solve!(x, state, optimizer)
 x
@@ -42,7 +42,7 @@ We note that this same problem may have trouble converging with other line searc
 x = ones(3)
 algorithm = Newton()
 state = OptimizerState(algorithm, x)
-optimizer = EuclideanOptimizer(x, F; algorithm = algorithm, linesearch = Backtracking())
+optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Backtracking())
 
 solve!(x, state, optimizer)
 x
@@ -56,8 +56,8 @@ x
 ```
 
 """
-struct EuclideanOptimizer{T,
-    ALG<:EuclideanOptimizerMethod,
+struct Optimizer{T,
+    ALG<:OptimizerMethod,
     OBJ<:OptimizerProblem{T},
     GT<:Gradient{T},
     HT<:Hessian{T},
@@ -73,7 +73,7 @@ struct EuclideanOptimizer{T,
     linesearch::LST
     retraction::RT
 
-    function EuclideanOptimizer(algorithm::EuclideanOptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=GradientAutodiff{T}(problem.F, length(cache.x)), retraction=Cayley(), options_kwargs...) where {T}
+    function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=GradientAutodiff{T}(problem.F, length(cache.x)), retraction=Cayley(), options_kwargs...) where {T}
         config = Options(T; options_kwargs...)
         ls_problem = linesearch_problem(problem, gradient, cache)
         ls = Linesearch(ls_problem, linesearch)
@@ -81,15 +81,15 @@ struct EuclideanOptimizer{T,
     end
 end
 
-function EuclideanOptimizer(x::VT, problem::OptimizerProblem; algorithm::EuclideanOptimizerMethod=_BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
+function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=_BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
     # translate to the correct type if we use the momentum method
     algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) : algorithm
     cache = OptimizerCache(algorithm, x)
     hes = Hessian(algorithm, problem, x)
-    EuclideanOptimizer(algorithm, problem, hes, cache, linesearch; options_kwargs...)
+    Optimizer(algorithm, problem, hes, cache, linesearch; options_kwargs...)
 end
 
-function EuclideanOptimizer(x::OptimizerSolution, F::Function; (∇F!)=nothing, mode=:autodiff, kwargs...)
+function Optimizer(x::OptimizerSolution, F::Function; (∇F!)=nothing, mode=:autodiff, kwargs...)
     G = if (ismissing(∇F!) | isnothing(∇F!))
         if mode == :autodiff
             GradientAutodiff(F, x)
@@ -100,25 +100,25 @@ function EuclideanOptimizer(x::OptimizerSolution, F::Function; (∇F!)=nothing, 
         GradientFunction(F, ∇F!, x)
     end
     problem = (ismissing(∇F!) | isnothing(∇F!)) ? OptimizerProblem(F, x) : OptimizerProblem(F, ∇F!, x)
-    EuclideanOptimizer(x, problem; gradient=G, kwargs...)
+    Optimizer(x, problem; gradient=G, kwargs...)
 end
 
-config(opt::EuclideanOptimizer) = opt.config
-problem(opt::EuclideanOptimizer) = opt.problem
-algorithm(opt::EuclideanOptimizer) = opt.algorithm
-linesearch(opt::EuclideanOptimizer) = opt.linesearch
-hessian(opt::EuclideanOptimizer) = opt.hessian
-direction(opt::EuclideanOptimizer) = direction(cache(opt))
-rhs(opt::EuclideanOptimizer) = rhs(cache(opt))
-cache(opt::EuclideanOptimizer) = opt.cache
-gradient(opt::EuclideanOptimizer) = opt.gradient
+config(opt::Optimizer) = opt.config
+problem(opt::Optimizer) = opt.problem
+algorithm(opt::Optimizer) = opt.algorithm
+linesearch(opt::Optimizer) = opt.linesearch
+hessian(opt::Optimizer) = opt.hessian
+direction(opt::Optimizer) = direction(cache(opt))
+rhs(opt::Optimizer) = rhs(cache(opt))
+cache(opt::Optimizer) = opt.cache
+gradient(opt::Optimizer) = opt.gradient
 
-check_gradient(opt::EuclideanOptimizer) = check_gradient(gradient(problem(opt)))
-print_gradient(opt::EuclideanOptimizer) = print_gradient(gradient(problem(opt)))
+check_gradient(opt::Optimizer) = check_gradient(gradient(problem(opt)))
+print_gradient(opt::Optimizer) = print_gradient(gradient(problem(opt)))
 
-meets_stopping_criteria(status::OptimizerStatus, opt::EuclideanOptimizer, state::OptimizerState) = meets_stopping_criteria(status, config(opt), iteration_number(state))
+meets_stopping_criteria(status::OptimizerStatus, opt::Optimizer, state::OptimizerState) = meets_stopping_criteria(status, config(opt), iteration_number(state))
 
-function initialize!(opt::EuclideanOptimizer, x::OptimizerSolution)
+function initialize!(opt::Optimizer, x::OptimizerSolution)
     initialize!(cache(opt), x)
 
     opt
@@ -127,7 +127,7 @@ end
 """
     solver_step!(x, state, opt)
 
-Compute a full iterate for an [`EuclideanOptimizer`](@ref).
+Compute a full iterate for an [`Optimizer`](@ref).
 
 !!! info
     This also performs a line search.
@@ -142,7 +142,7 @@ julia> x = [1f0, 2f0]
  1.0
  2.0
 
-julia> opt = EuclideanOptimizer(x, f; algorithm = Newton());
+julia> opt = Optimizer(x, f; algorithm = Newton());
 
 julia> state = NewtonOptimizerState(x);
 
@@ -154,7 +154,7 @@ julia> solver_step!(x, state, opt)
  0.6666666
 ```
 """
-function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::EuclideanOptimizer{T,MT}) where {T,MT}
+function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{T,MT}) where {T,MT}
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
@@ -188,7 +188,7 @@ end
 """
     solve!(x, state, opt)
 
-Solve the optimization problem described by `opt::`[`EuclideanOptimizer`](@ref) and store the result in `x`.
+Solve the optimization problem described by `opt::`[`Optimizer`](@ref) and store the result in `x`.
 
 # Examples
 
@@ -200,7 +200,7 @@ julia> x = [1f0, 2f0]
  1.0
  2.0
 
-julia> opt = EuclideanOptimizer(x, f; algorithm = Newton());
+julia> opt = Optimizer(x, f; algorithm = Newton());
 
 julia> state = NewtonOptimizerState(x);
 
@@ -226,7 +226,7 @@ julia> iteration_number(state)
 
 Also see [`solver_step!`](@ref).
 """
-function solve!(x::OptimizerSolution, state::OptimizerState, opt::EuclideanOptimizer)
+function solve!(x::OptimizerSolution, state::OptimizerState, opt::Optimizer)
     initialize_state!(state)
 
     while true
@@ -242,7 +242,7 @@ function solve!(x::OptimizerSolution, state::OptimizerState, opt::EuclideanOptim
     OptimizerResult(status, x, value(problem(opt), x))
 end
 
-update!(state::OptimizerState, opt::EuclideanOptimizer, x::OptimizerSolution) = update!(state, gradient(opt), x)
+update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution) = update!(state, gradient(opt), x)
 
 function initialize_state!(state::OptimizerState)
     state
@@ -268,7 +268,7 @@ function warn_iteration_number(state::OptimizerState, config::Options)
 end
 
 # put this somewhere else eventually!
-function update!(state::NewtonOptimizerState, opt::EuclideanOptimizer, x::AbstractVector)
+function update!(state::NewtonOptimizerState, opt::Optimizer, x::AbstractVector)
     update!(state, gradient(opt), x)
     update_section!(state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
     state

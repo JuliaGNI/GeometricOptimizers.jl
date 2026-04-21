@@ -6,7 +6,7 @@ function compute_direction!(cache::NewtonOptimizerCache{T}) where {T}
     compute_direction!(direction(cache), cache)
 end
 
-function compute_direction!(opt::EuclideanOptimizer{T, Newton}) where {T}
+function compute_direction!(opt::Optimizer{T, Newton}) where {T}
     compute_direction!(cache(opt))
 end
-compute_direction!(opt::EuclideanOptimizer{T, Newton}, ::NewtonOptimizerState) where {T} = compute_direction!(opt)
+compute_direction!(opt::Optimizer{T, Newton}, ::NewtonOptimizerState) where {T} = compute_direction!(opt)

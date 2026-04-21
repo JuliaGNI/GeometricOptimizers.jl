@@ -34,7 +34,7 @@ f!(y::AbstractVector{T}, x::AbstractVector{T}) where {T} = y .= f.(x)
 F!(y::AbstractVector{T}, x::AbstractVector{T}, params) where {T} = f!(y, x)
 ```
 
-We hence use [`linesearch_problem`](@ref) not for a [`SimpleSolvers.NewtonSolver`](@extref), but for an [`EuclideanOptimizer`](@ref):
+We hence use [`linesearch_problem`](@ref) not for a [`SimpleSolvers.NewtonSolver`](@extref), but for an [`Optimizer`](@ref):
 
 ```@example quadratic
 using GeometricOptimizers # hide

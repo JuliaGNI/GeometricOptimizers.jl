@@ -32,7 +32,7 @@ for T in (Float64, Float32)
             @testset "$(method) & $(_linesearch) & $(T)" begin
                 n = 1
                 x = ones(T, n)
-                opt = EuclideanOptimizer(x, F; algorithm=method, linesearch=_linesearch)
+                opt = Optimizer(x, F; algorithm=method, linesearch=_linesearch)
                 state = OptimizerState(method, x)
 
                 @test typeof(gradient(opt)) <: GradientAutodiff
@@ -42,7 +42,7 @@ for T in (Float64, Float32)
                 @test F(x) ≈ F(zero(T)) atol = ∛(2000eps(T))
 
                 x = ones(T, n)
-                opt = EuclideanOptimizer(x, F; (∇F!)=∇F!, algorithm=method, linesearch=_linesearch)
+                opt = Optimizer(x, F; (∇F!)=∇F!, algorithm=method, linesearch=_linesearch)
 
                 @test typeof(gradient(opt)) <: GradientFunction
 
@@ -64,7 +64,7 @@ end
 
     function test_nan_handling_for_optimizers(F, n::Integer, ::Type{T}; kwargs...) where {T}
         x = 0.2 * ones(T, n)
-        opt = EuclideanOptimizer(x, F; algorithm=Newton(), linesearch=Static(), verbosity=2, kwargs...)
+        opt = Optimizer(x, F; algorithm=Newton(), linesearch=Static(), verbosity=2, kwargs...)
         state = OptimizerState(Newton(), x)
         solve!(x, state, opt)
     end

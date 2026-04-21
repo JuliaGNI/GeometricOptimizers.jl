@@ -1,7 +1,7 @@
 """
     HessianBFGS <: Hessian
 
-A `struct` derived from [`SimpleSolvers.Hessian`](@extref) to be used for an [`EuclideanOptimizer`](@ref).
+A `struct` derived from [`SimpleSolvers.Hessian`](@extref) to be used for an [`Optimizer`](@ref).
 """
 struct HessianBFGS{T,FT<:Callable} <: IterativeHessian{T}
     F::FT

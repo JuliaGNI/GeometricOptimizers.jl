@@ -102,7 +102,7 @@ function update!(state::MomentumState{T}, gradient_array::GradientArrayOrNamedTu
     state
 end
 
-function update!(state::MomentumState, opt::EuclideanOptimizer, x::OptimizerSolution)
+function update!(state::MomentumState, opt::Optimizer, x::OptimizerSolution)
     update!(state, gradient_array(cache(opt)), direction(cache(opt)), algorithm(opt).α, x, problem(opt).F, opt.retraction)
 end
 

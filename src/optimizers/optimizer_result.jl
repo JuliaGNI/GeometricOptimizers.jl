@@ -2,7 +2,7 @@
 """
     OptimizerResult
 
-Serves as a diagnostic tool for the [`EuclideanOptimizer`](@ref) and is the return argument of [`solve!`](@ref).
+Serves as a diagnostic tool for the [`Optimizer`](@ref) and is the return argument of [`solve!`](@ref).
 
 # Keys
 
