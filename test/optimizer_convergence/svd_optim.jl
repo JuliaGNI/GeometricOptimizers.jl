@@ -1,8 +1,7 @@
 using GeometricOptimizers
-using GeometricOptimizers: optimization_step!
+using SimpleSolvers: Static
 using LinearAlgebra: norm, svd
 using Test
-import Zygote
 import Random
 Random.seed!(1234)
 
@@ -27,21 +26,37 @@ A = [0.06476993260924702 0.8369280855305259 0.6245358125914054 0.140729967064923
     0.838935723223811 0.5888502932130046 0.789979979782286 0.7108295494351453 0.21710960094241705
     0.7317681833003449 0.9051355184962627 0.3376918522349117 0.436545092402125 0.3462196925686055]
 
-function svd_test(A::AbstractMatrix{T}, n, train_steps=1000, tol=1e-1; retraction=cayley) where {T}
+error(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
+
+function svd_test(n, train_steps=1500, tol=1e-1; retraction=Cayley())
     N = size(A, 1)
     U, Σ, Vt = svd(A)
     U_result = U[:, 1:n]
 
     err_best = norm(A - U_result * U_result' * A)
-    ps = (w₁=rand(StiefelManifold{T}, N, n), w₂=rand(StiefelManifold{T}, N, n))
+    ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
 
-    o₁ = Optimizer(GeometricOptimizers._Gradient(T(0.01)), ps; retraction=retraction)
-    o₂ = Optimizer(GeometricOptimizers.Momentum(T(0.01)), ps; retraction=retraction)
-    o₃ = Optimizer(GeometricOptimizers.Adam(T(0.01)), ps; retraction=retraction)
+    o₁ = Optimizer(ps, error; retraction=retraction, algorithm=GradientMethod(), linesearch=Static(0.01), max_iterations=train_steps)
+    o₂ = Optimizer(ps, error; retraction=retraction, algorithm=MomentumMethod(), linesearch=Static(0.01), max_iterations=train_steps)
+    o₃ = Optimizer(ps, error; retraction=retraction, algorithm=GeometricOptimizers.Adam(0.01), linesearch=Static(0.01), max_iterations=train_steps)
 
-    U₁, Ũ₁, err₁ = perform_optimization!(o₁, deepcopy(ps), A, train_steps)
-    U₂, Ũ₂, err₂ = perform_optimization!(o₂, deepcopy(ps), A, train_steps)
-    U₃, Ũ₃, err₃ = perform_optimization!(o₃, deepcopy(ps), A, train_steps)
+    ps_copy₁ = deepcopy(ps)
+    state₁ = OptimizerState(GradientMethod(), ps_copy₁)
+    solve!(ps_copy₁, state₁, o₁)
+    err₁ = error(ps_copy₁)
+    U₁, Ũ₁ = values(ps_copy₁)
+
+    ps_copy₂ = deepcopy(ps)
+    state₂ = OptimizerState(MomentumMethod(), ps_copy₂)
+    solve!(ps_copy₂, state₂, o₂)
+    err₂ = error(ps_copy₂)
+    U₂, Ũ₂ = values(ps_copy₂)
+
+    ps_copy₃ = deepcopy(ps)
+    state₃ = OptimizerState(Adam(), ps_copy₃)
+    solve!(ps_copy₃, state₃, o₃)
+    err₃ = error(ps_copy₃)
+    U₃, Ũ₃ = values(ps_copy₃)
 
     @test GeometricOptimizers.check(U₁) < tol
     @test GeometricOptimizers.check(Ũ₁) < tol
@@ -54,17 +69,6 @@ function svd_test(A::AbstractMatrix{T}, n, train_steps=1000, tol=1e-1; retractio
     @test norm((err₃ - err_best) / err_best) < tol
 end
 
-function perform_optimization!(o::Optimizer, ps::NamedTuple, A::AbstractMatrix, train_steps)
-    error(ps) = norm(A - ps.w₁ * ps.w₂' * A)
-
-    for _ in 1:train_steps
-        dx = Zygote.gradient(error, ps)[1]
-        λY = GlobalSection(ps)
-        optimization_step!(o, λY, ps, dx)
-    end
-    ps.w₁, ps.w₂, error(ps)
-end
-
-for retraction in (GeometricOptimizers.geodesic, GeometricOptimizers.cayley)
-    svd_test(A, 3, retraction=retraction)
+for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
+    svd_test(3, retraction=retraction)
 end
