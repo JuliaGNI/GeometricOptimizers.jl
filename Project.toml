@@ -26,14 +26,12 @@ ParameterHandling = "0.5"
 Printf = "1"
 SafeTestsets = "0.1"
 SimpleSolvers = "0.8"
-Zygote = "0.7"
 julia = "1"
 
 [extras]
 NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [targets]
-test = ["Test", "SafeTestsets", "Zygote", "NaNMath"]
+test = ["Test", "SafeTestsets", "NaNMath"]
