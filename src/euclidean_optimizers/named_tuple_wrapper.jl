@@ -182,3 +182,107 @@ function _add!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
     apply_toNT(_add!, a, b)
     a
 end
+
+_add!(a::AbstractArray{T}, b::T) where {T} = a .+= b
+
+function _add!(a::SkewSymMatrix{T}, b::T) where {T}
+    _add!(a.S, b)
+    a
+end
+
+function _add!(a::StiefelLieAlgHorMatrix{T}, b::T) where {T}
+    _add!(a.A, b)
+    _add!(a.B, b)
+    a
+end
+
+function _add!(a::ArrayNamedTuple{T}, b::T) where {T}
+    closure(a) = _add!(a, b)
+    apply_toNT(closure, a)
+    a
+end
+
+"""
+    _rac!(B, A)
+
+Compute the element-wise square-root of `A`.
+"""
+_rac!(B::AbstractArray, A::AbstractArray) = B .= sqrt.(A)
+
+function _rac!(B::SkewSymMatrix, A::SkewSymMatrix)
+    _rac!(B.S, A.S)
+    B
+end
+
+function _rac!(B::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix)
+    _rac!(B.A, A.A)
+    _rac!(B.B, A.B)
+    B
+end
+
+_rac!(b::ArrayNamedTuple, a::ArrayNamedTuple) = apply_toNT(_rac!, b, a)
+
+_rac!(a) = _rac!(a, a)
+
+"""
+    _div!(C, A, B)
+
+Divide `A` by `B` (elment-wise)
+"""
+function _div!(C::AbstractArray, A::AbstractArray, B::AbstractArray)
+    @assert axes(A) == axes(B) == axes(C)
+    C .= A ./ B
+end
+
+function _div!(C::SkewSymMatrix, A::SkewSymMatrix, B::SkewSymMatrix)
+    _div!(C.S, A.S, B.S)
+    C
+end
+
+function _div!(C::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
+    _div!(C.A, A.A, B.A)
+    _div!(C.B, A.B, B.B)
+    C
+end
+
+function _div!(C::ArrayNamedTuple, A::ArrayNamedTuple, B::ArrayNamedTuple)
+    apply_toNT(_div!, C, A, B)
+    C
+end
+
+_div!(a, b) = _div!(a, a, b)
+
+"""
+    _square!(B, A)
+
+"""
+_square!(B::AbstractArray, A::AbstractArray) = B .= A .^ 2
+
+function _square!(B::SkewSymMatrix, A::SkewSymMatrix)
+    _square!(B.S, A.S)
+    B
+end
+
+function _square!(B::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix)
+    _square!(B.A, A.A)
+    _square!(B.B, A.B)
+    B
+end
+
+_square!(b::ArrayNamedTuple, a::ArrayNamedTuple) = apply_toNT(_square!, b, a)
+
+function _square(a)
+    b = _copy(a)
+    _square!(b, a)
+    b
+end
+
+
+Base.copyto!(dest::AT, src::GlobalSection{T,AT}) where {T,AT<:AbstractArray{T}} = copyto!(dest, src.Y)
+_copyto!(dest, src::GlobalSection) = copyto!(dest, src)
+rgrad(ps::ArrayNamedTuple, dx::ArrayNamedTuple) = apply_toNT(rgrad, ps, dx)
+
+function rgrad(Y::AbstractVecOrMat, dx::AbstractVecOrMat)
+    @assert size(Y) == size(dx)
+    dx
+end

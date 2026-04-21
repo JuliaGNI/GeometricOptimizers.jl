@@ -168,7 +168,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Eu
         f = value(problem(opt), solution(cache(opt)))
         if isnan(f) || isinf(f)
             (opt.config.verbosity ≥ 2 && @warn "NaN or Inf detected in optimizer. Reducing length of direction vector.")
-            direction(cache(opt)) .*= T(config(opt).nan_factor)
+            _rmul!(direction(cache(opt)), T(config(opt).nan_factor))
         else
             break
         end

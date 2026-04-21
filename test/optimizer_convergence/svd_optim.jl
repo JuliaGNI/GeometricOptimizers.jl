@@ -53,7 +53,12 @@ function svd_test(n, train_steps=1500, tol=1e-1; retraction=Cayley())
     solve!(ps_copy₂, state₂, o₂)
     err₂ = error(ps_copy₂)
     U₂, Ũ₂ = values(ps_copy₂)
-    U₃, Ũ₃, err₃ = perform_optimization!(o₃, deepcopy(ps), train_steps)
+
+    ps_copy₃ = deepcopy(ps)
+    state₃ = OptimizerState(Adam(), ps_copy₃)
+    solve!(ps_copy₃, state₃, o₃)
+    err₃ = error(ps_copy₃)
+    U₃, Ũ₃ = values(ps_copy₃)
 
     @test GeometricOptimizers.check(U₁) < tol
     @test GeometricOptimizers.check(Ũ₁) < tol
