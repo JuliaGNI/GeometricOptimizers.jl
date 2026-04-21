@@ -1,5 +1,4 @@
 using GeometricOptimizers
-using GeometricOptimizers: optimization_step!
 using SimpleSolvers: Static
 using LinearAlgebra: norm, svd
 using Test
