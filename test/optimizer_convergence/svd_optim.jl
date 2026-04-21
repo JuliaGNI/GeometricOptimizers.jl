@@ -71,15 +71,6 @@ function svd_test(n, train_steps=1500, tol=1e-1; retraction=Cayley())
     @test norm((err₃ - err_best) / err_best) < tol
 end
 
-function perform_optimization!(o::Optimizer, ps::NamedTuple, train_steps)
-    for _ in 1:train_steps
-        dx = Zygote.gradient(error, ps)[1]
-        λY = GlobalSection(ps)
-        optimization_step!(o, λY, ps, dx)
-    end
-    ps.w₁, ps.w₂, error(ps)
-end
-
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
     svd_test(3, retraction=retraction)
 end
