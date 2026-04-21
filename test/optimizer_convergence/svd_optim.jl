@@ -3,7 +3,6 @@ using GeometricOptimizers: optimization_step!
 using SimpleSolvers: Static
 using LinearAlgebra: norm, svd
 using Test
-import Zygote
 import Random
 Random.seed!(1234)
 
