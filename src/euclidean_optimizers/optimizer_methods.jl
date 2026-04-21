@@ -43,6 +43,22 @@ struct MomentumMethod{T} <: EuclideanOptimizerMethod
     MomentumMethod(α::T=DEFAULT_MOMENTUM_α) where {T} = new{T}(α)
 end
 
+"""
+    Adam
+"""
+struct Adam{T} <: EuclideanOptimizerMethod
+    η::T
+    β₁::T
+    β₂::T
+    δ::T
+
+    Adam(η=1.0f-3, β₁=9.0f-1, β₂=9.9f-1, δ=1.0f-8; T=typeof(η)) = new{T}(T(η), T(β₁), T(β₂), T(δ))
+end
+
+function Adam(T::Type)
+    Adam(T(1.0f-3))
+end
+
 const DEFAULT_MOMENTUM_α = 0.01
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")

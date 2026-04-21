@@ -158,7 +158,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Eu
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
-    update!(cache(opt), state, gradient(opt), hessian(opt), x)
+    MT <: Adam ? update!(cache(opt), state, gradient(opt), algorithm(opt), x) : update!(cache(opt), state, gradient(opt), hessian(opt), x)
     typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
 
     for _ in 1:config(opt).nan_max_iterations

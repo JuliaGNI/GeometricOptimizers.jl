@@ -108,8 +108,10 @@ include("euclidean_optimizers/named_tuple_wrapper.jl")
 
 export GradientMethod, GradientState
 export MomentumMethod, MomentumState
+export Adam, AdamState
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")
+include("manifold_optimizers/adam_optimizer.jl")
 
 end
