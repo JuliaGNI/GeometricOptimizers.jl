@@ -154,7 +154,7 @@ julia> solver_step!(x, state, opt)
  0.6666666
 ```
 """
-function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::EuclideanOptimizer{T}) where {T}
+function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::EuclideanOptimizer{T,MT}) where {T,MT}
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
