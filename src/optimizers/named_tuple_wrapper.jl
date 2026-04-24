@@ -2,6 +2,9 @@ function GradientAutodiff(F, nt::NamedTuple)
     v, unflatten = ParameterHandling.flatten(nt)
     GradientAutodiff(_x -> F(unflatten(_x)), v)
 end
+function GradientFunction(F::TF, GF::TGF, nt::ArrayNamedTuple{T}) where {T, TF<:Callable, TGF<:Callable}
+    GradientFunction{T, TF, TGF}(F, GF)
+end
 
 function ParameterHandling.flatten(::Type{T}, x::Manifold{R}) where {T<:AbstractFloat,R<:Real}
     v, unflatten = ParameterHandling.flatten(T, x.A)
