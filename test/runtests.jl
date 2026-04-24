@@ -3,6 +3,9 @@ using SafeTestsets
 using Test
 
 begin
+    @safetestset "check_zygote_interfaces.jl   " include("check_zygote_interfaces.jl")
+end
+begin
     @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")
 end
 begin
