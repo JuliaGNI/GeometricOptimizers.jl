@@ -12,7 +12,7 @@
 
 Also compare this to [`SimpleSolvers.NonlinearSolverCache`](@extref).
 """
-struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T}} <: OptimizerCache{T}
+struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T},GS<:GlobalSection{T}} <: OptimizerCache{T}
     x::AT
     Δx::AT
     g::AT
@@ -20,9 +20,12 @@ struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T}} <: Opt
     rhs::AT
     H::HT
 
+    section::GS
+
     function NewtonOptimizerCache(x::AT) where {T,AT<:AbstractArray{T}}
         h = zeros(T, length(x), length(x))
-        cache = new{T,AT,typeof(h)}(similar(x), similar(x), similar(x), similar(x), similar(x), h)
+        section = GlobalSection(x)
+        cache = new{T,AT,typeof(h),typeof(section)}(similar(x), similar(x), similar(x), similar(x), similar(x), h, section)
         initialize!(cache, x)
         cache
     end
@@ -31,11 +34,14 @@ struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T}} <: Opt
     function NewtonOptimizerCache(x::AT, problem::OptimizerProblem) where {T<:Number,AT<:AbstractArray{T}}
         g = Gradient(problem)(x)
         h = Hessian(problem)(x)
-        new{T,AT,typeof(h)}(copy(x), copy(x), zero(x), g, -g, zero(x), h)
+        section = GlobalSection(x)
+        new{T,AT,typeof(h),typeof(section)}(copy(x), copy(x), zero(x), g, -g, zero(x), h, section)
     end
 end
 
-OptimizerCache(::EuclideanOptimizerMethod, x::AbstractVector) = NewtonOptimizerCache(x)
+OptimizerCache(::OptimizerMethod, x::OptimizerSolution) = NewtonOptimizerCache(x)
+
+section(cache::NewtonOptimizerCache) = cache.section
 
 """
     rhs(cache)
@@ -50,6 +56,7 @@ rhs(cache::NewtonOptimizerCache) = cache.rhs
 Return the stored gradient (array) of an instance of [`NewtonOptimizerCache`](@ref)
 """
 gradient(cache::NewtonOptimizerCache) = cache.g
+gradient_array(cache::NewtonOptimizerCache) = gradient(cache)
 
 """
     direction(cache)
@@ -61,20 +68,6 @@ direction(cache::NewtonOptimizerCache) = cache.Δx
 hessian(cache::NewtonOptimizerCache) = cache.H
 
 solution(cache::NewtonOptimizerCache) = cache.x
-
-"""
-    update!(cache, state, x, g)
-
-Update the [`NewtonOptimizerCache`](@ref) based on `x` and `g`.
-"""
-function update!(cache::NewtonOptimizerCache, state::OptimizerState, x::AbstractVector, g::AbstractVector)
-    solution(cache) .= x
-    gradient(cache) .= g
-    rhs(cache) .= -g
-    cache
-end
-
-update!(cache::NewtonOptimizerCache, state::OptimizerState, grad::Gradient, x::AbstractVector) = update!(cache, state, x, grad(x))
 
 @doc raw"""
     update!(cache::NewtonOptimizerCache, x, g, hes)
@@ -97,7 +90,11 @@ H^\mathtt{cache} & \gets H(x), \\
 where we wrote ``H`` for the Hessian (i.e. the input argument `hes`).
 """
 function update!(cache::NewtonOptimizerCache, state::OptimizerState, g::Gradient, ∇²f::Hessian, x::AbstractVector)
-    update!(cache, state, g, x)
+    copyto!(section(cache), section(state))
+    copyto!(solution(cache), x)
+    g(gradient(cache), x)
+    copyto!(rhs(cache), gradient(cache))
+    rmul!(rhs(cache), -1)
     ∇²f(hessian(cache), x)
     direction(cache) .= hessian(cache) \ rhs(cache)
     cache

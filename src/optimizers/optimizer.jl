@@ -1,131 +1,275 @@
-@doc raw"""
-    Optimizer(method, cache, step, retraction)
 
-Store the `method` (e.g. [`Adam`](@ref) with corresponding hyperparameters), the `cache` (e.g. [`AdamCache`](@ref)), the optimization step and the retraction.
+const SOLUTION_MAX_PRINT_LENGTH = 10
 
-It takes as input an optimization method and the parameters of a network.
-
-Before one can call `Optimizer` a [`OptimizerMethod`](@ref) that stores all the hyperparameters of the optimizer needs to be specified.
 """
-mutable struct Optimizer{MT<:OptimizerMethod,CT,RT}
-    method::MT
-    cache::CT
-    step::Int
-    retraction::RT
-end
+    Optimizer
 
-Base.eltype(::Optimizer{<:OptimizerMethod{T}}) where {T} = T
+The optimizer that stores all the information needed for an optimization problem.
 
-@doc raw"""
-    Optimizer(method, nn_params)
+This problem can be solved by calling [`solve!(::AbstractVector, ::Optimizer)`](@ref).
 
-Allocate the cache for a specific `method` and `nn_params` for an instance of `Optimizer`.
+# Keys
+- `algorithm::`[`OptimizerState`](@ref),
+- `problem::`[`OptimizerProblem`](@ref),
+- `gradient::`[`SimpleSolvers.Gradient`](@extref),
+- `hessian::`[`SimpleSolvers.Hessian`](@extref),
+- `config::`[`SimpleSolvers.Options`](@extref),
+- `cache::`[`OptimizerCache`](@ref),
+- `linesearch::`[`SimpleSolvers.Linesearch`](@extref).
 
-Internally this calls [`init_optimizer_cache`](@ref).
+# Examples
 
-An equivalent constructor is
+```jldoctest; setup = :(using GeometricOptimizers)
+F(x) = sum(sin.(x) .^ 2)
+x = ones(3)
+algorithm = Newton()
+state = OptimizerState(algorithm, x)
+optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Bisection())
 
-```julia
-Optimizer(method, nn::NeuralNetwork)
-```
-
-# Arguments
-
-The optional keyword argument is the retraction. By default this is [`cayley`](@ref).
-"""
-function Optimizer(method::OptimizerMethod, params::NamedTuple; retraction=cayley)
-    Optimizer(method, init_optimizer_cache(method, params), 0, retraction)
-end
-
-@doc raw"""
-    update!(o, cache, B)
-
-Update the `cache` and output a final velocity that is stored in `B`.
-
-Note that ``B\in\mathfrak{g}^\mathrm{hor}`` in general.
-
-In the manifold case the final velocity is the input to a retraction.
-"""
-function update!(o::Optimizer, ::AbstractCache, ::AbstractArray)
-    error("No update rule implemented for method", o.method)
-end
-
-#######################################################################################
-# optimization step function
-
-function _optimization_step!(o::Optimizer, λY::NamedTuple, ps::NamedTuple, cache::NamedTuple, dx::NamedTuple)
-    gx = rgrad(ps, dx)
-    B = global_rep(λY, gx)
-    update!(o, cache, B)
-    update_section!(λY, B, o.retraction)
-
-    nothing
-end
-
-@doc raw"""
-    optimization_step!(o, λY, ps, dx)
-
-Update the weights `ps` based on an [`EuclideanOptimizer`](@ref), a `cache` and first-order derivatives `dx`.
-
-`optimization_step!` is calling [`update!`](@ref) internally.
-`update!` has to be implemented for every [`OptimizerMethod`](@ref).
-
-# Arguments
-
-All arguments into `optimization_step!` are mandatory:
-1. `o::Optimizer`,
-2. `λY::NamedTuple`: this named tuple has the same keys as `ps`, but contains [`GlobalSection`](@ref)s,
-3. `ps::NamedTuple`: the neural network parameters,
-5. `dx::NamedTuple`: the gradients stores as a NamedTuple.
-
-All the arguments are given as `NamedTuple`s  as the neural network weights are stores in that format.
-
-```jldoctest
-using GeometricOptimizers
-using GeometricOptimizers: MomentumCache, Momentum, apply_toNT, geodesic, optimization_step!
-
-ps = (weight = rand(StiefelManifold{Float32}, 5, 3), )
-cache = apply_toNT(MomentumCache, ps)
-o = Optimizer(Momentum(), cache, 0, geodesic)
-λY = GlobalSection(ps)
-dx = (weight = rand(Float32, 5, 3), )
-
-# call the optimizer
-optimization_step!(o, λY, ps, dx)
-
-_test_nt(x) = typeof(x) <: NamedTuple
-
-_test_nt(λY) & _test_nt(ps) & _test_nt(cache) & _test_nt(dx)
+solve!(x, state, optimizer)
+x
 
 # output
 
-true
+3-element Vector{Float64}:
+ 1.1102230246251565e-16
+ 1.1102230246251565e-16
+ 1.1102230246251565e-16
+```
+We note that this same problem may have trouble converging with other line searches:
+
+```jldoctest; setup = :(using GeometricOptimizers; F(x) = sum(sin.(x) .^ 2))
+x = ones(3)
+algorithm = Newton()
+state = OptimizerState(algorithm, x)
+optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Backtracking())
+
+solve!(x, state, optimizer)
+x
+
+# output
+
+3-element Vector{Float64}:
+ 1.0
+ 1.0
+ 1.0
 ```
 
-# Extended help
-
-The derivatives `dx` here are usually obtained via an AD routine by differentiating a loss function, i.e. `dx` is ``\nabla_xL``.
 """
-function optimization_step!(o::Optimizer, λY::NamedTuple, ps::NamedTuple, dx::NamedTuple)
-    o.step += 1
+struct Optimizer{T,
+    ALG<:OptimizerMethod,
+    OBJ<:OptimizerProblem{T},
+    GT<:Gradient{T},
+    HT<:Hessian{T},
+    OCT<:Union{OptimizerCache,NamedTuple},
+    LST<:Linesearch,
+    RT<:AbstractRetraction} <: AbstractSolver
+    algorithm::ALG
+    problem::OBJ
+    gradient::GT
+    hessian::HT
+    config::Options{T}
+    cache::OCT
+    linesearch::LST
+    retraction::RT
 
-    _optimization_step!(o, λY, ps, o.cache, dx)
+    function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=GradientAutodiff{T}(problem.F, length(cache.x)), retraction=Cayley(), options_kwargs...) where {T}
+        config = Options(T; options_kwargs...)
+        ls_problem = linesearch_problem(problem, gradient, cache)
+        ls = Linesearch(ls_problem, linesearch)
+        new{T,typeof(algorithm),typeof(problem),typeof(gradient),typeof(hessian),typeof(cache),typeof(ls),typeof(retraction)}(algorithm, problem, gradient, hessian, config, cache, ls, retraction)
+    end
 end
 
-#######################################################################################
-# utils functions (should probably be put somewhere else)
-
-rgrad(ps::NamedTuple, dx::NamedTuple) = apply_toNT(rgrad, ps, dx)
-
-function rgrad(Y::AbstractVecOrMat, dx::AbstractVecOrMat)
-    @assert size(Y) == size(dx)
-    dx
+function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=_BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
+    # translate to the correct type if we use the momentum method
+    algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) : algorithm
+    cache = OptimizerCache(algorithm, x)
+    hes = Hessian(algorithm, problem, x)
+    Optimizer(algorithm, problem, hes, cache, linesearch; options_kwargs...)
 end
 
-function update!(m::Optimizer, C::NamedTuple, B::NamedTuple)
-    apply_toNT(m, C, B, update!)
+function Optimizer(x::OptimizerSolution, F::Function; (∇F!)=nothing, mode=:autodiff, kwargs...)
+    G = if (ismissing(∇F!) | isnothing(∇F!))
+        if mode == :autodiff
+            GradientAutodiff(F, x)
+        else
+            GradientFiniteDifferences(F, x)
+        end
+    else
+        GradientFunction(F, ∇F!, x)
+    end
+    problem = (ismissing(∇F!) | isnothing(∇F!)) ? OptimizerProblem(F, x) : OptimizerProblem(F, ∇F!, x)
+    Optimizer(x, problem; gradient=G, kwargs...)
 end
 
-function apply_toNT(m::Optimizer, ps₁::NamedTuple, ps₂::NamedTuple, fun_name)
-    apply_toNT((ps₁, ps₂) -> fun_name(m, ps₁, ps₂), ps₁, ps₂)
+config(opt::Optimizer) = opt.config
+problem(opt::Optimizer) = opt.problem
+algorithm(opt::Optimizer) = opt.algorithm
+linesearch(opt::Optimizer) = opt.linesearch
+hessian(opt::Optimizer) = opt.hessian
+direction(opt::Optimizer) = direction(cache(opt))
+rhs(opt::Optimizer) = rhs(cache(opt))
+cache(opt::Optimizer) = opt.cache
+gradient(opt::Optimizer) = opt.gradient
+
+check_gradient(opt::Optimizer) = check_gradient(gradient(problem(opt)))
+print_gradient(opt::Optimizer) = print_gradient(gradient(problem(opt)))
+
+meets_stopping_criteria(status::OptimizerStatus, opt::Optimizer, state::OptimizerState) = meets_stopping_criteria(status, config(opt), iteration_number(state))
+
+function initialize!(opt::Optimizer, x::OptimizerSolution)
+    initialize!(cache(opt), x)
+
+    opt
+end
+
+"""
+    solver_step!(x, state, opt)
+
+Compute a full iterate for an [`Optimizer`](@ref).
+
+!!! info
+    This also performs a line search.
+
+# Examples
+
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: solver_step!, NewtonOptimizerState)
+julia> f(x) = sum(x .^ 2 + x .^ 3 / 3);
+
+julia> x = [1f0, 2f0]
+2-element Vector{Float32}:
+ 1.0
+ 2.0
+
+julia> opt = Optimizer(x, f; algorithm = Newton());
+
+julia> state = NewtonOptimizerState(x);
+
+julia> update!(state, gradient(opt), x);
+
+julia> solver_step!(x, state, opt)
+2-element Vector{Float32}:
+ 0.25
+ 0.6666666
+```
+"""
+function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{T,MT}) where {T,MT}
+    # update cache
+    # solve H δx = - ∇f
+    # rhs is -g
+    MT <: Adam ? update!(cache(opt), state, gradient(opt), algorithm(opt), x) : update!(cache(opt), state, gradient(opt), hessian(opt), x)
+    typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
+
+    for _ in 1:config(opt).nan_max_iterations
+        update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+        _copyto!(solution(cache(opt)), section(cache(opt)))
+        # compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)), cache(opt), opt.retraction)
+        f = value(problem(opt), solution(cache(opt)))
+        if isnan(f) || isinf(f)
+            (opt.config.verbosity ≥ 2 && @warn "NaN or Inf detected in optimizer. Reducing length of direction vector.")
+            _rmul!(direction(cache(opt)), T(config(opt).nan_factor))
+        else
+            break
+        end
+    end
+
+    # apply line search
+    α = solve(linesearch(opt), one(T), (x=x,))
+    _rmul!(direction(cache(opt)), α)
+
+    # compute new minimizer
+    update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+    _copyto!(solution(cache(opt)), section(cache(opt)))
+
+    _copyto!(x, solution(cache(opt)))
+end
+
+"""
+    solve!(x, state, opt)
+
+Solve the optimization problem described by `opt::`[`Optimizer`](@ref) and store the result in `x`.
+
+# Examples
+
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: solve!, NewtonOptimizerState, update!, iteration_number; using Random: seed!; seed!(123))
+julia> f(x) = sum(x .^ 2 + x .^ 3 / 3);
+
+julia> x = [1f0, 2f0]
+2-element Vector{Float32}:
+ 1.0
+ 2.0
+
+julia> opt = Optimizer(x, f; algorithm = Newton());
+
+julia> state = NewtonOptimizerState(x);
+
+julia> solve!(x, state, opt)
+GeometricOptimizers.OptimizerResult{Float32, Float32, Vector{Float32}, GeometricOptimizers.OptimizerStatus{Float32, Float32}}( * Convergence measures
+
+    |x - x'|               = 7.82e-03
+    |x - x'|/|x'|          = 2.56e+02
+    |f(x) - f(x')|         = 6.18e-05
+    |f(x) - f(x')|/|f(x')| = 6.63e+04
+    |g(x) - g(x')|         = 1.57e-02
+    |g(x)|                 = 6.10e-05
+, Float32[4.6478817f-8, 3.0517578f-5], 9.313341f-10)
+
+julia> x
+2-element Vector{Float32}:
+ 4.6478817f-8
+ 3.0517578f-5
+
+julia> iteration_number(state)
+4
+```
+
+Also see [`solver_step!`](@ref).
+"""
+function solve!(x::OptimizerSolution, state::OptimizerState, opt::Optimizer)
+    initialize_state!(state)
+
+    while true
+        increase_iteration_number!(state)
+        solver_step!(x, state, opt)
+        status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config=config(opt))
+        meets_stopping_criteria(status, opt, state) && break
+        update!(state, opt, x)
+    end
+
+    status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config=config(opt))
+    warn_iteration_number(state, config(opt))
+    OptimizerResult(status, x, value(problem(opt), x))
+end
+
+update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution) = update!(state, gradient(opt), x)
+
+function initialize_state!(state::OptimizerState)
+    state
+end
+
+const INITIAL_BFGS_X = 0.12345
+const INITIAL_BFGS_G = 0.54321
+const INITIAL_BFGS_F = 0.23456
+
+function initialize_state!(state::Union{BFGSState{T},DFPState{T}}) where {T}
+    _fill!(state.x̄, T(INITIAL_BFGS_X))
+    _fill!(state.ḡ, T(INITIAL_BFGS_G))
+    state.f̄ = T(INITIAL_BFGS_F)
+    state.Q .= one(state.Q)
+
+    state
+end
+
+function warn_iteration_number(state::OptimizerState, config::Options)
+    if config.warn_iterations > 0 && iteration_number(state) ≥ config.warn_iterations
+        println("WARNING: Optimizer took ", iteration_number(state), " iterations.")
+    end
+end
+
+# put this somewhere else eventually!
+function update!(state::NewtonOptimizerState, opt::Optimizer, x::AbstractVector)
+    update!(state, gradient(opt), x)
+    update_section!(state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
+    state
 end

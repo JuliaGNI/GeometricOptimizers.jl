@@ -44,3 +44,6 @@ end
 begin
     @safetestset "Optimizer Problems           " include("optimizer_problems.jl")
 end
+begin
+    @safetestset "Manifold Optimizers         " include("manifold_optimizers_with_new_interface.jl")
+end
