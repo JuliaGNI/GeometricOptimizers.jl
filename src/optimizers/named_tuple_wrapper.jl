@@ -1,4 +1,5 @@
-function GradientAutodiff(F, nt::NamedTuple)
+# strictly speaking these functions are type piracy
+function GradientAutodiff(F, nt::ArrayNamedTuple)
     v, unflatten = ParameterHandling.flatten(nt)
     GradientAutodiff(_x -> F(unflatten(_x)), v)
 end
