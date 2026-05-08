@@ -3,6 +3,9 @@ using SafeTestsets
 using Test
 
 begin
+    @safetestset "check_zygote_interfaces.jl   " include("check_zygote_interfaces.jl")
+end
+begin
     @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")
 end
 begin
@@ -40,4 +43,7 @@ begin
 end
 begin
     @safetestset "Optimizer Problems           " include("optimizer_problems.jl")
+end
+begin
+    @safetestset "Manifold Optimizers         " include("manifold_optimizers_with_new_interface.jl")
 end

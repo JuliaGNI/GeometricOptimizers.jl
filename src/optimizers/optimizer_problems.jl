@@ -5,21 +5,19 @@ See [`SimpleSolvers.LinesearchProblem`](@extref) and [`OptimizerProblem`](@ref).
 """
 abstract type AbstractOptimizerProblem{T<:Number} <: AbstractProblem end
 
-
 """
     value(obj::AbstractOptimizerProblem, x)
 
 Evaluates the value at `x` (i.e. computes `obj.F(x)`).
 """
-function value(obj::AbstractOptimizerProblem, x::Union{Number,AbstractArray{<:Number}})
+function value(obj::AbstractOptimizerProblem, x::OptimizerSolution)
     obj.F(x)
 end
-
 
 """
     OptimizerProblem <: AbstractOptimizerProblem
 
-Used in [`EuclideanOptimizer`](@ref). Also compare this to [`SimpleSolvers.NonlinearProblem`](@extref).
+Used in [`Optimizer`](@ref). Also compare this to [`SimpleSolvers.NonlinearProblem`](@extref).
 
 # Examples
 
@@ -40,15 +38,15 @@ mutable struct OptimizerProblem{T,TF<:Callable,TG<:Union{Callable,Missing},TH<:U
     H::TH
 end
 
-function OptimizerProblem(F::Callable, G::TG, H::Callable, ::Tx) where {T<:Number,Tx<:AbstractArray{T},TG<:Union{Callable,Missing}}
+function OptimizerProblem(F::Callable, G::TG, H::Callable, ::OptimizerSolution{T}) where {T<:Number,TG<:Union{Callable,Missing}}
     OptimizerProblem{T,typeof(F),TG,typeof(H)}(F, G, H)
 end
 
-function OptimizerProblem(F::Callable, G::TG, ::Tx) where {T<:Number,Tx<:AbstractArray{T},TG<:Union{Callable,Missing}}
+function OptimizerProblem(F::Callable, G::TG, ::OptimizerSolution{T}) where {T<:Number,TG<:Union{Callable,Missing}}
     OptimizerProblem{T,typeof(F),TG,Missing}(F, G, missing)
 end
 
-function OptimizerProblem(F::Callable, x::Tx; gradient=missing, hessian=missing) where {T<:Number,Tx<:AbstractArray{T}}
+function OptimizerProblem(F::Callable, x::OptimizerSolution; gradient=missing, hessian=missing)
     ismissing(hessian) ? OptimizerProblem(F, gradient, x) : OptimizerProblem(F, gradient, hessian, x)
 end
 
@@ -63,7 +61,7 @@ function GradientFunction(::OptimizerProblem{T,TF,Missing}) where {T,TF<:Callabl
     error("There is no gradient stored in this `OptimizerProblem`!")
 end
 
-function gradient(prob::OptimizerProblem, x::AbstractVector)
+function gradient(prob::OptimizerProblem, x::OptimizerSolution)
     grad = GradientFunction(prob)
     grad(x)
 end

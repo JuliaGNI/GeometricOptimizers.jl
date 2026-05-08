@@ -31,7 +31,7 @@ true
 
 Internally this `geodesic` method calls [`geodesic(::StiefelLieAlgHorMatrix)`](@ref).
 """
-function geodesic(Y::Manifold{T}, Δ::AbstractMatrix{T}) where T
+function geodesic(Y::Manifold{T}, Δ::AbstractMatrix{T}) where {T}
     λY = GlobalSection(Y)
     B = global_rep(λY, Δ)
     E = StiefelProjection(B)
@@ -52,16 +52,16 @@ Internally this is using:
 \mathbb{I} + B'\mathfrak{A}(B', B'')B'',
 ```
 
-with 
+with
 
 ```math
 \bar{B} = \begin{bmatrix}
-    A & -B^T \\ 
+    A & -B^T \\
     B & \mathbb{O}
 \end{bmatrix} = \begin{bmatrix}  \frac{1}{2}A & \mathbb{I} \\ B & \mathbb{O} \end{bmatrix} \begin{bmatrix}  \mathbb{I} & \mathbb{O} \\ \frac{1}{2}A & -B^T  \end{bmatrix} =: B'(B'')^T.
 ```
 
-This is using a computationally efficient version of the matrix exponential ``\mathfrak{A}``. 
+This is using a computationally efficient version of the matrix exponential ``\mathfrak{A}``.
 
 See [`GeometricOptimizers.𝔄`](@ref).
 """
@@ -70,8 +70,8 @@ function geodesic(B::StiefelLieAlgHorMatrix)
     E = StiefelProjection(B)
     unit = one(B.A)
     A_mat = B.A * unit
-    B̂ = hcat(vcat(T(.5) * A_mat, B.B), E)
-    B̄ = hcat(vcat(unit, T(.5) * A_mat), vcat(zero(B.B'), -B.B'))'
+    B̂ = hcat(vcat(T(0.5) * A_mat, B.B), E)
+    B̄ = hcat(vcat(unit, T(0.5) * A_mat), vcat(zero(B.B'), -B.B'))'
     StiefelManifold(one(B) + B̂ * 𝔄(B̂, B̄) * B̄')
 end
 
@@ -101,7 +101,7 @@ cayley(B::NamedTuple) = apply_toNT(cayley, B)
 
 Take as input an element of a manifold `Y` and a tangent vector in `Δ` in the corresponding tangent space and compute the Cayley retraction.
 
-In different notation: take as input an element ``x`` of ``\mathcal{M}`` and an element of ``T_x\mathcal{M}`` and return ``\mathrm{Cayley}(v_x).`` 
+In different notation: take as input an element ``x`` of ``\mathcal{M}`` and an element of ``T_x\mathcal{M}`` and return ``\mathrm{Cayley}(v_x).``
 
 # Examples
 
@@ -121,7 +121,7 @@ true
 
 See the example in [`geodesic(::Manifold{T}, ::AbstractMatrix{T}) where T`].
 """
-function cayley(Y::Manifold{T}, Δ::AbstractMatrix{T}) where T
+function cayley(Y::Manifold{T}, Δ::AbstractMatrix{T}) where {T}
     λY = GlobalSection(Y)
     B = global_rep(λY, Δ)
     E = StiefelProjection(B)
@@ -136,7 +136,7 @@ Compute the Cayley retraction of `B`.
 
 # Implementation
 
-Internally this is using 
+Internally this is using
 
 ```math
 \mathrm{Cayley}(\bar{B}) = \mathbb{I} + \frac{1}{2} B' (\mathbb{I}_{2n} - \frac{1}{2} (B'')^T B')^{-1} (B'')^T (\mathbb{I} + \frac{1}{2} B),
@@ -144,7 +144,7 @@ Internally this is using
 with
 ```math
 \bar{B} = \begin{bmatrix}
-    A & -B^T \\ 
+    A & -B^T \\
     B & \mathbb{O}
 \end{bmatrix} = \begin{bmatrix}  \frac{1}{2}A & \mathbb{I} \\ B & \mathbb{O} \end{bmatrix} \begin{bmatrix}  \mathbb{I} & \mathbb{O} \\ \frac{1}{2}A & -B^T  \end{bmatrix} =: B'(B'')^T,
 ```
@@ -158,10 +158,10 @@ function cayley(B::StiefelLieAlgHorMatrix)
     𝕀_small2 = hcat(vcat(𝕀_small, 𝕆), vcat(𝕆, 𝕀_small))
     𝕀_big = one(B)
     A_mat = B.A * 𝕀_small
-    B̂ = hcat(vcat(T(.5) * A_mat, B.B), E)
-    B̄ = hcat(vcat(𝕀_small, T(.5) * A_mat), vcat(zero(B.B'), -B.B'))'
+    B̂ = hcat(vcat(T(0.5) * A_mat, B.B), E)
+    B̄ = hcat(vcat(𝕀_small, T(0.5) * A_mat), vcat(zero(B.B'), -B.B'))'
 
-    StiefelManifold((𝕀_big + T(.5) * B̂ * inv(𝕀_small2 - T(.5) * B̄' * B̂) * B̄') * (𝕀_big + T(.5) * B))
+    StiefelManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') * (𝕀_big + T(0.5) * B))
 end
 
 @doc raw"""
@@ -184,5 +184,12 @@ function cayley(B::GrassmannLieAlgHorMatrix)
     B̂ = hcat(vcat(𝕆, B.B), E)
     B̄ = hcat(vcat(𝕀_small, 𝕆), vcat(zero(B.B'), -B.B'))'
 
-    GrassmannManifold((𝕀_big + T(.5) * B̂ * inv(𝕀_small2 - T(.5) * B̄' * B̂) * B̄') * (𝕀_big + T(.5) * B))
+    GrassmannManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') * (𝕀_big + T(0.5) * B))
 end
+
+function retraction(::AbstractRetraction, ::AbstractArray) end
+
+retraction(::Cayley, x::AbstractArray) = cayley(x)
+retraction(::Geodesic, x::AbstractArray) = geodesic(x)
+
+(R::AbstractRetraction)(x::AbstractArray) = retraction(R, x)
