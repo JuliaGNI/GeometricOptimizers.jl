@@ -2,6 +2,9 @@
 using SimpleSolvers
 using Test
 
+import Random
+Random.seed!(123)
+
 include("optimizers_problems.jl")
 
 
