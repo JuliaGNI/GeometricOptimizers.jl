@@ -2,8 +2,8 @@
 using SimpleSolvers
 using Test
 
-using Random: seed!
-seed!(123)
+import Random
+Random.seed!(123)
 
 include("optimizers_problems.jl")
 
