@@ -1,9 +1,9 @@
 using GeometricOptimizers
 using LinearAlgebra: norm
 using Test
-using Random: seed!
+import Random
 
-seed!(123)
+Random.seed!(123)
 
 include("../grassmann_test_help.jl")
 
