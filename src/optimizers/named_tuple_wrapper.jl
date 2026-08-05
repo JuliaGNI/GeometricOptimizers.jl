@@ -3,6 +3,16 @@ function GradientAutodiff(F, nt::NamedTuple)
     GradientAutodiff(_x -> F(unflatten(_x)), v)
 end
 
+# `∇F!` is called on the flattened parameters, i.e. on `ParameterHandling.flatten(nt)[1]`.
+function GradientFunction(F, ∇F!, nt::NamedTuple)
+    v, unflatten = ParameterHandling.flatten(nt)
+    GradientFunction(_x -> F(unflatten(_x)), ∇F!, v)
+end
+
+# `ParameterHandling.flatten` defaults to `Float64`, which would silently promote e.g.
+# `Float32` parameters, so we flatten to the element type of the parameters instead.
+ParameterHandling.flatten(x::ArrayNamedTuple{T}) where {T<:AbstractFloat} = ParameterHandling.flatten(T, x)
+
 function ParameterHandling.flatten(::Type{T}, x::Manifold{R}) where {T<:AbstractFloat,R<:Real}
     v, unflatten = ParameterHandling.flatten(T, x.A)
     v, _v -> StiefelManifold(unflatten(_v))
