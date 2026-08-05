@@ -95,7 +95,10 @@ function AdamState(x::OST, g::GradientArrayOrNamedTuple{T}) where {T,OST<:Optimi
     _x = _copy(x)
     _g = _copy(g)
     gs = GlobalSection(_x)
-    AdamState{T,typeof(_x),typeof(gs),typeof(_g)}(gs, 0, _x, _similar(_x), _g, _similar(_g), _similar(_g), _similar(_g), _similar(_g), T(NaN), T(NaN))
+    # note that the moments have to be initialized with zeros (and not with `_similar`):
+    # they are read in the first call to `update!(::AdamCache, ...)` before they are
+    # written to for the first time, so uninitialized memory would be used there.
+    AdamState{T,typeof(_x),typeof(gs),typeof(_g)}(gs, 0, _x, _similar(_x), _g, _similar(_g), _zero(_g), _zero(_g), _zero(_g), T(NaN), T(NaN))
 end
 
 AdamState(x::OptimizerSolution) = AdamState(x, _zero(x))
@@ -126,17 +129,21 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     _copyto!(gradient_array(cache), global_rep(section(state), gradient(x)))
     _copyto!(solution(cache), x)
     _t = t + 1
-    fac₁₁ = β₁ / (1 - β₁^_t)
+    # the moments are stored in bias-corrected form, hence the `- β^t` in the numerators of
+    # `fac₁₁` and `fac₂₁` (see the docstring of [`Adam`](@ref)).
+    fac₁₁ = (β₁ - β₁^_t) / (1 - β₁^_t)
     fac₁₂ = (1 - β₁) / (1 - β₁^_t)
-    fac₂₁ = β₂ / (1 - β₂^_t)
+    fac₂₁ = (β₂ - β₂^_t) / (1 - β₂^_t)
     fac₂₂ = (1 - β₂) / (1 - β₂^_t)
     _copyto!(first_moment(cache), _mul(fac₁₁, first_moment(state)))
     _add!(first_moment(cache), _mul(fac₁₂, gradient_array(cache)))
     _copyto!(second_moment(cache), _mul(fac₂₁, second_moment(state)))
     _add!(second_moment(cache), _mul(fac₂₂, _square(gradient_array(cache))))
+    # `m̃₂ = √m₂ + δ`; note that the square root must not be applied to `m₂` in place, as
+    # `m₂` is stored in the state in `update!(::AdamState, ...)` afterwards.
     _copyto!(_second_moment(cache), second_moment(cache))
+    _rac!(_second_moment(cache))
     _add!(_second_moment(cache), δ)
-    _rac!(second_moment(cache))
     _copyto!(direction(cache), first_moment(cache))
     _div!(direction(cache), _second_moment(cache))
     _rmul!(direction(cache), -1)

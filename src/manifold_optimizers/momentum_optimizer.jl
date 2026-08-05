@@ -81,7 +81,9 @@ function MomentumState(x::OST, g::GradientArrayOrNamedTuple{T}) where {T,OST<:Op
     _x = _copy(x)
     _g = _copy(g)
     gs = GlobalSection(_x)
-    MomentumState{T,typeof(_x),typeof(gs),typeof(_g)}(gs, 0, _x, _similar(_x), _g, _similar(_g), _similar(_g), T(NaN), T(NaN))
+    # as for [`AdamState`](@ref), the momentum has to be initialized with zeros: it is read
+    # in the first call to `update!(::MomentumCache, ...)` before it is written to.
+    MomentumState{T,typeof(_x),typeof(gs),typeof(_g)}(gs, 0, _x, _similar(_x), _g, _similar(_g), _zero(_g), T(NaN), T(NaN))
 end
 
 MomentumState(x::OptimizerSolution) = MomentumState(x, _zero(x))
