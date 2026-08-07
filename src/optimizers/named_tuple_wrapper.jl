@@ -18,6 +18,11 @@ function ParameterHandling.flatten(::Type{T}, x::Manifold{R}) where {T<:Abstract
     v, _v -> StiefelManifold(unflatten(_v))
 end
 
+# The `flatten` methods below that dispatch on Base types (`NamedTuple`, `Tuple`, `Vector`,
+# `AbstractMatrix`/`AbstractArray{,3}`) are type piracy, and they shadow methods that
+# ParameterHandling already defines: `T<:AbstractFloat` is narrower than its `T<:Real`. The
+# methods for `Manifold`, `SkewSymMatrix` and `StiefelLieAlgHorMatrix` are fine, those types
+# are ours. See issue #16.
 function ParameterHandling.flatten(::Type{T}, x::NamedTuple) where {T<:AbstractFloat}
     x_vec, unflatten = ParameterHandling.flatten(T, values(x))
     function unflatten_to_NamedTuple(v::Vector{R}) where {R<:Real}
@@ -68,7 +73,8 @@ function ParameterHandling.flatten(::Type{T}, g::StiefelLieAlgHorMatrix{R}) wher
     return x_vec, Array_from_vec
 end
 
-# note the type piracy here!
+# Type piracy: `Gradient` is SimpleSolvers' and `ArrayNamedTuple` is an alias for Base's
+# `NamedTuple`. A wrapper `struct` would fix this locally. See issue #16.
 function (grad::Gradient{T})(nt::ArrayNamedTuple{T}) where {T}
     # unflatten not needed here
     v, unflatten = ParameterHandling.flatten(nt)
@@ -80,7 +86,9 @@ function (grad::Gradient{T})(nt::ArrayNamedTuple{T}) where {T}
     NamedTuple{keys(nt)}(vals)
 end
 
-# technically constitutes type piracy
+# This is *not* type piracy, unlike the method above: it dispatches on `OptimizerState`,
+# which is defined in this package (see `optimizers/optimizer_state.jl`), and one owned
+# argument type is enough.
 function (grad::Gradient{T})(g::ArrayNamedTuple{T}, x::ArrayNamedTuple{T}, state::OptimizerState{T}) where {T}
     _copyto!(g, global_rep(section(state), grad(x)))
 end
@@ -104,6 +112,8 @@ function _copyto!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
     apply_toNT(_copyto!, a, b)
 end
 
+# Type piracy again by way of the aliases: both `GlobalSectionNamedTuple` and
+# `ArrayNamedTuple` are `NamedTuple`. See issue #16.
 function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ArrayNamedTuple{T}) where {T}
     apply_toNT(copyto!, Λ, x)
     Λ

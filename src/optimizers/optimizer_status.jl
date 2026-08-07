@@ -89,9 +89,13 @@ end
 l2norm(a::StiefelLieAlgHorMatrix) = √(l2norm(a.A)^2 + l2norm(a.B)^2)
 
 l2norm(a::SkewSymMatrix) = l2norm(a.S)
-# type piracy!!! TODO: fix this
+# Type piracy: `l2norm` is `GeometricBase.Utils.l2norm` (SimpleSolvers only re-exports it)
+# and both argument types are Base's, so every package that loads GeometricOptimizers
+# inherits these. They should be upstreamed to GeometricBase. See issue #16.
 l2norm(a::AbstractMatrix) = l2norm(vec(a))
 l2norm(a::AbstractFloat) = norm(a)
+# Type piracy as well, but only because `ArrayNamedTuple` is an alias for `NamedTuple`; a
+# wrapper `struct` would fix this one locally. See issue #16.
 function l2norm(a::ArrayNamedTuple)
     norms = apply_toNT(l2norm, a)
     +(values(norms)...)

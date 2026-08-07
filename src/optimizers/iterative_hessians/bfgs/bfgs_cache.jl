@@ -68,7 +68,8 @@ function update!(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     cache
 end
 
-# strictly speaking this constitutes type piracy (`outer!` is imported from `SimpleSolvers`.)
+# Type piracy: `outer!` is imported from `SimpleSolvers` and `ArrayNamedTuple` is an alias
+# for Base's `NamedTuple`. See issue #16.
 function outer!(m::AbstractMatrix{T}, arr1::ArrayNamedTuple{T}, arr2::ArrayNamedTuple{T}) where {T}
     v1, _ = ParameterHandling.flatten(arr1)
     v2, _ = ParameterHandling.flatten(arr2)
