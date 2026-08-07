@@ -3,7 +3,7 @@
 
 Build an instance of `StiefelLieAlgHorMatrix` based on a skew-symmetric matrix `A` and an arbitrary matrix `B`.
 
-An element of StiefelLieAlgMatrix takes the form: 
+An element of StiefelLieAlgMatrix takes the form:
 ```math
 \begin{pmatrix}
 A & B^T \\ B & \mathbb{O}
@@ -17,26 +17,26 @@ Also see [`GrassmannLieAlgHorMatrix`](@ref).
 
 `StiefelLieAlgHorMatrix` is the *horizontal component of the Lie algebra of skew-symmetric matrices* (with respect to the canonical metric).
 
-The projection here is: ``\pi:S \to SE`` where 
+The projection here is: ``\pi:S \to SE`` where
 ```math
 E = \begin{bmatrix} \mathbb{I}_{n} \\ \mathbb{O}_{(N-n)\times{}n}  \end{bmatrix}.
 ```
 The matrix ``E`` is implemented under [`StiefelProjection`](@ref) in `GeometricOptimizers`.
 """
-mutable struct StiefelLieAlgHorMatrix{T, AT <: SkewSymMatrix{T}, ST <: AbstractMatrix{T}} <: AbstractLieAlgHorMatrix{T}
+mutable struct StiefelLieAlgHorMatrix{T,AT<:SkewSymMatrix{T},ST<:AbstractMatrix{T}} <: AbstractLieAlgHorMatrix{T}
     A::AT
     B::ST
     N::Int
-    n::Int 
+    n::Int
 
     #maybe modify this - you don't need N & n as inputs!
     function StiefelLieAlgHorMatrix(A::SkewSymMatrix{T}, B::AbstractMatrix{T}, N::Integer, n::Integer) where {T}
-        @assert n == A.n == size(B,2) 
-        @assert N == size(B,1) + n
+        @assert n == A.n == size(B, 2)
+        @assert N == size(B, 1) + n
 
-        new{T, typeof(A), typeof(B)}(A, B, N, n)
-    end 
-end 
+        new{T,typeof(A),typeof(B)}(A, B, N, n)
+    end
+end
 
 @doc raw"""
     StiefelLieAlgHorMatrix(D::AbstractMatrix, n::Integer)
@@ -47,15 +47,15 @@ The integer ``N`` in ``St(n, N)`` is the number of rows of `D`.
 
 # Extended help
 
-If the constructor is called with a big ``N\times{}N`` matrix, then the projection is performed the following way: 
+If the constructor is called with a big ``N\times{}N`` matrix, then the projection is performed the following way:
 
 ```math
 \begin{pmatrix}
 A & B_1  \\
 B_2 & D
-\end{pmatrix} \mapsto 
+\end{pmatrix} \mapsto
 \begin{pmatrix}
-\mathrm{skew}(A) & -B_2^T \\ 
+\mathrm{skew}(A) & -B_2^T \\
 B_2 & \mathbb{O}
 \end{pmatrix}.
 ```
@@ -71,10 +71,10 @@ Also see [`GeometricOptimizers.Ω`](@ref).
 """
 function StiefelLieAlgHorMatrix(D::AbstractMatrix, n::Integer)
     N = size(D, 1)
-    @assert N ≥ n 
+    @assert N ≥ n
 
-    @views A_small = SkewSymMatrix(D[1:n,1:n])
-    @views B = D[(n + 1):N, 1:n]
+    @views A_small = SkewSymMatrix(D[1:n, 1:n])
+    @views B = D[(n+1):N, 1:n]
     StiefelLieAlgHorMatrix(A_small, B, N, n)
 end
 
@@ -83,40 +83,40 @@ Base.size(A::StiefelLieAlgHorMatrix) = (A.N, A.N)
 
 function Base.getindex(A::StiefelLieAlgHorMatrix{T}, i, j) where {T}
     if i ≤ A.n
-        if j ≤ A.n 
+        if j ≤ A.n
             return A.A[i, j]
         end
-        return -A.B[j - A.n, i]
+        return -A.B[j-A.n, i]
     end
-    if j ≤ A.n 
-        return A.B[i - A.n, j]
+    if j ≤ A.n
+        return A.B[i-A.n, j]
     end
-    return T(0.)
+    return T(0.0)
 end
 
 function Base.:+(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    @assert A.N == B.N 
-    @assert A.n == B.n 
-    StiefelLieAlgHorMatrix( A.A + B.A, 
-                            A.B + B.B, 
-                            A.N,
-                            A.n)
+    @assert A.N == B.N
+    @assert A.n == B.n
+    StiefelLieAlgHorMatrix(A.A + B.A,
+        A.B + B.B,
+        A.N,
+        A.n)
 end
 
 function Base.:-(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    @assert A.N == B.N 
-    @assert A.n == B.n 
-    StiefelLieAlgHorMatrix( A.A - B.A, 
-                            A.B - B.B, 
-                            A.N,
-                            A.n)
+    @assert A.N == B.N
+    @assert A.n == B.n
+    StiefelLieAlgHorMatrix(A.A - B.A,
+        A.B - B.B,
+        A.N,
+        A.n)
 end
 
 function add!(C::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
     @assert A.N == B.N == C.N
-    @assert A.n == B.n == C.n 
-    add!(C.A, A.A, B.A) 
-    add!(C.B, A.B, B.B)  
+    @assert A.n == B.n == C.n
+    add!(C.A, A.A, B.A)
+    add!(C.B, A.B, B.B)
 end
 
 
@@ -125,7 +125,7 @@ function Base.:-(A::StiefelLieAlgHorMatrix)
 end
 
 function Base.:*(A::StiefelLieAlgHorMatrix, α::Real)
-    StiefelLieAlgHorMatrix( α*A.A, α*A.B, A.N, A.n)
+    StiefelLieAlgHorMatrix(α * A.A, α * A.B, A.N, A.n)
 end
 
 function Base.:+(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
@@ -135,61 +135,68 @@ function Base.:+(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
     @views C[1:B.n, 1:B.n] .= B.A + A[1:B.n, 1:B.n]
     @views C[(B.n+1):B.N, 1:B.n] .= B.B + A[(B.n+1):B.N, 1:B.n]
     @views C[1:B.n, (B.n+1):B.N] .= A[1:B.n, (B.n+1):B.N] - B.B'
-    
+
     C
 end
 
 Base.:+(A::AbstractMatrix, B::StiefelLieAlgHorMatrix) = B + A
 
+function _add!(A::StiefelLieAlgHorMatrix{T}, B::StiefelLieAlgHorMatrix{T}) where {T}
+    _add!(A.A, B.A)
+    _add!(A.B, B.B)
+
+    A
+end
+
 Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
 
-function Base.zeros(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T
+function Base.zeros(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     StiefelLieAlgHorMatrix(
         zeros(SkewSymMatrix{T}, n),
-        zeros(T, N-n, n),
-        N, 
+        zeros(T, N - n, n),
+        N,
         n
     )
 end
-    
+
 function Base.zeros(::Type{StiefelLieAlgHorMatrix}, N::Integer, n::Integer)
     StiefelLieAlgHorMatrix(
         zeros(SkewSymMatrix, n),
-        zeros(N-n, n),
-        N, 
+        zeros(N - n, n),
+        N,
         n
     )
 end
 
-function Base.zeros(backend::KernelAbstractions.Backend, ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T 
-	StiefelLieAlgHorMatrix(
-			        zeros(backend, SkewSymMatrix{T}, n),
-                    KernelAbstractions.zeros(backend, T, N-n, n), N, n)
+function Base.zeros(backend::KernelAbstractions.Backend, ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    StiefelLieAlgHorMatrix(
+        zeros(backend, SkewSymMatrix{T}, n),
+        KernelAbstractions.zeros(backend, T, N - n, n), N, n)
 end
 
 
-Base.similar(A::StiefelLieAlgHorMatrix, dims::Union{Integer, AbstractUnitRange}...) = zeros(StiefelLieAlgHorMatrix{eltype(A)}, dims...)
+Base.similar(A::StiefelLieAlgHorMatrix, dims::Union{Integer,AbstractUnitRange}...) = zeros(StiefelLieAlgHorMatrix{eltype(A)}, dims...)
 Base.similar(A::StiefelLieAlgHorMatrix) = zeros(StiefelLieAlgHorMatrix{eltype(A)}, A.N, A.n)
 
-function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend, ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T 
-    B = KernelAbstractions.allocate(backend, T, N-n, n)
+function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend, ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    B = KernelAbstractions.allocate(backend, T, N - n, n)
     rand!(rng, B)
     StiefelLieAlgHorMatrix(rand(rng, backend, SkewSymMatrix{T}, n), B, N, n)
 end
 
-function Base.rand(backend::KernelAbstractions.Backend, type::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T 
+function Base.rand(backend::KernelAbstractions.Backend, type::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     rand(Random.default_rng(), backend, type, N, n)
 end
 
-function Base.rand(rng::Random.AbstractRNG, ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T
-    StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix{T}, n), rand(rng, T, N-n, n), N, n)
+function Base.rand(rng::Random.AbstractRNG, ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix{T}, n), rand(rng, T, N - n, n), N, n)
 end
 
 function Base.rand(rng::Random.AbstractRNG, ::Type{StiefelLieAlgHorMatrix}, N::Integer, n::Integer)
-    StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix, n), rand(rng, N-n, n), N, n)
+    StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix, n), rand(rng, N - n, n), N, n)
 end
 
-function Base.rand(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T
+function Base.rand(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     rand(Random.default_rng(), StiefelLieAlgHorMatrix{T}, N, n)
 end
 
@@ -203,14 +210,14 @@ end
 
 #define these functions more generally! (maybe make a fallback script!!)
 function ⊙²(A::StiefelLieAlgHorMatrix)
-    StiefelLieAlgHorMatrix(⊙²(A.A), A.B.^2, A.N, A.n)
+    StiefelLieAlgHorMatrix(⊙²(A.A), A.B .^ 2, A.N, A.n)
 end
 function racᵉˡᵉ(A::StiefelLieAlgHorMatrix)
     StiefelLieAlgHorMatrix(racᵉˡᵉ(A.A), sqrt.(A.B), A.N, A.n)
 end
 function /ᵉˡᵉ(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    StiefelLieAlgHorMatrix(/ᵉˡᵉ(A.A, B.A), A.B./B.B, A.N, A.n)
-end 
+    StiefelLieAlgHorMatrix(/ᵉˡᵉ(A.A, B.A), A.B ./ B.B, A.N, A.n)
+end
 
 function LinearAlgebra.mul!(C::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix, α::Real)
     mul!(C.A, A.A, α)
@@ -222,7 +229,7 @@ LinearAlgebra.rmul!(C::StiefelLieAlgHorMatrix, α::Real) = mul!(C, C, α)
 @doc raw"""
     vec(A::StiefelLieAlgHorMatrix)
 
-Vectorize `A`. 
+Vectorize `A`.
 
 # Examples
 
@@ -252,14 +259,14 @@ end
 
 function StiefelLieAlgHorMatrix(V::AbstractVector, N::Int, n::Int)
     # length of skew-symmetric matrix
-    skew_sym_size = n*(n-1)÷2
-    # size of matrix component 
-    matrix_size = (N-n)*n
+    skew_sym_size = n * (n - 1) ÷ 2
+    # size of matrix component
+    matrix_size = (N - n) * n
     @assert length(V) == skew_sym_size + matrix_size
     StiefelLieAlgHorMatrix(
         SkewSymMatrix(@view(V[1:skew_sym_size]), n),
-        reshape(@view(V[(skew_sym_size+1):(skew_sym_size+matrix_size)]), (N-n), n),
-        N, 
+        reshape(@view(V[(skew_sym_size+1):(skew_sym_size+matrix_size)]), (N - n), n),
+        N,
         n
     )
 end
@@ -277,11 +284,11 @@ function KernelAbstractions.get_backend(B::StiefelLieAlgHorMatrix)
     KernelAbstractions.get_backend(B.B)
 end
 
-# assign funciton; also implement this for other arrays! 
-function assign!(B::StiefelLieAlgHorMatrix{T}, C::StiefelLieAlgHorMatrix{T}) where T 
+# assign funciton; also implement this for other arrays!
+function assign!(B::StiefelLieAlgHorMatrix{T}, C::StiefelLieAlgHorMatrix{T}) where {T}
     assign!(B.A, C.A)
     assign!(B.B, C.B)
-    
+
     nothing
 end
 
@@ -296,16 +303,16 @@ end
 
 # fallback -> put this somewhere else!
 function assign!(A::AbstractArray, B::AbstractArray)
-    A .= B 
+    A .= B
 
     nothing
 end
 
-function Base.one(B::StiefelLieAlgHorMatrix{T}) where T
+function Base.one(B::StiefelLieAlgHorMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(B)
     oneB = KernelAbstractions.zeros(backend, T, B.N, B.N)
     write_ones! = write_ones_kernel!(backend)
-    write_ones!(oneB; ndrange = B.N)
+    write_ones!(oneB; ndrange=B.N)
 
     oneB
 end
@@ -318,3 +325,11 @@ function _round(B::StiefelLieAlgHorMatrix; kwargs...)
         B.n
     )
 end
+
+function Base.copyto!(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
+    copyto!(A.A, B.A)
+    copyto!(A.B, B.B)
+    A
+end
+
+Base.fill!(A::StiefelLieAlgHorMatrix, val) = (fill!(A.A, val); fill!(A.B, val); A)

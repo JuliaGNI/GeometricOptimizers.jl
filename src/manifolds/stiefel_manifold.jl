@@ -1,31 +1,31 @@
 @doc raw"""
     StiefelManifold <: Manifold
 
-An implementation of the Stiefel manifold [hairer2006geometric](@cite). The Stiefel manifold is the collection of all matrices ``Y\in\mathbb{R}^{N\times{}n}`` whose columns are orthonormal, i.e. 
+An implementation of the Stiefel manifold [hairer2006geometric](@cite). The Stiefel manifold is the collection of all matrices ``Y\in\mathbb{R}^{N\times{}n}`` whose columns are orthonormal, i.e.
 
 ```math
     St(n, N) = \{Y: Y^TY = \mathbb{I}_n \}.
 ```
 
-The Stiefel manifold can be shown to have manifold structure (as the name suggests) and this is heavily used in `GeometricOptimizers`. It is further a compact space. 
+The Stiefel manifold can be shown to have manifold structure (as the name suggests) and this is heavily used in `GeometricOptimizers`. It is further a compact space.
 More information can be found in the docstrings for [`rgrad(::StiefelManifold, ::AbstractMatrix)`](@ref) and [`metric(::StiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref).
 """
-mutable struct StiefelManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
+mutable struct StiefelManifold{T,AT<:AbstractMatrix{T}} <: Manifold{T}
     A::AT
 end
 
-Base.:*(Y::StiefelManifold, B::AbstractMatrix) = Y.A*B
-Base.:*(B::AbstractMatrix, Y::StiefelManifold) = B*Y.A
+Base.:*(Y::StiefelManifold, B::AbstractMatrix) = Y.A * B
+Base.:*(B::AbstractMatrix, Y::StiefelManifold) = B * Y.A
 
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where {T, AT<:AbstractMatrix{T}}
-    Y.parent.A'*B 
+function Base.:*(Y::Adjoint{T,StiefelManifold{T,AT}}, B::AbstractMatrix) where {T,AT<:AbstractMatrix{T}}
+    Y.parent.A' * B
 end
 
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::StiefelManifold{T, AT}) where {T, AT<:AbstractMatrix{T}}
-    Y.parent.A' * B.A 
+function Base.:*(Y::Adjoint{T,StiefelManifold{T,AT}}, B::StiefelManifold{T,AT}) where {T,AT<:AbstractMatrix{T}}
+    Y.parent.A' * B.A
 end
 
-function Base.:*(Y::Adjoint{T, ST}, B::ST) where {T, AT<:AbstractMatrix{T}, ST<:StiefelManifold{T, AT}}
+function Base.:*(Y::Adjoint{T,ST}, B::ST) where {T,AT<:AbstractMatrix{T},ST<:StiefelManifold{T,AT}}
     Y.parent.A' * B.A
 end
 
@@ -33,13 +33,13 @@ end
     rgrad(Y::StiefelManifold, ∇L::AbstractMatrix)
 
 Compute the Riemannian gradient for the Stiefel manifold at `Y` based on `∇L`.
-    
-Here ``Y\in{}St(N,n)`` and ``\nabla{}L\in\mathbb{R}^{N\times{}n}`` is the Euclidean gradient. 
-    
+
+Here ``Y\in{}St(N,n)`` and ``\nabla{}L\in\mathbb{R}^{N\times{}n}`` is the Euclidean gradient.
+
 The function computes the Riemannian gradient with respect to the canonical metric:
 [`metric(::StiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref).
 
-The precise form of the mapping is: 
+The precise form of the mapping is:
 ```math
 \mathtt{rgrad}(Y, \nabla{}L) \mapsto \nabla{}L - Y(\nabla{}L)^TY
 ```
@@ -74,16 +74,16 @@ end
 Compute the dot product for `Δ₁` and `Δ₂` at `Y`.
 
 This uses the canonical Riemannian metric for the Stiefel manifold:
-```math 
+```math
 g_Y: (\Delta_1, \Delta_2) \mapsto \mathrm{Tr}(\Delta_1^T(\mathbb{I} - \frac{1}{2}YY^T)\Delta_2).
 ```
 """
 function metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
-    LinearAlgebra.tr(Δ₁'*(I - .5*Y.A*Y.A')*Δ₂)
+    LinearAlgebra.tr(Δ₁' * (I - 0.5 * Y.A * Y.A') * Δ₂)
 end
 
 function check(Y::StiefelManifold)
-    norm(Y.A'*Y.A - I)
+    norm(Y.A' * Y.A - I)
 end
 
 @doc raw"""
@@ -119,7 +119,7 @@ Further note that we convert the `QRCompactWYQ` object to a `Matrix` before we d
 
 # Implementation
 
-The implementation is done with a QR decomposition (`LinearAlgebra.qr!`). Internally we do: 
+The implementation is done with a QR decomposition (`LinearAlgebra.qr!`). Internally we do:
 
 ```julia
 A = randn(N, N - n) # or the gpu equivalent
@@ -127,10 +127,10 @@ A = A - Y.A * (Y.A' * A)
 qr!(A).Q
 ```
 """
-function global_section(Y::StiefelManifold{T}) where T
+function global_section(Y::StiefelManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y)
-    A = KernelAbstractions.allocate(backend, T, N, N-n)
+    A = KernelAbstractions.allocate(backend, T, N, N - n)
     randn!(A)
     A = A - Y.A * (Y.A' * A)
     typeof(Y.A)(qr!(A).Q)
@@ -139,4 +139,18 @@ end
 function Base.copyto!(A::StiefelManifold, B::StiefelManifold)
     A.A .= B.A
     nothing
+end
+
+Base.copy(A::StiefelManifold) = StiefelManifold(copy(A.A))
+
+function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::Integer) where {T,AT<:AbstractMatrix{T},MT<:StiefelManifold{T,AT}}
+    @assert N ≥ n
+    A = randn(rng, T, N, n)
+    MT(assign_columns(typeof(A)(qr!(A).Q), N, n))
+end
+
+function Base.zero(Y::StiefelManifold{T}) where {T}
+    N, n = size(Y)
+    backend = KernelAbstractions.get_backend(Y.A)
+    zeros(backend, StiefelLieAlgHorMatrix{T}, N, n)
 end
