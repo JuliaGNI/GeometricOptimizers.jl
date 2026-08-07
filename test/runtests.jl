@@ -47,3 +47,6 @@ end
 begin
     @safetestset "Optimizer State Init         " include("optimizer_state_initialization.jl")
 end
+begin
+    @safetestset "NamedTuple Parameters        " include("named_tuple_parameters.jl")
+end
