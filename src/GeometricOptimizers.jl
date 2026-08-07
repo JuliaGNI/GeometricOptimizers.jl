@@ -3,13 +3,13 @@ module GeometricOptimizers
 using Base: Callable
 using GeometricBase: AbstractProblem, SolverMethod, AbstractSolver
 using SimpleSolvers: Options
-using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem, alloc_h, LU
-using SimpleSolvers: compute_new_iterate!, outer!
+using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem, LU
+import SimpleSolvers: outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_mindec, g_restol
-using SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
+import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
 using SimpleSolvers: HessianAutodiff, HessianFunction
 
-import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff
+import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff, alloc_h
 export GradientAutodiff, GradientFunction, GradientFiniteDifferences
 
 using SimpleSolvers: Backtracking, Quadratic, BierlaireQuadratic, Bisection
@@ -17,7 +17,7 @@ export Backtracking, Quadratic, BierlaireQuadratic, Bisection
 
 export Options
 
-import SimpleSolvers: update!, direction, linesearch_problem
+import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache, l2norm
 export update!
 
 using Printf
@@ -31,7 +31,7 @@ using ChainRulesCore: ProjectTo
 # we use the Vcat function from LazyArrays
 import LazyArrays
 
-include("utils.jl")
+import ParameterHandling, ForwardDiff
 
 export Manifold, StiefelManifold, GrassmannManifold
 export rgrad
@@ -61,29 +61,7 @@ include("retractions/modified_exponential.jl")
 include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")
 
-# optimizer methods I
-include("optimizers/optimizer_method.jl")
-
-# optimizer caches
-include("optimizers/optimizer_caches.jl")
-include("optimizers/bfgs_cache.jl")
-
-# optimizer
-export Optimizer
-include("optimizers/optimizer.jl")
-
-# optimizer methods II
-include("optimizers/gradient_optimizer.jl")
-include("optimizers/momentum_optimizer.jl")
-include("optimizers/adam_optimizer.jl")
-include("optimizers/adam_optimizer_with_decay.jl")
-include("optimizers/bfgs_optimizer.jl")
-
-include("optimizers/init_optimizer_cache.jl")
-
-include("euclidean_optimizers/optimizer_problems.jl")
-
-export EuclideanOptimizer,
+export Optimizer,
     OptimizerProblem,
     OptimizerState, isaOptimizerState,
     NewtonOptimizerState,
@@ -97,26 +75,43 @@ export EuclideanOptimizer,
 import SimpleSolvers: solve!, solve
 export solve!, solve, value, gradient, Newton
 
-include("euclidean_optimizers/optimizer_methods.jl")
+include("optimizer_solution.jl")
+include("optimizers/optimizer_problems.jl")
+include("optimizers/optimizer_methods.jl")
 
-include("euclidean_optimizers/optimizer_state.jl")
-include("euclidean_optimizers/optimizer_cache.jl")
-include("euclidean_optimizers/optimizer_status.jl")
-include("euclidean_optimizers/optimizer_result.jl")
-include("euclidean_optimizers/iterative_hessians/iterative_hessians.jl")
-include("euclidean_optimizers/iterative_hessians/bfgs/hessian_bfgs.jl")
-include("euclidean_optimizers/iterative_hessians/dfp/hessian_dfp.jl")
-include("euclidean_optimizers/newton_optimizer/newton_optimizer_cache.jl")
-include("euclidean_optimizers/newton_optimizer/newton_optimizer_state.jl")
-include("euclidean_optimizers/linesearch_problem.jl")
+include("optimizers/optimizer_state.jl")
+include("optimizers/optimizer_cache.jl")
+include("optimizers/optimizer_status.jl")
+include("optimizers/optimizer_result.jl")
+include("optimizers/iterative_hessians/iterative_hessians.jl")
+include("optimizers/iterative_hessians/bfgs/hessian_bfgs.jl")
+include("optimizers/iterative_hessians/dfp/hessian_dfp.jl")
+include("optimizers/newton_optimizer/newton_optimizer_cache.jl")
+include("optimizers/newton_optimizer/newton_optimizer_state.jl")
 
-include("euclidean_optimizers/iterative_hessians/bfgs/bfgs_state.jl")
-include("euclidean_optimizers/iterative_hessians/dfp/dfp_state.jl")
+include("optimizers/linesearch_problem.jl")
 
-include("euclidean_optimizers/iterative_hessians/bfgs/bfgs_cache.jl")
-include("euclidean_optimizers/iterative_hessians/dfp/dfp_cache.jl")
+include("optimizers/iterative_hessians/bfgs/bfgs_state.jl")
+include("optimizers/iterative_hessians/dfp/dfp_state.jl")
 
-include("euclidean_optimizers/optimizer.jl")
+include("optimizers/iterative_hessians/bfgs/bfgs_cache.jl")
+include("optimizers/iterative_hessians/dfp/dfp_cache.jl")
 
+# OptimizerSolution is defined in here for example. This should probably be moved to a separate file.
+include("utils.jl")
+
+include("optimizers/optimizer.jl")
+include("optimizers/iterative_hessians/iterative_hessians_direction.jl")
+include("optimizers/newton_optimizer/newton_optimizer_direction.jl")
+
+include("optimizers/named_tuple_wrapper.jl")
+
+export GradientMethod, GradientState
+export MomentumMethod, MomentumState
+export Adam, AdamState
+
+include("manifold_optimizers/gradient_optimizer.jl")
+include("manifold_optimizers/momentum_optimizer.jl")
+include("manifold_optimizers/adam_optimizer.jl")
 
 end
