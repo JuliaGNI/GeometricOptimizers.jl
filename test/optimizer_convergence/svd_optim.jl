@@ -33,22 +33,37 @@ error(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
 const MANIFOLD_TOLERANCE = 1e-12
 
 # How close each algorithm gets to the best rank-`n` approximation, as a relative error, after
-# `1500` iterations with `Static(0.01)` and seed `1234`. Measured on Julia 1.13:
+# `1000` iterations with `Static(0.01)` and seed `1234`. Measured on Julia 1.13:
 #
 #                  Geodesic   Cayley
-#     GradientMethod  1.5e-3   1.5e-3
-#     MomentumMethod  1.0e-2   9.8e-3
-#     Adam            1.1e-5   5.0e-5
+#     GradientMethod  1.0e-2   9.8e-3
+#     MomentumMethod  1.9e-2   1.7e-2
+#     Adam            1.1e-5   3.5e-5
 #
-# The tolerances below leave a factor of two on top of those.
+# The tolerances below leave roughly a factor of two on top of those.
 #
 # This test used to apply a single blanket tolerance of `1e-1` to all three algorithms, which
 # is how the two `Adam` bugs (uninitialised moments and the wrong bias-correction factors)
-# survived: with them present `Adam` reached only `1.1e-3` (Geodesic) and `1.7e-3` (Cayley),
-# i.e. it was the *worst* of the three rather than the best by two orders of magnitude, and
-# `1e-1` accepted that without complaint. The tolerance for `Adam` is an order of magnitude
-# below the error of the buggy version, so that regression now fails here.
-const RELATIVE_ERROR_TOLERANCE = (gradient=3e-3, momentum=2e-2, adam=1e-4)
+# survived: with them present `Adam` reached only `2.2e-4` (Geodesic) and `3.5e-3` (Cayley) at
+# these 1000 steps, i.e. it was the *worst* of the three rather than the best by two orders of
+# magnitude, and `1e-1` accepted that without complaint. The tolerance for `Adam` is what
+# closes that hole, and it is the only one of the three that guards a known bug.
+#
+# On the review comment "it shouldn't be necessary to increase the iteration number": correct,
+# and it is back to `main`'s 1000. An intermediate version of this branch ran 1500 steps, but
+# that was never a property of the unified interface — it was only needed to satisfy a
+# `gradient` tolerance of `3e-3`, which 1000 steps does not reach. Measured from an identical
+# starting point (seed `1234`, Geodesic), the unified interface and the old `optimization_step!`
+# code agree to every digit printed:
+#
+#                       old            new
+#     1000 steps   0.0101613780334933   0.0101613780334933
+#     1500 steps   0.00151325729788261  0.00151325729788277
+#
+# So there is no per-step convergence regression to paper over here; `Static(0.01)` interacts
+# with the retraction exactly as it used to. `MomentumMethod` is the one genuine discrepancy
+# and it is *not* fixed by more iterations — see issue #18.
+const RELATIVE_ERROR_TOLERANCE = (gradient=2e-2, momentum=4e-2, adam=1e-4)
 
 """
     svd_test(n; retraction)
@@ -56,7 +71,7 @@ const RELATIVE_ERROR_TOLERANCE = (gradient=3e-3, momentum=2e-2, adam=1e-4)
 Approximate the best rank-`n` approximation of `A` with all three algorithms and compare the
 result against the one that `LinearAlgebra.svd` gives.
 """
-function svd_test(n, train_steps=1500; retraction=Cayley())
+function svd_test(n, train_steps=1000; retraction=Cayley())
     N = size(A, 1)
     U, Σ, Vt = svd(A)
     U_result = U[:, 1:n]
