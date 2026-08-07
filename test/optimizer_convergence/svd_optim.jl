@@ -28,7 +28,35 @@ A = [0.06476993260924702 0.8369280855305259 0.6245358125914054 0.140729967064923
 
 error(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
 
-function svd_test(n, train_steps=1500, tol=1e-1; retraction=Cayley())
+# Both iterates stay on the Stiefel manifold, so this is a round-off tolerance and nothing
+# else; the values actually observed are of the order of `1e-14`.
+const MANIFOLD_TOLERANCE = 1e-12
+
+# How close each algorithm gets to the best rank-`n` approximation, as a relative error, after
+# `1500` iterations with `Static(0.01)` and seed `1234`. Measured on Julia 1.13:
+#
+#                  Geodesic   Cayley
+#     GradientMethod  1.5e-3   1.5e-3
+#     MomentumMethod  1.0e-2   9.8e-3
+#     Adam            1.1e-5   5.0e-5
+#
+# The tolerances below leave a factor of two on top of those.
+#
+# This test used to apply a single blanket tolerance of `1e-1` to all three algorithms, which
+# is how the two `Adam` bugs (uninitialised moments and the wrong bias-correction factors)
+# survived: with them present `Adam` reached only `1.1e-3` (Geodesic) and `1.7e-3` (Cayley),
+# i.e. it was the *worst* of the three rather than the best by two orders of magnitude, and
+# `1e-1` accepted that without complaint. The tolerance for `Adam` is an order of magnitude
+# below the error of the buggy version, so that regression now fails here.
+const RELATIVE_ERROR_TOLERANCE = (gradient=3e-3, momentum=2e-2, adam=1e-4)
+
+"""
+    svd_test(n; retraction)
+
+Approximate the best rank-`n` approximation of `A` with all three algorithms and compare the
+result against the one that `LinearAlgebra.svd` gives.
+"""
+function svd_test(n, train_steps=1500; retraction=Cayley())
     N = size(A, 1)
     U, Σ, Vt = svd(A)
     U_result = U[:, 1:n]
@@ -36,37 +64,27 @@ function svd_test(n, train_steps=1500, tol=1e-1; retraction=Cayley())
     err_best = norm(A - U_result * U_result' * A)
     ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
 
-    o₁ = Optimizer(ps, error; retraction=retraction, algorithm=GradientMethod(), linesearch=Static(0.01), max_iterations=train_steps)
-    o₂ = Optimizer(ps, error; retraction=retraction, algorithm=MomentumMethod(), linesearch=Static(0.01), max_iterations=train_steps)
-    o₃ = Optimizer(ps, error; retraction=retraction, algorithm=GeometricOptimizers.Adam(0.01), linesearch=Static(0.01), max_iterations=train_steps)
+    algorithms = (gradient=GradientMethod(), momentum=MomentumMethod(), adam=GeometricOptimizers.Adam(0.01))
 
-    ps_copy₁ = deepcopy(ps)
-    state₁ = OptimizerState(GradientMethod(), ps_copy₁)
-    solve!(ps_copy₁, state₁, o₁)
-    err₁ = error(ps_copy₁)
-    U₁, Ũ₁ = values(ps_copy₁)
+    relative_errors = map(algorithms) do algorithm
+        optimizer = Optimizer(ps, error; retraction=retraction, algorithm=algorithm,
+            linesearch=Static(0.01), max_iterations=train_steps)
+        ps_copy = deepcopy(ps)
+        solve!(ps_copy, OptimizerState(algorithm, ps_copy), optimizer)
 
-    ps_copy₂ = deepcopy(ps)
-    state₂ = OptimizerState(MomentumMethod(), ps_copy₂)
-    solve!(ps_copy₂, state₂, o₂)
-    err₂ = error(ps_copy₂)
-    U₂, Ũ₂ = values(ps_copy₂)
+        for Y in values(ps_copy)
+            @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
+        end
+        norm((error(ps_copy) - err_best) / err_best)
+    end
 
-    ps_copy₃ = deepcopy(ps)
-    state₃ = OptimizerState(Adam(), ps_copy₃)
-    solve!(ps_copy₃, state₃, o₃)
-    err₃ = error(ps_copy₃)
-    U₃, Ũ₃ = values(ps_copy₃)
+    for name in keys(algorithms)
+        @test relative_errors[name] < RELATIVE_ERROR_TOLERANCE[name]
+    end
 
-    @test GeometricOptimizers.check(U₁) < tol
-    @test GeometricOptimizers.check(Ũ₁) < tol
-    @test norm((err₁ - err_best) / err_best) < tol
-    @test GeometricOptimizers.check(U₂) < tol
-    @test GeometricOptimizers.check(Ũ₂) < tol
-    @test norm((err₂ - err_best) / err_best) < tol
-    @test GeometricOptimizers.check(U₃) < tol
-    @test GeometricOptimizers.check(Ũ₃) < tol
-    @test norm((err₃ - err_best) / err_best) < tol
+    # The ordering is the part of this that does not depend on the exact starting point:
+    # bias-corrected `Adam` beats plain gradient descent on this problem by a wide margin.
+    @test relative_errors.adam < relative_errors.gradient / 10
 end
 
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
