@@ -128,13 +128,20 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     _copyto!(section(cache), section(state))
     _copyto!(gradient_array(cache), global_rep(section(state), gradient(x)))
     _copyto!(solution(cache), x)
-    _t = t + 1
+    # `t` is the iteration number and is counted from one: `solve!` calls
+    # `increase_iteration_number!` *before* `solver_step!`, so `t = state.iterations` is already
+    # the number of the step that is being taken here. It used to be incremented a second time
+    # (`_t = t + 1`), which made the very first direction `0.7425⋅sign(∇L)` instead of the
+    # `sign(∇L)` that the bias correction is supposed to produce. Note that the correction is
+    # undefined for `t = 0` (`1 - β^0 = 0`), so a call sequence that forgets to increment fails
+    # here rather than quietly producing `NaN`s.
+    @assert t ≥ 1 "the bias-corrected Adam moments are undefined before the first iteration (t = $(t)); `increase_iteration_number!` has to be called before the step"
     # the moments are stored in bias-corrected form, hence the `- β^t` in the numerators of
     # `fac₁₁` and `fac₂₁` (see the docstring of [`Adam`](@ref)).
-    fac₁₁ = (β₁ - β₁^_t) / (1 - β₁^_t)
-    fac₁₂ = (1 - β₁) / (1 - β₁^_t)
-    fac₂₁ = (β₂ - β₂^_t) / (1 - β₂^_t)
-    fac₂₂ = (1 - β₂) / (1 - β₂^_t)
+    fac₁₁ = (β₁ - β₁^t) / (1 - β₁^t)
+    fac₁₂ = (1 - β₁) / (1 - β₁^t)
+    fac₂₁ = (β₂ - β₂^t) / (1 - β₂^t)
+    fac₂₂ = (1 - β₂) / (1 - β₂^t)
     _copyto!(first_moment(cache), _mul(fac₁₁, first_moment(state)))
     _add!(first_moment(cache), _mul(fac₁₂, gradient_array(cache)))
     _copyto!(second_moment(cache), _mul(fac₂₁, second_moment(state)))
@@ -144,6 +151,8 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     _copyto!(_second_moment(cache), second_moment(cache))
     _rac!(_second_moment(cache))
     _add!(_second_moment(cache), δ)
+    # the direction is `-m₁/(√m₂ + δ)`, which is *not* scaled by a learning rate: that is the
+    # line search's `α` (see [`default_linesearch`](@ref)).
     _copyto!(direction(cache), first_moment(cache))
     _div!(direction(cache), _second_moment(cache))
     _rmul!(direction(cache), -1)

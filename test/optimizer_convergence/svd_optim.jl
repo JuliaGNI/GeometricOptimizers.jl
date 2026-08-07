@@ -37,10 +37,16 @@ const MANIFOLD_TOLERANCE = 1e-12
 #
 #                  Geodesic   Cayley
 #     GradientMethod  1.0e-2   9.8e-3
-#     MomentumMethod  1.9e-2   1.7e-2
-#     Adam            1.1e-5   3.5e-5
+#     MomentumMethod  9.7e-3   9.3e-3
+#     Adam            3.1e-5   2.3e-5
 #
-# The tolerances below leave roughly a factor of two on top of those.
+# The tolerances below leave roughly a factor of two on top of those (a factor of three for
+# `Adam`).
+#
+# `MomentumMethod` used to land at `1.9e-2` / `1.7e-2` here, i.e. *worse* than plain gradient
+# descent, which is what issue #18 was about: it accumulated `p ← p + α∇L` and thereby kept
+# pushing after `∇L → 0`. With the classic `p ← αp + ∇L` it is slightly better than gradient
+# descent, as momentum should be.
 #
 # This test used to apply a single blanket tolerance of `1e-1` to all three algorithms, which
 # is how the two `Adam` bugs (uninitialised moments and the wrong bias-correction factors)
@@ -61,9 +67,8 @@ const MANIFOLD_TOLERANCE = 1e-12
 #     1500 steps   0.00151325729788261  0.00151325729788277
 #
 # So there is no per-step convergence regression to paper over here; `Static(0.01)` interacts
-# with the retraction exactly as it used to. `MomentumMethod` is the one genuine discrepancy
-# and it is *not* fixed by more iterations — see issue #18.
-const RELATIVE_ERROR_TOLERANCE = (gradient=2e-2, momentum=4e-2, adam=1e-4)
+# with the retraction exactly as it used to.
+const RELATIVE_ERROR_TOLERANCE = (gradient=2e-2, momentum=2e-2, adam=1e-4)
 
 """
     svd_test(n; retraction)
@@ -79,7 +84,7 @@ function svd_test(n, train_steps=1000; retraction=Cayley())
     err_best = norm(A - U_result * U_result' * A)
     ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
 
-    algorithms = (gradient=GradientMethod(), momentum=MomentumMethod(), adam=GeometricOptimizers.Adam(0.01))
+    algorithms = (gradient=GradientMethod(), momentum=MomentumMethod(), adam=GeometricOptimizers.Adam())
 
     relative_errors = map(algorithms) do algorithm
         optimizer = Optimizer(ps, error; retraction=retraction, algorithm=algorithm,

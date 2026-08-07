@@ -80,20 +80,29 @@ end
 #
 # The stateful algorithms take looser tolerances than `GradientMethod` above, on both counts.
 # They carry state across steps, so they accumulate more round-off: the deviation from the
-# manifold peaks at ~14 * eps(T) rather than the <= eps(T) that `GradientMethod` achieves. And
-# after the same number of steps `Adam` in particular is still an order of magnitude further
-# from the minimizer (worst case observed is ~1.7e-3, for `Float32` with `Cayley`).
+# manifold peaks at ~17 * eps(T) rather than the <= eps(T) that `GradientMethod` achieves.
 stateful_manifold_tolerance(::Type{T}) where {T} = 100 * eps(T)
-convergence_tolerance(::Type{T}) where {T} = 10 * sqrt(eps(T))
+
+# `MomentumMethod` converges as far as `GradientMethod` does: the worst distance to the
+# minimizer observed below is 5.9e-10 (Float64) and 4.6e-4 (Float32).
+convergence_tolerance(::Type{T}, ::MomentumMethod) where {T} = 10 * sqrt(eps(T))
+
+# `Adam` cannot: its direction is `-m₁/(√m₂ + δ)`, of magnitude ≈ 1 per component whatever the
+# gradient is, so every step it takes is ≈ the learning rate `α = 0.1` used here, however close
+# to the minimizer it already is. It therefore stops where the stopping criteria of `solve!`
+# trigger rather than at round-off, and the distance at that point is a property of the
+# trajectory: 1.6e-3 (Float64, Geodesic), 1.5e-8 (Float64, Cayley) and 1.4e-4 (Float32). Hence
+# a tolerance that is absolute rather than a multiple of `eps(T)`.
+convergence_tolerance(::Type{T}, ::Adam) where {T} = T(1e-2)
 
 @testset "the stateful algorithms accept a bare Manifold too" begin
     for T in (Float64, Float32), retraction in (Geodesic(), Cayley())
-        for algorithm in (MomentumMethod(T(0.1)), Adam(T(0.01)))
+        for algorithm in (MomentumMethod(T(0.1)), Adam(T))
             x, f = optimize(T, algorithm; retraction=retraction)
 
             @test x isa StiefelManifold{T}                              # type preserved ...
             @test check(x) < stateful_manifold_tolerance(T)             # ... and the manifold
-            @test isapprox(x, MINIMIZER; atol=convergence_tolerance(T)) # it found the minimizer
+            @test isapprox(x, MINIMIZER; atol=convergence_tolerance(T, algorithm)) # minimizer found
             @test f(x) < f(initial_point(T))                            # and improved on the start
         end
     end

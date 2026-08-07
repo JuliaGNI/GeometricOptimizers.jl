@@ -3,6 +3,7 @@ using NaNMath: log
 using GeometricOptimizers
 using GeometricOptimizers: Newton, _DFP, _BFGS
 using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
+using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
 using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, GradientAutodiff, GradientFunction
 using Test
 using Random
@@ -56,6 +57,44 @@ for T in (Float64, Float32)
     end
 end
 
+
+# The first-order methods produce a *direction* of their own and nothing more, so the step
+# length is entirely the `α` of the line search: for them a fixed learning rate is
+# `Static(η)`, which is why it is the default. `Adam` used to carry an `η` field instead, which
+# meant the step was scaled twice — once by `η` and once by the line search, whose default was
+# `Backtracking` and therefore not `1`.
+#
+# The methods that come with a Hessian (or an approximation of it) produce a direction whose
+# *length* is meaningful, so they keep `Backtracking`, which starts at `α₀ = 1` and only
+# shortens the step if it has to.
+@testset "the default line search matches the method" begin
+    for T in (Float64, Float32)
+        for method in (GradientMethod(), MomentumMethod(T(0.1)), Adam(T))
+            ls = default_linesearch(T, method)
+            @test ls isa Static{T}
+            @test ls.α == T(DEFAULT_LEARNING_RATE)
+
+            x = ones(T, 3)
+            @test linesearch(Optimizer(x, F; algorithm=method)).method isa Static{T}
+        end
+
+        for method in (Newton(), _BFGS(), _DFP())
+            @test default_linesearch(T, method) isa Backtracking{T}
+
+            x = ones(T, 3)
+            @test linesearch(Optimizer(x, F; algorithm=method)).method isa Backtracking{T}
+        end
+    end
+
+    # `DEFAULT_LEARNING_RATE` is written as a `Float64` literal so that the `Float32` default is
+    # `1f-3` and not `Float32(1.0e-3)` rounded through `Float64` — i.e. so that `Static`'s `α`
+    # prints as `0.001` for both element types.
+    @test default_linesearch(Float32, Adam(Float32)).α === 1.0f-3
+
+    # `Adam` no longer takes a learning rate, and `β₁`, `β₂` and `δ` are keyword arguments, so
+    # an old positional call fails instead of quietly setting `β₁ = 0.01`.
+    @test_throws MethodError Adam(0.01)
+end
 
 @testset "Test Nan handling in optimizers" begin
 

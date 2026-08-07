@@ -96,7 +96,13 @@ function update!(state::MomentumState{T}, gradient_array::GradientArrayOrNamedTu
     state.f̄ = value(state)
     _copyto!(solution(state), x)
     _copyto!(gradient(state), gradient_array)
-    _add!(momentum(state), _mul(α, gradient_array))
+    # `p ← αp + ∇L`, i.e. the classic momentum recursion, which is what `update!(::MomentumCache,
+    # ...)` anticipates when it forms the direction. Note that the decay has to be applied to `p`
+    # and *not* to `∇L`: `p ← p + α∇L` (what this used to do) is an undamped accumulator that
+    # grows without bound for a constant gradient instead of saturating at `∇L/(1 - α)`. See
+    # issue #18.
+    _rmul!(momentum(state), α)
+    _add!(momentum(state), gradient_array)
     state.f = f(x)
 
     update_section!(section(state), direction, retraction)
@@ -108,12 +114,17 @@ function update!(state::MomentumState, opt::Optimizer, x::OptimizerSolution)
     update!(state, gradient_array(cache(opt)), direction(cache(opt)), algorithm(opt).α, x, problem(opt).F, opt.retraction)
 end
 
-function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T}, ::Hessian{T}, x::OptimizerSolution{T}) where {T}
+function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T}, method::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
     _copyto!(section(cache), section(state))
     _copyto!(gradient_array(cache), global_rep(section(state), gradient(x)))
     _copyto!(solution(cache), x)
-    _copyto!(direction(cache), gradient_array(cache))
-    _add!(direction(cache), momentum(state))
+    # The direction is `-p` for the momentum `p ← αp + ∇L` of the step that is being taken. The
+    # momentum stored in the state is still the one of the *previous* step, because
+    # `update!(::MomentumState, ...)` runs after `solver_step!`, so the recursion is evaluated
+    # here as well — with the same `α` and the same gradient, hence the same `p`.
+    _copyto!(direction(cache), momentum(state))
+    _rmul!(direction(cache), method.α)
+    _add!(direction(cache), gradient_array(cache))
     _rmul!(direction(cache), -1)
 
     cache

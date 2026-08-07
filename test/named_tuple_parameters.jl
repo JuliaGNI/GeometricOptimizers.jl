@@ -1,7 +1,7 @@
 using GeometricOptimizers
-using GeometricOptimizers: ArrayNamedTuple, OptimizerSolution, ParameterHandling, Cayley,
-    Geodesic, check, increase_iteration_number!, solver_step!
-using SimpleSolvers: Static
+using GeometricOptimizers: ArrayNamedTuple, OptimizerCache, OptimizerSolution,
+    ParameterHandling, Cayley, Geodesic, check, increase_iteration_number!, solver_step!
+using SimpleSolvers: Static, l2norm
 using Test
 import Random
 
@@ -87,8 +87,9 @@ end
 
 # Note that `Adam` has to be constructed with the element type of the parameters: unlike
 # `MomentumMethod`, which the `Optimizer` converts, an `Adam{Float64}` does not dispatch to
-# `OptimizerCache(::Adam{T}, ::OptimizerSolution{T})` for `Float32` parameters.
-algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(T(0.1)), Adam(T(0.01)))
+# `OptimizerCache(::Adam{T}, ::OptimizerSolution{T})` for `Float32` parameters. That mismatch
+# now errors with a message that says so, see the testset at the bottom of this file.
+algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(T(0.1)), Adam(T))
 retractions() = (Geodesic(), Cayley())
 
 # `ArrayTuple` used to be written as `Tuple{Vararg{AT}} where {AT<:AbstractArray{T}}`, which

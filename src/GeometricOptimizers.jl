@@ -12,8 +12,10 @@ using SimpleSolvers: HessianAutodiff, HessianFunction
 import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff, alloc_h
 export GradientAutodiff, GradientFunction, GradientFiniteDifferences
 
-using SimpleSolvers: Backtracking, Quadratic, BierlaireQuadratic, Bisection
-export Backtracking, Quadratic, BierlaireQuadratic, Bisection
+# `Static` is exported because it is how a fixed learning rate is specified: the optimizer
+# methods only produce a direction, see `default_linesearch`.
+using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection
+export Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection
 
 export Options
 

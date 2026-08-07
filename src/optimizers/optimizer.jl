@@ -81,7 +81,7 @@ struct Optimizer{T,
     end
 end
 
-function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=_BFGS(), linesearch::LinesearchMethod=Backtracking(), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
+function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=_BFGS(), linesearch::LinesearchMethod=default_linesearch(T, algorithm), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
     # translate to the correct type if we use the momentum method
     algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) : algorithm
     cache = OptimizerCache(algorithm, x)
@@ -158,7 +158,13 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
-    MT <: Adam ? update!(cache(opt), state, gradient(opt), algorithm(opt), x) : update!(cache(opt), state, gradient(opt), hessian(opt), x)
+    # `Adam` and `MomentumMethod` need their own parameters to form the direction and have no
+    # Hessian, the other methods need the Hessian and have no parameters.
+    if MT <: Union{Adam,MomentumMethod}
+        update!(cache(opt), state, gradient(opt), algorithm(opt), x)
+    else
+        update!(cache(opt), state, gradient(opt), hessian(opt), x)
+    end
     typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
 
     for _ in 1:config(opt).nan_max_iterations

@@ -46,13 +46,20 @@ end
 # so for `t = 1` the first moment is the gradient and the second moment is its square. Note
 # that this also checks that the square root that goes into the direction
 # `-m₁/(√m₂ + δ)` is not applied to `m₂` itself.
+#
+# `increase_iteration_number!` has to be called before the step, exactly as `solve!` does it —
+# this testset used to be the only loop in the suite that left it out, which is how the
+# off-by-one in the bias correction (`_t = t + 1`, so `t = 2` in the first step) survived: it
+# is the one call sequence in which `t + 1` gives the right answer. `test/optimizer_step_formulas.jl`
+# pins the resulting step size.
 @testset "the first Adam step" begin
     x = (w=rand(StiefelManifold, 5, 3), b=randn(3))
-    algorithm = Adam(0.01)
+    algorithm = Adam()
     optimizer = Optimizer(x, named_tuple_error; algorithm=algorithm, linesearch=Static(0.01))
     state = AdamState(x)
 
     ps = deepcopy(x)
+    increase_iteration_number!(state)
     solver_step!(ps, state, optimizer)
     update!(state, optimizer, ps)
 
@@ -66,7 +73,7 @@ end
 # [`GlobalSection`](@ref) is drawn at random and `Adam` is not equivariant with respect to a
 # change of section (its moments are updated element-wise).
 @testset "the same seed gives the same result" begin
-    for algorithm in (GradientMethod(), MomentumMethod(0.5), Adam(0.01))
+    for algorithm in (GradientMethod(), MomentumMethod(0.5), Adam())
         x = (w=rand(StiefelManifold, 5, 3), b=randn(3))
         results = map(1:2) do _
             Random.seed!(1234)
