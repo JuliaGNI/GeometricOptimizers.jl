@@ -97,8 +97,11 @@ l2norm(a::AbstractFloat) = norm(a)
 # Type piracy as well, but only because `ArrayNamedTuple` is an alias for `NamedTuple`; a
 # wrapper `struct` would fix this one locally. See issue #16.
 function l2norm(a::ArrayNamedTuple)
+    # the block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them
+    # (which this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby
+    # every stopping criterion computed from it.
     norms = apply_toNT(l2norm, a)
-    +(values(norms)...)
+    √sum(abs2, values(norms))
 end
 
 contains_nan(a::Real) = isnan(a)

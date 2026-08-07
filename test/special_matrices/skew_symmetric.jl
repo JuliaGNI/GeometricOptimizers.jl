@@ -80,6 +80,27 @@ function test_random_array_generation(n::Int, N::Int, T::DataType)
     @test eltype(A_sym) == T
 end
 
+# `SkewSymMatrix` is exported, so both of these are public API. The parametric method was once
+# introduced *in place of* the non-parametric one, which made `zeros(SkewSymMatrix, n)` fall
+# through to `Base.zeros(::Type, ::Int)` and throw `MethodError: no method matching
+# zero(::Type{SkewSymMatrix})` — and took `zeros(::Type{StiefelLieAlgHorMatrix}, N, n)`, its
+# only in-repo caller, down with it.
+@testset "zeros for SkewSymMatrix" begin
+    for n ∈ 2:5
+        A = zeros(SkewSymMatrix, n)
+        @test A isa SkewSymMatrix{Float64}
+        @test size(A) == (n, n)
+        @test all(iszero, A)
+
+        for T ∈ (Float32, Float64)
+            A_T = zeros(SkewSymMatrix{T}, n)
+            @test A_T isa SkewSymMatrix{T}
+            @test size(A_T) == (n, n)
+            @test all(iszero, A_T)
+        end
+    end
+end
+
 for T ∈ (Float32, Float64)
     check_if_symmetric_matrix_works_for_1x1_matrices(T)
     for N ∈ 2:5

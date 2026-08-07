@@ -121,6 +121,30 @@ end
     end
 end
 
+# ... and it has to come back as the manifold it went in as. The method was written as
+# `StiefelManifold(unflatten(v))` for every `Manifold`, so a `GrassmannManifold` was silently
+# turned into a `StiefelManifold` — which has a different `rgrad` and a different retraction,
+# so the optimization would have kept running and produced the wrong iterates.
+@testset "the flattening preserves the kind of manifold" begin
+    for T in (Float64, Float32), MT in (StiefelManifold, GrassmannManifold)
+        Y = rand(Random.Xoshiro(1234), MT{T}, N, n)
+        # the element type has to be given explicitly here: only the `NamedTuple` method takes
+        # it from the parameters, a bare manifold goes through `ParameterHandling`'s own
+        # single-argument method, which defaults to `Float64`
+        v, unflatten = ParameterHandling.flatten(T, Y)
+        @test v isa Vector{T}
+        @test length(v) == N * n
+        Y′ = unflatten(v)
+        @test Y′ isa MT{T}
+        @test Y′ ≈ Y
+
+        # the same through a `NamedTuple`, which is how the optimizer sees it
+        ps = (Y=Y, W=zeros(T, n, m))
+        vₚ, unflattenₚ = ParameterHandling.flatten(ps)
+        @test unflattenₚ(vₚ).Y isa MT{T}
+    end
+end
+
 # The property that the whole exercise is about: a retraction maps back onto the manifold, so
 # `Y` has to satisfy `YᵀY = I` after every single step — for every algorithm, every
 # retraction and both element types.
@@ -168,4 +192,88 @@ end
         @test losses₁ ≈ losses₂
         @test maximum(checks₂) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)
     end
+end
+
+# `l2norm` on a `NamedTuple` has to combine the block norms in *quadrature*: it is the ℓ² norm
+# of the parameters seen as one long vector, which is what the flattening makes them. Summing
+# the blocks instead overestimates it by up to `√k` for `k` blocks — and every stopping
+# criterion of `solve!` is computed from it.
+@testset "l2norm on a NamedTuple is the norm of the flattened parameters" begin
+    # the 3-4-5 triangle, so that summing (7.0) and the quadrature (5.0) are far apart
+    @test l2norm((a=[3.0, 0.0], b=[0.0, 4.0])) ≈ 5.0
+
+    for T in (Float64, Float32)
+        ps = initial_parameters(T)
+        v, _ = ParameterHandling.flatten(ps)
+        @test l2norm(ps) ≈ l2norm(v)
+        # ... and the sum of the blocks really is a different number here
+        @test !isapprox(sum(l2norm, values(ps)), l2norm(v))
+    end
+end
+
+# `solve!` on `NamedTuple` parameters is the only path that builds an `OptimizerStatus` on
+# them, i.e. the only one that calls `l2norm(::ArrayNamedTuple)` above and `_difference!` on
+# the gradient blocks. The testsets further up drive `solver_step!` by hand and never get
+# there.
+@testset "solve! runs on NamedTuple parameters" begin
+    for T in (Float64, Float32), algorithm in algorithms(T)
+        Random.seed!(1234)
+        F, _ = test_problem(T)
+        ps = initial_parameters(T)
+        f₀ = F(ps)
+        # `max_iterations` is capped because a fixed step size does not get these all the way to
+        # the convergence criteria: `GradientMethod` and `Adam` run to the iteration limit, so
+        # the default of `1000` only costs time (and prints a warning) without testing more.
+        optimizer = Optimizer(ps, F; algorithm=algorithm, linesearch=Static(T(0.1)), max_iterations=100)
+        result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
+
+        @test result.f < f₀                                          # it made progress ...
+        @test F(ps) == result.f                                      # ... and reported it
+        @test check(ps.Y) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)       # still on the manifold
+        # the convergence measures are the ones computed from `l2norm(::ArrayNamedTuple)`
+        @test !isnan(result.status.rg)
+        @test result.status.rg ≥ 0
+    end
+end
+
+# The `Optimizer(x, problem)` entry point is the one that `Optimizer(x, F)` delegates to, but
+# it is also public on its own — and it is the one that has to build the gradient itself. For
+# `NamedTuple` parameters that gradient is called on the *flattened* parameters, so sizing it
+# with `length(x)` (the number of entries, `3` here) instead of constructing it from `x` used
+# to make the very first step throw a `DimensionMismatch`.
+@testset "Optimizer(ps, OptimizerProblem(F, ps)) supplies its own gradient" begin
+    for T in (Float64, Float32)
+        Random.seed!(1234)
+        F, _ = test_problem(T)
+        ps = initial_parameters(T)
+        ps₀ = deepcopy(ps)
+        algorithm = GradientMethod()
+        optimizer = Optimizer(ps, OptimizerProblem(F, ps); algorithm=algorithm, linesearch=Static(T(0.1)))
+        state = OptimizerState(algorithm, ps)
+
+        increase_iteration_number!(state)
+        solver_step!(ps, state, optimizer)
+
+        @test F(ps) < F(ps₀)
+        @test ps.Y ≉ ps₀.Y
+        # the same step as the one taken through `Optimizer(ps, F)`, which passes its own gradient
+        ps′, _, _ = optimize(T, algorithm; steps=1)
+        @test ps.Y ≈ ps′.Y
+        @test ps.W ≈ ps′.W
+        @test ps.b ≈ ps′.b
+    end
+end
+
+# The one thing about `Adam` that a user has to get right is that it carries its own
+# parameters, so it has to be constructed with the element type of the parameters (see the
+# comment above `algorithms`). `MomentumMethod` is converted by the `Optimizer`, `Adam` is not,
+# and the mismatch used to surface as `MethodError: no method matching
+# OptimizerCache(::Adam{Float64}, ::NamedTuple{...Float32...})` — which says what did not match
+# but not what to do about it.
+@testset "an Adam of the wrong element type says what is wrong" begin
+    ps = initial_parameters(Float32)
+    @test_throws "Adam(Float32)" OptimizerCache(Adam(Float64), ps)
+    @test_throws ErrorException Optimizer(ps, test_problem(Float32)[1]; algorithm=Adam(Float64))
+    # `Adam(Float32)` is what the message asks for, and it works
+    @test OptimizerCache(Adam(Float32), ps) isa GeometricOptimizers.AdamCache{Float32}
 end

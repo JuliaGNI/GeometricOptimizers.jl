@@ -1,7 +1,7 @@
-using Test 
+using Test
 using LinearAlgebra: norm
 using GeometricOptimizers
-using GeometricOptimizers: geodesic, cayley
+using GeometricOptimizers: AbstractRetraction, geodesic, cayley, retraction
 import Random
 
 Random.seed!(123)
@@ -34,6 +34,22 @@ function cayley_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::Typ
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = cayley(Y, Δ / 1000)
     norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
+end
+
+# A retraction that is passed to the `Optimizer` but has no `retraction` method has to say so.
+# The fallback used to have an empty body, so it returned `nothing`, and the step then failed
+# further downstream (in `_copyto!`, with a `MethodError` about `Nothing`) — which pointed at
+# the wrong place entirely.
+struct UnimplementedRetraction <: AbstractRetraction end
+
+@testset "an unimplemented retraction reports itself" begin
+    R = UnimplementedRetraction()
+    x = rand(3, 3)
+
+    @test_throws "UnimplementedRetraction" retraction(R, x)
+    @test_throws ErrorException R(x)                # through the callable form as well
+    @test retraction(GeometricOptimizers.Cayley(), x) == cayley(x)
+    @test retraction(GeometricOptimizers.Geodesic(), x) == geodesic(x)
 end
 
 T = Float32

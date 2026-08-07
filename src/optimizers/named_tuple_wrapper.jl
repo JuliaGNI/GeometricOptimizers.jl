@@ -15,7 +15,13 @@ ParameterHandling.flatten(x::ArrayNamedTuple{T}) where {T<:AbstractFloat} = Para
 
 function ParameterHandling.flatten(::Type{T}, x::Manifold{R}) where {T<:AbstractFloat,R<:Real}
     v, unflatten = ParameterHandling.flatten(T, x.A)
-    v, _v -> StiefelManifold(unflatten(_v))
+    # The manifold has to come back as the *same* kind of manifold — hardcoding
+    # `StiefelManifold` here silently turned a `GrassmannManifold` into a `StiefelManifold` on
+    # every round trip. It is reconstructed from the type *name* and not from `typeof(x)`,
+    # because `unflatten` may return an array of a different element type: `ForwardDiff.Dual`s,
+    # when the flattened parameters are differentiated through.
+    MT = Base.typename(typeof(x)).wrapper
+    v, _v -> MT(unflatten(_v))
 end
 
 # The `flatten` methods below that dispatch on Base types (`NamedTuple`, `Tuple`, `Vector`,

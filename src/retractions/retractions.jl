@@ -187,7 +187,11 @@ function cayley(B::GrassmannLieAlgHorMatrix)
     GrassmannManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') * (𝕀_big + T(0.5) * B))
 end
 
-function retraction(::AbstractRetraction, ::AbstractArray) end
+# This used to be an empty method body, i.e. every combination that is not covered below
+# returned `nothing` and failed somewhere downstream with an unrelated message.
+function retraction(R::AbstractRetraction, x::AbstractArray)
+    error("retraction is not implemented for $(typeof(R)) and $(typeof(x)).")
+end
 
 retraction(::Cayley, x::AbstractArray) = cayley(x)
 retraction(::Geodesic, x::AbstractArray) = geodesic(x)

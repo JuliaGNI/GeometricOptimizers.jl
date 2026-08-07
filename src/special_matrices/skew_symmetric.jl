@@ -168,6 +168,13 @@ function Base.zeros(::Type{SkewSymMatrix{T}}, n::Int) where {T}
     SkewSymMatrix(zeros(T, n * (n - 1) ÷ 2), n)
 end
 
+# `SkewSymMatrix` is exported, so `zeros(SkewSymMatrix, n)` is public API and defaults to
+# `Float64` just like `zeros(n)` does. It has to be kept alongside the parametric method above
+# and not replaced by it: without it `zeros(SkewSymMatrix, n)` falls through to
+# `Base.zeros(::Type, ::Int)`, which throws `MethodError: no method matching
+# zero(::Type{SkewSymMatrix})`. `zeros(::Type{StiefelLieAlgHorMatrix}, N, n)` calls it, too.
+Base.zeros(::Type{SkewSymMatrix}, n::Int) = zeros(SkewSymMatrix{Float64}, n)
+
 function Base.rand(rng::Random.AbstractRNG, ::Type{SkewSymMatrix{T}}, n::Int) where {T}
     SkewSymMatrix(rand(rng, T, n * (n - 1) ÷ 2), n)
 end

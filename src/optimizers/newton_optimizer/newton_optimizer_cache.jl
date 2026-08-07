@@ -39,7 +39,17 @@ struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T},GS<:Glo
     end
 end
 
-OptimizerCache(::OptimizerMethod, x::OptimizerSolution) = NewtonOptimizerCache(x)
+OptimizerCache(::Union{Newton,QuasiNewtonOptimizerMethod}, x::OptimizerSolution) = NewtonOptimizerCache(x)
+
+# This fallback used to be `OptimizerCache(::OptimizerMethod, x) = NewtonOptimizerCache(x)`, so a
+# method that *does* have a cache of its own but missed its `OptimizerCache(::Adam{T},
+# ::OptimizerSolution{T})` method on a `T` mismatch ended up building a `NewtonOptimizerCache`
+# and died several frames later with a `MethodError` that named neither the method nor `T`.
+function OptimizerCache(method::OptimizerMethod, x::OptimizerSolution{T}) where {T}
+    error("there is no OptimizerCache for the method $(typeof(method)) and parameters of element type $(T). " *
+          "Note that a method that carries parameters of its own has to be constructed with the element type of " *
+          "the parameters, e.g. `Adam($(T))` for $(T) parameters (unlike `MomentumMethod`, `Adam` is not converted).")
+end
 
 section(cache::NewtonOptimizerCache) = cache.section
 

@@ -73,13 +73,31 @@ struct Optimizer{T,
     linesearch::LST
     retraction::RT
 
-    function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=GradientAutodiff{T}(problem.F, length(cache.x)), retraction=Cayley(), options_kwargs...) where {T}
+    function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=default_gradient(problem, cache.x), retraction=Cayley(), options_kwargs...) where {T}
         config = Options(T; options_kwargs...)
         ls_problem = linesearch_problem(problem, gradient, cache)
         ls = Linesearch(ls_problem, linesearch)
         new{T,typeof(algorithm),typeof(problem),typeof(gradient),typeof(hessian),typeof(cache),typeof(ls),typeof(retraction)}(algorithm, problem, gradient, hessian, config, cache, ls, retraction)
     end
 end
+
+"""
+    default_gradient(problem, x)
+
+Return the [`SimpleSolvers.Gradient`](@extref) that [`Optimizer`](@ref) uses if none is
+supplied.
+
+# Implementation
+
+The `NamedTuple` method is not just a matter of the *length*: a `Gradient` built for a
+`NamedTuple` is called on the flattened parameters, so it has to be constructed from `x`
+itself (see `GradientAutodiff(F, ::NamedTuple)`), which composes `problem.F` with the
+`unflatten` that belongs to `x`. Sizing it with `length(x)` — the number of entries of the
+`NamedTuple` rather than the length of its flattening — used to make the first step fail with
+a `DimensionMismatch`.
+"""
+default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
+default_gradient(problem::OptimizerProblem, x::ArrayNamedTuple) = GradientAutodiff(problem.F, x)
 
 function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=_BFGS(), linesearch::LinesearchMethod=default_linesearch(T, algorithm), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
     # translate to the correct type if we use the momentum method

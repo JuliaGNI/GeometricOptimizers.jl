@@ -68,6 +68,21 @@ function random_array_generation(n::Integer, N::Integer, T::DataType)
     @test eltype(A_stiefel_hor) == T
 end
 
+# The non-parametric method delegates to `zeros(SkewSymMatrix, n)` and to `zeros(N - n, n)`,
+# so it is `Float64` throughout. It broke once when `zeros(SkewSymMatrix, n)` was removed in
+# favour of the parametric method only, and nothing in the suite noticed.
+function zeros_array_generation(n::Integer, N::Integer, T::DataType)
+    A = zeros(StiefelLieAlgHorMatrix{T}, N, n)
+    @test A isa StiefelLieAlgHorMatrix{T}
+    @test size(A) == (N, N)
+    @test all(iszero, A)
+
+    A₆₄ = zeros(StiefelLieAlgHorMatrix, N, n)
+    @test A₆₄ isa StiefelLieAlgHorMatrix{Float64}
+    @test size(A₆₄) == (N, N)
+    @test all(iszero, A₆₄)
+end
+
 for T ∈ (Float32, Float64)
     for N ∈ 3:5
         for n ∈ 1:N
@@ -76,6 +91,7 @@ for T ∈ (Float32, Float64)
             stiefel_lie_alg_vectorization_test(n, N, T)
             scalar_multiplication(n, N, T)
             random_array_generation(n, N, T)
+            zeros_array_generation(n, N, T)
         end
     end
 end
