@@ -83,6 +83,7 @@ end
 
 function LinearAlgebra.mul!(C::AT, A::AT, α::Real) where AT <: AbstractTriangular
     mul!(C.S, A.S, α)
+    C
 end
 LinearAlgebra.mul!(C::AT, α::Real, A::AT) where AT <: AbstractTriangular = mul!(C, A, α)
 LinearAlgebra.rmul!(C::AT, α::Real) where AT <: AbstractTriangular = mul!(C, C, α)

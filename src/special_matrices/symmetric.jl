@@ -203,6 +203,7 @@ end
 
 function LinearAlgebra.mul!(C::SymmetricMatrix, A::SymmetricMatrix, α::Real)
     mul!(C.S, A.S, α)
+    C
 end
 LinearAlgebra.mul!(C::SymmetricMatrix, α::Real, A::SymmetricMatrix) = mul!(C, A, α)
 LinearAlgebra.rmul!(C::SymmetricMatrix, α::Real) = mul!(C, C, α)

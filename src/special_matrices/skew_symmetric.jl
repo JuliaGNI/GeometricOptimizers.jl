@@ -214,6 +214,7 @@ end
 
 function LinearAlgebra.mul!(C::SkewSymMatrix, A::SkewSymMatrix, α::Real)
     mul!(C.S, A.S, α)
+    C
 end
 LinearAlgebra.mul!(C::SkewSymMatrix, α::Real, A::SkewSymMatrix) = mul!(C, A, α)
 LinearAlgebra.rmul!(C::SkewSymMatrix, α::Real) = mul!(C, C, α)

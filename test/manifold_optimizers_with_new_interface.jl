@@ -66,24 +66,35 @@ end
     end
 end
 
-# Known limitation, and the reason this file only exercises `GradientMethod` above: on a
-# *bare* manifold neither of the two stateful algorithms works. This is pre-existing and is
-# not touched by this PR — on a `NamedTuple` of parameters all three algorithms work, which
-# is what `test/named_tuple_parameters.jl` covers.
+# The two stateful algorithms used to fail outright on a *bare* manifold, which is why this
+# file once exercised only `GradientMethod`. The cause was issue #17: the scalar `mul!`
+# methods of the custom matrix types ended on `mul!(C.B, A.B, α)` (or `C.S`), so they returned
+# that inner field instead of the destination `C`. The mutation was right, only the return
+# value was wrong, which is fatal for `_mul(α, a) = _rmul!(_copy(a), α)`. For a
+# `StiefelManifold` of size `(3, 1)` that turned a `(3, 3)` `StiefelLieAlgHorMatrix` into a
+# `(2, 1)` `Matrix`, and from there `MomentumMethod` threw `DimensionMismatch` and `Adam`
+# threw `CanonicalIndexError`. `GradientMethod` escaped it because it never calls `_mul`.
 #
-# Both failures have one cause, tracked in issue #17: the scalar `mul!` methods of the custom
-# matrix types end on `mul!(C.B, A.B, α)` (or `C.S`), so they return that inner field instead
-# of the destination `C`. The mutation is right, only the return value is wrong, which is
-# fatal for `_mul(α, a) = _rmul!(_copy(a), α)`. For a `StiefelManifold` of size `(3, 1)` that
-# turns a `(3, 3)` `StiefelLieAlgHorMatrix` into a `(2, 1)` `Matrix`, and from there
-# `MomentumMethod` throws `DimensionMismatch` and `Adam` throws `CanonicalIndexError`.
-# `GradientMethod` escapes it because it never calls `_mul`.
+# #17 is fixed, so these are ordinary `@test`s now. The contract itself is pinned separately,
+# per type, in `test/special_matrices/scalar_mul_return_value.jl`.
 #
-# These are `@test_broken` rather than deleted so that the fix is noticed here: they will
-# report as `Unbroken` as soon as #17 is closed, at which point they become ordinary `@test`s.
-@testset "the stateful algorithms do not yet accept a bare Manifold" begin
-    for T in (Float64, Float32)
-        @test_broken (optimize(T, MomentumMethod(T(0.1))); true)
-        @test_broken (optimize(T, Adam(T(0.01))); true)
+# The stateful algorithms take looser tolerances than `GradientMethod` above, on both counts.
+# They carry state across steps, so they accumulate more round-off: the deviation from the
+# manifold peaks at ~14 * eps(T) rather than the <= eps(T) that `GradientMethod` achieves. And
+# after the same number of steps `Adam` in particular is still an order of magnitude further
+# from the minimizer (worst case observed is ~1.7e-3, for `Float32` with `Cayley`).
+stateful_manifold_tolerance(::Type{T}) where {T} = 100 * eps(T)
+convergence_tolerance(::Type{T}) where {T} = 10 * sqrt(eps(T))
+
+@testset "the stateful algorithms accept a bare Manifold too" begin
+    for T in (Float64, Float32), retraction in (Geodesic(), Cayley())
+        for algorithm in (MomentumMethod(T(0.1)), Adam(T(0.01)))
+            x, f = optimize(T, algorithm; retraction=retraction)
+
+            @test x isa StiefelManifold{T}                              # type preserved ...
+            @test check(x) < stateful_manifold_tolerance(T)             # ... and the manifold
+            @test isapprox(x, MINIMIZER; atol=convergence_tolerance(T)) # it found the minimizer
+            @test f(x) < f(initial_point(T))                            # and improved on the start
+        end
     end
 end

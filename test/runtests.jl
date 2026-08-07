@@ -18,6 +18,9 @@ begin
     @safetestset "Symmetric Matrix             " include("special_matrices/symmetric_matrix.jl")
 end
 begin
+    @safetestset "Scalar mul! Return Value     " include("special_matrices/scalar_mul_return_value.jl")
+end
+begin
     @safetestset "Grassmann Lie Alg Hor        " include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
 end
 begin
