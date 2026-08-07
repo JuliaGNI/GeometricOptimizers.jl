@@ -59,8 +59,8 @@ g_abschange(status::OptimizerStatus) = status.rgₐ
 g_residual(status::OptimizerStatus) = status.rg
 
 function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T,OST<:OptimizerState{T},OCT<:OptimizerCache{T}}
-    rxₐ = norm(direction(cache))
-    rxᵣ = rxₐ / norm(cache.x)
+    rxₐ = l2norm(direction(cache))
+    rxᵣ = rxₐ / l2norm(cache.x)
 
     Δf = f - state.f̄
     Δf̃ = state.ḡ ⋅ direction(cache)
@@ -68,16 +68,16 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     rfₐ = norm(Δf)
     rfᵣ = rfₐ / norm(f)
 
-    cache.Δg .= cache.g - state.ḡ
+    _difference!(cache.Δg, cache.g, state.ḡ)
 
-    rgₐ = norm(cache.Δg)
-    rg = norm(cache.g)
+    rgₐ = l2norm(cache.Δg)
+    rg = l2norm(cache.g)
 
     f_increased = abs(f) > abs(state.f̄)
 
-    x_isnan = any(isnan, cache.x)
-    f_isnan = any(isnan, f)
-    g_isnan = any(isnan, cache.g)
+    x_isnan = contains_nan(cache.x)
+    f_isnan = contains_nan(f)
+    g_isnan = contains_nan(cache.g)
 
     _status = OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false, f_increased, x_isnan, f_isnan, g_isnan)
 
@@ -85,6 +85,20 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
 
     OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, x_converged, f_converged, g_converged, f_increased, x_isnan, f_isnan, g_isnan)
 end
+
+l2norm(a::StiefelLieAlgHorMatrix) = √(l2norm(a.A)^2 + l2norm(a.B)^2)
+
+l2norm(a::SkewSymMatrix) = l2norm(a.S)
+# type piracy!!! TODO: fix this
+l2norm(a::AbstractMatrix) = l2norm(vec(a))
+l2norm(a::AbstractFloat) = norm(a)
+function l2norm(a::ArrayNamedTuple)
+    norms = apply_toNT(l2norm, a)
+    +(values(norms)...)
+end
+
+contains_nan(a::Real) = isnan(a)
+contains_nan(a) = any(contains_nan, a)
 
 function Base.show(io::IO, s::OptimizerStatus)
 
