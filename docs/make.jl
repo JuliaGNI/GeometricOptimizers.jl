@@ -33,6 +33,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Optimization on Homogeneous Spaces" => "manifold_optimizers.md",
         "Linesearch" => "linesearch.md",
         "References" => "references.md",
     ],
