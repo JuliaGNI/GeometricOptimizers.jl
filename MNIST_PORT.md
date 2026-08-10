@@ -232,6 +232,45 @@ M4 Max, which puts the full run at ≈15 h rather than ≈36 h — provisional, 
 still contain compilation. Everything past the memory call is still unexecuted: the accuracy
 evaluation, `orthonormality_error`, the epoch lines, the summaries and the verdict.
 
+### Repetitions: one configuration several times
+
+`scripts/mnist_cuda_repetitions.jl` trains *one* configuration `MNIST_REPETITIONS` times and
+ends on a mean and a corrected sample standard deviation over the repetitions — for the test
+accuracy, the final epoch loss, `‖YᵀY-I‖` and the wall clock — with the individual samples
+printed next to each. `mnist_cuda.jl` is untouched and still runs each of the four
+configurations exactly once, which is what a comparison of their learning curves needs.
+
+It exists because of the observation in step 4 below: a single accuracy from an `Adam`
+configuration is a sample and not a number. Everything below the run loop is `mnist_cuda.jl`'s
+code — same network, initialization, objective, gradient, schedule and bars — with the seed
+turned into an argument of `train`, so a repetition here is comparable to the corresponding run
+there. Each repetition builds its own `Optimizer` and `OptimizerState`, so no cache and no
+iteration counter survives from the previous one.
+
+- `MNIST_REPETITIONS` (default 5) is how often each configuration is trained. One repetition is
+  one configuration of the full run, i.e. ≈1:35 h for `Adam` on an RTX 4090, so the default is
+  ≈8 h — about what `mnist_cuda.jl` takes for all four.
+- `MNIST_CONFIGURATIONS` (default `adam-stiefel`) selects which ones, from `adam-stiefel`,
+  `adam-regular`, `gradient`, `momentum`, or `all`. Unknown keys fail before MNIST is loaded.
+- `MNIST_VARY_SEED` (default `1`) gives repetition `r` the seed `seed + r - 1`, so the spread is
+  that of the method over initializations *and* over the nondeterminism, which is the number to
+  quote. With `0` every repetition uses the same seed and the spread is the nondeterminism
+  alone — the observation itself rather than a property of the optimizer.
+- The remaining variables, the three output files and the `screen` wrapper
+  (`scripts/run_mnist_repetitions.sh`, with `--smoke`, `--repeat N` and `-c LIST`) are those of
+  `mnist_cuda.jl` and `run_mnist_cuda.sh`.
+
+Every repetition is judged individually by the same `verdict`, and the statistics are reported
+alongside those verdicts rather than instead of them: five repetitions whose mean clears the
+accuracy floor but of which one collapsed is not the same outcome as five that all worked, and
+only the individual verdicts distinguish the two. A repetition that throws is missing from the
+statistics, and the count of samples printed with them says so.
+
+Its loss CSV has one column more than the one `mnist_cuda.jl` writes (`repetition`, after
+`configuration`), so `scripts/distill_mnist_results.jl` — which feeds the figures of the
+documentation — does not read it. Those figures compare the four configurations and stay the
+job of `mnist_cuda.jl`; this script answers how far the `Adam` number in them can be trusted.
+
 ### The `Metal` script
 
 `scripts/mnist_metal.jl` is the same script again for the GPU of an Apple silicon Mac. The
@@ -370,7 +409,9 @@ full runs have deliberately not been started yet.
    have their sign decided by the last ulp. Two host runs with the same seed, one epoch, gave
    accuracies `0.3761` and `0.3302` and drifts `4.6e-04` and `3.7e-05` off the manifold, while
    `GradientMethod` and `MomentumMethod` reproduced to four decimals. A small gap against the
-   original is therefore not a regression. That is also why `mnist_cuda.jl` uses an
+   original is therefore not a regression, and an accuracy that is meant to be quoted comes
+   from `scripts/run_mnist_repetitions.sh` (see *Repetitions* above), which trains the
+   configuration five times and reports `mean ± deviation`. That is also why `mnist_cuda.jl` uses an
    `orthonormality_tolerance` of `1e-2` where `mnist_metal_short.jl` uses `1e-4` — one of
    those two samples already exceeded `1e-4` after 29 steps. **And the drift series is worth
    reading:** it is recorded every 25 epochs, so the full run answers what a single number
