@@ -18,6 +18,9 @@ begin
     @safetestset "Symmetric Matrix             " include("special_matrices/symmetric_matrix.jl")
 end
 begin
+    @safetestset "Scalar mul! Return Value     " include("special_matrices/scalar_mul_return_value.jl")
+end
+begin
     @safetestset "Grassmann Lie Alg Hor        " include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
 end
 begin
@@ -40,4 +43,16 @@ begin
 end
 begin
     @safetestset "Optimizer Problems           " include("optimizer_problems.jl")
+end
+begin
+    @safetestset "Manifold Optimizers         " include("manifold_optimizers_with_new_interface.jl")
+end
+begin
+    @safetestset "Optimizer State Init         " include("optimizer_state_initialization.jl")
+end
+begin
+    @safetestset "Optimizer Step Formulas      " include("optimizer_step_formulas.jl")
+end
+begin
+    @safetestset "NamedTuple Parameters        " include("named_tuple_parameters.jl")
 end

@@ -151,8 +151,10 @@ function Base.zeros(backend::KernelAbstractions.Backend, ::Type{GrassmannLieAlgH
     )
 end
 
-Base.similar(A::GrassmannLieAlgHorMatrix, dims::Union{Integer, AbstractUnitRange}...) = zeros(typeof(A), dims...)
-Base.similar(A::GrassmannLieAlgHorMatrix) = zeros(typeof(A), A.N, A.n)
+# `typeof(A)` is the two-parameter `GrassmannLieAlgHorMatrix{T, AT}`, which `zeros` has no
+# method for; it has to be narrowed to the one-parameter form, as in the Stiefel case.
+Base.similar(A::GrassmannLieAlgHorMatrix, dims::Union{Integer, AbstractUnitRange}...) = zeros(GrassmannLieAlgHorMatrix{eltype(A)}, dims...)
+Base.similar(A::GrassmannLieAlgHorMatrix) = zeros(GrassmannLieAlgHorMatrix{eltype(A)}, A.N, A.n)
 
 function Base.rand(rng::Random.AbstractRNG, ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T
     GrassmannLieAlgHorMatrix(rand(rng, T, N-n, n), N, n)
@@ -187,6 +189,7 @@ end
 
 function LinearAlgebra.mul!(C::GrassmannLieAlgHorMatrix, A::GrassmannLieAlgHorMatrix, α::Real)
     mul!(C.B, A.B, α)
+    C
 end
 LinearAlgebra.mul!(C::GrassmannLieAlgHorMatrix, α::Real, A::GrassmannLieAlgHorMatrix) = mul!(C, A, α)
 LinearAlgebra.rmul!(C::GrassmannLieAlgHorMatrix, α::Real) = mul!(C, C, α)
@@ -198,3 +201,16 @@ function _round(B::GrassmannLieAlgHorMatrix; kwargs...)
         B.n
     )
 end
+
+# The generic `AbstractArray` fallbacks for these route through `setindex!`, which this type
+# does not define, so they have to be given explicitly — as they already are for
+# `StiefelLieAlgHorMatrix`.
+Base.zero(B::GrassmannLieAlgHorMatrix) = GrassmannLieAlgHorMatrix(zero(B.B), B.N, B.n)
+Base.copy(B::GrassmannLieAlgHorMatrix) = GrassmannLieAlgHorMatrix(copy(B.B), B.N, B.n)
+
+function Base.copyto!(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
+    copyto!(A.B, B.B)
+    A
+end
+
+Base.fill!(A::GrassmannLieAlgHorMatrix, val) = (fill!(A.B, val); A)

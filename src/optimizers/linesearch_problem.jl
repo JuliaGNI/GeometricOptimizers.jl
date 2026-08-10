@@ -7,7 +7,7 @@ The variable on which this problem depends is ``\alpha``.
 
 # Example
 
-```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: NewtonOptimizerCache, linesearch_problem, update!, compute_direction)
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: NewtonOptimizerCache, linesearch_problem, update!, compute_direction!)
 julia> x = [1, 0., 0.]
 3-element Vector{Float64}:
  1.0

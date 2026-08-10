@@ -1,7 +1,7 @@
 """
     NewtonOptimizerState <: OptimizerState
 
-The optimizer state is needed to update the [`EuclideanOptimizer`](@ref). This is different from [`OptimizerStatus`](@ref) and [`OptimizerResult`](@ref) which serve as diagnostic tools.
+The optimizer state is needed to update the [`Optimizer`](@ref). This is different from [`OptimizerStatus`](@ref) and [`OptimizerResult`](@ref) which serve as diagnostic tools.
 
 We note that this is also used for the [`_BFGS`](@ref) and the [`_DFP`](@ref) optimizer.
 
@@ -14,7 +14,7 @@ We note that this is also used for the [`_BFGS`](@ref) and the [`_DFP`](@ref) op
 - `f̄`
 - `f̄`
 """
-mutable struct NewtonOptimizerState{T,AT<:AbstractArray{T},GT<:AbstractArray{T}} <: OptimizerState{T}
+mutable struct NewtonOptimizerState{T,AT<:AbstractArray{T},GT<:AbstractArray{T},GS<:GlobalSection{T}} <: OptimizerState{T}
     iterations::Int
 
     x::AT
@@ -23,6 +23,8 @@ mutable struct NewtonOptimizerState{T,AT<:AbstractArray{T},GT<:AbstractArray{T}}
     ḡ::GT
     f::T
     f̄::T
+
+    section::GS
 
     function NewtonOptimizerState(X::AT, G::GT) where {T,AT<:AbstractArray{T},GT<:AbstractArray{T}}
         x = zero(X)
@@ -33,11 +35,14 @@ mutable struct NewtonOptimizerState{T,AT<:AbstractArray{T},GT<:AbstractArray{T}}
         x̄ .= T(NaN)
         g .= T(NaN)
         ḡ .= T(NaN)
-        new{T,AT,GT}(0, x, x̄, g, ḡ, T(NaN), T(NaN))
+        section = GlobalSection(x)
+        new{T,AT,GT,typeof(section)}(0, x, x̄, g, ḡ, T(NaN), T(NaN), section)
     end
 
     NewtonOptimizerState(x) = NewtonOptimizerState(x, x)
 end
+
+section(state::NewtonOptimizerState) = state.section
 
 OptimizerState(::Newton, x_args...) = NewtonOptimizerState(x_args...)
 
@@ -49,6 +54,7 @@ function initialize!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::Ab
     state.x̄ .= T(NaN)
     state.ḡ .= T(NaN)
     state.f̄ = T(NaN)
+    section(state).Y .= x
 end
 
 function update!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
@@ -58,6 +64,7 @@ function update!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::Abstra
     state.x .= x
     state.g .= g
     state.f = f
+    section(state).Y .= x
 end
 
 solution(cache::NewtonOptimizerState) = cache.x̄
@@ -80,7 +87,7 @@ update!(state, grad, x)
 
 # output
 
-NewtonOptimizerState{Float64, Vector{Float64}, Vector{Float64}}(0, [1.0, 2.0], [NaN, NaN], [2.0, 4.0], [NaN, NaN], 5.0, NaN)
+NewtonOptimizerState{Float64, Vector{Float64}, Vector{Float64}, GlobalSection{Float64, Vector{Float64}, Nothing}}(0, [1.0, 2.0], [NaN, NaN], [2.0, 4.0], [NaN, NaN], 5.0, NaN, GlobalSection{Float64, Vector{Float64}, Nothing}([1.0, 2.0], nothing))
 ```
 """
 function update!(state::NewtonOptimizerState, gradient::Gradient, x::AbstractVector)
