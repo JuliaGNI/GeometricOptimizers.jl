@@ -16,10 +16,13 @@ export GradientAutodiff, GradientFunction, GradientFiniteDifferences
 # methods only produce a direction, see `default_linesearch`.
 using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection
 export Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection
+export DecayingStatic
 
 export Options
 
 import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache, l2norm
+import SimpleSolvers: change_precision, solve_with_status
+using SimpleSolvers: method, LinesearchStatus, LINESEARCH_UNKNOWN
 export update!
 
 using Printf
@@ -93,6 +96,7 @@ include("optimizers/newton_optimizer/newton_optimizer_cache.jl")
 include("optimizers/newton_optimizer/newton_optimizer_state.jl")
 
 include("optimizers/linesearch_problem.jl")
+include("optimizers/decaying_static.jl")
 
 include("optimizers/iterative_hessians/bfgs/bfgs_state.jl")
 include("optimizers/iterative_hessians/dfp/dfp_state.jl")

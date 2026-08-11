@@ -38,7 +38,7 @@ We hence use [`linesearch_problem`](@ref) not for a [`SimpleSolvers.NewtonSolver
 
 ```@example quadratic
 using GeometricOptimizers # hide
-using GeometricOptimizers: NewtonOptimizerCache, initialize!, gradient, compute_direction!, linesearch_problem # hide
+using GeometricOptimizers: NewtonOptimizerCache, initialize!, gradient, compute_direction!, linesearch_problem, Cayley # hide
 x₀ = [0., .1, .2]
 x = copy(x₀)
 obj = OptimizerProblem(sum∘f, x₀)
@@ -48,8 +48,10 @@ state = NewtonOptimizerState(x₀)
 hess = HessianAutodiff(obj, x₀)
 update!(state, grad, x₀)
 update!(_cache, state, grad, hess, x₀)
-params = (x = state.x, )
-ls_obj = linesearch_problem(obj, grad, _cache)
+params = (x = state.x, state = state)
+# the retraction is how a trial step is taken; on an `AbstractVector` like this one it is
+# never consulted, but `linesearch_problem` needs it for the manifold case
+ls_obj = linesearch_problem(obj, grad, _cache, Cayley())
 
 fˡˢ(alpha) = ls_obj.F(alpha, params)
 ∂fˡˢ∂α(alpha) = ls_obj.D(alpha, params)
@@ -84,7 +86,7 @@ p₁ = ∂fˡˢ∂α(0.)
 
 ```@example quadratic
 using SimpleSolvers: bracket_minimum_with_fixed_point, compute_new_iterate! # hide
-params = (x = state.x, )
+params = (x = state.x, state = state)
 α₀ = bracket_minimum_with_fixed_point(ls_obj, params, 0.)[1]
 @assert !(α₀ == 0. || α₀ == .1) # hide
 y = fˡˢ(α₀)
