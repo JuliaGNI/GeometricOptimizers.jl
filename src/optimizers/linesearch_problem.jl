@@ -31,7 +31,14 @@ function _trial_iterate!(::AbstractVector, cache::OptimizerCache, params, α, ::
     compute_new_iterate!(solution(cache), params.x, α, direction(cache))
 end
 
+@noinline _no_state_error() =
+    error("a trial step on a manifold retracts from `section(params.state)`, so the line search " *
+          "parameters have to carry the `state`; `solver_step!` passes it, a bare `(x = x,)` does not.")
+
 function _trial_iterate!(::Union{Manifold,ArrayNamedTuple}, cache::OptimizerCache, params, α, retraction)
+    # `params` is a concrete `NamedTuple` here, so this is constant-folded away rather than checked on
+    # every merit evaluation. Without it a missing `state` surfaces as `has no field state`.
+    hasproperty(params, :state) || _no_state_error()
     # `_mul` allocates a scaled copy because `direction(cache)` has to stay intact for the next trial
     # step; `solver_step!` can afford the in-place `_rmul!` only because it scales exactly once, by
     # the `α` the line search has already settled on.
@@ -51,17 +58,42 @@ On a [`Manifold`](@ref) the gradient that `gradient_instance` produces lives in 
 the embedding while `direction(cache)` is a horizontal lift, so the two are not even the same shape
 and have to be brought together by [`global_rep`](@ref) first — which is the same map
 `update!(::GradientCache, …)` applies to the gradient before storing it.
+
+The pairing is then [`_dot`](@ref) and not `dot`: the `α` of the line search parameterizes a curve in
+the *intrinsic* coordinates of the lift, and `dot` on a lift is the ambient Frobenius product, which
+is exactly twice that. With `dot` this returned `2\varphi'(\alpha)` — invisible to
+[`SimpleSolvers.Bisection`](@extref), which only looks for a sign change, and swamped by the Armijo
+slack in [`SimpleSolvers.Backtracking`](@extref), but wrong, and wrong in a way a curvature condition
+or a quadratic fit would act on.
+
+!!! warning "Exact for `Geodesic`, first-order for `Cayley`"
+    ``\varphi(\alpha) = f(\Lambda\mathrm{retract}(\alpha{}B))`` has
+    ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), B\rangle`` only when
+    ``\alpha \mapsto \mathrm{retract}(\alpha{}B)`` is a one-parameter subgroup, which
+    `Geodesic` is and `Cayley` is not. Against a central difference of the merit this
+    is exact for `Geodesic` at every ``\alpha``; for `Cayley` it is exact at ``\alpha = 0`` and drifts
+    with the step (about 6% at ``\alpha = 0.5``, 24% at ``\alpha = 1``). The merit itself is exact
+    either way, so a search that only brackets and compares values is unaffected; `Bisection` under
+    `Cayley` bisects a slightly wrong ``\varphi'`` and stops just off the merit's stationary point,
+    which is why it needs a few more iterations there than under `Geodesic`. The `retraction` is
+    accepted here for that reason — an exact `Cayley` differential would need it.
 """
 trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction) =
     _trial_slope(solution(cache), gradient_instance, cache)
 
+# These two differ in one respect worth knowing about: the `AbstractVector` method evaluates into
+# `gradient(cache)` — that is what makes it allocation-free — and so leaves the gradient at the last
+# trial `α` there, while the manifold method allocates and leaves `gradient(cache)` at the iterate
+# `update!` last stored. `OptimizerStatus` reports `rg = l2norm(cache.g)`, so the two report `‖∇f‖` at
+# slightly different points. Neither is wrong for a stopping criterion — the difference is one trial
+# step — but they are not the same quantity.
 function _trial_slope(::AbstractVector, gradient_instance::Gradient, cache::OptimizerCache)
     gradient_instance(gradient(cache), solution(cache))
-    dot(gradient(cache), direction(cache))
+    _dot(gradient(cache), direction(cache))
 end
 
 function _trial_slope(::Union{Manifold,ArrayNamedTuple}, gradient_instance::Gradient, cache::OptimizerCache)
-    dot(global_rep(section(cache), gradient_instance(solution(cache))), direction(cache))
+    _dot(global_rep(section(cache), gradient_instance(solution(cache))), direction(cache))
 end
 
 @doc raw"""

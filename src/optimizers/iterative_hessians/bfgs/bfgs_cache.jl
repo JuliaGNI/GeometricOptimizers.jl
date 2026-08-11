@@ -125,7 +125,12 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
     _copyto!(direction(cache), state.s)
     _difference!(cache.Δg, gradient(cache), state.ḡ)
 
-    ΔxΔg = cache.Δx ⋅ cache.Δg
+    # `_dot`, not `⋅`: every other quantity in the update below lives in the flattened coordinates --
+    # `outer!` flattens before it forms `ΔxΔx` and `ΔxΔg`, `Q` is sized by the flattening, and `γᵀQγ` is
+    # taken there -- so the `δᵀγ` they are all divided by has to be flattened too. `⋅` on a horizontal
+    # lift is the ambient Frobenius product, i.e. exactly twice that, which left the `1 + γᵀQγ/δᵀγ`
+    # coefficient mixing two different inner products. See `_dot`.
+    ΔxΔg = _dot(cache.Δx, cache.Δg)
 
     if !iszero(ΔxΔg) && !isnan(ΔxΔg)
         outer!(cache.ΔxΔx, cache.Δx, cache.Δx)

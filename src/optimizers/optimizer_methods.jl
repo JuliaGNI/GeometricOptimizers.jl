@@ -131,6 +131,16 @@ step reporting that it found no descent direction.
     They could not do anything else: until the line search learned to take its trial step through the
     retraction (see [`trial_iterate!`](@ref)), `Static` was the only line search that worked on
     manifold parameters at all. Pass `linesearch = Static(η)` to get the old fixed learning rate back.
+
+!!! tip "`Backtracking` is the safe default, not the best one"
+    A backtracking search returns the first `α` that decreases `f` enough, so on a well-scaled problem
+    it accepts `α = 1` on nearly every step and behaves much like `Static(1)`. On the sphere problem of
+    `test/manifold_linesearch_tests.jl` it takes 31 iterations where `Static(0.1)` takes 28 and
+    [`SimpleSolvers.Bisection`](@extref) takes **2**; on the SVD problem it takes the relative error
+    after 1000 iterations from 1.4e-2 to 2.3e-3 where `Bisection` reaches 6.2e-7 with
+    `MomentumMethod`. It is the default because it costs the fewest merit evaluations per iteration and
+    cannot fail on a descent direction — where iteration count matters more than cost per iteration,
+    pass `linesearch = Bisection(T)`.
 """
 default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T)
 default_linesearch(::Type{T}, ::Adam) where {T} = Static(T(DEFAULT_LEARNING_RATE))

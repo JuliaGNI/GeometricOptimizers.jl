@@ -27,7 +27,9 @@ A = [0.06476993260924702 0.8369280855305259 0.6245358125914054 0.140729967064923
     0.838935723223811 0.5888502932130046 0.789979979782286 0.7108295494351453 0.21710960094241705
     0.7317681833003449 0.9051355184962627 0.3376918522349117 0.436545092402125 0.3462196925686055]
 
-error(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
+# named `objective` and not `error`, which is what it used to be called: that shadows `Base.error`
+# for the whole file, so a genuine `error("...")` anywhere in it would have been a `MethodError`
+objective(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
 
 # Both iterates stay on the Stiefel manifold, so this is a round-off tolerance and nothing
 # else; the values actually observed are of the order of `1e-14`.
@@ -94,7 +96,7 @@ function svd_test(n, train_steps=1000; retraction=Cayley())
         # 8.4e-2 after these 1000 steps against a gate of 1.5e-8, and it is not stuck but slow
         # (1.9e-3 / 2.1e-4 / 4.0e-5 at 5000 / 20000 / 60000 steps), so reaching the gate this way
         # would take of the order of a million. The convergence test is the `_BFGS` one below.
-        optimizer = Optimizer(ps, error; retraction=retraction, algorithm=algorithm,
+        optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
             linesearch=Static(0.01), max_iterations=train_steps, warn_iterations=0)
         ps_copy = deepcopy(ps)
         solve!(ps_copy, OptimizerState(algorithm, ps_copy), optimizer)
@@ -102,7 +104,7 @@ function svd_test(n, train_steps=1000; retraction=Cayley())
         for Y in values(ps_copy)
             @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
         end
-        norm((error(ps_copy) - err_best) / err_best)
+        norm((objective(ps_copy) - err_best) / err_best)
     end
 
     for name in keys(algorithms)
@@ -139,7 +141,7 @@ function svd_convergence_test(n; retraction=Cayley(), linesearch=Backtracking(Fl
     Random.seed!(1234)
     ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
     state = OptimizerState(algorithm, ps)
-    optimizer = Optimizer(ps, error; retraction=retraction, algorithm=algorithm,
+    optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
         linesearch=linesearch, max_iterations=max_iterations, warn_iterations=0)
 
     result = solve!(ps, state, optimizer)
@@ -149,7 +151,7 @@ function svd_convergence_test(n; retraction=Cayley(), linesearch=Backtracking(Fl
     @test GeometricOptimizers.status(result).rg < 1e-5
 
     # and it gets to the answer, which the fixed-step runs above reach to 1e-2 at best
-    @test norm((error(ps) - err_best) / err_best) < 1e-10
+    @test norm((objective(ps) - err_best) / err_best) < 1e-10
 
     for Y in values(ps)
         @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
@@ -162,15 +164,25 @@ end
 # problem, but the cost is wildly uneven:
 #
 #                              Geodesic   Cayley
-#     _BFGS  Backtracking           176      172
-#     _BFGS  Bisection              164      197
-#     _DFP   Backtracking        35_263   21_689
-#     _DFP   Bisection              116      156
+#     _BFGS  Backtracking           113      136
+#     _BFGS  Bisection              143       93
+#     _DFP   Backtracking        49_679   29_081
+#     _DFP   Bisection              134       96
 #
-# DFP self-corrects far less well than BFGS from a badly scaled `Q` -- the historical reason BFGS
-# superseded it -- and paired with a backtracking search that is worth two orders of magnitude here.
-# It does terminate on a criterion rather than a cap, but 3×10⁴ iterations is too slow to put in a
-# test suite, so that pair is measured and documented rather than run.
+# What separates the rows is not the direction but whether the line search can *lengthen* a step.
+# Tracing `Q` over a run (see the `‖Q-Qᵀ‖`, `λmin`, `λmax` columns of that trace) shows both methods
+# driving `Q` to a condition number of `1e8`-`1e9`: `λmax` climbs past `1e4` while `λmin` falls below
+# `1e-5`. `_BFGS` reaches the gradient gate in about 120 iterations either way, so it evidently
+# self-corrects that scaling. `_DFP` does not, and then everything depends on the search: `Bisection`
+# minimizes along each direction and so recovers the missing scale every iteration, while
+# `Backtracking` starts at `α = 1` and only ever *shrinks*, so an under-scaled direction stays
+# under-scaled. From iteration 500 on, `_DFP` + `Backtracking` takes steps of `‖Δx‖ ≈ 1e-4` against a
+# gradient that is itself `≈ 1e-4`, and the gradient then falls by less than a factor of two over the
+# next 19_500 iterations. It is not stuck -- it terminates on a criterion, not on the cap -- merely
+# crawling, which is the historical reason BFGS superseded DFP.
+#
+# 5×10⁴ iterations is too slow to put in a test suite, so that pair is measured and documented rather
+# than run.
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
     for linesearch in (Backtracking(Float64), Bisection(Float64))
         svd_convergence_test(3; retraction=retraction, linesearch=linesearch,

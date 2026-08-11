@@ -90,7 +90,9 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
 
     _difference!(cache.Δg, gradient(cache), state.ḡ)
 
-    ΔxΔg = cache.Δx ⋅ cache.Δg
+    # see the remark in `bfgs_cache.jl`: `δᵀγ` is the denominator of an update whose every other term is
+    # flattened, so it is `_dot` and not the ambient `⋅`
+    ΔxΔg = _dot(cache.Δx, cache.Δg)
     # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too
     Δg2 = ParameterHandling.flatten(cache.Δg)[1]
     γQγ = Δg2' * state.Q * Δg2
@@ -103,7 +105,12 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
         # i.e. `δδᵀ`, which left `cache.ΔgΔg` computed on the line above and never read.
         mul!(cache.T1, cache.ΔgΔg, state.Q)
         mul!(cache.T2, state.Q, cache.T1)
-        state.Q .-= cache.T2 ./ γQγ
+        # `Q γγᵀ Q` is symmetric in exact arithmetic, but forming it as two separate products is not
+        # symmetric in floating point, and the error accumulates: unsymmetrized, `‖Q - Qᵀ‖/‖Q‖` grows
+        # from 8e-16 after five iterations to 1.6e-11 after twenty thousand, and `eigvals(Q)` then
+        # returns complex numbers. `BFGSCache` gets this for free because it adds `T₁ + T₂` where `T₂`
+        # is built as the exact transpose of `T₁`; here the symmetrization has to be explicit.
+        state.Q .-= (cache.T2 .+ cache.T2') ./ (2γQγ)
         state.Q .+= cache.ΔxΔx ./ ΔxΔg
     end
 

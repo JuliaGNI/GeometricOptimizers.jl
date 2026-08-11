@@ -225,6 +225,35 @@ function _mul(α::T, a::GradientArrayOrNamedTuple{T}) where {T}
     _rmul!(b, α)
 end
 
+@doc raw"""
+    _dot(a, b)
+
+The inner product of two gradients or directions, taken in the *flattened* coordinates.
+
+# Implementation
+
+For an `AbstractVecOrMat` this is `LinearAlgebra.dot`. For a horizontal lift — or a `NamedTuple` of
+them — it is emphatically not: `dot` on an [`AbstractLieAlgHorMatrix`](@ref) is the *ambient*
+Frobenius product, which counts each of the off-diagonal blocks of the lift twice and so comes out
+exactly twice the product of the free parameters. The intrinsic coordinates are the ones every other
+quantity in this package is expressed in — `Q` is sized by the flattening, [`outer!`](@ref) flattens
+before it forms its outer product, and the `α` of a line search parameterizes a curve in them — so
+pairing a gradient with a direction has to happen there too.
+
+Used by [`trial_slope`](@ref) for ``\varphi'(\alpha)``, and by the quasi-Newton caches for
+``\delta^T\gamma``, whose value has to be consistent with the flattened `T₁`, `T₂` and `γ^TQγ` it
+divides.
+"""
+_dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
+
+const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ArrayNamedTuple{T}}
+
+# `flatten` is given `T` explicitly: the one-argument `ParameterHandling.flatten` defaults to
+# `Float64`, which would make this return a `Float64` for `Float32` parameters and break every
+# element type the result is combined with downstream.
+_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} =
+    dot(ParameterHandling.flatten(T, a)[1], ParameterHandling.flatten(T, b)[1])
+
 _add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
 
 function _add!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
