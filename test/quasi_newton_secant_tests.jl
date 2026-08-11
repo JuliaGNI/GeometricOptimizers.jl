@@ -1,7 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: _BFGS, _DFP, cache, solver_step!, initialize_state!, inverse_hessian,
                            increase_iteration_number!, iteration_number, update!
-using LinearAlgebra: norm, dot, eigvals
+using LinearAlgebra: norm, dot
 using Test
 
 # `_BFGS` and `_DFP` build their inverse Hessian `Q` from the secant pair
@@ -13,22 +13,28 @@ using Test
 # which made `γ` identically zero; `ΔxΔg` was then zero too and the guard around the `Q` update
 # skipped it on every iteration. Both methods silently ran as steepest descent with `Q ≡ I`.
 
-F(x) = sum(sin.(x) .^ 2)
-
 # a genuinely non-separable, non-quadratic objective, so that a wrong `Q` cannot go unnoticed the way
 # it does on a problem an exact line search solves in one step
 rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i+1] - x[i]^2)^2 for i in 1:(length(x)-1))
 
 @testset "the secant pair is formed from consecutive iterates" begin
+    # Rosenbrock rather than `F`, and only ten iterations, so that the whole window stays in the
+    # pre-convergence regime: `f` is still of order 1e-2 at the end of it. Once a solve reaches
+    # machine precision, `δ` and `γ` underflow to zero and the guard around the `Q` update *correctly*
+    # skips, and how soon that happens is a floating-point detail that differs between platforms --
+    # so counting updates over a window that runs past convergence pins nothing. Every iteration in
+    # this window has a genuine secant pair, and `Q` has to move on each of them.
+    ITERATIONS = 10
+
     for algorithm in (_BFGS(), _DFP())
-        x = fill(0.5, 3)
+        x = [-1.2, 1.0]
         state = OptimizerState(algorithm, x)
-        opt = Optimizer(x, F; algorithm=algorithm, linesearch=Backtracking())
+        opt = Optimizer(x, rosenbrock; algorithm=algorithm, linesearch=Backtracking())
 
         initialize_state!(state)
         updates = 0
 
-        for _ in 1:20
+        for _ in 1:ITERATIONS
             increase_iteration_number!(state)
             Q_before = copy(inverse_hessian(state))
             solver_step!(x, state, opt)
@@ -36,11 +42,16 @@ rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i+1] - x[i]^2)^2 for i in 1:(length(
             update!(state, opt, x)
         end
 
-        # the first iteration is skipped on purpose (`state.s` is `NaN`, so there is no step to build
-        # a secant pair from yet, and BFGS is supposed to start from `Q = I`); every one after it has
-        # a valid pair. Before the fix this was 0.
-        @test updates ≥ 15
+        # the first iteration is skipped on purpose: `state.s` is `NaN`, so there is no step to build
+        # a secant pair from yet, and BFGS is supposed to start from `Q = I`. Every one after it has a
+        # valid pair. Before the fix this was 0 -- `Q` was never updated at all, on any iteration.
+        @test updates == ITERATIONS - 1
         @test inverse_hessian(state) != one(inverse_hessian(state))
+
+        # guards the premise above: if a future change makes this converge inside the window, the
+        # update count would drop legitimately and the assertion above would be measuring the wrong
+        # thing. This says so rather than leaving it to look like a regression.
+        @test rosenbrock(x) > 1e-8
     end
 end
 
