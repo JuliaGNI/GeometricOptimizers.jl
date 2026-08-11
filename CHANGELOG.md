@@ -96,7 +96,13 @@ this package produces change**, in most cases substantially for the better.
 
   Reported upstream as JuliaGNI/SimpleSolvers.jl#174: `Backtracking` has no expansion phase,
   `StrongWolfe` has one that its default `c₂` prevents from firing, and `Backtracking.α₀` is ignored
-  altogether, so the initial trial step cannot be configured.
+  altogether, so the initial trial step cannot be configured. SimpleSolvers `main` (0.11, unreleased)
+  has since addressed the first and the third: `Backtracking(T; expand = true)` lengthens the step when
+  the first trial is accepted, and the dead `α₀` field is gone. Verified here — it is under 4% per
+  iteration and exactly free on a well-scaled problem, takes `_BFGS` from 113 to 93 iterations and
+  `_DFP` from no convergence to 830 — so it should become the default for every `Backtracking` in
+  `default_linesearch` once the `SimpleSolvers = "0.10"` bound moves. `_DFP` keeps `StrongWolfe`, still
+  1.3 to 1.4 times cheaper. The suite passes against 0.11.0 unchanged.
 - **`StrongWolfe` is re-exported.** It was the only one of SimpleSolvers' six line searches this
   package did not re-export, and it is now the default for `_DFP`.
 - **Retractions are passed as instances, not functions**: `retraction = Cayley()` / `Geodesic()`, not

@@ -202,6 +202,33 @@ step reporting that it found no descent direction.
 
     None of this is a property of DFP: given a search that can exceed 1 it is competitive with `_BFGS`.
     See JuliaGNI/SimpleSolvers.jl#174 for the upstream half of the story.
+
+!!! note "SimpleSolvers 0.11 gives `Backtracking` an expansion phase"
+    `Backtracking(T; expand = true)` on SimpleSolvers `main` (0.11, unreleased at the time of writing,
+    so the `SimpleSolvers = "0.10"` compat bound here still rules it out) lengthens the step when the
+    *first* trial is accepted — the trigger identified in #174 — growing it by at most a factor `q = 10`
+    per round for at most `nexpand = 3` rounds while the step both satisfies sufficient decrease and
+    strictly improves the merit.
+
+    Measured on the SVD problem, it is close to free and helps both quasi-Newton methods:
+
+    | | `expand = false` | `expand = true` |
+    |---|---|---|
+    | `_BFGS`, `Geodesic` | 113 iters / 2 857 evals | **93 / 2 374** |
+    | `_BFGS`, `Cayley` | 136 / 3 431 | **118 / 3 006** |
+    | `_DFP`, `Geodesic` | no convergence / 75 012 | **830 / 21 540** |
+    | `_DFP`, `Cayley` | no convergence / 75 011 | **1 237 / 31 995** |
+
+    The cost is under 4% per iteration (25.0 to 26.0 evaluations), and on a well-scaled problem it is
+    *exactly* nothing: on the sphere the evaluation counts are identical with and without it, because
+    the extrapolation model declines to propose a longer step before any merit is evaluated. `_BFGS`
+    then takes `α > 1` on 20% of its iterations and `_DFP` on 59% (median 2.55, hitting the
+    ``q^{\mathrm{nexpand}} = 1000`` ceiling at the top).
+
+    So `expand = true` is the right default for every `Backtracking` above once the compat bound moves,
+    and it removes `_DFP`'s pathology outright — but not its exception: at 21 540 and 31 995 evaluations
+    it is still 1.3 to 1.4 times the work of `StrongWolfe(c₂ = 0.1)`, so `_DFP` keeps that. The suite
+    passes against 0.11.0 unchanged.
 """
 default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T)
 default_linesearch(::Type{T}, ::Adam) where {T} = Static(T(DEFAULT_LEARNING_RATE))
