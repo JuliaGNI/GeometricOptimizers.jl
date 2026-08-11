@@ -69,7 +69,10 @@ end
 # shortens the step if it has to.
 @testset "the default line search matches the method" begin
     for T in (Float64, Float32)
-        for method in (GradientMethod(), MomentumMethod(T(0.1)), Adam(T))
+        # `Adam` is the only method that keeps a fixed step: its direction is a moving average and is
+        # not required to descend on an individual step, so a sufficient-decrease search has nothing
+        # to work with.
+        let method = Adam(T)
             ls = default_linesearch(T, method)
             @test ls isa Static{T}
             @test ls.α == T(DEFAULT_LEARNING_RATE)
@@ -78,7 +81,10 @@ end
             @test linesearch(Optimizer(x, F; algorithm=method)).method isa Static{T}
         end
 
-        for method in (Newton(), _BFGS(), _DFP())
+        # Everything else searches. `GradientMethod` and `MomentumMethod` joined this group in 0.2.0,
+        # once a line search could take its trial step through a retraction; before that `Static` was
+        # the only thing that worked on manifold parameters, so they had no choice.
+        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), _BFGS(), _DFP())
             @test default_linesearch(T, method) isa Backtracking{T}
 
             x = ones(T, 3)

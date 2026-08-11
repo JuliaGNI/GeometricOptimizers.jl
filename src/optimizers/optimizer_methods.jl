@@ -110,19 +110,30 @@ const DEFAULT_MOMENTUM_α = 0.01
 
 const DEFAULT_LEARNING_RATE = 1.0e-3
 
-"""
+@doc raw"""
     default_linesearch(T, method)
 
 Return the line search that [`Optimizer`](@ref) uses for `method` if none is supplied.
 
-[`GradientMethod`](@ref), [`MomentumMethod`](@ref) and [`Adam`](@ref) determine a direction
-but no step size, so for them the `α` of a [`SimpleSolvers.Static`](@extref) line search *is*
-the learning rate and the default is `Static(DEFAULT_LEARNING_RATE)`. The methods that build a
-(quasi-)Newton direction come with a scale of their own and default to
-[`SimpleSolvers.Backtracking`](@extref).
+Everything except [`Adam`](@ref) defaults to [`SimpleSolvers.Backtracking`](@extref): the
+(quasi-)Newton methods because they build a direction with a scale of its own, and
+[`GradientMethod`](@ref) and [`MomentumMethod`](@ref) because a searching line search is what makes
+them *converge* rather than merely descend. Both produce genuine descent directions, so a
+backtracking search always has an `α` to find.
+
+`Adam` is the exception and keeps a fixed `Static(DEFAULT_LEARNING_RATE)`. Its direction is
+``-m_1/(\sqrt{m_2} + \delta)``, a moving average that is deliberately *not* required to descend on any
+individual step, so a sufficient-decrease search has nothing to work with and would spend every such
+step reporting that it found no descent direction.
+
+!!! info "This changed in 0.2.0"
+    `GradientMethod` and `MomentumMethod` used to default to `Static(DEFAULT_LEARNING_RATE)` as well.
+    They could not do anything else: until the line search learned to take its trial step through the
+    retraction (see [`trial_iterate!`](@ref)), `Static` was the only line search that worked on
+    manifold parameters at all. Pass `linesearch = Static(η)` to get the old fixed learning rate back.
 """
 default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T)
-default_linesearch(::Type{T}, ::Union{GradientMethod,MomentumMethod,Adam}) where {T} = Static(T(DEFAULT_LEARNING_RATE))
+default_linesearch(::Type{T}, ::Adam) where {T} = Static(T(DEFAULT_LEARNING_RATE))
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
 Base.show(io::IO, alg::_DFP) = print(io, "DFP")

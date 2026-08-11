@@ -1,5 +1,6 @@
 using GeometricOptimizers
-using SimpleSolvers: Static
+using GeometricOptimizers: StiefelManifold, Cayley
+using SimpleSolvers: Static, Backtracking, Bisection
 using LinearAlgebra: norm, svd
 using Test
 import Random
@@ -87,8 +88,14 @@ function svd_test(n, train_steps=1000; retraction=Cayley())
     algorithms = (gradient=GradientMethod(), momentum=MomentumMethod(), adam=GeometricOptimizers.Adam())
 
     relative_errors = map(algorithms) do algorithm
+        # `warn_iterations = 0` silences "Optimizer took 1000 iterations", which is true and is the
+        # point: this is a fixed-budget comparison of three first-order methods at one learning rate,
+        # not a convergence test. None of them can converge here — with `Static(0.01)` the gradient is
+        # 8.4e-2 after these 1000 steps against a gate of 1.5e-8, and it is not stuck but slow
+        # (1.9e-3 / 2.1e-4 / 4.0e-5 at 5000 / 20000 / 60000 steps), so reaching the gate this way
+        # would take of the order of a million. The convergence test is the `_BFGS` one below.
         optimizer = Optimizer(ps, error; retraction=retraction, algorithm=algorithm,
-            linesearch=Static(0.01), max_iterations=train_steps)
+            linesearch=Static(0.01), max_iterations=train_steps, warn_iterations=0)
         ps_copy = deepcopy(ps)
         solve!(ps_copy, OptimizerState(algorithm, ps_copy), optimizer)
 
@@ -109,4 +116,47 @@ end
 
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
     svd_test(3, retraction=retraction)
+end
+
+"""
+    svd_convergence_test(n; retraction)
+
+The same problem as [`svd_test`](@ref), solved to convergence rather than to a fixed budget.
+
+`_BFGS` needs a line search that actually searches, and until the line search learned to take its
+trial step through the retraction that was impossible on manifold parameters — `Static` was the only
+one that worked, because it is the only one that never evaluates the merit. So this problem had no
+algorithm that converged on it at all: the three first-order methods above exhaust 1000 iterations at
+a relative error of 1e-2.
+"""
+function svd_convergence_test(n; retraction=Cayley(), linesearch=Backtracking(Float64))
+    N = size(A, 1)
+    U, Σ, Vt = svd(A)
+    U_result = U[:, 1:n]
+    err_best = norm(A - U_result * U_result' * A)
+
+    Random.seed!(1234)
+    ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
+    state = OptimizerState(GeometricOptimizers._BFGS(), ps)
+    optimizer = Optimizer(ps, error; retraction=retraction,
+        algorithm=GeometricOptimizers._BFGS(), linesearch=linesearch)
+
+    result = solve!(ps, state, optimizer)
+
+    # it stops on a convergence criterion, not on the iteration cap
+    @test GeometricOptimizers.iteration_number(state) < 1000
+    @test GeometricOptimizers.status(result).rg < 1e-6
+
+    # and it gets to the answer, which the fixed-step runs above reach to 1e-2 at best
+    @test norm((error(ps) - err_best) / err_best) < 1e-10
+
+    for Y in values(ps)
+        @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
+    end
+end
+
+for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
+    for linesearch in (Backtracking(Float64), Bisection(Float64))
+        svd_convergence_test(3; retraction=retraction, linesearch=linesearch)
+    end
 end
