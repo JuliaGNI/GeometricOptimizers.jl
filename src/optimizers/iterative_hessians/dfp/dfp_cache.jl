@@ -95,7 +95,7 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
     Δg2 = ParameterHandling.flatten(cache.Δg)[1]
     γQγ = Δg2' * state.Q * Δg2
 
-    if !iszero(ΔxΔg) & !iszero(γQγ) & !isnan(ΔxΔg)
+    if !iszero(ΔxΔg) && !isnan(ΔxΔg) && !iszero(γQγ) && !isnan(γQγ)
         outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
         outer!(cache.ΔgΔg, cache.Δg, cache.Δg)
         # the DFP correction is `Q - Qγγᵀ Q/(γᵀQγ) + δδᵀ/(δᵀγ)` (nocedal2006numerical, eq. 6.15), so
