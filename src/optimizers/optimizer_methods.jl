@@ -12,6 +12,17 @@ Includes [`_BFGS`](@ref) and [`_DFP`](@ref).
 """
 abstract type QuasiNewtonOptimizerMethod <: OptimizerMethod end
 
+@doc raw"""
+    Newton
+
+Newton's method: the direction solves ``\nabla^2f(x)\delta = -\nabla{}f(x)`` with the exact Hessian,
+which [`SimpleSolvers.HessianAutodiff`](@extref) supplies.
+
+Unlike [`_BFGS`](@ref) and [`_DFP`](@ref) this needs no approximation to build up, so it converges in
+few iterations, but it also inherits the Hessian's indefiniteness: where ``\nabla^2f`` is not positive
+definite the direction ascends, and [`ensure_descent!`](@ref) substitutes the steepest-descent
+direction for it.
+"""
 struct Newton <: OptimizerMethod end
 
 Hessian(::Newton, ForOBJ::Union{Callable,OptimizerProblem}, x::AbstractVector) = HessianAutodiff(ForOBJ, x)

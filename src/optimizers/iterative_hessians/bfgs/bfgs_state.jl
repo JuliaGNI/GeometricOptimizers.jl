@@ -71,7 +71,10 @@ end
 
 function update!(state::BFGSState{T}, direction::GradientArrayOrNamedTuple{T}, gradient::Gradient, x::XT, f::T, retraction) where {T,XT<:OptimizerSolution{T}}
     _copyto!(state.x̄, x)
-    XT <: ArrayNamedTuple ? gradient(state.ḡ, x, state) : gradient(state.ḡ, x)
+    # `ḡ` is deliberately *not* refreshed here. This runs at the end of the iteration, at the same
+    # iterate `x` that the next `Δg = ∇f(x) - ḡ` is formed at, so writing `∇f(x)` here made `Δg`
+    # identically zero and the quasi-Newton `Q` update never fired on any iteration. The BFGS and DFP
+    # caches advance `ḡ` themselves, right after they have used it.
     state.f̄ = f
 
     _copyto!(state.s, direction)

@@ -45,6 +45,12 @@ begin
     @safetestset "Optimizer Problems           " include("optimizer_problems.jl")
 end
 begin
+    @safetestset "Descent Direction            " include("descent_direction_tests.jl")
+end
+begin
+    @safetestset "Quasi-Newton Secant Pair     " include("quasi_newton_secant_tests.jl")
+end
+begin
     @safetestset "Manifold Optimizers         " include("manifold_optimizers_with_new_interface.jl")
 end
 begin

@@ -58,6 +58,19 @@ f_change_approx(status::OptimizerStatus) = status.Δf̃
 g_abschange(status::OptimizerStatus) = status.rgₐ
 g_residual(status::OptimizerStatus) = status.rg
 
+"""
+    gradient_difference!(cache, state)
+
+Write the gradient difference `∇f(xᵏ) - ∇f(xᵏ⁻¹)` into `cache.Δg`, for [`OptimizerStatus`](@ref).
+
+# Implementation
+
+The default forms it from the gradient the cache holds and the previous gradient the state holds. The
+quasi-Newton caches have already formed exactly this difference -- it is the `γ` of their secant pair
+-- and have advanced `state.ḡ` past it in doing so, so for them this is a no-op.
+"""
+gradient_difference!(cache::OptimizerCache, state::OptimizerState) = _difference!(cache.Δg, cache.g, state.ḡ)
+
 function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T,OST<:OptimizerState{T},OCT<:OptimizerCache{T}}
     rxₐ = l2norm(direction(cache))
     rxᵣ = rxₐ / l2norm(cache.x)
@@ -68,7 +81,7 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     rfₐ = norm(Δf)
     rfᵣ = rfₐ / norm(f)
 
-    _difference!(cache.Δg, cache.g, state.ḡ)
+    gradient_difference!(cache, state)
 
     rgₐ = l2norm(cache.Δg)
     rg = l2norm(cache.g)
@@ -133,12 +146,19 @@ function convergence_measures(status::OptimizerStatus, config::Options)
     x_converged = x_abschange(status) ≤ x_abstol(config) ||
                   x_relchange(status) ≤ x_reltol(config)
 
+    # `f_relchange` is a *successive* change, so it is gated on `f_suctol`, which SimpleSolvers
+    # 0.9 introduced for exactly that and gave `f_reltol`'s former default. `f_reltol` itself is
+    # now anchored to the initial residual and defaults to `√eps(T)` -- seven orders of magnitude
+    # looser -- so keeping it here would stop a `Static` line search long before the minimizer.
     f_converged = f_abschange(status) ≤ f_abstol(config) ||
-                  f_relchange(status) ≤ f_reltol(config)
+                  f_relchange(status) ≤ f_suctol(config)
 
     f_converged_strong = f_change(status) ≤ f_mindec(config) * f_change_approx(status)
 
-    g_converged = g_residual(status) ≤ g_restol(config)
+    # SimpleSolvers 0.9 removed `Options.g_restol` and gave its role to `f_reltol`, whose default
+    # (`√eps(T)`) is the same number `g_restol` defaulted to. The residual of an optimizer is
+    # `‖∇f(x)‖`, so this is the corresponding gate here.
+    g_converged = g_residual(status) ≤ f_reltol(config)
 
     (x_converged, f_converged, f_converged_strong, g_converged)
 end
@@ -154,11 +174,7 @@ Check if the optimizer has converged.
 - `converged` (the output of [`SimpleSolvers.assess_convergence`](@extref)) is `true` and `iterations` ``\geq`` `config.min_iterations`,
 - if `config.allow_f_increases` is `false`: `status.f_increased` is `true`,
 - `iterations` ``\geq`` `config.max_iterations`,
-- `status.rxₐ` ``>`` `config.x_abstol_break`
-- `status.rxᵣ` ``>`` `config.x_reltol_break`
 - `status.rfₐ` ``>`` `config.f_abstol_break`
-- `status.rfᵣ` ``>`` `config.f_reltol_break`
-- `status.rg`  ``>`` `config.g_restol_break`
 - `status.x_isnan`
 - `status.f_isnan`
 - `status.g_isnan`
@@ -173,9 +189,8 @@ function meets_stopping_criteria(status::OptimizerStatus, config::Options, itera
     (converged && iterations ≥ config.min_iterations) ||
         (status.f_increased && !config.allow_f_increases) ||
         iterations ≥ config.max_iterations ||
-        status.rxₐ > config.x_abstol_break ||
-        status.rxᵣ > config.x_reltol_break ||
-        status.rfₐ > config.f_abstol_break ||
-        status.rfᵣ > config.f_reltol_break ||
-        status.rg > config.g_restol_break
+        # `f_abstol_break` is the only `*_break` field SimpleSolvers 0.9 kept; the four that
+        # are gone (`x_abstol_break`, `x_reltol_break`, `f_reltol_break`, `g_restol_break`)
+        # all defaulted to `Inf`, so dropping them changes nothing at default `Options`.
+        status.rfₐ > config.f_abstol_break
 end
