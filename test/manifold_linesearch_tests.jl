@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: Cayley, Geodesic, _BFGS, StiefelManifold, check, iteration_number,
+using GeometricOptimizers: Cayley, Geodesic, _BFGS, _DFP, StiefelManifold, check, iteration_number,
                            status, DecayingStatic, step_size
 using SimpleSolvers: Static, Backtracking, Bisection, l2norm, Options, f_reltol
 using LinearAlgebra: norm
@@ -117,4 +117,25 @@ end
     @test iteration_number(state) < 1000            # terminates on a criterion rather than the cap
     @test status(result).rxₐ < 1e-10                # the step really has gone to zero
     @test isapprox(x, MINIMIZER; atol=1e-3)
+end
+
+@testset "the quasi-Newton methods run on a bare Manifold" begin
+    # `Q` is sized by the *intrinsic* dimension -- the length of the flattening, 2 for `St(3, 1)` --
+    # while the gradient and the direction are horizontal lifts of the ambient shape, `3 × 3`. Four
+    # methods that the `NamedTuple` case had and the bare case did not (`outer!`, `_mul!`, `alloc_h`
+    # and `_copyto!` for a section) sat on that boundary; without them `_BFGS` on a bare `Manifold`
+    # died in `outer!` with `AssertionError: axes(O, 1) == axes(x, 1)`.
+    for algorithm in (_BFGS(), _DFP()), linesearch in (Backtracking(Float64), Bisection(Float64))
+        x = x₀()
+        state = OptimizerState(algorithm, x)
+        opt = Optimizer(x, f; algorithm=algorithm, linesearch=linesearch)
+
+        result = solve!(x, state, opt)
+
+        @test x isa StiefelManifold{Float64}
+        @test check(x) < 100eps()
+        @test iteration_number(state) < 100          # 2 with `Bisection`, 17 and 27 with `Backtracking`
+        @test status(result).rg < 1e-7
+        @test isapprox(x, MINIMIZER; atol=1e-7)
+    end
 end

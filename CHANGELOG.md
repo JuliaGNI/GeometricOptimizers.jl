@@ -85,6 +85,20 @@ this package produces change**, in most cases substantially for the better.
 
   Relative error on the SVD problem improves from 1.1e-3 to 1.7e-5 (`Geodesic`) and from 1.7e-3 to
   6.0e-5 (`Cayley`).
+- **`_DFP` accepts a `Manifold` and a `NamedTuple`, like `_BFGS`.** Its cache was `AbstractVector`-only,
+  so anything else fell through to a `NewtonOptimizerCache` and a `MethodError`. It is lifted to
+  `OptimizerSolution` the way `BFGSCache` already was: the solution and the gradient get separate type
+  parameters (on a manifold they are a point and a horizontal lift, of different shapes), the section
+  may be a `NamedTuple` of sections, `Q` is sized by the length of the flattening rather than by
+  `length(x)`, and the quadratic form `γᵀQγ` is taken in the flattened coordinates. `HessianDFP` and
+  the `Hessian(::_DFP, …)` methods are widened to match.
+- **`_BFGS` and `_DFP` run on a *bare* `Manifold`.** `Q` is sized by the intrinsic dimension — the
+  length of the flattening, 2 for `St(3, 1)` — while the gradient and the direction are horizontal
+  lifts of the ambient shape, `3 × 3`. Four methods that the `NamedTuple` case had and the bare case
+  did not sat on that boundary: `outer!` and `_mul!` for an `AbstractLieAlgHorMatrix`, `alloc_h` for a
+  `Manifold`, and `_copyto!` of a point into a `GlobalSection`. Without them `_BFGS` on a bare
+  manifold died in `outer!` with `AssertionError: axes(O, 1) == axes(x, 1)`. `ParameterHandling.flatten`
+  gains the `GrassmannLieAlgHorMatrix` method that the Stiefel lift already had.
 - **`_BFGS` and `_DFP` now actually update their inverse Hessian.** `state.ḡ` was refreshed at the end
   of the iteration, i.e. at the very iterate the next secant difference `γ = ∇f(x⁽ᵏ⁾) - ∇f(x⁽ᵏ⁻¹⁾)`
   was formed at, so `γ` was identically zero, `δᵀγ` was zero with it, and the guard around the `Q`

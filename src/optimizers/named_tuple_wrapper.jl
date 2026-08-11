@@ -79,6 +79,12 @@ function ParameterHandling.flatten(::Type{T}, g::StiefelLieAlgHorMatrix{R}) wher
     return x_vec, Array_from_vec
 end
 
+function ParameterHandling.flatten(::Type{T}, g::GrassmannLieAlgHorMatrix{R}) where {T<:AbstractFloat,R<:Real}
+    x_vec, from_vec = ParameterHandling.flatten(T, g.B)
+    Array_from_vec(x_vec) = GrassmannLieAlgHorMatrix(from_vec(x_vec), g.N, g.n)
+    return x_vec, Array_from_vec
+end
+
 # Type piracy: `Gradient` is SimpleSolvers' and `ArrayNamedTuple` is an alias for Base's
 # `NamedTuple`. A wrapper `struct` would fix this locally. See issue #16.
 function (grad::Gradient{T})(nt::ArrayNamedTuple{T}) where {T}
@@ -125,12 +131,17 @@ function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ArrayNamedTuple{T}) whe
     Λ
 end
 
-function Base.copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:StiefelManifold}
+function Base.copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold}
+    # only the anchor moves; `Λ.λ` is deliberately left alone, since recomputing the lift would move
+    # the frame the secant pair of a quasi-Newton method is expressed in
     copyto!(Λ.Y, x)
     Λ
 end
 
 _copyto!(Λ::GlobalSectionNamedTuple, x::ArrayNamedTuple) = copyto!(Λ, x)
+
+# the bare-`Manifold` counterpart of the line above
+_copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
 
 function _copyto!(x::ArrayNamedTuple, Λ::GlobalSectionNamedTuple)
     apply_toNT(copyto!, x, Λ)
@@ -192,6 +203,18 @@ end
 function _mul!(c::ArrayNamedTuple, a::AbstractMatrix, b::ArrayNamedTuple)
     v_c, c_unflatten = ParameterHandling.flatten(c)
     v_b, b_unflatten = ParameterHandling.flatten(b)
+
+    _mul!(v_c, a, v_b)
+    _copyto!(c, c_unflatten(v_c))
+end
+
+# The same ambient/intrinsic boundary as the method above, for a *bare* `Manifold`: the quasi-Newton
+# `Q` is sized by the length of the flattening, while the direction and the gradient are horizontal
+# lifts of the ambient shape (`3 × 3` against an intrinsic 2, for `St(3, 1)`). Multiplying them
+# directly reaches `setindex!`, which the lift types do not define.
+function _mul!(c::AbstractLieAlgHorMatrix, a::AbstractMatrix, b::AbstractLieAlgHorMatrix)
+    v_c, c_unflatten = ParameterHandling.flatten(c)
+    v_b, _ = ParameterHandling.flatten(b)
 
     _mul!(v_c, a, v_b)
     _copyto!(c, c_unflatten(v_c))

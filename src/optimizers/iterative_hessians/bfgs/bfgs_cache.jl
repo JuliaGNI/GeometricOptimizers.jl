@@ -77,6 +77,25 @@ function outer!(m::AbstractMatrix{T}, arr1::ArrayNamedTuple{T}, arr2::ArrayNamed
 end
 
 @doc raw"""
+    outer!(m, g₁, g₂)
+
+The outer product of two horizontal lifts, written into `m`.
+
+Like the `ArrayNamedTuple` method above, this exists because the quasi-Newton `Q` is sized by the
+*intrinsic* dimension of the parameters — the length of their flattening — while the direction and the
+gradient are handed around in the *ambient* horizontal-lift representation. For a bare
+`StiefelManifold` of size `(3, 1)` those are 2 and `3 × 3` respectively, so `SimpleSolvers.outer!`,
+which indexes its arguments linearly against `axes(m)`, would assert on the mismatch. Flattening first
+is what the `NamedTuple` case has always done; without the same method here `_BFGS` and `_DFP` cannot
+run on a *bare* `Manifold` at all.
+"""
+function outer!(m::AbstractMatrix{T}, g₁::AbstractLieAlgHorMatrix{T}, g₂::AbstractLieAlgHorMatrix{T}) where {T}
+    v1, _ = ParameterHandling.flatten(g₁)
+    v2, _ = ParameterHandling.flatten(g₂)
+    outer!(m, v1, v2)
+end
+
+@doc raw"""
     update!(cache, x, g)
 
 Update the [`BFGSCache`](@ref) based on `x` and `g`.
