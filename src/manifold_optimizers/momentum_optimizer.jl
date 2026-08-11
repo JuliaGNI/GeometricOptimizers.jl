@@ -61,7 +61,7 @@ mutable struct MomentumState{T,OT<:OptimizerSolution{T},GS<:GlobalSectionSingleO
     x::OT
     x̄::OT
     g::VT
-    ḡ::VT
+    ḡ::VT
     p::VT
     f::T
     f̄::T
@@ -70,7 +70,7 @@ end
 solution(state::MomentumState) = state.x
 previous_solution(state::MomentumState) = state.x̄
 gradient(state::MomentumState) = state.g
-previous_gradient(state::MomentumState) = state.ḡ
+previous_gradient(state::MomentumState) = state.ḡ
 value(state::MomentumState) = state.f
 previous_value(state::MomentumState) = state.f̄
 momentum(state::MomentumState) = state.p

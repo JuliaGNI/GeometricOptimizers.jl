@@ -104,7 +104,7 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
     _copyto!(rhs(cache), g)
     _rmul!(rhs(cache), -one(T))
     _copyto!(direction(cache), state.s)
-    _difference!(cache.Δg, gradient(cache), state.ḡ)
+    _difference!(cache.Δg, gradient(cache), state.ḡ)
 
     ΔxΔg = cache.Δx ⋅ cache.Δg
 

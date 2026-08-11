@@ -76,7 +76,7 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     rxᵣ = rxₐ / l2norm(cache.x)
 
     Δf = f - state.f̄
-    Δf̃ = state.ḡ ⋅ direction(cache)
+    Δf̃ = state.ḡ ⋅ direction(cache)
 
     rfₐ = norm(Δf)
     rfᵣ = rfₐ / norm(f)

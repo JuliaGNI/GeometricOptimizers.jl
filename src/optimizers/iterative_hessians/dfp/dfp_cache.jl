@@ -81,7 +81,7 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::AbstractVector{T}, g
     # cache.Δx .= cache.x .- state.x̄
     cache.Δx .= state.s
 
-    cache.Δg .= gradient(cache) - state.ḡ
+    cache.Δg .= gradient(cache) - state.ḡ
 
     ΔxΔg = cache.Δx ⋅ cache.Δg
     γQγ = cache.Δg' * state.Q * cache.Δg
