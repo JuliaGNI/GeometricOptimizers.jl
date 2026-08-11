@@ -3,8 +3,8 @@ using NaNMath: log
 using GeometricOptimizers
 using GeometricOptimizers: Newton, _DFP, _BFGS
 using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
-using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
-using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, GradientAutodiff, GradientFunction
+using GeometricOptimizers: DEFAULT_LEARNING_RATE, DEFAULT_DFP_c₂, default_linesearch
+using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, StrongWolfe, GradientAutodiff, GradientFunction
 using Test
 using Random
 Random.seed!(123)
@@ -66,7 +66,8 @@ end
 #
 # The methods that come with a Hessian (or an approximation of it) produce a direction whose
 # *length* is meaningful, so they keep `Backtracking`, which starts at `α₀ = 1` and only
-# shortens the step if it has to.
+# shortens the step if it has to — except `_DFP`, whose direction is under-scaled badly enough
+# that never being able to lengthen it costs two orders of magnitude. See below.
 @testset "the default line search matches the method" begin
     for T in (Float64, Float32)
         # `Adam` is the only method that keeps a fixed step: its direction is a moving average and is
@@ -84,11 +85,28 @@ end
         # Everything else searches. `GradientMethod` and `MomentumMethod` joined this group in 0.2.0,
         # once a line search could take its trial step through a retraction; before that `Static` was
         # the only thing that worked on manifold parameters, so they had no choice.
-        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), _BFGS(), _DFP())
+        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), _BFGS())
             @test default_linesearch(T, method) isa Backtracking{T}
 
             x = ones(T, 3)
             @test linesearch(Optimizer(x, F; algorithm=method)).method isa Backtracking{T}
+        end
+
+        # `_DFP` is the exception among the searching methods. Its direction is systematically
+        # under-scaled, and `Backtracking` starts at `α₀ = 1` and only ever shrinks, so it cannot
+        # lengthen the step: on the SVD problem it then accepts `α = 1` on *every* iteration and needs
+        # 49_679 of them. `StrongWolfe` has a bracketing phase that grows the step, but only fires it
+        # with a curvature constant tight enough to reject `α = 1` — hence `c₂ = DEFAULT_DFP_c₂` rather
+        # than its own default of `0.9`, which converges nowhere here. See `default_linesearch` and the
+        # analysis in `optimizer_convergence/svd_optim.jl`.
+        let method = _DFP()
+            ls = default_linesearch(T, method)
+            @test ls isa StrongWolfe{T}
+            @test ls.c₂ == T(DEFAULT_DFP_c₂)
+            @test ls.c₂ < T(0.9)                 # the whole point: loose enough and it never expands
+
+            x = ones(T, 3)
+            @test linesearch(Optimizer(x, F; algorithm=method)).method isa StrongWolfe{T}
         end
     end
 

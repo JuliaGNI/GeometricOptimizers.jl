@@ -71,8 +71,34 @@ this package produces change**, in most cases substantially for the better.
 
   On the SVD problem, letting the line search pick the step takes the relative error after 1000
   iterations from 1.4e-2 to 2.3e-3 (`GradientMethod`) and from 1.4e-2 to 2.2e-3 (`MomentumMethod`).
-  `Bisection` does better again — 6.2e-7 for `MomentumMethod` — so it is worth passing explicitly on
-  problems where the extra merit evaluations per iteration pay for themselves.
+  `Bisection` reaches 6.2e-7 in the same number of *iterations*, but it costs ≈583 objective
+  evaluations per iteration against `Backtracking`'s ≈25, so on any fixed budget of work
+  `Backtracking` is ahead; see the table in `default_linesearch`. Pass a searching method explicitly
+  when iterations rather than evaluations are what you are paying for.
+
+  **`_DFP` defaults to `StrongWolfe(c₂ = 0.1)`, not `Backtracking`.** `Backtracking` starts its trial
+  step at `α = 1` and only ever *shrinks*, which is right for a direction already scaled like a Newton
+  step — `_BFGS` accepts `α = 1` on 74% of its iterations — but `_DFP`'s direction is systematically
+  under-scaled and a backtracking search cannot lengthen it. On the SVD problem `_DFP` + `Backtracking`
+  accepts `α = 1` on *every* iteration and needs 49_679 of them. Raising only the initial trial step
+  from 1 to 3 gives 229, which is what shows the ceiling and not the method to be the cause.
+
+  `_DFP` therefore needs a search that can grow the step, and measured in objective evaluations rather
+  than iterations the cheapest is `StrongWolfe` — but only with a curvature constant tight enough to
+  reject `α = 1`. At its own default `c₂ = 0.9` the strong Wolfe conditions already hold at `α = 1` on
+  99.4% of iterations, the bracketing phase never fires, and it crawls exactly like `Backtracking`; at
+  `c₂ = 0.1` the expansion fires on 94.5% with a median `α` of 8. Cost for `_DFP` (Geodesic / Cayley):
+  `StrongWolfe(0.1)` 16 466 / 23 312 evaluations, `Quadratic` 18 313 / 54 230, `BierlaireQuadratic`
+  27 484 / 80 787, `Bisection` 78 698 / 55 493. `Bisection` needs the fewest iterations and four to
+  five times the work; `Quadratic` is competitive on `Geodesic` and degrades badly on the default
+  `Cayley`, probably because `trial_slope` is only first-order correct there and `Quadratic` uses
+  ``\varphi'`` quantitatively where the others use only its sign or its ratio to ``\varphi'(0)``.
+
+  Reported upstream as JuliaGNI/SimpleSolvers.jl#174: `Backtracking` has no expansion phase,
+  `StrongWolfe` has one that its default `c₂` prevents from firing, and `Backtracking.α₀` is ignored
+  altogether, so the initial trial step cannot be configured.
+- **`StrongWolfe` is re-exported.** It was the only one of SimpleSolvers' six line searches this
+  package did not re-export, and it is now the default for `_DFP`.
 - **Retractions are passed as instances, not functions**: `retraction = Cayley()` / `Geodesic()`, not
   `retraction = cayley`. The default is `Cayley()`.
 - **`MomentumMethod`'s recursion is fixed.** It accumulated `p ← p + α∇L`, which is not momentum but an

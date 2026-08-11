@@ -14,8 +14,8 @@ export GradientAutodiff, GradientFunction, GradientFiniteDifferences
 
 # `Static` is exported because it is how a fixed learning rate is specified: the optimizer
 # methods only produce a direction, see `default_linesearch`.
-using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection
-export Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection
+using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection, StrongWolfe
+export Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection, StrongWolfe
 export DecayingStatic
 
 export Options

@@ -70,7 +70,7 @@ or a quadratic fit would act on.
     ``\varphi(\alpha) = f(\Lambda\mathrm{retract}(\alpha{}B))`` has
     ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), B\rangle`` only when
     ``\alpha \mapsto \mathrm{retract}(\alpha{}B)`` is a one-parameter subgroup, which
-    `Geodesic` is and `Cayley` is not. Against a central difference of the merit this
+    [`Geodesic`](@ref) is and [`Cayley`](@ref) is not. Against a central difference of the merit this
     is exact for `Geodesic` at every ``\alpha``; for `Cayley` it is exact at ``\alpha = 0`` and drifts
     with the step (about 6% at ``\alpha = 0.5``, 24% at ``\alpha = 1``). The merit itself is exact
     either way, so a search that only brackets and compares values is unaffected; `Bisection` under

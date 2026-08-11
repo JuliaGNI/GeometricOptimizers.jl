@@ -169,17 +169,47 @@ end
 #     _DFP   Backtracking        49_679   29_081
 #     _DFP   Bisection              134       96
 #
-# What separates the rows is not the direction but whether the line search can *lengthen* a step.
-# Tracing `Q` over a run (see the `‖Q-Qᵀ‖`, `λmin`, `λmax` columns of that trace) shows both methods
-# driving `Q` to a condition number of `1e8`-`1e9`: `λmax` climbs past `1e4` while `λmin` falls below
-# `1e-5`. `_BFGS` reaches the gradient gate in about 120 iterations either way, so it evidently
-# self-corrects that scaling. `_DFP` does not, and then everything depends on the search: `Bisection`
-# minimizes along each direction and so recovers the missing scale every iteration, while
-# `Backtracking` starts at `α = 1` and only ever *shrinks*, so an under-scaled direction stays
-# under-scaled. From iteration 500 on, `_DFP` + `Backtracking` takes steps of `‖Δx‖ ≈ 1e-4` against a
-# gradient that is itself `≈ 1e-4`, and the gradient then falls by less than a factor of two over the
-# next 19_500 iterations. It is not stuck -- it terminates on a criterion, not on the cap -- merely
-# crawling, which is the historical reason BFGS superseded DFP.
+# The one bad cell is a property of the *line search*, not of DFP. `Backtracking` starts its trial step
+# at `α = 1` and only ever shrinks, and measuring the `α` it returns settles what happens:
+#
+#                       fraction α == 1   fraction α > 1   median α   iterations
+#     _BFGS  Backtracking         73.5%             0%          1.0          113
+#     _BFGS  Bisection               0%          67.8%          1.42         143
+#     _DFP   Backtracking        100.0%             0%          1.0       49_679
+#     _DFP   Bisection               0%          94.8%         11.1          134
+#
+# `_BFGS` produces a direction already scaled like a Newton step, so `α = 1` is the right answer and
+# accepting it is not a failure. `_DFP` produces a systematically *under-scaled* direction, and a
+# backtracking search cannot lengthen it: it accepts `α = 1` on every single iteration and the solve
+# crawls -- steps of `‖Δx‖ ≈ 1e-5` against a gradient of `≈ 1e-4`, with the gradient falling by less
+# than a factor of two over 19_500 iterations. It is not stuck (it terminates on a criterion, not on
+# the cap), just pinned at the ceiling.
+#
+# The decisive check is to change *nothing* but the initial trial step handed to the same
+# `Backtracking`, which it can shrink from but not grow past:
+#
+#     α₀ = 1  →  49_679 iterations        α₀ = 100  →  936
+#     α₀ = 3  →     229 iterations        α₀ = 1000 →  2_281
+#     α₀ = 10 →     268 iterations
+#
+# Three instead of one is worth a factor of 217. So DFP is not the problem — with any search that can
+# exceed 1 it is competitive with `_BFGS`.
+#
+# Which search, though, is decided by objective evaluations and not by iterations, and the two orderings
+# disagree. `Bisection` needs the fewest iterations of any option and spends ≈580 evaluations on each
+# one; `Backtracking` spends ≈25. Total evaluations for `_DFP` (Geodesic / Cayley):
+#
+#     StrongWolfe(c₂ = 0.1)    16_466 /  23_312      ← what `default_linesearch` picks
+#     Quadratic                18_313 /  54_230
+#     BierlaireQuadratic       27_484 /  80_787
+#     Bisection                78_698 /  55_493
+#     Backtracking             (does not converge)
+#
+# `StrongWolfe` has the bracketing phase that `Backtracking` lacks, but at its own default `c₂ = 0.9`
+# the Wolfe conditions already hold at `α = 1` on 99.4% of iterations, so it never fires and it crawls
+# just like `Backtracking` (3000+ iterations). At `c₂ = 0.1` the expansion fires on 94.5% of them with a
+# median `α` of 8. See `default_linesearch` and JuliaGNI/SimpleSolvers.jl#174; `solver_step!` also hands
+# the search a hard-coded `one(T)` with no way to configure that.
 #
 # 5×10⁴ iterations is too slow to put in a test suite, so that pair is measured and documented rather
 # than run.
