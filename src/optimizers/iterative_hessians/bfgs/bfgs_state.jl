@@ -6,23 +6,23 @@ The [`OptimizerState`](@ref) corresponding to the [`_BFGS`](@ref) method.
 # Keys
 - `x̄`
 - `s`: stores the previous direction. This needs to be stored in addition to the *previous solution* because of the manifold case.
-- `ḡ`
+- `ḡ`
 - `f̄`
 - `Q`
 """
 mutable struct BFGSState{T,AT<:OptimizerSolution{T},GT<:GradientArrayOrNamedTuple{T},MT<:AbstractMatrix{T},GS<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerState{T}
     x̄::AT
     s::GT
-    ḡ::GT
+    ḡ::GT
     f̄::T
     Q::MT
     iterations::Int
 
     section::GS
 
-    function BFGSState(x̄::AT, ḡ::GT, f̄::T, Q::MT) where {T,AT<:OptimizerSolution{T},GT<:GradientArrayOrNamedTuple{T},MT<:AbstractMatrix{T}}
+    function BFGSState(x̄::AT, ḡ::GT, f̄::T, Q::MT) where {T,AT<:OptimizerSolution{T},GT<:GradientArrayOrNamedTuple{T},MT<:AbstractMatrix{T}}
         section = GlobalSection(x̄)
-        state = new{T,AT,GT,MT,typeof(section)}(x̄, _similar(ḡ), ḡ, f̄, Q, 0, section)
+        state = new{T,AT,GT,MT,typeof(section)}(x̄, _similar(ḡ), ḡ, f̄, Q, 0, section)
         initialize!(state, x̄)
         state
     end
@@ -30,8 +30,8 @@ end
 
 section(state::BFGSState) = state.section
 
-BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientArrayOrNamedTuple{T}, f̄::T) where {T} = BFGSState(_copy(x̄), _copy(ḡ), f̄, alloc_h(x̄))
-BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientArrayOrNamedTuple{T}) where {T} = BFGSState(_copy(x̄), _copy(ḡ), zero(T))
+BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientArrayOrNamedTuple{T}, f̄::T) where {T} = BFGSState(_copy(x̄), _copy(ḡ), f̄, alloc_h(x̄))
+BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientArrayOrNamedTuple{T}) where {T} = BFGSState(_copy(x̄), _copy(ḡ), zero(T))
 BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 
 function alloc_h(x::ArrayNamedTuple{T}) where {T}
@@ -47,7 +47,7 @@ inverse_hessian(state::BFGSState) = state.Q
 function initialize!(state::BFGSState{T}, ::OptimizerSolution{T}) where {T}
     _fill!(state.x̄, T(NaN))
     _fill!(state.s, T(NaN))
-    _fill!(state.ḡ, T(NaN))
+    _fill!(state.ḡ, T(NaN))
     state.f̄ = NaN
     inverse_hessian(state) .= one(inverse_hessian(state))
     state.iterations = 0
@@ -57,7 +57,7 @@ end
 
 function update!(state::BFGSState, gradient::Gradient, x::XT, retraction) where {T,XT<:OptimizerSolution{T}}
     _copyto!(state.x̄, x)
-    XT <: ArrayNamedTuple ? gradient(state.ḡ, x, state) : gradient(state.ḡ, x)
+    XT <: ArrayNamedTuple ? gradient(state.ḡ, x, state) : gradient(state.ḡ, x)
     state.f̄ = gradient.F(ParameterHandling.flatten(T, x)[1])
 
     update_section!(section(state), state.s, retraction)
@@ -71,7 +71,10 @@ end
 
 function update!(state::BFGSState{T}, direction::GradientArrayOrNamedTuple{T}, gradient::Gradient, x::XT, f::T, retraction) where {T,XT<:OptimizerSolution{T}}
     _copyto!(state.x̄, x)
-    XT <: ArrayNamedTuple ? gradient(state.ḡ, x, state) : gradient(state.ḡ, x)
+    # `ḡ` is deliberately *not* refreshed here. This runs at the end of the iteration, at the same
+    # iterate `x` that the next `Δg = ∇f(x) - ḡ` is formed at, so writing `∇f(x)` here made `Δg`
+    # identically zero and the quasi-Newton `Q` update never fired on any iteration. The BFGS and DFP
+    # caches advance `ḡ` themselves, right after they have used it.
     state.f̄ = f
 
     _copyto!(state.s, direction)

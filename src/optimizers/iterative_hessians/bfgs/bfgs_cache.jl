@@ -104,7 +104,7 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
     _copyto!(rhs(cache), g)
     _rmul!(rhs(cache), -one(T))
     _copyto!(direction(cache), state.s)
-    _difference!(cache.Δg, gradient(cache), state.ḡ)
+    _difference!(cache.Δg, gradient(cache), state.ḡ)
 
     ΔxΔg = cache.Δx ⋅ cache.Δg
 
@@ -119,6 +119,13 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
         inverse_hessian(state) .-= (cache.T1 .+ cache.T2 .- cache.T3) ./ ΔxΔg
     end
 
+    # `ḡ` has to still hold the gradient at the *previous* iterate while `Δg` is formed above, so it
+    # is advanced here, right after it has been used. It used to be advanced in
+    # `update!(::BFGSState, …)` at the end of the iteration instead -- which runs at the very iterate
+    # the next `Δg` is computed at, so `Δg` was identically zero, `ΔxΔg` was zero with it, and the
+    # guard above skipped the `Q` update on every single iteration.
+    _copyto!(state.ḡ, gradient(cache))
+
     _mul!(direction(cache), inverse_hessian(state), rhs(cache))
     _copyto!(state.s, direction(cache))
 
@@ -130,6 +137,10 @@ function update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, x::Opt
 end
 
 update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, ::HessianBFGS, x::OptimizerSolution) = update!(cache, state, grad, x)
+
+# `Δg` is the `γ` of the secant pair, already formed in `update!` above from the `ḡ` that has
+# since been advanced, so `OptimizerStatus` must not recompute it. See `gradient_difference!`.
+gradient_difference!(cache::BFGSCache, ::OptimizerState) = cache.Δg
 
 function initialize!(cache::BFGSCache{T}, ::OptimizerSolution{T}) where {T}
     _fill!(solution(cache), T(NaN))

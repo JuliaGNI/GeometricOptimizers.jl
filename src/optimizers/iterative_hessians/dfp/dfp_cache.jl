@@ -81,7 +81,7 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::AbstractVector{T}, g
     # cache.Δx .= cache.x .- state.x̄
     cache.Δx .= state.s
 
-    cache.Δg .= gradient(cache) - state.ḡ
+    cache.Δg .= gradient(cache) - state.ḡ
 
     ΔxΔg = cache.Δx ⋅ cache.Δg
     γQγ = cache.Δg' * state.Q * cache.Δg
@@ -89,11 +89,18 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::AbstractVector{T}, g
     if !iszero(ΔxΔg) & !iszero(γQγ) & !isnan(ΔxΔg)
         outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
         outer!(cache.ΔgΔg, cache.Δg, cache.Δg)
-        mul!(cache.T1, cache.ΔxΔx, state.Q)
+        # the DFP correction is `Q - Qγγᵀ Q/(γᵀQγ) + δδᵀ/(δᵀγ)` (nocedal2006numerical, eq. 6.15), so
+        # the rank-one term that is subtracted is built from `γγᵀ`. This used to read `cache.ΔxΔx`,
+        # i.e. `δδᵀ`, which left `cache.ΔgΔg` computed on the line above and never read.
+        mul!(cache.T1, cache.ΔgΔg, state.Q)
         mul!(cache.T2, state.Q, cache.T1)
         state.Q .-= cache.T2 ./ γQγ
         state.Q .+= cache.ΔxΔx ./ ΔxΔg
     end
+
+    # see the remark in `bfgs_cache.jl`: `ḡ` is advanced here, right after `Δg` has been formed from
+    # it, and not at the end of the iteration, where it would be the gradient at the same iterate.
+    state.ḡ .= gradient(cache)
 
     direction(cache) .= inverse_hessian(state) * rhs(cache)
     state.s .= direction(cache)
@@ -104,6 +111,10 @@ end
 update!(cache::DFPCache, state::OptimizerState, grad::Gradient, x::AbstractVector) = update!(cache, state, x, grad(x))
 
 update!(cache::DFPCache, state::OptimizerState, grad::Gradient, ::HessianDFP, x::AbstractVector) = update!(cache, state, grad, x)
+
+# `Δg` is the `γ` of the secant pair, already formed in `update!` above from the `ḡ` that has
+# since been advanced, so `OptimizerStatus` must not recompute it. See `gradient_difference!`.
+gradient_difference!(cache::DFPCache, ::OptimizerState) = cache.Δg
 
 function initialize!(cache::DFPCache{T}, ::AbstractVector{T}) where {T}
     cache.x .= T(NaN)

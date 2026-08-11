@@ -6,7 +6,7 @@
 - `x`: current iterate (this stores the guess called by the functions generated with [`linesearch_problem`](@ref)),
 - `Δx`: direction of optimization step (difference between `x` and `x̄`); this is obtained by multiplying `rhs` with the inverse of the Hessian,
 - `g`: gradient value (this stores the gradient associated with `x` called by the *derivative part* of [`linesearch_problem`](@ref)),
-- `Δg`: gradient difference (difference between `g` and `ḡ`); this is used for computing the [`OptimizerStatus`](@ref),
+- `Δg`: gradient difference (difference between `g` and `ḡ`); this is used for computing the [`OptimizerStatus`](@ref),
 - `rhs`: the right hand side used to compute the update,
 - `H`: the Hessian matrix evaluated at `x`,
 

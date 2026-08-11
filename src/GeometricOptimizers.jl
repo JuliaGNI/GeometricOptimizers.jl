@@ -5,7 +5,7 @@ using GeometricBase: AbstractProblem, SolverMethod, AbstractSolver
 using SimpleSolvers: Options
 using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem, LU
 import SimpleSolvers: outer!
-using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_mindec, g_restol
+using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_suctol, f_mindec
 import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
 using SimpleSolvers: HessianAutodiff, HessianFunction
 
@@ -83,6 +83,7 @@ include("optimizers/optimizer_methods.jl")
 
 include("optimizers/optimizer_state.jl")
 include("optimizers/optimizer_cache.jl")
+include("optimizers/descent_direction.jl")
 include("optimizers/optimizer_status.jl")
 include("optimizers/optimizer_result.jl")
 include("optimizers/iterative_hessians/iterative_hessians.jl")

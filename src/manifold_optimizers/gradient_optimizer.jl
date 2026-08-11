@@ -64,7 +64,7 @@ mutable struct GradientState{T,OT<:OptimizerSolution{T},GS<:GlobalSectionSingleO
     x::OT
     x̄::OT
     g::VT
-    ḡ::VT
+    ḡ::VT
     f::T
     f̄::T
 end
@@ -72,7 +72,7 @@ end
 solution(state::GradientState) = state.x
 previous_solution(state::GradientState) = state.x̄
 gradient(state::GradientState) = state.g
-previous_gradient(state::GradientState) = state.ḡ
+previous_gradient(state::GradientState) = state.ḡ
 value(state::GradientState) = state.f
 previous_value(state::GradientState) = state.f̄
 

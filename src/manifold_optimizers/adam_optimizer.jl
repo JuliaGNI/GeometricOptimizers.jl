@@ -71,7 +71,7 @@ mutable struct AdamState{T,OT<:OptimizerSolution{T},GS<:GlobalSectionSingleOrNam
     x::OT
     x̄::OT
     g::VT
-    ḡ::VT
+    ḡ::VT
     m₁::VT
     m₂::VT
     m̃₂::VT
@@ -82,7 +82,7 @@ end
 solution(state::AdamState) = state.x
 previous_solution(state::AdamState) = state.x̄
 gradient(state::AdamState) = state.g
-previous_gradient(state::AdamState) = state.ḡ
+previous_gradient(state::AdamState) = state.ḡ
 value(state::AdamState) = state.f
 previous_value(state::AdamState) = state.f̄
 first_moment(state::AdamState) = state.m₁

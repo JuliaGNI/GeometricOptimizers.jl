@@ -10,7 +10,7 @@ We note that this is also used for the [`_BFGS`](@ref) and the [`_DFP`](@ref) op
 - `x`
 - `x̄`
 - `g`
-- `ḡ`
+- `ḡ`
 - `f̄`
 - `f̄`
 """
@@ -20,7 +20,7 @@ mutable struct NewtonOptimizerState{T,AT<:AbstractArray{T},GT<:AbstractArray{T},
     x::AT
     x̄::AT
     g::GT
-    ḡ::GT
+    ḡ::GT
     f::T
     f̄::T
 
@@ -30,11 +30,11 @@ mutable struct NewtonOptimizerState{T,AT<:AbstractArray{T},GT<:AbstractArray{T},
         x = zero(X)
         x̄ = zero(X)
         g = zero(X)
-        ḡ = zero(X)
+        ḡ = zero(X)
         x .= T(NaN)
         x̄ .= T(NaN)
         g .= T(NaN)
-        ḡ .= T(NaN)
+        ḡ .= T(NaN)
         section = GlobalSection(x)
         new{T,AT,GT,typeof(section)}(0, x, x̄, g, ḡ, T(NaN), T(NaN), section)
     end
@@ -52,14 +52,14 @@ function initialize!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::Ab
     state.g .= g
     state.f = f
     state.x̄ .= T(NaN)
-    state.ḡ .= T(NaN)
+    state.ḡ .= T(NaN)
     state.f̄ = T(NaN)
     section(state).Y .= x
 end
 
 function update!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
     state.x̄ .= state.x
-    state.ḡ .= state.g
+    state.ḡ .= state.g
     state.f̄ = state.f
     state.x .= x
     state.g .= g
@@ -68,7 +68,7 @@ function update!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::Abstra
 end
 
 solution(cache::NewtonOptimizerState) = cache.x̄
-gradient(cache::NewtonOptimizerState) = cache.ḡ
+gradient(cache::NewtonOptimizerState) = cache.ḡ
 
 """
     update!(state::NewtonOptimizerState, gradient, x)
@@ -77,7 +77,7 @@ Update an instance of [`NewtonOptimizerState`](@ref) based on `x` and `gradient`
 
 # Examples
 
-If we only call `update!` once there are still `NaN`s for x̄, ḡ and f̄.
+If we only call `update!` once there are still `NaN`s for x̄, ḡ and f̄.
 ```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: NewtonOptimizerState)
 f(x) = sum(x.^2)
 x = [1., 2.]
