@@ -34,6 +34,7 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "Linesearch" => "linesearch.md",
+        "Weight decay on a manifold" => "weight_decay.md",
         "References" => "references.md",
     ],
 )
