@@ -1,10 +1,9 @@
 # Line searches on manifolds
 
-This page records the theoretical and empirical findings of [pull request
-#31](https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/31). The work
-started from one defect—line searches could not evaluate a trial point on a
-manifold—and exposed several consequences for coordinate pairings,
-quasi-Newton updates, and step-size selection.
+This page records the theoretical and empirical findings from the manifold
+line-search work.[^pr31] It started from one defect—line searches could not
+evaluate a trial point on a manifold—and exposed several consequences for
+coordinate pairings, quasi-Newton updates, and step-size selection.
 
 ## A line-search trial point must use the retraction
 
@@ -218,3 +217,5 @@ parses it as 20×5: a newline separates rows just as `;` does, even when the
 source wraps a displayed row across two lines. The test is self-consistent
 because it uses `size(A, 1)`, so this is not a correctness failure, but the
 source does not describe the apparent matrix shape.
+
+[^pr31]: See [the pull request](https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/31).

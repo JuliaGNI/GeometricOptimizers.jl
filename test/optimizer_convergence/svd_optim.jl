@@ -85,6 +85,7 @@ function svd_test(n, train_steps=1000; retraction=Cayley())
     U_result = U[:, 1:n]
 
     err_best = norm(A - U_result * U_result' * A)
+    Random.seed!(1234)
     ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
 
     algorithms = (gradient=GradientMethod(), momentum=MomentumMethod(), adam=GeometricOptimizers.Adam())
