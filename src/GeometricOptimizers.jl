@@ -111,9 +111,14 @@ include("optimizers/named_tuple_wrapper.jl")
 export GradientMethod, GradientState
 export MomentumMethod, MomentumState
 export Adam, AdamState
+# `AdamWithEuclideanDecay` shares `Adam`'s cache and state, so there is no state to export
+# alongside it; `AdamW` is exported so that the name errors with an explanation instead of an
+# `UndefVarError` (see its docstring)
+export AdamWithEuclideanDecay, AdamW
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")
 include("manifold_optimizers/adam_optimizer.jl")
+include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
 
 end

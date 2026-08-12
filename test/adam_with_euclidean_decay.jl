@@ -1,0 +1,239 @@
+using GeometricOptimizers
+using GeometricOptimizers: AdamState, first_moment, second_moment, cache, check, direction,
+    gradient_array, increase_iteration_number!, solver_step!, update!, _square,
+    _weight_decay!, _is_decayable
+using SimpleSolvers: Static
+using LinearAlgebra: norm
+using Test
+import Random
+
+# `AdamWithEuclideanDecay` is [`Adam`](@ref) plus *decoupled* weight decay: the direction is
+# `-m₁/(√m₂ + δ) - λx` instead of `-m₁/(√m₂ + δ)`, and `λx` never enters the moments. This
+# file pins the three things that distinguishes it from `Adam` and from `Adam` on an
+# `L²`-penalized objective:
+#
+#   1. the decay is applied to the direction and scaled by the learning rate,
+#   2. the moments are the ones of `Adam` — the decay does not touch them,
+#   3. it does nothing to a weight that lives on a manifold.
+#
+# The objective is *linear*, so its gradient is the constant `C` at every iterate. For a
+# constant gradient the bias-corrected moments are exactly `m₁ = C` and `m₂ = C ⊙ C` at every
+# iteration (the two recursion factors are a convex combination), so the `Adam` part of the
+# direction is exactly `-sign(C)` up to `δ = 1e-8`, and the whole recursion has a closed form.
+const C = [1.0, -2.0, 0.5]
+objective(x::AbstractVector) = sum(C .* x)
+
+# the learning rate, i.e. the `α` of the `Static` line search — see `default_linesearch`
+const η = 0.01
+
+# deliberately much larger than `DEFAULT_WEIGHT_DECAY`, so that a step that forgot the decay is
+# not within tolerance of one that applied it
+const λ = 0.5
+
+# the mixed problem: a `NamedTuple` that holds a manifold weight and an ordinary one, i.e. the
+# case that tells `AdamWithEuclideanDecay` apart from `Adam`. `‖b‖` is in the objective so that
+# `b` has a gradient of its own to be decayed against.
+Random.seed!(1234)
+const A = randn(5, 3)
+named_tuple_error(ps::NamedTuple) = norm(A - ps.w * ps.w' * A) + norm(ps.b)
+
+# a bare `Manifold`, a `NamedTuple` and an ordinary `Vector` — the three kinds of parameters
+# the unified interface accepts
+problems() = ((rand(StiefelManifold, 5, 3), Y -> norm(A - Y * Y' * A)),
+    ((w=rand(StiefelManifold, 5, 3), b=randn(3)), named_tuple_error),
+    ([1.0, -2.0, 0.5], objective))
+
+_isapprox(a::AbstractArray, b::AbstractArray) = isapprox(a, b)
+_isapprox(a::NamedTuple, b::NamedTuple) = all(_isapprox(a[k], b[k]) for k in keys(a))
+
+"""
+    run!(ps, algorithm, f, steps)
+
+Take `steps` optimizer steps on `f`, exactly as `solve!` does it but without its stopping
+criteria, and return the parameters.
+"""
+function run!(ps, algorithm, f, steps; α=η)
+    Random.seed!(1234)
+    optimizer = Optimizer(ps, f; algorithm=algorithm, linesearch=Static(α))
+    state = OptimizerState(algorithm, ps)
+    for _ in 1:steps
+        increase_iteration_number!(state)
+        solver_step!(ps, state, optimizer)
+        update!(state, optimizer, ps)
+    end
+    ps
+end
+
+# `x ← x - η⋅sign(C) - ηλ⋅x` is an affine recursion, hence
+#
+#     xₖ = (1 - ηλ)ᵏx₀ - (sign(C)/λ)(1 - (1 - ηλ)ᵏ),
+#
+# which is the whole method in one line: the first term is the decay, the second is `Adam`, and
+# the fixed point `-sign(C)/λ` is where the two balance. Getting the decay coupled into the
+# gradient instead (`m₁ ← ... + λx`, i.e. `L²` regularization) fails this: the second moment
+# then rescales the penalty and the trajectory is a different one.
+@testset "the decayed Adam recursion, in closed form" begin
+    steps = 20
+    x₀ = [1.0, -2.0, 0.5]
+    x = run!(copy(x₀), AdamWithEuclideanDecay(; λ=λ), objective, steps)
+
+    decayed = (1 - η * λ)^steps
+    @test x ≈ decayed * x₀ - sign.(C) / λ * (1 - decayed) rtol = 1e-6
+
+    # the fixed point is approached, not overshot, and it is `Adam`'s step size divided by `λ`
+    @test all(abs.(x) .< 1 / λ)
+end
+
+# With no gradient at all nothing is left of the step but the decay, so the weights shrink by
+# `1 - ηλ` per iteration. This is the property that gives weight decay its name and the one
+# that a coupled implementation would get right as well — it is here to pin the *factor*.
+@testset "a vanishing gradient leaves the decay by itself" begin
+    steps = 15
+    x₀ = [1.0, -2.0, 0.5]
+    x = run!(copy(x₀), AdamWithEuclideanDecay(; λ=λ), x -> 0 * sum(x), steps)
+
+    @test x ≈ (1 - η * λ)^steps * x₀ rtol = 1e-6
+end
+
+# The decoupling itself: after a step the moments have to be those of the *unpenalized*
+# gradient. If `λx` had been added to the gradient — which is what `Adam` on
+# `objective(x) + λ/2‖x‖²` does — then `m₁` would be `C + λx₀` here.
+@testset "the weight decay stays out of the moments" begin
+    x = [1.0, -2.0, 0.5]
+    algorithm = AdamWithEuclideanDecay(; λ=λ)
+    optimizer = Optimizer(x, objective; algorithm=algorithm, linesearch=Static(η))
+    state = AdamState(x)
+
+    increase_iteration_number!(state)
+    solver_step!(x, state, optimizer)
+    update!(state, optimizer, x)
+
+    @test first_moment(state) ≈ C
+    @test second_moment(state) ≈ _square(C)
+end
+
+# `λ = 0` is the one setting in which `AdamWithEuclideanDecay` and `Adam` are the same method for
+# *every* kind of parameter, so it is the cheapest check that nothing else was changed along the
+# way. The comparison is exact rather than approximate: with `λ = 0` the decay subtracts `0 ⋅ x`
+# from the direction.
+@testset "λ = 0 is Adam" begin
+    for (ps, f) in problems()
+        adam = run!(deepcopy(ps), Adam(), f, 10)
+        adamw = run!(deepcopy(ps), AdamWithEuclideanDecay(; λ=0.0), f, 10)
+
+        @test _isapprox(adam, adamw)
+        @test f(adam) == f(adamw)
+    end
+end
+
+# The justification for the no-op below, checked rather than taken on trust: weight decay is
+# the gradient of `λ/2‖x‖²`, and that function is constant on both manifolds of this package
+# (`‖Y‖_F² = tr(YᵀY) = n`), so its Riemannian gradient vanishes identically.
+@testset "the Riemannian gradient of the weight-decay penalty vanishes" begin
+    Random.seed!(1234)
+    for Y in (rand(StiefelManifold, 6, 3), rand(GrassmannManifold, 6, 3))
+        @test norm(rgrad(Y, λ * Y.A)) < 1e-14
+    end
+end
+
+# Hence the method *is* `Adam` on a bare manifold — for any `λ`, and not just for a small one.
+# `_weight_decay!` is a no-op on the pair (`AbstractLieAlgHorMatrix` direction, `Manifold`
+# weight) that a manifold produces; the alternative, decaying the horizontal representation of
+# the update, would shrink the optimizer's own step rather than the weight and is not what
+# decoupled weight decay means. See issue #28 and `docs/src/weight_decay.md`. Because the run is
+# then `Adam` under another name, it is also the case that has to be *said* — the warning is
+# asserted here rather than merely tolerated.
+@testset "weight decay does nothing to a manifold weight" begin
+    for T in (Float64, Float32)
+        target = T[0.0, 0.0, 1.2]
+        f(Y::StiefelManifold) = norm(vec(Y) - target)
+        x₀ = StiefelManifold(T[0.0; sqrt(T(0.5)); sqrt(T(0.5));;])
+
+        adam = run!(deepcopy(x₀), Adam(T), f, 25; α=T(0.1))
+        adamw = @test_logs (:warn, r"none of the parameters") match_mode = :any run!(
+            deepcopy(x₀), AdamWithEuclideanDecay(T; λ=T(λ)), f, 25; α=T(0.1))
+
+        @test adamw isa StiefelManifold{T}
+        @test adamw.A == adam.A                     # bit for bit, not just to a tolerance
+        @test check(adamw) < 100 * eps(T)           # and it is still on the manifold
+        @test f(adamw) < f(x₀)                      # and it optimized
+    end
+end
+
+# The case the method exists for: a network whose parameters mix a manifold with ordinary
+# weights. The decay has to reach the ordinary ones and leave the manifold ones alone, in the same
+# step. Only the *first* step can be compared against `Adam` component-wise — after it the two
+# runs sit at different `b`, and the gradient with respect to `w` sees that.
+@testset "a NamedTuple is decayed entry by entry" begin
+    Random.seed!(1234)
+    ps₀ = (w=rand(StiefelManifold, 5, 3), b=randn(3))
+
+    adam = run!(deepcopy(ps₀), Adam(), named_tuple_error, 1)
+    adamw = run!(deepcopy(ps₀), AdamWithEuclideanDecay(; λ=λ), named_tuple_error, 1)
+
+    @test adamw.w.A == adam.w.A                     # the manifold entry is untouched ...
+    @test adamw.b ≈ adam.b - η * λ * ps₀.b          # ... and the ordinary one is decayed
+    @test adamw.b ≉ adam.b                          # by an amount that is actually visible
+end
+
+# Over many steps the decay has to keep pulling the ordinary entry towards zero: `b` appears in
+# the objective as `‖b‖`, whose `Adam` direction has magnitude ≈ 1 per component whatever `b`
+# is, so without the decay it oscillates around zero at the scale of the learning rate instead
+# of settling.
+@testset "the decay shrinks the ordinary entries of a NamedTuple" begin
+    Random.seed!(1234)
+    ps₀ = (w=rand(StiefelManifold, 5, 3), b=10 * randn(3))
+
+    adam = run!(deepcopy(ps₀), Adam(), named_tuple_error, 200)
+    adamw = run!(deepcopy(ps₀), AdamWithEuclideanDecay(; λ=λ), named_tuple_error, 200)
+
+    @test norm(adamw.b) < norm(adam.b)
+    @test norm(adamw.b) < norm(ps₀.b)
+    @test check(adamw.w) < 1e-12                    # the manifold entry survives 200 steps
+end
+
+# `AdamWithEuclideanDecay(Float32)` is needed for `Float32` parameters, exactly as for `Adam`:
+# `Optimizer` does not convert it (only `MomentumMethod` is converted).
+@testset "the element type is the one that was asked for" begin
+    @test AdamWithEuclideanDecay(Float32) isa AdamWithEuclideanDecay{Float32}
+    @test AdamWithEuclideanDecay() isa AdamWithEuclideanDecay{Float64}
+    @test AdamWithEuclideanDecay(Float32; λ=0.5).λ === 0.5f0
+    # the method only produces a direction; the learning rate is the line search's `α`
+    @test !hasproperty(AdamWithEuclideanDecay(), :η)
+end
+
+# A `λ` that cannot reach a single weight is silent otherwise — the run converges and nothing
+# says the decay was dropped — so it is warned about once, when the optimizer is built. The
+# `NamedTuple` above must *not* warn: one decayable entry is enough for the setting to mean
+# something.
+@testset "a λ that cannot reach anything is warned about" begin
+    Y = rand(StiefelManifold, 5, 3)
+    f(Y::StiefelManifold) = norm(A - Y * Y' * A)
+
+    @test !_is_decayable(Y)
+    @test _is_decayable(randn(3))
+    @test _is_decayable((w=Y, b=randn(3)))
+
+    @test_logs (:warn, r"none of the parameters") match_mode = :any Optimizer(
+        deepcopy(Y), f; algorithm=AdamWithEuclideanDecay(; λ=λ), linesearch=Static(η))
+    # `λ = 0` asks for no decay in the first place, and a `NamedTuple` with an ordinary entry
+    # gets one, so neither has anything to warn about
+    @test_logs Optimizer(deepcopy(Y), f; algorithm=AdamWithEuclideanDecay(; λ=0.0), linesearch=Static(η))
+    @test_logs Optimizer((w=deepcopy(Y), b=randn(3)), named_tuple_error;
+        algorithm=AdamWithEuclideanDecay(; λ=λ), linesearch=Static(η))
+end
+
+# `AdamW` is the name a user coming from `torch.optim` will reach for, and on a manifold it would
+# be `Adam` with extra steps. It is defined so that reaching for it says so.
+@testset "the name `AdamW` is reserved and explains itself" begin
+    @test_throws ErrorException AdamW()
+    @test_throws ErrorException AdamW(Float32; λ=0.5)
+
+    message = try
+        AdamW()
+    catch e
+        sprint(showerror, e)
+    end
+    @test occursin("AdamWithEuclideanDecay", message)
+    @test occursin("issues/28", message)
+end

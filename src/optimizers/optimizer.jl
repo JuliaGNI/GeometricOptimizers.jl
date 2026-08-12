@@ -176,9 +176,9 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
-    # `Adam` and `MomentumMethod` need their own parameters to form the direction and have no
-    # Hessian, the other methods need the Hessian and have no parameters.
-    if MT <: Union{Adam,MomentumMethod}
+    # `Adam`, `AdamWithEuclideanDecay` and `MomentumMethod` need their own parameters to form the direction and
+    # have no Hessian, the other methods need the Hessian and have no parameters.
+    if MT <: FirstOrderMethodWithState
         update!(cache(opt), state, gradient(opt), algorithm(opt), x)
     else
         update!(cache(opt), state, gradient(opt), hessian(opt), x)
