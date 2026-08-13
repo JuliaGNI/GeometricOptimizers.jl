@@ -48,15 +48,15 @@ const MANIFOLD_TOLERANCE = 1e-12
 const CONVERGED_ERROR_TOLERANCE = 1e-8
 
 # How close each algorithm gets to the best rank-`n` approximation, as a relative error, after
-# `1000` iterations with `Static(0.01)` and seed `1234`. Measured on Julia 1.13:
+# `1000` iterations with `Static(0.01)` and seed `1234`. Measured on Julia 1.13, macOS/aarch64:
 #
 #                  Geodesic   Cayley
 #     GradientMethod  1.0e-2   9.8e-3
 #     MomentumMethod  9.7e-3   9.3e-3
-#     Adam            3.1e-5   2.3e-5
+#     Adam            3.2e-5   2.3e-5
 #
-# The tolerances below leave roughly a factor of two on top of those (a factor of three for
-# `Adam`).
+# The two first-order tolerances leave roughly a factor of two on top of those. `Adam`'s does not, and
+# cannot -- see the warning below it.
 #
 # `MomentumMethod` used to land at `1.9e-2` / `1.7e-2` here, i.e. *worse* than plain gradient
 # descent, which is what issue #18 was about: it accumulated `p ← p + α∇L` and thereby kept
@@ -83,7 +83,32 @@ const CONVERGED_ERROR_TOLERANCE = 1e-8
 #
 # So there is no per-step convergence regression to paper over here; `Static(0.01)` interacts
 # with the retraction exactly as it used to.
-const RELATIVE_ERROR_TOLERANCE = (gradient=2e-2, momentum=2e-2, adam=1e-4)
+# WARNING: `adam`'s tolerance has almost no margin, in either direction, and this is inherent to what
+# it measures rather than a value someone picked badly.
+#
+# With a fixed `α`, `Adam`'s direction has magnitude ≈1 per component whatever the gradient is, so it
+# does not converge to the minimizer -- it circles it at a distance of order `α`. The error at
+# iteration 1000 is therefore a snapshot of an arbitrary *phase* on that orbit, and small differences
+# in floating-point arithmetic move the phase. Measured for identical code and seed:
+#
+#     3.2e-5   Julia 1.13, macOS/aarch64 (and bit-identical across 5 runs and BLAS threads 1..12)
+#     1.2e-4   Julia 1.10, Linux/x86_64 on GitHub Actions
+#
+# an 8x spread across platforms. The tolerance cannot be tightened to the local value without failing
+# on CI, and it cannot be loosened much either, because it is the *only* guard on the two `Adam` bugs
+# described below: with those present the same run reaches 2.2e-4 (Geodesic). So the usable window is
+#
+#     1.2e-4  (worst correct value seen)  ..  2.2e-4  (buggy value)
+#
+# a factor of 1.9, and 1.5e-4 sits in the middle of it with ~1.3x either side. Normalising by gradient
+# descent's error does not help: that one is stable at ≈1.0e-2, so all the variance is in `Adam`
+# (ratios 315 local, 88 on CI, 45 buggy -- the same 1.9x window).
+#
+# If this fails again on a new platform, do not simply widen it past 2.2e-4: that silently retires the
+# bug guard. Fix the statistic instead -- assert on something phase-independent, such as the minimum
+# relative error over the last 100 iterations via `Options(store_trace = true)`, which should collapse
+# the spread and allow a tight tolerance again.
+const RELATIVE_ERROR_TOLERANCE = (gradient=2e-2, momentum=2e-2, adam=1.5e-4)
 
 """
     svd_test(n; retraction)
