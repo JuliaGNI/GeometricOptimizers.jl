@@ -100,6 +100,12 @@ this package produces change**, in most cases substantially for the better.
   reuses `φ(0)`, `φ'(0)` and `φ(α)`, all known once the trial step is accepted, so declining to expand
   costs no evaluation. On the sphere problem the evaluation counts are identical with and without it.
 
+  The `_DFP` figures are for one starting point and are not representative: across eight, `_DFP` under
+  the default ranges over 512–77 890 iterations (`Geodesic`) and 465–3 834 (`Cayley`), because `Q`
+  becomes badly conditioned and how fast the expansion digs it out is close to arbitrary. `_BFGS` is
+  steady (93–159 / 91–156). For a DFP-heavy workload pass `StrongWolfe(T; c₂ = 0.1)`, which is both
+  faster and far steadier — see the next entry.
+
   0.11 also removes `Backtracking.α₀`, the field that appeared to configure the trial step and was never
   read — unused here, so nothing in this package changes for it. The compat bound is `"0.11"` rather
   than `"0.10, 0.11"` because `expand` does not exist in 0.10.
@@ -107,8 +113,10 @@ this package produces change**, in most cases substantially for the better.
   package did not pass through. It is not a default, but it is the better explicit choice for a
   DFP-heavy workload: `StrongWolfe(T; c₂ = 0.1)` takes `_DFP` to 201 / 274 iterations and
   16 466 / 23 312 evaluations, about 1.7× faster in wall clock than the expanding `Backtracking`
-  default. `c₂ = 0.1` and not its own default of `0.9`, at which the Wolfe conditions already hold at
-  `α = 1` on 99.4% of iterations, so its bracketing phase never fires and it crawls too.
+  default, and — the part that matters more — it stays inside 201–624 / 192–483 across eight starting
+  points where the default ranges over two orders of magnitude. `c₂ = 0.1` and not its own default of
+  `0.9`, at which the Wolfe conditions already hold at `α = 1` on 99.4% of iterations, so its
+  bracketing phase never fires and it crawls too.
 - **Retractions are passed as instances, not functions**: `retraction = Cayley()` / `Geodesic()`, not
   `retraction = cayley`. The default is `Cayley()`.
 - **`MomentumMethod`'s recursion is fixed.** It accumulated `p ← p + α∇L`, which is not momentum but an

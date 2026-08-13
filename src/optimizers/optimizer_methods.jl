@@ -174,10 +174,17 @@ step reporting that it found no descent direction.
 
 !!! note "[`_DFP`](@ref) converges under the default, but [`SimpleSolvers.StrongWolfe`](@extref) suits it better"
     DFP's direction stays under-scaled — the expansion phase makes that harmless rather than absent, so
-    `_DFP` needs 830 iterations on `Geodesic` and 1 237 on `Cayley` where `_BFGS` needs 93 and 118.
-    `StrongWolfe(T; c₂ = 0.1)` is the better explicit choice for a DFP-heavy workload: 201 and 274
-    iterations, 16 466 and 23 312 evaluations, and about 1.7× faster in wall clock (0.12 s against
-    0.20 s on `Geodesic`, 0.18 s against 0.33 s on `Cayley`).
+    `_DFP` needs 830 iterations on `Geodesic` and 1 237 on `Cayley` where `_BFGS` needs 93 and 118, on
+    the starting point the test suite uses. **Those two numbers are not representative.** Over eight
+    starting points on the same problem `_DFP` + the default ranges over 512–77 890 iterations
+    (`Geodesic`) and 465–3 834 (`Cayley`): `Q` becomes badly conditioned (κ ≈ 1e9) and how quickly the
+    expansion phase digs it out is close to arbitrary.
+
+    `StrongWolfe(T; c₂ = 0.1)` is both faster and far steadier, and is the choice to pass explicitly on
+    a DFP-heavy workload: 201 and 274 iterations on that starting point, 201–624 and 192–483 across the
+    eight, 16 466 and 23 312 evaluations, about 1.7× faster in wall clock (0.12 s against 0.20 s on
+    `Geodesic`, 0.18 s against 0.33 s on `Cayley`). `Bisection` is steadier still (103–143 / 96–141)
+    at four to five times the work.
 
     `c₂ = 0.1` and not `StrongWolfe`'s own default of `0.9`: at `0.9` the strong Wolfe conditions are
     already satisfied at `α = 1` on 99.4% of iterations, so its bracketing phase never fires and it
