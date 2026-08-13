@@ -1,9 +1,8 @@
 using GeometricOptimizers
-using GeometricOptimizers: AdamState, first_moment, second_moment, cache, check, direction,
-    gradient_array, increase_iteration_number!, solver_step!, update!, _square,
-    _weight_decay!, _is_decayable
+using GeometricOptimizers: AdamState, Manifold, first_moment, second_moment, check,
+    increase_iteration_number!, solver_step!, update!, _square, _weight_decay!, _is_decayable
 using SimpleSolvers: Static
-using LinearAlgebra: norm
+using LinearAlgebra: I, norm
 using Test
 import Random
 
@@ -43,8 +42,8 @@ problems() = ((rand(StiefelManifold, 5, 3), Y -> norm(A - Y * Y' * A)),
     ((w=rand(StiefelManifold, 5, 3), b=randn(3)), named_tuple_error),
     ([1.0, -2.0, 0.5], objective))
 
-_isapprox(a::AbstractArray, b::AbstractArray) = isapprox(a, b)
-_isapprox(a::NamedTuple, b::NamedTuple) = all(_isapprox(a[k], b[k]) for k in keys(a))
+_isequal(a::AbstractArray, b::AbstractArray) = a == b
+_isequal(a::NamedTuple, b::NamedTuple) = all(_isequal(a[k], b[k]) for k in keys(a))
 
 """
     run!(ps, algorithm, f, steps)
@@ -114,14 +113,20 @@ end
 
 # `λ = 0` is the one setting in which `AdamWithEuclideanDecay` and `Adam` are the same method for
 # *every* kind of parameter, so it is the cheapest check that nothing else was changed along the
-# way. The comparison is exact rather than approximate: with `λ = 0` the decay subtracts `0 ⋅ x`
-# from the direction.
+# way.
+#
+# The comparison is exact rather than approximate, and structurally so rather than by luck: on an
+# ordinary array the decay is `δ .-= 0.0 .* x`, and `d - 0.0` is `d` bit for bit in IEEE-754 for
+# every finite `d` (`-0.0` is the one value it can flip, and `==` does not distinguish the two
+# zeros); on a manifold entry `_weight_decay!` is the no-op. So the two runs execute the same
+# arithmetic in the same order and there is no rounding to absorb. Asserting `≈` here would let a
+# decay that leaked in at the size of the tolerance pass.
 @testset "λ = 0 is Adam" begin
     for (ps, f) in problems()
         adam = run!(deepcopy(ps), Adam(), f, 10)
         adamw = run!(deepcopy(ps), AdamWithEuclideanDecay(; λ=0.0), f, 10)
 
-        @test _isapprox(adam, adamw)
+        @test _isequal(adam, adamw)
         @test f(adam) == f(adamw)
     end
 end
@@ -158,6 +163,76 @@ end
         @test check(adamw) < 100 * eps(T)           # and it is still on the manifold
         @test f(adamw) < f(x₀)                      # and it optimized
     end
+end
+
+# The `GrassmannManifold` is *not* covered by an optimizer run, and cannot be as things stand:
+# `GradientAutodiff(F, ::GrassmannManifold)` does not exist for a bare one, and a `NamedTuple`
+# holding one dies in `_similar` (`similar` is deliberately undefined for its horizontal lift).
+# Both are issue #27, "bare Manifold parameters are only partially supported", and neither is
+# specific to weight decay. What *can* be checked of the Grassmann case is checked: the `rgrad`
+# identity above and the `_weight_decay!` dispatch below.
+#
+# `_weight_decay!` directly, rather than only through a 25-step run. The no-op is not an omission:
+# the direction on a manifold is a horizontal lift, of a different shape from the point, so `λx`
+# could not be subtracted from it even if it were nonzero.
+@testset "the no-op of `_weight_decay!` is a no-op" begin
+    Random.seed!(1234)
+    for (Y, B) in ((rand(StiefelManifold, 6, 3), rand(StiefelLieAlgHorMatrix, 6, 3)),
+        (rand(GrassmannManifold, 6, 3), rand(GrassmannLieAlgHorMatrix, 6, 3)))
+        B₀ = copy(B)
+        @test _weight_decay!(B, Y, λ) === B         # returned in place, as the array method is
+        @test B == B₀                               # and untouched
+        @test size(B) != size(Y)                    # the shapes it would have to reconcile
+    end
+
+    # the ordinary method for comparison, on the same call shape
+    δ = [1.0, 1.0, 1.0]
+    @test _weight_decay!(δ, [2.0, 4.0, 6.0], 0.5) == [0.0, -1.0, -2.0]
+end
+
+# The trait carries the geometry, and it is declared on the two concrete manifolds rather than on
+# `Manifold`: what makes the decay vanish is that both are *compact*, which a manifold added later
+# need not be. It therefore has to answer for itself instead of inheriting a no-op that may be
+# wrong for it — the failure mode this guards is a silent one.
+struct NoncompactTestManifold{T} <: Manifold{T}
+    A::Matrix{T}
+end
+
+@testset "a manifold that has not decided is an error, not a no-op" begin
+    Y = NoncompactTestManifold(randn(3, 2))
+
+    @test_throws ErrorException _is_decayable(Y)
+    message = try
+        _is_decayable(Y)
+    catch e
+        sprint(showerror, e)
+    end
+    @test occursin("NoncompactTestManifold", message)
+    @test occursin("compact", message)
+
+    # and the two that have decided are unaffected by the absence of a fallback
+    @test !_is_decayable(rand(StiefelManifold, 5, 3))
+    @test !_is_decayable(rand(GrassmannManifold, 5, 3))
+end
+
+# The public entry point, rather than the hand-rolled loop the rest of this file uses: `solve!`
+# adds the stopping criteria and `OptimizerStatus`, and nothing about the decay should disturb
+# either. `warn_iterations = 0` because `Adam` on a fixed step is expected to use its budget.
+@testset "solve! runs the decayed method end to end" begin
+    Random.seed!(1234)
+    ps = (w=rand(StiefelManifold, 5, 3), b=10 * randn(3))
+    algorithm = AdamWithEuclideanDecay(; λ=λ)
+
+    optimizer = Optimizer(ps, named_tuple_error; algorithm=algorithm, linesearch=Static(η),
+        max_iterations=200, warn_iterations=0)
+    state = OptimizerState(algorithm, ps)
+    f₀, b₀ = named_tuple_error(ps), norm(ps.b)
+    solve!(ps, state, optimizer)
+
+    @test state isa AdamState
+    @test named_tuple_error(ps) < f₀
+    @test norm(ps.b) < b₀                           # the decay pulled `b` in
+    @test check(ps.w) < 1e-12                       # and `w` is still on the manifold
 end
 
 # The case the method exists for: a network whose parameters mix a manifold with ordinary

@@ -39,7 +39,8 @@ const MANIFOLD_TOLERANCE = 1e-12
     # every one of these threw `Not implemented for StiefelManifold{...}` from
     # `SimpleSolvers.compute_new_iterate!` before. All four searching methods this package exports are
     # covered, not just the two the rest of the file uses.
-    searching = (Backtracking(Float64), Bisection(Float64), Quadratic(Float64), BierlaireQuadratic(Float64))
+    searching = (Backtracking(Float64), Backtracking(Float64; expand=true), Bisection(Float64),
+        Quadratic(Float64), BierlaireQuadratic(Float64))
     for linesearch in searching, retraction in (Geodesic(), Cayley())
         x = x₀()
         opt = Optimizer(x, f; algorithm=GradientMethod(), linesearch=linesearch, retraction=retraction)

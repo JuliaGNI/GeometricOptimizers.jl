@@ -3,7 +3,7 @@ using NaNMath: log
 using GeometricOptimizers
 using GeometricOptimizers: Newton, _DFP, _BFGS
 using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
-using GeometricOptimizers: DEFAULT_LEARNING_RATE, DEFAULT_DFP_c₂, default_linesearch
+using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
 using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, StrongWolfe, GradientAutodiff, GradientFunction
 using Test
 using Random
@@ -29,7 +29,8 @@ test_obj = OptimizerProblem(F, test_x)
 
 for T in (Float64, Float32)
     for method in (Newton(), _DFP(), _BFGS())
-        for _linesearch in (Static(T(0.1)), Backtracking(T), BierlaireQuadratic(T), Quadratic(T), Bisection(T))
+        for _linesearch in (Static(T(0.1)), Backtracking(T), Backtracking(T; expand=true),
+            BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂=T(0.1)))
             @testset "$(method) & $(_linesearch) & $(T)" begin
                 n = 1
                 x = ones(T, n)
@@ -65,15 +66,18 @@ end
 # `Backtracking` and therefore not `1`.
 #
 # The methods that come with a Hessian (or an approximation of it) produce a direction whose
-# *length* is meaningful, so they keep `Backtracking`, which starts at `α₀ = 1` and only
-# shortens the step if it has to — except `_DFP`, whose direction is under-scaled badly enough
-# that never being able to lengthen it costs two orders of magnitude. See below.
+# *length* is meaningful, so they keep `Backtracking`, which starts its trial step at `α = 1`
+# and shortens it if it has to — and, with `expand = true`, lengthens it if the first trial is
+# accepted and longer ones keep improving the merit.
 @testset "the default line search matches the method" begin
     for T in (Float64, Float32)
-        # `Adam` is the only method that keeps a fixed step: its direction is a moving average and is
-        # not required to descend on an individual step, so a sufficient-decrease search has nothing
-        # to work with.
-        let method = Adam(T)
+        # The `AdamFamily` methods are the ones that keep a fixed step: their direction is a moving
+        # average and is not required to descend on an individual step, so a sufficient-decrease
+        # search has nothing to work with. For `AdamWithEuclideanDecay` a fixed step is also what
+        # makes `λ` mean what it is documented to mean — the merit does not contain the penalty, so
+        # a searching `α` would be picked partly in order to undo the decay, and `αλ` would be
+        # whatever the search settled on. See `default_linesearch`.
+        for method in (Adam(T), AdamWithEuclideanDecay(T))
             ls = default_linesearch(T, method)
             @test ls isa Static{T}
             @test ls.α == T(DEFAULT_LEARNING_RATE)
@@ -84,29 +88,21 @@ end
 
         # Everything else searches. `GradientMethod` and `MomentumMethod` joined this group in 0.2.0,
         # once a line search could take its trial step through a retraction; before that `Static` was
-        # the only thing that worked on manifold parameters, so they had no choice.
-        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), _BFGS())
-            @test default_linesearch(T, method) isa Backtracking{T}
-
-            x = ones(T, 3)
-            @test linesearch(Optimizer(x, F; algorithm=method)).method isa Backtracking{T}
-        end
-
-        # `_DFP` is the exception among the searching methods. Its direction is systematically
-        # under-scaled, and `Backtracking` starts at `α₀ = 1` and only ever shrinks, so it cannot
-        # lengthen the step: on the SVD problem it then accepts `α = 1` on *every* iteration and needs
-        # 49_679 of them. `StrongWolfe` has a bracketing phase that grows the step, but only fires it
-        # with a curvature constant tight enough to reject `α = 1` — hence `c₂ = DEFAULT_DFP_c₂` rather
-        # than its own default of `0.9`, which converges nowhere here. See `default_linesearch` and the
-        # analysis in `optimizer_convergence/svd_optim.jl`.
-        let method = _DFP()
+        # the only thing that worked on manifold parameters, so they had no choice. `_DFP` rejoined it
+        # in SimpleSolvers 0.11: it needs a search that can *lengthen* a step, and until `expand` that
+        # ruled `Backtracking` out for it entirely (49_679 iterations on the SVD problem, against 830
+        # with the expansion phase). See `default_linesearch`.
+        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), _BFGS(), _DFP())
             ls = default_linesearch(T, method)
-            @test ls isa StrongWolfe{T}
-            @test ls.c₂ == T(DEFAULT_DFP_c₂)
-            @test ls.c₂ < T(0.9)                 # the whole point: loose enough and it never expands
+            @test ls isa Backtracking{T}
+            # the property the default turns on, and the one a future SimpleSolvers bump could drop
+            # silently: without it `_DFP` does not converge on the SVD problem at all
+            @test ls.expand
 
             x = ones(T, 3)
-            @test linesearch(Optimizer(x, F; algorithm=method)).method isa StrongWolfe{T}
+            opt_ls = linesearch(Optimizer(x, F; algorithm=method)).method
+            @test opt_ls isa Backtracking{T}
+            @test opt_ls.expand
         end
     end
 
@@ -114,6 +110,7 @@ end
     # `1f-3` and not `Float32(1.0e-3)` rounded through `Float64` — i.e. so that `Static`'s `α`
     # prints as `0.001` for both element types.
     @test default_linesearch(Float32, Adam(Float32)).α === 1.0f-3
+    @test default_linesearch(Float32, AdamWithEuclideanDecay(Float32)).α === 1.0f-3
 
     # `Adam` no longer takes a learning rate, and `β₁`, `β₂` and `δ` are keyword arguments, so
     # an old positional call fails instead of quietly setting `β₁ = 0.01`.

@@ -2,7 +2,7 @@
 CurrentModule = GeometricOptimizers
 ```
 
-# Weight decay on a manifold
+# Weight Decay on Manifolds
 
 [`AdamWithEuclideanDecay`](@ref) is [`Adam`](@ref) with the *decoupled weight decay* of
 [loshchilov2019decoupled](@cite), the method usually called AdamW. The name is deliberately
@@ -39,36 +39,100 @@ therefore constant, and its Riemannian gradient [`rgrad(::StiefelManifold, ::Abs
   = \lambda{}Y - \lambda{}Y = \mathbb{O}.
 ```
 
+Both manifolds, and to machine precision rather than by assertion:
+
+```jldoctest
+julia> using GeometricOptimizers, LinearAlgebra, Random
+
+julia> Random.seed!(1234);
+
+julia> λ = 0.5;
+
+julia> [norm(rgrad(Y, λ * Y.A)) < 1e-14
+        for Y in (rand(StiefelManifold, 6, 3), rand(GrassmannManifold, 6, 3))]
+2-element Vector{Bool}:
+ 1
+ 1
+```
+
 The constraint already prevents the norm from growing, so the Euclidean penalty has nothing left to do. Consequently, [`AdamWithEuclideanDecay`](@ref)
 
 - decays ordinary array parameters,
-- leaves [`Manifold`](@ref) parameters unchanged, and
+- leaves [`StiefelManifold`](@ref) and [`GrassmannManifold`](@ref) parameters unchanged, and
 - coincides with [`Adam`](@ref) on a bare manifold for every ``\lambda``.
 
-!!! info
-    The `StiefelManifold` is compact, which is why this argument applies. For other, noncompact spaces,
-    Euclidean decay may have a nontrivial effect.
+!!! info "Compactness, not manifoldness"
+    Both manifolds of this package are compact, which is why this argument applies. For a
+    noncompact space Euclidean decay may well have a nontrivial effect, so the no-op is declared
+    on the two concrete manifolds rather than on [`Manifold`](@ref): a manifold added later gets an
+    error from [`_is_decayable`](@ref) until it has decided the question for itself.
 
 For a mixed parameter container, such as a model with Stiefel attention weights and ordinary
 weights and biases, only the ordinary arrays are decayed:
 
-```julia
-ps = (w = rand(StiefelManifold, 5, 3), b = randn(3))
-algorithm = AdamWithEuclideanDecay(; λ = 1e-2)
-optimizer = Optimizer(ps, loss; algorithm = algorithm, linesearch = Static(1e-3))
+```jldoctest mixed
+julia> using GeometricOptimizers, LinearAlgebra, Random
+
+julia> Random.seed!(1234);
+
+julia> A = randn(5, 3);
+
+julia> ps = (w = rand(StiefelManifold, 5, 3), b = randn(3));
+
+julia> loss(ps::NamedTuple) = norm(A - ps.w * ps.w' * A) + norm(ps.b);
+
+julia> algorithm = AdamWithEuclideanDecay(; λ = 1e-2);
+
+julia> optimizer = Optimizer(ps, loss; algorithm = algorithm, linesearch = Static(1e-3));
+
+julia> OptimizerState(algorithm, ps) isa AdamState   # Adam's state, reused verbatim
+true
 ```
+
+Only `b` is decayed; `w` is left to [`Adam`](@ref) alone. The
+[test file](https://github.com/JuliaGNI/GeometricOptimizers.jl/blob/main/test/adam_with_euclidean_decay.jl)
+pins both halves of that, including that `b` moves by exactly ``-\eta\lambda{}b`` more than it does
+under [`Adam`](@ref) on the first step.
 
 If every parameter is a manifold, a nonzero ``\lambda`` cannot affect the run. The optimizer warns
 at construction instead of silently behaving exactly like [`Adam`](@ref). The method reuses Adam's
 cache and state; `OptimizerState(AdamWithEuclideanDecay(), ps)` returns an [`AdamState`](@ref).
 
-## Iterate versus direction
+## Which line search
 
-The conclusion above applies when the iterate is constrained: each update is retracted back onto
-the manifold. It does not say that every method using a tangent projection makes weight decay
-irrelevant.
+The decay is applied to the *direction*, and the line search then scales that direction by its
+``\alpha``, so the decay per step is ``\alpha\lambda``. That is deliberate — it is how
+[loshchilov2019decoupled](@cite) couples the decay to the learning-rate schedule and nothing else —
+but it means the choice of line search is part of the method's semantics rather than a performance
+knob. See [`default_linesearch`](@ref):
 
-A seemingly related optimizer to the generalized manifold Adam is Mano (see [gu2026mano](@cite)). It first updates in ``\mathbb{R}^{m\times{}n}`` and then projects to the more trivial *oblique manifold*. Its weights are therefore free to change norm in the first step. The Mano paper also reports that a retracting Riemannian-SGD baseline failed to converge at one tested large language-model scale. That result is relevant empirical context, not a contradiction of the geometric argument above. The package's premise, following [brantner2023generalizing](@cite), is that the constraint is part of the model rather than a projection fitted to an unconstrained AdamW solution. Furthermore, the implementation's [`cayley`](@ref) retraction uses a ``2n\times{}2n`` solve, not an SVD or QR of the full weight, and hence reduces cost.
+- `Static(η)`, the default, gives the decay of the paper with ``\eta`` fixed.
+- [`DecayingStatic`](@ref) is the schedule case, and equally well defined: ``\lambda`` keeps its
+  meaning relative to ``\eta`` while both go to zero.
+- A *searching* line search is not recommended, and not only because [`Adam`](@ref)'s direction is
+  a poor thing to search along. The merit it minimizes is the bare objective ``f``, not
+  ``f + \frac{\lambda}{2}||x||^2`` — the penalty is never assembled anywhere, which is what
+  *decoupled* means — so the search spends its ``\alpha`` undoing the decay's contribution to
+  ``f``, and the effective regularization strength becomes whatever ``\alpha`` it settled on.
+
+## What the argument does and does not depend on
+
+The argument depends on the *iterate* being constrained: every step ends with a retraction back
+onto the manifold, so ``||Y||_F^2 = n`` holds at every iterate and not merely in the limit. What it
+does **not** say is that any method with a geometric flavour makes Euclidean weight decay
+irrelevant. Projecting a gradient, a momentum or a direction onto a tangent space constrains the
+*step*; unless the point is then returned to the constraint set, ``||Y||_F`` is free to drift and a
+Euclidean penalty has something to act on again. Whether the decay vanishes is therefore a question
+about the iterates, and it has to be asked of each method separately.
+
+That distinction matters because manifold-flavoured optimizers for large language models are an
+active area — Mano ([gu2026mano](@cite)) projects the momentum onto the tangent space of the
+parameters and constrains it on a rotational oblique manifold, and reports outperforming AdamW and
+Muon at lower memory and compute cost. This package takes the other route, following
+[brantner2023generalizing](@cite): the constraint is part of the model, maintained at every
+iterate, rather than a projection wrapped around an essentially unconstrained solution. Its cost
+is kept down in the retraction instead — [`cayley`](@ref) needs only a ``2n\times{}2n`` solve, not
+an SVD or a QR decomposition of the full weight.
 
 ## Why the name is not `AdamW`
 

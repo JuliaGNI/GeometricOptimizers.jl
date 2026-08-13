@@ -1,79 +1,84 @@
-# Line searches on manifolds
+```@meta
+CurrentModule = GeometricOptimizers
+```
 
-This page records the theoretical and empirical findings from the manifold
-line-search work.[^pr31] It started from one defect—line searches could not
-evaluate a trial point on a manifold—and exposed several consequences for
-coordinate pairings, quasi-Newton updates, and step-size selection.
+# Linesearches on Manifolds
+
+A line search on a manifold is not the vector construction with a different inner product. Three
+things change: the trial point has to be formed with the retraction, the derivative of the merit has
+to be paired in the intrinsic coordinates, and the accepted step is no longer content to stay below
+``\alpha = 1``. This page collects those three points and their consequences for the quasi-Newton
+methods.
 
 ## A line-search trial point must use the retraction
 
-For an ordinary vector, a line search evaluates the one-dimensional merit
-function
+For an ordinary vector, a line search evaluates the one-dimensional merit function
 
 ```math
-\phi(\alpha) = f(x_k + \alpha p_k).
+\varphi(\alpha) = f(x_k + \alpha{}p_k).
 ```
 
-That construction is not valid when ``x_k`` lies on a manifold. In
-particular, adding a tangent or horizontal-lift direction to a point on
-``\operatorname{St}(N,n)`` generally leaves the manifold. In the SVD problem,
-`linesearch_problem` therefore failed for every searching line search with a
-`NamedTuple` of Stiefel points. `Static` appeared to work only because it
-never evaluated the merit function.
+That construction is not available when ``x_k`` lies on a manifold: adding a tangent or
+horizontal-lift direction to a point on ``\operatorname{St}(N,n)`` generally leaves the manifold.
+[`linesearch_problem`](@ref) therefore failed for every *searching* line search on a `NamedTuple` of
+[`StiefelManifold`](@ref) points, and [`SimpleSolvers.Static`](@extref) only appeared to work because
+it never evaluates the merit at all.
 
-The correct manifold trial point is formed by applying the selected
-retraction to the current point and direction. `trial_iterate!` now follows
-the same construction as `solver_step!` after the line search has selected
-``\alpha``. The vector implementation still uses the allocation-free
-`compute_new_iterate!` path.
+The manifold trial point is formed by applying the selected retraction to the current point and
+direction: [`trial_iterate!`](@ref) uses the same construction as [`solver_step!`](@ref) does once the
+line search has settled on ``\alpha``. The `AbstractVector` implementation still takes the
+allocation-free [`SimpleSolvers.compute_new_iterate!`](@extref) path.
 
-The line-search derivative must use the same tangent-space representation as
-the direction. `trial_slope` consequently pairs the gradient and direction
-through `global_rep`; they do not otherwise necessarily have matching shapes
-on a manifold.
+The derivative has to use the same tangent-space representation as the direction, which is why
+[`trial_slope`](@ref) brings the gradient and the direction together through [`global_rep`](@ref) — on
+a manifold the two need not have matching shapes to begin with.
 
-This changes a fixed-step workaround into a genuine search:
+That turns a fixed-step workaround into a genuine search:
 
-| Problem | Fixed-step behavior | Searching behavior |
+| Problem | Fixed step | Searching |
 | --- | --- | --- |
-| Sphere, `GradientMethod` | 28 iterations | 2 iterations, ``\|\nabla f\| = 2.7\times10^{-16}`` |
-| Sphere, `MomentumMethod` | 23 iterations | 2 iterations, ``\|\nabla f\| = 1.7\times10^{-15}`` |
-| SVD, best available | 1000 iterations, relative error ``10^{-2}`` | `_BFGS`: 113 iterations, relative error ``2.6\times10^{-11}`` |
+| Sphere, [`GradientMethod`](@ref) | 28 iterations | 2 iterations, ``\|\nabla f\| = 2.7\times10^{-16}`` |
+| Sphere, [`MomentumMethod`](@ref) | 23 iterations | 2 iterations, ``\|\nabla f\| = 1.7\times10^{-15}`` |
+| SVD, best available | 1000 iterations, relative error ``10^{-2}`` | [`_BFGS`](@ref) in 93 iterations, relative error below ``10^{-8}`` |
 
-With `Static(0.01)`, the SVD solve reaches only ``\|\nabla f\|=8\times10^{-2}``
-after 1000 iterations. At 5000, 20000, and 60000 iterations the norm is
-approximately ``1.9\times10^{-3}``, ``2.1\times10^{-4}``, and
-``4.0\times10^{-5}``, respectively. Reaching the convergence gate by this
-route would require roughly a million iterations.
+The fixed-step column is not merely slower. With `Static(0.01)` the SVD solve reaches only
+``\|\nabla f\| = 8\times10^{-2}`` after 1000 iterations, and ``1.9\times10^{-3}``,
+``2.1\times10^{-4}``, ``4.0\times10^{-5}`` at 5000, 20 000 and 60 000; reaching the convergence gate
+that way would take of the order of a million iterations.
+
+!!! info "This changed in 0.2.0"
+    [`GradientMethod`](@ref) and [`MomentumMethod`](@ref) used to default to a fixed
+    `Static(1e-3)`. They could not do anything else, because until the trial point went through the
+    retraction `Static` was the only line search that worked on manifold parameters at all.
 
 ## Pair gradients and directions intrinsically
 
-The ambient Frobenius `dot` product on an `AbstractLieAlgHorMatrix` counts
-each off-diagonal block of the horizontal lift twice. It is therefore exactly
-twice the product of the free parameters. Those free parameters are the
-coordinates used to size ``Q``, flatten with `outer!`, and parameterize the
-line-search step ``\alpha``. A central-difference check showed that the old
-`trial_slope` returned ``2\phi'(\alpha)`` rather than ``\phi'(\alpha)``.
+`LinearAlgebra.dot` on an [`AbstractLieAlgHorMatrix`](@ref) is the *ambient* Frobenius product, and it
+counts each off-diagonal block of the horizontal lift twice — so it comes out at exactly twice the
+product of the lift's free parameters. Those free parameters are the coordinates everything else in
+this package is expressed in: they size ``Q``, they are what [`outer!`](@ref) flattens before forming
+its outer product, and they are what the line search's ``\alpha`` parameterizes. A central-difference
+check showed the consequence: paired ambiently, the slope came out as ``2\varphi'(\alpha)`` where
+``\varphi'(\alpha)`` was wanted.
 
-The intrinsic pairing is now used consistently by `_dot` at three sites:
+[`_dot`](@ref) is the intrinsic pairing, and it is what three quantities need:
 
-1. `trial_slope`, so the line-search derivative has the right scale.
-2. The quasi-Newton denominator ``\delta^\mathsf{T}\gamma``, so it agrees with
-   the flattened ``T_1``, ``T_2``, and ``\gamma^\mathsf{T}Q\gamma`` quantities.
-3. The predicted decrease ``\widetilde{\Delta f}``, so it is comparable with
-   the measured ``\Delta f``.
+1. [`trial_slope`](@ref), so that the line-search derivative has the right scale.
+2. The quasi-Newton denominator ``\delta^\mathsf{T}\gamma``, so that it agrees with the flattened
+   ``T_1``, ``T_2`` and ``\gamma^\mathsf{T}Q\gamma`` it divides.
+3. The predicted decrease ``\widetilde{\Delta f}``, so that it is comparable with the measured
+   ``\Delta f``.
 
-This improves `_BFGS` on the SVD problem from 176 to 113 iterations for
-`Geodesic` plus `Backtracking`, and from 197 to 93 iterations for `Cayley`
-plus `Bisection`.
+Getting that scale right improved [`_BFGS`](@ref) on the SVD problem from 176 to 113 iterations on
+[`Geodesic`](@ref) with a shrink-only [`SimpleSolvers.Backtracking`](@extref), and from 197 to 93 on
+[`Cayley`](@ref) with [`SimpleSolvers.Bisection`](@extref).
 
-There is an important retraction distinction. For `Geodesic`, `trial_slope` is
-the exact derivative of the merit. `Cayley` is not a one-parameter subgroup,
-so its slope is exact at ``\alpha=0`` but drifts for finite steps: the measured
-error is about 6% at ``\alpha=0.5`` and 24% at ``\alpha=1``. The merit value
-itself remains exact for either retraction. This explains why methods that
-use the derivative quantitatively can be more sensitive to the retraction
-than methods that use only its sign.
+The two retractions are not equivalent here. For [`Geodesic`](@ref), [`trial_slope`](@ref) is the
+exact derivative of the merit. [`Cayley`](@ref) is not a one-parameter subgroup, so its slope is exact
+at ``\alpha = 0`` and drifts for finite steps — about 6% at ``\alpha = 0.5`` and 24% at
+``\alpha = 1``. The merit *value* stays exact for either. A method that uses ``\varphi'``
+quantitatively is therefore more sensitive to the choice of retraction than one that uses only its
+sign.
 
 ## Preserve symmetry in the DFP inverse Hessian
 
@@ -83,139 +88,99 @@ The DFP update contains a term of the form
 Q\,\gamma\gamma^\mathsf{T}\,Q,
 ```
 
-which is symmetric in exact arithmetic. Computing its two matrix products
-independently does not preserve symmetry in floating-point arithmetic. In
-the observed run, the relative asymmetry grew from ``8\times10^{-16}`` after
-five iterations to ``1.6\times10^{-11}`` after 20,000 iterations; eventually
-`eigvals(Q)` returned complex values for a matrix that should be symmetric.
+which is symmetric in exact arithmetic and not symmetric when its two matrix products are formed
+independently in floating point. The error accumulates: ``\|Q - Q^\mathsf{T}\|/\|Q\|`` grows from
+``8\times10^{-16}`` after five iterations to ``1.6\times10^{-11}`` after twenty thousand, at which
+point `eigvals(Q)` starts returning complex numbers for a matrix that cannot have them. The update is
+therefore symmetrized explicitly. The BFGS cache gets this for free, because it adds ``T_1 + T_2``
+where ``T_2`` is built as the exact transpose of ``T_1``.
 
-The DFP implementation now constructs the update symmetrically. The BFGS
-cache did not exhibit the same problem because its second term is formed as
-the exact transpose of the first.
+## A manifold step does not want ``\alpha \le 1``
 
-## DFP needs expansion, not only backtracking
+A shrink-only backtracking search starts at ``\alpha = 1`` and can never exceed it. That ceiling is
+right for a direction already scaled like a Newton step — [`_BFGS`](@ref) accepts ``\alpha = 1`` on
+74% of its iterations — and wrong for one that is systematically *under*-scaled. [`_DFP`](@ref) wants
+a median ``\alpha`` of 8, so under a shrink-only search it accepted the ceiling on 100% of its
+iterations and crawled to the gradient gate in 49 679 of them. Raising only the initial trial step,
+from 1 to 3, brought the same solve to 229 — which is what identifies the ceiling rather than DFP
+itself as the cause.
 
-`Backtracking` begins at ``\alpha=1`` and only decreases the trial step. This
-works well for a direction already scaled like a Newton step: `_BFGS` accepts
-``\alpha=1`` on 74% of its iterations. DFP directions are systematically
-under-scaled, however; DFP accepted ``\alpha=1`` on 100% of its iterations
-and required 49,679 iterations to reach the gate. Changing only the initial
-trial step from 1 to 3 reduced that solve to 229 iterations. The bottleneck
-was the inability to expand the step, not DFP itself.
-
-Line searches must be compared by objective evaluations as well as iteration
-count. Bisection uses the fewest iterations but approximately 583 objective
-evaluations per iteration, while Backtracking uses about 25:
-
-| Search | Evaluations/iteration | `_BFGS`: iterations / evaluations | `_DFP`: iterations / evaluations |
-| --- | ---: | ---: | ---: |
-| `Backtracking` | 25 | 113 / 2,857 | 3000+ / 75,012, no convergence |
-| `StrongWolfe` (``c_2=0.9``) | 36 | 159 / 5,708 | 3000+ / 105,054, no convergence |
-| `StrongWolfe` (``c_2=0.1``) | 82 | 118 / 6,738 | 201 / 16,466 |
-| `BierlaireQuadratic` | 102 | 170 / 17,340 | 322 / 27,484 |
-| `Quadratic` | 129 | 173 / 22,267 | 189 / 18,313 |
-| `Bisection` | 583 | 143 / 83,353 | 134 / 78,698 |
-
-`StrongWolfe` already has an expansion/bracketing phase that Backtracking
-lacks. With its default ``c_2=0.9``, however, the Wolfe conditions hold at
-the first trial step on 99.4% of iterations, so expansion almost never runs.
-With ``c_2=0.1``, expansion runs on 94.5% of iterations, the median accepted
-step is 8, and it is the cheapest converging option for both tested
-retractions. `Quadratic` is competitive on `Geodesic` but degrades to 555
-iterations on `Cayley`, consistent with its greater dependence on the
-quantitatively inaccurate finite-step slope.
-
-The resulting defaults are consequently method-specific:
-
-- `GradientMethod` and `MomentumMethod` use `Backtracking` instead of their
-  former `Static(1e-3)` workaround.
-- `_DFP` uses `StrongWolfe(c₂ = 0.1)` so it can lengthen under-scaled steps.
-- Other well-scaled methods retain `Backtracking` because its low evaluation
-  cost gives the smallest total work.
-- `Adam` retains `Static`: its moving-average direction is not required to be
-  a descent direction, so sufficient-decrease searches would reject its
-  intended behavior.
-- `linesearch = Static(η)` remains the explicit way to restore a fixed
-  learning rate.
-
-`DecayingStatic` is the weaker alternative for `AdamWithDecay`. It eventually
-drives the step to zero and can terminate on a criterion, but its geometric
-schedule is summable: the solve stops short at approximately
-``\|\nabla f\|=10^{-3}`` while ``\|\Delta x\|`` is about ``10^{-13}``. A
-searching line search reaches approximately ``10^{-7}`` for the same Adam
-problem.
-
-## Lift quasi-Newton caches to manifold solutions
-
-DFP was previously restricted to `AbstractVector` solutions. That restriction
-was accidental: DFP, like BFGS, is built from a secant pair and does not
-require a vector-valued point. The cache now operates at the
-`OptimizerSolution` level, with separate type parameters for the solution and
-gradient, because a manifold point and its horizontal lift need not have the
-same shape. Its section may be a `NamedTuple`, ``Q`` is sized by the intrinsic
-dimension rather than `length(x)`, and ``\gamma^\mathsf{T}Q\gamma`` uses the
-intrinsic pairing.
-
-The same boundary fixes allow both BFGS and DFP to run on a bare `Manifold`.
-For ``\operatorname{St}(3,1)`` the intrinsic dimension is 2 even though the
-gradient and direction are ambient ``3\times3`` lifts. The required support
-includes `outer!` and `_mul!` for `AbstractLieAlgHorMatrix`, `alloc_h` for a
-`Manifold`, and copying a point into a `GlobalSection`. Both methods then
-reach the sphere minimizer in a handful of iterations.
-
-## Reproducibility and convergence diagnostics
-
-`global_section` draws from Julia's global RNG. Each `OptimizerState` and each
-cache creates a `GlobalSection`, so a manifold solve is reproducible only when
-the RNG is seeded before constructing the state and optimizer. Without that
-seed, `_BFGS` plus `Backtracking` varied between 17 and 18 iterations, and the
-final `check(x)` varied from ``2\times10^{-16}`` to ``4.5\times10^{-14}``.
-The initial point now seeds the solve, and the manifold tolerance is
-``10^{-12}``, matching the corresponding SVD test.
-
-The seven iteration-budget warnings had two causes. Six belonged to the
-intentional 1000-iteration SVD algorithm-comparison budget; those tests keep
-the budget and explicitly disable the warning. The remaining
-`Float64`/`Cayley`/`Adam` warning represented a real convergence failure and
-is fixed by selecting the step with a searching line search. Its distance to
-the minimizer improves from ``1.6\times10^{-3}`` to ``1.3\times10^{-8}``.
-
-## Consequences for tests and documentation
-
-The new manifold line-search tests verify all four exported searching methods,
-convergence versus a crawling fixed-step solve, both quasi-Newton methods on
-both `NamedTuple` and bare-manifold solutions, and the `DecayingStatic`
-schedule and its effect on a solve. The SVD tests separate convergence from
-the fixed-budget algorithm comparison and stop shadowing `Base.error` with an
-objective variable of the same name.
-
-`Cayley`, `Geodesic`, and `AbstractRetraction` now have docstrings and
-doctests. `StrongWolfe` is re-exported because it is now a public default
-choice. The documentation build's page-size threshold was raised to account
-for the additional API documentation. The complete suite and documentation
-build were green with 4,310 assertions and no warnings.
-
-## Upstream implications
-
-The line-search findings were also reported upstream in
+The remedy is an expansion phase, which SimpleSolvers 0.11 added in response to
 [SimpleSolvers issue #174](https://github.com/JuliaGNI/SimpleSolvers.jl/issues/174):
+`Backtracking(T; expand = true)` lengthens an accepted *first* trial step for at most `nexpand = 3`
+rounds of at most a factor `q = 10` each, while every longer trial still satisfies sufficient decrease
+and strictly improves the merit. It is close to free — under 4% more objective evaluations per
+iteration, and *exactly* nothing on a well-scaled problem, because the extrapolation reuses
+``\varphi(0)``, ``\varphi'(0)`` and ``\varphi(\alpha)``, all of which are known once the trial step
+has been accepted. That is why it is the default here for every method except [`Adam`](@ref); see
+[`default_linesearch`](@ref) for the per-method choices and the evaluation counts behind them.
 
-- Backtracking has no expansion phase.
-- Strong Wolfe has an expansion phase, but its default ``c_2`` prevents it
-  from firing for the under-scaled DFP direction.
-- `Backtracking.α₀` is stored, documented, printed, and compared, but was not
-  read, so the initial trial step could not actually be configured.
-- Common initial-step heuristics (Nocedal--Wright 3.59 and 3.60, a unit first
-  step, and rescaling ``Q_0``) help the under-scaled method but hurt a method
-  whose direction is already well scaled. There is no universally good
-  initial-step heuristic across these optimizers.
+Two conclusions from those measurements are worth stating separately, because they are properties of
+the manifold problem rather than of any one search:
 
-## A parsing caveat in the SVD example
+- **Compare line searches by objective evaluations, not by iterations.**
+  [`SimpleSolvers.Bisection`](@extref) needs the fewest iterations of any option here, and roughly 583
+  objective evaluations per iteration to get them, against 26 for `Backtracking(expand = true)`.
+  Bracketing methods refine a line *minimum*; a backtracking search returns the first ``\alpha`` that
+  decreases ``f`` enough. Reach for a bracketing method when iterations rather than evaluations are
+  what you pay for — a very expensive objective, or an outer loop bounded in iterations.
+- **A search that uses ``\varphi'`` quantitatively inherits the retraction's slope error.**
+  [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (189 iterations for `_DFP`) and
+  falls apart on `Cayley` (555), because it fits a polynomial to a slope that is only first-order
+  correct there. `Bisection` uses only the sign of ``\varphi'``, and
+  [`SimpleSolvers.StrongWolfe`](@extref) only compares it against ``\varphi'(0)``; neither degrades
+  that way.
 
-The matrix `A` in `svd_optim.jl` visually resembles a 10×10 matrix but Julia
-parses it as 20×5: a newline separates rows just as `;` does, even when the
-source wraps a displayed row across two lines. The test is self-consistent
-because it uses `size(A, 1)`, so this is not a correctness failure, but the
-source does not describe the apparent matrix shape.
+[`_DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled, and
+how quickly the expansion digs out a badly conditioned ``Q`` is close to arbitrary: across eight
+starting points on the SVD problem it ranges over 512–77 890 iterations on `Geodesic`.
+`StrongWolfe(T; c₂ = 0.1)` is both faster and far steadier — 201–624 iterations across the same eight
+— and is the choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
+`StrongWolfe`'s own default of ``0.9``: at ``0.9`` the strong Wolfe conditions already hold at
+``\alpha = 1`` on 99.4% of iterations, so the bracketing phase never fires and the solve crawls just as
+a shrink-only search does. ``0.1`` is the value [nocedal2006numerical](@cite) recommends where a more
+accurate line search is needed, and it makes the expansion fire on 94.5% of iterations.
 
-[^pr31]: See [the pull request](https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/31).
+There is no initial-step heuristic that serves both cases. The common ones — [nocedal2006numerical](@cite)
+equations 3.59 and 3.60, a unit first step, rescaling ``Q_0`` — all help the under-scaled method and
+hurt the one whose direction is already well scaled, which is why the expansion phase, rather than a
+cleverer ``\alpha_0``, is what fixes this.
+
+### Keeping a fixed learning rate
+
+`linesearch = Static(η)` remains the way to ask for a fixed learning rate, and it is what
+[`Adam`](@ref) keeps as its default: Adam's direction ``-m_1/(\sqrt{m_2} + \delta)`` is a moving
+average that is deliberately *not* required to descend on any individual step, so a
+sufficient-decrease search has nothing to work with and would spend every step reporting that it found
+no descent direction.
+
+[`DecayingStatic`](@ref) is the weaker of the two ways to make such a solve terminate — it is what the
+`AdamWithDecay` method of v0.1.0 did with its own fields. It drives the step to zero geometrically, so
+the solve does stop on a criterion, but the schedule is summable: it stops short at
+``\|\nabla f\| \approx 10^{-3}`` with ``\|\Delta x\|`` already around ``10^{-13}``. A searching line
+search reaches about ``10^{-7}`` on the same Adam problem.
+
+## Quasi-Newton caches on manifold solutions
+
+[`_DFP`](@ref) used to be restricted to `AbstractVector` solutions, and the restriction was
+accidental: like [`_BFGS`](@ref) it is built from a secant pair and never needs a vector-valued point.
+The cache operates at the [`OptimizerSolution`](@ref) level, with separate type parameters for the
+solution and the gradient, because a manifold point and its horizontal lift need not have the same
+shape. Its section may be a `NamedTuple`, ``Q`` is sized by the *intrinsic* dimension rather than by
+`length(x)`, and ``\gamma^\mathsf{T}Q\gamma`` uses the intrinsic pairing.
+
+The same boundaries let both methods run on a bare [`Manifold`](@ref), not only on a `NamedTuple` of
+them. For ``\operatorname{St}(3,1)`` the intrinsic dimension is 2 even though the gradient and the
+direction are ambient ``3\times3`` lifts — which is exactly the mismatch the separate type parameters
+exist for. The supporting pieces are [`outer!`](@ref) and `_mul!` for
+[`AbstractLieAlgHorMatrix`](@ref), `alloc_h` for a `Manifold`, and copying a point into a
+[`GlobalSection`](@ref).
+
+## Reproducibility
+
+[`global_section`](@ref) draws from Julia's global RNG, and both [`OptimizerState`](@ref) and each
+quasi-Newton cache construct a [`GlobalSection`](@ref). A manifold solve is therefore reproducible
+only if the RNG is seeded *before* the state and the optimizer are built — not merely before the
+starting point is drawn. Unseeded, `_BFGS` with `Backtracking` varied between 17 and 18 iterations on
+the sphere problem, with a final `check(x)` anywhere from ``2\times10^{-16}`` to
+``4.5\times10^{-14}``.
