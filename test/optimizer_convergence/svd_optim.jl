@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: StiefelManifold, Cayley
-using SimpleSolvers: Static, Backtracking, Bisection
+using SimpleSolvers: Static, Backtracking, Bisection, StrongWolfe
 using LinearAlgebra: norm, svd
 using Test
 import Random
@@ -131,7 +131,7 @@ one that worked, because it is the only one that never evaluates the merit. So t
 algorithm that converged on it at all: the three first-order methods above exhaust 1000 iterations at
 a relative error of 1e-2.
 """
-function svd_convergence_test(n; retraction=Cayley(), linesearch=Backtracking(Float64),
+function svd_convergence_test(n; retraction=Cayley(), linesearch=Backtracking(Float64; expand=true),
     algorithm=GeometricOptimizers._BFGS(), max_iterations=5000)
     N = size(A, 1)
     U, Σ, Vt = svd(A)
@@ -159,18 +159,24 @@ function svd_convergence_test(n; retraction=Cayley(), linesearch=Backtracking(Fl
 end
 
 # `_DFP` needed the same lift to `OptimizerSolution` that `_BFGS` already had; before it, its cache was
-# `AbstractVector`-only, so a `NamedTuple` fell through to a `NewtonOptimizerCache` and a
-# `MethodError`. All eight combinations of retraction, method and line search converge on this
-# problem, but the cost is wildly uneven:
+# `AbstractVector`-only, so a `NamedTuple` fell through to a `NewtonOptimizerCache` and a `MethodError`.
+# Every combination of retraction, method and line search converges on this problem now, but the cost
+# is uneven, and the ordering by *iterations* is not the ordering by *work* -- a `Bisection` iteration
+# spends ≈580 objective evaluations against ≈25 for a `Backtracking` one. Iterations, then total
+# evaluations, Geodesic / Cayley:
 #
-#                              Geodesic   Cayley
-#     _BFGS  Backtracking           113      136
-#     _BFGS  Bisection              143       93
-#     _DFP   Backtracking        49_679   29_081
-#     _DFP   Bisection              134       96
+#                                     iterations          evaluations
+#     _BFGS  Backtracking(expand)     93 /   118        2_374 /  3_006
+#     _BFGS  Backtracking            113 /   136        2_857 /  3_431
+#     _BFGS  Bisection               143 /    93       83_353 / 53_788
+#     _DFP   Backtracking(expand)   830 / 1_237       21_540 / 31_995
+#     _DFP   Backtracking        49_679 / 29_081    1_241_987 / 727_036
+#     _DFP   StrongWolfe(c₂=0.1)    201 /   274       16_466 / 23_312
+#     _DFP   Bisection               134 /    96       78_698 / 55_493
 #
-# The one bad cell is a property of the *line search*, not of DFP. `Backtracking` starts its trial step
-# at `α = 1` and only ever shrinks, and measuring the `α` it returns settles what happens:
+# The `_DFP  Backtracking` row is a property of the *line search*, not of DFP. A shrink-only backtracking
+# search starts its trial step at `α = 1` and can never exceed it; measuring the `α` it returns settles
+# what happens:
 #
 #                       fraction α == 1   fraction α > 1   median α   iterations
 #     _BFGS  Backtracking         73.5%             0%          1.0          113
@@ -179,45 +185,39 @@ end
 #     _DFP   Bisection               0%          94.8%         11.1          134
 #
 # `_BFGS` produces a direction already scaled like a Newton step, so `α = 1` is the right answer and
-# accepting it is not a failure. `_DFP` produces a systematically *under-scaled* direction, and a
-# backtracking search cannot lengthen it: it accepts `α = 1` on every single iteration and the solve
-# crawls -- steps of `‖Δx‖ ≈ 1e-5` against a gradient of `≈ 1e-4`, with the gradient falling by less
-# than a factor of two over 19_500 iterations. It is not stuck (it terminates on a criterion, not on
-# the cap), just pinned at the ceiling.
-#
-# The decisive check is to change *nothing* but the initial trial step handed to the same
-# `Backtracking`, which it can shrink from but not grow past:
+# accepting it is not a failure. `_DFP` produces a systematically *under-scaled* direction that wants a
+# median `α` of 8, and a shrink-only search cannot get there: it accepts `α = 1` on every single
+# iteration and the solve crawls -- steps of `‖Δx‖ ≈ 1e-5` against a gradient of `≈ 1e-4`, the gradient
+# falling by less than a factor of two over 19_500 iterations. It is not stuck (it terminates on a
+# criterion, not on the cap), just pinned at the ceiling. Changing *nothing* but the initial trial step
+# handed to the same search, which can shrink from it but not grow past it, is worth a factor of 217:
 #
 #     α₀ = 1  →  49_679 iterations        α₀ = 100  →  936
 #     α₀ = 3  →     229 iterations        α₀ = 1000 →  2_281
 #     α₀ = 10 →     268 iterations
 #
-# Three instead of one is worth a factor of 217. So DFP is not the problem — with any search that can
-# exceed 1 it is competitive with `_BFGS`.
+# That measurement became JuliaGNI/SimpleSolvers.jl#174 and, in SimpleSolvers 0.11, the `expand` key
+# that `default_linesearch` now switches on: an accepted *first* trial step is lengthened while each
+# longer trial still satisfies sufficient decrease and strictly improves the merit. It costs under 4%
+# per iteration, so the `_DFP` pair that used to be too slow to run here (5×10⁴ iterations) is now in the
+# loop below at 830 and 1_237.
 #
-# Which search, though, is decided by objective evaluations and not by iterations, and the two orderings
-# disagree. `Bisection` needs the fewest iterations of any option and spends ≈580 evaluations on each
-# one; `Backtracking` spends ≈25. Total evaluations for `_DFP` (Geodesic / Cayley):
-#
-#     StrongWolfe(c₂ = 0.1)    16_466 /  23_312      ← what `default_linesearch` picks
-#     Quadratic                18_313 /  54_230
-#     BierlaireQuadratic       27_484 /  80_787
-#     Bisection                78_698 /  55_493
-#     Backtracking             (does not converge)
-#
-# `StrongWolfe` has the bracketing phase that `Backtracking` lacks, but at its own default `c₂ = 0.9`
-# the Wolfe conditions already hold at `α = 1` on 99.4% of iterations, so it never fires and it crawls
-# just like `Backtracking` (3000+ iterations). At `c₂ = 0.1` the expansion fires on 94.5% of them with a
-# median `α` of 8. See `default_linesearch` and JuliaGNI/SimpleSolvers.jl#174; `solver_step!` also hands
-# the search a hard-coded `one(T)` with no way to configure that.
-#
-# 5×10⁴ iterations is too slow to put in a test suite, so that pair is measured and documented rather
-# than run.
+# `StrongWolfe(c₂ = 0.1)` remains the better explicit choice for a DFP-heavy workload -- fewer
+# evaluations and ≈1.7× faster in wall clock -- but not by enough to be worth a per-method default; see
+# `default_linesearch`. At `StrongWolfe`'s own `c₂ = 0.9` the Wolfe conditions already hold at `α = 1` on
+# 99.4% of iterations, its bracketing phase never fires, and it crawls just as the shrink-only search
+# does.
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
-    for linesearch in (Backtracking(Float64), Bisection(Float64))
+    for linesearch in (Backtracking(Float64), Backtracking(Float64; expand=true), Bisection(Float64))
         svd_convergence_test(3; retraction=retraction, linesearch=linesearch,
             algorithm=GeometricOptimizers._BFGS())
     end
+    # `_DFP` under the package default: only possible since the expansion phase, and the reason the
+    # shrink-only pair is not run here
+    svd_convergence_test(3; retraction=retraction, linesearch=Backtracking(Float64; expand=true),
+        algorithm=GeometricOptimizers._DFP(), max_iterations=3000)
     svd_convergence_test(3; retraction=retraction, linesearch=Bisection(Float64),
+        algorithm=GeometricOptimizers._DFP())
+    svd_convergence_test(3; retraction=retraction, linesearch=StrongWolfe(Float64; c₂=0.1),
         algorithm=GeometricOptimizers._DFP())
 end
