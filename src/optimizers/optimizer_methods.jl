@@ -285,18 +285,18 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
 
     | search | evals/iteration | `_BFGS`: iters / evals | `_DFP`: iters / evals |
     |---|---|---|---|
-    | `Backtracking(expand = true)` | **26** | **93** / **2 374** | 830 / 21 540 |
-    | `Backtracking` (shrink only) | 25 | 113 / 2 857 | 49 679 / 1 241 987 |
-    | `StrongWolfe` (`c₂ = 0.1`) | 57 | 118 / 6 738 | 201 / **16 466** |
-    | `StrongWolfe` (`c₂ = 0.9`) | 36 | 159 / 5 708 | no convergence |
-    | `BierlaireQuadratic` | 102 | 170 / 17 340 | 322 / 27 484 |
-    | `Quadratic` | 129 | 173 / 22 267 | 189 / 18 313 |
-    | `Bisection` | 583 | 143 / 83 353 | 134 / 78 698 |
+    | `Backtracking(expand = true)` | **26** | **93** / **2 389** | 702 / 18 258 |
+    | `Backtracking` (shrink only) | 26 | 114 / 2 915 | 47 115 / 1 177 919 |
+    | `StrongWolfe` (`c₂ = 0.1`) | 62 | 136 / 8 420 | 207 / **16 873** |
+    | `StrongWolfe` (`c₂ = 0.9`) | 37 | 161 / 5 959 | 26 978 / 946 382 |
+    | `BierlaireQuadratic` | 105 | 136 / 14 291 | 191 / 21 039 |
+    | `Quadratic` | 140 | 103 / 14 416 | 165 / 17 236 |
+    | `Bisection` | 591 | 142 / 83 906 | 134 / 79 301 |
 
     A shrink-only backtracking search starts at `α = 1` and can never exceed it, which is right for a
     direction already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its iterations —
     but wrong for one that is systematically *under*-scaled. `_DFP` wants a median `α` of 8, so it
-    accepted the ceiling on **100%** of its iterations and crawled to the gate in 49 679 of them.
+    accepts the ceiling on **100%** of its iterations and crawls to the gate in 47 115 of them.
     `expand = true` lets an accepted *first* trial step be lengthened while each longer trial still
     satisfies sufficient decrease and strictly improves the merit, at most `nexpand = 3` rounds of at
     most `q = 10` each.
@@ -312,27 +312,32 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     first-order methods that trade is poor: `Bisection` burns 1.8M evaluations against
     `Backtracking`'s 79 500 for the same 3 000 iterations.
 
-!!! note "[`_DFP`](@ref) converges under the default, but [`SimpleSolvers.StrongWolfe`](@extref) suits it better"
+!!! note "[`_DFP`](@ref) converges under the default, and [`SimpleSolvers.StrongWolfe`](@extref) is still the steadier explicit choice"
     DFP's direction stays under-scaled — the expansion phase makes that harmless rather than absent, so
-    `_DFP` needs 830 iterations on `Geodesic` and 1 237 on `Cayley` where `_BFGS` needs 93 and 118, on
-    the starting point the test suite uses. **Those two numbers are not representative.** Over eight
-    starting points on the same problem `_DFP` + the default ranges over 512–77 890 iterations
-    (`Geodesic`) and 465–3 834 (`Cayley`): `Q` becomes badly conditioned (κ ≈ 1e9) and how quickly the
-    expansion phase digs it out is close to arbitrary.
+    `_DFP` needs 702 iterations on `Geodesic` and 1 366 on `Cayley` where `_BFGS` needs 93 and 118, on
+    the starting point the test suite uses. Over eight starting points on the same problem it ranges
+    over 387–845 (`Geodesic`) and 466–1 366 (`Cayley`).
 
-    `StrongWolfe(T; c₂ = 0.1)` is both faster and far steadier, and is the choice to pass explicitly on
-    a DFP-heavy workload: 201 and 274 iterations on that starting point, 201–624 and 192–483 across the
-    eight, 16 466 and 23 312 evaluations, about 1.7× faster in wall clock (0.12 s against 0.20 s on
-    `Geodesic`, 0.18 s against 0.33 s on `Cayley`). `Bisection` is steadier still (103–143 / 96–141)
-    at four to five times the work.
+    Those ranges used to be 512–77 890 and 465–3 834, and the difference is
+    [`curvature_is_usable`](@ref). `Q` became badly conditioned (κ ≈ 1e9) because it was being built
+    from secant pairs with ``\delta^T\gamma \leq 0``, which the guard on the update did not reject; how
+    quickly the expansion phase dug it back out was close to arbitrary. Enforcing the curvature
+    condition removes a factor of 92 from the spread on `Geodesic` and, on this problem, most of the
+    reason `_DFP` had a reputation for being unpredictable.
+
+    `StrongWolfe(T; c₂ = 0.1)` remains the choice to pass explicitly on a DFP-heavy workload, now on
+    cost rather than on reliability: 207 and 279 iterations on that starting point, 207–755 and 215–447
+    across the eight, 16 873 and 23 818 evaluations against the default's 18 258 and 35 329, and 1.4×
+    to 2.0× faster in wall clock (0.13 s against 0.17 s on `Geodesic`, 0.19 s against 0.37 s on
+    `Cayley`). `Bisection` is steadier still (103–141 / 88–129) at four to five times the work.
 
     `c₂ = 0.1` and not `StrongWolfe`'s own default of `0.9`: at `0.9` the strong Wolfe conditions are
     already satisfied at `α = 1` on 99.4% of iterations, so its bracketing phase never fires and it
-    crawls just as a shrink-only `Backtracking` does. `0.1` is the value [nocedal2006numerical](@cite)
-    recommends where a more accurate line search is needed, and it makes the expansion fire on 94.5% of
-    iterations.
+    crawls just as a shrink-only `Backtracking` does — 26 978 iterations against 207. `0.1` is the
+    value [nocedal2006numerical](@cite) recommends where a more accurate line search is needed, and it
+    makes the expansion fire on 94.5% of iterations.
 
-    `Quadratic` is competitive on `Geodesic` (189 iterations) and falls apart on `Cayley` (555) —
+    `Quadratic` is competitive on `Geodesic` (165 iterations) and falls apart on `Cayley` (550) —
     probably because [`trial_slope`](@ref) is only first-order correct there and `Quadratic` uses
     ``\varphi'`` *quantitatively* in its polynomial fit, where `Bisection` uses only its sign and
     `StrongWolfe` only compares it against ``\varphi'(0)``.

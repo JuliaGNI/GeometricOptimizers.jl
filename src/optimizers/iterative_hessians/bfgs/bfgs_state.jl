@@ -49,6 +49,28 @@ OptimizerState(::_BFGS, x_args...) = BFGSState(x_args...)
 
 inverse_hessian(state::BFGSState) = state.Q
 
+@doc raw"""
+    restart!(state::BFGSState)
+
+Reset the inverse-Hessian approximation to the identity, so that the next direction is the
+steepest-descent one.
+
+This is the `BFGSState` method of [`restart!`](@ref); `DFPState` is an alias for `BFGSState`, so it
+covers `_DFP` as well. [`solver_step!`](@ref) calls it when a line search reports that it could not
+decrease the merit — see [`linesearch_rejected`](@ref).
+
+!!! info "Why the direction alone is not enough"
+    [`ensure_descent!`](@ref) already substitutes the steepest-descent direction for one step when
+    ``Q`` has stopped being positive definite, but it leaves ``Q`` itself alone, so every subsequent
+    direction comes from the same damaged approximation. Measured on the SVD problem of
+    `test/optimizer_convergence/svd_optim.jl`, ``\lambda_\mathrm{min}(Q)`` reached `-398` and stayed
+    negative for the rest of the solve. Discarding ``Q`` is what actually recovers.
+"""
+function restart!(state::BFGSState)
+    inverse_hessian(state) .= one(inverse_hessian(state))
+    state
+end
+
 function initialize!(state::BFGSState{T}, ::OptimizerSolution{T}) where {T}
     _fill!(state.x̄, T(NaN))
     _fill!(state.s, T(NaN))

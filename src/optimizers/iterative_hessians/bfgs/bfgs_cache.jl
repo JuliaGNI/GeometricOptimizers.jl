@@ -132,7 +132,11 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
     # coefficient mixing two different inner products. See `_dot`.
     ΔxΔg = _dot(cache.Δx, cache.Δg)
 
-    if !iszero(ΔxΔg) && !isnan(ΔxΔg)
+    # `curvature_is_usable` and not `!iszero(ΔxΔg) && !isnan(ΔxΔg)`: this update keeps `Q` positive
+    # definite only for `δᵀγ > 0`, and the old guard admitted a negative pairing as readily as a
+    # positive one -- as well as denominators of the order of `1e-16`, which it is about to divide a
+    # rank-two correction by.
+    if curvature_is_usable(ΔxΔg, cache.Δx, cache.Δg)
         outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
         outer!(cache.ΔxΔg, cache.Δx, cache.Δg)
         mul!(cache.T1, cache.ΔxΔg, inverse_hessian(state))

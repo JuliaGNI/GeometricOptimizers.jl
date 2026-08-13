@@ -42,38 +42,53 @@ const MANIFOLD_TOLERANCE = 1e-12
 
 # How close to the best rank-`n` approximation a *converged* solve has to get, as a relative error.
 #
-# This is deliberately not tighter. A solve stops when `‖∇f‖ ≤ f_reltol = √eps ≈ 1.5e-8`, and nothing
-# bounds the resulting error in the objective below that in a platform-independent way: across eight
-# starting points the worst case here is 2.6e-11, but CI has produced 1.3e-10 on the same seed this
-# file uses, on a different Julia version. The previous value of `1e-10` therefore passed by luck of
-# the platform rather than by anything the stopping criterion guarantees.
+# This is deliberately not tighter. Nothing bounds the error in the objective at the point a solve
+# stops in a platform-independent way: across eight starting points the worst case here is 2.6e-11,
+# but CI has produced 1.3e-10 on the same seed this file uses, on a different Julia version. The
+# previous value of `1e-10` therefore passed by luck of the platform rather than by anything the
+# stopping criterion guarantees.
 #
 # It still discriminates: the fixed-step runs in `svd_test` above reach 1e-2 at best, so a converged
 # solve is separated from an unconverged one by six orders of magnitude either way.
 const CONVERGED_ERROR_TOLERANCE = 1e-8
 
-# How close each algorithm gets to the best rank-`n` approximation, as a relative error, after
-# `1000` iterations with `Static(0.01)` and seed `1234`. Measured on Julia 1.13, macOS/aarch64:
+# How small `‖∇f‖` is at the point a solve stops.
+#
+# Not `1e-5`, which is what this used to be, and not because `1e-5` was unlucky. The reasoning behind
+# it was that a solve stops when `‖∇f‖ ≤ f_reltol = √eps ≈ 1.5e-8`, and that is simply not what
+# happens on this problem: over the ten (method, line search, retraction) combinations run below and
+# eight starting points each, `g_converged` is `false` in all eighty. Every one of them terminates on
+# `f_converged` instead -- the successive relative change in `f` falling to `f_suctol = 2eps` -- and
+# `‖∇f‖` at that point is whatever it is.
+#
+# Which is not arbitrary, just not `√eps`. Near a minimizer `f - f_min ≈ ‖∇f‖²/2λ`, so `f` stops
+# changing in double precision once `‖∇f‖ ≈ √(eps ⋅ f ⋅ 2λ)`, i.e. around `1e-8` for a well-scaled
+# problem and higher where the curvature is poor. Before the fixes described further down the worst
+# case over those eighty runs was `1.8e-5` (`_DFP` + `StrongWolfe(c₂ = 0.1)` + `Cayley`), so `1e-5`
+# sat *inside* the natural spread of the quantity it was bounding and CI's `1.354e-5` on
+# Julia 1.13/Linux was unremarkable rather than a regression.
+#
+# With `linesearch_rejected` and `curvature_is_usable` in place the worst case over the same eighty
+# runs is `2.9e-7`, so `1e-5` now has a factor of 35 of headroom and is a real bound rather than a
+# coin flip. It is kept at `1e-5` for exactly that reason: it is the value that fails if the
+# line-search handling regresses.
+const CONVERGED_GRADIENT_TOLERANCE = 1e-5
+
+# How close `GradientMethod` and `MomentumMethod` get to the best rank-`n` approximation, as a
+# relative error at iteration `1000` with `Static(0.01)` and seed `1234`:
 #
 #                  Geodesic   Cayley
 #     GradientMethod  1.0e-2   9.8e-3
 #     MomentumMethod  9.7e-3   9.3e-3
-#     Adam            3.2e-5   2.3e-5
 #
-# The two first-order tolerances leave roughly a factor of two on top of those. `Adam`'s does not, and
-# cannot -- see the warning below it.
+# Both leave roughly a factor of two, and both are *bit-identical* on Julia 1.10, 1.12 and 1.13
+# (1.016e-2 and 9.688e-3 to every digit measured), so the final iterate is a perfectly good statistic
+# for them. It is not one for `Adam`; see `ADAM_MEAN_ORBIT_TOLERANCE` below.
 #
 # `MomentumMethod` used to land at `1.9e-2` / `1.7e-2` here, i.e. *worse* than plain gradient
 # descent, which is what issue #18 was about: it accumulated `p ← p + α∇L` and thereby kept
 # pushing after `∇L → 0`. With the classic `p ← αp + ∇L` it is slightly better than gradient
 # descent, as momentum should be.
-#
-# This test used to apply a single blanket tolerance of `1e-1` to all three algorithms, which
-# is how the two `Adam` bugs (uninitialised moments and the wrong bias-correction factors)
-# survived: with them present `Adam` reached only `2.2e-4` (Geodesic) and `3.5e-3` (Cayley) at
-# these 1000 steps, i.e. it was the *worst* of the three rather than the best by two orders of
-# magnitude, and `1e-1` accepted that without complaint. The tolerance for `Adam` is what
-# closes that hole, and it is the only one of the three that guards a known bug.
 #
 # On the review comment "it shouldn't be necessary to increase the iteration number": correct,
 # and it is back to `main`'s 1000. An intermediate version of this branch ran 1500 steps, but
@@ -88,118 +103,180 @@ const CONVERGED_ERROR_TOLERANCE = 1e-8
 #
 # So there is no per-step convergence regression to paper over here; `Static(0.01)` interacts
 # with the retraction exactly as it used to.
-# WARNING: `adam`'s tolerance has almost no margin, in either direction, and this is inherent to what
-# it measures rather than a value someone picked badly.
+const RELATIVE_ERROR_TOLERANCE = (gradient=2e-2, momentum=2e-2)
+
+# The number of trailing iterations the `Adam` statistic averages over, out of `1000`.
+const ADAM_ORBIT_WINDOW = 500
+
+# How large `Adam`'s orbit around the minimizer is, as a relative error averaged over the last
+# `ADAM_ORBIT_WINDOW` iterations.
 #
-# With a fixed `α`, `Adam`'s direction has magnitude ≈1 per component whatever the gradient is, so it
-# does not converge to the minimizer -- it circles it at a distance of order `α`. The error at
-# iteration 1000 is therefore a snapshot of an arbitrary *phase* on that orbit, and small differences
-# in floating-point arithmetic move the phase. Measured for identical code and seed:
+# The point of averaging: with a fixed `α`, `Adam`'s direction has magnitude ≈1 per component
+# whatever the gradient is, so it does not converge to the minimizer -- it circles it at a distance
+# of order `α`. The error at iteration 1000 is a sample of an arbitrary *phase* on that orbit, and the
+# last bits of the floating-point arithmetic move the phase. Averaging over a stretch of the orbit
+# measures its *radius*, which is a property of `α` and the problem and not of the platform.
 #
-#     3.2e-5   Julia 1.13, macOS/aarch64 (and bit-identical across 5 runs and BLAS threads 1..12)
-#     1.2e-4   Julia 1.10, Linux/x86_64 on GitHub Actions
+# Measured for identical code and seed on three Julia versions, Geodesic / Cayley:
 #
-# an 8x spread across platforms. The tolerance cannot be tightened to the local value without failing
-# on CI, and it cannot be loosened much either, because it is the *only* guard on the two `Adam` bugs
-# described below: with those present the same run reaches 2.2e-4 (Geodesic). So the usable window is
+#                            1.13             1.12             1.10        spread
+#     iteration 1000     1.45e-5 / 2.88e-5  1.40e-5 / 1.24e-5  2.17e-5 / 9.7e-6   3.0x
+#     min over 901:1000  5.8e-6 / 6.7e-6    9.3e-6 / 5.3e-6    5.9e-6 / 5.4e-6    1.76x
+#     mean over 901:1000 3.50e-5 / 3.44e-5  3.12e-5 / 2.92e-5  2.88e-5 / 2.85e-5  1.21x
+#     mean over 501:1000 2.24e-5 / 2.24e-5  2.12e-5 / 2.15e-5  2.13e-5 / 2.17e-5  1.06x
 #
-#     1.2e-4  (worst correct value seen)  ..  2.2e-4  (buggy value)
+# So this is not the `min` an earlier version of this comment proposed: `min` is a lower envelope,
+# it is attained at whichever single iteration happened to fall nearest the minimizer, and it is
+# measurably *less* stable than the mean. The longer the window, the more of the orbit is averaged
+# and the tighter the spread -- hence `501:1000` rather than `901:1000`.
 #
-# a factor of 1.9, and 1.5e-4 sits in the middle of it with ~1.3x either side. Normalising by gradient
-# descent's error does not help: that one is stable at ≈1.0e-2, so all the variance is in `Adam`
-# (ratios 315 local, 88 on CI, 45 buggy -- the same 1.9x window).
+# The margin, which is what the old snapshot statistic did not have. Worst correct value measured is
+# 2.24e-5, so `4e-5` is 1.8x above it; and it is a real guard on the `Adam` bugs the CHANGELOG
+# records (bias correction at `t + 1`, factors `β/(1 - βᵗ)` instead of `(β - βᵗ)/(1 - βᵗ)`, `√`
+# applied to `m₂` rather than to `m̃₂`). Reintroducing them makes this statistic read 1.04e-1
+# (Geodesic) and 4.5e-2 (Cayley), i.e. more than 1000x over the tolerance. The blanket `1e-1` this
+# file once applied to all three algorithms is what let those bugs through in the first place.
 #
-# If this fails again on a new platform, do not simply widen it past 2.2e-4: that silently retires the
-# bug guard. Fix the statistic instead -- assert on something phase-independent, such as the minimum
-# relative error over the last 100 iterations via `Options(store_trace = true)`, which should collapse
-# the spread and allow a tight tolerance again.
-const RELATIVE_ERROR_TOLERANCE = (gradient=2e-2, momentum=2e-2, adam=1.5e-4)
+# Getting the trace needs `Options(store_trace = true)`, which is now implemented -- see `trace`. It
+# used to be accepted and silently ignored, by this package and by SimpleSolvers alike.
+const ADAM_MEAN_ORBIT_TOLERANCE = 4e-5
 
 """
-    svd_test(n; retraction)
+    starting_point(n)
 
-Approximate the best rank-`n` approximation of `A` with all three algorithms and compare the
-result against the one that `LinearAlgebra.svd` gives.
+The starting point every solve in this file uses, on `St(size(A, 1), n)²`.
+
+Seeded on each call, and not once at the top of the file, so that every solve starts from the *same*
+point: the solves in between draw from the global RNG themselves (each `GlobalSection` does), so
+without this a later run would start somewhere that depends on how much randomness an earlier one
+happened to consume. The tolerances here are calibrated for one starting point, so that has to be
+pinned.
 """
-function svd_test(n, train_steps=1000; retraction=Cayley())
-    N = size(A, 1)
+function starting_point(n)
+    Random.seed!(1234)
+    (w₁=rand(StiefelManifold, size(A, 1), n), w₂=rand(StiefelManifold, size(A, 1), n))
+end
+
+"""
+    best_rank_n_error(n)
+
+The error of the best rank-`n` approximation of `A`, i.e. what `LinearAlgebra.svd` gives.
+"""
+function best_rank_n_error(n)
     U, Σ, Vt = svd(A)
     U_result = U[:, 1:n]
+    norm(A - U_result * U_result' * A)
+end
 
-    err_best = norm(A - U_result * U_result' * A)
-    # seeded here, and not only at the top of the file, so that every call starts from the *same*
-    # point: this function is called once per retraction, and the solves in between draw from the
-    # global RNG themselves (each `GlobalSection` does), so without this the `Cayley` run would start
-    # somewhere that depends on how much randomness the `Geodesic` run happened to consume. The
-    # tolerances below are calibrated for one starting point, so that has to be pinned.
-    Random.seed!(1234)
-    ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
+"""
+    relative_error(ps, err_best)
 
-    algorithms = (gradient=GradientMethod(), momentum=MomentumMethod(), adam=GeometricOptimizers.Adam())
+How far `ps` is from the best rank-`n` approximation, relative to it.
+"""
+relative_error(ps, err_best) = norm((objective(ps) - err_best) / err_best)
 
-    relative_errors = map(algorithms) do algorithm
-        # `warn_iterations = 0` silences "Optimizer took 1000 iterations", which is true and is the
-        # point: this is a fixed-budget comparison of three first-order methods at one learning rate,
-        # not a convergence test. None of them can converge here — with `Static(0.01)` the gradient is
-        # 8.4e-2 after these 1000 steps against a gate of 1.5e-8, and it is not stuck but slow
-        # (1.9e-3 / 2.1e-4 / 4.0e-5 at 5000 / 20000 / 60000 steps), so reaching the gate this way
-        # would take of the order of a million. The convergence test is the `_BFGS` one below.
-        optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
-            linesearch=Static(0.01), max_iterations=train_steps, warn_iterations=0)
-        ps_copy = deepcopy(ps)
-        solve!(ps_copy, OptimizerState(algorithm, ps_copy), optimizer)
+"""
+    mean_orbit_error(entries, err_best)
 
-        for Y in values(ps_copy)
-            @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
-        end
-        norm((objective(ps_copy) - err_best) / err_best)
-    end
+The mean relative error over `entries` of a [`GeometricOptimizers.trace`](@ref).
 
-    for name in keys(algorithms)
+Spelled out rather than taken from `Statistics.mean`, which is not a test dependency and is not worth
+becoming one for a mean over a fixed-length window.
+"""
+mean_orbit_error(entries, err_best) =
+    sum(abs((entry.f - err_best) / err_best) for entry in entries) / length(entries)
+
+# `warn_iterations = 0` silences "Optimizer took 1000 iterations", which is true and is the point:
+# this is a fixed-budget comparison of three first-order methods at one learning rate, not a
+# convergence test. None of them can converge here — with `Static(0.01)` the gradient is 8.4e-2 after
+# these 1000 steps against a gate of 1.5e-8, and it is not stuck but slow (1.9e-3 / 2.1e-4 / 4.0e-5 at
+# 5000 / 20000 / 60000 steps), so reaching the gate this way would take of the order of a million. The
+# convergence test is `svd_convergence_check` below.
+#
+# `store_trace = true` because the `Adam` statistic is an average over the last `ADAM_ORBIT_WINDOW`
+# iterations rather than the final iterate; see `ADAM_MEAN_ORBIT_TOLERANCE`.
+const FIXED_BUDGET_STEPS = 1000
+
+"""
+    svd_check(relative_errors, mean_orbit_errors)
+
+Compare the three first-order methods against each other and against their tolerances.
+"""
+function svd_check(relative_errors, mean_orbit_errors)
+    for name in keys(RELATIVE_ERROR_TOLERANCE)
         @test relative_errors[name] < RELATIVE_ERROR_TOLERANCE[name]
     end
 
+    @test mean_orbit_errors.adam < ADAM_MEAN_ORBIT_TOLERANCE
+
     # The ordering is the part of this that does not depend on the exact starting point:
-    # bias-corrected `Adam` beats plain gradient descent on this problem by a wide margin.
-    @test relative_errors.adam < relative_errors.gradient / 10
+    # bias-corrected `Adam` beats plain gradient descent on this problem by a wide margin — a factor
+    # of 310 on the averaged statistic, against the factor of 10 asserted here.
+    @test mean_orbit_errors.adam < mean_orbit_errors.gradient / 10
 end
 
+# The `Optimizer` is constructed and `solve!` called from *this loop* rather than from inside a helper
+# that takes the retraction and the algorithm as arguments, which is how this file used to read. That
+# shape cost 951 s to run on Julia 1.12 -- one single method compilation of 908 s, against 0.04 s on
+# 1.13 -- because inference had to propagate the type of a constructor reached through three nested
+# levels of `kwargs...` into a `solve!` call in the same inferred body.
+#
+# That is fixed in `Optimizer`'s constructors now, so this loop no longer *has* to look like this: the
+# helper shape would be fast again. It is left flat because it costs nothing and because the failure
+# mode was so quiet -- the tests all passed, they just took sixteen minutes. See the warning on
+# `Optimizer(x, F)` for the measurements and for what does not work as a fix (`@noinline`,
+# `@nospecialize`).
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
-    svd_test(3, retraction=retraction)
+    err_best = best_rank_n_error(3)
+    relative_errors = Float64[]
+    mean_orbit_errors = Float64[]
+
+    for algorithm in (GradientMethod(), MomentumMethod(), GeometricOptimizers.Adam())
+        ps = starting_point(3)
+        state = OptimizerState(algorithm, ps)
+        optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
+            linesearch=Static(0.01), max_iterations=FIXED_BUDGET_STEPS, warn_iterations=0,
+            store_trace=true)
+        result = solve!(ps, state, optimizer)
+
+        for Y in values(ps)
+            @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
+        end
+
+        push!(relative_errors, relative_error(ps, err_best))
+
+        # the trace records `f`, so the relative error per iteration comes straight out of it
+        window = @view GeometricOptimizers.trace(result)[(end-ADAM_ORBIT_WINDOW+1):end]
+        push!(mean_orbit_errors, mean_orbit_error(window, err_best))
+    end
+
+    names = (:gradient, :momentum, :adam)
+    svd_check(NamedTuple{names}(Tuple(relative_errors)), NamedTuple{names}(Tuple(mean_orbit_errors)))
 end
 
 """
-    svd_convergence_test(n; retraction)
+    svd_convergence_check(n, ps, state, result, max_iterations)
 
-The same problem as [`svd_test`](@ref), solved to convergence rather than to a fixed budget.
+The same problem as the fixed-budget loop above, solved to convergence rather than to a fixed budget.
 
 `_BFGS` needs a line search that actually searches, and until the line search learned to take its
 trial step through the retraction that was impossible on manifold parameters — `Static` was the only
 one that worked, because it is the only one that never evaluates the merit. So this problem had no
 algorithm that converged on it at all: the three first-order methods above exhaust 1000 iterations at
 a relative error of 1e-2.
+
+The `Optimizer` is built and solved by the caller rather than here; see the comment at the
+fixed-budget loop above.
 """
-function svd_convergence_test(n; retraction=Cayley(), linesearch=Backtracking(Float64; expand=true),
-    algorithm=GeometricOptimizers._BFGS(), max_iterations=5000)
-    N = size(A, 1)
-    U, Σ, Vt = svd(A)
-    U_result = U[:, 1:n]
-    err_best = norm(A - U_result * U_result' * A)
-
-    Random.seed!(1234)
-    ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
-    state = OptimizerState(algorithm, ps)
-    optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
-        linesearch=linesearch, max_iterations=max_iterations, warn_iterations=0)
-
-    result = solve!(ps, state, optimizer)
+function svd_convergence_check(n, ps, state, result, max_iterations)
+    err_best = best_rank_n_error(n)
 
     # it stops on a convergence criterion, not on the iteration cap
     @test GeometricOptimizers.iteration_number(state) < max_iterations
-    @test GeometricOptimizers.status(result).rg < 1e-5
+    @test GeometricOptimizers.status(result).rg < CONVERGED_GRADIENT_TOLERANCE
 
     # and it gets to the answer, which the fixed-step runs above reach to 1e-2 at best
-    @test norm((objective(ps) - err_best) / err_best) < CONVERGED_ERROR_TOLERANCE
+    @test relative_error(ps, err_best) < CONVERGED_ERROR_TOLERANCE
 
     for Y in values(ps)
         @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
@@ -214,18 +291,24 @@ end
 # evaluations, Geodesic / Cayley:
 #
 #                                     iterations          evaluations       iters over 8 seeds
-#     _BFGS  Backtracking(expand)     93 /   118        2_374 /  3_006      93..159 /  91..156
-#     _BFGS  Backtracking            113 /   136        2_857 /  3_431     113..187 / 123..203
-#     _BFGS  Bisection               143 /    93       83_353 / 53_788        see note below
-#     _DFP   Backtracking(expand)   830 / 1_237       21_540 / 31_995    512..77_890 / 465..3_834
-#     _DFP   Backtracking        49_679 / 29_081    1_241_987 / 727_036             --
-#     _DFP   StrongWolfe(c₂=0.1)    201 /   274       16_466 / 23_312      201..624 / 192..483
-#     _DFP   Bisection               134 /    96       78_698 / 55_493      103..143 /  96..141
+#     _BFGS  Backtracking(expand)     93 /   118        2_389 /  3_021      93..154 / 114..156
+#     _BFGS  Backtracking            114 /   136        2_915 /  3_446     114..188 / 131..203
+#     _BFGS  Bisection               142 /    92       83_906 / 54_970      103..142 /  89..135
+#     _DFP   Backtracking(expand)   702 / 1_366       18_258 / 35_329      387..845 / 466..1_366
+#     _DFP   Backtracking        47_115 / 26_479    1_177_919 / 662_019  10_448..114_116 / 5_596..26_479
+#     _DFP   StrongWolfe(c₂=0.1)    207 /   279       16_873 / 23_818      207..755 / 215..447
+#     _DFP   Bisection               134 /    96       79_301 / 56_106      103..141 /  88..129
 #
-# (`_BFGS` + `Bisection` + `Geodesic` diverges outright on one of those eight starting points -- it
-# stops after 4 iterations with `check(Y) = 1e200`, i.e. off the manifold altogether. That is not a
-# property of anything this branch changed, and the seed used here is unaffected, but it is a genuine
-# robustness hole and wants an issue of its own.)
+# The `_BFGS` + `Bisection` + `Geodesic` row used to read "see note below", because on one of those
+# eight starting points that combination *diverged*: it stopped after 4 iterations with
+# `check(Y) = 1e200`, i.e. off the manifold altogether, and reported convergence while doing it. That
+# is fixed. `Bisection` bisects `φ'`, so on a non-convex ray it can settle on a stationary point of
+# the ray that is a *maximum*; it said so (`LINESEARCH_FLOOR`, `φ(1) = φ(0)` exactly) and
+# `solver_step!` took the step anyway, because it called `solve` and saw only the step length. See
+# `linesearch_rejected`, `curvature_is_usable` and `restart!`. That starting point now converges in
+# 121 iterations, and the worst `‖∇f‖` over all of these rows and all eight starting points went from
+# `NaN` to `2.9e-7` -- see `CONVERGED_GRADIENT_TOLERANCE`, which is the other issue the same fix
+# closed.
 #
 # The `_DFP  Backtracking` row is a property of the *line search*, not of DFP. A shrink-only backtracking
 # search starts its trial step at `α = 1` and can never exceed it; measuring the `α` it returns settles
@@ -236,6 +319,12 @@ end
 #     _BFGS  Bisection               0%          67.8%          1.42         143
 #     _DFP   Backtracking        100.0%             0%          1.0       49_679
 #     _DFP   Bisection               0%          94.8%         11.1          134
+#
+# (The `α` columns were measured on the code as it stood before `linesearch_rejected` and
+# `curvature_is_usable`, which is why the iteration column here does not quite match the table above
+# -- it read 113 / 143 / 49_679 / 134 then and 114 / 142 / 47_115 / 134 now. What the columns
+# characterise is the *line search*, and that has not changed; the point they make about the ceiling
+# at `α = 1` stands either way.)
 #
 # `_BFGS` produces a direction already scaled like a Newton step, so `α = 1` is the right answer and
 # accepting it is not a failure. `_DFP` produces a systematically *under-scaled* direction that wants a
@@ -252,32 +341,50 @@ end
 # That measurement became JuliaGNI/SimpleSolvers.jl#174 and, in SimpleSolvers 0.11, the `expand` key
 # that `default_linesearch` now switches on: an accepted *first* trial step is lengthened while each
 # longer trial still satisfies sufficient decrease and strictly improves the merit. It costs under 4%
-# per iteration, and it takes `_DFP` from no practical convergence to 830 and 1_237 iterations on the
+# per iteration, and it takes `_DFP` from no practical convergence to 702 and 1_366 iterations on the
 # seed used here.
 #
-# That pair is still *not* run below, for a different reason than before. Its iteration count is
-# extraordinarily sensitive to the starting point: over eight seeds it ranges
+# That pair is still *not* run below, but the reason has weakened considerably. Its iteration count
+# used to be extraordinarily sensitive to the starting point -- over eight seeds it ranged
 #
 #     Geodesic   512 .. 77_890        Cayley   465 .. 3_834
 #
-# against 201..624 for `StrongWolfe(c₂ = 0.1)` and 103..143 for `Bisection`. DFP's `Q` becomes badly
-# conditioned (κ ≈ 1e9, see the trace referenced above) and how quickly the expansion phase digs it out
-# is close to arbitrary. CI found this the honest way: the case converged in 830 iterations locally and
-# exceeded a 3_000 cap on Julia 1.10 / Linux. A test whose bound has to be 1e5 to be safe is measuring
-# the platform's floating-point details, not the optimizer, so it is documented rather than run -- the
-# same call as for the shrink-only pair, and the reason `default_linesearch` says what it says about
-# `StrongWolfe` being the better *explicit* choice for a DFP-heavy workload.
+# against 201..624 for `StrongWolfe(c₂ = 0.1)` and 103..143 for `Bisection`. DFP's `Q` became badly
+# conditioned (κ ≈ 1e9, see the trace referenced above) and how quickly the expansion phase dug it out
+# was close to arbitrary. CI found this the honest way: the case converged in 830 iterations locally
+# and exceeded a 3_000 cap on Julia 1.10 / Linux.
+#
+# `curvature_is_usable` is what that sensitivity was: an ill-conditioned `Q` on this problem is a `Q`
+# built from secant pairs it should have rejected. With the condition enforced the same eight starting
+# points give
+#
+#     Geodesic   387 .. 845           Cayley   466 .. 1_366
+#
+# i.e. a factor of 92 less spread on `Geodesic`. That is well inside the 5_000 cap used below, so this
+# pair could reasonably be run now. It is left documented rather than run only because the earlier CI
+# surprise was a factor of four between one platform and another and there is no CI measurement of the
+# post-fix spread yet -- worth revisiting once there is. `default_linesearch` still says what it says
+# about `StrongWolfe` being the better *explicit* choice for a DFP-heavy workload, and that is now a
+# statement about cost (16_873 evaluations against 18_258) rather than about reliability.
 #
 # At `StrongWolfe`'s own `c₂ = 0.9` the Wolfe conditions already hold at `α = 1` on 99.4% of iterations,
 # its bracketing phase never fires, and it crawls just as the shrink-only search does.
+const CONVERGENCE_MAX_ITERATIONS = 5000
+
+# As in the fixed-budget loop above, the `Optimizer` is constructed here rather than inside
+# `svd_convergence_check`; see the comment there for why that used to matter on Julia 1.12.
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
-    for linesearch in (Backtracking(Float64), Backtracking(Float64; expand=true), Bisection(Float64))
-        svd_convergence_test(3; retraction=retraction, linesearch=linesearch,
-            algorithm=GeometricOptimizers._BFGS())
+    for (algorithm, linesearch) in ((GeometricOptimizers._BFGS(), Backtracking(Float64)),
+        (GeometricOptimizers._BFGS(), Backtracking(Float64; expand=true)),
+        (GeometricOptimizers._BFGS(), Bisection(Float64)),
+        # `_DFP` with the two searches whose cost on this problem is stable across starting points
+        (GeometricOptimizers._DFP(), Bisection(Float64)),
+        (GeometricOptimizers._DFP(), StrongWolfe(Float64; c₂=0.1)))
+        ps = starting_point(3)
+        state = OptimizerState(algorithm, ps)
+        optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
+            linesearch=linesearch, max_iterations=CONVERGENCE_MAX_ITERATIONS, warn_iterations=0)
+        result = solve!(ps, state, optimizer)
+        svd_convergence_check(3, ps, state, result, CONVERGENCE_MAX_ITERATIONS)
     end
-    # `_DFP` with the two searches whose cost on this problem is stable across starting points
-    svd_convergence_test(3; retraction=retraction, linesearch=Bisection(Float64),
-        algorithm=GeometricOptimizers._DFP())
-    svd_convergence_test(3; retraction=retraction, linesearch=StrongWolfe(Float64; c₂=0.1),
-        algorithm=GeometricOptimizers._DFP())
 end

@@ -25,6 +25,10 @@ export Options
 import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache, l2norm
 import SimpleSolvers: change_precision, solve_with_status
 using SimpleSolvers: method, LinesearchStatus, LINESEARCH_UNKNOWN
+# `solver_step!` decides whether to keep the step a line search returned, so it needs the outcome
+# and not only the step length. See `linesearch_rejected`.
+using SimpleSolvers: outcome, steplength
+using SimpleSolvers: LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT
 export update!
 
 using Printf
