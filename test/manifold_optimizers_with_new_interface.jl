@@ -1,7 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: Cayley, Geodesic, check, increase_iteration_number!, solver_step!
 using SimpleSolvers
-using SimpleSolvers: l2norm
+using SimpleSolvers: l2norm, Bisection
 using Test
 import Random
 
@@ -27,11 +27,11 @@ objective(::Type{T}) where {T} = let target = T.(TARGET)
     x::StiefelManifold -> l2norm(vec(x), target)
 end
 
-function optimize(::Type{T}, algorithm; α=0.1, retraction=Geodesic()) where {T}
+function optimize(::Type{T}, algorithm; α=0.1, retraction=Geodesic(), linesearch=Static(T(α))) where {T}
     Random.seed!(1234)
     f = objective(T)
     x = initial_point(T)
-    optimizer = Optimizer(x, f; algorithm=algorithm, linesearch=Static(T(α)), retraction=retraction)
+    optimizer = Optimizer(x, f; algorithm=algorithm, linesearch=linesearch, retraction=retraction)
     solve!(x, OptimizerState(algorithm, x), optimizer)
     x, f
 end
@@ -87,18 +87,22 @@ stateful_manifold_tolerance(::Type{T}) where {T} = 100 * eps(T)
 # minimizer observed below is 5.9e-10 (Float64) and 4.6e-4 (Float32).
 convergence_tolerance(::Type{T}, ::MomentumMethod) where {T} = 10 * sqrt(eps(T))
 
-# `Adam` cannot: its direction is `-m₁/(√m₂ + δ)`, of magnitude ≈ 1 per component whatever the
-# gradient is, so every step it takes is ≈ the learning rate `α = 0.1` used here, however close
-# to the minimizer it already is. It therefore stops where the stopping criteria of `solve!`
-# trigger rather than at round-off, and the distance at that point is a property of the
-# trajectory: 1.6e-3 (Float64, Geodesic), 1.5e-8 (Float64, Cayley) and 1.4e-4 (Float32). Hence
-# a tolerance that is absolute rather than a multiple of `eps(T)`.
-convergence_tolerance(::Type{T}, ::Adam) where {T} = T(1e-2)
+# `Adam` reaches the same tolerance, but only with a line search that searches. Its direction is
+# `-m₁/(√m₂ + δ)`, of magnitude ≈ 1 per component whatever the gradient is, so with a fixed `α` every
+# step it takes is ≈ `α` however close to the minimizer it already is: it circles the minimizer at
+# that distance instead of converging, and the `Float64`/`Cayley` case used to run out its 1000
+# iterations doing so. Letting the line search pick the step is what fixes that -- the distance to the
+# minimizer goes from 1.6e-3 to 1.3e-8 -- and it then meets the same tolerance as the other two.
+convergence_tolerance(::Type{T}, ::Adam) where {T} = 10 * sqrt(eps(T))
 
 @testset "the stateful algorithms accept a bare Manifold too" begin
     for T in (Float64, Float32), retraction in (Geodesic(), Cayley())
         for algorithm in (MomentumMethod(T(0.1)), Adam(T))
-            x, f = optimize(T, algorithm; retraction=retraction)
+            # `Adam` gets a searching line search; see `convergence_tolerance` above. `Bisection`
+            # rather than `Backtracking` because Adam's direction is not required to descend, and a
+            # sufficient-decrease search reports that on every step where it does not.
+            linesearch = algorithm isa Adam ? Bisection(T) : Static(T(0.1))
+            x, f = optimize(T, algorithm; retraction=retraction, linesearch=linesearch)
 
             @test x isa StiefelManifold{T}                              # type preserved ...
             @test check(x) < stateful_manifold_tolerance(T)             # ... and the manifold

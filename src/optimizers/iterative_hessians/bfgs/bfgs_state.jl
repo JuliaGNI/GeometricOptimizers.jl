@@ -34,7 +34,12 @@ BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientArrayOrNamedTuple{T}, f̄::T) 
 BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientArrayOrNamedTuple{T}) where {T} = BFGSState(_copy(x̄), _copy(ḡ), zero(T))
 BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 
-function alloc_h(x::ArrayNamedTuple{T}) where {T}
+# `Q` is sized by the *intrinsic* dimension of the parameters, i.e. by the length of the flattening of
+# the space the direction lives in. SimpleSolvers' fallback is `x * x'`, which for anything but a
+# plain vector is the wrong shape: for a bare `StiefelManifold` of size `(3, 1)` it gives `3 × 3`
+# where the horizontal lift has only 2 free parameters, and the cache and the state then disagree
+# about how big `Q` is.
+function alloc_h(x::Union{ArrayNamedTuple{T},Manifold{T}}) where {T}
     v, _ = ParameterHandling.flatten(_zero(x))
     h = zeros(T, length(v), length(v))
     fill!(h, T(NaN))

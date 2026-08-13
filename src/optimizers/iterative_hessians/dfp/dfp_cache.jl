@@ -3,32 +3,39 @@
 
 The [`OptimizerCache`](@ref) corresponding to the [`_DFP`](@ref) method.
 """
-struct DFPCache{T,VT,MT,GS<:GlobalSection{T}} <: OptimizerCache{T}
+struct DFPCache{T,VT<:OptimizerSolution{T},GT,MT,GS<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
     x::VT    # current solution
 
-    g::VT    # current gradient
+    g::GT    # current gradient
 
     T1::MT
     T2::MT
     ΔgΔg::MT
     ΔxΔx::MT
 
-    rhs::VT
-    Δx::VT
-    Δg::VT
+    rhs::GT
+    Δx::GT
+    Δg::GT
 
     section::GS
 
-    function DFPCache(x::AT) where {T,AT<:AbstractVector{T}}
-        q = zeros(T, length(x), length(x))
+    # The solution and the gradient are separate type parameters because on a manifold they are not
+    # the same thing: `x` is a point of `St(N, n)` while the gradient, the direction and the secant
+    # differences are horizontal lifts of shape `N × N`. `Q` is sized by neither -- it is sized by the
+    # length of the *flattening*, the intrinsic dimension, which for a `NamedTuple` is emphatically
+    # not `length(x)` (that is the number of entries).
+    function DFPCache(x::AT) where {T,AT<:OptimizerSolution{T}}
+        v, _ = ParameterHandling.flatten(_zero(x))
+        q = zeros(T, length(v), length(v))
         section = GlobalSection(x)
-        cache = new{T,AT,typeof(q),typeof(section)}(similar(x), similar(x), similar(q), similar(q), similar(q), similar(q), similar(x), similar(x), similar(x), section)
+        g = _zero(x)
+        cache = new{T,AT,typeof(g),typeof(q),typeof(section)}(_copy(x), _similar(g), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section)
         initialize!(cache, x)
         cache
     end
 end
 
-OptimizerCache(::_DFP, x::AbstractVector) = DFPCache(x)
+OptimizerCache(::_DFP, x::OptimizerSolution) = DFPCache(x)
 
 section(cache::DFPCache) = cache.section
 
@@ -58,9 +65,9 @@ solution(cache::DFPCache) = cache.x
 hessian(::DFPCache) = error("DFPCache does not store the Hessian, but it's inverse! Call inverse_hessian.")
 inverse_hessian(::DFPCache) = error("The inverse Hessian is stored in the state, not the cache!")
 
-function update!(cache::DFPCache, state::OptimizerState, x::AbstractVector)
-    cache.x .= x
-    direction(cache) .= cache.x - state.x̄
+function update!(cache::DFPCache, state::OptimizerState, x::OptimizerSolution)
+    _copyto!(cache.x, x)
+    _copyto!(direction(cache), state.s)
     outer!(cache.ΔxΔx, direction(cache), direction(cache))
     cache
 end
@@ -74,19 +81,23 @@ Update the [`DFPCache`](@ref) based on `x` and `g`.
 
 The update rule used here can be found in [kochenderfer2019algorithms](@cite) and [nocedal2006numerical](@cite).
 """
-function update!(cache::DFPCache{T}, state::DFPState{T}, x::AbstractVector{T}, g::AbstractVector{T}) where {T}
+function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
     update!(cache, state, x)
-    gradient(cache) .= g
-    rhs(cache) .= -g
-    # cache.Δx .= cache.x .- state.x̄
-    cache.Δx .= state.s
+    _copyto!(gradient(cache), g)
+    _copyto!(rhs(cache), g)
+    _rmul!(rhs(cache), -one(T))
+    _copyto!(cache.Δx, state.s)
 
-    cache.Δg .= gradient(cache) - state.ḡ
+    _difference!(cache.Δg, gradient(cache), state.ḡ)
 
-    ΔxΔg = cache.Δx ⋅ cache.Δg
-    γQγ = cache.Δg' * state.Q * cache.Δg
+    # see the remark in `bfgs_cache.jl`: `δᵀγ` is the denominator of an update whose every other term is
+    # flattened, so it is `_dot` and not the ambient `⋅`
+    ΔxΔg = _dot(cache.Δx, cache.Δg)
+    # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too
+    Δg2 = ParameterHandling.flatten(cache.Δg)[1]
+    γQγ = Δg2' * state.Q * Δg2
 
-    if !iszero(ΔxΔg) & !iszero(γQγ) & !isnan(ΔxΔg)
+    if !iszero(ΔxΔg) && !isnan(ΔxΔg) && !iszero(γQγ) && !isnan(γQγ)
         outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
         outer!(cache.ΔgΔg, cache.Δg, cache.Δg)
         # the DFP correction is `Q - Qγγᵀ Q/(γᵀQγ) + δδᵀ/(δᵀγ)` (nocedal2006numerical, eq. 6.15), so
@@ -94,32 +105,39 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::AbstractVector{T}, g
         # i.e. `δδᵀ`, which left `cache.ΔgΔg` computed on the line above and never read.
         mul!(cache.T1, cache.ΔgΔg, state.Q)
         mul!(cache.T2, state.Q, cache.T1)
-        state.Q .-= cache.T2 ./ γQγ
+        # `Q γγᵀ Q` is symmetric in exact arithmetic, but forming it as two separate products is not
+        # symmetric in floating point, and the error accumulates: unsymmetrized, `‖Q - Qᵀ‖/‖Q‖` grows
+        # from 8e-16 after five iterations to 1.6e-11 after twenty thousand, and `eigvals(Q)` then
+        # returns complex numbers. `BFGSCache` gets this for free because it adds `T₁ + T₂` where `T₂`
+        # is built as the exact transpose of `T₁`; here the symmetrization has to be explicit.
+        state.Q .-= (cache.T2 .+ cache.T2') ./ (2γQγ)
         state.Q .+= cache.ΔxΔx ./ ΔxΔg
     end
 
     # see the remark in `bfgs_cache.jl`: `ḡ` is advanced here, right after `Δg` has been formed from
     # it, and not at the end of the iteration, where it would be the gradient at the same iterate.
-    state.ḡ .= gradient(cache)
+    _copyto!(state.ḡ, gradient(cache))
 
-    direction(cache) .= inverse_hessian(state) * rhs(cache)
-    state.s .= direction(cache)
+    _mul!(direction(cache), inverse_hessian(state), rhs(cache))
+    _copyto!(state.s, direction(cache))
 
     cache
 end
 
-update!(cache::DFPCache, state::OptimizerState, grad::Gradient, x::AbstractVector) = update!(cache, state, x, grad(x))
+function update!(cache::DFPCache, state::OptimizerState, grad::Gradient, x::OptimizerSolution)
+    update!(cache, state, x, global_rep(section(state), grad(x)))
+end
 
-update!(cache::DFPCache, state::OptimizerState, grad::Gradient, ::HessianDFP, x::AbstractVector) = update!(cache, state, grad, x)
+update!(cache::DFPCache, state::OptimizerState, grad::Gradient, ::HessianDFP, x::OptimizerSolution) = update!(cache, state, grad, x)
 
 # `Δg` is the `γ` of the secant pair, already formed in `update!` above from the `ḡ` that has
 # since been advanced, so `OptimizerStatus` must not recompute it. See `gradient_difference!`.
 gradient_difference!(cache::DFPCache, ::OptimizerState) = cache.Δg
 
-function initialize!(cache::DFPCache{T}, ::AbstractVector{T}) where {T}
-    cache.x .= T(NaN)
-    direction(cache) .= T(NaN)
-    cache.g .= T(NaN)
-    cache.rhs .= T(NaN)
+function initialize!(cache::DFPCache{T}, ::OptimizerSolution{T}) where {T}
+    _fill!(solution(cache), T(NaN))
+    _fill!(direction(cache), T(NaN))
+    _fill!(gradient(cache), T(NaN))
+    _fill!(rhs(cache), T(NaN))
     cache
 end

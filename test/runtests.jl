@@ -51,6 +51,9 @@ begin
     @safetestset "Quasi-Newton Secant Pair     " include("quasi_newton_secant_tests.jl")
 end
 begin
+    @safetestset "Manifold Line Search         " include("manifold_linesearch_tests.jl")
+end
+begin
     @safetestset "Manifold Optimizers         " include("manifold_optimizers_with_new_interface.jl")
 end
 begin

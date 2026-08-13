@@ -202,20 +202,131 @@ const DEFAULT_LEARNING_RATE = 1.0e-3
 # the default of [loshchilov2019decoupled](@cite) and of `torch.optim.AdamW`
 const DEFAULT_WEIGHT_DECAY = 1.0e-2
 
+@doc raw"""
+    DEFAULT_DFP_c₂
+
+The curvature constant [`default_linesearch`](@ref) gives [`_DFP`](@ref)'s
+[`SimpleSolvers.StrongWolfe`](@extref) search.
+
+`StrongWolfe`'s own default is `0.9`, the value [nocedal2006numerical](@cite) recommends for Newton and
+quasi-Newton methods. That is too loose for `_DFP`: the strong Wolfe conditions are then already
+satisfied at ``\alpha = 1`` on 99.4% of iterations, so the bracketing phase never grows the step and the
+solve crawls exactly as it does under [`SimpleSolvers.Backtracking`](@extref). `0.1` — the value the
+same reference recommends where a more accurate line search is needed — makes the expansion fire on
+94.5% of iterations, with a median ``\alpha`` of 8.
 """
+const DEFAULT_DFP_c₂ = 0.1
+
+@doc raw"""
     default_linesearch(T, method)
 
 Return the line search that [`Optimizer`](@ref) uses for `method` if none is supplied.
 
-[`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref) and
-[`AdamWithEuclideanDecay`](@ref)
-determine a direction but no step size, so for them the `α` of a
-[`SimpleSolvers.Static`](@extref) line search *is* the learning rate and the default is
-`Static(DEFAULT_LEARNING_RATE)`. The methods that build a (quasi-)Newton direction come with a
-scale of their own and default to [`SimpleSolvers.Backtracking`](@extref).
+Everything except [`Adam`](@ref) defaults to [`SimpleSolvers.Backtracking`](@extref): the
+(quasi-)Newton methods because they build a direction with a scale of its own, and
+[`GradientMethod`](@ref) and [`MomentumMethod`](@ref) because a searching line search is what makes
+them *converge* rather than merely descend. Both produce genuine descent directions, so a
+backtracking search always has an `α` to find.
+
+`Adam` is the exception and keeps a fixed `Static(DEFAULT_LEARNING_RATE)`. Its direction is
+``-m_1/(\sqrt{m_2} + \delta)``, a moving average that is deliberately *not* required to descend on any
+individual step, so a sufficient-decrease search has nothing to work with and would spend every such
+step reporting that it found no descent direction. [`AdamWithEuclideanDecay`](@ref) shares the
+exception for the same reason: it adds ``-\lambda{}x`` to that direction, which does not make it a
+descent direction either.
+
+!!! info "This changed in 0.2.0"
+    `GradientMethod` and `MomentumMethod` used to default to `Static(DEFAULT_LEARNING_RATE)` as well.
+    They could not do anything else: until the line search learned to take its trial step through the
+    retraction (see [`trial_iterate!`](@ref)), `Static` was the only line search that worked on
+    manifold parameters at all. Pass `linesearch = Static(η)` to get the old fixed learning rate back.
+
+!!! tip "Why `Backtracking`, when the searching methods need far fewer iterations"
+    Because iterations are the wrong unit. `Backtracking` returns the *first* `α` that decreases `f`
+    enough, while `Bisection`, [`SimpleSolvers.Quadratic`](@extref) and
+    [`SimpleSolvers.BierlaireQuadratic`](@extref) bracket and then refine a line *minimum*, which costs
+    an order of magnitude more merit evaluations per iteration. Counting objective evaluations rather
+    than iterations, on the SVD problem of `test/optimizer_convergence/svd_optim.jl` (`Geodesic`;
+    `Static` needs ≈4 evaluations per iteration, so subtract that for the search's own cost):
+
+    | search | evals/iteration | `_BFGS`: iters / evals | `_DFP`: iters / evals |
+    |---|---|---|---|
+    | `Backtracking` | **25** | 113 / **2 857** | 3 000+ / 75 012 (no convergence) |
+    | `StrongWolfe` (`c₂ = 0.9`) | 36 | 159 / 5 708 | 3 000+ / 105 054 (no convergence) |
+    | `StrongWolfe` (`c₂ = 0.1`) | 82 | 118 / 6 738 | 201 / **16 466** |
+    | `BierlaireQuadratic` | 102 | 170 / 17 340 | 322 / 27 484 |
+    | `Quadratic` | 129 | 173 / 22 267 | 189 / 18 313 |
+    | `Bisection` | 583 | 143 / 83 353 | 134 / 78 698 |
+
+    So for `_BFGS` the extra iterations are a bargain: `Backtracking` does the job in **6× less work**
+    than the cheapest searching method, and its lower final accuracy (2.6e-11 against 9.3e-16) is far
+    past the convergence gate anyway. The same holds on the sphere problem (44 evaluations against 81
+    to 127) and for the first-order methods, where `Bisection` burns 1.8M evaluations to `Backtracking`'s
+    79 500 for the same 3 000 iterations. Reach for a searching method when iteration count is what you
+    are paying for — a very expensive objective, or an outer loop that is bounded in iterations.
+
+!!! warning "[`_DFP`](@ref) is the exception, and defaults to `StrongWolfe(c₂ = 0.1)`"
+    `Backtracking` starts its trial step at `α = 1` and only ever *shrinks*. That is fine for a method
+    whose direction is already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its
+    iterations and converges in 113 — but `_DFP` produces a systematically *under-scaled* direction,
+    and a backtracking search has no mechanism to lengthen it. On the SVD problem it then accepts
+    `α = 1` on **100%** of its iterations and crawls to the gradient gate in **49 679** of them.
+    Raising only `Backtracking`'s initial trial step to 3 gives 229, which is what identifies the
+    ceiling rather than the method as the cause.
+
+    What `_DFP` needs is a search that can *grow* the step, and the cheapest of those is
+    `StrongWolfe` — but only with a curvature constant tight enough to reject `α = 1`. At its own
+    default `c₂ = 0.9` the strong Wolfe conditions are already satisfied at `α = 1` on 99.4% of
+    iterations, so the bracketing phase never fires and it crawls just like `Backtracking`. At
+    `c₂ = ` [`DEFAULT_DFP_c₂`](@ref) the expansion fires on 94.5% of iterations with a median `α` of 8,
+    and it is then the cheapest converging option on *both* retractions:
+
+    | search | `_DFP` on `Geodesic` | `_DFP` on `Cayley` |
+    |---|---|---|
+    | `StrongWolfe` (`c₂ = 0.1`) | 201 iters / **16 466** evals | 274 / **23 312** |
+    | `Quadratic` | 189 / 18 313 | 555 / 54 230 |
+    | `BierlaireQuadratic` | 322 / 27 484 | 990 / 80 787 |
+    | `Bisection` | 134 / 78 698 | 96 / 55 493 |
+
+    `Bisection` needs the fewest *iterations* but four to five times the work. `Quadratic` is close on
+    `Geodesic` and falls apart on `Cayley`, which is the default retraction — probably because
+    [`trial_slope`](@ref) is only first-order correct there and `Quadratic` uses ``\varphi'``
+    *quantitatively* in its polynomial fit, where `Bisection` uses only its sign and `StrongWolfe` only
+    compares it against ``\varphi'(0)``.
+
+    None of this is a property of DFP: given a search that can exceed 1 it is competitive with `_BFGS`.
+    See JuliaGNI/SimpleSolvers.jl#174 for the upstream half of the story.
+
+!!! note "SimpleSolvers 0.11 gives `Backtracking` an expansion phase"
+    `Backtracking(T; expand = true)` on SimpleSolvers `main` (0.11, unreleased at the time of writing,
+    so the `SimpleSolvers = "0.10"` compat bound here still rules it out) lengthens the step when the
+    *first* trial is accepted — the trigger identified in #174 — growing it by at most a factor `q = 10`
+    per round for at most `nexpand = 3` rounds while the step both satisfies sufficient decrease and
+    strictly improves the merit.
+
+    Measured on the SVD problem, it is close to free and helps both quasi-Newton methods:
+
+    | | `expand = false` | `expand = true` |
+    |---|---|---|
+    | `_BFGS`, `Geodesic` | 113 iters / 2 857 evals | **93 / 2 374** |
+    | `_BFGS`, `Cayley` | 136 / 3 431 | **118 / 3 006** |
+    | `_DFP`, `Geodesic` | no convergence / 75 012 | **830 / 21 540** |
+    | `_DFP`, `Cayley` | no convergence / 75 011 | **1 237 / 31 995** |
+
+    The cost is under 4% per iteration (25.0 to 26.0 evaluations), and on a well-scaled problem it is
+    *exactly* nothing: on the sphere the evaluation counts are identical with and without it, because
+    the extrapolation model declines to propose a longer step before any merit is evaluated. `_BFGS`
+    then takes `α > 1` on 20% of its iterations and `_DFP` on 59% (median 2.55, hitting the
+    ``q^{\mathrm{nexpand}} = 1000`` ceiling at the top).
+
+    So `expand = true` is the right default for every `Backtracking` above once the compat bound moves,
+    and it removes `_DFP`'s pathology outright — but not its exception: at 21 540 and 31 995 evaluations
+    it is still 1.3 to 1.4 times the work of `StrongWolfe(c₂ = 0.1)`, so `_DFP` keeps that. The suite
+    passes against 0.11.0 unchanged.
 """
 default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T)
-default_linesearch(::Type{T}, ::Union{GradientMethod,FirstOrderMethodWithState}) where {T} = Static(T(DEFAULT_LEARNING_RATE))
+default_linesearch(::Type{T}, ::Union{Adam,AdamWithEuclideanDecay}) where {T} = Static(T(DEFAULT_LEARNING_RATE))
+default_linesearch(::Type{T}, ::_DFP) where {T} = StrongWolfe(T; c₂=T(DEFAULT_DFP_c₂))
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
 Base.show(io::IO, alg::_DFP) = print(io, "DFP")

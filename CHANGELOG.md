@@ -45,7 +45,7 @@ this package produces change**, in most cases substantially for the better.
 
 - **`AdamWithDecay` is removed.** It differed from `Adam` only in an exponentially decaying learning
   rate, and the learning rate is now the line search's business (see below); a decaying schedule
-  belongs in a `LinesearchMethod`.
+  belongs in a `LinesearchMethod`, which is what `DecayingStatic` is (see *Added*).
 - **`Adam`'s `η` field is removed.** It was never applied to the direction, so `Adam(1e-3)` and
   `Adam(1e2)` produced identical results.
 - Two stranded test files (`test/optimizer_status_tests.jl`, `test/special_matrices/poisson_tensor.jl`)
@@ -64,9 +64,47 @@ this package produces change**, in most cases substantially for the better.
 - **The learning rate moved to the line search.** Every `OptimizerMethod` now produces only a
   *direction*; how far the optimizer goes along it is the line search's `α`. A fixed learning rate `η`
   is `linesearch = Static(η)`, and `Static` is exported for that reason. `default_linesearch` makes
-  `Static(1e-3)` the default for `GradientMethod`, `MomentumMethod` and `Adam`, and keeps
-  `Backtracking` for the (quasi-)Newton methods, which come with a scale of their own. Previously
-  everything defaulted to `Backtracking`.
+  `Static(1e-3)` the default for `Adam`, whose direction is a moving average that is deliberately not
+  required to descend, and `Backtracking` the default for everything else: the (quasi-)Newton methods
+  because they come with a scale of their own, `GradientMethod` and `MomentumMethod` because a
+  searching line search is what makes them converge rather than merely descend.
+
+  On the SVD problem, letting the line search pick the step takes the relative error after 1000
+  iterations from 1.4e-2 to 2.3e-3 (`GradientMethod`) and from 1.4e-2 to 2.2e-3 (`MomentumMethod`).
+  `Bisection` reaches 6.2e-7 in the same number of *iterations*, but it costs ≈583 objective
+  evaluations per iteration against `Backtracking`'s ≈25, so on any fixed budget of work
+  `Backtracking` is ahead; see the table in `default_linesearch`. Pass a searching method explicitly
+  when iterations rather than evaluations are what you are paying for.
+
+  **`_DFP` defaults to `StrongWolfe(c₂ = 0.1)`, not `Backtracking`.** `Backtracking` starts its trial
+  step at `α = 1` and only ever *shrinks*, which is right for a direction already scaled like a Newton
+  step — `_BFGS` accepts `α = 1` on 74% of its iterations — but `_DFP`'s direction is systematically
+  under-scaled and a backtracking search cannot lengthen it. On the SVD problem `_DFP` + `Backtracking`
+  accepts `α = 1` on *every* iteration and needs 49_679 of them. Raising only the initial trial step
+  from 1 to 3 gives 229, which is what shows the ceiling and not the method to be the cause.
+
+  `_DFP` therefore needs a search that can grow the step, and measured in objective evaluations rather
+  than iterations the cheapest is `StrongWolfe` — but only with a curvature constant tight enough to
+  reject `α = 1`. At its own default `c₂ = 0.9` the strong Wolfe conditions already hold at `α = 1` on
+  99.4% of iterations, the bracketing phase never fires, and it crawls exactly like `Backtracking`; at
+  `c₂ = 0.1` the expansion fires on 94.5% with a median `α` of 8. Cost for `_DFP` (Geodesic / Cayley):
+  `StrongWolfe(0.1)` 16 466 / 23 312 evaluations, `Quadratic` 18 313 / 54 230, `BierlaireQuadratic`
+  27 484 / 80 787, `Bisection` 78 698 / 55 493. `Bisection` needs the fewest iterations and four to
+  five times the work; `Quadratic` is competitive on `Geodesic` and degrades badly on the default
+  `Cayley`, probably because `trial_slope` is only first-order correct there and `Quadratic` uses
+  ``\varphi'`` quantitatively where the others use only its sign or its ratio to ``\varphi'(0)``.
+
+  Reported upstream as JuliaGNI/SimpleSolvers.jl#174: `Backtracking` has no expansion phase,
+  `StrongWolfe` has one that its default `c₂` prevents from firing, and `Backtracking.α₀` is ignored
+  altogether, so the initial trial step cannot be configured. SimpleSolvers `main` (0.11, unreleased)
+  has since addressed the first and the third: `Backtracking(T; expand = true)` lengthens the step when
+  the first trial is accepted, and the dead `α₀` field is gone. Verified here — it is under 4% per
+  iteration and exactly free on a well-scaled problem, takes `_BFGS` from 113 to 93 iterations and
+  `_DFP` from no convergence to 830 — so it should become the default for every `Backtracking` in
+  `default_linesearch` once the `SimpleSolvers = "0.10"` bound moves. `_DFP` keeps `StrongWolfe`, still
+  1.3 to 1.4 times cheaper. The suite passes against 0.11.0 unchanged.
+- **`StrongWolfe` is re-exported.** It was the only one of SimpleSolvers' six line searches this
+  package did not re-export, and it is now the default for `_DFP`.
 - **Retractions are passed as instances, not functions**: `retraction = Cayley()` / `Geodesic()`, not
   `retraction = cayley`. The default is `Cayley()`.
 - **`MomentumMethod`'s recursion is fixed.** It accumulated `p ← p + α∇L`, which is not momentum but an
@@ -85,6 +123,20 @@ this package produces change**, in most cases substantially for the better.
 
   Relative error on the SVD problem improves from 1.1e-3 to 1.7e-5 (`Geodesic`) and from 1.7e-3 to
   6.0e-5 (`Cayley`).
+- **`_DFP` accepts a `Manifold` and a `NamedTuple`, like `_BFGS`.** Its cache was `AbstractVector`-only,
+  so anything else fell through to a `NewtonOptimizerCache` and a `MethodError`. It is lifted to
+  `OptimizerSolution` the way `BFGSCache` already was: the solution and the gradient get separate type
+  parameters (on a manifold they are a point and a horizontal lift, of different shapes), the section
+  may be a `NamedTuple` of sections, `Q` is sized by the length of the flattening rather than by
+  `length(x)`, and the quadratic form `γᵀQγ` is taken in the flattened coordinates. `HessianDFP` and
+  the `Hessian(::_DFP, …)` methods are widened to match.
+- **`_BFGS` and `_DFP` run on a *bare* `Manifold`.** `Q` is sized by the intrinsic dimension — the
+  length of the flattening, 2 for `St(3, 1)` — while the gradient and the direction are horizontal
+  lifts of the ambient shape, `3 × 3`. Four methods that the `NamedTuple` case had and the bare case
+  did not sat on that boundary: `outer!` and `_mul!` for an `AbstractLieAlgHorMatrix`, `alloc_h` for a
+  `Manifold`, and `_copyto!` of a point into a `GlobalSection`. Without them `_BFGS` on a bare
+  manifold died in `outer!` with `AssertionError: axes(O, 1) == axes(x, 1)`. `ParameterHandling.flatten`
+  gains the `GrassmannLieAlgHorMatrix` method that the Stiefel lift already had.
 - **`_BFGS` and `_DFP` now actually update their inverse Hessian.** `state.ḡ` was refreshed at the end
   of the iteration, i.e. at the very iterate the next secant difference `γ = ∇f(x⁽ᵏ⁾) - ∇f(x⁽ᵏ⁻¹⁾)`
   was formed at, so `γ` was identically zero, `δᵀγ` was zero with it, and the guard around the `Q`
@@ -146,6 +198,25 @@ this package produces change**, in most cases substantially for the better.
 
 ### Fixed
 
+- **Gradients and directions are paired in the intrinsic coordinates, not the ambient ones.** `dot` on
+  an `AbstractLieAlgHorMatrix` is the ambient Frobenius product, which counts each of the lift's
+  off-diagonal blocks twice and so comes out *exactly twice* the product of its free parameters — the
+  coordinates `Q` is sized by, `outer!` flattens to, and a line search's `α` parameterizes. The new
+  `_dot` takes the pairing there instead, at three sites: `trial_slope`, which was returning
+  `2φ′(α)`; the `δᵀγ` of the quasi-Newton update, whose value has to be consistent with the flattened
+  `T₁`, `T₂` and `γᵀQγ` it divides; and the predicted decrease `Δf̃`, which has to be comparable with
+  `Δf`. `_BFGS` on the SVD problem improves from 176 to 113 iterations (`Geodesic`, `Backtracking`)
+  and from 197 to 93 (`Cayley`, `Bisection`).
+
+  `trial_slope` remains exact only for `Geodesic`: `Cayley` is not a one-parameter subgroup, so
+  `⟨∇f(x(α)), B⟩` is its derivative at `α = 0` and drifts from it with the step (about 6% at
+  `α = 0.5`). This is documented on `trial_slope` rather than fixed.
+- **`_DFP` keeps its inverse Hessian symmetric.** `Q γγᵀ Q` is symmetric in exact arithmetic, but
+  forming it as two separate `mul!`s is not, and the error accumulated: `‖Q - Qᵀ‖/‖Q‖` grew from 8e-16
+  after five iterations to 1.6e-11 after twenty thousand, at which point `eigvals(Q)` returned complex
+  numbers for a matrix that is by definition symmetric. `BFGSCache` never had this, because it adds
+  `T₁ + T₂` with `T₂` built as the exact transpose of `T₁`. Symmetrizing is not what makes `_DFP`
+  converge, though — see the analysis in `test/optimizer_convergence/svd_optim.jl`.
 - `zeros(SkewSymMatrix, n)` threw a `MethodError` about `zero(::Type{SkewSymMatrix})` — the
   non-parametric method had been dropped — including for its only in-repo caller,
   `zeros(::Type{StiefelLieAlgHorMatrix}, N, n)`. Both are public API.
@@ -175,6 +246,20 @@ this package produces change**, in most cases substantially for the better.
   accessors and in-place methods that `solver_step!` needs.
 - `default_gradient` and `default_linesearch`, which name the two choices `Optimizer` makes when the
   caller does not supply a gradient or a line search.
+- **`DecayingStatic`**, a `LinesearchMethod` that takes no search but whose step decays geometrically
+  from `η₁` to `η₂` over `n` iterations, reading the iteration number out of the line search
+  parameters. This is the replacement for the `AdamWithDecay` of v0.1.0 (see *Removed*), and being a
+  line search it composes with `GradientMethod` and `MomentumMethod` too. It is the weaker of the two
+  ways to make `Adam` converge: a geometric schedule is summable and so stops short (`‖∇f‖ ≈ 1e-3`
+  once `‖Δx‖ ≈ 1e-13`), where letting a searching line search pick the step gets `Adam` to `≈1e-7`.
+- **A line search can take its trial step through the retraction.** `linesearch_problem` built its
+  merit with `SimpleSolvers.compute_new_iterate!`, i.e. `xₖ + α·pₖ`, which on a manifold is undefined —
+  and would be wrong even if it were not, since a step has to go through the retraction and the
+  direction is a horizontal lift of a different shape than the point. `Static`, the one method that
+  never evaluates the merit, was therefore the only line search that worked on manifold parameters.
+  `trial_iterate!` now builds the trial point the way `solver_step!` does, and `trial_slope` pairs the
+  gradient with the direction through `global_rep`; both dispatch on the solution type, so the
+  `AbstractVector` path keeps its allocation-free `compute_new_iterate!`.
 
 ### Known issues
 

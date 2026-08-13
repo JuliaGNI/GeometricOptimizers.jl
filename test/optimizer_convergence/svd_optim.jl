@@ -1,5 +1,6 @@
 using GeometricOptimizers
-using SimpleSolvers: Static
+using GeometricOptimizers: StiefelManifold, Cayley
+using SimpleSolvers: Static, Backtracking, Bisection
 using LinearAlgebra: norm, svd
 using Test
 import Random
@@ -26,7 +27,9 @@ A = [0.06476993260924702 0.8369280855305259 0.6245358125914054 0.140729967064923
     0.838935723223811 0.5888502932130046 0.789979979782286 0.7108295494351453 0.21710960094241705
     0.7317681833003449 0.9051355184962627 0.3376918522349117 0.436545092402125 0.3462196925686055]
 
-error(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
+# named `objective` and not `error`, which is what it used to be called: that shadows `Base.error`
+# for the whole file, so a genuine `error("...")` anywhere in it would have been a `MethodError`
+objective(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
 
 # Both iterates stay on the Stiefel manifold, so this is a round-off tolerance and nothing
 # else; the values actually observed are of the order of `1e-14`.
@@ -82,20 +85,27 @@ function svd_test(n, train_steps=1000; retraction=Cayley())
     U_result = U[:, 1:n]
 
     err_best = norm(A - U_result * U_result' * A)
+    Random.seed!(1234)
     ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
 
     algorithms = (gradient=GradientMethod(), momentum=MomentumMethod(), adam=GeometricOptimizers.Adam())
 
     relative_errors = map(algorithms) do algorithm
-        optimizer = Optimizer(ps, error; retraction=retraction, algorithm=algorithm,
-            linesearch=Static(0.01), max_iterations=train_steps)
+        # `warn_iterations = 0` silences "Optimizer took 1000 iterations", which is true and is the
+        # point: this is a fixed-budget comparison of three first-order methods at one learning rate,
+        # not a convergence test. None of them can converge here — with `Static(0.01)` the gradient is
+        # 8.4e-2 after these 1000 steps against a gate of 1.5e-8, and it is not stuck but slow
+        # (1.9e-3 / 2.1e-4 / 4.0e-5 at 5000 / 20000 / 60000 steps), so reaching the gate this way
+        # would take of the order of a million. The convergence test is the `_BFGS` one below.
+        optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
+            linesearch=Static(0.01), max_iterations=train_steps, warn_iterations=0)
         ps_copy = deepcopy(ps)
         solve!(ps_copy, OptimizerState(algorithm, ps_copy), optimizer)
 
         for Y in values(ps_copy)
             @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
         end
-        norm((error(ps_copy) - err_best) / err_best)
+        norm((objective(ps_copy) - err_best) / err_best)
     end
 
     for name in keys(algorithms)
@@ -109,4 +119,106 @@ end
 
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
     svd_test(3, retraction=retraction)
+end
+
+"""
+    svd_convergence_test(n; retraction)
+
+The same problem as [`svd_test`](@ref), solved to convergence rather than to a fixed budget.
+
+`_BFGS` needs a line search that actually searches, and until the line search learned to take its
+trial step through the retraction that was impossible on manifold parameters — `Static` was the only
+one that worked, because it is the only one that never evaluates the merit. So this problem had no
+algorithm that converged on it at all: the three first-order methods above exhaust 1000 iterations at
+a relative error of 1e-2.
+"""
+function svd_convergence_test(n; retraction=Cayley(), linesearch=Backtracking(Float64),
+    algorithm=GeometricOptimizers._BFGS(), max_iterations=5000)
+    N = size(A, 1)
+    U, Σ, Vt = svd(A)
+    U_result = U[:, 1:n]
+    err_best = norm(A - U_result * U_result' * A)
+
+    Random.seed!(1234)
+    ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
+    state = OptimizerState(algorithm, ps)
+    optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
+        linesearch=linesearch, max_iterations=max_iterations, warn_iterations=0)
+
+    result = solve!(ps, state, optimizer)
+
+    # it stops on a convergence criterion, not on the iteration cap
+    @test GeometricOptimizers.iteration_number(state) < max_iterations
+    @test GeometricOptimizers.status(result).rg < 1e-5
+
+    # and it gets to the answer, which the fixed-step runs above reach to 1e-2 at best
+    @test norm((objective(ps) - err_best) / err_best) < 1e-10
+
+    for Y in values(ps)
+        @test GeometricOptimizers.check(Y) < MANIFOLD_TOLERANCE
+    end
+end
+
+# `_DFP` needed the same lift to `OptimizerSolution` that `_BFGS` already had; before it, its cache was
+# `AbstractVector`-only, so a `NamedTuple` fell through to a `NewtonOptimizerCache` and a
+# `MethodError`. All eight combinations of retraction, method and line search converge on this
+# problem, but the cost is wildly uneven:
+#
+#                              Geodesic   Cayley
+#     _BFGS  Backtracking           113      136
+#     _BFGS  Bisection              143       93
+#     _DFP   Backtracking        49_679   29_081
+#     _DFP   Bisection              134       96
+#
+# The one bad cell is a property of the *line search*, not of DFP. `Backtracking` starts its trial step
+# at `α = 1` and only ever shrinks, and measuring the `α` it returns settles what happens:
+#
+#                       fraction α == 1   fraction α > 1   median α   iterations
+#     _BFGS  Backtracking         73.5%             0%          1.0          113
+#     _BFGS  Bisection               0%          67.8%          1.42         143
+#     _DFP   Backtracking        100.0%             0%          1.0       49_679
+#     _DFP   Bisection               0%          94.8%         11.1          134
+#
+# `_BFGS` produces a direction already scaled like a Newton step, so `α = 1` is the right answer and
+# accepting it is not a failure. `_DFP` produces a systematically *under-scaled* direction, and a
+# backtracking search cannot lengthen it: it accepts `α = 1` on every single iteration and the solve
+# crawls -- steps of `‖Δx‖ ≈ 1e-5` against a gradient of `≈ 1e-4`, with the gradient falling by less
+# than a factor of two over 19_500 iterations. It is not stuck (it terminates on a criterion, not on
+# the cap), just pinned at the ceiling.
+#
+# The decisive check is to change *nothing* but the initial trial step handed to the same
+# `Backtracking`, which it can shrink from but not grow past:
+#
+#     α₀ = 1  →  49_679 iterations        α₀ = 100  →  936
+#     α₀ = 3  →     229 iterations        α₀ = 1000 →  2_281
+#     α₀ = 10 →     268 iterations
+#
+# Three instead of one is worth a factor of 217. So DFP is not the problem — with any search that can
+# exceed 1 it is competitive with `_BFGS`.
+#
+# Which search, though, is decided by objective evaluations and not by iterations, and the two orderings
+# disagree. `Bisection` needs the fewest iterations of any option and spends ≈580 evaluations on each
+# one; `Backtracking` spends ≈25. Total evaluations for `_DFP` (Geodesic / Cayley):
+#
+#     StrongWolfe(c₂ = 0.1)    16_466 /  23_312      ← what `default_linesearch` picks
+#     Quadratic                18_313 /  54_230
+#     BierlaireQuadratic       27_484 /  80_787
+#     Bisection                78_698 /  55_493
+#     Backtracking             (does not converge)
+#
+# `StrongWolfe` has the bracketing phase that `Backtracking` lacks, but at its own default `c₂ = 0.9`
+# the Wolfe conditions already hold at `α = 1` on 99.4% of iterations, so it never fires and it crawls
+# just like `Backtracking` (3000+ iterations). At `c₂ = 0.1` the expansion fires on 94.5% of them with a
+# median `α` of 8. See `default_linesearch` and JuliaGNI/SimpleSolvers.jl#174; `solver_step!` also hands
+# the search a hard-coded `one(T)` with no way to configure that.
+#
+# 5×10⁴ iterations is too slow to put in a test suite, so that pair is measured and documented rather
+# than run.
+for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
+    for linesearch in (Backtracking(Float64), Bisection(Float64))
+        svd_convergence_test(3; retraction=retraction, linesearch=linesearch,
+            algorithm=GeometricOptimizers._BFGS())
+    end
+    svd_convergence_test(3; retraction=retraction, linesearch=Bisection(Float64),
+        algorithm=GeometricOptimizers._DFP())
 end

@@ -76,7 +76,10 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     rxᵣ = rxₐ / l2norm(cache.x)
 
     Δf = f - state.f̄
-    Δf̃ = state.ḡ ⋅ direction(cache)
+    # `_dot`, not `⋅`: this is the decrease in `f` the step predicts to first order, so it has to be
+    # comparable with `Δf` above. On a manifold both operands are horizontal lifts, and `⋅` on those is
+    # the ambient product, which is twice the intrinsic one. See `_dot`.
+    Δf̃ = _dot(state.ḡ, direction(cache))
 
     rfₐ = norm(Δf)
     rfᵣ = rfₐ / norm(f)
