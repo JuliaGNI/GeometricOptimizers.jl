@@ -32,11 +32,12 @@ x
 # output
 
 3-element Vector{Float64}:
- 1.1102230246251565e-16
- 1.1102230246251565e-16
- 1.1102230246251565e-16
+ 0.0
+ 0.0
+ 0.0
 ```
-We note that this same problem may have trouble converging with other line searches:
+
+The choice of line search does not change where this one ends up:
 
 ```jldoctest; setup = :(using GeometricOptimizers; F(x) = sum(sin.(x) .^ 2))
 x = ones(3)
@@ -50,10 +51,15 @@ x
 # output
 
 3-element Vector{Float64}:
- 1.0
- 1.0
- 1.0
+ 0.0
+ 0.0
+ 0.0
 ```
+
+!!! info "This example needs the descent safeguard"
+    ``\\sin^2`` has second derivative ``2\\cos(2x) = -0.83`` at `x = 1`, so the Newton direction there
+    points *uphill*. [`ensure_descent!`](@ref) replaces it by the steepest-descent direction; without
+    it both solves converge to ``\\pi/2``, where `F` is maximal.
 
 """
 struct Optimizer{T,
@@ -182,6 +188,10 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
         update!(cache(opt), state, gradient(opt), algorithm(opt), x)
     else
         update!(cache(opt), state, gradient(opt), hessian(opt), x)
+        # A (quasi-)Newton direction only descends where the Hessian is positive definite; see
+        # `ensure_descent!`. `Adam` and `MomentumMethod` are excluded on purpose -- their direction is
+        # a moving average and is allowed not to descend on an individual step.
+        ensure_descent!(cache(opt), algorithm(opt), config(opt))
     end
     typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
 
@@ -231,21 +241,21 @@ julia> state = NewtonOptimizerState(x);
 julia> solve!(x, state, opt)
 GeometricOptimizers.OptimizerResult{Float32, Float32, Vector{Float32}, GeometricOptimizers.OptimizerStatus{Float32, Float32}}( * Convergence measures
 
-    |x - x'|               = 7.82e-03
-    |x - x'|/|x'|          = 2.56e+02
-    |f(x) - f(x')|         = 6.18e-05
-    |f(x) - f(x')|/|f(x')| = 6.63e+04
-    |g(x) - g(x')|         = 1.57e-02
+    |x - x'|               = 3.05e-05
+    |x - x'|/|x'|          = 6.55e+04
+    |f(x) - f(x')|         = 9.31e-10
+    |f(x) - f(x')|/|f(x')| = 4.30e+09
+    |g(x) - g(x')|         = 0.00e+00
     |g(x)|                 = 6.10e-05
-, Float32[4.6478817f-8, 3.0517578f-5], 9.313341f-10)
+, Float32[0.0, 4.656613f-10], 2.1684043f-19)
 
 julia> x
 2-element Vector{Float32}:
- 4.6478817f-8
- 3.0517578f-5
+ 0.0
+ 4.656613f-10
 
 julia> iteration_number(state)
-4
+5
 ```
 
 Also see [`solver_step!`](@ref).
@@ -278,7 +288,7 @@ const INITIAL_BFGS_F = 0.23456
 
 function initialize_state!(state::Union{BFGSState{T},DFPState{T}}) where {T}
     _fill!(state.x̄, T(INITIAL_BFGS_X))
-    _fill!(state.ḡ, T(INITIAL_BFGS_G))
+    _fill!(state.ḡ, T(INITIAL_BFGS_G))
     state.f̄ = T(INITIAL_BFGS_F)
     state.Q .= one(state.Q)
 
