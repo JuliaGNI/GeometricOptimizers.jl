@@ -12,6 +12,16 @@ Includes [`_BFGS`](@ref) and [`_DFP`](@ref).
 """
 abstract type QuasiNewtonOptimizerMethod <: OptimizerMethod end
 
+# The defaults of the methods below, collected here so that each one is defined before the
+# constructor that uses it as a keyword default. They are written as `Float64` literals so that
+# `T(1.0e-3)` is `1.0f-3` for `T = Float32` rather than `Float64(1.0e-3)` rounded twice.
+const DEFAULT_MOMENTUM_α = 0.01
+
+const DEFAULT_LEARNING_RATE = 1.0e-3
+
+# the default of [loshchilov2019decoupled](@cite) and of `torch.optim.AdamW`
+const DEFAULT_WEIGHT_DECAY = 1.0e-2
+
 @doc raw"""
     Newton
 
@@ -129,23 +139,20 @@ penalty away.
 
 # Why the name says *Euclidean*
 
-``\lambda{}x`` is the gradient of ``\frac{\lambda}{2}||x||^2``, and on the manifolds of this
-package that function is constant: ``||Y||_F^2 = \mathrm{tr}(Y^TY) = n`` for every
-``Y\in{}St(N, n)``, and likewise on the [`GrassmannManifold`](@ref). Its Riemannian gradient
-is therefore zero,
-```math
-\mathtt{rgrad}(Y, \lambda{}Y) = \lambda{}Y - Y(\lambda{}Y)^TY = \lambda{}Y - \lambda{}Y = \mathbb{O},
-```
-so this decay does nothing at all to a manifold weight. The method decays the ordinary arrays
-of a `NamedTuple` of parameters and leaves the [`Manifold`](@ref)s in it alone — which is the
-case it exists for, a network that keeps Stiefel weights next to unconstrained ones — and on a
-*bare* [`Manifold`](@ref) it *is* [`Adam`](@ref), for every ``\lambda``. Passing a nonzero `λ`
-together with parameters that are entirely manifolds is therefore warned about rather than
-silently ignored.
+``\lambda{}x`` is the gradient of ``\frac{\lambda}{2}||x||^2``, which is *constant* on the
+[`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref) — both are compact, with
+``||Y||_F^2 = \mathrm{tr}(Y^TY) = n`` — so its Riemannian gradient
+``\mathtt{rgrad}(Y, \lambda{}Y)`` vanishes identically and the decay does nothing at all to a
+manifold weight. The method therefore decays the ordinary arrays of a `NamedTuple` of parameters
+and leaves the [`Manifold`](@ref)s in it alone — which is the case it exists for, a network that
+keeps Stiefel weights next to unconstrained ones — and on a *bare* [`Manifold`](@ref) it *is*
+[`Adam`](@ref), for every ``\lambda``. Passing a nonzero `λ` together with parameters that are
+entirely manifolds is therefore warned about rather than silently ignored.
 
-Whether a *Riemannian* weight decay should exist alongside this one, and what it would decay
-towards, is [issue #28](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28); the name
-`AdamW` is held in reserve for its answer, which is why this method is not called that.
+The derivation, the Grassmann case and why the name `AdamW` is held in reserve for a
+*Riemannian* decay instead (see
+[issue #28](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28)) are in the
+[Weight Decay on Manifolds](@ref) page.
 
 # Arguments
 
@@ -155,6 +162,20 @@ As for [`Adam`](@ref), `T` is the element type of the parameters
 also the default (see [`default_linesearch`](@ref)). `λ` is hence multiplied by ``\eta``,
 exactly as in [loshchilov2019decoupled](@cite), where the two are decoupled from each other but
 the decay is still scaled by the schedule.
+
+!!! warning "Do not pass a searching line search"
+    For [`Adam`](@ref) a sufficient-decrease search is merely wasted work. Here it is worse than
+    that, because the merit the line search minimizes is the *bare* objective ``f`` and not
+    ``f + \frac{\lambda}{2}||x||^2``: the penalty this method exists to apply is not part of the
+    function whose decrease the search insists on, so the search picks its ``\alpha`` in order to
+    undo the decay's contribution as far as it can. On top of that ``\alpha`` then varies from
+    step to step, and since the decay per step is ``\alpha\lambda``, the regularization strength
+    would be whatever the search happened to choose rather than what was asked for.
+
+    A fixed `Static(η)` — the default — is the setting in which ``\lambda`` means what
+    [loshchilov2019decoupled](@cite) says it means. [`DecayingStatic`](@ref) is also well defined
+    and is the analogue of AdamW's schedule: it shrinks the decay along with the step, so
+    ``\lambda`` keeps its interpretation relative to ``\eta`` while both go to zero.
 """
 struct AdamWithEuclideanDecay{T} <: OptimizerMethod
     β₁::T
@@ -190,17 +211,27 @@ function AdamW(args...; kwargs...)
 end
 
 """
-The methods that build their direction from parameters of their own (and have no Hessian),
-as opposed to the (quasi-)Newton methods, which need the Hessian and have no parameters.
+[`Adam`](@ref) and the variants of it that differ only in how the direction is finished off, i.e.
+that share [`AdamCache`](@ref), [`AdamState`](@ref) and the moment recursion. Currently
+[`AdamWithEuclideanDecay`](@ref).
 """
-const FirstOrderMethodWithState = Union{MomentumMethod,Adam,AdamWithEuclideanDecay}
+const AdamFamily = Union{Adam,AdamWithEuclideanDecay}
 
-const DEFAULT_MOMENTUM_α = 0.01
+"""
+The methods whose `update!` needs the *method* rather than a
+[`SimpleSolvers.Hessian`](@extref), because they carry state of their own out of which the
+direction is built — a momentum or a pair of moments. The (quasi-)Newton methods are the
+complement: their direction comes from the Hessian and the method object holds nothing.
 
-const DEFAULT_LEARNING_RATE = 1.0e-3
+[`GradientMethod`](@ref) is in neither group: it has no Hessian *and* no state, and takes the
+Hessian branch because `NoHessian` is all that branch needs from it.
 
-# the default of [loshchilov2019decoupled](@cite) and of `torch.optim.AdamW`
-const DEFAULT_WEIGHT_DECAY = 1.0e-2
+`solver_step!` also uses this to decide whether [`ensure_descent!`](@ref) applies. It must not:
+a momentum and a moment average are deliberately allowed not to descend on an individual step,
+and the decay of [`AdamWithEuclideanDecay`](@ref) tilts the direction further away from the
+gradient still.
+"""
+const FirstOrderMethodWithState = Union{MomentumMethod,AdamFamily}
 
 @doc raw"""
     default_linesearch(T, method)
@@ -216,12 +247,27 @@ genuine descent directions, so a backtracking search always has an `α` to find.
 `expand = true` is what lets that search *lengthen* a step as well as shorten it, and it is not the
 SimpleSolvers default — see the tip below for why it is the default here.
 
-`Adam` is the exception and keeps a fixed `Static(DEFAULT_LEARNING_RATE)`. Its direction is
-``-m_1/(\sqrt{m_2} + \delta)``, a moving average that is deliberately *not* required to descend on any
-individual step, so a sufficient-decrease search has nothing to work with and would spend every such
-step reporting that it found no descent direction. [`AdamWithEuclideanDecay`](@ref) shares the
-exception for the same reason: it adds ``-\lambda{}x`` to that direction, which does not make it a
-descent direction either.
+The [`AdamFamily`](@ref) methods are the exception and keep a fixed `Static(DEFAULT_LEARNING_RATE)`.
+[`Adam`](@ref)'s direction is ``-m_1/(\sqrt{m_2} + \delta)``, a moving average that is deliberately
+*not* required to descend on any individual step, so a sufficient-decrease search has nothing to work
+with and would spend every such step reporting that it found no descent direction.
+
+For [`AdamWithEuclideanDecay`](@ref) a fixed step is not merely the cheaper choice but the only one
+under which ``\lambda`` means what it is documented to mean. Two reasons, and the first is the one
+that matters:
+
+ 1. The merit the line search minimizes is the *bare* objective ``f``. It is not
+    ``f + \frac{\lambda}{2}||x||^2``, because this package regularizes by adding ``-\lambda{}x`` to
+    the direction rather than by penalizing the objective — that is what *decoupled* means. So the
+    penalty is invisible to the search, which will spend its ``\alpha`` undoing the decay's
+    contribution to ``f`` as far as it can. The search is not approximating a line minimum of the
+    function the method is actually descending.
+ 2. The decay per step is ``\alpha\lambda``, so a varying ``\alpha`` makes the effective
+    regularization strength whatever the search happened to pick on that step.
+
+[`DecayingStatic`](@ref) is the exception to the exception: it varies ``\alpha`` too, but on a
+*schedule* rather than in response to the merit, which is exactly AdamW's own learning-rate
+schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
 
 !!! info "This changed in 0.2.0"
     `GradientMethod` and `MomentumMethod` used to default to `Static(DEFAULT_LEARNING_RATE)` as well.
@@ -297,7 +343,7 @@ descent direction either.
     SimpleSolvers 0.11.
 """
 default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T; expand=true)
-default_linesearch(::Type{T}, ::Union{Adam,AdamWithEuclideanDecay}) where {T} = Static(T(DEFAULT_LEARNING_RATE))
+default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNING_RATE))
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
 Base.show(io::IO, alg::_DFP) = print(io, "DFP")

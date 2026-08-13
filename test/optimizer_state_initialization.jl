@@ -73,7 +73,7 @@ end
 # [`GlobalSection`](@ref) is drawn at random and `Adam` is not equivariant with respect to a
 # change of section (its moments are updated element-wise).
 @testset "the same seed gives the same result" begin
-    for algorithm in (GradientMethod(), MomentumMethod(0.5), Adam())
+    for algorithm in (GradientMethod(), MomentumMethod(0.5), Adam(), AdamWithEuclideanDecay())
         x = (w=rand(StiefelManifold, 5, 3), b=randn(3))
         results = map(1:2) do _
             Random.seed!(1234)

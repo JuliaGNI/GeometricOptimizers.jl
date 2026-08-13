@@ -45,7 +45,9 @@ this package produces change**, in most cases substantially for the better.
 
 - **`AdamWithDecay` is removed.** It differed from `Adam` only in an exponentially decaying learning
   rate, and the learning rate is now the line search's business (see below); a decaying schedule
-  belongs in a `LinesearchMethod`, which is what `DecayingStatic` is (see *Added*).
+  belongs in a `LinesearchMethod`, which is what `DecayingStatic` is (see *Added*). Note that the
+  decay it named was of the *learning rate*, not of the weights — `AdamWithEuclideanDecay` (see
+  *Added*) is a different method and not a rename of this one.
 - **`Adam`'s `η` field is removed.** It was never applied to the direction, so `Adam(1e-3)` and
   `Adam(1e2)` produced identical results.
 - Two stranded test files (`test/optimizer_status_tests.jl`, `test/special_matrices/poisson_tensor.jl`)
@@ -244,6 +246,25 @@ this package produces change**, in most cases substantially for the better.
 
 ### Added
 
+- **`AdamWithEuclideanDecay`**, `Adam` with the *decoupled* weight decay of Loshchilov and Hutter
+  (2019) — the method usually called AdamW. The decay `λx` is applied to the *direction* after the
+  moments have been formed, so it never enters `m₁` or `m₂` and is scaled by the line search's `α`,
+  exactly as the paper's schedule scales it. It shares `Adam`'s cache and state:
+  `OptimizerState(AdamWithEuclideanDecay(), ps)` returns an `AdamState`.
+
+  The name says *Euclidean* because `λx` is the gradient of `λ‖x‖²/2`, which is *constant* on both
+  manifolds of this package (`‖Y‖²_F = tr(YᵀY) = n`, both being compact), so its Riemannian gradient
+  `rgrad(Y, λY)` vanishes identically. The method therefore decays the ordinary arrays of a
+  `NamedTuple` and leaves the manifolds in it alone — the case it exists for, a network with Stiefel
+  weights next to unconstrained ones ([#14]) — and on a *bare* manifold it *is* `Adam`, for every `λ`.
+  That last case warns at construction rather than being silently ignored. Whether a *Riemannian*
+  weight decay should exist alongside it is [#28]; the name `AdamW` is held in reserve for the answer
+  and, for now, raises an explanatory error rather than aliasing `Adam`. Derived in the new
+  *Weight Decay on Manifolds* documentation page.
+
+  This is **not** the replacement for the `AdamWithDecay` of v0.1.0 (see *Removed*) — that decayed the
+  learning rate, and its replacement is `DecayingStatic`. The two are unrelated and compose: passing
+  `linesearch = DecayingStatic(…)` decays both the step and, with it, the decay.
 - **`OptimizerSolution`**, the union of `AbstractVector`, `Manifold` and `ArrayNamedTuple`, so that a
   single method signature covers all three — together with `named_tuple_wrapper.jl`, which supplies
   the elementwise arithmetic (`_copy`, `_zero`, `_add!`, `_mul`, `norm`) that the Euclidean code
@@ -292,11 +313,13 @@ this package produces change**, in most cases substantially for the better.
 Initial release. Ports the manifold optimizer machinery from GeometricMachineLearning and the
 Euclidean optimizer machinery from SimpleSolvers into one package.
 
+[#14]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/14
 [#16]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16
 [#17]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/17
 [#18]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/18
 [#24]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/24
 [#25]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/25
 [#27]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/27
+[#28]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
