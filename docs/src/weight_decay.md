@@ -170,11 +170,20 @@ factor:
 |---|---|---|
 | decay factor | ``\gamma = \exp(\log(\eta_2/\eta_1)/n_\mathrm{epochs})`` | ``\gamma = \exp(\log(\eta_2/\eta_1)/n)`` |
 | step at ``t`` | ``\eta_1\gamma^t`` | ``\gamma^t\eta_1`` |
+| first step taken | ``\eta_1\gamma`` (`o.step` is incremented before `update!`) | ``\gamma\eta_1`` (`increase_iteration_number!` runs before `solver_step!`) |
+
+The left column is GML's *code*; its docstring states the reciprocal,
+``\gamma = \exp(\log(\eta_1/\eta_2)/n_\mathrm{epochs})``, which would grow the step rather than decay
+it. The third row matters as much as the second: an equality of formulas is not an equality of
+schedules unless the two also count ``t`` alike, and both start at ``t = 1``.
 
 So migrating it here is a matter of splitting it across the two halves it was bundling —
 ``\rho_1``, ``\rho_2``, ``\delta`` to [`Adam`](@ref) and ``\eta_1``, ``\eta_2``,
 ``n_\mathrm{epochs}`` to the line search — which is what [`AdamOptimizerWithDecay`](@ref) does under
-the original name, so that GML can delete its copy rather than port it.
+the original name, so that GML can delete its copy rather than port it. The name is all that carries
+over unchanged: GML derives the element type from ``\eta_1``, whose default is a `Float32` literal, and
+takes the step sizes and moment coefficients positionally, so migrated call sites still need editing
+(see the note on [`AdamOptimizerWithDecay`](@ref)).
 
 This is also what v0.1.0's `AdamWithDecay` did, with the same three fields on the method itself. It
 was removed when the step size moved out of the [`OptimizerMethod`](@ref)s; the schedule survived it,

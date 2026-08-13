@@ -82,15 +82,20 @@ Base.show(io::IO, alg::DecayingStatic) =
     print(io, "DecayingStatic from α = ", alg.η₁, " to α = ", alg.η₂, " over ", alg.n, " iterations.")
 
 @doc raw"""
-    AdamOptimizerWithDecay(n_epochs; η₁, η₂, β₁, β₂, δ, T)
+    AdamOptimizerWithDecay(n_epochs, T; η₁, η₂, kwargs...)
 
 [`Adam`](@ref) paired with a [`DecayingStatic`](@ref) line search whose learning rate decays
 geometrically from `η₁` to `η₂` over `n_epochs`, returned as a `NamedTuple` to splat into
 [`Optimizer`](@ref):
 
 ```julia
-Optimizer(x, problem; AdamOptimizerWithDecay(1000)...)
+method = AdamOptimizerWithDecay(1000)
+opt    = Optimizer(x, problem; method...)
+solve!(x, OptimizerState(method.algorithm, x), opt)
 ```
+
+The state has to be built from `method.algorithm`, so the pairing is worth binding to a name rather
+than splatting it twice.
 
 There is no new type here and no schedule of its own: this is exactly `Adam(T)` and
 `DecayingStatic(T; η₁, η₂, n = n_epochs)`, under the one name that the two together used to have.
@@ -113,8 +118,24 @@ that method to. This is it, so GML can delete its own copy; see
 
 # Arguments
 
-`η₁`, `η₂` and `n_epochs` go to the line search, `β₁`, `β₂` and `δ` to [`Adam`](@ref) (they are
-GML's `ρ₁`, `ρ₂` and `δ`), and `T` is the element type of the parameters, as for `Adam`.
+`η₁`, `η₂` and `n_epochs` go to the line search; everything else is forwarded to [`Adam`](@ref), so
+`β₁`, `β₂` and `δ` — GML's `ρ₁`, `ρ₂` and `δ` — keep `Adam`'s own defaults rather than a second copy
+of them. `T` is the element type of the parameters and is positional, as it is for `Adam` and
+`DecayingStatic`.
+
+!!! note "What a call migrated from `GeometricMachineLearning` has to change"
+    GML's signature is
+    `AdamOptimizerWithDecay(n_epochs, η₁ = 1f-2, η₂ = 1f-6, ρ₁ = 9f-1, ρ₂ = 9.9f-1, δ = 1f-8; T = typeof(η₁))`,
+    so the *name* migrates but the call does not always:
+
+    - **The default element type differs.** GML takes `T` from `η₁`, whose default is a `Float32`
+      literal, so `AdamOptimizerWithDecay(1000)` is `Float32` there and `Float64` here. Pass the type
+      — `AdamOptimizerWithDecay(1000, Float32)` — for a `Float32` network. Forgetting to is not
+      silent: `OptimizerCache` rejects an `Adam{Float64}` handed `Float32` parameters and says so.
+    - **The step sizes and moment coefficients are keywords here, not positional arguments**, and the
+      coefficients are spelled `β₁`, `β₂` as everywhere else in this package. GML's
+      `AdamOptimizerWithDecay(1000, 1f-3, 1f-8)` becomes
+      `AdamOptimizerWithDecay(1000, Float32; η₁ = 1f-3, η₂ = 1f-8)`.
 
 # Examples
 
@@ -126,8 +147,10 @@ AdamOptimizerWithDecay(1000).linesearch
 DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
 ```
 """
-function AdamOptimizerWithDecay(n_epochs::Integer; η₁=1.0e-2, η₂=1.0e-6, β₁=9.0e-1, β₂=9.9e-1,
-        δ=1.0e-8, T::Type=Float64)
-    (algorithm=Adam(T; β₁=β₁, β₂=β₂, δ=δ),
-        linesearch=DecayingStatic(T; η₁=η₁, η₂=η₂, n=n_epochs))
+function AdamOptimizerWithDecay(n_epochs::Integer, ::Type{T}=Float64; η₁=T(1.0e-2), η₂=T(1.0e-6),
+        kwargs...) where {T}
+    # the `η` defaults are written in `T` (and not as bare `Float64` literals) so that `γ` is computed
+    # in `T`, i.e. so that this really is the `DecayingStatic(T; …)` it claims to be down to the last
+    # bit; they are `DecayingStatic`'s defaults, which are also GML's.
+    (algorithm=Adam(T; kwargs...), linesearch=DecayingStatic(T; η₁=η₁, η₂=η₂, n=n_epochs))
 end
