@@ -38,6 +38,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Optimization on Homogeneous Spaces" => "manifold_optimizers.md",
         "Linesearch" => "linesearch.md",
         "Linesearches on Manifolds" => "linesearch_on_manifolds.md",
         "Weight Decay on Manifolds" => "weight_decay.md",
