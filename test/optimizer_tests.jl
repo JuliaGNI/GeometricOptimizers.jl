@@ -71,10 +71,13 @@ end
 # accepted and longer ones keep improving the merit.
 @testset "the default line search matches the method" begin
     for T in (Float64, Float32)
-        # `Adam` is the only method that keeps a fixed step: its direction is a moving average and is
-        # not required to descend on an individual step, so a sufficient-decrease search has nothing
-        # to work with.
-        let method = Adam(T)
+        # The `AdamFamily` methods are the ones that keep a fixed step: their direction is a moving
+        # average and is not required to descend on an individual step, so a sufficient-decrease
+        # search has nothing to work with. For `AdamWithEuclideanDecay` a fixed step is also what
+        # makes `λ` mean what it is documented to mean — the merit does not contain the penalty, so
+        # a searching `α` would be picked partly in order to undo the decay, and `αλ` would be
+        # whatever the search settled on. See `default_linesearch`.
+        for method in (Adam(T), AdamWithEuclideanDecay(T))
             ls = default_linesearch(T, method)
             @test ls isa Static{T}
             @test ls.α == T(DEFAULT_LEARNING_RATE)
@@ -107,6 +110,7 @@ end
     # `1f-3` and not `Float32(1.0e-3)` rounded through `Float64` — i.e. so that `Static`'s `α`
     # prints as `0.001` for both element types.
     @test default_linesearch(Float32, Adam(Float32)).α === 1.0f-3
+    @test default_linesearch(Float32, AdamWithEuclideanDecay(Float32)).α === 1.0f-3
 
     # `Adam` no longer takes a learning rate, and `β₁`, `β₂` and `δ` are keyword arguments, so
     # an old positional call fails instead of quietly setting `β₁ = 0.01`.

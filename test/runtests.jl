@@ -63,5 +63,8 @@ begin
     @safetestset "Optimizer Step Formulas      " include("optimizer_step_formulas.jl")
 end
 begin
+    @safetestset "Adam + Euclidean decay       " include("adam_with_euclidean_decay.jl")
+end
+begin
     @safetestset "NamedTuple Parameters        " include("named_tuple_parameters.jl")
 end
