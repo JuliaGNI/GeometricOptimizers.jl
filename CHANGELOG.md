@@ -76,35 +76,47 @@ this package produces change**, in most cases substantially for the better.
   `Backtracking` is ahead; see the table in `default_linesearch`. Pass a searching method explicitly
   when iterations rather than evaluations are what you are paying for.
 
-  **`_DFP` defaults to `StrongWolfe(c₂ = 0.1)`, not `Backtracking`.** `Backtracking` starts its trial
-  step at `α = 1` and only ever *shrinks*, which is right for a direction already scaled like a Newton
-  step — `_BFGS` accepts `α = 1` on 74% of its iterations — but `_DFP`'s direction is systematically
-  under-scaled and a backtracking search cannot lengthen it. On the SVD problem `_DFP` + `Backtracking`
-  accepts `α = 1` on *every* iteration and needs 49_679 of them. Raising only the initial trial step
-  from 1 to 3 gives 229, which is what shows the ceiling and not the method to be the cause.
+  The `Backtracking` is `Backtracking(T; expand = true)`, which is *not* SimpleSolvers' own default —
+  see the next entry.
+- **Requires SimpleSolvers 0.11, and the line search may now lengthen a step.** A shrink-only
+  backtracking search starts its trial step at `α = 1` and can never exceed it. That is right for a
+  direction already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its iterations — but
+  wrong for one that is systematically under-scaled. `_DFP`'s wants a median `α` of 8, so on the SVD
+  problem it accepted the ceiling on *every* iteration and needed 49 679 of them; handing the same
+  search a trial step of 3 instead of 1 was worth a factor of 217, which is what identified the ceiling
+  rather than the method as the cause.
 
-  `_DFP` therefore needs a search that can grow the step, and measured in objective evaluations rather
-  than iterations the cheapest is `StrongWolfe` — but only with a curvature constant tight enough to
-  reject `α = 1`. At its own default `c₂ = 0.9` the strong Wolfe conditions already hold at `α = 1` on
-  99.4% of iterations, the bracketing phase never fires, and it crawls exactly like `Backtracking`; at
-  `c₂ = 0.1` the expansion fires on 94.5% with a median `α` of 8. Cost for `_DFP` (Geodesic / Cayley):
-  `StrongWolfe(0.1)` 16 466 / 23 312 evaluations, `Quadratic` 18 313 / 54 230, `BierlaireQuadratic`
-  27 484 / 80 787, `Bisection` 78 698 / 55 493. `Bisection` needs the fewest iterations and four to
-  five times the work; `Quadratic` is competitive on `Geodesic` and degrades badly on the default
-  `Cayley`, probably because `trial_slope` is only first-order correct there and `Quadratic` uses
-  ``\varphi'`` quantitatively where the others use only its sign or its ratio to ``\varphi'(0)``.
+  That measurement became JuliaGNI/SimpleSolvers.jl#174 and, in SimpleSolvers 0.11, the `expand` key:
+  an accepted *first* trial step is lengthened while each longer trial still satisfies sufficient
+  decrease and strictly improves the merit. `default_linesearch` switches it on. Iterations, then total
+  objective evaluations, Geodesic / Cayley:
 
-  Reported upstream as JuliaGNI/SimpleSolvers.jl#174: `Backtracking` has no expansion phase,
-  `StrongWolfe` has one that its default `c₂` prevents from firing, and `Backtracking.α₀` is ignored
-  altogether, so the initial trial step cannot be configured. SimpleSolvers `main` (0.11, unreleased)
-  has since addressed the first and the third: `Backtracking(T; expand = true)` lengthens the step when
-  the first trial is accepted, and the dead `α₀` field is gone. Verified here — it is under 4% per
-  iteration and exactly free on a well-scaled problem, takes `_BFGS` from 113 to 93 iterations and
-  `_DFP` from no convergence to 830 — so it should become the default for every `Backtracking` in
-  `default_linesearch` once the `SimpleSolvers = "0.10"` bound moves. `_DFP` keeps `StrongWolfe`, still
-  1.3 to 1.4 times cheaper. The suite passes against 0.11.0 unchanged.
+  | | `expand = false` | `expand = true` |
+  |---|---|---|
+  | `_BFGS` | 113 / 136 iters, 2 857 / 3 431 evals | **93 / 118**, **2 374 / 3 006** |
+  | `_DFP` | 49 679 / 29 081, 1 241 987 / 727 036 | **830 / 1 237**, **21 540 / 31 995** |
+
+  It costs under 4% per iteration and, on a well-scaled problem, exactly nothing: the extrapolation
+  reuses `φ(0)`, `φ'(0)` and `φ(α)`, all known once the trial step is accepted, so declining to expand
+  costs no evaluation. On the sphere problem the evaluation counts are identical with and without it.
+
+  The `_DFP` figures are for one starting point and are not representative: across eight, `_DFP` under
+  the default ranges over 512–77 890 iterations (`Geodesic`) and 465–3 834 (`Cayley`), because `Q`
+  becomes badly conditioned and how fast the expansion digs it out is close to arbitrary. `_BFGS` is
+  steady (93–159 / 91–156). For a DFP-heavy workload pass `StrongWolfe(T; c₂ = 0.1)`, which is both
+  faster and far steadier — see the next entry.
+
+  0.11 also removes `Backtracking.α₀`, the field that appeared to configure the trial step and was never
+  read — unused here, so nothing in this package changes for it. The compat bound is `"0.11"` rather
+  than `"0.10, 0.11"` because `expand` does not exist in 0.10.
 - **`StrongWolfe` is re-exported.** It was the only one of SimpleSolvers' six line searches this
-  package did not re-export, and it is now the default for `_DFP`.
+  package did not pass through. It is not a default, but it is the better explicit choice for a
+  DFP-heavy workload: `StrongWolfe(T; c₂ = 0.1)` takes `_DFP` to 201 / 274 iterations and
+  16 466 / 23 312 evaluations, about 1.7× faster in wall clock than the expanding `Backtracking`
+  default, and — the part that matters more — it stays inside 201–624 / 192–483 across eight starting
+  points where the default ranges over two orders of magnitude. `c₂ = 0.1` and not its own default of
+  `0.9`, at which the Wolfe conditions already hold at `α = 1` on 99.4% of iterations, so its
+  bracketing phase never fires and it crawls too.
 - **Retractions are passed as instances, not functions**: `retraction = Cayley()` / `Geodesic()`, not
   `retraction = cayley`. The default is `Cayley()`.
 - **`MomentumMethod`'s recursion is fixed.** It accumulated `p ← p + α∇L`, which is not momentum but an
