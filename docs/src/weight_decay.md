@@ -149,7 +149,7 @@ in what parameterizes them, and in which half of the optimizer they live in.
 
 | | acts on | parameterized by | lives in | effect |
 |---|---|---|---|---|
-| [`AdamWithEuclideanDecay`](@ref) | the **weights** | ``\lambda`` | the [`OptimizerMethod`](@ref), i.e. the direction | ``\delta \gets \delta - \lambda{}x`` |
+| [`AdamWithEuclideanDecay`](@ref) | the **weights** | ``\lambda`` | the [`OptimizerMethod`](@ref), i.e. the direction | adds ``-\lambda{}x`` to the direction |
 | [`DecayingStatic`](@ref), and hence [`AdamOptimizerWithDecay`](@ref) | the **learning rate** | ``\eta_1``, ``\eta_2``, ``n`` | the `SimpleSolvers.LinesearchMethod`, i.e. the step size | ``\alpha(t) = \gamma^t\eta_1`` |
 
 Neither implies the other and they compose freely: a run may decay its weights, its learning rate,

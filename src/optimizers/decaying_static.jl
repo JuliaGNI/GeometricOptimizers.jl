@@ -13,6 +13,15 @@ so that ``\alpha(0) = \eta_1`` and ``\alpha(n) = \eta_2``. It keeps decaying pas
 not floored at ``\eta_2``, because a floor is exactly what stops the iteration from converging (see
 below).
 
+``\alpha(0)`` is a limit of the schedule and not a step a solve takes: [`solve!`](@ref) calls
+`increase_iteration_number!` before [`solver_step!`](@ref), so the first step is ``\alpha(1) =
+\gamma\eta_1``, the ``k``-th is ``\alpha(k)``, and the horizon is reached exactly at iteration `n`
+rather than one before it. ``\eta_1`` is therefore an upper bound on the step rather than the first
+one — by a factor of ``\gamma``, which for the defaults is 0.9908. The offset is deliberate: it is
+also how `GeometricMachineLearning`'s `AdamOptimizerWithDecay` counts, which is what makes
+[`AdamOptimizerWithDecay`](@ref) reproduce it step for step (`test/adam_optimizer_with_decay.jl`
+asserts this against a live solve).
+
 # Why this exists
 
 [`Adam`](@ref) produces a direction of magnitude ``\approx{}1`` per component whatever the gradient
@@ -58,7 +67,9 @@ end
 """
     step_size(method, t)
 
-The step size a [`DecayingStatic`](@ref) takes in iteration `t`, counted from `t = 0`.
+The step size a [`DecayingStatic`](@ref) takes in iteration `t`, where `t` is the iteration number
+the solve reports — so `t = 1` for the first step, and `t = 0` evaluates the schedule at a point no
+solve asks for (see the remark on ``\\alpha(0)`` in [`DecayingStatic`](@ref)).
 """
 step_size(method::DecayingStatic{T}, t::Integer) where {T} = method.γ^t * method.η₁
 
