@@ -42,8 +42,8 @@ problems() = ((rand(StiefelManifold, 5, 3), Y -> norm(A - Y * Y' * A)),
     ((w=rand(StiefelManifold, 5, 3), b=randn(3)), named_tuple_error),
     ([1.0, -2.0, 0.5], objective))
 
-_isapprox(a::AbstractArray, b::AbstractArray) = isapprox(a, b)
-_isapprox(a::NamedTuple, b::NamedTuple) = all(_isapprox(a[k], b[k]) for k in keys(a))
+_isequal(a::AbstractArray, b::AbstractArray) = a == b
+_isequal(a::NamedTuple, b::NamedTuple) = all(_isequal(a[k], b[k]) for k in keys(a))
 
 """
     run!(ps, algorithm, f, steps)
@@ -113,14 +113,20 @@ end
 
 # `λ = 0` is the one setting in which `AdamWithEuclideanDecay` and `Adam` are the same method for
 # *every* kind of parameter, so it is the cheapest check that nothing else was changed along the
-# way. The comparison is exact rather than approximate: with `λ = 0` the decay subtracts `0 ⋅ x`
-# from the direction.
+# way.
+#
+# The comparison is exact rather than approximate, and structurally so rather than by luck: on an
+# ordinary array the decay is `δ .-= 0.0 .* x`, and `d - 0.0` is `d` bit for bit in IEEE-754 for
+# every finite `d` (`-0.0` is the one value it can flip, and `==` does not distinguish the two
+# zeros); on a manifold entry `_weight_decay!` is the no-op. So the two runs execute the same
+# arithmetic in the same order and there is no rounding to absorb. Asserting `≈` here would let a
+# decay that leaked in at the size of the tolerance pass.
 @testset "λ = 0 is Adam" begin
     for (ps, f) in problems()
         adam = run!(deepcopy(ps), Adam(), f, 10)
         adamw = run!(deepcopy(ps), AdamWithEuclideanDecay(; λ=0.0), f, 10)
 
-        @test _isapprox(adam, adamw)
+        @test _isequal(adam, adamw)
         @test f(adam) == f(adamw)
     end
 end
