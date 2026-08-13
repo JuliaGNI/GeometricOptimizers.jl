@@ -79,6 +79,12 @@ function ParameterHandling.flatten(::Type{T}, g::StiefelLieAlgHorMatrix{R}) wher
     return x_vec, Array_from_vec
 end
 
+function ParameterHandling.flatten(::Type{T}, g::GrassmannLieAlgHorMatrix{R}) where {T<:AbstractFloat,R<:Real}
+    x_vec, from_vec = ParameterHandling.flatten(T, g.B)
+    Array_from_vec(x_vec) = GrassmannLieAlgHorMatrix(from_vec(x_vec), g.N, g.n)
+    return x_vec, Array_from_vec
+end
+
 # Type piracy: `Gradient` is SimpleSolvers' and `ArrayNamedTuple` is an alias for Base's
 # `NamedTuple`. A wrapper `struct` would fix this locally. See issue #16.
 function (grad::Gradient{T})(nt::ArrayNamedTuple{T}) where {T}
@@ -125,12 +131,17 @@ function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ArrayNamedTuple{T}) whe
     Λ
 end
 
-function Base.copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:StiefelManifold}
+function Base.copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold}
+    # only the anchor moves; `Λ.λ` is deliberately left alone, since recomputing the lift would move
+    # the frame the secant pair of a quasi-Newton method is expressed in
     copyto!(Λ.Y, x)
     Λ
 end
 
 _copyto!(Λ::GlobalSectionNamedTuple, x::ArrayNamedTuple) = copyto!(Λ, x)
+
+# the bare-`Manifold` counterpart of the line above
+_copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
 
 function _copyto!(x::ArrayNamedTuple, Λ::GlobalSectionNamedTuple)
     apply_toNT(copyto!, x, Λ)
@@ -197,10 +208,51 @@ function _mul!(c::ArrayNamedTuple, a::AbstractMatrix, b::ArrayNamedTuple)
     _copyto!(c, c_unflatten(v_c))
 end
 
+# The same ambient/intrinsic boundary as the method above, for a *bare* `Manifold`: the quasi-Newton
+# `Q` is sized by the length of the flattening, while the direction and the gradient are horizontal
+# lifts of the ambient shape (`3 × 3` against an intrinsic 2, for `St(3, 1)`). Multiplying them
+# directly reaches `setindex!`, which the lift types do not define.
+function _mul!(c::AbstractLieAlgHorMatrix, a::AbstractMatrix, b::AbstractLieAlgHorMatrix)
+    v_c, c_unflatten = ParameterHandling.flatten(c)
+    v_b, _ = ParameterHandling.flatten(b)
+
+    _mul!(v_c, a, v_b)
+    _copyto!(c, c_unflatten(v_c))
+end
+
 function _mul(α::T, a::GradientArrayOrNamedTuple{T}) where {T}
     b = _copy(a)
     _rmul!(b, α)
 end
+
+@doc raw"""
+    _dot(a, b)
+
+The inner product of two gradients or directions, taken in the *flattened* coordinates.
+
+# Implementation
+
+For an `AbstractVecOrMat` this is `LinearAlgebra.dot`. For a horizontal lift — or a `NamedTuple` of
+them — it is emphatically not: `dot` on an [`AbstractLieAlgHorMatrix`](@ref) is the *ambient*
+Frobenius product, which counts each of the off-diagonal blocks of the lift twice and so comes out
+exactly twice the product of the free parameters. The intrinsic coordinates are the ones every other
+quantity in this package is expressed in — `Q` is sized by the flattening, [`outer!`](@ref) flattens
+before it forms its outer product, and the `α` of a line search parameterizes a curve in them — so
+pairing a gradient with a direction has to happen there too.
+
+Used by [`trial_slope`](@ref) for ``\varphi'(\alpha)``, and by the quasi-Newton caches for
+``\delta^T\gamma``, whose value has to be consistent with the flattened `T₁`, `T₂` and `γ^TQγ` it
+divides.
+"""
+_dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
+
+const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ArrayNamedTuple{T}}
+
+# `flatten` is given `T` explicitly: the one-argument `ParameterHandling.flatten` defaults to
+# `Float64`, which would make this return a `Float64` for `Float32` parameters and break every
+# element type the result is combined with downstream.
+_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} =
+    dot(ParameterHandling.flatten(T, a)[1], ParameterHandling.flatten(T, b)[1])
 
 _add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
 

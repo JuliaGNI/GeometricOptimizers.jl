@@ -30,6 +30,11 @@ makedocs(;
         canonical="https://JuliaGNI.github.io/GeometricOptimizers.jl",
         edit_link="main",
         assets=String[],
+        # `index.md` is a single `@autodocs` block holding every docstring in the package, so it grows
+        # with the package and has already passed Documenter's 200 KiB default. Raising the hard limit
+        # keeps the build green; `size_threshold_warn` is deliberately left at its default so the
+        # warning keeps nagging until the reference is split across pages.
+        size_threshold=400 * 2^10,
     ),
     pages=[
         "Home" => "index.md",

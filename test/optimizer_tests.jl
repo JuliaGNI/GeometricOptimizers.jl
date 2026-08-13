@@ -4,7 +4,7 @@ using GeometricOptimizers
 using GeometricOptimizers: Newton, _DFP, _BFGS
 using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
 using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
-using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, GradientAutodiff, GradientFunction
+using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, StrongWolfe, GradientAutodiff, GradientFunction
 using Test
 using Random
 Random.seed!(123)
@@ -29,7 +29,8 @@ test_obj = OptimizerProblem(F, test_x)
 
 for T in (Float64, Float32)
     for method in (Newton(), _DFP(), _BFGS())
-        for _linesearch in (Static(T(0.1)), Backtracking(T), BierlaireQuadratic(T), Quadratic(T), Bisection(T))
+        for _linesearch in (Static(T(0.1)), Backtracking(T), Backtracking(T; expand=true),
+            BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂=T(0.1)))
             @testset "$(method) & $(_linesearch) & $(T)" begin
                 n = 1
                 x = ones(T, n)
@@ -65,11 +66,15 @@ end
 # `Backtracking` and therefore not `1`.
 #
 # The methods that come with a Hessian (or an approximation of it) produce a direction whose
-# *length* is meaningful, so they keep `Backtracking`, which starts at `α₀ = 1` and only
-# shortens the step if it has to.
+# *length* is meaningful, so they keep `Backtracking`, which starts its trial step at `α = 1`
+# and shortens it if it has to — and, with `expand = true`, lengthens it if the first trial is
+# accepted and longer ones keep improving the merit.
 @testset "the default line search matches the method" begin
     for T in (Float64, Float32)
-        for method in (GradientMethod(), MomentumMethod(T(0.1)), Adam(T))
+        # `Adam` is the only method that keeps a fixed step: its direction is a moving average and is
+        # not required to descend on an individual step, so a sufficient-decrease search has nothing
+        # to work with.
+        let method = Adam(T)
             ls = default_linesearch(T, method)
             @test ls isa Static{T}
             @test ls.α == T(DEFAULT_LEARNING_RATE)
@@ -78,11 +83,23 @@ end
             @test linesearch(Optimizer(x, F; algorithm=method)).method isa Static{T}
         end
 
-        for method in (Newton(), _BFGS(), _DFP())
-            @test default_linesearch(T, method) isa Backtracking{T}
+        # Everything else searches. `GradientMethod` and `MomentumMethod` joined this group in 0.2.0,
+        # once a line search could take its trial step through a retraction; before that `Static` was
+        # the only thing that worked on manifold parameters, so they had no choice. `_DFP` rejoined it
+        # in SimpleSolvers 0.11: it needs a search that can *lengthen* a step, and until `expand` that
+        # ruled `Backtracking` out for it entirely (49_679 iterations on the SVD problem, against 830
+        # with the expansion phase). See `default_linesearch`.
+        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), _BFGS(), _DFP())
+            ls = default_linesearch(T, method)
+            @test ls isa Backtracking{T}
+            # the property the default turns on, and the one a future SimpleSolvers bump could drop
+            # silently: without it `_DFP` does not converge on the SVD problem at all
+            @test ls.expand
 
             x = ones(T, 3)
-            @test linesearch(Optimizer(x, F; algorithm=method)).method isa Backtracking{T}
+            opt_ls = linesearch(Optimizer(x, F; algorithm=method)).method
+            @test opt_ls isa Backtracking{T}
+            @test opt_ls.expand
         end
     end
 

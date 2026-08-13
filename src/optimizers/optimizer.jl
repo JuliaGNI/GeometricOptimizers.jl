@@ -81,7 +81,7 @@ struct Optimizer{T,
 
     function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=default_gradient(problem, cache.x), retraction=Cayley(), options_kwargs...) where {T}
         config = Options(T; options_kwargs...)
-        ls_problem = linesearch_problem(problem, gradient, cache)
+        ls_problem = linesearch_problem(problem, gradient, cache, retraction)
         ls = Linesearch(ls_problem, linesearch)
         new{T,typeof(algorithm),typeof(problem),typeof(gradient),typeof(hessian),typeof(cache),typeof(ls),typeof(retraction)}(algorithm, problem, gradient, hessian, config, cache, ls, retraction)
     end
@@ -209,7 +209,10 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     end
 
     # apply line search
-    α = solve(linesearch(opt), one(T), (x=x,))
+    # `state` is passed because the merit needs `section(state)` as the base its trial steps retract
+    # from, and because a step-size schedule needs `iteration_number(state)`; see
+    # `trial_iterate!` and `DecayingStatic`.
+    α = solve(linesearch(opt), one(T), (x=x, state=state))
     _rmul!(direction(cache(opt)), α)
 
     # compute new minimizer
