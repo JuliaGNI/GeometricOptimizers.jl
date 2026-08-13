@@ -17,6 +17,8 @@ export GradientAutodiff, GradientFunction, GradientFiniteDifferences
 using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection, StrongWolfe
 export Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection, StrongWolfe
 export DecayingStatic
+# `AdamOptimizerWithDecay` is a convenience pairing of `Adam` with `DecayingStatic`, not a method
+export AdamOptimizerWithDecay
 
 export Options
 

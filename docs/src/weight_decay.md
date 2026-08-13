@@ -76,6 +76,46 @@ On a bare manifold, `AdamWithEuclideanDecay` is [`Adam`](@ref) for every ``\lamb
 
 The qualifier in `AdamWithEuclideanDecay` describes the decay, ``\lambda{}x``; the method itself is the manifold optimizer. A reference-point regularizer or decay of lifted coordinates would be a different method, not standard AdamW.
 
+## Two unrelated decays
+
+Three names in this package contain the word *decay*, and only one of them decays weights. The
+collision is worth spelling out, because the two that are easiest to confuse —
+[`AdamWithEuclideanDecay`](@ref) and [`AdamOptimizerWithDecay`](@ref) — differ in what they act on,
+in what parameterizes them, and in which half of the optimizer they live in.
+
+| | acts on | parameterized by | lives in | effect |
+|---|---|---|---|---|
+| [`AdamWithEuclideanDecay`](@ref) | the **weights** | ``\lambda`` | the [`OptimizerMethod`](@ref), i.e. the direction | ``\delta \gets \delta - \lambda{}x`` |
+| [`DecayingStatic`](@ref), and hence [`AdamOptimizerWithDecay`](@ref) | the **learning rate** | ``\eta_1``, ``\eta_2``, ``n`` | the `SimpleSolvers.LinesearchMethod`, i.e. the step size | ``\alpha(t) = \gamma^t\eta_1`` |
+
+Neither implies the other and they compose freely: a run may decay its weights, its learning rate,
+both, or neither. `AdamWithEuclideanDecay` has a *fixed* learning rate by default
+([`default_linesearch`](@ref) gives it `Static`), and `AdamOptimizerWithDecay` never touches a
+weight — it is [`Adam`](@ref), which has no ``\lambda``.
+
+### Where `GeometricMachineLearning`'s method belongs
+
+`GeometricMachineLearning` defines an `AdamOptimizerWithDecay` that stores ``\eta_1``, ``\eta_2``,
+``n_\mathrm{epochs}`` alongside Adam's ``\rho_1``, ``\rho_2``, ``\delta``, and steps by
+``\eta_1\gamma^t`` with ``\gamma = \exp(\log(\eta_2/\eta_1)/n_\mathrm{epochs})``. Despite the name it
+is the **second** row of the table: an exponential decay of the learning rate, with no weight decay
+anywhere in it. Its schedule is the one [`DecayingStatic`](@ref) already implements, factor for
+factor:
+
+| | GML's `AdamOptimizerWithDecay` | [`DecayingStatic`](@ref) |
+|---|---|---|
+| decay factor | ``\gamma = \exp(\log(\eta_2/\eta_1)/n_\mathrm{epochs})`` | ``\gamma = \exp(\log(\eta_2/\eta_1)/n)`` |
+| step at ``t`` | ``\eta_1\gamma^t`` | ``\gamma^t\eta_1`` |
+
+So migrating it here is a matter of splitting it across the two halves it was bundling —
+``\rho_1``, ``\rho_2``, ``\delta`` to [`Adam`](@ref) and ``\eta_1``, ``\eta_2``,
+``n_\mathrm{epochs}`` to the line search — which is what [`AdamOptimizerWithDecay`](@ref) does under
+the original name, so that GML can delete its copy rather than port it.
+
+This is also what v0.1.0's `AdamWithDecay` did, with the same three fields on the method itself. It
+was removed when the step size moved out of the [`OptimizerMethod`](@ref)s; the schedule survived it,
+the bundling did not.
+
 ## Related questions
 
 The settled no-op does not resolve questions about [`Adam`](@ref) itself. Its moments are accumulated element-wise in the horizontal Lie-algebra representation while [`GlobalSection`](@ref) re-bases that representation after each step. Questions regarding parallel transport, the related covariant derivative, and how much the random section affects optimization through holonomy remain open.

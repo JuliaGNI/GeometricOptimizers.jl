@@ -80,3 +80,54 @@ end
 
 Base.show(io::IO, alg::DecayingStatic) =
     print(io, "DecayingStatic from α = ", alg.η₁, " to α = ", alg.η₂, " over ", alg.n, " iterations.")
+
+@doc raw"""
+    AdamOptimizerWithDecay(n_epochs; η₁, η₂, β₁, β₂, δ, T)
+
+[`Adam`](@ref) paired with a [`DecayingStatic`](@ref) line search whose learning rate decays
+geometrically from `η₁` to `η₂` over `n_epochs`, returned as a `NamedTuple` to splat into
+[`Optimizer`](@ref):
+
+```julia
+Optimizer(x, problem; AdamOptimizerWithDecay(1000)...)
+```
+
+There is no new type here and no schedule of its own: this is exactly `Adam(T)` and
+`DecayingStatic(T; η₁, η₂, n = n_epochs)`, under the one name that the two together used to have.
+
+# Why it exists
+
+`GeometricMachineLearning` carries an `AdamOptimizerWithDecay` that bundles Adam's `ρ₁`, `ρ₂`, `δ`
+with a learning-rate schedule `η₁`, `η₂`, `n_epochs`, and computes the same
+``\gamma = \exp(\log(\eta_2/\eta_1)/n)``. Since 0.2.0 the two halves of that live in different
+places here — the direction in an [`OptimizerMethod`](@ref), the step size in a
+`SimpleSolvers.LinesearchMethod` — which is the right split but leaves no single name to migrate
+that method to. This is it, so GML can delete its own copy; see
+[GeometricMachineLearning#230](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/230).
+
+!!! warning "This decays the learning rate, not the weights"
+    Despite the shared word, this has nothing to do with [`AdamWithEuclideanDecay`](@ref). That one
+    decays the *weights*, by ``\lambda{}x``, and leaves the learning rate alone; this one decays the
+    *learning rate* and never touches a weight. They compose, and neither implies the other — see
+    the *Two unrelated decays* section of the weight-decay page.
+
+# Arguments
+
+`η₁`, `η₂` and `n_epochs` go to the line search, `β₁`, `β₂` and `δ` to [`Adam`](@ref) (they are
+GML's `ρ₁`, `ρ₂` and `δ`), and `T` is the element type of the parameters, as for `Adam`.
+
+# Examples
+
+```jldoctest; setup = :(using GeometricOptimizers)
+AdamOptimizerWithDecay(1000).linesearch
+
+# output
+
+DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
+```
+"""
+function AdamOptimizerWithDecay(n_epochs::Integer; η₁=1.0e-2, η₂=1.0e-6, β₁=9.0e-1, β₂=9.9e-1,
+        δ=1.0e-8, T::Type=Float64)
+    (algorithm=Adam(T; β₁=β₁, β₂=β₂, δ=δ),
+        linesearch=DecayingStatic(T; η₁=η₁, η₂=η₂, n=n_epochs))
+end
