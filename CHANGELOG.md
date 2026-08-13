@@ -285,6 +285,19 @@ this package produces change**, in most cases substantially for the better.
   line search it composes with `GradientMethod` and `MomentumMethod` too. It is the weaker of the two
   ways to make `Adam` converge: a geometric schedule is summable and so stops short (`‖∇f‖ ≈ 1e-3`
   once `‖Δx‖ ≈ 1e-13`), where letting a searching line search pick the step gets `Adam` to `≈1e-7`.
+- **`AdamOptimizerWithDecay(n_epochs, T; η₁, η₂, kwargs...)`**, a convenience pairing of `Adam` with a
+  `DecayingStatic` line search, returned as a `NamedTuple` to splat into `Optimizer`:
+  `Optimizer(x, F; AdamOptimizerWithDecay(1000)...)`. It defines no type and no schedule of its own —
+  `kwargs...` goes to `Adam`, so `β₁`, `β₂` and `δ` keep `Adam`'s defaults rather than a copy of them.
+  It exists so that GeometricMachineLearning's method of the same name — which bundles Adam's `ρ₁`,
+  `ρ₂`, `δ` with `η₁`, `η₂`, `n_epochs` and computes the identical
+  `γ = exp(log(η₂/η₁)/n_epochs)` — has one name to migrate to now that the direction and the step
+  size live in different halves of the optimizer. The name carries over but the call does not always:
+  GML takes `T` from `η₁`, whose default is a `Float32` literal, so a `Float32` network needs
+  `AdamOptimizerWithDecay(n_epochs, Float32)`; and GML's positional step sizes and its `ρ₁`/`ρ₂`
+  spelling are keywords `η₁`, `η₂`, `β₁`, `β₂` here. Note that this decays the *learning rate*, not
+  the weights; `AdamWithEuclideanDecay` is the unrelated one, and the *Two unrelated decays* section
+  of the weight-decay page sets them side by side.
 - **A line search can take its trial step through the retraction.** `linesearch_problem` built its
   merit with `SimpleSolvers.compute_new_iterate!`, i.e. `xₖ + α·pₖ`, which on a manifold is undefined —
   and would be wrong even if it were not, since a step has to go through the retraction and the

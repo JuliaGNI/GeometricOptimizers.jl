@@ -13,6 +13,15 @@ so that ``\alpha(0) = \eta_1`` and ``\alpha(n) = \eta_2``. It keeps decaying pas
 not floored at ``\eta_2``, because a floor is exactly what stops the iteration from converging (see
 below).
 
+``\alpha(0)`` is a limit of the schedule and not a step a solve takes: [`solve!`](@ref) calls
+`increase_iteration_number!` before [`solver_step!`](@ref), so the first step is ``\alpha(1) =
+\gamma\eta_1``, the ``k``-th is ``\alpha(k)``, and the horizon is reached exactly at iteration `n`
+rather than one before it. ``\eta_1`` is therefore an upper bound on the step rather than the first
+one — by a factor of ``\gamma``, which for the defaults is 0.9908. The offset is deliberate: it is
+also how `GeometricMachineLearning`'s `AdamOptimizerWithDecay` counts, which is what makes
+[`AdamOptimizerWithDecay`](@ref) reproduce it step for step (`test/adam_optimizer_with_decay.jl`
+asserts this against a live solve).
+
 # Why this exists
 
 [`Adam`](@ref) produces a direction of magnitude ``\approx{}1`` per component whatever the gradient
@@ -58,7 +67,9 @@ end
 """
     step_size(method, t)
 
-The step size a [`DecayingStatic`](@ref) takes in iteration `t`, counted from `t = 0`.
+The step size a [`DecayingStatic`](@ref) takes in iteration `t`, where `t` is the iteration number
+the solve reports — so `t = 1` for the first step, and `t = 0` evaluates the schedule at a point no
+solve asks for (see the remark on ``\\alpha(0)`` in [`DecayingStatic`](@ref)).
 """
 step_size(method::DecayingStatic{T}, t::Integer) where {T} = method.γ^t * method.η₁
 
@@ -80,3 +91,77 @@ end
 
 Base.show(io::IO, alg::DecayingStatic) =
     print(io, "DecayingStatic from α = ", alg.η₁, " to α = ", alg.η₂, " over ", alg.n, " iterations.")
+
+@doc raw"""
+    AdamOptimizerWithDecay(n_epochs, T; η₁, η₂, kwargs...)
+
+[`Adam`](@ref) paired with a [`DecayingStatic`](@ref) line search whose learning rate decays
+geometrically from `η₁` to `η₂` over `n_epochs`, returned as a `NamedTuple` to splat into
+[`Optimizer`](@ref):
+
+```julia
+method = AdamOptimizerWithDecay(1000)
+opt    = Optimizer(x, problem; method...)
+solve!(x, OptimizerState(method.algorithm, x), opt)
+```
+
+The state has to be built from `method.algorithm`, so the pairing is worth binding to a name rather
+than splatting it twice.
+
+There is no new type here and no schedule of its own: this is exactly `Adam(T)` and
+`DecayingStatic(T; η₁, η₂, n = n_epochs)`, under the one name that the two together used to have.
+
+# Why it exists
+
+`GeometricMachineLearning` carries an `AdamOptimizerWithDecay` that bundles Adam's `ρ₁`, `ρ₂`, `δ`
+with a learning-rate schedule `η₁`, `η₂`, `n_epochs`, and computes the same
+``\gamma = \exp(\log(\eta_2/\eta_1)/n)``. Since 0.2.0 the two halves of that live in different
+places here — the direction in an [`OptimizerMethod`](@ref), the step size in a
+`SimpleSolvers.LinesearchMethod` — which is the right split but leaves no single name to migrate
+that method to. This is it, so GML can delete its own copy; see
+[GeometricMachineLearning#230](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/230).
+
+!!! warning "This decays the learning rate, not the weights"
+    Despite the shared word, this has nothing to do with [`AdamWithEuclideanDecay`](@ref). That one
+    decays the *weights*, by ``\lambda{}x``, and leaves the learning rate alone; this one decays the
+    *learning rate* and never touches a weight. They compose, and neither implies the other — see
+    the *Two unrelated decays* section of the weight-decay page.
+
+# Arguments
+
+`η₁`, `η₂` and `n_epochs` go to the line search; everything else is forwarded to [`Adam`](@ref), so
+`β₁`, `β₂` and `δ` — GML's `ρ₁`, `ρ₂` and `δ` — keep `Adam`'s own defaults rather than a second copy
+of them. `T` is the element type of the parameters and is positional, as it is for `Adam` and
+`DecayingStatic`.
+
+!!! note "What a call migrated from `GeometricMachineLearning` has to change"
+    GML's signature is
+    `AdamOptimizerWithDecay(n_epochs, η₁ = 1f-2, η₂ = 1f-6, ρ₁ = 9f-1, ρ₂ = 9.9f-1, δ = 1f-8; T = typeof(η₁))`,
+    so the *name* migrates but the call does not always:
+
+    - **The default element type differs.** GML takes `T` from `η₁`, whose default is a `Float32`
+      literal, so `AdamOptimizerWithDecay(1000)` is `Float32` there and `Float64` here. Pass the type
+      — `AdamOptimizerWithDecay(1000, Float32)` — for a `Float32` network. Forgetting to is not
+      silent: `OptimizerCache` rejects an `Adam{Float64}` handed `Float32` parameters and says so.
+    - **The step sizes and moment coefficients are keywords here, not positional arguments**, and the
+      coefficients are spelled `β₁`, `β₂` as everywhere else in this package. GML's
+      `AdamOptimizerWithDecay(1000, 1f-3, 1f-8)` becomes
+      `AdamOptimizerWithDecay(1000, Float32; η₁ = 1f-3, η₂ = 1f-8)`.
+
+# Examples
+
+```jldoctest; setup = :(using GeometricOptimizers)
+AdamOptimizerWithDecay(1000).linesearch
+
+# output
+
+DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
+```
+"""
+function AdamOptimizerWithDecay(n_epochs::Integer, ::Type{T}=Float64; η₁=T(1.0e-2), η₂=T(1.0e-6),
+        kwargs...) where {T}
+    # the `η` defaults are written in `T` (and not as bare `Float64` literals) so that `γ` is computed
+    # in `T`, i.e. so that this really is the `DecayingStatic(T; …)` it claims to be down to the last
+    # bit; they are `DecayingStatic`'s defaults, which are also GML's.
+    (algorithm=Adam(T; kwargs...), linesearch=DecayingStatic(T; η₁=η₁, η₂=η₂, n=n_epochs))
+end
