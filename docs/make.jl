@@ -39,7 +39,7 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "Linesearch" => "linesearch.md",
-        "Line searches on manifolds" => "linesearch_on_manifolds.md",
+        "Linesearches on Manifolds" => "linesearch_on_manifolds.md",
         "References" => "references.md",
     ],
 )

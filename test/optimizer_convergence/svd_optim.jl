@@ -6,6 +6,11 @@ using Test
 import Random
 Random.seed!(1234)
 
+# NOTE: this literal looks like a 10x10 matrix and Julia parses it as **20x5**. Inside `[ ]` a newline
+# separates rows exactly as `;` does, so each of the two source lines that make up a visually wrapped
+# row is a row of its own. Everything below goes through `size(A, 1)`, so the tests are self-consistent
+# either way and this is not a correctness problem — but `N` is 20, not 10, and the Stiefel manifold
+# these solves run on is St(20, 3).
 A = [0.06476993260924702 0.8369280855305259 0.6245358125914054 0.14072996706492302 0.3057604800441981
     0.46705795621669255 0.1112669220975867 0.4533808015358275 0.8080656034678635 0.8124722742350421;
     0.01612280707759217 0.9297364035931851 0.7748255582653033 0.18802235970624825 0.12372987461277729
@@ -85,6 +90,11 @@ function svd_test(n, train_steps=1000; retraction=Cayley())
     U_result = U[:, 1:n]
 
     err_best = norm(A - U_result * U_result' * A)
+    # seeded here, and not only at the top of the file, so that every call starts from the *same*
+    # point: this function is called once per retraction, and the solves in between draw from the
+    # global RNG themselves (each `GlobalSection` does), so without this the `Cayley` run would start
+    # somewhere that depends on how much randomness the `Geodesic` run happened to consume. The
+    # tolerances below are calibrated for one starting point, so that has to be pinned.
     Random.seed!(1234)
     ps = (w₁=rand(StiefelManifold, N, n), w₂=rand(StiefelManifold, N, n))
 
