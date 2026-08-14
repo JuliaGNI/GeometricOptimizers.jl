@@ -30,6 +30,9 @@ begin
     @safetestset "Retractions                  " include("retractions/retractions.jl")
 end
 begin
+    @safetestset "Exponential Accuracy         " include("retractions/exponential_accuracy.jl")
+end
+begin
     @safetestset "Ω functions                  " include("global_sections/omega_functions.jl")
 end
 begin

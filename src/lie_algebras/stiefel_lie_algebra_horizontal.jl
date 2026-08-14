@@ -81,6 +81,8 @@ end
 Base.parent(A::StiefelLieAlgHorMatrix) = (A.A, A.B)
 Base.size(A::StiefelLieAlgHorMatrix) = (A.N, A.N)
 
+manifold_type(::StiefelLieAlgHorMatrix) = StiefelManifold
+
 function Base.getindex(A::StiefelLieAlgHorMatrix{T}, i, j) where {T}
     if i ≤ A.n
         if j ≤ A.n

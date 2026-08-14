@@ -216,6 +216,48 @@ this package produces change**, in most cases substantially for the better.
 
 ### Fixed
 
+- **The `Geodesic` retraction no longer silently leaves the manifold for a large step.** `geodesic`
+  built the exponential by summing ``\mathfrak{A}(X) = \sum_{n\geq1}X^{n-1}/n!`` directly. That series
+  converges everywhere but is only *accurate* for a small argument, and the argument here is not
+  small: the factorisation ``\bar{B} = B'(B'')^T`` puts ``\frac{1}{4}A^2 - B^TB`` in a block of
+  ``X = (B'')^TB'``, so ``\|X\| \approx \|\bar{B}\|^2/4`` while its spectral radius is only
+  ``\approx\|\bar{B}\|``. The terms cancel, and nothing reported it. `check(geodesic(B))` on a random
+  `StiefelLieAlgHorMatrix(20, 3)`:
+
+  | `‖B̄‖` | 5.8 | 17.8 | 36.5 | 78.8 | 160 | 361 | 767 |
+  |---|---|---|---|---|---|---|---|
+  | before | `2.1e-15` | `2.6e-12` | `4.4e-7` | `8.3e10` | `4.2e55` | `1.4e168` | `NaN` |
+  | after | `1.1e-15` | `3.5e-15` | `7.9e-15` | `2.5e-14` | `9.0e-15` | `3.6e-14` | `7.7e-14` |
+
+  At `‖B̄‖ = 79` the "retracted" point was not on the Stiefel manifold in any sense. `Cayley` was never
+  affected — it inverts a `2n × 2n` matrix rather than summing a series.
+
+  The fix is scaling and squaring, and it stays at `2n × 2n` throughout: the low-rank form is closed
+  under squaring, `(I + B'W(B'')ᵀ)² = I + B'(2W + WXW)(B'')ᵀ`, so squaring the *exponential* is one
+  application of `W ↦ 2W + WXW` and no `N × N` matrix is ever squared. It is also **faster** than what
+  it replaces, by 1.6× at `N = 200, n = 10` and 4.6× at `N = 500, n = 50`, because the scaled series
+  converges in a handful of terms where the unscaled one ground through hundreds.
+
+  Consequences elsewhere. In `test/optimizer_convergence/svd_optim.jl` the worst `check` over eight
+  starting points was `2.45e-5` (`_BFGS` + `Backtracking` + `Geodesic`), five orders of magnitude past
+  that file's `MANIFOLD_TOLERANCE` of `1e-12`; it is `2.8e-12` now. Every `Geodesic` iteration and
+  evaluation count in this package moved by a few percent, since a more accurate exponential is a
+  different trajectory — the tables in `svd_optim.jl` and in `default_linesearch`'s docstring are
+  re-measured, and `scripts/retraction_accuracy.jl` regenerates them. The `Cayley` columns are
+  unchanged to the digit.
+
+  `Geodesic` is now also the *cheaper* of the two retractions for `N ≳ 50`, which reverses what its
+  docstring used to say: `cayley` finishes with a product of two `N × N` matrices at `O(N³)` where
+  `geodesic` only assembles `I + B'𝔄(X)(B'')ᵀ` at `O(N²n)`. At `N = 1000, n = 20` that is 2.5 ms against
+  39 ms.
+
+- **`check` works on a `GrassmannManifold`.** It was defined for `StiefelManifold` only, so the one
+  function that measures distance from the manifold — the assertion every manifold test rests on —
+  was a `MethodError` for the other of the two manifolds this package provides. It is now
+  `check(::Manifold)`, since the representative of a `GrassmannManifold` point satisfies `YᵀY = I`
+  just as the Stiefel one does. This is why the accuracy loss above went unnoticed for so long: half
+  the retraction paths had nothing that could have caught it.
+
 - **`Optimizer`'s constructors no longer nest three levels of `kwargs...`, which cost Julia 1.12
   fifteen minutes of compile time per specialization.** The test suite ran for 31–42 minutes on 1.12
   across all three CI operating systems, against 3–5 minutes on 1.10, 1.13 and nightly, and
@@ -326,6 +368,29 @@ this package produces change**, in most cases substantially for the better.
   `similar` handed a two-parameter concrete type to `zeros`, which has no such method.
 
 ### Added
+
+- **`Geodesic` takes an algorithm for the matrix exponential.** `Geodesic(ScaledSquaring())` is the
+  default and is the fix described under *Fixed*; `AugmentedPade()` gets ``\mathfrak{A}`` out of a
+  block of `Base.exp`'s Padé approximant, and `ProjectedSkew()` exponentiates the lift in an
+  orthonormal basis of its own range, where it is a small skew-symmetric matrix and the exponential
+  can be built from an eigendecomposition. All three compute the same map, so the one-parameter
+  subgroup property `Geodesic` relies on holds for each.
+
+  They differ in what they trade. `ProjectedSkew` is the only one whose orthogonality is
+  *structural* rather than the outcome of a series, so it is the only one whose `check` does not
+  degrade with the step: over the eight SVD starting points its worst case is `1.9e-13` against
+  `ScaledSquaring`'s `2.8e-12`, and in `Float32` it holds `1.3e-6` where the others reach `2.3e-5`.
+  It costs about an order of magnitude on the *typical* case and needs `qr` and `eigen`.
+  `ScaledSquaring` is the default because it is the fastest, the most accurate against
+  `exp(Matrix(B))`, and — using nothing but matrix products and norms — the only one of the three
+  that runs on a `KernelAbstractions` GPU backend.
+
+  `TaylorSeries()` is the pre-0.2.0 behaviour. It is kept, and documented as unusable, so that the
+  regression stays reproducible from the test suite rather than only from this file.
+
+  The algorithm reaches every entry point, not just `retraction(::Geodesic, ::AbstractLieAlgHorMatrix)`:
+  `geodesic(Y, Δ, algorithm)` takes it as an optional third argument, so the tangent-vector form is
+  selectable too rather than being pinned to the default.
 
 - **`Options(store_trace = true)` does something.** `OptimizerResult` gains a `trace` of one
   `OptimizerTraceEntry` — `(iteration, f, rg)` — per iteration, reachable through `trace(result)` and

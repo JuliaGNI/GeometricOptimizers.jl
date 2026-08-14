@@ -30,8 +30,23 @@ The Cayley transform as a retraction, and the default one.
 
 For ``B`` in the horizontal component this maps into the Lie group, so the retracted point stays on
 the manifold to round-off. [`cayley`](@ref) never forms the ``N\times{}N`` inverse: it factors
-``B = B'(B'')^T`` into two ``N\times{}2n`` matrices and inverts a ``2n\times{}2n`` matrix instead,
-which is what makes it cheaper than [`Geodesic`](@ref) when ``n \ll N``.
+``B = B'(B'')^T`` into two ``N\times{}2n`` matrices with [`lift_factors`](@ref) and inverts a
+``2n\times{}2n`` matrix instead.
+
+!!! note "It is no longer the cheaper of the two"
+    It was, when [`Geodesic`](@ref) summed an unscaled series. It is not now. `cayley` finishes with
+    a product of two ``N\times{}N`` matrices, which is ``O(N^3)``, where `geodesic` only assembles
+    ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` at ``O(N^2n)``. One retraction, `ScaledSquaring` against
+    `Cayley`:
+
+    | ``N``, ``n`` | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 1000, 20 |
+    |---|---|---|---|---|---|---|
+    | `Geodesic` | `0.005 ms` | `0.013 ms` | `0.021 ms` | `0.094 ms` | `0.42 ms` | `2.5 ms` |
+    | `Cayley` | `0.004 ms` | `0.013 ms` | `0.060 ms` | `0.38 ms` | `5.1 ms` | `39 ms` |
+
+    They are level up to ``N \approx 50`` and `Cayley` loses by a factor of 15 by ``N = 1000``.
+    `Cayley` remains useful — it is unconditionally stable and needs no matrix function at all — but
+    cost is no longer a reason to prefer it.
 
 # Examples
 
@@ -59,7 +74,7 @@ See [`cayley`](@ref) for the implementation and [`Geodesic`](@ref) for the alter
 struct Cayley <: AbstractRetraction end
 
 @doc raw"""
-    Geodesic <: AbstractRetraction
+    Geodesic(algorithm = ScaledSquaring()) <: AbstractRetraction
 
 The exponential map as a retraction, i.e. the *true* geodesic of the manifold.
 
@@ -73,7 +88,14 @@ one-parameter subgroup: it follows the geodesic through the point in the directi
 is the property [`Cayley`](@ref) lacks, and the reason a derivative-based line search is exact here.
 
 [`geodesic`](@ref) exploits the sparsity of a horizontal lift rather than exponentiating the full
-``N\times{}N`` matrix, but it is still the more expensive of the two.
+``N\times{}N`` matrix: the only matrix function it evaluates is on a ``2n\times{}2n`` argument. Since
+0.2.0 that also makes it the *cheaper* of the two for ``N \gtrsim 50`` — see the note on
+[`Cayley`](@ref).
+
+`algorithm` selects how the exponential is evaluated. All of them compute the same map — the choice
+is one of accuracy at a large lift, cost, and backend support — and the default
+[`ScaledSquaring`](@ref) is the one to use unless there is a reason not to. See
+[`AbstractExponentialAlgorithm`](@ref) for the comparison.
 
 # Examples
 
@@ -90,6 +112,27 @@ check(Geodesic()(B)) < 1e-14      # the retracted element is still on the manifo
 true
 ```
 
+A large lift is where the algorithms part company, and the reason the default is what it is:
+
+```jldoctest
+using GeometricOptimizers
+using GeometricOptimizers: Geodesic, ScaledSquaring, TaylorSeries, check
+import Random
+Random.seed!(1234)
+
+B = 60 * rand(StiefelLieAlgHorMatrix, 20, 3)      # ‖B̄‖ ≈ 393
+
+check(Geodesic()(B)) < 1e-12, check(Geodesic(TaylorSeries())(B)) < 1e-12
+
+# output
+
+(true, false)
+```
+
 See [`geodesic`](@ref) for the implementation and [`Cayley`](@ref) for the cheaper alternative.
 """
-struct Geodesic <: AbstractRetraction end
+struct Geodesic{AT<:AbstractExponentialAlgorithm} <: AbstractRetraction
+    algorithm::AT
+end
+
+Geodesic() = Geodesic(ScaledSquaring())

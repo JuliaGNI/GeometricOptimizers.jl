@@ -1,17 +1,24 @@
 using Test
 using LinearAlgebra: norm
 using GeometricOptimizers
-using GeometricOptimizers: AbstractRetraction, geodesic, cayley, retraction
+using GeometricOptimizers: AbstractRetraction, geodesic, cayley, retraction, check
 import Random
 
 Random.seed!(123)
 
 include("../grassmann_test_help.jl")
 
+# Every one of these takes a step of `Δ / 1000`, so they say nothing about a retraction's behaviour
+# at a step of any size — which is how bugs.md A1 survived. The `check` assertion is the one that
+# holds the retraction on the manifold; `test/retractions/exponential_accuracy.jl` is what exercises
+# it at a lift norm large enough to matter.
+const MANIFOLD_TOLERANCE = 1e-5     # `Float32`; `check` cannot go much below `1e-6` in that format
+
 function geodesic_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Type=Float32)
     Y = rand(StiefelManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = geodesic(Y, Δ / 1000)
+    @test check(Y₁) < MANIFOLD_TOLERANCE
     norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
 end
 
@@ -19,6 +26,7 @@ function cayley_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Type=
     Y = rand(StiefelManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = cayley(Y, Δ / 1000)
+    @test check(Y₁) < MANIFOLD_TOLERANCE
     norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
 end
 
@@ -26,6 +34,7 @@ function geodesic_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::T
     Y = rand(GrassmannManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = geodesic(Y, Δ / 1000)
+    @test check(Y₁) < MANIFOLD_TOLERANCE
     norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
 end
 
@@ -33,6 +42,7 @@ function cayley_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::Typ
     Y = rand(GrassmannManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = cayley(Y, Δ / 1000)
+    @test check(Y₁) < MANIFOLD_TOLERANCE
     norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
 end
 
