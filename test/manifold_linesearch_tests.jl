@@ -1,6 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: Cayley, Geodesic, _BFGS, _DFP, StiefelManifold, check, iteration_number,
-                           status, DecayingStatic, step_size
+                           status, DecayingStatic, step_size, increase_iteration_number!,
+                           solver_step!, update!
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew
 using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe, l2norm
 using LinearAlgebra: norm
@@ -180,6 +181,39 @@ end
         @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-4)
         for Y in values(ps)
             @test check(Y) < MANIFOLD_TOLERANCE
+        end
+    end
+end
+
+@testset "the reused gradient is the one a fresh evaluation would give" begin
+    # `solver_step!` refreshes `latest_gradient` at the accepted iterate and the next
+    # `update!(cache, ...)` reuses it rather than evaluating `∇f` again at the same point; see
+    # `store_gradient!`. The manifold case is the one where that could go wrong quietly, because the
+    # gradient is expressed in the frame of a `GlobalSection` and the cache's and the state's frames
+    # are advanced by two different calls. They are the same call underneath -- `update_section!`'s
+    # three-argument method has the body the two-argument one uses -- and this asserts it, bit for
+    # bit, rather than taking it on trust.
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
+        retraction in (Geodesic(), Cayley())
+
+        ps = ps₀()
+        state = OptimizerState(method, ps)
+        opt = Optimizer(ps, two_spheres; algorithm=method, linesearch=Bisection(Float64),
+            retraction=retraction)
+        grad = GeometricOptimizers.gradient(opt)
+
+        for k in 1:6
+            @test GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, ps) == (k > 1)
+
+            fresh = GeometricOptimizers.global_rep(GeometricOptimizers.section(state), grad(ps))
+            increase_iteration_number!(state)
+            solver_step!(ps, state, opt)
+            update!(state, opt, ps)
+
+            stored = GeometricOptimizers.gradient_array(GeometricOptimizers.cache(opt))
+            for key in keys(fresh)
+                @test stored[key] == fresh[key]
+            end
         end
     end
 end

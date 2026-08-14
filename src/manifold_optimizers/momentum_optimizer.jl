@@ -13,6 +13,7 @@ Cache for the gradient optimizer.
 - `Δg`: difference in gradients (used in [`OptimizerStatus`](@ref)),
 - `g̃`: scratch for [`latest_gradient`](@ref); see [`GradientCache`](@ref) for why it is separate
   from `g`, and note that this is the cache the separation was measured on,
+- `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 """
 struct MomentumCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
@@ -21,6 +22,7 @@ struct MomentumCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T}
     δ::VT
     Δg::VT
     g̃::VT
+    g̃_is_current::Base.RefValue{Bool}
     section::ST
 end
 
@@ -28,7 +30,7 @@ function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    MomentumCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, sec)
+    MomentumCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
 end
 
 function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
@@ -49,10 +51,14 @@ function MomentumCache(x::OptimizerSolution{T}) where {T}
 end
 
 solution(cache::MomentumCache) = cache.x
-gradient_array(cache::MomentumCache) = cache.g
 gradient(cache::MomentumCache) = cache.g
+gradient_array(cache::MomentumCache) = gradient(cache)
 latest_gradient(cache::MomentumCache) = cache.g̃
 refresh_latest_gradient!(cache::MomentumCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
+latest_gradient_is_current(cache::MomentumCache, state::OptimizerState, x::OptimizerSolution) =
+    _latest_gradient_is_current(cache, state, x)
+invalidate_latest_gradient!(cache::MomentumCache) = _invalidate_latest_gradient!(cache)
+gradient_difference!(cache::MomentumCache, ::OptimizerState) = _latest_gradient_difference!(cache)
 direction(cache::MomentumCache) = cache.δ
 rhs(cache::MomentumCache) = direction(cache)
 section(cache::MomentumCache) = cache.section
@@ -123,8 +129,9 @@ function update!(state::MomentumState, opt::Optimizer, x::OptimizerSolution)
 end
 
 function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T}, method::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
+    # first, and before the two `_copyto!`s below; see `store_gradient!`
+    store_gradient!(cache, state, gradient, x)
     _copyto!(section(cache), section(state))
-    _copyto!(gradient_array(cache), global_rep(section(state), gradient(x)))
     _copyto!(solution(cache), x)
     # The direction is `-p` for the momentum `p ← αp + ∇L` of the step that is being taken. The
     # momentum stored in the state is still the one of the *previous* step, because

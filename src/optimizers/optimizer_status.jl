@@ -68,6 +68,20 @@ Write the gradient difference `∇f(xᵏ) - ∇f(xᵏ⁻¹)` into `cache.Δg`, f
 The default forms it from the gradient the cache holds and the previous gradient the state holds. The
 quasi-Newton caches have already formed exactly this difference -- it is the `γ` of their secant pair
 -- and have advanced `state.ḡ` past it in doing so, so for them this is a no-op.
+
+The three first-order caches use neither: they take the difference of the two gradients they hold
+themselves, `latest_gradient` at ``x_{k+1}`` and `gradient` at ``x_k``. `state.ḡ` is the wrong operand
+for them and the default was measurably wrong here. `update!(::MomentumState, ...)` runs *after* the
+step and copies the cache's *pre-step* gradient into `state.g`, shifting the one before it into
+`state.ḡ`, so `state.ḡ` ends up two iterates behind `cache.g` rather than one: on
+``f(x) = \\sum(x^2 + 0.1x^4)`` from `[1.5, -0.8, 0.4]` with `MomentumMethod` + `Bisection`, iteration
+three reported `rgₐ = 4.976` where ``\\|\\nabla{}f(x_k) - \\nabla{}f(x_{k-1})\\| = 0.295``. On the
+first iteration it differenced against the `_similar` memory `MomentumState` never writes. It also
+kept `rgₐ` and `rg` from being about the same step, now that [`latest_gradient`](@ref) has made `rg` a
+statement about ``x_{k+1}``; see [`convergence_measures`](@ref).
+
+`state.ḡ` is still two iterates behind for these methods, and `Δf̃` above still reads it. That is
+recorded as open issue A10 in `CHANGELOG.md`.
 """
 gradient_difference!(cache::OptimizerCache, state::OptimizerState) = _difference!(cache.Δg, cache.g, state.ḡ)
 

@@ -12,6 +12,7 @@ Cache for the gradient optimizer.
 - `δ`: the direction,
 - `Δg`: difference in gradients, needed for [`OptimizerStatus`](@ref),
 - `g̃`: scratch for [`latest_gradient`](@ref); see [`GradientCache`](@ref),
+- `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 """
 struct AdamCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
@@ -20,6 +21,7 @@ struct AdamCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<
     δ::VT
     Δg::VT
     g̃::VT
+    g̃_is_current::Base.RefValue{Bool}
     m₁::VT
     m₂::VT
     m̃₂::VT
@@ -37,7 +39,7 @@ function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<
     m₁ = _similar(g)
     m₂ = _similar(g)
     m̃₂ = _similar(g)
-    AdamCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, m₁, m₂, m̃₂, sec)
+    AdamCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, m̃₂, sec)
 end
 
 function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
@@ -58,10 +60,14 @@ function AdamCache(x::OptimizerSolution{T}) where {T}
 end
 
 solution(cache::AdamCache) = cache.x
-gradient_array(cache::AdamCache) = cache.g
 gradient(cache::AdamCache) = cache.g
+gradient_array(cache::AdamCache) = gradient(cache)
 latest_gradient(cache::AdamCache) = cache.g̃
 refresh_latest_gradient!(cache::AdamCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
+latest_gradient_is_current(cache::AdamCache, state::OptimizerState, x::OptimizerSolution) =
+    _latest_gradient_is_current(cache, state, x)
+invalidate_latest_gradient!(cache::AdamCache) = _invalidate_latest_gradient!(cache)
+gradient_difference!(cache::AdamCache, ::OptimizerState) = _latest_gradient_difference!(cache)
 direction(cache::AdamCache) = cache.δ
 rhs(cache::AdamCache) = direction(cache)
 section(cache::AdamCache) = cache.section
@@ -132,8 +138,9 @@ function update!(state::AdamState, opt::Optimizer, x::OptimizerSolution)
 end
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}, β₁::T, β₂::T, δ::T, t::Integer, x::OptimizerSolution{T}) where {T}
+    # first, and before the two `_copyto!`s below; see `store_gradient!`
+    store_gradient!(cache, state, gradient, x)
     _copyto!(section(cache), section(state))
-    _copyto!(gradient_array(cache), global_rep(section(state), gradient(x)))
     _copyto!(solution(cache), x)
     # `t` is the iteration number and is counted from one: `solve!` calls
     # `increase_iteration_number!` *before* `solver_step!`, so `t = state.iterations` is already

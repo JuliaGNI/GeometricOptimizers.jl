@@ -126,11 +126,11 @@ end
 #
 # A second, smooth, non-quadratic objective, because `F` is a quadratic and one accurate line search
 # solves it exactly -- which is the case where a stale `rg` used to stop these methods one step past
-# the minimiser (see `convergence_measures` and the testset below). `H` is convex with a unique
+# the minimiser (see `convergence_measures` and the testset below). `Fsmooth` is convex with a unique
 # minimiser at `0` and is never solved in one step, so it asserts convergence and not just
-# termination.
-H(x) = sum(sqrt.(1 .+ x .^ 2))
-∇H!(g, x) = (g .= x ./ sqrt.(1 .+ x .^ 2))
+# termination. (Not `H`: `optimizers_problems.jl`, included above, calls a *Hessian* `H!`.)
+Fsmooth(x) = sum(sqrt.(1 .+ x .^ 2))
+∇Fsmooth!(g, x) = (g .= x ./ sqrt.(1 .+ x .^ 2))
 
 @testset "the first-order methods solve on every line search" begin
     for T in (Float64, Float32)
@@ -143,7 +143,7 @@ H(x) = sum(sqrt.(1 .+ x .^ 2))
         # explicitly, which is what this covers -- and before this branch it threw as well.
         for method in (GradientMethod(), MomentumMethod(T(0.1)), Adam(T)),
             _linesearch in linesearches,
-            (name, obj, ∇obj!) in (("F", F, ∇F!), ("H", H, ∇H!))
+            (name, obj, ∇obj!) in (("F", F, ∇F!), ("Fsmooth", Fsmooth, ∇Fsmooth!))
 
             @testset "$(method) & $(_linesearch) & $(T) & $(name)" begin
                 x = ones(T, 3)
@@ -230,6 +230,117 @@ end
         # and it really is at the minimiser: `1.8e-8` is the worst of the twelve, against the `0.346`
         # and `1.16` this used to stop at
         @test norm(x) < 1e-7
+    end
+end
+
+@testset "the gradient the direction is built from is the gradient at the iterate" begin
+    # `solver_step!` refreshes `latest_gradient` at the accepted iterate, and the next
+    # `update!(cache, ...)` reuses it instead of evaluating `∇f` a second time at the same point --
+    # which is what keeps the refresh from doubling the gradient evaluations of a first-order step.
+    # See `store_gradient!`.
+    #
+    # Exact equality: the reuse is only legitimate if the two are the *same* computation, so anything
+    # but a bit-identical result means the reused value belongs to a different point or a different
+    # frame. This is the test that catches a future reordering of `solve!` making it stale.
+    f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4 .+ 0.3 .* sin.(3x))
+    ∇f!(g, x) = (g .= 2 .* x .+ 0.4 .* x .^ 3 .+ 0.9 .* cos.(3x))
+
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
+        _linesearch in (Static(0.1), Backtracking(; expand=true), Bisection(), Quadratic(),
+            BierlaireQuadratic(), StrongWolfe(; c₂=0.1))
+
+        x = [1.5, -0.8, 0.4]
+        state = OptimizerState(method, x)
+        opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=method, linesearch=_linesearch)
+        g = similar(x)
+
+        for k in 1:8
+            increase_iteration_number!(state)
+            # the reuse is available on every iteration but the first, where the scratch array has
+            # never been written and the two `GlobalSection`s are independent draws
+            @test GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, x) == (k > 1)
+
+            ∇f!(g, x)
+            solver_step!(x, state, opt)
+            update!(state, opt, x)
+
+            # whichever branch `store_gradient!` took, the direction was built from ∇f at the iterate
+            # the step started from
+            @test GeometricOptimizers.gradient_array(GeometricOptimizers.cache(opt)) == g
+        end
+    end
+end
+
+@testset "a caller that moves the iterate does not get a reused gradient" begin
+    # The reuse is guarded on `solution(cache) == x` and `section(cache) == section(state)`, not on
+    # the call sequence, so a loop that moves `x` behind the optimizer's back falls back to a fresh
+    # evaluation rather than silently building its direction from the gradient at the old point.
+    f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4)
+    ∇f!(g, x) = (g .= 2 .* x .+ 0.4 .* x .^ 3)
+
+    x = [1.5, -0.8, 0.4]
+    state = OptimizerState(GradientMethod(), x)
+    opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=GradientMethod(), linesearch=Bisection())
+    g = similar(x)
+
+    for _ in 1:4
+        increase_iteration_number!(state)
+        solver_step!(x, state, opt)
+        update!(state, opt, x)
+
+        x .+= 0.25                     # the move the guard has to notice
+        @test !GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, x)
+
+        increase_iteration_number!(state)
+        ∇f!(g, x)
+        solver_step!(x, state, opt)
+        update!(state, opt, x)
+
+        @test GeometricOptimizers.gradient_array(GeometricOptimizers.cache(opt)) == g
+    end
+end
+
+@testset "the gradient difference is the one the status prints" begin
+    # `rgₐ` is `|g(x) - g(x')|`, i.e. the change over the step just taken. For the first-order caches
+    # the generic `gradient_difference!` did not produce that: `state.ḡ` is two iterates behind
+    # `cache.g` for them, so `rgₐ` was `‖∇f(xₖ) - ∇f(xₖ₋₂)‖` -- on the objective below, `4.976` where
+    # the successive difference is `0.295` -- and on the first iteration it differenced against
+    # `_similar` memory that `MomentumState` never writes. See `gradient_difference!`.
+    f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4)
+    ∇f(x) = 2 .* x .+ 0.4 .* x .^ 3
+    ∇f!(g, x) = (g .= ∇f(x))
+
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
+        _linesearch in (Static(0.1), Bisection(), Quadratic())
+
+        x = [1.5, -0.8, 0.4]
+        state = OptimizerState(method, x)
+        opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=method, linesearch=_linesearch)
+
+        for _ in 1:5
+            increase_iteration_number!(state)
+            x_before = copy(x)
+            solver_step!(x, state, opt)
+            _status = GeometricOptimizers.OptimizerStatus(state, GeometricOptimizers.cache(opt),
+                f(x); config=GeometricOptimizers.config(opt))
+
+            @test _status.rgₐ ≈ norm(∇f(x) .- ∇f(x_before))
+            # and `rg` is the other end of that same step, so the two rows the status prints are
+            # about one step and not about two different ones
+            @test _status.rg ≈ norm(∇f(x))
+
+            update!(state, opt, x)
+        end
+    end
+
+    # the first iteration used to read uninitialized memory; a one-iteration solve is the smallest
+    # case that reaches it
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64))
+        x = ones(3)
+        result = solve!(x, OptimizerState(method, x),
+            Optimizer(x, F; algorithm=method, linesearch=Static(0.1), max_iterations=1))
+
+        @test isfinite(status(result).rgₐ)
     end
 end
 

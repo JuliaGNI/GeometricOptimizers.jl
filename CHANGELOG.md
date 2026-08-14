@@ -259,17 +259,38 @@ this package produces change**, in most cases substantially for the better.
   | ``\sum\sqrt{1+x^2}`` | `Adam` | 1.16 → **3.9e-16** | 1.16 → **7.7e-16** | 0.104 → **4.5e-9** |
 
   `Adam` was the worse of the two — at ``\|x\| = 1.16`` it had barely left `ones(3)` — and both
-  reported convergence. `solver_step!` now refreshes `latest_gradient` at the accepted iterate, which
-  costs one gradient evaluation per iteration and is paid only by the caches that implement it.
-  Measured on the SVD problem of `test/optimizer_convergence/svd_optim.jl`, `Adam` + `Static` over
-  2 000 iterations goes from 125 ms to 167 ms, at an identical trajectory. It never cost an
-  *iteration*: across the 42 (objective, method, line search) combinations measured the count is
-  equal or one lower.
+  reported convergence. `solver_step!` now refreshes `latest_gradient` at the accepted iterate. It
+  never cost an *iteration*: across the 42 (objective, method, line search) combinations measured the
+  count is equal or one lower.
 
-  `Newton`, `_BFGS` and `_DFP` are untouched — `latest_gradient` defaults to `gradient(cache)` and
-  nothing refreshes it for them. Verified bit-for-bit: 49 solves over Rosenbrock and the SVD problem,
-  across all seven line searches and both retractions, reproduce `rg`, the iterate, the error and
-  `check` to the last digit.
+  **And it costs no gradient evaluation either**, which is not obvious and was not free. The refresh
+  computes ``\nabla{}f(x_{k+1})`` in the frame of `section(cache)`, and that is bit-for-bit what
+  `update!(cache, state, …)` recomputes at the top of the next step — `update_section!`'s
+  three-argument method has the body the two-argument one `update!(::MomentumState, …)` uses, so the
+  cache's frame after a step *is* the state's frame after `update!`. `store_gradient!` therefore
+  reuses it instead of evaluating again, guarded on `solution(cache) == x` and
+  `section(cache) == section(state)` so that a caller which moves the iterate between steps falls
+  back rather than silently reusing a stale value. On the SVD problem of
+  `test/optimizer_convergence/svd_optim.jl`, `Adam` + `Static` over 2 000 iterations (`err = 1.7097`
+  in every column, i.e. one trajectory):
+
+  | | before this release | refresh, no reuse | as shipped |
+  |---|---|---|---|
+  | wall clock | 124 ms | 167 ms (1.35×) | **128 ms (1.03×)** |
+  | ``\nabla{}f`` per iteration | 1 | 2 | **1** |
+
+  `rgₐ` is formed from the same two arrays — ``\nabla{}f(x_{k+1}) - \nabla{}f(x_k)``, the successive
+  difference `OptimizerStatus` prints it as — so the two `g` rows of a status are about one step
+  rather than about two different ones. It used to come from `state.ḡ`, which is two iterates behind
+  `cache.g` for these three methods and is uninitialised on the first: on
+  ``f(x) = \sum(x^2 + 0.1x^4)`` that reported `rgₐ = 4.976` where the successive difference is
+  `0.295`. The remaining half of that — `Δf̃` still reads `state.ḡ` — is open issue A10 below.
+
+  `Newton`, `_BFGS` and `_DFP` are untouched — `latest_gradient` defaults to `gradient(cache)`,
+  nothing refreshes it for them and `store_gradient!` is not on their path. Verified bit-for-bit: 266
+  solves over Rosenbrock, the SVD problem and a two-sphere `NamedTuple`, across all seven line
+  searches, both retractions and all six methods, reproduce `rg`, the iterate, the value and `check`
+  to the last digit; `rgₐ` moves for the three first-order methods and for nothing else.
 
 - **The `Geodesic` retraction no longer silently leaves the manifold for a large step.** `geodesic`
   built the exponential by summing ``\mathfrak{A}(X) = \sum_{n\geq1}X^{n-1}/n!`` directly. That series
@@ -556,7 +577,7 @@ observability, C its dead code and bookkeeping; D is upstream, E lists things re
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
 given. Entries A5, A6, C6 and D5 come from the review of [#36]; A7, A8, A9 and the second half of A1b
-from [#38]; the rest from unifying the optimizer hierarchies.
+from [#38], and A10 from the review of [#38]; the rest from unifying the optimizer hierarchies.
 
 A1, A2 and A3 are fixed and are kept for the record, since later entries refer to them: A1 and A3 by
 [#36], A2 by [#38]. C6 describes text that [#36] introduced.
@@ -682,7 +703,7 @@ it is why `manifold_linesearch_tests.jl` uses a two-sphere problem for its first
 #### A2. `GradientMethod` and `MomentumMethod` throw on their own default line search — fixed in 0.2.0
 
 **Fixed** by [#38]: `gradient` is defined for all three first-order caches, and `trial_slope` writes
-into `latest_gradient` — a scratch array on those caches rather than an alias for `cache.g`. Two
+into `latest_gradient` — a scratch array on those caches rather than an alias for `cache.g`. Three
 notes on what the fix turned up that the diagnosis below did not anticipate:
 
 - **defining the accessor is not enough.** `trial_slope`'s vector branch evaluates *into* the cache,
@@ -696,8 +717,13 @@ notes on what the fix turned up that the diagnosis below did not anticipate:
   momentum in it, where a line search accurate enough to drive `∇f(x₁) ≈ 0` made `g_converged` fire
   while the momentum still moved the iterate. That left `MomentumMethod` at `‖x‖ = 0.35` and `Adam`
   at `‖x‖ = 1.16` on the bracketing searches, both reporting convergence. `solver_step!` now
-  refreshes the gradient at the accepted iterate. See the CHANGELOG entries above for the tables and
-  the cost.
+  refreshes the gradient at the accepted iterate. See the CHANGELOG entries above for the tables.
+- **the refresh is free, but only because the value is reused.** `∇f` at the accepted iterate, in the
+  frame the cache is in, is bit-for-bit the gradient the *next* `update!(cache, …)` recomputes, so
+  refreshing without reusing simply doubles the gradient evaluations of a first-order step — 1.35× on
+  `Adam` + `Static`. `store_gradient!` reuses it under a guard that compares the iterate and the
+  frame, which brings that to 1.03×. Fixing `rgₐ` fell out of the same pairing; the half that did
+  not is A10.
 
 **Severity: high** (a documented entry point fails outright), **pre-existing on `main`**.
 
@@ -905,6 +931,45 @@ So `default_linesearch`'s choice of `Static` for `AdamFamily` is not merely the 
 construction. Worth a sentence in `Adam`'s docstring, which currently sends the reader to
 `default_linesearch` for the cost argument and not for this one.
 
+#### A10. `state.ḡ` is two iterates behind for the three first-order states
+
+**Severity: low** — everything it still reaches is reported and not acted on. Found in the review of
+[#38], which fixes the half of it that had become visible and leaves the rest. **Pre-existing on
+`main`.**
+
+`GradientState`, `MomentumState` and `AdamState` are advanced by `update!(state, opt, x)`, which runs
+*after* the step. It writes the *post*-step iterate into `state.x` and the cache's *pre*-step gradient
+into `state.g`, shifting the one before that into `state.ḡ`:
+
+```
+after update! at the end of step k:   state.x = xₖ   state.g = ∇f(xₖ₋₁)   state.ḡ = ∇f(xₖ₋₂)
+```
+
+So `state.g` does not belong to `state.x`, and `state.ḡ` is two iterates behind `cache.g` rather than
+one. The quasi-Newton states do not have this: `update!(::BFGSCache, …)` advances `state.ḡ` itself,
+inside the step, right after forming `γ` from it.
+
+Two consumers, both in `OptimizerStatus`:
+
+- `rgₐ = ‖cache.Δg‖`. **Fixed in [#38]**: the first-order caches now override `gradient_difference!`
+  and take `latest_gradient - gradient`, which is the successive difference the status prints and
+  needs no `state.ḡ`. On `f(x) = Σ(x² + 0.1x⁴)` from `[1.5, -0.8, 0.4]` with `MomentumMethod` +
+  `Bisection` the old value was `4.976` at iteration three where the successive difference is
+  `0.295`; on iteration one it differenced against the `_similar` memory these states never write,
+  which is the same defect `test/optimizer_state_initialization.jl` exists to catch for the `Adam`
+  moments.
+- `Δf̃ = ⟨state.ḡ, δ⟩` (`optimizer_status.jl:82`), the first-order predicted decrease. **Not fixed.**
+  It is a two-step-stale gradient paired with the current direction, so the prediction it makes is
+  not one. Its only reader is `f_converged_strong`, which C1 records as computed and discarded — so
+  whichever way C1 goes, this has to be settled with it, and settling it separately would be
+  measuring a number nothing looks at.
+
+The honest fix is upstream of both: `update!(state, opt, x)` should store the gradient that belongs
+to the `x` it is storing. `latest_gradient` is exactly that gradient and is already in the cache. The
+obstacle is that the same call site feeds the momentum recursion `p ← αp + ∇f(xₖ)`, which needs the
+*pre*-step gradient and must keep getting `gradient_array(cache)` — so the two uses have to be
+separated first, and `update!(::MomentumState, …)`'s argument list says they currently are not.
+
 ---
 
 ### B. This package — observability
@@ -940,6 +1005,11 @@ exists.
 in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
 on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
 and `Options.f_stall_window` were meant to drive — both of which are also unread here.
+
+Whichever way this goes, it has to be settled together with A10: `Δf̃` is its only input, and for the
+three first-order methods that is a two-step-stale gradient paired with the current direction. Using
+`f_converged_strong` without fixing A10 would be acting on a prediction that is not one; deleting it
+retires A10's second consumer along with it.
 
 #### C2. `compute_direction!` for the quasi-Newton methods is dead
 
