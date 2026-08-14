@@ -180,6 +180,11 @@ end
 # it does not. This is what keeps `refresh_latest_gradient!` from costing `_BFGS` a second gradient
 # evaluation per iteration. It has to run *before* `update!(cache, state, x)` overwrites `cache.x`,
 # which is what the pairing is checked against.
+#
+# `store_gradient!` writes into `gradient(cache)`, so the `g` handed on below *is* `cache.g` and the
+# `_copyto!(gradient(cache), g)` in the four-argument method is a copy onto itself. That method is
+# also called with a `g` of its own, from `update!(cache, state, x, g)` directly, which is why it
+# keeps the copy.
 function update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, x::OptimizerSolution)
     store_gradient!(cache, state, grad, x)
     update!(cache, state, x, gradient(cache))

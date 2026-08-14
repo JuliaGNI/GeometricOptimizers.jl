@@ -218,7 +218,7 @@ end
     # stale `rg` was not `‖∇f(xₖ)‖` but `‖∇f‖` at whatever point the line search last probed, because
     # `trial_slope` evaluates into the same array -- on Rosenbrock from `(-1.2, 1)` with the default
     # `Backtracking` that read `5.8e4` times the true residual for `_BFGS` and `299` times it for
-    # `_DFP`. That was open issue A8; `Backtracking` is in the list below for exactly that reason.
+    # `_DFP`. That was issue A8; `Backtracking` is in the list below for exactly that reason.
     ∇F(x) = 2 .* x
 
     for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), _BFGS(), _DFP()),

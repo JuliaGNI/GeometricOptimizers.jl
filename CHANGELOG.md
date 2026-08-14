@@ -438,12 +438,14 @@ this package produces change**, in most cases substantially for the better.
   **It costs `_BFGS` and `_DFP` no gradient evaluation.** Their `update!(cache, state, grad, x)`
   recomputed `global_rep(section(state), grad(x))`, which is bit-for-bit what the refresh at the end
   of the previous `solver_step!` produced, so it goes through the same `store_gradient!` the
-  first-order caches use. Over the twenty combinations of the eight-seed sweep in
-  `scripts/retraction_accuracy.jl` the objective-evaluation count rises by exactly 10 per solve — one
-  gradient evaluation on that problem, `GradientAutodiff` costing ten objective calls for its 60
-  parameters — and 10 is per *solve*, not per iteration: it is the refresh at the last iterate, the
-  one no `update!` follows and so the one nothing reuses. `Newton` does pay one gradient evaluation
-  per iteration (Rosenbrock, 103 → 124 over 25 iterations), because
+  first-order caches use. `NewtonOptimizerCache` goes through it too — all six caches now do — which
+  is what makes `g̃_is_current` mean something there; it changes no count, because the frames `Newton`
+  compares never agree inside a solve (that is A13). Over the twenty combinations of the eight-seed
+  sweep in `scripts/retraction_accuracy.jl` the objective-evaluation count rises by exactly 10 per
+  solve — one gradient evaluation on that problem, `GradientAutodiff` costing ten objective calls for
+  its 60 parameters — and 10 is per *solve*, not per iteration: it is the refresh at the last iterate,
+  the one no `update!` follows and so the one nothing reuses. `Newton` does pay one gradient
+  evaluation per iteration (Rosenbrock, 103 → 124 over 25 iterations), because
   `update!(::NewtonOptimizerState, …)` advances the state's section by the *gradient* rather than by
   the direction, so the frames do not match and the guard correctly declines to reuse. That is the
   path already marked "this will have to be removed later" and it is left alone.
@@ -1183,11 +1185,16 @@ Two consequences, both of them about `store_gradient!`'s reuse guard, which requ
   point `refresh_latest_gradient!` has just evaluated it at. Measured on Rosenbrock from
   ``(-1.2, 1)`` with `Backtracking(expand)`: 103 gradient evaluations over 26 iterations before A8,
   124 over 25 after.
-- **The reuse comes back by accident at the end of a solve.** Once ``\nabla{}f`` and ``\delta`` have
-  both gone to zero the two frames agree again and the guard fires. That is *correct* — on Euclidean
-  parameters `global_rep` is the identity, so the value depends only on `solution(cache) == x`, which
-  the guard also checks — but it means the branch taken is not a property anything should assert on.
-  `test/optimizer_tests.jl` asserts on the gradient the direction is built from instead, and says so.
+- **The reuse comes back by accident once the iteration has nowhere left to go.** Once ``\nabla{}f``
+  and ``\delta`` have both gone to zero the two frames agree again and the guard fires. That is
+  *correct* — on Euclidean parameters `global_rep` is the identity, so the value depends only on
+  `solution(cache) == x`, which the guard also checks — but it means the branch taken is not a
+  property anything should assert on. `test/optimizer_tests.jl` asserts on the gradient the direction
+  is built from instead, and says so. Measured by calling `latest_gradient_is_current` at the top of
+  each of 30 forced `solver_step!`s: the guard fires on 3 of the 30 on Rosenbrock — all of them past
+  the iteration the solve stops at, which is why the evaluation count above does not move — and on 28
+  of the 30 on ``\sum{}x^2``, where `Newton` reaches the minimiser in one step and both quantities are
+  zero from then on.
 
 The fix is to advance the state's section by `direction(cache(opt))` like every other state, after
 which the reuse is available to `Newton` too and the extra evaluation goes away. It needs a

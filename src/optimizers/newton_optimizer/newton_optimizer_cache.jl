@@ -120,9 +120,14 @@ H^\mathtt{cache} & \gets H(x), \\
 where we wrote ``H`` for the Hessian (i.e. the input argument `hes`).
 """
 function update!(cache::NewtonOptimizerCache, state::OptimizerState, g::Gradient, ∇²f::Hessian, x::AbstractVector)
+    # first, and before the two `copyto!`s below: `store_gradient!` compares `solution(cache)` against
+    # `x` and `section(cache)` against `section(state)`, which those overwrite. It is what the other
+    # five caches use, and going through it rather than calling `g(gradient(cache), x)` directly is
+    # what makes `g̃_is_current` mean anything here -- only `store_gradient!` clears it, so without
+    # this the flag stayed `true` across a whole step while `trial_slope` overwrote `g̃`.
+    store_gradient!(cache, state, g, x)
     copyto!(section(cache), section(state))
     copyto!(solution(cache), x)
-    g(gradient(cache), x)
     copyto!(rhs(cache), gradient(cache))
     rmul!(rhs(cache), -1)
     ∇²f(hessian(cache), x)

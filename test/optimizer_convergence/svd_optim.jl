@@ -52,7 +52,7 @@ const CONVERGED_ERROR_TOLERANCE = 1e-8
 # line-search handling regresses.
 #
 # The headroom grew again when `rg` became the residual at the iterate a solve returns rather than at
-# whichever point the line search last probed (open issue A8): the stale value overestimated the
+# whichever point the line search last probed (issue A8): the stale value overestimated the
 # residual near a minimiser. Over the eighteen converging combinations of the eight-seed sweep in
 # `scripts/retraction_accuracy.jl` the worst `rg` goes from `2.5e-7` to `2.0e-7`, i.e. a factor of 50
 # of headroom. (The two that do not converge -- `_BFGS` with either polynomial search under `Cayley`,
@@ -290,7 +290,7 @@ end
 #     _DFP   Quadratic               175 /   529       18_122 / 50_666       92..868 / 164..735
 #
 # Every evaluation count here is ten higher than it was before `rg` became the residual at the iterate
-# a solve returns (open issue A8), and every iteration count and seed spread is unchanged under it
+# a solve returns (issue A8), and every iteration count and seed spread is unchanged under it
 # (the one iteration count that does move is the `_DFP  Backtracking` correction below). Ten is one
 # gradient evaluation on this problem -- `GradientAutodiff` costs exactly ten objective calls for these
 # 60 parameters, and the counter above counts those too -- and it is the refresh at the *last* iterate,

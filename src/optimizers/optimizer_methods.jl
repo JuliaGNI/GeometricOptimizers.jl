@@ -312,13 +312,14 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     0.2.0 when the geodesic retraction stopped losing accuracy on a large lift — a more accurate
     exponential is a different trajectory. The ordering, which is what the table is for, did not.)
 
-    Every evaluation count in this table is ten higher than it was before `rg` became the residual at
-    the iterate a solve returns (issue A8), and every iteration count but one is unchanged
-    (`StrongWolfe (c₂ = 0.1)` for `_BFGS`, 136 → 135). Ten is exactly one gradient evaluation on this
-    problem — `GradientAutodiff` costs ten objective calls for its 60 parameters, and the count above
-    includes those — and it is the refresh at the *last* iterate, the one no `update!` follows and so
-    the one nothing reuses. Per solve, not per iteration: the reuse in `store_gradient!` is what makes
-    the difference `10` rather than `10 × iterations`.
+    Every evaluation count in this table but one is ten higher than it was before `rg` became the
+    residual at the iterate a solve returns (issue A8), and every iteration count but one is unchanged
+    — and it is the same row both times: `StrongWolfe (c₂ = 0.1)` for `_BFGS` went 136 → 135
+    iterations and so 8 074 → 7 893 evaluations, which is the one cell that moved *down*. Ten is
+    exactly one gradient evaluation on this problem — `GradientAutodiff` costs ten objective calls for
+    its 60 parameters, and the count above includes those — and it is the refresh at the *last*
+    iterate, the one no `update!` follows and so the one nothing reuses. Per solve, not per iteration:
+    the reuse in `store_gradient!` is what makes the difference `10` rather than `10 × iterations`.
 
     A shrink-only backtracking search starts at `α = 1` and can never exceed it, which is right for a
     direction already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its iterations —

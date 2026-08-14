@@ -1,13 +1,13 @@
 using GeometricOptimizers
-using GeometricOptimizers: GradientCache, GradientState, OptimizerStatus, convergence_measures,
-    solution_scale, l2norm, direction, solution, _zero, _copyto!, _rmul!, isconverged
+using GeometricOptimizers: GradientCache, GradientState, OptimizerStatus, solution_scale, l2norm,
+    _zero, _rmul!, isconverged
 using LinearAlgebra: norm
 using Test
 import Random
 
 Random.seed!(1234)
 
-# The two guards on `x_converged` (open issue A4 in `CHANGELOG.md`). The divergence that motivated
+# The two guards on `x_converged` (issue A4 in `CHANGELOG.md`). The divergence that motivated
 # them -- an iterate at `1e100` taking steps of `‖δ‖ = 345` and reporting convergence -- is no longer
 # reachable from a solve, because `linesearch_rejected` and `curvature_is_usable` removed its cause.
 # So the state it produced is built here directly, out of the same cache and state a solve would hand
@@ -51,8 +51,8 @@ function manifold_status(x::StiefelManifold, δ_norm, f, f̄)
     δ.B .= 1
     _rmul!(δ, δ_norm / l2norm(δ))
 
+    # `GradientCache` keeps `x` itself rather than a copy, so `solution(cache)` is already the iterate
     cache = GradientCache(x, _zero(x), δ)
-    _copyto!(solution(cache), x)
 
     state = GradientState(x)
     state.f̄ = f̄

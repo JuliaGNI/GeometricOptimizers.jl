@@ -42,9 +42,10 @@ Evaluate the gradient at the iterate `cache` currently holds and store it in
 [`latest_gradient`](@ref).
 
 [`solver_step!`](@ref) calls this once the accepted step has been taken, so that `rg` is a statement
-about the point the solve is about to report rather than about the one it started the step from. The
-default is a no-op; see [`latest_gradient`](@ref) for which caches implement it and why the others
-do not.
+about the point the solve is about to report rather than about the one it started the step from.
+
+All six caches in this package implement it; the default is a no-op so that a cache defined elsewhere
+keeps working, at the cost of an `rg` that means ``\|\nabla{}f(x_k)\|``. See [`latest_gradient`](@ref).
 
 It is also what establishes the pairing [`store_gradient!`](@ref) relies on, so a cache that
 implements this has to implement [`latest_gradient_is_current`](@ref) with it.

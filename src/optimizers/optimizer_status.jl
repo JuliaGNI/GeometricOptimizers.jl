@@ -117,6 +117,13 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     # objective that takes negative values the two are different questions -- `-5 → -6` is a decrease
     # and reads as an increase through `abs`. That was tolerable while nothing acted on the flag;
     # `convergence_measures` now does.
+    #
+    # On the *first* iteration of `_BFGS` and `_DFP` this compares against `INITIAL_BFGS_F`, the
+    # sentinel `initialize_state!` seeds `f̄` with, so it is not a statement about the objective at
+    # all: minimising `f(x) = 1 + ‖x‖²` from `x = 0` -- already the minimiser -- reports
+    # `f_increased = true`, and `x_converged` is suppressed with it. `g_converged` still fires there,
+    # and every other state starts `f̄` at `NaN`, where `f > NaN` is `false`. Changing the sentinel
+    # would move `rfₐ` and `rfᵣ` on the first iteration of every quasi-Newton solve, so it stands.
     f_increased = f > state.f̄
 
     x_nonfinite = contains_nonfinite(cache.x)
@@ -238,7 +245,7 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
     last probed. On Rosenbrock from ``(-1.2, 1)`` with the default `Backtracking` — which probes
     ``\alpha = 0``, so that point is ``x_k`` — `rg` came out `5.8\times10^4` times the true residual
     for `_BFGS` and `299` times it for `_DFP`. It errs high near a minimiser, so `g_converged` fired
-    *late*; that was open issue A8.
+    *late*; that was issue A8.
 
     The distinction is not cosmetic for a direction that carries momentum. Under
     [`SimpleSolvers.Static`](@extref) a stale `rg` is harmless, because the direction is a scaled

@@ -25,7 +25,7 @@ F(x) = sum(sin.(x) .^ 2)
                 # 48 combinations here reach the minimizer.
                 #
                 # `1e-15` and not the `1e-27` this used to assert. That value was measured before
-                # `rg` was the residual at the iterate the solve returns (open issue A8): the
+                # `rg` was the residual at the iterate the solve returns (issue A8): the
                 # (quasi-)Newton caches reported `‖∇F‖` at whatever point the line search had last
                 # probed, which overestimates it near a minimiser, so `g_converged` fired late and
                 # these solves *overshot* their own stopping criterion. They now stop when they meet

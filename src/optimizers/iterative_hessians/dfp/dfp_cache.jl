@@ -140,7 +140,8 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
 end
 
 # see the remark in `bfgs_cache.jl`: this reuses the gradient `solver_step!` refreshed at the end of
-# the previous step, and has to run before `update!(cache, state, x)` overwrites `cache.x`
+# the previous step, has to run before `update!(cache, state, x)` overwrites `cache.x`, and leaves the
+# four-argument method below copying `cache.g` onto itself
 function update!(cache::DFPCache, state::OptimizerState, grad::Gradient, x::OptimizerSolution)
     store_gradient!(cache, state, grad, x)
     update!(cache, state, x, gradient(cache))
