@@ -468,6 +468,13 @@ this package produces change**, in most cases substantially for the better.
   `geodesic(Y, Δ, algorithm)` takes it as an optional third argument, so the tangent-vector form is
   selectable too rather than being pinned to the default.
 
+  Described, with the theory of both retractions and the advantages and disadvantages of each
+  algorithm, in the new *Retractions* documentation page. Its accuracy tables are recomputed when the
+  documentation is built rather than quoted, so they cannot go stale the way the *typical case* figure
+  above did (C6). `scripts/retraction_accuracy.jl` sweeps the same eight lifts from the same seed, so
+  the page and the script print the same rows — and both include `Cayley`, whose `check` drifts
+  further with the size of the lift than any of the three usable algorithms.
+
 - **`Options(store_trace = true)` does something.** `OptimizerResult` gains a `trace` of one
   `OptimizerTraceEntry` — `(iteration, f, rg)` — per iteration, reachable through `trace(result)` and
   empty unless the option asked for it. The option existed before and was accepted and ignored, by
@@ -1063,6 +1070,10 @@ were found afterwards, while re-running `scripts/retraction_accuracy.jl`, and ar
   matters across a 32× range, is correct and is what the numbers support; only the justification for
   the specific value is not.
 
+  **Fixed** in the review of [#39]: the docstring now makes the point the measurement supports —
+  nothing singles out `0.5`, and no value in the range does better — and the sweep is recomputed
+  when the documentation is built, on the *Retractions* page. The first bullet stands.
+
 ---
 
 ### D. Upstream
@@ -1173,5 +1184,6 @@ Neither is a defect in the code; both are things a later reader would otherwise 
 [#33]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/33
 [#36]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/36
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
+[#39]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/39
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
