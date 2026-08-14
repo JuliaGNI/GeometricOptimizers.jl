@@ -154,10 +154,11 @@ the manifold problem rather than of any one search:
   to a slope which is only first-order correct there — was measured and is not the cause: with the
   exact differential above the figure moves from 550 to 529 and the gap remains. On two of eight
   starting points the same pair with `_BFGS` still runs to the iteration cap and ends off the
-  manifold. That is open issue A1b, and the sharpened diagnosis is in `CHANGELOG.md`: the solve asks
-  for directions of ``\|\delta\| \approx 10^8``, and `check` after a retraction grows like
-  ``\varepsilon\|\bar{B}\|`` for *both* retractions, `Cayley` about fifteen times faster than
-  `Geodesic`.
+  manifold. That is open issue A1b, and the sharpened diagnosis is in `CHANGELOG.md`: the *direction*
+  is unremarkable — ``\|\delta\| = 5.5`` at the step that does the damage, with a well-conditioned
+  ``Q`` behind it — and the polynomial fit multiplies it by ``\alpha = 4\times10^7``. `check` after a
+  retraction grows like ``\varepsilon\|\bar{B}\|`` for *both* retractions, three to fifteen times
+  faster for `Cayley` than for `Geodesic`, which is why only one of the two survives such a step.
 
 [`_DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled:
 across eight starting points on the SVD problem it ranges over 387–845 iterations on `Geodesic`.

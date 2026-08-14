@@ -680,8 +680,9 @@ verified, measured, and not fixed here — see [Open Issues](#open-issues) at th
 - No documentation page describes the unified optimizer interface yet ([#25]).
 - `_BFGS` with either polynomial line search runs to the iteration cap and ends off the manifold on
   two of eight starting points of the SVD problem, under `Cayley`. The cause is a line search
-  extrapolating to `α ≈ 1e9` on a merit that a compact manifold leaves bounded, so nothing in the
-  search rejects it; catalogued as A1b below, with the two hypotheses that have been ruled out.
+  extrapolating to `α ≈ 4e7`, i.e. a *step* of `‖αδ‖ ≈ 2e8`, on a merit that a compact manifold
+  leaves bounded, so nothing in the search rejects it; catalogued as A1b below, with the two
+  hypotheses that have been ruled out.
 - The `|g(x) - g(x')|` convergence *measure* is structurally zero for `Newton`. `solver_step!`
   refreshes `state.ḡ` at the same iterate the cache takes its gradient at, so the difference the
   status reports is always `0`. It is display-only — no stopping criterion reads it — but it is the
@@ -760,21 +761,44 @@ itself informative: on this problem that search never asks for ``\varphi'`` away
 never the mechanism, and it could not have been.
 
 **Where the cause actually is: the line search returns an absurd ``\alpha``, and on a compact
-manifold nothing tells it not to.** Tracing seed 8 under `Cayley` + `Quadratic` step by step, the
-solve wanders rather than converging — `f` oscillates between 3 and 10 — and at iteration 8 the step
-actually taken is
+manifold nothing tells it not to.** Tracing seed 8 under `Cayley` + `Quadratic` step by step — `α`,
+`‖δ‖` and `λmax(Q)` are not observable from outside `solver_step!`, so this is the loop with three
+`push!`es added and nothing else changed — the damage is done on the *third* step, and it takes three
+more to become irrecoverable:
 
-| iteration | 1 | 2 | … | 7 | 8 |
-|---|---|---|---|---|---|
-| ``\|\alpha\delta\|`` | 0.61 | 1.67 | … | 1.71 | **1.85e9** |
-| ``\lambda_\mathrm{max}(Q)`` | 1.0 | 2.0 | … | 10.2 | **38.6** |
-| `check` | 2.0e-14 | 3.4e-14 | … | 3.1e-14 | **9.6e-7** |
+| iteration | 1 | 2 | **3** | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| ``\alpha`` | 0.176 | 0.473 | **4.29e7** | 8.59e7 | 2.15e7 | 1.0 |
+| ``\|\delta\|`` | 3.48 | 2.91 | **5.54** | 3.48 | 3.48 | 6.65e13 |
+| ``\|\alpha\delta\|`` | 0.61 | 1.38 | **2.38e8** | 2.99e8 | 7.47e7 | 6.65e13 |
+| ``\lambda_\mathrm{max}(Q)`` | 1.0 | 1.54 | **3.86** | 1.0 | 1.0 | 1.91e13 |
+| `check` *after* the step | 2.0e-14 | 3.8e-14 | **5.7e-7** | 3.0e-6 | 3.3e-6 | 0.75 |
 
-``Q`` is *well conditioned* at the step that does the damage — ``\lambda_\mathrm{max} = 38.6``, and it
-had been restarted twice before this. The magnitude is entirely the line search's ``\alpha``, which
-the two polynomial fits extrapolate to ``10^9``. **So damping the quasi-Newton update is not the
-remedy**; that was the first hypothesis after the slope one, and the measurement above rules it out
-as well.
+Three things the trace settles, in order of how much they narrow the entry:
+
+- **The direction is fine and the step is not.** ``\|\delta\| = 5.54`` at the step that loses the
+  manifold, in the same range as the two before it; the ``2.38\times10^8`` is entirely the line
+  search's ``\alpha``, which the polynomial fit extrapolates to ``4.3\times10^7``.
+- **``Q`` is well conditioned there** — ``\lambda_\mathrm{max} = 3.86``, and it grew from 1.0 over
+  three steps. **So damping the quasi-Newton update is not the remedy**; that was the first
+  hypothesis after the slope one, and this rules it out. ``\lambda_\mathrm{max} = 1.9\times10^{13}``
+  at iteration 6 is the *consequence* of the wild step, four iterations later: a secant pair taken
+  across a step of norm ``10^8`` is what poisons ``Q``, and from there ``\|\delta\|`` is ``10^{13}``
+  and the solve never returns.
+- **It is not a quasi-Newton phenomenon at all.** Iterations 4 and 5 run on ``Q = \mathbb{I}`` — both
+  follow a rejected search, so `restart!` has just fired and the direction *is* ``-\nabla{}f`` — and
+  `Quadratic` still hands back ``\alpha = 8.6\times10^7`` and ``2.1\times10^7``. Steepest descent
+  buys nothing here, which is why the remedy below is a bound on the step and not a change of
+  direction.
+
+!!! warning "This table replaces one that did not reproduce"
+    The entry previously put the damaging step at iteration 8 with
+    ``\|\alpha\delta\| = 1.85\times10^9``, ``\lambda_\mathrm{max}(Q) = 38.6`` and "restarted twice
+    before this". Re-measured on this branch and on `main` — the two agree to three digits up to the
+    step in question — it is iteration 3, ``2.38\times10^8``, ``3.86``, and no restart yet. Iteration
+    1 reproduces (``0.61``, ``1.0``) and nothing after it does. Every conclusion the old table was
+    used for survives, and two of them get sharper; the figures did not, and are replaced rather
+    than carried forward.
 
 What makes such an ``\alpha`` acceptable to a line search is the geometry, and it is specific to a
 *compact* manifold. ``\varphi(\alpha) = f(\Lambda\mathrm{retract}(\alpha\bar{B})E)`` is **bounded**
@@ -814,8 +838,8 @@ direction, on ``Q``, or on the outcome the search reports — none of which is w
 does the damage. The scale is supplied by the geometry rather than invented: the retraction of a lift
 is a rotation, so beyond ``\|\alpha\bar{B}\| \approx 2\pi`` a larger step adds nothing but the
 round-off in the table above. A cap of a few multiples of that would leave every solve in this
-package untouched — the largest step in a converging run measured here is ``5.5`` — while making the
-``10^9`` one impossible.
+package untouched — over the converging solve next to it, seed 2 at 90 iterations, the largest
+``\|\alpha\delta\|`` is ``2.03`` — while making the ``10^8`` one impossible.
 
 It is still a behaviour change on every manifold solve and it needs its own measurement of every table
 in the package, so it wants its own PR. It is *not* the same defect as A4, nor as the rejected-step
@@ -1246,8 +1270,9 @@ Issue against JuliaGNI/SimpleSolvers.jl, and the upstream half of A1b.
 `Quadratic` and `BierlaireQuadratic` fit a polynomial to ``\varphi`` and step to its stationary
 point. Where the fit is nearly flat that point is arbitrarily far away, and neither search bounds it:
 measured on the SVD problem of `test/optimizer_convergence/svd_optim.jl`, `Quadratic` returns
-``\alpha`` up to `4.3e7` and produces steps of ``\|\alpha\delta\| = 1.85e9`` from a direction of
-norm `5.5`.
+``\alpha = 4.3e7`` on the third iteration of seed 8, which turns a direction of norm `5.54` into a
+step of ``\|\alpha\delta\| = 2.4e8``. It does the same two steps later on a *steepest-descent*
+direction, so this is a property of the search and not of what it is handed.
 
 In a Euclidean problem this is self-correcting and that is presumably why it has never been reported:
 ``f(x + \alpha{}p)`` grows with ``\alpha`` — as ``\alpha^2`` for the quadratic in A1b's table — so
@@ -1255,6 +1280,10 @@ the search's own sufficient-decrease test throws the step out. The report should
 rather than as "the step is too large", because on a *compact* manifold it is not too large by any
 test the search has: ``\varphi`` is bounded there, and at ``\alpha = 10^9`` it can be genuinely
 *lower* than at ``\alpha = 0``. See the tables under A1b.
+
+The bound has to be on the *step* and not on ``\alpha``, incidentally: the same solve accepts
+``\alpha = 18.4`` on an iteration where ``\|\delta\| = 5.8\times10^{-5}``, i.e. a perfectly ordinary
+step of ``10^{-3}``, and converges.
 
 Two defensible resolutions and the issue should name one: bound the extrapolation to a multiple of the
 bracketing interval, which is what most implementations do and costs nothing; or expose the fitted
