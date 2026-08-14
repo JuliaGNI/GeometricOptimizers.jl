@@ -35,7 +35,8 @@ using Printf
 
 using KernelAbstractions
 using Random
-using LinearAlgebra: Adjoint, qr!, norm, I, mul!, rmul!, dot, ⋅
+using LinearAlgebra: Adjoint, qr, qr!, norm, opnorm, I, mul!, rmul!, dot, ⋅
+using LinearAlgebra: Diagonal, Hermitian, eigen
 import LinearAlgebra
 import ChainRulesCore
 using ChainRulesCore: ProjectTo
@@ -68,6 +69,7 @@ export GlobalSection, global_rep
 include("global_sections/global_sections.jl")
 include("global_sections/omega_functions.jl")
 
+include("retractions/exponential_algorithms.jl")
 include("retractions/modified_exponential.jl")
 include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")

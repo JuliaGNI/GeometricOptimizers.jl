@@ -5,7 +5,7 @@ Warning: all these tests seem to be fine for double precision, but require a rid
 using Test 
 using LinearAlgebra
 using GeometricOptimizers
-using GeometricOptimizers: Ω, metric
+using GeometricOptimizers: Ω, metric, check
 using GeometricOptimizers: global_section, global_rep
 import Random 
 
@@ -48,6 +48,10 @@ function metric_test(T, N, n)
 end
 
 function run_tests(T, N, n, tol)
+    # `check` used to be defined for `StiefelManifold` only, so the one function that measures
+    # distance from the manifold was a `MethodError` here — see bugs.md A3. The representative of a
+    # `GrassmannManifold` point satisfies `YᵗY = I` just as the Stiefel one does.
+    @test check(rand(GrassmannManifold{T}, N, n)) < tol
     @test check_gradient(T, N, n) < tol
     @test norm(tangent_space_rep(T, N, n)[1:n,1:n])/N/n < tol
     @test typeof(gloabl_tangent_space_representation(T, N, n)) <: GrassmannLieAlgHorMatrix

@@ -111,6 +111,38 @@ function Base.rand(manifold_type::Type{MT}, N::Integer, n::Integer) where {MT<:M
     rand(Random.default_rng(), manifold_type, N, n)
 end
 
+@doc raw"""
+    check(Y::Manifold)
+
+Measure how far `Y` is from the manifold, as ``\|Y^TY - \mathbb{I}\|``.
+
+Both manifolds this package provides store a representative whose columns are orthonormal — for
+[`StiefelManifold`](@ref) that is the point itself, for [`GrassmannManifold`](@ref) it is the
+representative of the equivalence class — so the same expression measures both. A retraction maps
+onto the manifold by construction, so in exact arithmetic this is zero and what it actually returns
+is accumulated round-off.
+
+This is the assertion the manifold tests rest on. It used to exist for [`StiefelManifold`](@ref)
+only, which is why the accuracy loss in [`GeometricOptimizers.𝔄`](@ref) went unnoticed for so long:
+half the retraction paths had nothing that could have caught it.
+
+# Examples
+
+```jldoctest
+using GeometricOptimizers
+using GeometricOptimizers: check
+import Random
+Random.seed!(123)
+
+check(rand(GrassmannManifold, 5, 3)) < 1e-14
+
+# output
+
+true
+```
+"""
+check(Y::Manifold) = norm(Y.A' * Y.A - I)
+
 Base.size(A::Manifold) = size(A.A)
 Base.parent(A::Manifold) = A.A
 Base.getindex(A::Manifold, i::Int, j::Int) = A.A[i, j]

@@ -82,10 +82,6 @@ function metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix
     LinearAlgebra.tr(Δ₁' * (I - 0.5 * Y.A * Y.A') * Δ₂)
 end
 
-function check(Y::StiefelManifold)
-    norm(Y.A' * Y.A - I)
-end
-
 @doc raw"""
     global_section(Y::StiefelManifold)
 

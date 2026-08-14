@@ -84,7 +84,9 @@ and the conjugation ``Z \mapsto \Lambda^{-1}Z\Lambda`` that moves ``\mathfrak{g}
 
 A classical retraction maps ``T_Y\mathcal{M} \to \mathcal{M}``. Here the argument lives in ``\mathfrak{g}^\mathrm{hor}`` instead, so the paper defines an **extended retraction** ``\overline{\mathrm{retraction}}: \mathfrak{g}^\mathrm{hor} \to \mathcal{M}``, characterized by ``\overline{\mathrm{retraction}} \circ \Omega`` being a classical retraction. Computationally it splits into `update_section` (right-multiply the section by ``\mathrm{retraction}(W^{(t)})``) and `apply_section` (right-multiply by ``E``).
 
-Two choices ship with the package: `Geodesic`, the closed-form geodesic of the Stiefel manifold, and `Cayley`, the Cayley transform. Both exploit the sparsity of ``\mathfrak{g}^\mathrm{hor}``, so their cost is set by ``n``, not by ``N``.
+Two choices ship with the package: [`Geodesic`](@ref), the closed-form geodesic of the Stiefel manifold, and [`Cayley`](@ref), the Cayley transform. Both exploit the sparsity of ``\mathfrak{g}^\mathrm{hor}``: a horizontal lift factors as ``\bar{B} = B'(B'')^T`` into two ``N\times{}2n`` matrices ([`lift_factors`](@ref)), so the only matrix function either of them evaluates is on a ``2n\times{}2n`` argument.
+
+For [`Geodesic`](@ref) that function is ``\mathfrak{A}(X) = \sum_{n\geq1} X^{n-1}/n!``, and *how* it is evaluated is a choice in its own right — the argument ``X`` has norm ``\approx\|\bar{B}\|^2/4``, so summing the series directly loses everything to cancellation once the step is large. [`Geodesic`](@ref) therefore takes an [`AbstractExponentialAlgorithm`](@ref); the default [`ScaledSquaring`](@ref) is accurate at every lift norm, and is the only one that runs on a GPU backend. See its docstring for the comparison.
 
 Note that the section is *not* recomputed at every step. It is built once, when the optimizer is initialized (the ``QR`` decomposition above), and thereafter parallel-transported along the optimization trajectory by `update_section`.
 

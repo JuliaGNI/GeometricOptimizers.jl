@@ -80,6 +80,8 @@ end
 Base.parent(A::GrassmannLieAlgHorMatrix) = (A.B, )
 Base.size(A::GrassmannLieAlgHorMatrix) = (A.N, A.N)
 
+manifold_type(::GrassmannLieAlgHorMatrix) = GrassmannManifold
+
 KernelAbstractions.get_backend(B::GrassmannLieAlgHorMatrix) = KernelAbstractions.get_backend(B.B)
 
 function Base.getindex(A::GrassmannLieAlgHorMatrix{T}, i::Integer, j::Integer) where {T}

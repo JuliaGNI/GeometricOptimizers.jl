@@ -1,6 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: Cayley, Geodesic, _BFGS, _DFP, StiefelManifold, check, iteration_number,
                            status, DecayingStatic, step_size
+using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew
 using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, l2norm
 using LinearAlgebra: norm
 using Test
@@ -41,7 +42,12 @@ const MANIFOLD_TOLERANCE = 1e-12
     # covered, not just the two the rest of the file uses.
     searching = (Backtracking(Float64), Backtracking(Float64; expand=true), Bisection(Float64),
         Quadratic(Float64), BierlaireQuadratic(Float64))
-    for linesearch in searching, retraction in (Geodesic(), Cayley())
+    # All three exponential algorithms are put through a real solve here, not just through
+    # `geodesic` in isolation: they have to agree on where the optimizer ends up, not merely on the
+    # value of one retraction.
+    retractions = (Geodesic(ScaledSquaring()), Geodesic(AugmentedPade()), Geodesic(ProjectedSkew()),
+        Cayley())
+    for linesearch in searching, retraction in retractions
         x = x₀()
         opt = Optimizer(x, f; algorithm=GradientMethod(), linesearch=linesearch, retraction=retraction)
 
