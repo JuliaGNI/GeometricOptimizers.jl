@@ -262,6 +262,20 @@ this package produces change**, in most cases substantially for the better.
   enter it. `ensure_descent!`, which acts on the direction before the search, still exempts both
   methods.
 
+  Two things the open-issue entry for this (A7) had recorded and that measuring it did not bear out,
+  kept here because they are the reason the fix is what it is:
+
+  - **its `194 of 200` count of `LINESEARCH_NO_DESCENT` does not reproduce.** On the same problem,
+    method and line search it is 3 of the first 200 and 13 of all 457. The direction does not ascend
+    on almost every step; the searches overwhelmingly report `LINESEARCH_DECREASED` and the solve
+    genuinely descends for 400 iterations. What the thirteen do is multiply `f` by `1e3`..`1e42`
+    *each*, and the descending steps in between cannot make that back.
+  - **neither guard it proposed would have fired.** "A bound on `‖p‖` relative to `‖∇f‖`" never
+    triggers: that ratio stays between `0.57` and `6.8`, because it is the gradient that explodes and
+    the momentum follows it. "A count of *consecutive* `LINESEARCH_NO_DESCENT` outcomes" never
+    triggers either — the thirteen events are isolated. The question was never how often the
+    direction ascends, but whether the step is taken when it does.
+
 - **The line-search slope is the derivative of the line-search merit under `Cayley` too.**
   ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), B\rangle`` holds only where
   ``\alpha \mapsto \mathrm{retract}(\alpha{}B)`` is a one-parameter subgroup. `Geodesic` is one and
@@ -652,9 +666,15 @@ verified, measured, and not fixed here — see [Open Issues](#open-issues) at th
 - Type piracy in `l2norm`, `ParameterHandling.flatten`, `Gradient` and `outer!`, catalogued in the
   source. `ArrayNamedTuple` and `GlobalSectionNamedTuple` are type *aliases* for `NamedTuple`, so
   dispatching on them is dispatching on Base; a wrapper `struct` would make most of it legal. ([#16])
-- Bare `Manifold` parameters are only partially supported ([#27]).
+- Bare `Manifold` parameters are only partially supported ([#27]). In particular a
+  `GrassmannManifold` cannot be optimized over *at all*, as a bare point or inside a `NamedTuple`;
+  the two failures are catalogued as A11 below.
 - `mode = :finitediff` throws a `MethodError` on `NamedTuple` parameters ([#24]).
 - No documentation page describes the unified optimizer interface yet ([#25]).
+- `_BFGS` with either polynomial line search runs to the iteration cap and ends off the manifold on
+  two of eight starting points of the SVD problem, under `Cayley`. The cause is a line search
+  extrapolating to `α ≈ 1e9` on a merit that a compact manifold leaves bounded, so nothing in the
+  search rejects it; catalogued as A1b below, with the two hypotheses that have been ruled out.
 - The `|g(x) - g(x')|` convergence *measure* is structurally zero for `Newton`. `solver_step!`
   refreshes `state.ḡ` at the same iterate the cache takes its gradient at, so the difference the
   status reports is always `0`. It is display-only — no stopping criterion reads it — but it is the
@@ -673,18 +693,23 @@ are tracked with the code rather than in a scratch file. A is correctness in thi
 observability, C its dead code and bookkeeping; D is upstream, E lists things reported during the
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
-given. Entries A5, A6, C6 and D5 come from the review of [#36]; A7, A8, A9 and the second half of A1b
-from [#38], and A10 from the review of [#38]; the rest from unifying the optimizer hierarchies.
+given. Entries A5, A6, C6 and D5 come from the review of [#36]; A8 and the second half of A1b from
+[#38], and A10 from the review of [#38]; A11, C7 and D6 from the line-search work of this release;
+the rest from unifying the optimizer hierarchies.
 
-A1, A2, A3, A7 and most of A9 are fixed and are kept for the record, since later entries refer to
-them: A1 and A3 by [#36], A2 by [#38], A7 and A9 by the rejected-step fix in *Fixed* above. C6
-describes text that [#36] introduced. A1b is still open, but the fix it proposed for itself has since
-been implemented, measured and ruled out — read that entry before starting on it.
+**Only open entries are listed here.** A1, A2, A3, A7 and A9 were in this catalogue and have been
+fixed; each is now described in [Unreleased](#unreleased--targeting-020) above, under the change that
+fixed it, and the entry here is gone. The labels are *not* reused and the surviving ones are not
+renumbered, so the gaps are deliberate: A1b, A4, A5, A6, A8 and A10 mean what they have always meant,
+and a reference to A1 or A7 in a commit message still resolves to the right subject.
 
-Two entries carried measurements that do not reproduce, both corrected in place: A1b's first-order
-`check` table and A7's `194 of 200` outcome count. The *conclusion* held in each case and the
-supporting figure did not, so treat a number here as reproducible only where the harness that
-produced it is named.
+A1b is still open, and the fix it proposed for itself — and the second one proposed after that — have
+both been implemented or measured and ruled out. Read that entry before starting on it.
+
+Two entries carried measurements that did not reproduce, both corrected before they moved or in
+place: A1b's first-order `check` table and A7's `194 of 200` outcome count. The *conclusion* held in
+each case and the supporting figure did not, so treat a number here as reproducible only where the
+harness that produced it is named.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
@@ -696,71 +721,11 @@ to their section rather than interleaved, so that the labels stay stable referen
 
 ### A. This package — correctness
 
-#### A1. `Geodesic` silently leaves the manifold for a lift of norm ≳ 50 — fixed in 0.2.0
-
-Retained in full: A1b and A4 refer to it, and the measurement below is the only side-by-side
-against `Cayley` on the identical lift, which is what shows the defect was specific to
-``\mathfrak{A}`` and not to retraction on a manifold.
-
-**Fixed** by the scaling-and-squaring rewrite of `𝔄`; kept here for the record. See `CHANGELOG.md`
-and `src/retractions/exponential_algorithms.jl`. Two notes on what the investigation changed about
-the diagnosis below:
-
-- making the termination test relative to the partial sum, which the last paragraph proposes, was
-  measured to change **nothing** at any lift norm. The loss is cancellation inside the sum, not the
-  point at which the summation stops.
-- the scaling and squaring does not need an `N × N` matrix: the low-rank form is closed under
-  squaring, `(I + B̂WB̄ᵗ)² = I + B̂(2W + WXW)B̄ᵗ`, so it is a `2n × 2n` recurrence throughout.
-
-
-
-**Severity: high.** The most serious thing found, and the amplifier of the divergence PR #35 fixes.
-
-`geodesic(B)` builds the exponential from `𝔄(A) = Σₙ Aⁿ⁻¹/n!`
-(`src/retractions/modified_exponential.jl:28-45`). That series is summed directly, with an
-**absolute** termination test:
-
-```julia
-ε = eps(T)
-while norm(Aⁿ) > ε      # `Aⁿ` here is the running term Aⁿ⁻¹/n!
-```
-
-For `‖A‖ ≫ 1` the partial sum is enormous and the terms cancel, so stopping when a *term* falls
-below `2.2e-16` leaves a relative error of `eps ⋅ ‖𝔄A‖`, not `eps`. Measured on a random
-`StiefelLieAlgHorMatrix(20, 3)` scaled up, against `Cayley` on the identical lift:
-
-| `‖B‖` | `check(geodesic(B))` | `check(cayley(B))` |
-|---|---|---|
-| 6.06 | 2.8e-15 | 1.3e-15 |
-| 30.3 | 5.4e-9 | 7.6e-15 |
-| 60.6 | **4.31** | 1.7e-14 |
-| 90.9 | **7.1e16** | 1.4e-14 |
-| 303 | **6.5e134** | 5.9e-14 |
-| 606 | **2.9e303** | 1.3e-13 |
-
-At `‖B‖ = 60` the "retracted" point is not on the Stiefel manifold in any sense, and nothing
-reports it. `Cayley` is unaffected at any of these norms — it inverts a `2n × 2n` matrix rather than
-summing a series — so this is specific to `𝔄`, not to retraction on a manifold.
-
-Two consequences already observed in the test suite:
-
-- `_BFGS` + `Backtracking` + `Geodesic` reaches `check(Y) = 2.45e-5` on one of the eight starting
-  points of `test/optimizer_convergence/svd_optim.jl`, against a `MANIFOLD_TOLERANCE` of `1e-12`.
-  That starting point would fail the existing manifold assertion; the test passes only because it
-  uses seed `1234`.
-- It is why the divergence PR #35 fixes ended at `check(Y) = 1.07e200` rather than merely somewhere
-  wrong. The bad step had `‖δ‖ = 345`; the table above says a `Geodesic` retraction of a lift that
-  size produces garbage of roughly that magnitude. The line-search fix removes the cause of the
-  large step, but the retraction will still do this to any large lift from any other cause.
-
-Scaling and squaring is the standard remedy for a matrix exponential in this regime, and the
-termination test should be relative to the partial sum rather than absolute regardless.
-
 #### A1b. `Quadratic` and `BierlaireQuadratic` diverge on `Cayley` on two of eight starting points
 
-**Severity: high.** Found while re-measuring the tables after fixing A1, and *not* caused by that fix
-— `cayley` is bitwise unchanged by it (every `Cayley` figure in `svd_optim.jl` reproduces to the
-digit).
+**Severity: high.** Found while re-measuring the tables after the geodesic-retraction fix of [#36],
+and *not* caused by it — `cayley` is bitwise unchanged by that fix (every `Cayley` figure in
+`svd_optim.jl` reproduces to the digit).
 
 **Still open, and the diagnosis below has been narrowed by ruling its own proposed fix out.** The
 entry originally read "the honest fix is probably an exact `Cayley` differential in `trial_slope`".
@@ -833,7 +798,8 @@ That last part is *not* a defect in either retraction. `check` after a retractio
 Both degrade; `Cayley` is about three to fifteen times worse across the range. That factor is the
 whole of the `Geodesic`/`Cayley` split this entry opens with — `Geodesic` survives the same wild step
 with a `check` an order of magnitude smaller, stays inside what the solve can recover from, and
-converges. So the retraction is the *amplifier*, exactly as in A1, and the cause is upstream of it:
+converges. So the retraction is the *amplifier*, exactly as it was for the `𝔄` series [#36]
+replaced, and the cause is upstream of it:
 the quasi-Newton direction and the step the polynomial search accepts for it.
 
 **What the remedy has to be.** A bound on the *step*, ``\|\alpha\delta\|``, and not on the
@@ -845,8 +811,9 @@ package untouched — the largest step in a converging run measured here is ``5.
 ``10^9`` one impossible.
 
 It is still a behaviour change on every manifold solve and it needs its own measurement of every table
-in the package, so it wants its own PR. It is *not* the same defect as A4 or A7, which this entry
-previously grouped it with: A7 was the step of a *rejected* search being taken, and every search
+in the package, so it wants its own PR. It is *not* the same defect as A4, nor as the rejected-step
+fix in *Fixed* above (the entry that was A7), which this one previously grouped it with: that was the
+step of a *rejected* search being taken, and every search
 involved here reports `LINESEARCH_DECREASED` or `LINESEARCH_FLOOR` on a step that genuinely decreases
 the merit. Nothing is being overruled; the merit is simply not a bound on the step.
 
@@ -879,67 +846,6 @@ one `_BFGS` converges to — but stop at `rg` between `4e-5` and `2e-3`, several
 That is what a first-order method on a badly conditioned problem does; it is why
 `manifold_linesearch_tests.jl` uses a two-sphere problem for its first-order coverage.)
 
-#### A2. `GradientMethod` and `MomentumMethod` throw on their own default line search — fixed in 0.2.0
-
-**Fixed** by [#38]: `gradient` is defined for all three first-order caches, and `trial_slope` writes
-into `latest_gradient` — a scratch array on those caches rather than an alias for `cache.g`. Three
-notes on what the fix turned up that the diagnosis below did not anticipate:
-
-- **defining the accessor is not enough.** `trial_slope`'s vector branch evaluates *into* the cache,
-  and `update!(::MomentumState, …)` re-runs `p ← αp + ∇f(xₖ)` from the same array afterwards, so
-  aliasing `gradient(cache)` onto `cache.g` made the momentum accumulate the gradient at whatever
-  trial step the search last probed — 104% wrong under `Bisection`, `Quadratic` and `StrongWolfe`,
-  451% under `BierlaireQuadratic`. `Backtracking` was exact only because it evaluates `φ'` once, at
-  `α = 0`.
-- **`rg` was one iteration stale, and that stopped these methods early.** It was `‖∇f(xₖ)‖` at the
-  iterate the step started from — harmless under `Static`, and not harmless under a direction with
-  momentum in it, where a line search accurate enough to drive `∇f(x₁) ≈ 0` made `g_converged` fire
-  while the momentum still moved the iterate. That left `MomentumMethod` at `‖x‖ = 0.35` and `Adam`
-  at `‖x‖ = 1.16` on the bracketing searches, both reporting convergence. `solver_step!` now
-  refreshes the gradient at the accepted iterate. See the CHANGELOG entries above for the tables.
-- **the refresh is free, but only because the value is reused.** `∇f` at the accepted iterate, in the
-  frame the cache is in, is bit-for-bit the gradient the *next* `update!(cache, …)` recomputes, so
-  refreshing without reusing simply doubles the gradient evaluations of a first-order step — 1.35× on
-  `Adam` + `Static`. `store_gradient!` reuses it under a guard that compares the iterate and the
-  frame, which brings that to 1.03×. Fixing `rgₐ` fell out of the same pairing; the half that did
-  not is A10.
-
-**Severity: high** (a documented entry point fails outright), **pre-existing on `main`**.
-
-```julia
-julia> Optimizer(ones(3), x -> sum(x.^2); algorithm = GradientMethod())
-ERROR: MethodError: no method matching gradient(::GeometricOptimizers.GradientCache{…})
-```
-
-`_trial_slope`'s `AbstractVector` branch (`src/optimizers/linesearch_problem.jl:89-92`) calls
-`gradient(cache)`. Only `BFGSCache` (`bfgs_cache.jl:50`), `DFPCache` and `NewtonOptimizerCache`
-(`newton_optimizer_cache.jl:68`) define it; `GradientCache`, `MomentumCache` and `AdamCache` expose
-the same field as `gradient_array` instead (`gradient_optimizer.jl:50`). So the three first-order
-methods cannot use *any* line search that evaluates `φ'` on Euclidean vector parameters.
-
-This became reachable by default in 0.2.0: `default_linesearch(::Type{T}, ::OptimizerMethod)` returns
-`Backtracking(T; expand = true)`, and `GradientMethod`/`MomentumMethod` are not in `AdamFamily`, so
-they get the searching default. Reproduced on `main` at `b2c20f0`, so PR #35 did not introduce it.
-
-Note the reason the test suite does not catch it: `test/optimizer_tests.jl:95` checks only that
-`default_linesearch` *returns* the right type for these methods, and the loops that actually solve
-(`optimizer_tests.jl:30-33`, `descent_direction_tests.jl:14-16`) cover `Newton`, `_BFGS` and `_DFP`
-only.
-
-#### A3. `check(::GrassmannManifold)` does not exist — fixed in 0.2.0
-
-**Fixed**: `check` is now generic over `Manifold`, in `src/manifolds/abstract_manifold.jl`.
-
-
-**Severity: medium.** `check` is defined only for `StiefelManifold`
-(`src/manifolds/stiefel_manifold.jl:85-87`), so the one function that measures distance from the
-manifold — the assertion every manifold test rests on, and the thing that would have caught A1 — is
-a `MethodError` for the other of the two manifolds this package provides. There is no generic
-`check(::Manifold)` either.
-
-The representative of a `GrassmannManifold` point satisfies `YᵗY = I` just as the Stiefel one does,
-so the same expression is correct for it.
-
 #### A4. `x_converged` cannot be trusted on a solve that has diverged
 
 **Severity: medium** (a wrong "converged" report), **documented rather than fixed in PR #35**.
@@ -962,9 +868,10 @@ it. `_BFGS` + `Quadratic` + `Cayley` on seed 8 of the SVD problem, and `Momentum
 Rosenbrock under each of the three line searches it used to diverge on, all report
 `x_converged = false`, `f_converged = false` and `g_converged = false`; they stop on the iteration cap
 and on `contains_nonfinite` respectively, so `isconverged` is `false` for all of them. A4 therefore
-remains a hole that no measured solve falls into, and A7's fix removes three more of the candidates.
-It stays open on the same terms, and it is *not* the same defect as A1b or A7: those are about which
-step gets taken, this one only about how the stop is reported.
+remains a hole that no measured solve falls into, and the rejected-step fix removes three more of the
+candidates. It stays open on the same terms, and it is *not* the same defect as A1b or as the
+rejected-step fix: those are about which step gets taken, this one only about how the stop is
+reported.
 
 On a manifold this is not actually ambiguous: `‖Y‖_F = √n` exactly, so the denominator is a
 *constant* and a large one is itself the divergence signal. The information is available; the
@@ -1026,76 +933,6 @@ of scalar indexing and dense LAPACK, which is what lets it run on a GPU backend 
 docstring). That rules out reaching for the spectral radius directly — an eigenvalue computation
 would give the tighter bound and forfeit the reason the algorithm was chosen.
 
-#### A7. `MomentumMethod` runs away when its direction ascends, and nothing stops it — fixed in 0.2.0
-
-**Fixed**: `linesearch_rejected` now applies to `Adam` and `MomentumMethod` as well, so a rejected
-search no longer gets its `α = 1` step taken. See the *Fixed* entry above for the tables. Two
-corrections to the diagnosis below, both found while fixing it, and the second changes what the
-remedy had to be:
-
-- **the `194 of 200` figure does not reproduce.** Re-measured on the same problem, the same method
-  and the same line search, `LINESEARCH_NO_DESCENT` is reported on **3 of the first 200** iterations
-  and 13 of all 457. The direction does *not* ascend on almost every step; the searches
-  overwhelmingly report `LINESEARCH_DECREASED` and the solve genuinely descends, reaching
-  `f = 7.8e-5` by iteration 400. What the thirteen ascent steps do is multiply `f` by between `1e3`
-  and `1e42` *each*, and the descending steps in between cannot make that back. The conclusion this
-  entry draws is right; the picture of how it happens was not.
-- **neither guard it proposes would have worked.** The first, "a bound on `‖p‖` relative to `‖∇f‖`",
-  never fires: that ratio stays between `0.57` and `6.8` over the whole run, because it is the
-  *gradient* that explodes and the momentum follows it. The second, "a count of consecutive
-  `LINESEARCH_NO_DESCENT` outcomes", never fires either — the thirteen events are isolated, never
-  consecutive. What was needed was neither: it is that a rejected search returns `α = 1`, so the
-  question was never how many times the direction ascends but whether the *step* is taken when it
-  does.
-
-  Nor is the ascent outcome the whole of it. Under `BierlaireQuadratic` the same solve reaches `Inf`
-  in six iterations through `LINESEARCH_EXHAUSTED`, also at `α = 1` every time and also multiplying
-  `f` by ≈`1e21` a step. Acting on `LINESEARCH_NO_DESCENT` alone leaves that case diverging, which is
-  why the fix is the whole of `linesearch_rejected`.
-
-**Severity: high.** Found in [#38], while giving the first-order methods their first coverage on a
-badly conditioned problem. Pre-existing; [#38] neither causes nor fixes it, but it made the affected
-path the default.
-
-On Rosenbrock from `(-1.2, 1)` with `MomentumMethod(0.1)`, the iterate reaches `Inf` rather than the
-minimiser:
-
-| line search | iterations | `f` | `‖x‖` at the end |
-|---|---|---|---|
-| `Backtracking` | 379 | **`Inf`** | `3.0e200` |
-| `Backtracking(expand)` — the default | 457 | **`Inf`** | `8.7e77` |
-| `BierlaireQuadratic` | 6 | **`Inf`** | `2.0e208` |
-| `Bisection` | 636 | `3.3e-17` | ✓ |
-| `Quadratic` | 577 | `2.3e-16` | ✓ |
-| `StrongWolfe(c₂ = 0.1)` | 3 136 | `2.7e-16` | ✓ |
-
-The mechanism, counted directly over the first 200 iterations of the `Backtracking(expand)` run:
-**194 line searches report `LINESEARCH_NO_DESCENT`**, 4 report `LINESEARCH_DECREASED`. The direction
-ascends almost every step, the search says so, and the step is taken anyway — `solver_step!` excludes
-`FirstOrderMethodWithState` from both `ensure_descent!` and the `linesearch_rejected` restart. That
-exclusion is right in principle, since a moving average is deliberately allowed not to descend on an
-*individual* step, but nothing tells that apart from failing on 97% of them. `allow_f_increases`
-defaults to `true`, so the outer loop does not stop it either, and `contains_nonfinite` only catches
-it once the iterate is already past `1e200`.
-
-`MomentumMethod` is the only method exposed this way, and the comparison is what shows it:
-
-- `GradientMethod` is *not* in `FirstOrderMethodWithState`, so it keeps `ensure_descent!`, and its
-  direction is `-∇f` and always descends. It never diverges under any of the seven searches — it is
-  merely slow (10 000 iterations to `f = 6.3e-7`).
-- `Adam` *is* excluded, and does not diverge either, because its direction is normalised to magnitude
-  ≈1 per component. It converges under five of the seven.
-- `MomentumMethod`'s direction is `-(αp + ∇f)`, unnormalised **and** unguarded, so an ascending step
-  raises `‖∇f‖`, which raises `‖p‖`, which lengthens the next ascending step.
-
-(`Static(0.1)` diverges here for `GradientMethod` too, in five iterations. That is an over-large fixed
-step on a badly scaled problem and a different matter; the entry is about the searching line searches,
-where the search correctly reports that no step decreases the merit and is overruled.)
-
-Two candidate guards, neither costing an evaluation: a bound on `‖p‖` relative to `‖∇f‖`, or a count
-of consecutive `LINESEARCH_NO_DESCENT` outcomes — which is exactly the counter B1 asks for, so the
-two are worth doing together.
-
 #### A8. `rg` for the (quasi-)Newton methods is whichever point the line search last probed
 
 **Severity: medium**, and it errs in the safe direction. [#38] fixed this for the three first-order
@@ -1124,38 +961,6 @@ what the same staleness did to `MomentumMethod` and `Adam` before [#38], and the
 medium and not high. The fix is the one line the first-order caches already use,
 `refresh_latest_gradient!`; the cost is one gradient evaluation per iteration and a re-measurement of
 every iteration count in the package, which is why it wants its own PR.
-
-#### A9. A searching line search does not give `Adam` a criterion it can meet — mostly fixed in 0.2.0
-
-**Mostly fixed**, and by A7's fix rather than by anything aimed at this. The case below — `Adam` +
-`BierlaireQuadratic` exhausting all 1 000 iterations under both retractions while sitting `6.8e-6`
-from the minimiser — was the `α = 1` step of a rejected search being taken, i.e. the same defect as
-A7. All fourteen (line search, retraction) combinations now terminate on a criterion, in 251–331
-iterations, and the worst distance over them is `5.0e-7` — attained by `Static`, i.e. by the orbit
-this entry is really about, with every *searching* line search at `1.8e-8` or better.
-
-What survives is the cost argument, which is the part `default_linesearch` rests on: `Adam` still
-needs 251–331 iterations on that problem where `GradientMethod` and `MomentumMethod` need 9–64. So
-`Static` remains the default for `AdamFamily`, and the sentence this entry asks for in `Adam`'s
-docstring is still worth writing.
-
-**Severity: low**, and a sharpening of something already documented rather than a new defect. From
-[#38], where it is why the `Adam` testset in `manifold_linesearch_tests.jl` asserts less than the one
-next to it.
-
-`Adam`'s direction has magnitude ≈1 per component whatever the gradient is, so with a step that does
-not shrink it circles the minimiser at that distance rather than settling on it. `DecayingStatic`
-exists for this, and its docstring and testset record it for `Static`. What [#38] adds is that a
-*searching* line search does not fix it either: on the two-sphere `NamedTuple` problem of
-`manifold_linesearch_tests.jl`, `Adam` + `BierlaireQuadratic` runs out all 1 000 iterations under
-both retractions while sitting `6.8e-6` (`Geodesic`) and `5.4e-7` (`Cayley`) from the minimiser — at
-the answer, with no criterion it can meet. The other six searches terminate, but take 267–855
-iterations where `GradientMethod` and `MomentumMethod` take 9–64.
-
-So `default_linesearch`'s choice of `Static` for `AdamFamily` is not merely the cheaper one, and
-`DecayingStatic` remains the only setting under which `Adam` terminates on a criterion by
-construction. Worth a sentence in `Adam`'s docstring, which currently sends the reader to
-`default_linesearch` for the cost argument and not for this one.
 
 #### A10. `state.ḡ` is two iterates behind for the three first-order states
 
@@ -1198,6 +1003,39 @@ separated first, and `update!(::MomentumState, …)`'s argument list says they c
 
 ---
 
+#### A11. A `GrassmannManifold` cannot be driven through an `Optimizer` at all
+
+**Severity: medium.** Found while giving `retraction_differential` its test coverage, where
+the intended end-to-end check on a Grassmann problem could not be written. This is the concrete
+content of issue [#27], "bare `Manifold` parameters are only partially supported", which until now
+recorded the conclusion without the two failures behind it. Pre-existing; nothing in this release
+causes or fixes it.
+
+Both halves of the obvious API fail, and they fail differently:
+
+- **A bare `GrassmannManifold`** has no gradient. `Optimizer(Y, F)` reaches
+  `GradientAutodiff(F, ::GrassmannManifold)`, which does not exist — only the `StiefelManifold`,
+  `Matrix` and `NamedTuple` methods do (`src/utils.jl:24-27`) — so it is a `MethodError` at
+  construction.
+- **A `NamedTuple` holding one** gets past construction and dies in the first step, inside
+  `update!(::BFGSCache, …)`: `_copyto!` on a `GrassmannManifold` falls through to the generic
+  `AbstractArray` `copyto!`, which routes through `setindex!`, which `GrassmannManifold` does not
+  define. `StiefelManifold` does, which is why only one of the two manifolds this package provides
+  can be optimized over.
+
+So every `GrassmannManifold` test in the suite exercises the manifold, its lift, its retraction and
+its `check` — and none exercises a solve, because none can. `adam_with_euclidean_decay.jl:168-173`
+records the same limitation from the other end.
+
+The fix is small and in two places: a `GradientAutodiff` method for `Manifold` rather than for
+`StiefelManifold`, and `setindex!`/`copyto!` on `GrassmannManifold` — the latter alongside the
+`copy`, `zero`, `copyto!`, `fill!` and `similar` methods `GrassmannLieAlgHorMatrix` already gained
+this release for exactly this class of reason. What it needs beyond that is a decision about what the
+Grassmann *tests* should then assert, since the quotient means two representatives of the same point
+are equally correct answers.
+
+---
+
 ### B. This package — observability
 
 #### B1. A line search failure is invisible in the returned status
@@ -1208,10 +1046,11 @@ PR #35 makes `solver_step!` act on `LINESEARCH_FLOOR` / `LINESEARCH_EXHAUSTED` /
 quasi-Newton restart on half its iterations is indistinguishable, in the object the caller gets,
 from one that never needed one. Only a `verbosity ≥ 2` log message with `maxlog = 1` shows it.
 
-A7 is no longer the argument for this that the entry claimed. That divergence was 13 rejected outcomes
+The `MomentumMethod` runaway is no longer the argument for this that this entry claimed when that was
+open as A7. That divergence was 13 rejected outcomes
 over 457 iterations rather than 194 over 200, and it is fixed by *acting* on them rather than by
 counting them — so the counter is not a guard against anything, it is what would have made the
-thirteen visible. It is still worth having on its own terms: after A7's fix, a solve that needed a
+thirteen visible. It is still worth having on its own terms: after that fix, a solve that needed a
 steepest-descent substitution on a quarter of its iterations is *still* indistinguishable, in the
 object the caller gets, from one that never needed one. `_BFGS` + `Quadratic` + `Cayley` on seed 8 of
 the SVD problem reports `LINESEARCH_FLOOR` on 4 780 of its 20 000 iterations and says nothing about
@@ -1295,6 +1134,31 @@ were found afterwards, while re-running `scripts/retraction_accuracy.jl`, and ar
 
 ---
 
+#### C7. `ensure_descent!` is vacuous for `GradientMethod`
+
+**Severity: low**, and currently harmless. Found while writing `steepest_descent!`, which exists
+because of the same aliasing.
+
+`ensure_descent!` tests `dot(rhs(cache), direction(cache)) > 0`. That works because `rhs` is
+``-\nabla{}f`` on the (quasi-)Newton caches — but on the three first-order caches `rhs` is defined as
+an *alias* for `direction` (`gradient_optimizer.jl:82`, `momentum_optimizer.jl:63`,
+`adam_optimizer.jl:72`), so the test reads `dot(δ, δ) > 0` and is true for every `δ` that is neither
+zero nor `NaN`.
+
+Of the three, only `GradientCache` reaches it: `MomentumMethod` and `Adam` are `FirstOrderMethodWithState`
+and `solver_step!` skips the call for them deliberately. So `GradientMethod` runs a safeguard that
+cannot fire. It is harmless *today* because that method's direction already is ``-\nabla{}f``, which
+always descends — the safeguard has nothing to catch. It is worth recording because the harmlessness
+is a property of the direction and not of the guard: anything that changes what `GradientCache` puts
+in `direction` would silently lose the check rather than start failing it.
+
+The same aliasing had a second consequence that *was* live, and is fixed in this release: the
+steepest-descent substitution after a rejected line search was written as
+`_copyto!(direction(cache), rhs(cache))`, which is a no-op on these three caches. See
+`steepest_descent!`.
+
+---
+
 ### D. Upstream
 
 #### D1. Julia 1.12: nested `kwargs...` feeding a call in the same inferred body
@@ -1336,7 +1200,7 @@ end
 
 The intent is that a flat derivative at a minimum is benign, but the effect is that the core cannot
 distinguish "found the root" from "gave up", and this sits upstream of the `LINESEARCH_FLOOR` path
-that produced the divergence in A1/PR #35.
+that produced the divergence PR #35 fixed.
 
 #### D4. `maxlog` on the SimpleSolvers line-search warnings is per session, not per solve
 
@@ -1361,6 +1225,31 @@ method's page. This is worth knowing here specifically because the commit immedi
 on the same branch was "mend four dead doc links" — the build cannot be what certifies that work.
 `checkdocs = :all` does not help: it checks that docstrings are *included*, not that references
 resolve to what they name.
+
+---
+
+#### D6. SimpleSolvers: the polynomial line searches extrapolate ``\alpha`` without bound
+
+Issue against JuliaGNI/SimpleSolvers.jl, and the upstream half of A1b.
+
+`Quadratic` and `BierlaireQuadratic` fit a polynomial to ``\varphi`` and step to its stationary
+point. Where the fit is nearly flat that point is arbitrarily far away, and neither search bounds it:
+measured on the SVD problem of `test/optimizer_convergence/svd_optim.jl`, `Quadratic` returns
+``\alpha`` up to `4.3e7` and produces steps of ``\|\alpha\delta\| = 1.85e9`` from a direction of
+norm `5.5`.
+
+In a Euclidean problem this is self-correcting and that is presumably why it has never been reported:
+``f(x + \alpha{}p)`` grows with ``\alpha`` — as ``\alpha^2`` for the quadratic in A1b's table — so
+the search's own sufficient-decrease test throws the step out. The report should be framed that way
+rather than as "the step is too large", because on a *compact* manifold it is not too large by any
+test the search has: ``\varphi`` is bounded there, and at ``\alpha = 10^9`` it can be genuinely
+*lower* than at ``\alpha = 0``. See the tables under A1b.
+
+Two defensible resolutions and the issue should name one: bound the extrapolation to a multiple of the
+bracketing interval, which is what most implementations do and costs nothing; or expose the fitted
+``\alpha`` before it is taken so a caller with a scale of its own — which a manifold solver has, in
+the ``2\pi`` of the rotation — can clamp it. GeometricOptimizers needs the second regardless, since
+the bound it wants is geometric and not a property of the merit.
 
 ---
 

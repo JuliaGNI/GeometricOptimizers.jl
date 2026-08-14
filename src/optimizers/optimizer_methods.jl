@@ -95,6 +95,16 @@ from which the direction is computed as ``-m_1/(\sqrt{m_2} + \delta)``.
 [`MomentumMethod`](@ref), `Adam` is *not* converted by [`Optimizer`](@ref), so
 `Adam(Float32)` is needed for `Float32` parameters.
 
+!!! info "A searching line search is not the way to make this converge"
+    Because the direction has magnitude ``\approx{}1`` per component whatever the gradient is,
+    a step that does not shrink leaves `Adam` circling the minimiser at that distance rather
+    than settling on it. A *searching* line search does not fix that — it picks each step from
+    the merit and has no reason to drive the sequence to zero — it only makes each step a
+    better one: on the two-sphere problem of `test/manifold_linesearch_tests.jl` the searching
+    options need 251–331 iterations where [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
+    need 9–64. [`DecayingStatic`](@ref) is the setting under which `Adam` terminates on a
+    criterion by construction, because its schedule drives the step to zero itself.
+
 !!! info "The learning rate is not stored here"
     `Adam` only produces a direction, of magnitude ``\approx{}1`` per component; the learning
     rate ``\eta`` is the line search's `α`, i.e. it is passed as `linesearch = Static(η)`,
