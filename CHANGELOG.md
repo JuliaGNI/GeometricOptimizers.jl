@@ -787,15 +787,43 @@ itself informative: on this problem that search never asks for ``\varphi'`` away
 ``\alpha = 0``, where the old and new slopes agree exactly. So for half these cases the slope was
 never the mechanism, and it could not have been.
 
-**Where the cause actually is.** Tracing seed 2 under `Cayley` + `Quadratic` step by step, the solve
-does not converge slowly — it wanders. `f` oscillates between 3 and 9 for the whole run, `Q` is
-restarted repeatedly (κ falls back to 1), and every so often a direction comes out enormous:
-``\|\delta\| = 1.05e2`` at iteration 13, ``1.89e1`` at 18, and **``1.62e8``** at iteration 22, which
-is where `check` first leaves round-off, jumping from `4.7e-15` to `9.1e-9`.
+**Where the cause actually is: the line search returns an absurd ``\alpha``, and on a compact
+manifold nothing tells it not to.** Tracing seed 8 under `Cayley` + `Quadratic` step by step, the
+solve wanders rather than converging — `f` oscillates between 3 and 10 — and at iteration 8 the step
+actually taken is
 
-Retracting a lift that large is what costs the manifold, and — unlike A1 — this is *not* a defect in
-either retraction. `check` after a retraction grows like ``\varepsilon\|\bar{B}\|`` for both, which is
-the conditioning of the problem and not a summation that cancels. On `St(20, 3)`:
+| iteration | 1 | 2 | … | 7 | 8 |
+|---|---|---|---|---|---|
+| ``\|\alpha\delta\|`` | 0.61 | 1.67 | … | 1.71 | **1.85e9** |
+| ``\lambda_\mathrm{max}(Q)`` | 1.0 | 2.0 | … | 10.2 | **38.6** |
+| `check` | 2.0e-14 | 3.4e-14 | … | 3.1e-14 | **9.6e-7** |
+
+``Q`` is *well conditioned* at the step that does the damage — ``\lambda_\mathrm{max} = 38.6``, and it
+had been restarted twice before this. The magnitude is entirely the line search's ``\alpha``, which
+the two polynomial fits extrapolate to ``10^9``. **So damping the quasi-Newton update is not the
+remedy**; that was the first hypothesis after the slope one, and the measurement above rules it out
+as well.
+
+What makes such an ``\alpha`` acceptable to a line search is the geometry, and it is specific to a
+*compact* manifold. ``\varphi(\alpha) = f(\Lambda\mathrm{retract}(\alpha\bar{B})E)`` is **bounded**
+in ``\alpha``: `Cayley` converges to a fixed rotation as ``\alpha \to \infty`` and `Geodesic` is
+periodic in it. Measured on `St(10, 3)` against a random target:
+
+| ``\alpha`` | 0 | 1 | 1e2 | 1e4 | 1e6 | 1e9 |
+|---|---|---|---|---|---|---|
+| ``\varphi``, `Cayley` | 4.8499 | 4.9648 | 5.4758 | 5.4861 | 5.4862 | 5.4862 |
+| ``\varphi``, `Geodesic` | 4.8499 | 5.1399 | 5.0538 | 5.1601 | 4.9046 | **4.7299** |
+| Euclidean ``f(x + \alpha{}p)`` | 1.1e1 | 1.1e1 | 3.3e4 | 3.4e8 | 3.4e12 | 3.4e18 |
+
+The `Geodesic` row at ``\alpha = 10^9`` is *lower* than at ``\alpha = 0``, so a search that finds it
+has found a genuine decrease and is right to report one. In the Euclidean row the same ``\alpha``
+would be rejected by the merit alone, which is why no line search carries a guard against it. On a
+manifold the merit gives the search no signal at all, and the only thing wrong with the step is that
+retracting a lift of that norm loses the manifold.
+
+That last part is *not* a defect in either retraction. `check` after a retraction grows like
+``\varepsilon\|\bar{B}\|`` for both, which is conditioning and not a summation that cancels. On
+`St(20, 3)`:
 
 | ``\|\bar{B}\|`` | 1e2 | 1e4 | 1e6 | 1e7 | 1e8 | 1e9 |
 |---|---|---|---|---|---|---|
@@ -808,11 +836,19 @@ with a `check` an order of magnitude smaller, stays inside what the solve can re
 converges. So the retraction is the *amplifier*, exactly as in A1, and the cause is upstream of it:
 the quasi-Newton direction and the step the polynomial search accepts for it.
 
-That makes this the same family as A4 (`x_converged` on a diverged solve) and A7 (`MomentumMethod`
-running away while the search reports `LINESEARCH_NO_DESCENT`), and it wants the same kind of remedy
-— a bound on an implausible ``\|\delta\|``, routed through the `linesearch_rejected` restart that
-already exists. That is a behaviour change touching every method and every table in the package, so
-it needs its own PR and its own measurement; it is not a `trial_slope` fix.
+**What the remedy has to be.** A bound on the *step*, ``\|\alpha\delta\|``, and not on the
+direction, on ``Q``, or on the outcome the search reports — none of which is wrong at the step that
+does the damage. The scale is supplied by the geometry rather than invented: the retraction of a lift
+is a rotation, so beyond ``\|\alpha\bar{B}\| \approx 2\pi`` a larger step adds nothing but the
+round-off in the table above. A cap of a few multiples of that would leave every solve in this
+package untouched — the largest step in a converging run measured here is ``5.5`` — while making the
+``10^9`` one impossible.
+
+It is still a behaviour change on every manifold solve and it needs its own measurement of every table
+in the package, so it wants its own PR. It is *not* the same defect as A4 or A7, which this entry
+previously grouped it with: A7 was the step of a *rejected* search being taken, and every search
+involved here reports `LINESEARCH_DECREASED` or `LINESEARCH_FLOOR` on a step that genuinely decreases
+the merit. Nothing is being overruled; the merit is simply not a bound on the step.
 
 Coverage: `svd_optim.jl` now runs both polynomial searches in its convergence loop, but only on seed
 `1234`, where they pass — so the loop covers the searches and does **not** guard this. Reproducing it
