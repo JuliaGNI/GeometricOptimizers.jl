@@ -304,13 +304,17 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
 
     # A rejected search means "no step along *this* direction decreases the merit". For a
     # quasi-Newton method that is a statement about `Q`, so throw `Q` away and try the one direction
-    # that always descends. `Adam` and `MomentumMethod` are excluded for the same reason
-    # `ensure_descent!` excludes them: their direction is a moving average with no `Q` behind it, and
-    # it is allowed not to descend on an individual step.
-    if linesearch_rejected(ls_status) && !(MT <: FirstOrderMethodWithState)
+    # that always descends.
+    #
+    # `Adam` and `MomentumMethod` used to be exempt here, on the grounds that a moving average is
+    # allowed not to descend on an individual step. That is true of the *direction* and was the wrong
+    # conclusion about the *step*: a rejected search returns `α = 1` untouched, so the exemption did
+    # not let those methods take a non-descent step, it made them take the longest one available
+    # along it. See `linesearch_rejected` and issue A7.
+    if linesearch_rejected(ls_status)
         config(opt).verbosity ≥ 2 && @warn "the line search returned $(outcome(ls_status)), i.e. no step along the $(algorithm(opt)) direction decreased the merit; restarting the inverse Hessian and searching along the steepest-descent direction instead." maxlog = 1
         restart!(state)
-        _copyto!(direction(cache(opt)), rhs(cache(opt)))
+        steepest_descent!(cache(opt))
         update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
         _copyto!(solution(cache(opt)), section(cache(opt)))
         ls_status = solve_with_status(linesearch(opt), one(T), (x=x, state=state))

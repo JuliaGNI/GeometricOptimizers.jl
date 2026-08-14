@@ -230,6 +230,11 @@ Hessian branch because `NoHessian` is all that branch needs from it.
 a momentum and a moment average are deliberately allowed not to descend on an individual step,
 and the decay of [`AdamWithEuclideanDecay`](@ref) tilts the direction further away from the
 gradient still.
+
+That exemption is about the direction *before* the search, and it used to be extended to the
+restart *after* it as well. It no longer is — see [`linesearch_rejected`](@ref) and issue A7.
+Declining to overrule the direction is not the same as taking the longest step along it, which
+is what a rejected search hands back.
 """
 const FirstOrderMethodWithState = Union{MomentumMethod,AdamFamily}
 

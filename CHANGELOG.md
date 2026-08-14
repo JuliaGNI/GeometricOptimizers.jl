@@ -216,6 +216,52 @@ this package produces change**, in most cases substantially for the better.
 
 ### Fixed
 
+- **`Adam` and `MomentumMethod` no longer take the step a line search has rejected.** `solver_step!`
+  restarts and searches along steepest descent when the outcome is `LINESEARCH_FLOOR`,
+  `LINESEARCH_EXHAUSTED` or `LINESEARCH_NO_DESCENT`, and the two methods whose direction carries state
+  were exempt from it. The reasoning was that `ensure_descent!` exempts them — a moving average is
+  *allowed* not to descend on an individual step — and it does not carry over: a rejected search
+  returns `α = 1` untouched, so the exemption did not permit a non-descent step, it took the
+  **longest** step available along one.
+
+  On Rosenbrock from `(-1.2, 1)` with `MomentumMethod(0.1)`, the solve reaches `f = 7.8e-5` by
+  iteration 400 and is then ratcheted to `Inf` by thirteen such steps:
+
+  | iteration | outcome | `α` | `f` |
+  |---|---|---|---|
+  | 441 | `LINESEARCH_NO_DESCENT` | 1.0 | 4.97e-2 → 4.65e3 |
+  | 443 | `LINESEARCH_NO_DESCENT` | 1.0 | 8.16e1 → 5.33e9 |
+  | 453 | `LINESEARCH_NO_DESCENT` | 1.0 | 1.46e3 → 4.41e19 |
+
+  Each multiplies `f` by between `1e3` and `1e42`; the steps in between descend and cannot make it
+  back. Iterations and final `f` on that problem, at a cap of 10 000:
+
+  | | `Backtracking` | `Backtracking(expand)` | `BierlaireQuadratic` | `StrongWolfe(c₂ = 0.1)` |
+  |---|---|---|---|---|
+  | `MomentumMethod(0.1)` before | 379, **`Inf`** | 457, **`Inf`** | 6, **`Inf`** | 3 136, 2.7e-16 |
+  | after | 2 921, **1.9e-16** | 2 693, **1.6e-16** | 355, **1.3e-16** | 3 254, 2.6e-16 |
+  | `Adam` before | 10 000 (cap), 3.0e-5 | 275, 1.4e-16 | 1 941, 4.0e-17 | 2 846, 2.3e-16 |
+  | after | **453**, 8.6e-18 | 256, 2.0e-20 | **285**, 1.7e-16 | **294**, 5.0e-17 |
+
+  `GradientMethod` is bit-identical throughout — it is not in `FirstOrderMethodWithState`, so it was
+  never exempt, which makes it the control. So is every `Static` figure, since that search reports no
+  outcome to act on: `Static(0.1)` still diverges on Rosenbrock for both first-order methods, which is
+  an over-large fixed step on a badly scaled problem and a different matter.
+
+  **This also retires most of issue A9.** `Adam` + `BierlaireQuadratic` on the two-sphere problem of
+  `test/manifold_linesearch_tests.jl` used to run out all 1 000 iterations under both retractions
+  while sitting `6.8e-6` from the minimiser — at the answer, with no criterion it could meet. It now
+  terminates in 251–286, and all fourteen (line search, retraction) combinations terminate on a
+  criterion, in 251–331 iterations. The worst distance over the fourteen is `5.0e-7` and that one is
+  `Static`; every searching line search is at `1.8e-8` or better. What survives of A9 is the cost
+  argument, which is unchanged: `Adam` needs 251–331 iterations there where `GradientMethod` and
+  `MomentumMethod` need 9–64, so `default_linesearch` keeps `Static` for `AdamFamily`.
+
+  The momentum recursion is untouched: `p ← αp + ∇f` is evaluated in `update!(::MomentumState, …)`
+  from `gradient_array(cache)` *after* the step, so which direction the step was taken along does not
+  enter it. `ensure_descent!`, which acts on the direction before the search, still exempts both
+  methods.
+
 - **The line-search slope is the derivative of the line-search merit under `Cayley` too.**
   ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), B\rangle`` holds only where
   ``\alpha \mapsto \mathrm{retract}(\alpha{}B)`` is a one-parameter subgroup. `Geodesic` is one and
@@ -630,10 +676,15 @@ review. Everything was verified directly — where a claim rests on a measuremen
 given. Entries A5, A6, C6 and D5 come from the review of [#36]; A7, A8, A9 and the second half of A1b
 from [#38], and A10 from the review of [#38]; the rest from unifying the optimizer hierarchies.
 
-A1, A2 and A3 are fixed and are kept for the record, since later entries refer to them: A1 and A3 by
-[#36], A2 by [#38]. C6 describes text that [#36] introduced. A1b is still open, but the fix it
-proposed for itself has since been implemented, measured and ruled out — read that entry before
-starting on it.
+A1, A2, A3, A7 and most of A9 are fixed and are kept for the record, since later entries refer to
+them: A1 and A3 by [#36], A2 by [#38], A7 and A9 by the rejected-step fix in *Fixed* above. C6
+describes text that [#36] introduced. A1b is still open, but the fix it proposed for itself has since
+been implemented, measured and ruled out — read that entry before starting on it.
+
+Two entries carried measurements that do not reproduce, both corrected in place: A1b's first-order
+`check` table and A7's `194 of 200` outcome count. The *conclusion* held in each case and the
+supporting figure did not, so treat a number here as reproducible only where the harness that
+produced it is named.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
@@ -869,6 +920,16 @@ is left open because every way of closing it inside `convergence_measures` needs
 stopping behaviour of every Euclidean solve to guard a state that is now unreachable. It is
 documented as a warning on `convergence_measures`.
 
+**Re-checked against the two divergences that were still live**, since both are exactly the shape this
+entry describes — an iterate running to `1e77`..`1e208` while the step stays large. Neither reaches
+it. `_BFGS` + `Quadratic` + `Cayley` on seed 8 of the SVD problem, and `MomentumMethod(0.1)` on
+Rosenbrock under each of the three line searches it used to diverge on, all report
+`x_converged = false`, `f_converged = false` and `g_converged = false`; they stop on the iteration cap
+and on `contains_nonfinite` respectively, so `isconverged` is `false` for all of them. A4 therefore
+remains a hole that no measured solve falls into, and A7's fix removes three more of the candidates.
+It stays open on the same terms, and it is *not* the same defect as A1b or A7: those are about which
+step gets taken, this one only about how the stop is reported.
+
 On a manifold this is not actually ambiguous: `‖Y‖_F = √n` exactly, so the denominator is a
 *constant* and a large one is itself the divergence signal. The information is available; the
 function just does not have it.
@@ -929,7 +990,32 @@ of scalar indexing and dense LAPACK, which is what lets it run on a GPU backend 
 docstring). That rules out reaching for the spectral radius directly — an eigenvalue computation
 would give the tighter bound and forfeit the reason the algorithm was chosen.
 
-#### A7. `MomentumMethod` runs away when its direction ascends, and nothing stops it
+#### A7. `MomentumMethod` runs away when its direction ascends, and nothing stops it — fixed in 0.2.0
+
+**Fixed**: `linesearch_rejected` now applies to `Adam` and `MomentumMethod` as well, so a rejected
+search no longer gets its `α = 1` step taken. See the *Fixed* entry above for the tables. Two
+corrections to the diagnosis below, both found while fixing it, and the second changes what the
+remedy had to be:
+
+- **the `194 of 200` figure does not reproduce.** Re-measured on the same problem, the same method
+  and the same line search, `LINESEARCH_NO_DESCENT` is reported on **3 of the first 200** iterations
+  and 13 of all 457. The direction does *not* ascend on almost every step; the searches
+  overwhelmingly report `LINESEARCH_DECREASED` and the solve genuinely descends, reaching
+  `f = 7.8e-5` by iteration 400. What the thirteen ascent steps do is multiply `f` by between `1e3`
+  and `1e42` *each*, and the descending steps in between cannot make that back. The conclusion this
+  entry draws is right; the picture of how it happens was not.
+- **neither guard it proposes would have worked.** The first, "a bound on `‖p‖` relative to `‖∇f‖`",
+  never fires: that ratio stays between `0.57` and `6.8` over the whole run, because it is the
+  *gradient* that explodes and the momentum follows it. The second, "a count of consecutive
+  `LINESEARCH_NO_DESCENT` outcomes", never fires either — the thirteen events are isolated, never
+  consecutive. What was needed was neither: it is that a rejected search returns `α = 1`, so the
+  question was never how many times the direction ascends but whether the *step* is taken when it
+  does.
+
+  Nor is the ascent outcome the whole of it. Under `BierlaireQuadratic` the same solve reaches `Inf`
+  in six iterations through `LINESEARCH_EXHAUSTED`, also at `α = 1` every time and also multiplying
+  `f` by ≈`1e21` a step. Acting on `LINESEARCH_NO_DESCENT` alone leaves that case diverging, which is
+  why the fix is the whole of `linesearch_rejected`.
 
 **Severity: high.** Found in [#38], while giving the first-order methods their first coverage on a
 badly conditioned problem. Pre-existing; [#38] neither causes nor fixes it, but it made the affected
@@ -1003,7 +1089,19 @@ medium and not high. The fix is the one line the first-order caches already use,
 `refresh_latest_gradient!`; the cost is one gradient evaluation per iteration and a re-measurement of
 every iteration count in the package, which is why it wants its own PR.
 
-#### A9. A searching line search does not give `Adam` a criterion it can meet
+#### A9. A searching line search does not give `Adam` a criterion it can meet — mostly fixed in 0.2.0
+
+**Mostly fixed**, and by A7's fix rather than by anything aimed at this. The case below — `Adam` +
+`BierlaireQuadratic` exhausting all 1 000 iterations under both retractions while sitting `6.8e-6`
+from the minimiser — was the `α = 1` step of a rejected search being taken, i.e. the same defect as
+A7. All fourteen (line search, retraction) combinations now terminate on a criterion, in 251–331
+iterations, and the worst distance over them is `5.0e-7` — attained by `Static`, i.e. by the orbit
+this entry is really about, with every *searching* line search at `1.8e-8` or better.
+
+What survives is the cost argument, which is the part `default_linesearch` rests on: `Adam` still
+needs 251–331 iterations on that problem where `GradientMethod` and `MomentumMethod` need 9–64. So
+`Static` remains the default for `AdamFamily`, and the sentence this entry asks for in `Adam`'s
+docstring is still worth writing.
 
 **Severity: low**, and a sharpening of something already documented rather than a new defect. From
 [#38], where it is why the `Adam` testset in `manifold_linesearch_tests.jl` asserts less than the one
@@ -1074,10 +1172,14 @@ PR #35 makes `solver_step!` act on `LINESEARCH_FLOOR` / `LINESEARCH_EXHAUSTED` /
 quasi-Newton restart on half its iterations is indistinguishable, in the object the caller gets,
 from one that never needed one. Only a `verbosity ≥ 2` log message with `maxlog = 1` shows it.
 
-A7 raises the stakes: `MomentumMethod` diverging on Rosenbrock reports `LINESEARCH_NO_DESCENT` on 194
-of its first 200 iterations, and the returned status says nothing about any of them. The counter this
-entry asks for is also the cheapest guard against that divergence, so the two are worth doing
-together.
+A7 is no longer the argument for this that the entry claimed. That divergence was 13 rejected outcomes
+over 457 iterations rather than 194 over 200, and it is fixed by *acting* on them rather than by
+counting them — so the counter is not a guard against anything, it is what would have made the
+thirteen visible. It is still worth having on its own terms: after A7's fix, a solve that needed a
+steepest-descent substitution on a quarter of its iterations is *still* indistinguishable, in the
+object the caller gets, from one that never needed one. `_BFGS` + `Quadratic` + `Cayley` on seed 8 of
+the SVD problem reports `LINESEARCH_FLOOR` on 4 780 of its 20 000 iterations and says nothing about
+any of them.
 
 #### B2. `show_trace` and `extended_trace` are still accepted and ignored
 

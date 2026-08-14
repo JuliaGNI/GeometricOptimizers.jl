@@ -244,7 +244,7 @@ const NT_LINESEARCHES = (Static(0.1), Backtracking(Float64), Backtracking(Float6
         solve!(ps, state, opt)
 
         # 64 is the worst of the 28, and it is a `Static` one: every searching line search here is
-        # under 22
+        # under 25
         @test iteration_number(state) < 100                     # terminates on a criterion ...
         @test isapprox(ps.w₁, MINIMIZER; atol=1e-6)             # ... at the minimiser ...
         @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-6)
@@ -257,13 +257,22 @@ end
 @testset "Adam runs on a manifold NamedTuple under a searching line search" begin
     # `Adam` is in this file's coverage but not in the loop above, and the reason is the one the
     # `DecayingStatic` testset states: its direction has magnitude ≈1 per component whatever the
-    # gradient is, so with a step that does not shrink it circles the minimiser at that distance.
-    # That is also why `default_linesearch` keeps `Static` for `AdamFamily` -- a sufficient-decrease
-    # search has nothing to work with when the direction is a moving average that is deliberately
-    # allowed not to descend. It needs 267-1000 iterations here where the two methods above need
-    # 9-64, and under `BierlaireQuadratic` it does not terminate on a criterion at all. What it has
-    # to do is run and stay on the manifold, which before this branch it did only because the
-    # `NamedTuple` path never called `gradient(cache)`.
+    # gradient is, so with a step that does not shrink it circles the minimiser at that distance. It
+    # needs 251-331 iterations here where the two methods above need 9-64, which is why
+    # `default_linesearch` keeps `Static` for `AdamFamily` -- the searching alternatives cost an
+    # order of magnitude and buy nothing.
+    #
+    # It does now *terminate* under all fourteen, which is new: `Adam` + `BierlaireQuadratic` used to
+    # run out all 1000 iterations under both retractions while sitting 6.8e-6 from the minimiser,
+    # with no criterion it could meet. That was recorded as issue A9, and it was the same defect as
+    # A7 -- a rejected search returns `α = 1` and `solver_step!` exempted the `AdamFamily` methods
+    # from doing anything about it. With the exemption gone the worst of the fourteen is 331
+    # iterations, so the iteration bound below is a real one rather than a restatement of the cap.
+    #
+    # The distance tolerance moves with it, 1e-4 to 1e-6. The worst of the fourteen is now 5.0e-7 and
+    # that one is `Static`, i.e. the orbit of radius ∝ α this comment opens with, which no line-search
+    # change can touch; every *searching* one is at 1.8e-8 or better, against the 6.8e-6 that
+    # `BierlaireQuadratic` used to sit at while exhausting the cap.
     for linesearch in NT_LINESEARCHES, retraction in (Geodesic(), Cayley())
         ps = ps₀()
         state = OptimizerState(Adam(Float64), ps)
@@ -272,8 +281,9 @@ end
 
         solve!(ps, state, opt)
 
-        @test isapprox(ps.w₁, MINIMIZER; atol=1e-4)             # 6.8e-6 is the worst of the 14
-        @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-4)
+        @test iteration_number(state) < 1000                    # terminates on a criterion ...
+        @test isapprox(ps.w₁, MINIMIZER; atol=1e-6)             # ... 5.0e-7 is the worst of the 14
+        @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-6)
         for Y in values(ps)
             @test check(Y) < MANIFOLD_TOLERANCE
         end
