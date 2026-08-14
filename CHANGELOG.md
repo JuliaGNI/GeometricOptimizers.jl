@@ -657,6 +657,9 @@ this package produces change**, in most cases substantially for the better.
 - `GrassmannLieAlgHorMatrix` gained explicit `copy`, `zero`, `copyto!`, `fill!` and `similar` methods.
   The generic `AbstractArray` fallbacks route through `setindex!`, which it does not define, and its
   `similar` handed a two-parameter concrete type to `zeros`, which has no such method.
+- `NewtonOptimizerCache(x, problem)` passed eight values for seven fields and would have thrown on its
+  first call. Nothing calls it — it carries a "we probably don't need this constructor" comment — which
+  is how it stayed that way; its field list is now spelled out rather than positional.
 
 ### Added
 
@@ -671,7 +674,10 @@ this package produces change**, in most cases substantially for the better.
   *structural* rather than the outcome of a series, so it is the only one whose `check` does not
   degrade with the step: over the eight SVD starting points its worst case is `1.9e-13` against
   `ScaledSquaring`'s `2.8e-12`, and in `Float32` it holds `1.3e-6` where the others reach `2.3e-5`.
-  It costs about an order of magnitude on the *typical* case and needs `qr` and `eigen`.
+  It costs 1.2× to 1.8× on the *typical* case, measured over eight `(N, n)` pairs from `10, 2` to
+  `1000, 20`, and needs `qr` and `eigen`. (This read "about an order of magnitude", which no
+  measurement supports and which understates how attractive the algorithm is; it was catalogued as
+  C6 and the figures above are that entry's.)
   `ScaledSquaring` is the default because it is the fastest, the most accurate against
   `exp(Matrix(B))`, and — using nothing but matrix products and norms — the only one of the three
   that runs on a `KernelAbstractions` GPU backend.
@@ -800,28 +806,40 @@ are tracked with the code rather than in a scratch file. A is correctness in thi
 observability, C its dead code and bookkeeping; D is upstream, E lists things reported during the
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
-given. Entries A5, A6, C6 and D5 come from the review of [#36]; the second half of A1b from [#38] and
-A10 from the review of [#38]; A11, C7 and D6 from the line-search work of this release, and A12 and
-C8 from the review of [#40]; the rest from unifying the optimizer hierarchies.
+given. Entries A5, A6 and D5 come from the review of [#36]; the second half of A1b from [#38] and A10
+from the review of [#38]; A11, C7 and D6 from the line-search work of this release, A12 and C8 from
+the review of [#40], and A13, A14 and C9 from the work on A4 and A8; the rest from unifying the
+optimizer hierarchies.
 
-**Only open entries are listed here.** A1, A2, A3, A4, A7, A8 and A9 were in this catalogue and have
-been fixed; each is now described in [Unreleased](#unreleased--targeting-020) above, under the change
-that fixed it, and the entry here is gone. The labels are *not* reused and the surviving ones are not
-renumbered, so the gaps are deliberate: A1b, A5, A6 and A10 mean what they have always meant, and a
-reference to A1, A4, A7 or A8 in a commit message still resolves to the right subject.
+**Only open entries are listed here.** A1, A2, A3, A4, A7, A8, A9 and C6 were in this catalogue and
+have been fixed; each is now described in [Unreleased](#unreleased--targeting-020) above, under the
+change that fixed it, and the entry here is gone. The labels are *not* reused and the surviving ones
+are not renumbered, so the gaps are deliberate: A1b, A5, A6 and A10 mean what they have always meant,
+and a reference to A1, A4, A7, A8 or C6 in a commit message still resolves to the right subject.
+
+Each entry says what it would take to fix it — look for **What to do**. That used to live in a
+`plan.md` that sequenced the catalogue into PRs and was never tracked here (it was excluded
+locally), so it drifted from the catalogue twice and was invisible to anyone who cloned the
+repository — which is the failure mode the paragraph above describes, one level up. It is folded into
+the entries it planned and deleted. The one thing it had that no entry does is the sequencing: the
+observability entries (B1, B2, C1) are one PR because they are one subject, C3 and C4 are one small
+PR, and anything that moves a number wants its own PR and its own re-measurement.
 
 A1b is still open, and the fix it proposed for itself — and the second one proposed after that — have
 both been implemented or measured and ruled out. Read that entry before starting on it.
 
-**Three measurements in this catalogue have now failed to reproduce**, each corrected in place or
-before its entry moved: A1b's first-order `check` table, A7's `194 of 200` outcome count, and — found
-in the review of [#40] — A1b's step-by-step trace of the divergence, which named the wrong iteration
-and was an order of magnitude out on two of its three rows. The *conclusion* held all three times and
-the supporting figures did not, which is a consistent enough pattern to state as a rule: **treat a
-number here as reproducible only where the harness that produced it is named**, and prefer a figure
-that a committed script or test regenerates to one that was measured once at a REPL. Where a
-measurement needs code that is not in the package — the A1b trace needs `α`, `‖δ‖` and `λmax(Q)`,
-none of which is observable from outside `solver_step!` — say so and say what was changed to get it.
+**Five measurements in this catalogue and its tables have now failed to reproduce**, each corrected in
+place or before its entry moved: A1b's first-order `check` table, A7's `194 of 200` outcome count,
+A1b's step-by-step trace of the divergence — found in the review of [#40], and an order of magnitude
+out on two of its three rows — and, found while re-measuring for A8, the `_DFP + Backtracking` row of
+`svd_optim.jl` (see C8) and a `Cayley` spread in `default_linesearch` that quoted the pinned value as
+its upper bound. The *conclusion* held every time and the supporting figures did not, which is a
+consistent enough pattern to state as a rule: **treat a number here as reproducible only where the
+harness that produced it is named**, and prefer a figure that a committed script or test regenerates
+to one that was measured once at a REPL. Where a measurement needs code that is not in the package —
+the A1b trace needs `α`, `‖δ‖` and `λmax(Q)`, none of which is observable from outside
+`solver_step!` — say so and say what was changed to get it. C9 records how much of this package's
+measurement apparatus is still in that category.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
@@ -1139,6 +1157,67 @@ nobody has measured justifies.
 
 ---
 
+#### A13. `Newton`'s state advances its frame by the gradient, not by the step
+
+**Severity: low** — it costs an evaluation and not an answer. Found while fixing A8, which is what
+made the difference visible: with the gradient reuse in place, `Newton` is the one method that cannot
+have it.
+
+`update!(state::NewtonOptimizerState, opt, x)` (`src/optimizers/optimizer.jl`, the line already
+marked "this will have to be removed later") ends with
+
+```julia
+update_section!(state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
+```
+
+i.e. it advances the state's `GlobalSection` by ``\nabla{}f`` where every other state
+advances it by the direction the step was taken along. For Euclidean parameters `update_section!` is
+``\Lambda^t.Y \gets \Lambda^{t-1}.Y + B``, so this is not a formality: after a step the cache's frame
+holds ``Y + \delta`` and the state's holds ``Y + \nabla{}f``.
+
+Two consequences, both of them about `store_gradient!`'s reuse guard, which requires
+`section(cache) == section(state)`:
+
+- **`Newton` pays one gradient evaluation per iteration that `_BFGS` and `_DFP` do not.** The frames
+  do not match, so the guard declines the reuse and the cache evaluates ``\nabla{}f`` afresh at the
+  point `refresh_latest_gradient!` has just evaluated it at. Measured on Rosenbrock from
+  ``(-1.2, 1)`` with `Backtracking(expand)`: 103 gradient evaluations over 26 iterations before A8,
+  124 over 25 after.
+- **The reuse comes back by accident at the end of a solve.** Once ``\nabla{}f`` and ``\delta`` have
+  both gone to zero the two frames agree again and the guard fires. That is *correct* — on Euclidean
+  parameters `global_rep` is the identity, so the value depends only on `solution(cache) == x`, which
+  the guard also checks — but it means the branch taken is not a property anything should assert on.
+  `test/optimizer_tests.jl` asserts on the gradient the direction is built from instead, and says so.
+
+The fix is to advance the state's section by `direction(cache(opt))` like every other state, after
+which the reuse is available to `Newton` too and the extra evaluation goes away. It needs a
+re-measurement of the `Newton` rows and nothing else — `NewtonOptimizerCache` is `AbstractArray`-only,
+so no manifold path reaches this.
+
+---
+
+#### A14. `x_converged` still cannot see a Euclidean solve that diverges downhill
+
+**Severity: low** — no measured solve reaches it. The remainder of A4, which is otherwise fixed
+above; kept here because the hole is real and because the next person to look at
+`convergence_measures` should find it named rather than have to re-derive it.
+
+The two guards A4's fix installed are a *scale* (`solution_scale`, exact on a manifold because
+``\|Y\|_F = \sqrt{n}``) and the *objective* (`x_converged` requires `!f_increased`). A Euclidean
+solve whose ``\|x\|`` grows without bound while `f` decreases at every step defeats both: nothing
+bounds ``\|x\|``, so ``\|x - x'\|/\|x'\|`` still goes to zero for a step that is not small, and the
+objective never gives the second guard anything to act on. It would be reported as converged.
+
+The divergences this package has actually produced all went *uphill* (`3.38 → 9.13 → 1.2e169`) or
+straight to non-finite, so the guards cover them; and both of those causes are fixed at their source
+(`linesearch_rejected`, `curvature_is_usable`). What would close it is a scale fixed at the start of
+the solve rather than read off the current iterate — and the obvious candidate, ``\|x_0\|``, fails on
+the two commonest starting points: it is `0` at the origin, and it is the wrong scale entirely for a
+solve that legitimately travels a long way. That is the same "no property of the problem supplies a
+threshold" this entry inherits from A4; it is narrower now, and it is not gone.
+
+---
+
 ### B. This package — observability
 
 #### B1. A line search failure is invisible in the returned status
@@ -1161,12 +1240,23 @@ nothing about any of them. (That count is `linesearch_rejected`, i.e. the three 
 this entry previously attributed all 4 780 to `LINESEARCH_FLOOR`, which the re-measurement in the
 review of [#40] did not separate and so does not support.)
 
+**What to do**: one counter, `linesearch_restarts`,
+and not one field per outcome — the question a caller has is "did this solve need help". Accumulate
+it on the *state*, which persists across iterations as `iterations` already does, rather than
+widening the `OptimizerStatus(state, cache, f; config)` constructor, which is where `solver_step!`
+would otherwise have to thread it.
+
 #### B2. `show_trace` and `extended_trace` are still accepted and ignored
 
 PR #35 implements `store_trace`. The other two remain dead in this package *and* upstream (verified:
 no reads of either in `SimpleSolvers/src/` outside `options.jl`'s struct, constructor and `show`).
 Setting them gets neither output nor an error. Both are now cheap, since the per-iteration record
 exists.
+
+**What to do**: `show_trace` prints the record every `config.show_every`
+iterations; `extended_trace` adds `rxₐ` and `Δf` to `OptimizerTraceEntry`. Small, and it retires the
+last two silently-ignored options. Belongs in one PR with B1 and C1 — all three are the same subject,
+the status object not saying enough.
 
 ---
 
@@ -1185,61 +1275,52 @@ three first-order methods that is a two-step-stale gradient paired with the curr
 `f_converged_strong` without fixing A10 would be acting on a prediction that is not one; deleting it
 retires A10's second consumer along with it.
 
+**What to do**: either *use* it as the stall detector `Options.max_stalls` and
+`Options.f_stall_window` were meant to drive — count consecutive iterations that fail it, stop after
+`max_stalls` — or *delete* it from `convergence_measures`' return tuple and say in the docstring that
+the outer-iteration Armijo test is not implemented. Deleting is the honest default. Using it is worth
+more but is a behaviour change that needs its own measurement over the eight starting points, so it
+must not ride along in an observability PR; split it out if that is the choice.
+
 #### C2. `compute_direction!` for the quasi-Newton methods is dead
 
 `src/optimizers/iterative_hessians/iterative_hessians_direction.jl:1-3` defines
 `compute_direction!(opt, ::Union{BFGSState,DFPState})`. There is no call site (verified: the only
 live callers are the `Newton` methods in `newton_optimizer_direction.jl`). The direction is formed
-inline at the end of the cache `update!` instead — `bfgs_cache.jl:153`, `dfp_cache.jl:121`.
+inline at the end of the cache `update!` instead — `bfgs_cache.jl`, `dfp_cache.jl`.
+
+**What to do**: delete the file and its `include`. The alternative — routing
+`solver_step!` through `compute_direction!` for symmetry with `Newton` — is a refactor with no
+behavioural gain, and the inline form is what the `ḡ`-ordering fix depends on. Deleting is the
+smaller and clearer change.
 
 #### C3. `Random` and `LinearAlgebra` have no `[compat]` entries
 
 `Project.toml` gives `Printf = "1"` but nothing for `Random` or `LinearAlgebra`, though all three are
 stdlibs listed in `[deps]` and used the same way.
 
+**What to do**: add `Random = "1"` and `LinearAlgebra = "1"` to `[compat]`, matching
+the existing `Printf = "1"`. One small PR together with C4.
+
 #### C4. The 0.2.0 release notes are not closed out
 
 `Project.toml` says `version = "0.2.0"` while `CHANGELOG.md:9` still reads
 `## [Unreleased] — targeting 0.2.0`, and the compare link at the bottom is `v0.1.0...main`.
 
+**What to do**: at release, retitle the section to `## [0.2.0] — <date>`, add a fresh
+`[Unreleased]` above it, and change the compare link from `v0.1.0...main` to `v0.1.0...v0.2.0`.
+
 #### C5. `_DFP` + `Backtracking(expand = true)` is documented rather than run, on stale grounds
 
 `test/optimizer_convergence/svd_optim.jl` excludes that pair because its iteration count ranged
 `512..77_890` over eight starting points. The curvature condition in PR #35 brings that to
-`387..845` (`Geodesic`) and `466..1_366` (`Cayley`), comfortably inside the 5 000 cap the file
+`385..1_118` (`Geodesic`) and `466..1_177` (`Cayley`), comfortably inside the 5 000 cap the file
 already uses, so the stated reason no longer holds. Left out only because there is no CI measurement
 of the post-fix spread yet — the original surprise was a factor of four between platforms.
 
-#### C6. Two figures in the 0.2.0 notes do not match the measurements they describe
-
-From the PR #36 review. Four other mis-stated numbers in that PR were corrected in it; these two
-were found afterwards, while re-running `scripts/retraction_accuracy.jl`, and are still wrong.
-
-- **`ProjectedSkew` does not cost "about an order of magnitude".** The `Added` entry that [#36]
-  writes for the exponential algorithms says it "costs about an order of magnitude on the *typical*
-  case". Measured against `ScaledSquaring`, one retraction, minimum of 50, one BLAS thread:
-
-  | `N`, `n` | 10, 2 | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 500, 50 | 1000, 20 |
-  |---|---|---|---|---|---|---|---|---|
-  | `ScaledSquaring` | 0.003 | 0.005 | 0.016 | 0.023 | 0.095 | 0.443 | 3.100 | 2.586 |
-  | `ProjectedSkew` | 0.005 | 0.009 | 0.023 | 0.033 | 0.137 | 0.530 | 4.142 | 3.044 |
-  | ratio | 1.7 | 1.8 | 1.4 | 1.4 | 1.4 | 1.2 | 1.3 | 1.2 |
-
-  So 1.2×–1.8×, never above two. The algorithm's own docstring in
-  `src/retractions/exponential_algorithms.jl` does *not* make the claim — it says only "a QR plus an
-  eigendecomposition instead of matrix products", which is right — so this is the CHANGELOG line
-  alone, and it understates how attractive `ProjectedSkew` is. A one-line fix.
-
-- **`θ = 0.5` is not "the measured middle of that range".** `ScaledSquaring`'s docstring says so.
-  Over `θ ∈ {0.125, 0.25, 0.5, 1, 2, 4}` at `‖B̄‖ = 155` the measured `check` is
-  `9.94e-15, 1.76e-14, 2.82e-14, 2.11e-14, 1.18e-14, 4.97e-14` — `0.5` is the third largest of six,
-  and `θ = 0.125` and `θ = 2` both beat it. The paragraph's actual point, that the choice barely
-  matters across a 32× range, is correct and is what the numbers support; only the justification for
-  the specific value is not.
-
-  **Fixed** in the review of [#39]: the docstring now makes the point the measurement supports —
-  nothing singles out `0.5`, and no value in the range does better — and the sweep is recomputed
-  when the documentation is built, on the *Retractions* page. The first bullet stands.
+**What to do**: add the pair to the driver loop in `svd_optim.jl` at the existing 5 000 cap and
+rewrite the comment that explains why it is not run. Gate it on having seen one green CI run on
+Linux *and* Windows, because the local spread does not measure the thing that surprised us.
 
 ---
 
@@ -1275,7 +1356,7 @@ steepest-descent substitution after a rejected line search was written as
 
 Both are ten (method, line search) pairs and eight of the ten agree. The two that do not:
 
-- **`_DFP + Backtracking`** is in the table and not in `COMBINATIONS`. That is deliberate — at 47 115
+- **`_DFP + Backtracking`** is in the table and not in `COMBINATIONS`. That is deliberate — at 48 322
   iterations on the pinned seed it would dominate the runtime of every sweep, and its only purpose in
   the table is the `α = 1` ceiling argument below it — and it now says so in place. Its spread
   (`10_448..114_116`) is an older measurement at a cap high enough not to bind, which is why it
@@ -1288,6 +1369,40 @@ Either add the `_BFGS + StrongWolfe` row to the table or drop it from `COMBINATI
 the cheaper of the two and loses nothing that is quoted anywhere. The general point is the one the
 preamble now makes: a table that names a script as its source should be checkable against that
 script row by row, or say which rows are exceptions and why.
+
+**The first bullet is why this is worth doing rather than filing.** Running the A8 sweep found that
+the `_DFP + Backtracking` row had been *wrong* on `Geodesic` since the curvature-condition fix —
+47 115 iterations and 1 177 919 evaluations where the same harness measures 48 322 and 1 208 157, and
+where `default_linesearch`'s own table said 48 322 all along. Neither table is regenerated by the
+sweep, so nothing compared them. Both are corrected and both now name the harness and the cap; a row
+that no script regenerates is a row that goes stale silently.
+
+---
+
+#### C9. Most of the harnesses these figures come from are not in the repository
+
+**Severity: low**, and the direct cause of every stale figure this catalogue has had to correct. The
+sequencing plan this catalogue absorbed listed five measurement scripts under `/tmp/go_diag/` and
+said they "should be moved somewhere durable before relying on them". One of the five was:
+`scripts/retraction_accuracy.jl`, which regenerates the SVD tables and the exponential-accuracy
+tables. The rest are gone, and each round of work since has added another.
+
+What is quoted somewhere and has no committed harness:
+
+- **the flag-and-residual probe** — 264 solves over Rosenbrock, ``\sum\sin^2``, two Euclidean
+  objectives, the `St(3,1)` sphere and a manifold `NamedTuple`, across six methods and six line
+  searches, reporting iterations, gradient-evaluation counts, `rg` against ``\|\nabla{}f\|`` computed
+  outside the optimizer, and the four status flags. It is what showed A4 to be numerically inert and
+  what measured A8's `5.8e4×` table, and it is the only thing that would catch either regressing.
+- **the Rosenbrock iteration counts** that `ROSENBROCK_MAX_ITERATIONS` is set against.
+- **the `Adam` cross-version statistic**, quoted in `svd_optim.jl` as a 1.06× spread over three Julia
+  versions and reproducible only by running three Julia versions.
+- **the 1.12 compile-time reproducer** (D1), which no longer exists at all.
+
+The pattern is C8's worked example: a number that no committed script regenerates is a number that
+goes stale silently, and the ones this catalogue has caught were all of that kind. Either put them
+under `scripts/` next to `retraction_accuracy.jl`, or accept the rule the preamble already states and
+stop quoting figures that nothing can re-run.
 
 ---
 
@@ -1308,7 +1423,16 @@ operating systems, against 3–5 minutes on 1.10, 1.13 and nightly, with a singl
 for the whole difference.
 
 1.13 and nightly are unaffected, so this needs an upstream report only if 1.12 is still receiving
-backports. `/tmp/go_diag/isolate2.jl` is a ~10-line reproducer (three variants, one per process).
+backports; if it is not, the value is documentation rather than a fix, and the warning on
+`Optimizer(x, F)` already carries it.
+
+**What to do**: file against JuliaLang/julia, but reduce the reproducer to something
+that does not depend on this package first — the shape is "a constructor reached through N nested
+`kwargs...` levels whose result is passed to a second function with a large call tree, both in one
+inferred body". Report the three controls together, since between them they rule out the two obvious
+explanations: 940.86 s plain, 925.27 s behind `@noinline`, 6.53 s at one level, against 4.35 s on
+1.13.0-rc2 (aarch64-darwin). The reproducer this was measured with lived in `/tmp` and is gone; it
+has to be rewritten, which is the case for writing it into `test/` or `scripts/` this time.
 
 #### D2. SimpleSolvers 0.11: three `Options` fields that nothing reads
 
@@ -1318,6 +1442,12 @@ with **zero readers** anywhere in `SimpleSolvers/src/`. Anyone setting them on a
 gets silence rather than a trace or an error. PR #35 implements `store_trace` at the
 GeometricOptimizers level, which is arguably the right layer since `solve!` is ours, but the upstream
 options remain misleading.
+
+**What to do**: file against JuliaGNI/SimpleSolvers.jl, naming which of the two
+defensible resolutions is preferred — implement the trace in SimpleSolvers' own solvers, or remove
+the three fields and let each caller own its trace, which is what GeometricOptimizers now does.
+Either is better than a field that accepts a value and discards it. If the first, this package's
+local implementation should be retired in favour of it.
 
 #### D3. SimpleSolvers `Bisection` reports success when it cannot bracket
 
@@ -1334,12 +1464,21 @@ The intent is that a flat derivative at a minimum is benign, but the effect is t
 distinguish "found the root" from "gave up", and this sits upstream of the `LINESEARCH_FLOOR` path
 that produced the divergence PR #35 fixed.
 
+**What to do**: file against JuliaGNI/SimpleSolvers.jl, proposing that
+`_bisection_core` distinguish "no sign change" from "converged" — the caller already has a
+`LinesearchOutcome` enum with room for it — and reference this package's `linesearch_rejected` path
+as the case where the conflation mattered.
+
 #### D4. `maxlog` on the SimpleSolvers line-search warnings is per session, not per solve
 
 Documented upstream at `src/linesearch/linesearch_status.jl:221-229`: `maxlog` is keyed on source
 location, so a genuine line-search failure in the tenth solve of a run is silent if the first solve
 already used the budget. Relevant because it is the only channel by which a rejected line search was
 visible before PR #35, and still the only channel for B1.
+
+**What to do**: a feature request rather than a bug report, since the behaviour is
+documented upstream. Lower priority than D2 and D3, and largely mitigated here once B1 puts the
+information in the status object instead of in a log line.
 
 #### D5. Documenter does not catch an `@ref` to a method signature that no longer exists
 
@@ -1404,7 +1543,7 @@ Three things reported as problems during the investigation that are **not**:
 
 ### F. Loose ends from the geodesic-retraction review
 
-Neither is a defect in the code; both are things a later reader would otherwise have to rediscover.
+Not a defect in the code; a thing a later reader would otherwise have to rediscover.
 
 - **The PR #36 description still says the MNIST scripts use the geodesic retraction.** The claim was
   corrected in `docs/src/manifold_optimizers.md`, but it also appears in the pull request body, where
@@ -1412,11 +1551,12 @@ Neither is a defect in the code; both are things a later reader would otherwise 
   scripts passes `retraction`, so they all take the `Optimizer` default, which is `Cayley()`. The
   default is still the right choice — being free of dense LAPACK is reason enough — but if that PR
   body becomes a squashed commit message, the wrong reason goes into the history with it.
-- **`svd_tables()` was not independently reproduced.** The PR #36 review re-ran
-  `scripts/retraction_accuracy.jl`'s `exponential_tables()` and confirmed every accuracy figure to
-  the digit. The iteration and evaluation counts in `test/optimizer_convergence/svd_optim.jl` and in
-  `default_linesearch`'s docstring come from `svd_tables()`, which was not re-run — it is the slow
-  half, and the `Geodesic` columns all moved in that PR. They rest on the author's measurement alone.
+
+(The second loose end here — that `svd_tables()` had never been re-run, so the iteration and
+evaluation counts rested on the author's measurement alone — is closed. It was run on `main` before
+the A8 work below and reproduced every one of the twenty rows to the digit, iterations, evaluations
+and `check` alike. The two figures it did *not* confirm were the two that came from somewhere else,
+and both are corrected: see C8.)
 
 [#14]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/14
 [#16]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16
