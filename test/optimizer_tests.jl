@@ -4,6 +4,7 @@ using GeometricOptimizers
 using GeometricOptimizers: Newton, _DFP, _BFGS
 using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
 using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
+using GeometricOptimizers: iteration_number, increase_iteration_number!, status
 using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, StrongWolfe, GradientAutodiff, GradientFunction
 using Test
 using Random
@@ -115,6 +116,121 @@ end
     # `Adam` no longer takes a learning rate, and `β₁`, `β₂` and `δ` are keyword arguments, so
     # an old positional call fails instead of quietly setting `β₁ = 0.01`.
     @test_throws MethodError Adam(0.01)
+end
+
+# The loop above covers `Newton`, `_BFGS` and `_DFP` only, and the one above that checks which line
+# search the first-order methods *default* to without ever solving with it. Between them they missed
+# that `GradientMethod` and `MomentumMethod` threw a `MethodError` on their own default:
+# `trial_slope`'s `AbstractVector` branch calls `gradient(cache)`, which only the (quasi-)Newton
+# caches defined. So the whole point of this loop is that it solves.
+#
+# A second, smooth, non-quadratic objective, because `F` is a quadratic and one accurate line search
+# solves it exactly -- which is the case where a stale `rg` used to stop these methods one step past
+# the minimiser (see `convergence_measures` and the testset below). `H` is convex with a unique
+# minimiser at `0` and is never solved in one step, so it asserts convergence and not just
+# termination.
+H(x) = sum(sqrt.(1 .+ x .^ 2))
+∇H!(g, x) = (g .= x ./ sqrt.(1 .+ x .^ 2))
+
+@testset "the first-order methods solve on every line search" begin
+    for T in (Float64, Float32)
+        linesearches = (Static(T(0.1)), Backtracking(T), Backtracking(T; expand=true),
+            BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂=T(0.1)))
+        # `Adam` is in this loop but *not* in `default_linesearch`'s searching group, and the two are
+        # not in conflict: a sufficient-decrease search has nothing to work with when the direction is
+        # a moving average that is deliberately allowed not to descend, so `AdamFamily` keeps
+        # `Static` as its default (asserted above). It still has to *work* when one is passed
+        # explicitly, which is what this covers -- and before this branch it threw as well.
+        for method in (GradientMethod(), MomentumMethod(T(0.1)), Adam(T)),
+            _linesearch in linesearches,
+            (name, obj, ∇obj!) in (("F", F, ∇F!), ("H", H, ∇H!))
+
+            @testset "$(method) & $(_linesearch) & $(T) & $(name)" begin
+                x = ones(T, 3)
+                state = OptimizerState(method, x)
+                opt = Optimizer(x, obj; algorithm=method, linesearch=_linesearch, max_iterations=1000)
+
+                solve!(x, state, opt)
+
+                # it terminated on a convergence criterion and not on the iteration cap
+                @test iteration_number(state) < 1000
+                # and it got there: the worst of the 168 combinations is 1.7e-3 in `Float32`,
+                # against a tolerance of 6.2e-2
+                @test norm(x) ≈ zero(T) atol = ∛(2000eps(T))
+
+                # and the same with an explicit gradient rather than the autodiff one
+                x = ones(T, 3)
+                state = OptimizerState(method, x)
+                opt = Optimizer(x, obj; (∇F!)=∇obj!, algorithm=method, linesearch=_linesearch,
+                    max_iterations=1000)
+
+                solve!(x, state, opt)
+
+                @test iteration_number(state) < 1000
+                @test norm(x) ≈ zero(T) atol = ∛(2000eps(T))
+            end
+        end
+    end
+end
+
+@testset "a line search does not corrupt the momentum" begin
+    # `trial_slope`'s `AbstractVector` branch evaluates the trial gradient *into* the cache, and
+    # `update!(::MomentumState, ...)` re-runs `p ← αp + ∇f(xₖ)` from `gradient_array(cache)`
+    # afterwards. Sharing one array between the two made the momentum accumulate the gradient at
+    # whatever trial step the search last probed: 104% wrong under `Bisection`, `Quadratic` and
+    # `StrongWolfe`, 451% under `BierlaireQuadratic`. `Backtracking` was exact by accident, because it
+    # evaluates `φ'` only at `α = 0`, so it cannot stand in for the others here.
+    #
+    # Exact equality, not `isapprox`: both sides are the same two floating-point operations on the
+    # same two arrays, so anything but a bit-identical result means a different gradient went in.
+    f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4 .+ 0.3 .* sin.(3x))
+    ∇f!(g, x) = (g .= 2 .* x .+ 0.4 .* x .^ 3 .+ 0.9 .* cos.(3x))
+    α = 0.1
+
+    for _linesearch in (Bisection(), Quadratic(), BierlaireQuadratic(), StrongWolfe(; c₂=0.1),
+        Backtracking(; expand=true), Static(0.1))
+        x = [1.5, -0.8, 0.4]
+        method = MomentumMethod(α)
+        state = OptimizerState(method, x)
+        opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=method, linesearch=_linesearch)
+        g = similar(x)
+
+        for _ in 1:8
+            increase_iteration_number!(state)
+            p̄ = copy(state.p)
+            ∇f!(g, x)                      # ∇f at the iterate the direction is about to be built at
+            solver_step!(x, state, opt)
+            update!(state, opt, x)
+
+            @test state.p == α .* p̄ .+ g
+        end
+    end
+end
+
+@testset "the gradient residual is measured at the iterate the solve returns" begin
+    # `rg` used to be `‖∇f(xₖ)‖` at the iterate the step *started* from. Harmless under `Static`,
+    # where the direction is a scaled gradient, and not harmless at all under one that carries
+    # momentum: a line search accurate enough to drive `∇f(x₁) ≈ 0` made `g_converged` fire while the
+    # momentum term was still moving the iterate. On `F` from `ones(3)` that left `MomentumMethod` at
+    # `‖x‖ = 0.346` and `Adam` at `‖x‖ = 1.16` -- barely moved -- both reporting convergence.
+    ∇F(x) = 2 .* x
+
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
+        _linesearch in (Bisection(), Quadratic(), BierlaireQuadratic(), StrongWolfe(; c₂=0.1))
+
+        x = ones(3)
+        state = OptimizerState(method, x)
+        result = solve!(x, state, Optimizer(x, F; algorithm=method, linesearch=_linesearch))
+
+        # the residual belongs to the point the solve returns, and not to the one before it
+        @test status(result).rg ≈ norm(∇F(x))
+        # it stopped on a convergence criterion -- `g_converged` for ten of these twelve, `f_converged`
+        # for the two `BierlaireQuadratic` ones -- rather than on the iteration cap
+        @test GeometricOptimizers.isconverged(status(result))
+        # and it really is at the minimiser: `1.8e-8` is the worst of the twelve, against the `0.346`
+        # and `1.16` this used to stop at
+        @test norm(x) < 1e-7
+    end
 end
 
 @testset "Test Nan handling in optimizers" begin

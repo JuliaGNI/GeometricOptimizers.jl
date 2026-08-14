@@ -11,6 +11,8 @@ Cache for the gradient optimizer.
 - `g`: the gradient (for the *manifold case* this is in [`AbstractLieAlgHorMatrix`](@ref) form),
 - `δ`: the direction,
 - `Δg`: difference in gradients (used in [`OptimizerStatus`](@ref)),
+- `g̃`: scratch for [`latest_gradient`](@ref); see [`GradientCache`](@ref) for why it is separate
+  from `g`, and note that this is the cache the separation was measured on,
 - `section`: the [`GlobalSection`](@ref).
 """
 struct MomentumCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
@@ -18,12 +20,15 @@ struct MomentumCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T}
     g::VT
     δ::VT
     Δg::VT
+    g̃::VT
     section::ST
 end
 
 function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
     sec = GlobalSection(_copy(x))
-    MomentumCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, sec)
+    g̃ = _similar(g)
+    _fill!(g̃, T(NaN))
+    MomentumCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, sec)
 end
 
 function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
@@ -45,6 +50,9 @@ end
 
 solution(cache::MomentumCache) = cache.x
 gradient_array(cache::MomentumCache) = cache.g
+gradient(cache::MomentumCache) = cache.g
+latest_gradient(cache::MomentumCache) = cache.g̃
+refresh_latest_gradient!(cache::MomentumCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
 direction(cache::MomentumCache) = cache.δ
 rhs(cache::MomentumCache) = direction(cache)
 section(cache::MomentumCache) = cache.section

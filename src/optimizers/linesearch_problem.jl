@@ -81,15 +81,23 @@ or a quadratic fit would act on.
 trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction) =
     _trial_slope(solution(cache), gradient_instance, cache)
 
-# These two differ in one respect worth knowing about: the `AbstractVector` method evaluates into
-# `gradient(cache)` — that is what makes it allocation-free — and so leaves the gradient at the last
-# trial `α` there, while the manifold method allocates and leaves `gradient(cache)` at the iterate
-# `update!` last stored. `OptimizerStatus` reports `rg = l2norm(cache.g)`, so the two report `‖∇f‖` at
-# slightly different points. Neither is wrong for a stopping criterion — the difference is one trial
-# step — but they are not the same quantity.
+# These two differ in one respect worth knowing about: the `AbstractVector` method evaluates *into* an
+# array of the cache — that is what makes it allocation-free — and so leaves the gradient at the last
+# trial `α` there, while the manifold method allocates and leaves the cache alone.
+#
+# Which array it writes into is `latest_gradient(cache)` and deliberately not `gradient(cache)`. On
+# the quasi-Newton caches the two are the same array, which is what this did unconditionally and is
+# harmless there: `BFGSCache` and `DFPCache` advance `state.ḡ` and form `cache.Δg` inside
+# `update!(cache, ...)`, i.e. before the line search runs, so nothing downstream reads `cache.g`
+# again. On the three first-order caches they are not, because `update!(::MomentumState, ...)` re-runs
+# `p ← αp + ∇f(xₖ)` from `gradient_array(cache)` *after* the search — so a shared array made the
+# momentum accumulate the gradient at whatever trial step the search last probed. Measured over eight
+# iterations, the state's momentum was 104% wrong under `Bisection`, `Quadratic` and `StrongWolfe` and
+# 451% wrong under `BierlaireQuadratic`; `Backtracking` was exact only because it evaluates `φ'` once,
+# at `α = 0`, where the trial gradient *is* `∇f(xₖ)`. See the CHANGELOG entry for issue A2.
 function _trial_slope(::AbstractVector, gradient_instance::Gradient, cache::OptimizerCache)
-    gradient_instance(gradient(cache), solution(cache))
-    _dot(gradient(cache), direction(cache))
+    gradient_instance(latest_gradient(cache), solution(cache))
+    _dot(latest_gradient(cache), direction(cache))
 end
 
 function _trial_slope(::Union{Manifold,ArrayNamedTuple}, gradient_instance::Gradient, cache::OptimizerCache)

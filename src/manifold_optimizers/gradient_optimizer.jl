@@ -13,19 +13,34 @@ Cache for the gradient optimizer.
 - `g`: the gradient (for the *manifold case* this is in [`AbstractLieAlgHorMatrix`](@ref) form),
 - `δ`: the direction,
 - `Δg`: difference in gradients,
+- `g̃`: scratch for [`latest_gradient`](@ref),
 - `section`: the [`GlobalSection`](@ref).
+
+# Implementation
+
+!!! info "Why `g̃` is a field and not an alias for `g`"
+    The line search evaluates ``\\varphi'(\\alpha)`` *into* an array of the cache — that is what makes
+    [`trial_slope`](@ref) allocation-free — and [`solver_step!`](@ref) refreshes the same array at the
+    accepted iterate. Neither may land in `g`, because `g` is ``\\nabla{}f(x_k)`` at the iterate the
+    direction was built from and the state updates read it afterwards: `update!(::MomentumState, ...)`
+    accumulates it into the momentum, and with `g` shared that recursion was measurably wrong (see
+    the CHANGELOG entry for issue A2). [`MomentumCache`](@ref) and [`AdamCache`](@ref) carry the same
+    field for the same reason.
 """
 struct GradientCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT
     Δg::VT
+    g̃::VT
     section::ST
 end
 
 function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
     sec = GlobalSection(_copy(x))
-    GradientCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, sec)
+    g̃ = _similar(g)
+    _fill!(g̃, T(NaN))
+    GradientCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, sec)
 end
 
 function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
@@ -48,6 +63,12 @@ end
 
 solution(cache::GradientCache) = cache.x
 gradient_array(cache::GradientCache) = cache.g
+# `gradient` and `gradient_array` are the same array here, as they are on `NewtonOptimizerCache`.
+# Only `gradient` was missing, and `trial_slope`'s `AbstractVector` branch calls it, so the three
+# first-order methods used to throw a `MethodError` on any line search that evaluates `φ'`.
+gradient(cache::GradientCache) = cache.g
+latest_gradient(cache::GradientCache) = cache.g̃
+refresh_latest_gradient!(cache::GradientCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
 direction(cache::GradientCache) = cache.δ
 rhs(cache::GradientCache) = direction(cache)
 section(cache::GradientCache) = cache.section

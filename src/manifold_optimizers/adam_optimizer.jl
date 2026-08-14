@@ -11,6 +11,7 @@ Cache for the gradient optimizer.
 - `g`: the gradient (for the *manifold case* this is in [`AbstractLieAlgHorMatrix`](@ref) form),
 - `δ`: the direction,
 - `Δg`: difference in gradients, needed for [`OptimizerStatus`](@ref),
+- `g̃`: scratch for [`latest_gradient`](@ref); see [`GradientCache`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 """
 struct AdamCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
@@ -18,6 +19,7 @@ struct AdamCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<
     g::VT
     δ::VT
     Δg::VT
+    g̃::VT
     m₁::VT
     m₂::VT
     m̃₂::VT
@@ -30,10 +32,12 @@ _second_moment(cache::AdamCache) = cache.m̃₂
 
 function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
     sec = GlobalSection(_copy(x))
+    g̃ = _similar(g)
+    _fill!(g̃, T(NaN))
     m₁ = _similar(g)
     m₂ = _similar(g)
     m̃₂ = _similar(g)
-    AdamCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, m₁, m₂, m̃₂, sec)
+    AdamCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, m₁, m₂, m̃₂, sec)
 end
 
 function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
@@ -55,6 +59,9 @@ end
 
 solution(cache::AdamCache) = cache.x
 gradient_array(cache::AdamCache) = cache.g
+gradient(cache::AdamCache) = cache.g
+latest_gradient(cache::AdamCache) = cache.g̃
+refresh_latest_gradient!(cache::AdamCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
 direction(cache::AdamCache) = cache.δ
 rhs(cache::AdamCache) = direction(cache)
 section(cache::AdamCache) = cache.section
