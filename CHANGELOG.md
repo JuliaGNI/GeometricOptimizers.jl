@@ -559,7 +559,7 @@ given. Entries A5, A6, C6 and D5 come from the review of [#36], the rest from un
 hierarchies.
 
 A1, A2 and A3 are fixed and are kept for the record, since later entries refer to them: A1 and A3 by
-[#36], A2 by the branch that added `latest_gradient`. C6 describes text that [#36] introduced.
+[#36], A2 by [#38]. C6 describes text that [#36] introduced.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
@@ -661,9 +661,9 @@ are fine. The honest fix is probably an exact `Cayley` differential in `trial_sl
 
 #### A2. `GradientMethod` and `MomentumMethod` throw on their own default line search — fixed in 0.2.0
 
-**Fixed**: `gradient` is defined for all three first-order caches, and `trial_slope` writes into
-`latest_gradient` — a scratch array on those caches rather than an alias for `cache.g`. Two notes on
-what the fix turned up that the diagnosis below did not anticipate:
+**Fixed** by [#38]: `gradient` is defined for all three first-order caches, and `trial_slope` writes
+into `latest_gradient` — a scratch array on those caches rather than an alias for `cache.g`. Two
+notes on what the fix turned up that the diagnosis below did not anticipate:
 
 - **defining the accessor is not enough.** `trial_slope`'s vector branch evaluates *into* the cache,
   and `update!(::MomentumState, …)` re-runs `p ← αp + ∇f(xₖ)` from the same array afterwards, so
@@ -983,5 +983,6 @@ Neither is a defect in the code; both are things a later reader would otherwise 
 [#28]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28
 [#33]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/33
 [#36]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/36
+[#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
