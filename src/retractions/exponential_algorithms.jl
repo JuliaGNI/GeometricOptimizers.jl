@@ -59,7 +59,7 @@ The squaring is done on the ``2n\times{}2n`` factor rather than on the assembled
 matrix, which is possible because the low-rank form is closed under squaring:
 
 ```math
-\left(\mathbb{I} + B'WB''^T\right)^2 = \mathbb{I} + B'\left(2W + WXW\right)B''^T,
+\left(\mathbb{I} + B'W(B'')^T\right)^2 = \mathbb{I} + B'\left(2W + WXW\right)(B'')^T,
 \qquad X = (B'')^TB',
 ```
 
@@ -73,7 +73,9 @@ accurate.
 `6.4e-15` and `8.2e-15`. `0.5` is the measured middle of that range and needs no tuning.
 
 This is the only algorithm that uses nothing but matrix products and norms, so it is the only one
-that runs unchanged on a `KernelAbstractions` GPU backend. That is why it is the default.
+that runs unchanged on a `KernelAbstractions` GPU backend. That is why it is the default. The norm
+is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by `LinearAlgebra.opnorm(X, 1)`, which
+is a scalar-indexing loop and would give up exactly the property this paragraph claims.
 
 !!! note "The argument is worse-conditioned than the lift"
     ``X``'s lower-left block is ``\frac{1}{4}A^2 - B^TB``, so ``\|X\| \approx \|\bar{B}\|^2/4`` while
@@ -180,7 +182,9 @@ the result is of order one, so stopping when a *term* falls below `eps` leaves a
 to the partial sum instead of absolute does not help, and was measured not to change any of the
 numbers above — the loss is in the cancellation, not in when the summation stops.
 
-Use [`ScaledSquaring`](@ref), which fixes this and is also five times faster.
+Use [`ScaledSquaring`](@ref), which fixes this and is also the cheaper of the two — 1.6× at
+``N = 200``, ``n = 10`` and 4.6× at ``N = 500``, ``n = 50``, because the scaled series converges in a
+handful of terms where the unscaled one grinds through hundreds.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the alternatives.
 """

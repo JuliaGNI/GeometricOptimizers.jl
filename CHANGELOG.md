@@ -248,7 +248,7 @@ this package produces change**, in most cases substantially for the better.
 
   `Geodesic` is now also the *cheaper* of the two retractions for `N ≳ 50`, which reverses what its
   docstring used to say: `cayley` finishes with a product of two `N × N` matrices at `O(N³)` where
-  `geodesic` only assembles `I + B'𝔄(B'')ᵀ` at `O(N²n)`. At `N = 1000, n = 20` that is 2.5 ms against
+  `geodesic` only assembles `I + B'𝔄(X)(B'')ᵀ` at `O(N²n)`. At `N = 1000, n = 20` that is 2.5 ms against
   39 ms.
 
 - **`check` works on a `GrassmannManifold`.** It was defined for `StiefelManifold` only, so the one
@@ -387,6 +387,10 @@ this package produces change**, in most cases substantially for the better.
 
   `TaylorSeries()` is the pre-0.2.0 behaviour. It is kept, and documented as unusable, so that the
   regression stays reproducible from the test suite rather than only from this file.
+
+  The algorithm reaches every entry point, not just `retraction(::Geodesic, ::AbstractLieAlgHorMatrix)`:
+  `geodesic(Y, Δ, algorithm)` takes it as an optional third argument, so the tangent-vector form is
+  selectable too rather than being pinned to the default.
 
 - **`Options(store_trace = true)` does something.** `OptimizerResult` gains a `trace` of one
   `OptimizerTraceEntry` — `(iteration, f, rg)` — per iteration, reachable through `trace(result)` and

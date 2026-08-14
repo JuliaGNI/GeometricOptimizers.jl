@@ -113,7 +113,7 @@ Two conclusions follow. First, hard geometric constraints can replace the heuris
 
 ## Reproducing the experiment
 
-The scripts in `scripts/` of this repository run that experiment against `GeometricOptimizers` itself — `mnist.jl` on the CPU, `mnist_cuda.jl` on an NVIDIA GPU, `mnist_metal.jl` on Apple silicon. Everything below is one run of `mnist_cuda.jl` on an RTX 4090: the same four configurations, 500 epochs of 29 batches each at a batch size of 2048, `Float32`, the geodesic retraction, 6 h 53 min for all four.
+The scripts in `scripts/` of this repository run that experiment against `GeometricOptimizers` itself — `mnist.jl` on the CPU, `mnist_cuda.jl` on an NVIDIA GPU, `mnist_metal.jl` on Apple silicon. Everything below is one run of `mnist_cuda.jl` on an RTX 4090: the same four configurations, 500 epochs of 29 batches each at a batch size of 2048, `Float32`, the Cayley retraction — none of the scripts passes `retraction`, so they all take the default — 6 h 53 min for all four.
 
 The three series the figures plot are checked in under `docs/src/data/` — 540 rows in total, distilled from the run by `scripts/distill_mnist_results.jl`. The figures are therefore rebuilt with the documentation and need neither a GPU nor a rerun.
 

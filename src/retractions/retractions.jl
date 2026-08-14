@@ -55,12 +55,16 @@ function lift_factors(B::GrassmannLieAlgHorMatrix)
 end
 
 @doc raw"""
-    geodesic(Y::Manifold, Δ)
+    geodesic(Y::Manifold, Δ, algorithm = ScaledSquaring())
 
 Take as input an element of a manifold `Y` and a tangent vector in `Δ` in the corresponding tangent space and compute the geodesic (exponential map).
 
 In different notation: take as input an element ``x`` of ``\mathcal{M}`` and an element of ``T_x\mathcal{M}`` and return ``\mathtt{geodesic}(x, v_x) = \exp(v_x).``
 
+`algorithm` selects how the exponential is evaluated and is passed straight through to
+[`geodesic(::AbstractLieAlgHorMatrix)`](@ref); see [`AbstractExponentialAlgorithm`](@ref) for the
+choice. It matters only for a large ``\Delta`` — the default [`ScaledSquaring`](@ref) is accurate at
+every step size.
 
 # Examples
 
@@ -80,13 +84,14 @@ true
 
 # Implementation
 
-Internally this `geodesic` method calls [`geodesic(::StiefelLieAlgHorMatrix)`](@ref).
+Internally this `geodesic` method calls [`geodesic(::AbstractLieAlgHorMatrix)`](@ref).
 """
-function geodesic(Y::Manifold{T}, Δ::AbstractMatrix{T}) where {T}
+function geodesic(Y::Manifold{T}, Δ::AbstractMatrix{T},
+    algorithm::AbstractExponentialAlgorithm=ScaledSquaring()) where {T}
     λY = GlobalSection(Y)
     B = global_rep(λY, Δ)
     E = StiefelProjection(B)
-    expB = geodesic(B)
+    expB = geodesic(B, algorithm)
     λY * typeof(Y)(expB * E)
 end
 
@@ -167,7 +172,7 @@ Y₂' * Y₂ ≈ [1.;]
 true
 ```
 
-See the example in [`geodesic(::Manifold{T}, ::AbstractMatrix{T}) where T`].
+See the example in [`geodesic(::Manifold, ::AbstractMatrix)`](@ref).
 """
 function cayley(Y::Manifold{T}, Δ::AbstractMatrix{T}) where {T}
     λY = GlobalSection(Y)

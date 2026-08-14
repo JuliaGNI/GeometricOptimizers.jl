@@ -35,7 +35,7 @@ using Printf
 
 using KernelAbstractions
 using Random
-using LinearAlgebra: Adjoint, qr, qr!, norm, opnorm, I, mul!, rmul!, dot, ⋅
+using LinearAlgebra: Adjoint, qr, qr!, norm, I, mul!, rmul!, dot, ⋅
 using LinearAlgebra: Diagonal, Hermitian, eigen
 import LinearAlgebra
 import ChainRulesCore

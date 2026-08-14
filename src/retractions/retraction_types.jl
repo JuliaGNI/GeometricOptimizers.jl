@@ -36,7 +36,7 @@ the manifold to round-off. [`cayley`](@ref) never forms the ``N\times{}N`` inver
 !!! note "It is no longer the cheaper of the two"
     It was, when [`Geodesic`](@ref) summed an unscaled series. It is not now. `cayley` finishes with
     a product of two ``N\times{}N`` matrices, which is ``O(N^3)``, where `geodesic` only assembles
-    ``\mathbb{I} + B'\mathfrak{A}(B'')^T`` at ``O(N^2n)``. One retraction, `ScaledSquaring` against
+    ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` at ``O(N^2n)``. One retraction, `ScaledSquaring` against
     `Cayley`:
 
     | ``N``, ``n`` | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 1000, 20 |

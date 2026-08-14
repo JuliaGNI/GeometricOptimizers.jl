@@ -47,9 +47,26 @@ function 𝔄(A::AbstractMatrix)
         𝔄A += Aⁿ
         n += 1
     end
-    # println("Number of iterations is: ", i)
     𝔄A
 end
+
+@doc raw"""
+    opnorm₁(X)
+
+The induced 1-norm of `X`, i.e. its largest absolute column sum, as a reduction.
+
+`LinearAlgebra.opnorm(X, 1)` is the natural spelling and is *not* used, because
+`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. Scalar indexing is precisely what an array
+on a GPU backend cannot serve, and being free of it is the reason [`ScaledSquaring`](@ref) is the
+default algorithm — so the one norm that algorithm takes has to be expressible as `sum` and
+`maximum`, which every `KernelAbstractions` backend specializes.
+
+The two agree to a few `eps`, not bitwise: `opnorm1` accumulates each column sequentially in at
+least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. The value is only ever
+used to pick the number of halvings `s = ⌈log₂(‖X‖₁/θ)⌉`, so a difference of an ulp can at most
+shift `s` by one, and only for an argument that lands exactly on a power of two.
+"""
+opnorm₁(X::AbstractMatrix) = isempty(X) ? zero(real(eltype(X))) : maximum(sum(abs, X; dims=1))
 
 @doc raw"""
     𝔄(X, algorithm)
@@ -94,7 +111,7 @@ function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
     # N × N. `W` absorbs the `2^-s` that belongs to `B̂`, which is what makes `I + B̂WB̄ᵗ` the
     # exponential of the *scaled* lift; after `s` squarings it is `𝔄(X)` itself, so every caller is
     # unchanged.
-    nrm = opnorm(X, 1)
+    nrm = opnorm₁(X)
     s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
     scale = eltype(X)(2)^s
 
