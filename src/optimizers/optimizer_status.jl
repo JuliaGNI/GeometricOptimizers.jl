@@ -151,6 +151,20 @@ function Base.show(io::IO, s::OptimizerStatus)
 
 end
 
+"""
+    isconverged(status)
+
+Whether any of the three convergence flags [`convergence_measures`](@ref) sets is set.
+
+The flags are a disjunction on purpose: `x_converged`, `f_converged` and `g_converged` test different
+things and a solve is entitled to stop on any one of them. Note that [`solve!`](@ref) can also stop
+for reasons that are *not* convergence — the iteration cap, a non-finite iterate, an increase in `f`
+where one is not allowed — and none of those sets a flag here, so this is what tells the two apart;
+see [`meets_stopping_criteria`](@ref).
+
+`x_converged` is the one to be careful with: it cannot be trusted on a solve that has diverged, for
+the reason recorded under [`convergence_measures`](@ref).
+"""
 isconverged(status::OptimizerStatus) = status.x_converged || status.f_converged || status.g_converged
 
 @doc raw"""
@@ -177,7 +191,7 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
     way of closing it here needs a threshold on ``\|x\|`` or on ``\|x - x'\|`` that no property of
     the problem supplies, and imposing one would change the stopping behaviour of every Euclidean
     solve to guard a state that can no longer be reached. On a manifold the honest test is
-    [`check`](@ref), which the caller has and this function does not: ``\|Y\|_F = \sqrt{n}`` exactly
+    `check`, which the caller has and this function does not: ``\|Y\|_F = \sqrt{n}`` exactly
     for ``Y \in St(N, n)``, so any deviation is measurable without a tolerance being invented for it.
 """
 function convergence_measures(status::OptimizerStatus, config::Options)

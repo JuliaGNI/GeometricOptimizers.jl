@@ -62,13 +62,15 @@ end
 Whether a line search reported that it could not decrease the merit along the direction it was
 given.
 
-[`SimpleSolvers.solve`](@extref) returns only the step length, so an outcome of
-`LINESEARCH_FLOOR`, `LINESEARCH_EXHAUSTED` or `LINESEARCH_NO_DESCENT` used to be indistinguishable
-from a successful search: the step came back and [`solver_step!`](@ref) took it. The three mean, in
-order, that the decrease achieved was no larger than the merit's own round-off resolution, that the
-budget ran out or the merit could not be bracketed, and that ``\varphi'(0) \geq 0``. In none of them
-does the returned ``\alpha`` carry a guarantee, and taking it anyway is how a solve can walk
-*uphill*.
+`SimpleSolvers.solve` returns only the step length, so an outcome of `LINESEARCH_FLOOR`,
+`LINESEARCH_EXHAUSTED` or `LINESEARCH_NO_DESCENT` used to be indistinguishable from a successful
+search: the step came back and [`solver_step!`](@ref) took it. The three mean, in order, that the
+decrease achieved was no larger than the merit's own round-off resolution, that the budget ran out or
+the merit could not be bracketed, and that ``\varphi'(0) \geq 0``. In none of them does the returned
+``\alpha`` carry a guarantee, and taking it anyway is how a solve can walk *uphill*.
+
+The outcome comes from [`SimpleSolvers.solve_with_status`](@extref), which `solver_step!` calls in
+place of `solve` for exactly this reason.
 
 !!! info "This is deliberately the outcome and not `φ > φ₀`"
     Testing the merit directly — "reject the step only if it actually made things worse" — is the

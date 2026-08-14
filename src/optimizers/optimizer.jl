@@ -241,8 +241,8 @@ julia> solver_step!(x, state, opt)
 # Extended help
 
 !!! info "A line search that fails does not get its step taken"
-    [`SimpleSolvers.solve`](@extref) returns a step length whether or not the search succeeded, so
-    taking it unconditionally lets a failed search drive the iteration. On the SVD problem of
+    `SimpleSolvers.solve` returns a step length whether or not the search succeeded, so taking it
+    unconditionally lets a failed search drive the iteration. On the SVD problem of
     `test/optimizer_convergence/svd_optim.jl`, `_BFGS` + `Bisection` + `Geodesic` used to diverge
     outright on one of eight starting points, and this is the mechanism:
 
@@ -258,8 +258,9 @@ julia> solver_step!(x, state, opt)
     the manifold completely: `check(Y) = 1.07e200`. The solve then reported *convergence*, because
     ``\\|\\delta\\|/\\|x\\|`` is tiny once ``\\|x\\|`` is at `1e100`.
 
-    See [`linesearch_rejected`](@ref) and [`restart!`](@ref). With the restart the same starting
-    point converges in 121 iterations at `check(Y) = 6e-14`.
+    [`SimpleSolvers.solve_with_status`](@extref) reports the outcome alongside the step length, so
+    the two cases can be told apart; see [`linesearch_rejected`](@ref) and [`restart!`](@ref). With
+    the restart the same starting point converges in 121 iterations at `check(Y) = 6e-14`.
 """
 function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{T,MT}) where {T,MT}
     # update cache

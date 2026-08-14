@@ -84,7 +84,7 @@ this package produces change**, in most cases substantially for the better.
   backtracking search starts its trial step at `α = 1` and can never exceed it. That is right for a
   direction already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its iterations — but
   wrong for one that is systematically under-scaled. `_DFP`'s wants a median `α` of 8, so on the SVD
-  problem it accepted the ceiling on *every* iteration and needed 49 679 of them; handing the same
+  problem it accepted the ceiling on *every* iteration and needed 47 115 of them; handing the same
   search a trial step of 3 instead of 1 was worth a factor of 217, which is what identified the ceiling
   rather than the method as the cause.
 
