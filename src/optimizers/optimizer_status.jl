@@ -44,9 +44,9 @@ struct OptimizerStatus{XT,YT}
     g_converged::Bool
     f_increased::Bool
 
-    x_isnan::Bool
-    f_isnan::Bool
-    g_isnan::Bool
+    x_nonfinite::Bool
+    f_nonfinite::Bool
+    g_nonfinite::Bool
 end
 
 x_abschange(status::OptimizerStatus) = status.rxₐ
@@ -91,15 +91,15 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
 
     f_increased = abs(f) > abs(state.f̄)
 
-    x_isnan = contains_nan(cache.x)
-    f_isnan = contains_nan(f)
-    g_isnan = contains_nan(cache.g)
+    x_nonfinite = contains_nonfinite(cache.x)
+    f_nonfinite = contains_nonfinite(f)
+    g_nonfinite = contains_nonfinite(cache.g)
 
-    _status = OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false, f_increased, x_isnan, f_isnan, g_isnan)
+    _status = OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false, f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
 
     (x_converged, f_converged, f_converged_strong, g_converged) = convergence_measures(_status, config)
 
-    OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, x_converged, f_converged, g_converged, f_increased, x_isnan, f_isnan, g_isnan)
+    OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, x_converged, f_converged, g_converged, f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
 end
 
 l2norm(a::StiefelLieAlgHorMatrix) = √(l2norm(a.A)^2 + l2norm(a.B)^2)
@@ -120,8 +120,23 @@ function l2norm(a::ArrayNamedTuple)
     √sum(abs2, values(norms))
 end
 
-contains_nan(a::Real) = isnan(a)
-contains_nan(a) = any(contains_nan, a)
+@doc raw"""
+    contains_nonfinite(a)
+
+Whether `a` holds any value that is not finite.
+
+This was `contains_nan`, and tested `isnan` only. `NaN` is the *last* thing a diverging solve
+produces: it reaches `Inf` first, and before that every finite magnitude on the way. On the SVD
+problem of `test/optimizer_convergence/svd_optim.jl` the diverging solve passed through
+`f = 1.2e169` and `check(Y) = 1.07e200` — both perfectly ordinary `Float64`s, neither of them `NaN`
+— and only went `NaN` on the iteration after that. By then it had been off the manifold for two
+iterations.
+
+`isfinite` still does not catch `1e200`, which is why it is not the only guard; see
+[`convergence_measures`](@ref) for the one that does.
+"""
+contains_nonfinite(a::Real) = !isfinite(a)
+contains_nonfinite(a) = any(contains_nonfinite, a)
 
 function Base.show(io::IO, s::OptimizerStatus)
 
@@ -136,14 +151,48 @@ function Base.show(io::IO, s::OptimizerStatus)
 
 end
 
+"""
+    isconverged(status)
+
+Whether any of the three convergence flags [`convergence_measures`](@ref) sets is set.
+
+The flags are a disjunction on purpose: `x_converged`, `f_converged` and `g_converged` test different
+things and a solve is entitled to stop on any one of them. Note that [`solve!`](@ref) can also stop
+for reasons that are *not* convergence — the iteration cap, a non-finite iterate, an increase in `f`
+where one is not allowed — and none of those sets a flag here, so this is what tells the two apart;
+see [`meets_stopping_criteria`](@ref).
+
+`x_converged` is the one to be careful with: it cannot be trusted on a solve that has diverged, for
+the reason recorded under [`convergence_measures`](@ref).
+"""
 isconverged(status::OptimizerStatus) = status.x_converged || status.f_converged || status.g_converged
 
-"""
+@doc raw"""
     convergence_measures(status, config)
 
 Checks if the optimizer converged.
 
 Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`SimpleSolvers.Options`](@extref) object.
+
+# Extended help
+
+!!! warning "`x_converged` cannot be trusted on a solve that has diverged"
+    ``\|x - x'\|/\|x'\|`` measures "the iterate stopped moving" only while ``\|x'\|`` is bounded, and
+    a diverging solve is exactly the case where it is not. On the SVD problem of
+    `test/optimizer_convergence/svd_optim.jl`, `_BFGS` + `Bisection` + `Geodesic` once left the
+    manifold on iteration 4 with an iterate of magnitude ``10^{100}``. The step that took it there
+    had ``\|\delta\| = 345`` — not remotely a solve that has stopped moving — but the *relative*
+    change was ``345/10^{100} \approx 10^{-98}``, far under `x_reltol`, so `x_converged` fired and
+    the solve reported success.
+
+    That divergence is fixed at its source ([`linesearch_rejected`](@ref),
+    [`curvature_is_usable`](@ref)) and [`contains_nonfinite`](@ref) catches the `Inf`/`NaN` end of
+    the range, so nothing measured still reaches this. The hole itself is left open on purpose: every
+    way of closing it here needs a threshold on ``\|x\|`` or on ``\|x - x'\|`` that no property of
+    the problem supplies, and imposing one would change the stopping behaviour of every Euclidean
+    solve to guard a state that can no longer be reached. On a manifold the honest test is
+    `check`, which the caller has and this function does not: ``\|Y\|_F = \sqrt{n}`` exactly
+    for ``Y \in St(N, n)``, so any deviation is measurable without a tolerance being invented for it.
 """
 function convergence_measures(status::OptimizerStatus, config::Options)
     x_converged = x_abschange(status) ≤ x_abstol(config) ||
@@ -177,21 +226,34 @@ Check if the optimizer has converged.
 - `converged` (the output of [`SimpleSolvers.assess_convergence`](@extref)) is `true` and `iterations` ``\geq`` `config.min_iterations`,
 - if `config.allow_f_increases` is `false`: `status.f_increased` is `true`,
 - `iterations` ``\geq`` `config.max_iterations`,
-- `status.rfₐ` ``>`` `config.f_abstol_break`
-- `status.x_isnan`
-- `status.f_isnan`
-- `status.g_isnan`
+- `status.rfₐ` ``>`` `config.f_abstol_break`,
+- any of `status.x_nonfinite`, `status.f_nonfinite`, `status.g_nonfinite`.
+
+# Extended help
+
+!!! info "A non-finite iterate stops the solve"
+    The last of those used to be reported and then ignored: the `@error` below fired and the loop
+    carried on. Nothing an iteration does to a `NaN` iterate can recover it, so the only effect was
+    to burn the whole iteration budget printing the same message. On the SVD problem of
+    `test/optimizer_convergence/svd_optim.jl` one starting point spent all 100 000 iterations of a
+    raised cap that way, at roughly one `@error` per iteration.
+
+    A solve that stops here is *not* converged — [`isconverged`](@ref) reads the three convergence
+    flags and none of them is set by this — so a caller that checks the status rather than only the
+    return value can tell the two apart.
 """
 function meets_stopping_criteria(status::OptimizerStatus, config::Options, iterations::Integer)
     converged = isconverged(status)
+    nonfinite = status.x_nonfinite || status.f_nonfinite || status.g_nonfinite
 
-    if iterations ≥ 1 && (status.x_isnan || status.f_isnan || status.g_isnan)
-        @error "x, f or g in the OptimizerStatus you provided are NaNs."
+    if iterations ≥ 1 && nonfinite
+        @error "x, f or g in the OptimizerStatus you provided is not finite; stopping." iterations
     end
 
     (converged && iterations ≥ config.min_iterations) ||
         (status.f_increased && !config.allow_f_increases) ||
         iterations ≥ config.max_iterations ||
+        (iterations ≥ 1 && nonfinite) ||
         # `f_abstol_break` is the only `*_break` field SimpleSolvers 0.9 kept; the four that
         # are gone (`x_abstol_break`, `x_reltol_break`, `f_reltol_break`, `g_restol_break`)
         # all defaulted to `Inf`, so dropping them changes nothing at default `Options`.

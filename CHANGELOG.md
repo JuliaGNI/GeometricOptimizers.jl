@@ -84,7 +84,7 @@ this package produces change**, in most cases substantially for the better.
   backtracking search starts its trial step at `α = 1` and can never exceed it. That is right for a
   direction already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its iterations — but
   wrong for one that is systematically under-scaled. `_DFP`'s wants a median `α` of 8, so on the SVD
-  problem it accepted the ceiling on *every* iteration and needed 49 679 of them; handing the same
+  problem it accepted the ceiling on *every* iteration and needed 47 115 of them; handing the same
   search a trial step of 3 instead of 1 was worth a factor of 217, which is what identified the ceiling
   rather than the method as the cause.
 
@@ -95,30 +95,34 @@ this package produces change**, in most cases substantially for the better.
 
   | | `expand = false` | `expand = true` |
   |---|---|---|
-  | `_BFGS` | 113 / 136 iters, 2 857 / 3 431 evals | **93 / 118**, **2 374 / 3 006** |
-  | `_DFP` | 49 679 / 29 081, 1 241 987 / 727 036 | **830 / 1 237**, **21 540 / 31 995** |
+  | `_BFGS` | 114 / 136 iters, 2 915 / 3 446 evals | **93 / 118**, **2 389 / 3 021** |
+  | `_DFP` | 47 115 / 26 479, 1 177 919 / 662 019 | **702 / 1 366**, **18 258 / 35 329** |
 
   It costs under 4% per iteration and, on a well-scaled problem, exactly nothing: the extrapolation
   reuses `φ(0)`, `φ'(0)` and `φ(α)`, all known once the trial step is accepted, so declining to expand
   costs no evaluation. On the sphere problem the evaluation counts are identical with and without it.
 
-  The `_DFP` figures are for one starting point and are not representative: across eight, `_DFP` under
-  the default ranges over 512–77 890 iterations (`Geodesic`) and 465–3 834 (`Cayley`), because `Q`
-  becomes badly conditioned and how fast the expansion digs it out is close to arbitrary. `_BFGS` is
-  steady (93–159 / 91–156). For a DFP-heavy workload pass `StrongWolfe(T; c₂ = 0.1)`, which is both
-  faster and far steadier — see the next entry.
+  The `_DFP` figures are for one starting point, but they are now roughly representative: across eight,
+  `_DFP` under the default ranges over 387–845 iterations (`Geodesic`) and 466–1 366 (`Cayley`), and
+  `_BFGS` over 93–154 / 114–156. Those `_DFP` ranges read 512–77 890 and 465–3 834 when this entry was
+  first written, because `Q` became badly conditioned and how fast the expansion dug it out was close to
+  arbitrary; that was the missing curvature condition, fixed below. For a DFP-heavy workload
+  `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — see the next entry.
 
   0.11 also removes `Backtracking.α₀`, the field that appeared to configure the trial step and was never
   read — unused here, so nothing in this package changes for it. The compat bound is `"0.11"` rather
   than `"0.10, 0.11"` because `expand` does not exist in 0.10.
 - **`StrongWolfe` is re-exported.** It was the only one of SimpleSolvers' six line searches this
   package did not pass through. It is not a default, but it is the better explicit choice for a
-  DFP-heavy workload: `StrongWolfe(T; c₂ = 0.1)` takes `_DFP` to 201 / 274 iterations and
-  16 466 / 23 312 evaluations, about 1.7× faster in wall clock than the expanding `Backtracking`
-  default, and — the part that matters more — it stays inside 201–624 / 192–483 across eight starting
-  points where the default ranges over two orders of magnitude. `c₂ = 0.1` and not its own default of
-  `0.9`, at which the Wolfe conditions already hold at `α = 1` on 99.4% of iterations, so its
-  bracketing phase never fires and it crawls too.
+  DFP-heavy workload: `StrongWolfe(T; c₂ = 0.1)` takes `_DFP` to 207 / 279 iterations and
+  16 873 / 23 818 evaluations, 1.4× to 2.0× faster in wall clock than the expanding `Backtracking`
+  default, and stays inside 207–755 / 215–447 across eight starting points. The "part that matters
+  more" this entry originally claimed — that the default ranged over two orders of magnitude where
+  `StrongWolfe` did not — no longer holds: the curvature-condition fix below brings the default to
+  387–845 / 466–1 366, so the remaining case for `StrongWolfe` here is cost rather than reliability.
+  `c₂ = 0.1` and not its own default of `0.9`, at which the Wolfe conditions already hold at `α = 1` on
+  99.4% of iterations, so its bracketing phase never fires and it crawls too — 26 978 iterations
+  against 207.
 - **Retractions are passed as instances, not functions**: `retraction = Cayley()` / `Geodesic()`, not
   `retraction = cayley`. The default is `Cayley()`.
 - **`MomentumMethod`'s recursion is fixed.** It accumulated `p ← p + α∇L`, which is not momentum but an
@@ -212,6 +216,83 @@ this package produces change**, in most cases substantially for the better.
 
 ### Fixed
 
+- **`Optimizer`'s constructors no longer nest three levels of `kwargs...`, which cost Julia 1.12
+  fifteen minutes of compile time per specialization.** The test suite ran for 31–42 minutes on 1.12
+  across all three CI operating systems, against 3–5 minutes on 1.10, 1.13 and nightly, and
+  `test/optimizer_convergence/svd_optim.jl` accounted for the whole difference
+  (`Optimizer Convergence | 70 70 16m01.9s`, every other testset normal). It was never the numerical
+  work: the identical solves driven from a script take 6.94 s on 1.12 and 7.04 s on 1.13, with the same
+  iteration and evaluation counts.
+
+  The trigger is having the `Optimizer` constructor and the `solve!` call in the *same* inferred
+  function body — which is what any ordinary `function solve_my_problem(...)` does. Neither half is
+  slow alone on 1.12: 0.99 s for the constructor, 2.35 s for `solve!`, 908 s for the two together.
+  Inference has to resolve the `Core.kwcall` chain before it knows the constructor's return type, and
+  on 1.12 propagating that into `solve!` goes superlinear.
+
+  `Options` is now built once in the outermost method and passed positionally from there, so the
+  return type does not depend on which keywords were given, and `Optimizer(x, F; …)` reaches the inner
+  constructor through one level of splatting rather than three:
+
+  | construction + solve in one body | 1.13 | 1.12 |
+  |---|---|---|
+  | before | 4.35 s | **940.86 s** |
+  | before, behind a `@noinline` boundary | 4.57 s | 925.27 s |
+  | after | 4.15 s | **6.71 s** |
+
+  A 140× improvement on 1.12 and no change elsewhere. The second row is worth noting: a barrier around
+  the construction does not help, and neither does `@nospecialize` on the enclosing function — only
+  flattening the chain does, which is why the fix is where it is rather than at the call site. The
+  regression itself is upstream and already fixed in 1.13 and nightly.
+
+  No API change: every keyword `Optimizer` accepted, it still accepts.
+- **A line search that reports it could not decrease the merit no longer gets its step taken.**
+  `solver_step!` called `SimpleSolvers.solve`, which returns the step length and nothing else, so
+  `LINESEARCH_FLOOR`, `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT` were indistinguishable from a
+  successful search. It now calls `solve_with_status`, and on any of those three outcomes restarts the
+  inverse Hessian (`restart!`), sets the direction to steepest descent and searches once more. See
+  `linesearch_rejected` for why the trigger is the outcome and not `φ > φ₀`.
+
+  This was the `check(Y) = 1e200` divergence recorded in `test/optimizer_convergence/svd_optim.jl` and
+  in commit `8673007`. On one of eight starting points, `_BFGS` + `Bisection` + `Geodesic` stopped
+  after 4 iterations off the manifold altogether and reported *convergence*: `Bisection` bisects `φ'`,
+  so on a non-convex ray it settled on a stationary point that was a maximum, said so
+  (`LINESEARCH_FLOOR`, `φ(1) = φ(0)` exactly), and the step was taken anyway. `f` went from 3.38 to
+  9.13, the corrupted secant pair gave the next direction `‖δ‖ = 345`, and retracting a lift that
+  large left the manifold; `x_converged` then fired because `‖δ‖/‖x‖ ≈ 1e-98` once `‖x‖` was at
+  `1e100`. That starting point now converges in 121 iterations at `check(Y) = 6e-14`.
+
+  It also closes a second hole, which had been diagnosed as a tolerance problem. `@test status(result).rg < 1e-5`
+  failed on CI at `1.354e-5`, and the assertion was unguaranteed rather than unlucky: over the ten
+  (method, line search, retraction) combinations that test runs and eight starting points each,
+  `g_converged` is `false` in **all eighty** — every solve terminates on `f_converged`, and `‖∇f‖`
+  there ranged over `1.5e-8 .. 1.8e-5`. With the restart in place the worst case over the same eighty
+  runs is `2.9e-7`, so `1e-5` has a factor of 35 of headroom and is now a real bound. ([#33])
+- **The quasi-Newton update enforces the curvature condition.** The guard was
+  `!iszero(ΔxΔg) && !isnan(ΔxΔg)`, which admits a negative `δᵀγ` as readily as a positive one — and
+  admits denominators that are zero to within round-off, which it then divides a rank-two correction
+  by. On the SVD problem `δᵀγ` took the values `-12.8`, `-4.5e-16` and `+1.5e-15` on consecutive
+  iterations; `λmax(Q)` went from 3 to 442 as a result, and `λmin(Q)` to `-398` from another starting
+  point. Both BFGS and DFP preserve positive definiteness of `Q` only for `δᵀγ > 0`, so
+  `curvature_is_usable` now requires `δᵀγ > 1e-8 ⋅ ‖δ‖‖γ‖`. The threshold is relative because an
+  absolute one cannot tell `1.5e-15` on a problem scaled to `1e0` from a legitimate pairing on a
+  problem scaled to `1e-15`; its value barely matters, since `1e-8` and `eps(T)` behave identically.
+
+  This is where `_DFP`'s notorious sensitivity to its starting point came from: an ill-conditioned `Q`
+  on this problem is a `Q` built from pairs that should have been rejected. With an expanding
+  `Backtracking` over eight starting points its iteration count goes from `512..77_890` to `512..845`
+  on `Geodesic`, a factor of 92 less spread. It costs `_DFP` a factor of seventeen on Rosenbrock
+  (50 iterations to 851, both reaching `f ≈ 3e-24`) because it had been exploiting those invalid
+  updates to compensate for its under-scaled direction; `_BFGS` is unaffected at 22 either way.
+- **A non-finite iterate stops the solve.** `meets_stopping_criteria` reported `NaN` through an
+  `@error` and then carried on, so one starting point spent all 100 000 iterations of a raised cap
+  emitting that message once per iteration. The flags are now part of the stopping condition, and none
+  of the three convergence flags is set by it, so `isconverged` still distinguishes the two cases.
+  `contains_nan` becomes `contains_nonfinite` and tests `isfinite`: `NaN` is the *last* thing a
+  diverging solve produces, and the one on the SVD problem passed through `f = 1.2e169` and
+  `check(Y) = 1.07e200` — neither of them `NaN` — two iterations before it got there. The
+  `OptimizerStatus` fields `x_isnan`, `f_isnan` and `g_isnan` are renamed to `x_nonfinite`,
+  `f_nonfinite` and `g_nonfinite` to match.
 - **Gradients and directions are paired in the intrinsic coordinates, not the ambient ones.** `dot` on
   an `AbstractLieAlgHorMatrix` is the ambient Frobenius product, which counts each of the lift's
   off-diagonal blocks twice and so comes out *exactly twice* the product of its free parameters — the
@@ -246,6 +327,24 @@ this package produces change**, in most cases substantially for the better.
 
 ### Added
 
+- **`Options(store_trace = true)` does something.** `OptimizerResult` gains a `trace` of one
+  `OptimizerTraceEntry` — `(iteration, f, rg)` — per iteration, reachable through `trace(result)` and
+  empty unless the option asked for it. The option existed before and was accepted and ignored, by
+  this package *and* by SimpleSolvers 0.11, where it is a field of `Options` that nothing reads: code
+  that set it got neither a trace nor an error.
+
+  The entries come from the `OptimizerStatus` that `solve!` already computes on every iteration, so
+  the cost when the option is unset is one `Bool` test per iteration.
+
+  What it is for is a statistic that does not depend on the *phase* of an orbit. `Adam` at a fixed
+  learning rate does not converge to the minimizer, it circles it at a distance of order `α`, so the
+  error at any single iteration is a sample of an arbitrary phase and moves with the last bits of the
+  floating-point arithmetic — across Julia 1.10, 1.12 and 1.13 the final-iterate error on the SVD
+  problem spans a factor of 3.0. Averaging over the last five hundred iterations measures the orbit's
+  *radius* instead, which is a property of `α` and the problem: the same three versions span 1.06.
+  That is what `test/optimizer_convergence/svd_optim.jl` now asserts on, at a tolerance with 1.8× of
+  margin above the worst correct value and more than 1000× below the value the known `Adam` bugs
+  produce. The tolerance it replaced had a factor of 1.9 to work in altogether.
 - **`AdamWithEuclideanDecay`**, `Adam` with the *decoupled* weight decay of Loshchilov and Hutter
   (2019) — the method usually called AdamW. The decay `λx` is applied to the *direction* after the
   moments have been formed, so it never enters `m₁` or `m₂` and is scaled by the line search's `α`,

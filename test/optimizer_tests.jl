@@ -90,7 +90,7 @@ end
         # once a line search could take its trial step through a retraction; before that `Static` was
         # the only thing that worked on manifold parameters, so they had no choice. `_DFP` rejoined it
         # in SimpleSolvers 0.11: it needs a search that can *lengthen* a step, and until `expand` that
-        # ruled `Backtracking` out for it entirely (49_679 iterations on the SVD problem, against 830
+        # ruled `Backtracking` out for it entirely (47_115 iterations on the SVD problem, against 702
         # with the expansion phase). See `default_linesearch`.
         for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), _BFGS(), _DFP())
             ls = default_linesearch(T, method)
@@ -131,4 +131,27 @@ end
 
     @test_warn "NaN or Inf detected in optimizer. Reducing length of direction vector." test_nan_handling_for_optimizers(Fnan, 1, Float64; max_iterations=5)
 
+end
+
+@testset "store_trace records one entry per iteration" begin
+    # `Options(store_trace = true)` was accepted and ignored before this -- by this package and by
+    # SimpleSolvers 0.11, where the field exists and nothing reads it -- so code that asked for a
+    # trace got neither a trace nor an error. See `trace`.
+    Fquad(x::AbstractVector) = sum(x .^ 2)
+    x = [1.0, 2.0]
+    state = OptimizerState(Newton(), x)
+    result = solve!(x, state, Optimizer(x, Fquad; algorithm=Newton(), store_trace=true))
+
+    @test length(GeometricOptimizers.trace(result)) == GeometricOptimizers.iteration_number(state)
+    @test [entry.iteration for entry in GeometricOptimizers.trace(result)] == 1:GeometricOptimizers.iteration_number(state)
+
+    # the last entry is the status the solve reports, so the trace and the status cannot disagree
+    # about where the solve ended up
+    @test last(GeometricOptimizers.trace(result)).rg == GeometricOptimizers.status(result).rg
+    @test last(GeometricOptimizers.trace(result)).f == minimum(result)
+
+    # and without the option there is no trace and no error
+    y = [1.0, 2.0]
+    result_untraced = solve!(y, OptimizerState(Newton(), y), Optimizer(y, Fquad; algorithm=Newton()))
+    @test isempty(GeometricOptimizers.trace(result_untraced))
 end

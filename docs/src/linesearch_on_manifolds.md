@@ -100,8 +100,8 @@ where ``T_2`` is built as the exact transpose of ``T_1``.
 A shrink-only backtracking search starts at ``\alpha = 1`` and can never exceed it. That ceiling is
 right for a direction already scaled like a Newton step — [`_BFGS`](@ref) accepts ``\alpha = 1`` on
 74% of its iterations — and wrong for one that is systematically *under*-scaled. [`_DFP`](@ref) wants
-a median ``\alpha`` of 8, so under a shrink-only search it accepted the ceiling on 100% of its
-iterations and crawled to the gradient gate in 49 679 of them. Raising only the initial trial step,
+a median ``\alpha`` of 8, so under a shrink-only search it accepts the ceiling on 100% of its
+iterations and crawls to the gradient gate in 47 115 of them. Raising only the initial trial step,
 from 1 to 3, brought the same solve to 229 — which is what identifies the ceiling rather than DFP
 itself as the cause.
 
@@ -125,17 +125,23 @@ the manifold problem rather than of any one search:
   decreases ``f`` enough. Reach for a bracketing method when iterations rather than evaluations are
   what you pay for — a very expensive objective, or an outer loop bounded in iterations.
 - **A search that uses ``\varphi'`` quantitatively inherits the retraction's slope error.**
-  [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (189 iterations for `_DFP`) and
-  falls apart on `Cayley` (555), because it fits a polynomial to a slope that is only first-order
+  [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (165 iterations for `_DFP`) and
+  falls apart on `Cayley` (550), because it fits a polynomial to a slope that is only first-order
   correct there. `Bisection` uses only the sign of ``\varphi'``, and
   [`SimpleSolvers.StrongWolfe`](@extref) only compares it against ``\varphi'(0)``; neither degrades
   that way.
 
-[`_DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled, and
-how quickly the expansion digs out a badly conditioned ``Q`` is close to arbitrary: across eight
-starting points on the SVD problem it ranges over 512–77 890 iterations on `Geodesic`.
-`StrongWolfe(T; c₂ = 0.1)` is both faster and far steadier — 201–624 iterations across the same eight
-— and is the choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
+[`_DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled:
+across eight starting points on the SVD problem it ranges over 387–845 iterations on `Geodesic`.
+
+That range used to read 512–77 890, and the difference is not the line search. A badly conditioned
+``Q`` on this problem was a ``Q`` built from secant pairs with ``\delta^T\gamma \leq 0``, which the
+guard on the quasi-Newton update accepted; how quickly the expansion phase dug it back out was close
+to arbitrary. Enforcing the curvature condition — see [`curvature_is_usable`](@ref) — takes a factor
+of 92 off the spread, and with it most of the reason DFP had a reputation here for being
+unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 207–755 iterations
+across the same eight, at 16 873 objective evaluations against the default's 18 258 — and remains the
+choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
 `StrongWolfe`'s own default of ``0.9``: at ``0.9`` the strong Wolfe conditions already hold at
 ``\alpha = 1`` on 99.4% of iterations, so the bracketing phase never fires and the solve crawls just as
 a shrink-only search does. ``0.1`` is the value [nocedal2006numerical](@cite) recommends where a more

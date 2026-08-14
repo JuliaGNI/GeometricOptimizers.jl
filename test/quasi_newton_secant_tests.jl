@@ -55,6 +55,32 @@ rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i+1] - x[i]^2)^2 for i in 1:(length(
     end
 end
 
+# How many iterations either method may take on Rosenbrock from `(-1.2, 1)` with the `Backtracking`
+# search that `default_linesearch` returns for both of them, i.e. the expanding one. Measured: 20 for
+# `_BFGS` and 34 for `_DFP`, and both are *invariant* over 900 starting points one ulp either side of
+# `(-1.2, 1)` in each coordinate. One bound covers both with a factor of three to spare.
+#
+# The search has to be the expanding one. A shrink-only `Backtracking` starts at `α = 1` and can
+# never exceed it, which is right for a direction already scaled like a Newton step but wrong for
+# `_DFP`, whose direction is systematically under-scaled and which wants a median `α` of 8 (see
+# `default_linesearch`). Starved of the step length it needs, `_DFP` picks its way to the minimizer
+# along a path that is *chaotic* in the last bits of the arithmetic: over 400 starting points one ulp
+# apart the count ranges over `108 .. 591_735`, median 1 784, while `f < 1e-12` holds in every one of
+# them. That is not a quantity a test can bound — an earlier version of this file bounded it at 2 000
+# on the strength of the 851 this machine produces, and CI's ubuntu/1.13 and windows/nightly runners,
+# whose BLAS rounds differently, returned 2 941.
+#
+# The bound still separates a working quasi-Newton method from `Q ≡ I`, which is the regression this
+# whole file exists to catch: plain gradient descent needs 42 608 iterations to reach `f < 1e-12`
+# here (`GradientMethod` with the best fixed step found for it, `Static(0.001)`), three orders of
+# magnitude above this bound.
+#
+# What the shrink-only search costs `_DFP` — and that it costs `_BFGS` nothing — is documented where
+# it belongs, in `curvature_is_usable` and `default_linesearch`, both of which carry the measured
+# figures. `max_iterations` is set past the bound so that a solve which did drift cannot be truncated
+# by the cap and fail the `f < 1e-12` assertion for a different reason than the one being tested.
+const ROSENBROCK_MAX_ITERATIONS = 100
+
 @testset "the quasi-Newton methods beat gradient descent on Rosenbrock" begin
     # `Q ≡ I` makes `_BFGS`/`_DFP` identical to `GradientMethod`, which is what this separates. On
     # Rosenbrock, gradient descent is famously slow while a working quasi-Newton method is not.
@@ -63,14 +89,14 @@ end
     for algorithm in (_BFGS(), _DFP())
         x = copy(x₀)
         state = OptimizerState(algorithm, x)
-        opt = Optimizer(x, rosenbrock; algorithm=algorithm, linesearch=Backtracking())
+        opt = Optimizer(x, rosenbrock; algorithm=algorithm, linesearch=Backtracking(expand=true),
+            max_iterations=3 * ROSENBROCK_MAX_ITERATIONS, warn_iterations=0)
 
         solve!(x, state, opt)
 
         @test rosenbrock(x) < 1e-12
         @test x ≈ [1.0, 1.0] atol = 1e-5
-        # gradient descent does not come close to this within `max_iterations`
-        @test iteration_number(state) < 200
+        @test iteration_number(state) < ROSENBROCK_MAX_ITERATIONS
     end
 end
 
