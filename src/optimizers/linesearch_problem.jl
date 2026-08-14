@@ -47,7 +47,7 @@ function _trial_iterate!(::Union{Manifold,ArrayNamedTuple}, cache::OptimizerCach
 end
 
 @doc raw"""
-    trial_slope(gradient_instance, cache, retraction)
+    trial_slope(gradient_instance, cache, retraction, α)
 
 Return ``\varphi'(\alpha) = \langle\nabla{}f, p\rangle`` at the iterate currently held in
 `solution(cache)`, for the derivative of the line search's merit.
@@ -66,20 +66,28 @@ is exactly twice that. With `dot` this returned `2\varphi'(\alpha)` — invisibl
 slack in [`SimpleSolvers.Backtracking`](@extref), but wrong, and wrong in a way a curvature condition
 or a quadratic fit would act on.
 
-!!! warning "Exact for `Geodesic`, first-order for `Cayley`"
-    ``\varphi(\alpha) = f(\Lambda\mathrm{retract}(\alpha{}B))`` has
-    ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), B\rangle`` only when
-    ``\alpha \mapsto \mathrm{retract}(\alpha{}B)`` is a one-parameter subgroup, which
-    [`Geodesic`](@ref) is and [`Cayley`](@ref) is not. Against a central difference of the merit this
-    is exact for `Geodesic` at every ``\alpha``; for `Cayley` it is exact at ``\alpha = 0`` and drifts
-    with the step (about 6% at ``\alpha = 0.5``, 24% at ``\alpha = 1``). The merit itself is exact
-    either way, so a search that only brackets and compares values is unaffected; `Bisection` under
-    `Cayley` bisects a slightly wrong ``\varphi'`` and stops just off the merit's stationary point,
-    which is why it needs a few more iterations there than under `Geodesic`. The `retraction` is
-    accepted here for that reason — an exact `Cayley` differential would need it.
+The direction the gradient is paired *with* is [`retraction_differential`](@ref)`(retraction, B, α)`
+and not `B` itself. ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), B\rangle`` holds only where
+``\alpha \mapsto \mathrm{retract}(\alpha{}B)`` is a one-parameter subgroup, which [`Geodesic`](@ref)
+is and [`Cayley`](@ref) is not; under `Cayley` the generator of the curve's velocity turns with the
+step, and the differential is what supplies it. Against a central difference of the merit this is now
+exact for both retractions at every ``\alpha``.
+
+!!! info "This changed in 0.2.0"
+    The slope used to be paired against `B` under either retraction, so under `Cayley` it was exact
+    at ``\alpha = 0`` and drifted with the step — on a `St(6, 3)` problem, 8.9% out at
+    ``\alpha = 0.5``, 36% at ``\alpha = 1`` and 143% at ``\alpha = 2``, against a central difference
+    of the merit. Searches that use ``\varphi'`` only qualitatively absorbed that: `Bisection` looks
+    for a sign change, [`SimpleSolvers.StrongWolfe`](@extref) compares against ``\varphi'(0)``, and
+    `Backtracking` — the default — evaluates ``\varphi'`` at ``\alpha = 0`` only, where the two agree
+    exactly. The two polynomial searches fit a curve to it *quantitatively*, and on the SVD problem of
+    `test/optimizer_convergence/svd_optim.jl` that took `_BFGS` off the manifold altogether on two of
+    eight starting points. See the CHANGELOG entry for issue A1b.
+
+    `α = 0` still returns `B` untouched, so the `Backtracking` default costs nothing for this.
 """
-trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction) =
-    _trial_slope(solution(cache), gradient_instance, cache)
+trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction, α) =
+    _trial_slope(solution(cache), gradient_instance, cache, retraction, α)
 
 # These two differ in one respect worth knowing about: the `AbstractVector` method evaluates *into* an
 # array of the cache — that is what makes it allocation-free — and so leaves the gradient at the last
@@ -95,13 +103,14 @@ trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction) =
 # iterations, the state's momentum was 104% wrong under `Bisection`, `Quadratic` and `StrongWolfe` and
 # 451% wrong under `BierlaireQuadratic`; `Backtracking` was exact only because it evaluates `φ'` once,
 # at `α = 0`, where the trial gradient *is* `∇f(xₖ)`. See the CHANGELOG entry for issue A2.
-function _trial_slope(::AbstractVector, gradient_instance::Gradient, cache::OptimizerCache)
+function _trial_slope(::AbstractVector, gradient_instance::Gradient, cache::OptimizerCache, ::AbstractRetraction, α)
     gradient_instance(latest_gradient(cache), solution(cache))
     _dot(latest_gradient(cache), direction(cache))
 end
 
-function _trial_slope(::Union{Manifold,ArrayNamedTuple}, gradient_instance::Gradient, cache::OptimizerCache)
-    _dot(global_rep(section(cache), gradient_instance(solution(cache))), direction(cache))
+function _trial_slope(::Union{Manifold,ArrayNamedTuple}, gradient_instance::Gradient, cache::OptimizerCache, retraction::AbstractRetraction, α)
+    _dot(global_rep(section(cache), gradient_instance(solution(cache))),
+        retraction_differential(retraction, direction(cache), α))
 end
 
 @doc raw"""
@@ -159,7 +168,7 @@ function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gra
 
     function d(α, params)
         trial_iterate!(cache, params, α, retraction)
-        trial_slope(gradient_instance, cache, retraction)
+        trial_slope(gradient_instance, cache, retraction, α)
     end
 
     LinesearchProblem{T}(f, d)

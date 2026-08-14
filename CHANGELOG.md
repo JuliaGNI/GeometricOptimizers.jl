@@ -216,6 +216,57 @@ this package produces change**, in most cases substantially for the better.
 
 ### Fixed
 
+- **The line-search slope is the derivative of the line-search merit under `Cayley` too.**
+  ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), B\rangle`` holds only where
+  ``\alpha \mapsto \mathrm{retract}(\alpha{}B)`` is a one-parameter subgroup. `Geodesic` is one and
+  `Cayley` is not, so pairing against the direction `B` regardless gave a slope that was exact at
+  ``\alpha = 0`` and drifted from there. Against a central difference of the merit the search itself
+  evaluates, on a `St(6, 3)` problem:
+
+  | ``\alpha`` | 0 | 0.25 | 0.5 | 1 | 2 |
+  |---|---|---|---|---|---|
+  | paired with ``B`` | exact | 2.2% | 8.9% | 36% | **143%** |
+  | with ``D(\alpha)`` | exact | 4e-10 | 1e-9 | 4e-9 | 4e-10 |
+
+  The second row is the central difference's own truncation error at `h = 1e-6`, i.e. the slope is
+  now exact to what the check can resolve. The new `retraction_differential` supplies the generator
+  that turns with the step: with ``M = (\mathbb{I} - \frac{\alpha}{2}B)^{-1}``,
+  ``\frac{d}{d\alpha}\mathrm{Cayley}(\alpha{}B) = MBM``, so the velocity of the trial curve is
+  ``W(\alpha)(M^TBM)E`` where ``W(\alpha)`` is the frame the trial point was built in. Both inverses
+  go through `lift_factors` and the Woodbury identity exactly as `cayley` does, so no ``N \times N``
+  matrix is formed and the cost is ``O(Nn^2 + n^3)``. For `Geodesic` — and for an ordinary array under
+  either retraction, where the retraction is addition — ``D(\alpha) = B`` and nothing is computed.
+
+  **What is bit-identical**, verified over the ten (method, line search) combinations of
+  `scripts/retraction_accuracy.jl` on the pinned seed and eight starting points: every `Geodesic`
+  figure in the package, in every column; both `Backtracking` rows under `Cayley`, because
+  `Backtracking` evaluates ``\varphi'`` at ``\alpha = 0`` only, where ``D(0) = B`` is returned
+  untouched — so the default path costs nothing for this, in accuracy or in work; and, on the SVD
+  problem, every `BierlaireQuadratic` figure, which is what shows that search never asks for
+  ``\varphi'`` away from ``\alpha = 0`` there.
+
+  **What moves** is `Bisection`, `StrongWolfe` and `Quadratic` under `Cayley`. Iterations and
+  objective evaluations on the SVD problem, seed 1234:
+
+  | | before | after |
+  |---|---|---|
+  | `_BFGS` + `Bisection` | 92 / 54 970 | 114 / 67 020 |
+  | `_BFGS` + `StrongWolfe(c₂ = 0.1)` | 139 / 8 354 | 135 / 7 870 |
+  | `_DFP` + `Bisection` | 96 / 56 106 | 110 / 64 306 |
+  | `_DFP` + `Quadratic` | 550 / 54 176 | 529 / 50 656 |
+
+  `Bisection` taking more iterations for a *correct* slope than for a wrong one is not a regression —
+  it bisects ``\varphi'``, so a different slope is a different sequence of brackets — and its spread
+  over the eight starting points tightens, 88–129 to 102–124 for `_DFP`. The clearest gain is
+  `_DFP` + `Quadratic`, whose spread goes from 168–1 211 to 164–735.
+
+  **It does not close issue A1b**, which is what it was written for, and that is the more useful
+  result. A1b proposed an exact `Cayley` differential as the likely fix for `_BFGS` +
+  `Quadratic`/`BierlaireQuadratic` running to the iteration cap and ending off the manifold on two of
+  eight starting points. One of those four cases is fixed — `Quadratic` on seed 2 goes from the
+  20 000-iteration cap at `check = 5.0e-2` to **90 iterations at `check = 6.4e-15`** — and three are
+  not. See the rewritten A1b entry for where the cause actually is.
+
 - **`GradientMethod` and `MomentumMethod` no longer throw on their own default line search.**
   `Optimizer(ones(3), x -> sum(x.^2); algorithm = GradientMethod())` followed by a `solve!` was a
   `MethodError`: `trial_slope`'s `AbstractVector` branch calls `gradient(cache)`, which only
@@ -580,7 +631,9 @@ given. Entries A5, A6, C6 and D5 come from the review of [#36]; A7, A8, A9 and t
 from [#38], and A10 from the review of [#38]; the rest from unifying the optimizer hierarchies.
 
 A1, A2 and A3 are fixed and are kept for the record, since later entries refer to them: A1 and A3 by
-[#36], A2 by [#38]. C6 describes text that [#36] introduced.
+[#36], A2 by [#38]. C6 describes text that [#36] introduced. A1b is still open, but the fix it
+proposed for itself has since been implemented, measured and ruled out — read that entry before
+starting on it.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
@@ -658,47 +711,86 @@ termination test should be relative to the partial sum rather than absolute rega
 — `cayley` is bitwise unchanged by it (every `Cayley` figure in `svd_optim.jl` reproduces to the
 digit).
 
+**Still open, and the diagnosis below has been narrowed by ruling its own proposed fix out.** The
+entry originally read "the honest fix is probably an exact `Cayley` differential in `trial_slope`".
+That differential now exists (`retraction_differential`, see *Fixed* above) and is verified exact
+against a central difference of the merit at every ``\alpha``; it closes **one of the four** cases
+below and leaves three. So the slope error was real — 8.9% at ``\alpha = 0.5``, 143% at
+``\alpha = 2`` — and was worth fixing on its own account, but it is not what this entry is about.
+Anyone picking this up should not spend the effort a second time.
+
 On the SVD problem of `test/optimizer_convergence/svd_optim.jl`, `_BFGS` with either polynomial line
-search on the `Cayley` retraction runs to the iteration cap and ends off the manifold:
+search on the `Cayley` retraction runs to the iteration cap and ends off the manifold. Before the
+differential, and after it:
 
-| | seed | iterations | `rg` | `check` |
-|---|---|---|---|---|
-| `Quadratic` | 2 | 20 000 (cap) | 5.2e-3 | **5.0e-2** |
-| `Quadratic` | 8 | 20 000 (cap) | 1.7e-1 | **1.7e-1** |
-| `BierlaireQuadratic` | 2 | 20 000 (cap) | 7.1e-2 | **6.9e-2** |
-| `BierlaireQuadratic` | 8 | 20 000 (cap) | 2.7e-2 | **2.0e-1** |
+| | seed | before | after |
+|---|---|---|---|
+| `Quadratic` | 2 | 20 000 (cap), `check` **5.0e-2** | **90 iterations, `check` 6.4e-15** |
+| `Quadratic` | 8 | 20 000 (cap), `check` **1.7e-1** | 20 000 (cap), `check` **4.0e-1** |
+| `BierlaireQuadratic` | 2 | 20 000 (cap), `check` **6.9e-2** | 20 000 (cap), `check` **6.9e-2** |
+| `BierlaireQuadratic` | 8 | 20 000 (cap), `check` **2.0e-1** | 20 000 (cap), `check` **1.3e-1** |
 
-The other six seeds converge in 96–130 iterations, and every one of these cases converges on
-`Geodesic`. `default_linesearch`'s docstring already suspects the mechanism for a milder version of
-this: `trial_slope` is only first-order correct under `Cayley`, and `Quadratic` uses ``\varphi'``
-*quantitatively* in its polynomial fit where `Bisection` uses only its sign. What that docstring
-records as "falls apart on `Cayley` (550 iterations)" is the same phenomenon two orders of magnitude
-milder.
+The other six seeds converge in 90–159 iterations, and every one of these cases converges on
+`Geodesic`. The `BierlaireQuadratic` rows are *bit-identical* across the differential, which is
+itself informative: on this problem that search never asks for ``\varphi'`` away from
+``\alpha = 0``, where the old and new slopes agree exactly. So for half these cases the slope was
+never the mechanism, and it could not have been.
 
-Not reached by the test suite: `svd_optim.jl` runs neither polynomial search in its convergence loop,
-and `manifold_linesearch_tests.jl` runs them only on the one-dimensional sphere problem, where they
-are fine. The honest fix is probably an exact `Cayley` differential in `trial_slope` — the
-`retraction` argument is already threaded there for exactly this reason
-(`linesearch_problem.jl:69-79`) — but that needs its own investigation.
+**Where the cause actually is.** Tracing seed 2 under `Cayley` + `Quadratic` step by step, the solve
+does not converge slowly — it wanders. `f` oscillates between 3 and 9 for the whole run, `Q` is
+restarted repeatedly (κ falls back to 1), and every so often a direction comes out enormous:
+``\|\delta\| = 1.05e2`` at iteration 13, ``1.89e1`` at 18, and **``1.62e8``** at iteration 22, which
+is where `check` first leaves round-off, jumping from `4.7e-15` to `9.1e-9`.
 
-**It is not specific to `_BFGS`.** Measured while adding the first-order coverage of [#38], on the
-same problem at seed `1234` under `Cayley`, 1 000 iterations:
+Retracting a lift that large is what costs the manifold, and — unlike A1 — this is *not* a defect in
+either retraction. `check` after a retraction grows like ``\varepsilon\|\bar{B}\|`` for both, which is
+the conditioning of the problem and not a summation that cancels. On `St(20, 3)`:
+
+| ``\|\bar{B}\|`` | 1e2 | 1e4 | 1e6 | 1e7 | 1e8 | 1e9 |
+|---|---|---|---|---|---|---|
+| `Cayley` | 5.3e-14 | 3.0e-12 | 4.2e-10 | 1.1e-8 | 9.3e-8 | 7.7e-7 |
+| `Geodesic` | 2.4e-14 | 1.7e-12 | 1.5e-10 | 2.7e-9 | 6.1e-9 | 3.7e-8 |
+
+Both degrade; `Cayley` is about three to fifteen times worse across the range. That factor is the
+whole of the `Geodesic`/`Cayley` split this entry opens with — `Geodesic` survives the same wild step
+with a `check` an order of magnitude smaller, stays inside what the solve can recover from, and
+converges. So the retraction is the *amplifier*, exactly as in A1, and the cause is upstream of it:
+the quasi-Newton direction and the step the polynomial search accepts for it.
+
+That makes this the same family as A4 (`x_converged` on a diverged solve) and A7 (`MomentumMethod`
+running away while the search reports `LINESEARCH_NO_DESCENT`), and it wants the same kind of remedy
+— a bound on an implausible ``\|\delta\|``, routed through the `linesearch_rejected` restart that
+already exists. That is a behaviour change touching every method and every table in the package, so
+it needs its own PR and its own measurement; it is not a `trial_slope` fix.
+
+Coverage: `svd_optim.jl` now runs both polynomial searches in its convergence loop, but only on seed
+`1234`, where they pass — so the loop covers the searches and does **not** guard this. Reproducing it
+needs the eight-seed sweep of `scripts/retraction_accuracy.jl`.
+
+**It is not specific to `_BFGS`.** On the same problem at seed `1234` under `Cayley`, 1 000
+iterations, `check` at the end, before the differential and after:
 
 | | `Backtracking(expand)` | `Bisection` | `Quadratic` | `BierlaireQuadratic` |
 |---|---|---|---|---|
-| `GradientMethod` | `1.7e-14` | `1.3e-14` | **`5.6e-4`** | **`1.9e-3`** |
-| `MomentumMethod` | `1.5e-14` | `2.6e-14` | **`5.3e-4`** | **`2.4e-3`** |
-| `Adam` | `1.7e-14` | `2.6e-14` | **`1.1e-5`** | **`3.1e-4`** |
+| `GradientMethod` | `5.8e-14` → `5.8e-14` | `7.1e-14` → `6.7e-14` | **`1.8e-3`** → **`7.1e-4`** | **`4.8e-3`** → **`4.8e-3`** |
+| `MomentumMethod` | `6.0e-14` → `6.0e-14` | `5.7e-14` → `4.6e-14` | **`1.4e-3`** → **`5.8e-4`** | **`4.9e-3`** → **`4.9e-3`** |
+| `Adam` | `8.5e-14` → `8.5e-14` | `8.7e-14` → `9.2e-14` | **`4.2e-3`** → **`9.7e-3`** | **`7.6e-4`** → **`7.6e-4`** |
 
-Same split, six more cases: whatever the method, the two polynomial searches leave the manifold under
-`Cayley` and the two that use ``\varphi'`` only qualitatively do not. That is what makes
-`trial_slope`'s `Cayley` differential the suspect rather than anything in the quasi-Newton update.
+Same split, six more cases, and the differential improves the `Quadratic` column by about 2.5× for
+the two gradient methods while leaving `BierlaireQuadratic` untouched to the digit — none of them
+anywhere near round-off either way. The `Backtracking` column is bit-identical, which is the control:
+that search evaluates ``\varphi'`` at ``\alpha = 0`` only.
 
-(Context for the table, and not itself a defect: no first-order method converges on this problem
-within 1 000 iterations. `Backtracking(expand)` and `Bisection` reach the optimal value —
-`err = 1.7097`, the same one `_BFGS` converges to — but stop at `rg` between `4e-5` and `2e-3`,
-several orders off the gate. That is what a first-order method on a badly conditioned problem does;
-it is why `manifold_linesearch_tests.jl` uses a two-sphere problem for its first-order coverage.)
+(The "before" columns here are a re-measurement on `main`. They do not match the numbers this entry
+carried when it was written — `1.7e-14` / `5.6e-4` / `1.9e-3` for `GradientMethod` — which do not
+reproduce from the harness described. The split they document is real and is what the re-measurement
+shows; the individual figures were not. Take the table above as the record.)
+
+(Context, and not itself a defect: no first-order method converges on this problem within 1 000
+iterations. `Backtracking(expand)` and `Bisection` reach the optimal value — `err = 1.7097`, the same
+one `_BFGS` converges to — but stop at `rg` between `4e-5` and `2e-3`, several orders off the gate.
+That is what a first-order method on a badly conditioned problem does; it is why
+`manifold_linesearch_tests.jl` uses a two-sphere problem for its first-order coverage.)
 
 #### A2. `GradientMethod` and `MomentumMethod` throw on their own default line search — fixed in 0.2.0
 

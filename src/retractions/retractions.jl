@@ -235,6 +235,88 @@ function cayley(B::GrassmannLieAlgHorMatrix)
     GrassmannManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') * (𝕀_big + T(0.5) * B))
 end
 
+@doc raw"""
+    retraction_differential(retraction, B, α)
+
+The horizontal lift ``D(\alpha)`` that generates the velocity of the curve a line search walks along.
+
+[`trial_iterate!`](@ref) builds its trial point as ``x(\alpha) = \Lambda_0\mathrm{retract}(\alpha\bar{B})E``
+with ``\Lambda_0`` the section the step starts from, so with ``W(\alpha) = \Lambda_0\mathrm{retract}(\alpha\bar{B})``
+the frame the cache holds afterwards, this returns the ``D(\alpha)`` for which
+
+```math
+\frac{dx}{d\alpha} = W(\alpha)D(\alpha)E .
+```
+
+[`trial_slope`](@ref) pairs the gradient against it, which is what makes ``\varphi'(\alpha)`` the
+derivative of ``\varphi``.
+
+# Implementation
+
+For [`Geodesic`](@ref) this is ``\bar{B}`` itself. The exponential is a one-parameter subgroup, so
+``\frac{d}{d\alpha}\exp(\alpha\bar{B}) = \exp(\alpha\bar{B})\bar{B}`` and the frame factors out
+whole. The same holds for an ordinary array under either retraction, where the retraction is addition
+and ``\varphi`` is affine in ``\alpha``.
+
+[`Cayley`](@ref) is *not* a one-parameter subgroup, and this is what that costs. With
+``M = (\mathbb{I} - \frac{\alpha}{2}\bar{B})^{-1}``,
+
+```math
+\frac{d}{d\alpha}\mathrm{Cayley}(\alpha\bar{B}) = M\bar{B}M ,
+\qquad
+D(\alpha) = \mathrm{Cayley}(\alpha\bar{B})^{-1}M\bar{B}M = M^T\bar{B}M ,
+```
+
+using ``M^T = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}`` for skew ``\bar{B}``. ``D`` is skew but
+not horizontal; only its first ``n`` columns ever enter — ``D(\alpha)E`` — and the horizontal
+projection has the same ones, so what is returned is that projection. For a
+[`GrassmannLieAlgHorMatrix`](@ref) the top block is dropped rather than kept, which is not an
+approximation either: [`rgrad`](@ref) there is ``\nabla{}L - Y(Y^T\nabla{}L)`` and so satisfies
+``Y^T\mathrm{rgrad} = 0``, which is exactly the pairing that block would contribute to.
+
+Both inverses are taken through [`lift_factors`](@ref) and the Woodbury identity, exactly as
+[`cayley`](@ref) does, so the cost is ``O(Nn^2 + n^3)`` and no ``N\times{}N`` matrix is formed.
+
+`α = 0` returns `B` unchanged, and that is the case that matters for cost:
+[`SimpleSolvers.Backtracking`](@extref) — the default of [`default_linesearch`](@ref) — evaluates
+``\varphi'`` only at ``\alpha = 0``, so it never reaches the general branch.
+"""
+retraction_differential(::Geodesic, B, α) = B
+
+retraction_differential(::Cayley, B::AbstractVecOrMat, α) = B
+
+retraction_differential(R::Cayley, B::NamedTuple, α) =
+    apply_toNT(Bᵢ -> retraction_differential(R, Bᵢ, α), B)
+
+function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) where {T}
+    iszero(α) && return B
+
+    a = T(α) / 2
+    B̂, B̄ = lift_factors(B)
+    E = StiefelProjection(B)
+    G = B̄' * B̂
+    𝕀 = one(G)
+
+    w₁ = E + B̂ * ((𝕀 - a * G) \ (a * (B̄' * E)))      # M E
+    w₂ = B̂ * (B̄' * w₁)                                # B̄ M E
+    V = w₂ - B̂ * ((𝕀 + a * G) \ (a * (B̄' * w₂)))     # Mᵀ B̄ M E
+
+    horizontal_lift(B, V)
+end
+
+@doc raw"""
+    horizontal_lift(B, V)
+
+Rebuild a lift of the same type as `B` from the ``N\times{}n`` block `V`, i.e. from the first ``n``
+columns of a skew matrix. Used by [`retraction_differential`](@ref), which is the only place a lift
+has to be assembled from its action on ``E`` rather than from its own blocks.
+"""
+horizontal_lift(B::StiefelLieAlgHorMatrix, V::AbstractMatrix) =
+    StiefelLieAlgHorMatrix(SkewSymMatrix(V[1:(B.n), :]), V[(B.n+1):(B.N), :], B.N, B.n)
+
+horizontal_lift(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix) =
+    GrassmannLieAlgHorMatrix(V[(B.n+1):(B.N), :], B.N, B.n)
+
 # This used to be an empty method body, i.e. every combination that is not covered below
 # returned `nothing` and failed somewhere downstream with an unrelated message.
 function retraction(R::AbstractRetraction, x::AbstractArray)

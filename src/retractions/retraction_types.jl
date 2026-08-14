@@ -66,8 +66,11 @@ true
 !!! warning "It is a retraction, not the exponential map"
     ``\alpha \mapsto \mathrm{Cayley}(\alpha{}B)`` is *not* a one-parameter subgroup — only
     [`Geodesic`](@ref) is. It agrees with the geodesic to first order at ``\alpha = 0`` and departs
-    from it as the step grows, which is why [`trial_slope`](@ref) is the exact derivative of a line
-    search's merit under `Geodesic` but only a first-order one under `Cayley`.
+    from it as the step grows, so the generator of the curve's velocity turns with ``\alpha`` instead
+    of staying ``B``. [`retraction_differential`](@ref) is what supplies it, and with it
+    [`trial_slope`](@ref) is the exact derivative of a line search's merit under either retraction.
+    Before 0.2.0 the slope was paired against ``B`` regardless, which made it first-order under
+    `Cayley` — see the CHANGELOG entry for issue A1b for what that cost.
 
 See [`cayley`](@ref) for the implementation and [`Geodesic`](@ref) for the alternative.
 """

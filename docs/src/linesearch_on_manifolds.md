@@ -73,12 +73,34 @@ Getting that scale right improved [`_BFGS`](@ref) on the SVD problem from 176 to
 [`Geodesic`](@ref) with a shrink-only [`SimpleSolvers.Backtracking`](@extref), and from 197 to 93 on
 [`Cayley`](@ref) with [`SimpleSolvers.Bisection`](@extref).
 
-The two retractions are not equivalent here. For [`Geodesic`](@ref), [`trial_slope`](@ref) is the
-exact derivative of the merit. [`Cayley`](@ref) is not a one-parameter subgroup, so its slope is exact
-at ``\alpha = 0`` and drifts for finite steps — about 6% at ``\alpha = 0.5`` and 24% at
-``\alpha = 1``. The merit *value* stays exact for either. A method that uses ``\varphi'``
-quantitatively is therefore more sensitive to the choice of retraction than one that uses only its
-sign.
+## The generator of the trial curve turns with the step
+
+``\varphi'(\alpha) = \langle\nabla f(x(\alpha)), B\rangle`` holds only where
+``\alpha \mapsto \mathrm{retract}(\alpha B)`` is a one-parameter subgroup. [`Geodesic`](@ref) is one;
+[`Cayley`](@ref) is not, and pairing against ``B`` there gave a slope that was exact at
+``\alpha = 0`` and drifted from there — 8.9% out at ``\alpha = 0.5``, 36% at ``\alpha = 1`` and 143%
+at ``\alpha = 2`` on a ``\operatorname{St}(6,3)`` problem, against a central difference of the merit
+the search itself evaluates.
+
+[`retraction_differential`](@ref) supplies the generator that turns with the step. With
+``M = (\mathbb{I} - \frac{\alpha}{2}\bar{B})^{-1}``,
+
+```math
+\frac{d}{d\alpha}\mathrm{Cayley}(\alpha\bar{B}) = M\bar{B}M,
+\qquad\text{so}\qquad
+\frac{dx}{d\alpha} = W(\alpha)\,\big(M^\mathsf{T}\bar{B}M\big)\,E ,
+```
+
+with ``W(\alpha)`` the frame the trial point was built in. Both inverses go through
+[`lift_factors`](@ref) and the Woodbury identity, exactly as [`cayley`](@ref) does, so no
+``N \times N`` matrix is formed and the cost is ``O(Nn^2 + n^3)``. ``\alpha = 0`` returns ``\bar{B}``
+untouched, which is why the `Backtracking` default — the one search that evaluates ``\varphi'`` at
+``\alpha = 0`` only — pays nothing for this and is bit-identical across the change, as is every
+`Geodesic` figure in this package.
+
+The merit *value* was always exact for either retraction, so what this changes is the searches that
+read ``\varphi'``: `Bisection`, the two polynomial fits, and
+[`SimpleSolvers.StrongWolfe`](@extref).
 
 ## Preserve symmetry in the DFP inverse Hessian
 
@@ -124,12 +146,16 @@ the manifold problem rather than of any one search:
   Bracketing methods refine a line *minimum*; a backtracking search returns the first ``\alpha`` that
   decreases ``f`` enough. Reach for a bracketing method when iterations rather than evaluations are
   what you pay for — a very expensive objective, or an outer loop bounded in iterations.
-- **A search that uses ``\varphi'`` quantitatively inherits the retraction's slope error.**
-  [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (165 iterations for `_DFP`) and
-  falls apart on `Cayley` (550), because it fits a polynomial to a slope that is only first-order
-  correct there. `Bisection` uses only the sign of ``\varphi'``, and
-  [`SimpleSolvers.StrongWolfe`](@extref) only compares it against ``\varphi'(0)``; neither degrades
-  that way.
+- **A search that uses ``\varphi'`` quantitatively is the one that notices a bad step, not the one
+  that causes it.** [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (175 iterations
+  for `_DFP`) and falls apart on `Cayley` (529). The obvious explanation — that it fits a polynomial
+  to a slope which is only first-order correct there — was measured and is not the cause: with the
+  exact differential above the figure moves from 550 to 529 and the gap remains. On two of eight
+  starting points the same pair with `_BFGS` still runs to the iteration cap and ends off the
+  manifold. That is open issue A1b, and the sharpened diagnosis is in `CHANGELOG.md`: the solve asks
+  for directions of ``\|\delta\| \approx 10^8``, and `check` after a retraction grows like
+  ``\varepsilon\|\bar{B}\|`` for *both* retractions, `Cayley` about fifteen times faster than
+  `Geodesic`.
 
 [`_DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled:
 across eight starting points on the SVD problem it ranges over 387–845 iterations on `Geodesic`.
@@ -139,8 +165,8 @@ That range used to read 512–77 890, and the difference is not the line search.
 guard on the quasi-Newton update accepted; how quickly the expansion phase dug it back out was close
 to arbitrary. Enforcing the curvature condition — see [`curvature_is_usable`](@ref) — takes a factor
 of 92 off the spread, and with it most of the reason DFP had a reputation here for being
-unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 207–755 iterations
-across the same eight, at 16 873 objective evaluations against the default's 18 258 — and remains the
+unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 296–868 iterations
+across the same eight, at 18 117 objective evaluations against the default's 19 991 — and remains the
 choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
 `StrongWolfe`'s own default of ``0.9``: at ``0.9`` the strong Wolfe conditions already hold at
 ``\alpha = 1`` on 99.4% of iterations, so the bracketing phase never fires and the solve crawls just as
