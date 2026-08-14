@@ -25,12 +25,13 @@ scaled to ``\|\bar{B}\| = 361``, against the cost of one retraction at ``N = 200
 
 | | `check` | forward error | cost | backend |
 |---|---|---|---|---|
-| [`ScaledSquaring`](@ref) | `3.6e-14` | `1.0e-14` | `0.094 ms` | any |
-| [`AugmentedPade`](@ref) | `1.5e-14` | `1.3e-14` | `0.125 ms` | CPU (dense LAPACK) |
-| [`ProjectedSkew`](@ref) | `4.8e-15` | `2.0e-14` | `0.126 ms` | CPU (dense LAPACK) |
-| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.155 ms` | any |
+| [`ScaledSquaring`](@ref) | `3.6e-14` | `2.1e-14` | `0.097 ms` | any |
+| [`AugmentedPade`](@ref) | `1.5e-14` | `2.0e-14` | `0.130 ms` | CPU (dense LAPACK) |
+| [`ProjectedSkew`](@ref) | `4.8e-15` | `3.0e-14` | `0.140 ms` | CPU (dense LAPACK) |
+| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.164 ms` | any |
 
-"Forward error" is the relative distance to `exp(Matrix(B))`. [`ScaledSquaring`](@ref) is the default
+"Forward error" is the relative distance to `exp(Matrix(B))`; both it and `check` come from the same
+lift, so the columns are comparable row by row. [`ScaledSquaring`](@ref) is the default
 and is the cheapest as well as the most portable, so there is rarely a reason to change it —
 [`ProjectedSkew`](@ref) if `check` matters more than the last digit of the exponential, and
 [`AugmentedPade`](@ref) as the independent implementation the other two are tested against.
@@ -69,11 +70,13 @@ now converges in a handful of terms — cheaper than summing the unscaled series
 accurate.
 
 `θ` is the norm below which the series is summed. It barely matters: at ``\|\bar{B}\| = 155`` every
-``θ \in [0.125, 4]`` gives a `check` between `9.9e-15` and `5.0e-14` and a forward error between
-`6.4e-15` and `8.2e-15`. `0.5` is the measured middle of that range and needs no tuning.
+``θ \in [0.125, 4]`` — a 32-fold range — gives a `check` between `9.9e-15` and `5.0e-14` and a
+forward error between `6.4e-15` and `8.2e-15`, and neither column is monotone in `θ`. Nothing in the
+measurement singles out `0.5`; it needs no tuning because no value in that range does better.
 
-This is the only algorithm that uses nothing but matrix products and norms, so it is the only one
-that runs unchanged on a `KernelAbstractions` GPU backend. That is why it is the default. The norm
+Like [`TaylorSeries`](@ref) — and unlike the other two — this uses nothing but matrix products and
+norms, so it is the only *usable* algorithm that runs unchanged on a `KernelAbstractions` GPU
+backend. That is why it is the default. The norm
 is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by `LinearAlgebra.opnorm(X, 1)`, which
 is a scalar-indexing loop and would give up exactly the property this paragraph claims.
 
@@ -143,14 +146,16 @@ construction rather than by cancellation.
 This is the only algorithm whose `check` does not degrade with the size of the lift: it stays between
 `2.1e-15` and `5.3e-15` from ``\|\bar{B}\| = 5.8`` to ``\|\bar{B}\| = 767``, where the other two drift
 from `1e-15` to `7e-14`. Orthogonality is structural here — it comes from the eigenvector matrix, not
-from the accuracy of a series. The trade is the largest forward error of the three against
-`exp(Matrix(B))`, and a QR plus an eigendecomposition instead of matrix products.
+from the accuracy of a series. The trade is the forward error against `exp(Matrix(B))`, which is the
+largest of the three at all but the very largest lifts and up to 4.5× [`ScaledSquaring`](@ref)'s, and
+a QR plus an eigendecomposition instead of matrix products.
 
 The gap is widest in `Float32`, where the other two are at the mercy of the format: over the same
-sweep `check` reaches `2.3e-5` for [`ScaledSquaring`](@ref) and `4.2e-5` for [`AugmentedPade`](@ref)
-while this stays at `1.3e-6`. Choose it when staying on the manifold matters more than agreeing with
-the exponential to the last bit — a long `Float32` run, for instance, where `check` accumulates over
-thousands of steps.
+sweep `check` climbs to `4.0e-5` for [`ScaledSquaring`](@ref) and `3.4e-5` for
+[`AugmentedPade`](@ref) — which of them is worse depends on the lift — while this stays between
+`1.0e-6` and `3.1e-6` from one end to the other. Choose it when staying on the manifold matters more
+than agreeing with the exponential to the last bit — a long `Float32` run, for instance, where
+`check` accumulates over thousands of steps.
 
 !!! warning "CPU only"
     `qr` and `eigen` on a dense matrix need LAPACK, so this does not run on a GPU backend. Use
@@ -182,7 +187,7 @@ the result is of order one, so stopping when a *term* falls below `eps` leaves a
 to the partial sum instead of absolute does not help, and was measured not to change any of the
 numbers above — the loss is in the cancellation, not in when the summation stops.
 
-Use [`ScaledSquaring`](@ref), which fixes this and is also the cheaper of the two — 1.6× at
+Use [`ScaledSquaring`](@ref), which fixes this and is also the cheaper of the two — 1.7× at
 ``N = 200``, ``n = 10`` and 4.6× at ``N = 500``, ``n = 50``, because the scaled series converges in a
 handful of terms where the unscaled one grinds through hundreds.
 

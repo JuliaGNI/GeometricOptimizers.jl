@@ -78,7 +78,8 @@ exact derivative of the merit. [`Cayley`](@ref) is not a one-parameter subgroup,
 at ``\alpha = 0`` and drifts for finite steps — about 6% at ``\alpha = 0.5`` and 24% at
 ``\alpha = 1``. The merit *value* stays exact for either. A method that uses ``\varphi'``
 quantitatively is therefore more sensitive to the choice of retraction than one that uses only its
-sign.
+sign. The [Retractions](@ref) page has the rest of the comparison, including what
+[`Geodesic`](@ref) costs now that it is the cheaper of the two.
 
 ## Preserve symmetry in the DFP inverse Hessian
 
