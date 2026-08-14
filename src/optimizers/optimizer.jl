@@ -37,7 +37,9 @@ x
  0.0
 ```
 
-The choice of line search does not change where this one ends up:
+The choice of line search does not change *which* minimum this one finds, only how close to it the
+stopping criterion lets the solve get — `Backtracking` stops at `1.4e-9` per component, where
+`Bisection` above happens to land on `0` exactly:
 
 ```jldoctest; setup = :(using GeometricOptimizers; F(x) = sum(sin.(x) .^ 2))
 x = ones(3)
@@ -46,14 +48,11 @@ state = OptimizerState(algorithm, x)
 optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Backtracking())
 
 solve!(x, state, optimizer)
-x
+F(x) < 1e-15
 
 # output
 
-3-element Vector{Float64}:
- 0.0
- 0.0
- 0.0
+true
 ```
 
 !!! info "This example needs the descent safeguard"
@@ -364,25 +363,32 @@ julia> state = NewtonOptimizerState(x);
 julia> solve!(x, state, opt)
 GeometricOptimizers.OptimizerResult{Float32, Float32, Vector{Float32}, GeometricOptimizers.OptimizerStatus{Float32, Float32}}( * Convergence measures
 
-    |x - x'|               = 3.05e-05
-    |x - x'|/|x'|          = 6.55e+04
-    |f(x) - f(x')|         = 9.31e-10
-    |f(x) - f(x')|/|f(x')| = 4.30e+09
-    |g(x) - g(x')|         = 0.00e+00
+    |x - x'|               = 7.82e-03
+    |x - x'|/|x'|          = 2.56e+02
+    |f(x) - f(x')|         = 6.18e-05
+    |f(x) - f(x')|/|f(x')| = 6.63e+04
+    |g(x) - g(x')|         = 1.57e-02
     |g(x)|                 = 6.10e-05
-, Float32[0.0, 4.656613f-10], 2.1684043f-19, GeometricOptimizers.OptimizerTraceEntry{Float32, Float32}[])
+, Float32[4.6478817f-8, 3.0517578f-5], 9.313341f-10, GeometricOptimizers.OptimizerTraceEntry{Float32, Float32}[])
 
 julia> x
 2-element Vector{Float32}:
- 0.0
- 4.656613f-10
+ 4.6478817f-8
+ 3.0517578f-5
 
 julia> iteration_number(state)
-5
+4
 ```
 
 The trailing empty vector is the per-iteration [`trace`](@ref), which is only filled if
 `Options(store_trace = true)` asked for it.
+
+Two rows of that status moved in 0.2.0 and both are the same fix (issue A8). `|g(x)|` is now
+``\\|\\nabla{}f\\|`` at the iterate the solve returns, so `g_converged` fires when the residual has
+actually reached `f_reltol` — this solve stops on iteration 4 where it used to run a fifth and report
+the residual of the fourth. And `|g(x) - g(x')|` used to be `0.00e+00` *structurally* for `Newton`:
+`solver_step!` advanced `state.ḡ` at the same iterate the cache took its gradient at, so the
+difference it printed could not be anything else. See [`gradient_difference!`](@ref).
 
 Also see [`solver_step!`](@ref).
 """

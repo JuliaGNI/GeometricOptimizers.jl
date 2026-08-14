@@ -94,16 +94,16 @@ trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction, α) 
 # array of the cache — that is what makes it allocation-free — and so leaves the gradient at the last
 # trial `α` there, while the manifold method allocates and leaves the cache alone.
 #
-# Which array it writes into is `latest_gradient(cache)` and deliberately not `gradient(cache)`. On
-# the quasi-Newton caches the two are the same array, which is what this did unconditionally and is
-# harmless there: `BFGSCache` and `DFPCache` advance `state.ḡ` and form `cache.Δg` inside
-# `update!(cache, ...)`, i.e. before the line search runs, so nothing downstream reads `cache.g`
-# again. On the three first-order caches they are not, because `update!(::MomentumState, ...)` re-runs
-# `p ← αp + ∇f(xₖ)` from `gradient_array(cache)` *after* the search — so a shared array made the
-# momentum accumulate the gradient at whatever trial step the search last probed. Measured over eight
-# iterations, the state's momentum was 104% wrong under `Bisection`, `Quadratic` and `StrongWolfe` and
-# 451% wrong under `BierlaireQuadratic`; `Backtracking` was exact only because it evaluates `φ'` once,
-# at `α = 0`, where the trial gradient *is* `∇f(xₖ)`. See the CHANGELOG entry for issue A2.
+# Which array it writes into is `latest_gradient(cache)` and deliberately not `gradient(cache)`, on
+# every cache. Two reasons, and they were fixed one release apart. On the three first-order caches a
+# shared array corrupts the *state*: `update!(::MomentumState, ...)` re-runs `p ← αp + ∇f(xₖ)` from
+# `gradient_array(cache)` *after* the search, so the momentum accumulated the gradient at whatever
+# trial step the search last probed — measured over eight iterations, 104% wrong under `Bisection`,
+# `Quadratic` and `StrongWolfe` and 451% wrong under `BierlaireQuadratic` (issue A2). On the
+# quasi-Newton caches nothing downstream reads `cache.g` again, so a shared array corrupted nothing —
+# but it made `rg` a statement about the last point the line search probed rather than about the
+# iterate the solve returns, which is issue A8. `Backtracking` is exact for both, and only because it
+# evaluates `φ'` once, at `α = 0`, where the trial gradient *is* `∇f(xₖ)`.
 function _trial_slope(::AbstractVector, gradient_instance::Gradient, cache::OptimizerCache, ::AbstractRetraction, α)
     gradient_instance(latest_gradient(cache), solution(cache))
     _dot(latest_gradient(cache), direction(cache))

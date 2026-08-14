@@ -2,11 +2,17 @@
     DFPCache <: OptimizerCache
 
 The [`OptimizerCache`](@ref) corresponding to the [`_DFP`](@ref) method.
+
+`g̃` is the scratch for [`latest_gradient`](@ref) and `g̃_is_current` says whether it is the gradient at
+`x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
+[`store_gradient!`](@ref).
 """
 struct DFPCache{T,VT<:OptimizerSolution{T},GT,MT,GS<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::GT    # current gradient
+    g̃::GT    # most recently evaluated gradient; see `latest_gradient`
+    g̃_is_current::Base.RefValue{Bool}
 
     T1::MT
     T2::MT
@@ -29,7 +35,7 @@ struct DFPCache{T,VT<:OptimizerSolution{T},GT,MT,GS<:GlobalSectionSingleOrNamedT
         q = zeros(T, length(v), length(v))
         section = GlobalSection(x)
         g = _zero(x)
-        cache = new{T,AT,typeof(g),typeof(q),typeof(section)}(_copy(x), _similar(g), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section)
+        cache = new{T,AT,typeof(g),typeof(q),typeof(section)}(_copy(x), _similar(g), _similar(g), Ref(false), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section)
         initialize!(cache, x)
         cache
     end
@@ -52,6 +58,13 @@ rhs(cache::DFPCache) = cache.rhs
 Return the stored gradient (array) of an instance of [`DFPCache`](@ref)
 """
 gradient(cache::DFPCache) = cache.g
+# see the remark in `bfgs_cache.jl`
+gradient_array(cache::DFPCache) = gradient(cache)
+latest_gradient(cache::DFPCache) = cache.g̃
+refresh_latest_gradient!(cache::DFPCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
+latest_gradient_is_current(cache::DFPCache, state::OptimizerState, x::OptimizerSolution) =
+    _latest_gradient_is_current(cache, state, x)
+invalidate_latest_gradient!(cache::DFPCache) = _invalidate_latest_gradient!(cache)
 
 """
     direction(cache)
@@ -126,20 +139,26 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
     cache
 end
 
+# see the remark in `bfgs_cache.jl`: this reuses the gradient `solver_step!` refreshed at the end of
+# the previous step, has to run before `update!(cache, state, x)` overwrites `cache.x`, and leaves the
+# four-argument method below copying `cache.g` onto itself
 function update!(cache::DFPCache, state::OptimizerState, grad::Gradient, x::OptimizerSolution)
-    update!(cache, state, x, global_rep(section(state), grad(x)))
+    store_gradient!(cache, state, grad, x)
+    update!(cache, state, x, gradient(cache))
 end
 
 update!(cache::DFPCache, state::OptimizerState, grad::Gradient, ::HessianDFP, x::OptimizerSolution) = update!(cache, state, grad, x)
 
-# `Δg` is the `γ` of the secant pair, already formed in `update!` above from the `ḡ` that has
-# since been advanced, so `OptimizerStatus` must not recompute it. See `gradient_difference!`.
-gradient_difference!(cache::DFPCache, ::OptimizerState) = cache.Δg
+# see the remark in `bfgs_cache.jl`: the successive difference the status prints, and not the `γ` of
+# the secant pair, which is one step behind it
+gradient_difference!(cache::DFPCache, ::OptimizerState) = _latest_gradient_difference!(cache)
 
 function initialize!(cache::DFPCache{T}, ::OptimizerSolution{T}) where {T}
     _fill!(solution(cache), T(NaN))
     _fill!(direction(cache), T(NaN))
     _fill!(gradient(cache), T(NaN))
+    _fill!(latest_gradient(cache), T(NaN))
+    invalidate_latest_gradient!(cache)
     _fill!(rhs(cache), T(NaN))
     cache
 end

@@ -213,10 +213,17 @@ end
     # momentum: a line search accurate enough to drive `∇f(x₁) ≈ 0` made `g_converged` fire while the
     # momentum term was still moving the iterate. On `F` from `ones(3)` that left `MomentumMethod` at
     # `‖x‖ = 0.346` and `Adam` at `‖x‖ = 1.16` -- barely moved -- both reporting convergence.
+    #
+    # The (quasi-)Newton caches were left out of that fix and are covered here too now. For them the
+    # stale `rg` was not `‖∇f(xₖ)‖` but `‖∇f‖` at whatever point the line search last probed, because
+    # `trial_slope` evaluates into the same array -- on Rosenbrock from `(-1.2, 1)` with the default
+    # `Backtracking` that read `5.8e4` times the true residual for `_BFGS` and `299` times it for
+    # `_DFP`. That was issue A8; `Backtracking` is in the list below for exactly that reason.
     ∇F(x) = 2 .* x
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
-        _linesearch in (Bisection(), Quadratic(), BierlaireQuadratic(), StrongWolfe(; c₂=0.1))
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), _BFGS(), _DFP()),
+        _linesearch in (Backtracking(; expand=true), Bisection(), Quadratic(), BierlaireQuadratic(),
+            StrongWolfe(; c₂=0.1))
 
         x = ones(3)
         state = OptimizerState(method, x)
@@ -224,10 +231,9 @@ end
 
         # the residual belongs to the point the solve returns, and not to the one before it
         @test status(result).rg ≈ norm(∇F(x))
-        # it stopped on a convergence criterion -- `g_converged` for ten of these twelve, `f_converged`
-        # for the two `BierlaireQuadratic` ones -- rather than on the iteration cap
+        # it stopped on a convergence criterion rather than on the iteration cap
         @test GeometricOptimizers.isconverged(status(result))
-        # and it really is at the minimiser: `1.8e-8` is the worst of the twelve, against the `0.346`
+        # and it really is at the minimiser: `1.8e-8` is the worst of the thirty, against the `0.346`
         # and `1.16` this used to stop at
         @test norm(x) < 1e-7
     end
@@ -245,7 +251,7 @@ end
     f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4 .+ 0.3 .* sin.(3x))
     ∇f!(g, x) = (g .= 2 .* x .+ 0.4 .* x .^ 3 .+ 0.9 .* cos.(3x))
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), _BFGS(), _DFP()),
         _linesearch in (Static(0.1), Backtracking(; expand=true), Bisection(), Quadratic(),
             BierlaireQuadratic(), StrongWolfe(; c₂=0.1))
 
@@ -266,6 +272,33 @@ end
 
             # whichever branch `store_gradient!` took, the direction was built from ∇f at the iterate
             # the step started from
+            @test GeometricOptimizers.gradient_array(GeometricOptimizers.cache(opt)) == g
+        end
+    end
+
+    # `Newton` is the one method that does not reliably get the reuse, and it is the state's section
+    # that denies it: `update!(::NewtonOptimizerState, opt, x)` advances `state.section` by the
+    # *gradient* rather than by the direction, so the two frames differ by `∇f - δ` and the guard
+    # falls back to a fresh evaluation. That is the gradient evaluation per iteration the refresh
+    # costs for `Newton` and for nothing else. It comes back once the solve has converged, where both
+    # the gradient and the step have gone to zero and the frames agree again -- which is why what is
+    # asserted here is the gradient the direction is built from and not the branch taken to get it.
+    for _linesearch in (Static(0.1), Backtracking(; expand=true), Bisection())
+        x = [1.5, -0.8, 0.4]
+        state = OptimizerState(Newton(), x)
+        opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=Newton(), linesearch=_linesearch)
+        g = similar(x)
+
+        # not current on the first iteration, where nothing has written the scratch array yet
+        @test !GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, x)
+
+        for _ in 1:8
+            increase_iteration_number!(state)
+
+            ∇f!(g, x)
+            solver_step!(x, state, opt)
+            update!(state, opt, x)
+
             @test GeometricOptimizers.gradient_array(GeometricOptimizers.cache(opt)) == g
         end
     end
@@ -306,11 +339,16 @@ end
     # `cache.g` for them, so `rgₐ` was `‖∇f(xₖ) - ∇f(xₖ₋₂)‖` -- on the objective below, `4.976` where
     # the successive difference is `0.295` -- and on the first iteration it differenced against
     # `_similar` memory that `MomentumState` never writes. See `gradient_difference!`.
+    #
+    # The (quasi-)Newton caches had the same row wrong in their own way and are covered here now:
+    # `BFGSCache` and `DFPCache` reported the `γ` of their secant pair, which is one step behind the
+    # `rg` next to it, and for `NewtonOptimizerCache` the difference was *structurally zero* --
+    # `solver_step!` advances `state.ḡ` at the very iterate the cache takes its gradient at.
     f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4)
     ∇f(x) = 2 .* x .+ 0.4 .* x .^ 3
     ∇f!(g, x) = (g .= ∇f(x))
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), _BFGS(), _DFP()),
         _linesearch in (Static(0.1), Bisection(), Quadratic())
 
         x = [1.5, -0.8, 0.4]

@@ -50,6 +50,15 @@ const CONVERGED_ERROR_TOLERANCE = 1e-8
 # runs is `2.9e-7`, so `1e-5` now has a factor of 35 of headroom and is a real bound rather than a
 # coin flip. It is kept at `1e-5` for exactly that reason: it is the value that fails if the
 # line-search handling regresses.
+#
+# The headroom grew again when `rg` became the residual at the iterate a solve returns rather than at
+# whichever point the line search last probed (issue A8): the stale value overestimated the
+# residual near a minimiser. Over the eighteen converging combinations of the eight-seed sweep in
+# `scripts/retraction_accuracy.jl` the worst `rg` goes from `2.5e-7` to `2.0e-7`, i.e. a factor of 50
+# of headroom. (The two that do not converge -- `_BFGS` with either polynomial search under `Cayley`,
+# open issue A1b -- report `rg` of order `1e0` on two of their eight seeds, which is the divergence
+# and not the tolerance.) `g_converged` is still `false` in all eighty: `1e-7` is four orders above
+# the `f_reltol` gate, and every one of these solves still terminates on `f_converged`.
 const CONVERGED_GRADIENT_TOLERANCE = 1e-5
 
 # How close `GradientMethod` and `MomentumMethod` get to the best rank-`n` approximation, as a
@@ -269,16 +278,30 @@ end
 # evaluations, Geodesic / Cayley:
 #
 #                                     iterations          evaluations       iters over 8 seeds
-#     _BFGS  Backtracking(expand)     95 /   118        2_431 /  3_021     104..161 /  91..156
-#     _BFGS  Backtracking            136 /   136        3_447 /  3_446     114..192 / 118..203
-#     _BFGS  Bisection               133 /   114       78_648 / 67_020       87..133 / 102..137
-#     _BFGS  Quadratic               111 /    98       15_367 / 12_203       89..159 /  90..cap
-#     _BFGS  BierlaireQuadratic      130 /   119       13_771 / 12_766      108..261 /  96..cap
-#     _DFP   Backtracking(expand)   768 / 1_366       19_991 / 35_329     385..1_118 / 466..1_177
-#     _DFP   Backtracking        47_115 / 26_479    1_177_919 / 662_019  10_448..114_116 / 5_596..26_479
-#     _DFP   StrongWolfe(c₂=0.1)    218 /   279       18_117 / 23_818      296..868 / 198..515
-#     _DFP   Bisection               136 /   110       79_991 / 64_306       87..141 / 102..124
-#     _DFP   Quadratic               175 /   529       18_112 / 50_656       92..868 / 164..735
+#     _BFGS  Backtracking(expand)     95 /   118        2_441 /  3_031     104..161 /  91..156
+#     _BFGS  Backtracking            136 /   136        3_457 /  3_456     114..192 / 118..203
+#     _BFGS  Bisection               133 /   114       78_658 / 67_030       87..133 / 102..137
+#     _BFGS  Quadratic               111 /    98       15_377 / 12_213       89..159 /  90..cap
+#     _BFGS  BierlaireQuadratic      130 /   119       13_781 / 12_776      108..261 /  96..cap
+#     _DFP   Backtracking(expand)   768 / 1_366       20_001 / 35_339     385..1_118 / 466..1_177
+#     _DFP   Backtracking        48_322 / 26_479    1_208_157 / 662_029  10_448..114_116 / 5_596..26_479
+#     _DFP   StrongWolfe(c₂=0.1)    218 /   279       18_127 / 23_828      296..868 / 198..515
+#     _DFP   Bisection               136 /   110       80_001 / 64_316       87..141 / 102..124
+#     _DFP   Quadratic               175 /   529       18_122 / 50_666       92..868 / 164..735
+#
+# Every evaluation count here is ten higher than it was before `rg` became the residual at the iterate
+# a solve returns (issue A8), and every iteration count and seed spread is unchanged under it
+# (the one iteration count that does move is the `_DFP  Backtracking` correction below). Ten is one
+# gradient evaluation on this problem -- `GradientAutodiff` costs exactly ten objective calls for these
+# 60 parameters, and the counter above counts those too -- and it is the refresh at the *last* iterate,
+# the one no `update!` follows and so the one nothing reuses. Per solve and not per iteration: the
+# reuse in `store_gradient!` is what makes the difference `10` rather than `10 x iterations`.
+#
+# Re-measuring also corrected the `_DFP  Backtracking` row, whose `Geodesic` figures read 47_115 and
+# 1_177_919 -- a state of the code that predates `curvature_is_usable`, and which `default_linesearch`'s
+# own table already disagreed with. Both columns are now `solve_once` from `scripts/retraction_accuracy.jl`
+# at a cap of 200_000, like everything else here; its *spread* is still the older measurement it has
+# always been.
 #
 # Every `Geodesic` figure here moved when the retraction was fixed (see `ScaledSquaring`): a more
 # accurate exponential is a different trajectory, so the counts shift by a few percent in both
@@ -289,7 +312,7 @@ end
 # eight, and that is open issue A1b.
 #
 # `_DFP  Backtracking` is deliberately not one of the script's `COMBINATIONS` -- it is the shrink-only
-# search whose only purpose here is the ceiling argument three paragraphs down, and at 47_115
+# search whose only purpose here is the ceiling argument three paragraphs down, and at 48_322
 # iterations on the pinned seed it would dominate the runtime of every sweep. Its spread is an older
 # measurement at a cap high enough not to bind, which is why it exceeds 20_000.
 #
@@ -300,7 +323,8 @@ end
 # (54_176 -> 50_656, and its spread 168..1_211 -> 164..735), and `_BFGS  Quadratic` 101 -> 98. A more
 # accurate `φ'` is a different trajectory in the same way a more accurate exponential is; `Bisection`
 # needing a few more iterations for a *correct* slope than for a wrong one is not a regression, it is
-# a different sequence of brackets.
+# a different sequence of brackets. (Those "after" evaluation counts are what the differential left
+# behind; each is ten below the table above, which was measured after A8 added the final gradient.)
 #
 # Four stale `Cayley` bounds in the table above are corrected here -- three lower and one upper:
 # `_BFGS  Backtracking(expand)` read 114 where it measures 91, `_BFGS  Backtracking` 131 where it
@@ -348,7 +372,7 @@ end
 #
 # (The `α` columns were measured on the code as it stood before `linesearch_rejected` and
 # `curvature_is_usable`, which is why the iteration column here does not quite match the table above
-# -- it read 113 / 143 / 49_679 / 134 then and 114 / 142 / 47_115 / 134 now. What the columns
+# -- it read 113 / 143 / 49_679 / 134 then and 136 / 133 / 48_322 / 136 now. What the columns
 # characterise is the *line search*, and that has not changed; the point they make about the ceiling
 # at `α = 1` stands either way.)
 #
