@@ -94,14 +94,60 @@ subgroup**,
 \exp\left((\alpha + \beta)\bar{B}\right) = \exp(\alpha\bar{B})\exp(\beta\bar{B}),
 ```
 
-and ``\alpha \mapsto \mathrm{Cayley}(\alpha\bar{B})`` is not. The Cayley transform agrees with the
-geodesic to first order at ``\alpha = 0`` and departs from it as the step grows, so the generator of
-the curve's velocity turns with ``\alpha`` instead of staying ``\bar{B}``. That is what
-[`retraction_differential`](@ref) supplies, and with it [`trial_slope`](@ref) is the exact derivative
-of a line search's merit function under *either* retraction. Before 0.2.0 the slope was paired
-against ``\bar{B}`` regardless, which made it first-order under [`Cayley`](@ref) — 8.9% off at
-``\alpha = 0.5`` and 36% at ``\alpha = 1``; see [Linesearches on Manifolds](@ref) for the
-measurement.
+and ``\alpha \mapsto \mathrm{Cayley}(\alpha\bar{B})`` is not. Everything in sight is a rational
+function of ``\bar{B}``, so it all commutes and the two products can be compared directly: with
+``t = \alpha/2`` and ``s = \beta/2``,
+
+```math
+\mathrm{Cayley}(\alpha\bar{B})\,\mathrm{Cayley}(\beta\bar{B})
+  = \big[\mathbb{I} + (t + s)\bar{B} + ts\bar{B}^2\big]
+    \big[\mathbb{I} - (t + s)\bar{B} + ts\bar{B}^2\big]^{-1} ,
+```
+
+against ``[\mathbb{I} + (t+s)\bar{B}][\mathbb{I} - (t+s)\bar{B}]^{-1}`` for
+``\mathrm{Cayley}((\alpha+\beta)\bar{B})``. The two agree only where ``ts\bar{B}^2 = \mathbb{O}``, and
+the gap is not small: on a random ``\mathfrak{g}^\mathrm{hor}`` element of ``\operatorname{St}(6,3)``
+with ``\|\bar{B}\| = 2.99`` it is ``1.28`` at ``\alpha = \beta = 1``, where the same difference for
+``\exp`` is ``8\times10^{-16}``.
+
+So the generator of the curve's velocity turns with ``\alpha`` instead of staying ``\bar{B}``. That
+is what [`retraction_differential`](@ref) supplies, and with it [`trial_slope`](@ref) is the exact
+derivative of a line search's merit function under *either* retraction. Before 0.2.0 the slope was
+paired against ``\bar{B}`` regardless, which made it first-order under [`Cayley`](@ref) — 8.9% off at
+``\alpha = 0.5`` and 36% at ``\alpha = 1`` on the ``\operatorname{St}(6,3)`` problem of
+[Linesearches on Manifolds](@ref), which is where that measurement lives.
+
+!!! info "It is the parameterisation and not the approximation"
+    The natural reading of "`Cayley` is a retraction and `Geodesic` is the exponential map" is that
+    the slope was wrong because the *curve* was approximate. That is not the mechanism, and the
+    smallest counterexample separates them. Take ``N = 2`` and ``\bar{B} = J = \left(\begin{smallmatrix}0 & -1\\ 1 & 0\end{smallmatrix}\right)``.
+    Then
+
+    ```math
+    \mathrm{Cayley}(\alpha{}J) = \exp\big(2\arctan(\tfrac{\alpha}{2})\,J\big)
+    ```
+
+    to the last bit — the Cayley curve is the geodesic, *exactly*, with nothing approximate about it.
+    It is traversed at a different speed:
+
+    | ``\alpha`` | 0 | 0.5 | 1 | 2 | 4 |
+    |---|---|---|---|---|---|
+    | angle turned, `Cayley` | 0 | 0.4900 | 0.9273 | 1.5708 | 2.2143 |
+    | angle turned, `Geodesic` | 0 | 0.5 | 1 | 2 | 4 |
+    | ``d\theta/d\alpha`` for `Cayley` | 1 | 0.9412 | 0.8 | 0.5 | 0.2 |
+
+    and that last row is exactly ``D(\alpha) = \bar{B}(\mathbb{I} - \frac{\alpha^2}{4}\bar{B}^2)^{-1}``
+    at ``J^2 = -\mathbb{I}``, i.e. ``J/(1 + \alpha^2/4)``. Pairing the gradient against ``J`` rather
+    than against ``D(\alpha)`` therefore overstates ``\varphi'`` by ``1 + \alpha^2/4`` — 6.2% at
+    ``\alpha = 0.5``, 25% at ``\alpha = 1``, 100% at ``\alpha = 2``. A curve can be exactly right and
+    still give the wrong ``\varphi'``, because ``\varphi'`` is a derivative with respect to the
+    *parameter*.
+
+    That also says how to read the percentages above: to leading order the error is
+    ``\alpha^2\lambda^2/4`` for an eigenvalue ``\pm{}i\lambda`` of ``\bar{B}``, so it grows with the
+    step *and* with the size of the lift, and a figure quoted without its problem means little. The
+    same measurement on the ``\operatorname{St}(3,1)`` sphere of `manifold_linesearch_tests.jl` gives
+    4.5%, 18%, 72% and 288% at ``\alpha = 0.25, 0.5, 1, 2``.
 
 The retraction still separates the two polynomial line searches on the SVD problem, where they leave
 the manifold under [`Cayley`](@ref) for every optimizer method and stay on it under
