@@ -555,8 +555,8 @@ are tracked with the code rather than in a scratch file. A is correctness in thi
 observability, C its dead code and bookkeeping; D is upstream, E lists things reported during the
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
-given. Entries A5, A6, C6 and D5 come from the review of [#36], the rest from unifying the optimizer
-hierarchies.
+given. Entries A5, A6, C6 and D5 come from the review of [#36]; A7, A8, A9 and the second half of A1b
+from [#38]; the rest from unifying the optimizer hierarchies.
 
 A1, A2 and A3 are fixed and are kept for the record, since later entries refer to them: A1 and A3 by
 [#36], A2 by [#38]. C6 describes text that [#36] introduced.
@@ -564,7 +564,8 @@ A1, A2 and A3 are fixed and are kept for the record, since later entries refer t
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
 
-Ordered by severity within each section.
+Ordered by severity within each section, except that entries found after the first pass are appended
+to their section rather than interleaved, so that the labels stay stable references.
 
 ---
 
@@ -658,6 +659,25 @@ and `manifold_linesearch_tests.jl` runs them only on the one-dimensional sphere 
 are fine. The honest fix is probably an exact `Cayley` differential in `trial_slope` — the
 `retraction` argument is already threaded there for exactly this reason
 (`linesearch_problem.jl:69-79`) — but that needs its own investigation.
+
+**It is not specific to `_BFGS`.** Measured while adding the first-order coverage of [#38], on the
+same problem at seed `1234` under `Cayley`, 1 000 iterations:
+
+| | `Backtracking(expand)` | `Bisection` | `Quadratic` | `BierlaireQuadratic` |
+|---|---|---|---|---|
+| `GradientMethod` | `1.7e-14` | `1.3e-14` | **`5.6e-4`** | **`1.9e-3`** |
+| `MomentumMethod` | `1.5e-14` | `2.6e-14` | **`5.3e-4`** | **`2.4e-3`** |
+| `Adam` | `1.7e-14` | `2.6e-14` | **`1.1e-5`** | **`3.1e-4`** |
+
+Same split, six more cases: whatever the method, the two polynomial searches leave the manifold under
+`Cayley` and the two that use ``\varphi'`` only qualitatively do not. That is what makes
+`trial_slope`'s `Cayley` differential the suspect rather than anything in the quasi-Newton update.
+
+(Context for the table, and not itself a defect: no first-order method converges on this problem
+within 1 000 iterations. `Backtracking(expand)` and `Bisection` reach the optimal value —
+`err = 1.7097`, the same one `_BFGS` converges to — but stop at `rg` between `4e-5` and `2e-3`,
+several orders off the gate. That is what a first-order method on a badly conditioned problem does;
+it is why `manifold_linesearch_tests.jl` uses a two-sphere problem for its first-order coverage.)
 
 #### A2. `GradientMethod` and `MomentumMethod` throw on their own default line search — fixed in 0.2.0
 
@@ -791,6 +811,100 @@ of scalar indexing and dense LAPACK, which is what lets it run on a GPU backend 
 docstring). That rules out reaching for the spectral radius directly — an eigenvalue computation
 would give the tighter bound and forfeit the reason the algorithm was chosen.
 
+#### A7. `MomentumMethod` runs away when its direction ascends, and nothing stops it
+
+**Severity: high.** Found in [#38], while giving the first-order methods their first coverage on a
+badly conditioned problem. Pre-existing; [#38] neither causes nor fixes it, but it made the affected
+path the default.
+
+On Rosenbrock from `(-1.2, 1)` with `MomentumMethod(0.1)`, the iterate reaches `Inf` rather than the
+minimiser:
+
+| line search | iterations | `f` | `‖x‖` at the end |
+|---|---|---|---|
+| `Backtracking` | 379 | **`Inf`** | `3.0e200` |
+| `Backtracking(expand)` — the default | 457 | **`Inf`** | `8.7e77` |
+| `BierlaireQuadratic` | 6 | **`Inf`** | `2.0e208` |
+| `Bisection` | 636 | `3.3e-17` | ✓ |
+| `Quadratic` | 577 | `2.3e-16` | ✓ |
+| `StrongWolfe(c₂ = 0.1)` | 3 136 | `2.7e-16` | ✓ |
+
+The mechanism, counted directly over the first 200 iterations of the `Backtracking(expand)` run:
+**194 line searches report `LINESEARCH_NO_DESCENT`**, 4 report `LINESEARCH_DECREASED`. The direction
+ascends almost every step, the search says so, and the step is taken anyway — `solver_step!` excludes
+`FirstOrderMethodWithState` from both `ensure_descent!` and the `linesearch_rejected` restart. That
+exclusion is right in principle, since a moving average is deliberately allowed not to descend on an
+*individual* step, but nothing tells that apart from failing on 97% of them. `allow_f_increases`
+defaults to `true`, so the outer loop does not stop it either, and `contains_nonfinite` only catches
+it once the iterate is already past `1e200`.
+
+`MomentumMethod` is the only method exposed this way, and the comparison is what shows it:
+
+- `GradientMethod` is *not* in `FirstOrderMethodWithState`, so it keeps `ensure_descent!`, and its
+  direction is `-∇f` and always descends. It never diverges under any of the seven searches — it is
+  merely slow (10 000 iterations to `f = 6.3e-7`).
+- `Adam` *is* excluded, and does not diverge either, because its direction is normalised to magnitude
+  ≈1 per component. It converges under five of the seven.
+- `MomentumMethod`'s direction is `-(αp + ∇f)`, unnormalised **and** unguarded, so an ascending step
+  raises `‖∇f‖`, which raises `‖p‖`, which lengthens the next ascending step.
+
+(`Static(0.1)` diverges here for `GradientMethod` too, in five iterations. That is an over-large fixed
+step on a badly scaled problem and a different matter; the entry is about the searching line searches,
+where the search correctly reports that no step decreases the merit and is overruled.)
+
+Two candidate guards, neither costing an evaluation: a bound on `‖p‖` relative to `‖∇f‖`, or a count
+of consecutive `LINESEARCH_NO_DESCENT` outcomes — which is exactly the counter B1 asks for, so the
+two are worth doing together.
+
+#### A8. `rg` for the (quasi-)Newton methods is whichever point the line search last probed
+
+**Severity: medium**, and it errs in the safe direction. [#38] fixed this for the three first-order
+caches and deliberately left the (quasi-)Newton ones alone, so that every table in
+`default_linesearch`'s docstring and in `svd_optim.jl` stays bit-identical.
+
+`latest_gradient` aliases `cache.g` for `NewtonOptimizerCache`, `BFGSCache` and `DFPCache`, and
+`trial_slope` evaluates into it, so what `rg` reports depends on where the line search last evaluated
+``\varphi'``. On Rosenbrock from `(-1.2, 1)`, `rg` against `‖∇f(x)‖` at the point the solve actually
+returns:
+
+| | `Backtracking(expand)` | `Bisection` | `Quadratic` | `StrongWolfe` |
+|---|---|---|---|---|
+| `Newton` | `5.0e-14` vs `0` | 1.0× | 1.0× | 1.0× |
+| `_BFGS` | **5.8e4×** | 1.0× | 1.0× | 1.0× |
+| `_DFP` | **299×** | 1.0× | 1.0× | 1.0× |
+
+The three bracketing searches come out exact because their last ``\varphi'`` evaluation happens to
+land at the accepted ``\alpha``; `Backtracking` — the default — evaluates ``\varphi'`` only at
+``\alpha = 0``, so its `rg` is `‖∇f(xₖ)‖` at the iterate the step started from. That `rg` therefore
+means a different point depending on which line search ran, and the same number is not comparable
+across the rows of any of this package's tables.
+
+It overestimates near a minimiser, so `g_converged` fires *late* rather than early — the opposite of
+what the same staleness did to `MomentumMethod` and `Adam` before [#38], and the reason this is
+medium and not high. The fix is the one line the first-order caches already use,
+`refresh_latest_gradient!`; the cost is one gradient evaluation per iteration and a re-measurement of
+every iteration count in the package, which is why it wants its own PR.
+
+#### A9. A searching line search does not give `Adam` a criterion it can meet
+
+**Severity: low**, and a sharpening of something already documented rather than a new defect. From
+[#38], where it is why the `Adam` testset in `manifold_linesearch_tests.jl` asserts less than the one
+next to it.
+
+`Adam`'s direction has magnitude ≈1 per component whatever the gradient is, so with a step that does
+not shrink it circles the minimiser at that distance rather than settling on it. `DecayingStatic`
+exists for this, and its docstring and testset record it for `Static`. What [#38] adds is that a
+*searching* line search does not fix it either: on the two-sphere `NamedTuple` problem of
+`manifold_linesearch_tests.jl`, `Adam` + `BierlaireQuadratic` runs out all 1 000 iterations under
+both retractions while sitting `6.8e-6` (`Geodesic`) and `5.4e-7` (`Cayley`) from the minimiser — at
+the answer, with no criterion it can meet. The other six searches terminate, but take 267–855
+iterations where `GradientMethod` and `MomentumMethod` take 9–64.
+
+So `default_linesearch`'s choice of `Static` for `AdamFamily` is not merely the cheaper one, and
+`DecayingStatic` remains the only setting under which `Adam` terminates on a criterion by
+construction. Worth a sentence in `Adam`'s docstring, which currently sends the reader to
+`default_linesearch` for the cost argument and not for this one.
+
 ---
 
 ### B. This package — observability
@@ -802,6 +916,11 @@ PR #35 makes `solver_step!` act on `LINESEARCH_FLOOR` / `LINESEARCH_EXHAUSTED` /
 (verified: no reference to the outcome in `optimizer_status.jl`), so a solve that needed a
 quasi-Newton restart on half its iterations is indistinguishable, in the object the caller gets,
 from one that never needed one. Only a `verbosity ≥ 2` log message with `maxlog = 1` shows it.
+
+A7 raises the stakes: `MomentumMethod` diverging on Rosenbrock reports `LINESEARCH_NO_DESCENT` on 194
+of its first 200 iterations, and the returned status says nothing about any of them. The counter this
+entry asks for is also the cheapest guard against that divergence, so the two are worth doing
+together.
 
 #### B2. `show_trace` and `extended_trace` are still accepted and ignored
 
