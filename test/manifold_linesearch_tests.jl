@@ -109,6 +109,8 @@ end
 # difference of the retraction it is the derivative of. This is also the only place the identity is
 # checked against `retract` rather than against `f ∘ retract`, which is what makes it independent of
 # `global_rep` and `_dot`.
+struct UncoveredRetraction <: GeometricOptimizers.AbstractRetraction end
+
 @testset "retraction_differential is d/dα retract(αB), for both lifts" begin
     for LT in (StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix)
         Random.seed!(1234)
@@ -126,6 +128,11 @@ end
 
         # `α = 0` returns the direction untouched, which is what keeps `Backtracking` free
         @test retraction_differential(Cayley(), B, 0.0) === B
+
+        # A retraction with no differential of its own has to say so here rather than fail with a
+        # `MethodError` from inside a merit evaluation, three frames down. Same reason `retraction`
+        # carries an explicit error for the combinations it does not cover.
+        @test_throws ErrorException retraction_differential(UncoveredRetraction(), B, 1.0)
     end
 end
 

@@ -327,6 +327,19 @@ this package produces change**, in most cases substantially for the better.
   20 000-iteration cap at `check = 5.0e-2` to **90 iterations at `check = 6.4e-15`** — and three are
   not. See the rewritten A1b entry for where the cause actually is.
 
+  Two things from the review of [#40], both in the *Retractions* page rather than here. That
+  `α ↦ Cayley(αB̄)` is not a one-parameter subgroup is now *shown* and not asserted: everything in
+  sight is a rational function of `B̄`, so `Cay(αB̄)Cay(βB̄)` and `Cay((α+β)B̄)` differ by a `tsB̄²` in
+  both factors, and on a `St(6, 3)` lift of norm 2.99 the gap is `1.28` at `α = β = 1` against `8e-16`
+  for `exp`. And the mechanism is the *parameterisation*, not the approximation, which `N = 2`
+  separates completely: there `Cayley(αJ) = exp(2·atan(α/2)·J)` to the last bit, so the curve is the
+  geodesic exactly and the slope is still wrong — by `1 + α²/4`, which is `D(α)` at `J² = -I`.
+
+  That case is also how to read the percentages: to leading order the error is `α²λ²/4` for an
+  eigenvalue `±iλ` of `B̄`, so it depends on the lift as much as on the step, and the same measurement
+  gives 4.5% / 18% / 72% / 288% on the `St(3, 1)` sphere against the 2.2% / 8.9% / 36% / 143% quoted
+  above for `St(6, 3)`. Figures here now name their problem for that reason.
+
 - **`GradientMethod` and `MomentumMethod` no longer throw on their own default line search.**
   `Optimizer(ones(3), x -> sum(x.^2); algorithm = GradientMethod())` followed by a `solve!` was a
   `MethodError`: `trial_slope`'s `AbstractVector` branch calls `gradient(cache)`, which only
@@ -702,8 +715,8 @@ observability, C its dead code and bookkeeping; D is upstream, E lists things re
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
 given. Entries A5, A6, C6 and D5 come from the review of [#36]; A8 and the second half of A1b from
-[#38], and A10 from the review of [#38]; A11, C7 and D6 from the line-search work of this release;
-the rest from unifying the optimizer hierarchies.
+[#38], and A10 from the review of [#38]; A11, C7 and D6 from the line-search work of this release,
+and A12 and C8 from the review of [#40]; the rest from unifying the optimizer hierarchies.
 
 **Only open entries are listed here.** A1, A2, A3, A7 and A9 were in this catalogue and have been
 fixed; each is now described in [Unreleased](#unreleased--targeting-020) above, under the change that
@@ -714,10 +727,15 @@ and a reference to A1 or A7 in a commit message still resolves to the right subj
 A1b is still open, and the fix it proposed for itself — and the second one proposed after that — have
 both been implemented or measured and ruled out. Read that entry before starting on it.
 
-Two entries carried measurements that did not reproduce, both corrected before they moved or in
-place: A1b's first-order `check` table and A7's `194 of 200` outcome count. The *conclusion* held in
-each case and the supporting figure did not, so treat a number here as reproducible only where the
-harness that produced it is named.
+**Three measurements in this catalogue have now failed to reproduce**, each corrected in place or
+before its entry moved: A1b's first-order `check` table, A7's `194 of 200` outcome count, and — found
+in the review of [#40] — A1b's step-by-step trace of the divergence, which named the wrong iteration
+and was an order of magnitude out on two of its three rows. The *conclusion* held all three times and
+the supporting figures did not, which is a consistent enough pattern to state as a rule: **treat a
+number here as reproducible only where the harness that produced it is named**, and prefer a figure
+that a committed script or test regenerates to one that was measured once at a REPL. Where a
+measurement needs code that is not in the package — the A1b trace needs `α`, `‖δ‖` and `λmax(Q)`,
+none of which is observable from outside `solver_step!` — say so and say what was changed to get it.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
@@ -1067,6 +1085,33 @@ are equally correct answers.
 
 ---
 
+#### A12. The `Cayley` differential is recomputed per `φ'`, and its cost is unmeasured
+
+**Severity: low**, and not a defect — a cost this release introduced and did not measure. Found in
+the review of [#40], where `retraction_differential` was added.
+
+Under `Cayley`, `trial_slope` now calls `retraction_differential` on every evaluation of ``\varphi'``.
+That is `lift_factors`, a `StiefelProjection`, two ``2n\times{}2n`` solves and about six allocations —
+``O(Nn^2 + n^3)``, the same order as the retraction itself — where before it was a `_dot` against an
+array the cache already held. `Geodesic` returns ``\bar{B}`` untouched at every ``\alpha`` and
+`Cayley` does at ``\alpha = 0``, so every `Geodesic` solve and the `Backtracking` default pay nothing;
+what is unmeasured is a search that evaluates ``\varphi'`` many times per iteration, which on this
+problem is `Bisection` at ≈580 objective evaluations per iteration.
+
+**The iteration and evaluation counts in `svd_optim.jl` do not answer this.** They moved under the
+change — `_BFGS + Bisection` under `Cayley` from 92 to 114 iterations — but they moved because the
+trajectory changed, so they measure a different solve rather than the cost of a step. Nothing here
+is a wall-clock measurement.
+
+The obvious remedy if it does turn out to matter is not a cache but a shared factorisation:
+`linesearch_problem`'s `d(α, params)` calls `trial_iterate!` and then `trial_slope` with the *same*
+``\alpha``, and both go through `lift_factors` — the first on ``\alpha\bar{B}`` and the second on
+``\bar{B}`` — so one line search evaluation factors the same lift twice. Fusing them would need
+`trial_iterate!` to hand its factors on, which is a wider change to that interface than a cost
+nobody has measured justifies.
+
+---
+
 ### B. This package — observability
 
 #### B1. A line search failure is invisible in the returned status
@@ -1084,8 +1129,10 @@ counting them — so the counter is not a guard against anything, it is what wou
 thirteen visible. It is still worth having on its own terms: after that fix, a solve that needed a
 steepest-descent substitution on a quarter of its iterations is *still* indistinguishable, in the
 object the caller gets, from one that never needed one. `_BFGS` + `Quadratic` + `Cayley` on seed 8 of
-the SVD problem reports `LINESEARCH_FLOOR` on 4 780 of its 20 000 iterations and says nothing about
-any of them.
+the SVD problem takes the steepest-descent branch on **4 780 of its 20 000 iterations** and says
+nothing about any of them. (That count is `linesearch_rejected`, i.e. the three outcomes together;
+this entry previously attributed all 4 780 to `LINESEARCH_FLOOR`, which the re-measurement in the
+review of [#40] did not separate and so does not support.)
 
 #### B2. `show_trace` and `extended_trace` are still accepted and ignored
 
@@ -1191,6 +1238,29 @@ The same aliasing had a second consequence that *was* live, and is fixed in this
 steepest-descent substitution after a rejected line search was written as
 `_copyto!(direction(cache), rhs(cache))`, which is a no-op on these three caches. See
 `steepest_descent!`.
+
+---
+
+#### C8. `svd_optim.jl`'s table and the script's `COMBINATIONS` are not the same ten rows
+
+**Severity: low**, bookkeeping. Found in the review of [#40], while making the "regenerated by
+`scripts/retraction_accuracy.jl`" claim in that table true.
+
+Both are ten (method, line search) pairs and eight of the ten agree. The two that do not:
+
+- **`_DFP + Backtracking`** is in the table and not in `COMBINATIONS`. That is deliberate — at 47 115
+  iterations on the pinned seed it would dominate the runtime of every sweep, and its only purpose in
+  the table is the `α = 1` ceiling argument below it — and it now says so in place. Its spread
+  (`10_448..114_116`) is an older measurement at a cap high enough not to bind, which is why it
+  exceeds the `SVD_MAX_ITERATIONS = 20_000` the rest of the column is quoted against.
+- **`_BFGS + StrongWolfe(c₂ = 0.1)`** is in `COMBINATIONS` and not in the table. Nothing records why.
+  It is measured on every run of the sweep, over the pinned seed and all eight, and printed to
+  nobody — the `StrongWolfe` argument in `default_linesearch` is about `_DFP`, which has its own row.
+
+Either add the `_BFGS + StrongWolfe` row to the table or drop it from `COMBINATIONS`; the second is
+the cheaper of the two and loses nothing that is quoted anywhere. The general point is the one the
+preamble now makes: a table that names a script as its source should be checkable against that
+script row by row, or say which rows are exceptions and why.
 
 ---
 
@@ -1333,5 +1403,6 @@ Neither is a defect in the code; both are things a later reader would otherwise 
 [#36]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/36
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#39]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/39
+[#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
