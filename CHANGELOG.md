@@ -468,6 +468,11 @@ this package produces change**, in most cases substantially for the better.
   `geodesic(Y, Δ, algorithm)` takes it as an optional third argument, so the tangent-vector form is
   selectable too rather than being pinned to the default.
 
+  Described, with the theory of both retractions and the advantages and disadvantages of each
+  algorithm, in the new *Retractions* documentation page. Its accuracy tables are recomputed when the
+  documentation is built rather than quoted, so they cannot go stale the way the *typical case* figure
+  above did (C6).
+
 - **`Options(store_trace = true)` does something.** `OptimizerResult` gains a `trace` of one
   `OptimizerTraceEntry` — `(iteration, f, rg)` — per iteration, reachable through `trace(result)` and
   empty unless the option asked for it. The option existed before and was accepted and ignored, by
