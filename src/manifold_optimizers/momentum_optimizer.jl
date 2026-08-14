@@ -62,7 +62,7 @@ gradient_difference!(cache::MomentumCache, ::OptimizerState) = _latest_gradient_
 direction(cache::MomentumCache) = cache.δ
 rhs(cache::MomentumCache) = direction(cache)
 # `rhs` above is an alias for the direction, so the default `steepest_descent!` would be a silent
-# no-op here -- and the direction is `-(αp + ∇f)`, not `-∇f`. See `substitute_descent`.
+# no-op here -- and the direction is `-(αp + ∇f)`, not `-∇f`. See `steepest_descent!`.
 steepest_descent!(cache::MomentumCache) = _steepest_descent_from_gradient!(cache)
 section(cache::MomentumCache) = cache.section
 

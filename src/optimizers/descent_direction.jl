@@ -128,11 +128,17 @@ copying would be a silent no-op. `GradientCache`'s direction already *is* ``-\na
 no-op is correct there; `MomentumCache` and `AdamCache` hold a moving average and have to be given
 the gradient explicitly.
 """
-steepest_descent!(cache::OptimizerCache) = _copyto!(direction(cache), rhs(cache))
+function steepest_descent!(cache::OptimizerCache)
+    _copyto!(direction(cache), rhs(cache))
+
+    cache
+end
 
 function _steepest_descent_from_gradient!(cache::OptimizerCache)
     _copyto!(direction(cache), gradient_array(cache))
     _rmul!(direction(cache), -1)
+
+    cache
 end
 
 """

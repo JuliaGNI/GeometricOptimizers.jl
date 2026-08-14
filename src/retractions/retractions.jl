@@ -269,10 +269,19 @@ D(\alpha) = \mathrm{Cayley}(\alpha\bar{B})^{-1}M\bar{B}M = M^T\bar{B}M ,
 
 using ``M^T = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}`` for skew ``\bar{B}``. ``D`` is skew but
 not horizontal; only its first ``n`` columns ever enter — ``D(\alpha)E`` — and the horizontal
-projection has the same ones, so what is returned is that projection. For a
-[`GrassmannLieAlgHorMatrix`](@ref) the top block is dropped rather than kept, which is not an
-approximation either: [`rgrad`](@ref) there is ``\nabla{}L - Y(Y^T\nabla{}L)`` and so satisfies
-``Y^T\mathrm{rgrad} = 0``, which is exactly the pairing that block would contribute to.
+projection has the same ones, so what [`lift_from_columns`](@ref) is handed is that projection.
+
+For a [`GrassmannLieAlgHorMatrix`](@ref) the top ``n\times{}n`` block is dropped rather than kept,
+and that is not an approximation. ``M``, ``M^T`` and ``\bar{B}`` are all rational functions of
+``\bar{B}`` and so commute, which gives
+
+```math
+D(\alpha) = \bar{B}\left(\mathbb{I} - \tfrac{\alpha^2}{4}\bar{B}^2\right)^{-1} ,
+```
+
+and for a Grassmann lift — where ``A \equiv \mathbb{O}``, so ``\bar{B}^2`` is block-diagonal — the
+top-left block of that product is identically zero at every ``\alpha``. The drop is exact whatever
+``D`` is paired against, not merely exact against a gradient that happens to be orthogonal to ``Y``.
 
 Both inverses are taken through [`lift_factors`](@ref) and the Woodbury identity, exactly as
 [`cayley`](@ref) does, so the cost is ``O(Nn^2 + n^3)`` and no ``N\times{}N`` matrix is formed.
@@ -281,6 +290,11 @@ Both inverses are taken through [`lift_factors`](@ref) and the Woodbury identity
 [`SimpleSolvers.Backtracking`](@extref) — the default of [`default_linesearch`](@ref) — evaluates
 ``\varphi'`` only at ``\alpha = 0``, so it never reaches the general branch.
 """
+retraction_differential(R::AbstractRetraction, B, α) =
+    error("retraction_differential is not implemented for $(typeof(R)) and $(typeof(B)); " *
+          "a line search that evaluates φ' needs it, and pairing the gradient with `B` instead is " *
+          "correct only where α ↦ retract(αB) is a one-parameter subgroup.")
+
 retraction_differential(::Geodesic, B, α) = B
 
 retraction_differential(::Cayley, B::AbstractVecOrMat, α) = B
@@ -301,20 +315,24 @@ function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) wh
     w₂ = B̂ * (B̄' * w₁)                                # B̄ M E
     V = w₂ - B̂ * ((𝕀 + a * G) \ (a * (B̄' * w₂)))     # Mᵀ B̄ M E
 
-    horizontal_lift(B, V)
+    lift_from_columns(B, V)
 end
 
 @doc raw"""
-    horizontal_lift(B, V)
+    lift_from_columns(B, V)
 
 Rebuild a lift of the same type as `B` from the ``N\times{}n`` block `V`, i.e. from the first ``n``
 columns of a skew matrix. Used by [`retraction_differential`](@ref), which is the only place a lift
 has to be assembled from its action on ``E`` rather than from its own blocks.
+
+Not to be confused with the *canonical horizontal lift* [`GeometricOptimizers.Ω`](@ref), which maps a
+tangent vector to an element of ``\mathfrak{g}^\mathrm{hor}``. This one takes the columns of a matrix
+that is already in the Lie algebra.
 """
-horizontal_lift(B::StiefelLieAlgHorMatrix, V::AbstractMatrix) =
+lift_from_columns(B::StiefelLieAlgHorMatrix, V::AbstractMatrix) =
     StiefelLieAlgHorMatrix(SkewSymMatrix(V[1:(B.n), :]), V[(B.n+1):(B.N), :], B.N, B.n)
 
-horizontal_lift(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix) =
+lift_from_columns(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix) =
     GrassmannLieAlgHorMatrix(V[(B.n+1):(B.N), :], B.N, B.n)
 
 # This used to be an empty method body, i.e. every combination that is not covered below

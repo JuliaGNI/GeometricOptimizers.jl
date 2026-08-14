@@ -49,8 +49,9 @@ end
 @doc raw"""
     trial_slope(gradient_instance, cache, retraction, α)
 
-Return ``\varphi'(\alpha) = \langle\nabla{}f, p\rangle`` at the iterate currently held in
-`solution(cache)`, for the derivative of the line search's merit.
+Return ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), D(\alpha)\rangle`` at the iterate currently
+held in `solution(cache)`, for the derivative of the line search's merit. ``D(\alpha)`` is
+[`retraction_differential`](@ref)`(retraction, direction(cache), α)`.
 
 # Implementation
 
