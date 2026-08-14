@@ -408,6 +408,9 @@ this package produces change**, in most cases substantially for the better.
 
 ### Known issues
 
+Tracked issues open against this release. For the defects and gaps found *while* building it —
+verified, measured, and not fixed here — see [Open Issues](#open-issues) at the end of this file.
+
 - Type piracy in `l2norm`, `ParameterHandling.flatten`, `Gradient` and `outer!`, catalogued in the
   source. `ArrayNamedTuple` and `GlobalSectionNamedTuple` are type *aliases* for `NamedTuple`, so
   dispatching on them is dispatching on Base; a wrapper `struct` would make most of it legal. ([#16])
@@ -425,6 +428,413 @@ this package produces change**, in most cases substantially for the better.
 Initial release. Ports the manifold optimizer machinery from GeometricMachineLearning and the
 Euclidean optimizer machinery from SimpleSolvers into one package.
 
+## Open Issues
+
+Defects and gaps found while working on this release that are **not** fixed by it, kept here so they
+are tracked with the code rather than in a scratch file. A is correctness in this package, B its
+observability, C its dead code and bookkeeping; D is upstream, E lists things reported during the
+investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
+review. Everything was verified directly — where a claim rests on a measurement, the measurement is
+given. Entries A5, A6, C6 and D5 come from the review of [#36], the rest from unifying the optimizer
+hierarchies.
+
+A1 and A3 are fixed by [#36] rather than by anything on `main`, so until that merges their "fixed"
+markers describe a branch and not this file; C6 likewise describes text that [#36] introduces.
+
+This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
+[Unreleased](#unreleased--targeting-020) above; the two do not overlap.
+
+Ordered by severity within each section.
+
+---
+
+### A. This package — correctness
+
+#### A1. `Geodesic` silently leaves the manifold for a lift of norm ≳ 50 — fixed in 0.2.0
+
+Retained in full: A1b and A4 refer to it, and the measurement below is the only side-by-side
+against `Cayley` on the identical lift, which is what shows the defect was specific to
+``\mathfrak{A}`` and not to retraction on a manifold.
+
+**Fixed** by the scaling-and-squaring rewrite of `𝔄`; kept here for the record. See `CHANGELOG.md`
+and `src/retractions/exponential_algorithms.jl`. Two notes on what the investigation changed about
+the diagnosis below:
+
+- making the termination test relative to the partial sum, which the last paragraph proposes, was
+  measured to change **nothing** at any lift norm. The loss is cancellation inside the sum, not the
+  point at which the summation stops.
+- the scaling and squaring does not need an `N × N` matrix: the low-rank form is closed under
+  squaring, `(I + B̂WB̄ᵗ)² = I + B̂(2W + WXW)B̄ᵗ`, so it is a `2n × 2n` recurrence throughout.
+
+
+
+**Severity: high.** The most serious thing found, and the amplifier of the divergence PR #35 fixes.
+
+`geodesic(B)` builds the exponential from `𝔄(A) = Σₙ Aⁿ⁻¹/n!`
+(`src/retractions/modified_exponential.jl:28-45`). That series is summed directly, with an
+**absolute** termination test:
+
+```julia
+ε = eps(T)
+while norm(Aⁿ) > ε      # `Aⁿ` here is the running term Aⁿ⁻¹/n!
+```
+
+For `‖A‖ ≫ 1` the partial sum is enormous and the terms cancel, so stopping when a *term* falls
+below `2.2e-16` leaves a relative error of `eps ⋅ ‖𝔄A‖`, not `eps`. Measured on a random
+`StiefelLieAlgHorMatrix(20, 3)` scaled up, against `Cayley` on the identical lift:
+
+| `‖B‖` | `check(geodesic(B))` | `check(cayley(B))` |
+|---|---|---|
+| 6.06 | 2.8e-15 | 1.3e-15 |
+| 30.3 | 5.4e-9 | 7.6e-15 |
+| 60.6 | **4.31** | 1.7e-14 |
+| 90.9 | **7.1e16** | 1.4e-14 |
+| 303 | **6.5e134** | 5.9e-14 |
+| 606 | **2.9e303** | 1.3e-13 |
+
+At `‖B‖ = 60` the "retracted" point is not on the Stiefel manifold in any sense, and nothing
+reports it. `Cayley` is unaffected at any of these norms — it inverts a `2n × 2n` matrix rather than
+summing a series — so this is specific to `𝔄`, not to retraction on a manifold.
+
+Two consequences already observed in the test suite:
+
+- `_BFGS` + `Backtracking` + `Geodesic` reaches `check(Y) = 2.45e-5` on one of the eight starting
+  points of `test/optimizer_convergence/svd_optim.jl`, against a `MANIFOLD_TOLERANCE` of `1e-12`.
+  That starting point would fail the existing manifold assertion; the test passes only because it
+  uses seed `1234`.
+- It is why the divergence PR #35 fixes ended at `check(Y) = 1.07e200` rather than merely somewhere
+  wrong. The bad step had `‖δ‖ = 345`; the table above says a `Geodesic` retraction of a lift that
+  size produces garbage of roughly that magnitude. The line-search fix removes the cause of the
+  large step, but the retraction will still do this to any large lift from any other cause.
+
+Scaling and squaring is the standard remedy for a matrix exponential in this regime, and the
+termination test should be relative to the partial sum rather than absolute regardless.
+
+#### A1b. `Quadratic` and `BierlaireQuadratic` diverge on `Cayley` on two of eight starting points
+
+**Severity: high.** Found while re-measuring the tables after fixing A1, and *not* caused by that fix
+— `cayley` is bitwise unchanged by it (every `Cayley` figure in `svd_optim.jl` reproduces to the
+digit).
+
+On the SVD problem of `test/optimizer_convergence/svd_optim.jl`, `_BFGS` with either polynomial line
+search on the `Cayley` retraction runs to the iteration cap and ends off the manifold:
+
+| | seed | iterations | `rg` | `check` |
+|---|---|---|---|---|
+| `Quadratic` | 2 | 20 000 (cap) | 5.2e-3 | **5.0e-2** |
+| `Quadratic` | 8 | 20 000 (cap) | 1.7e-1 | **1.7e-1** |
+| `BierlaireQuadratic` | 2 | 20 000 (cap) | 7.1e-2 | **6.9e-2** |
+| `BierlaireQuadratic` | 8 | 20 000 (cap) | 2.7e-2 | **2.0e-1** |
+
+The other six seeds converge in 96–130 iterations, and every one of these cases converges on
+`Geodesic`. `default_linesearch`'s docstring already suspects the mechanism for a milder version of
+this: `trial_slope` is only first-order correct under `Cayley`, and `Quadratic` uses ``\varphi'``
+*quantitatively* in its polynomial fit where `Bisection` uses only its sign. What that docstring
+records as "falls apart on `Cayley` (550 iterations)" is the same phenomenon two orders of magnitude
+milder.
+
+Not reached by the test suite: `svd_optim.jl` runs neither polynomial search in its convergence loop,
+and `manifold_linesearch_tests.jl` runs them only on the one-dimensional sphere problem, where they
+are fine. The honest fix is probably an exact `Cayley` differential in `trial_slope` — the
+`retraction` argument is already threaded there for exactly this reason
+(`linesearch_problem.jl:69-79`) — but that needs its own investigation.
+
+#### A2. `GradientMethod` and `MomentumMethod` throw on their own default line search
+
+**Severity: high** (a documented entry point fails outright), **pre-existing on `main`**.
+
+```julia
+julia> Optimizer(ones(3), x -> sum(x.^2); algorithm = GradientMethod())
+ERROR: MethodError: no method matching gradient(::GeometricOptimizers.GradientCache{…})
+```
+
+`_trial_slope`'s `AbstractVector` branch (`src/optimizers/linesearch_problem.jl:89-92`) calls
+`gradient(cache)`. Only `BFGSCache` (`bfgs_cache.jl:50`), `DFPCache` and `NewtonOptimizerCache`
+(`newton_optimizer_cache.jl:68`) define it; `GradientCache`, `MomentumCache` and `AdamCache` expose
+the same field as `gradient_array` instead (`gradient_optimizer.jl:50`). So the three first-order
+methods cannot use *any* line search that evaluates `φ'` on Euclidean vector parameters.
+
+This became reachable by default in 0.2.0: `default_linesearch(::Type{T}, ::OptimizerMethod)` returns
+`Backtracking(T; expand = true)`, and `GradientMethod`/`MomentumMethod` are not in `AdamFamily`, so
+they get the searching default. Reproduced on `main` at `b2c20f0`, so PR #35 did not introduce it.
+
+Note the reason the test suite does not catch it: `test/optimizer_tests.jl:95` checks only that
+`default_linesearch` *returns* the right type for these methods, and the loops that actually solve
+(`optimizer_tests.jl:30-33`, `descent_direction_tests.jl:14-16`) cover `Newton`, `_BFGS` and `_DFP`
+only.
+
+#### A3. `check(::GrassmannManifold)` does not exist — fixed in 0.2.0
+
+**Fixed**: `check` is now generic over `Manifold`, in `src/manifolds/abstract_manifold.jl`.
+
+
+**Severity: medium.** `check` is defined only for `StiefelManifold`
+(`src/manifolds/stiefel_manifold.jl:85-87`), so the one function that measures distance from the
+manifold — the assertion every manifold test rests on, and the thing that would have caught A1 — is
+a `MethodError` for the other of the two manifolds this package provides. There is no generic
+`check(::Manifold)` either.
+
+The representative of a `GrassmannManifold` point satisfies `YᵗY = I` just as the Stiefel one does,
+so the same expression is correct for it.
+
+#### A4. `x_converged` cannot be trusted on a solve that has diverged
+
+**Severity: medium** (a wrong "converged" report), **documented rather than fixed in PR #35**.
+
+`rxᵣ = rxₐ / l2norm(cache.x)` (`src/optimizers/optimizer_status.jl:76`) measures "the iterate stopped
+moving" only while `‖x‖` is bounded. On the diverging seed the step that left the manifold had
+`‖δ‖ = 345` and the iterate was at `1e100`, so the relative change was `≈ 1e-98`, far under
+`x_reltol = 2eps`, and `x_converged` fired. Confirmed directly: that run reported
+`x_conv = true, f_conv = false, g_conv = false`.
+
+PR #35 removes the cause and widens the non-finite check, so nothing measured still reaches this. It
+is left open because every way of closing it inside `convergence_measures` needs a threshold on
+`‖x‖` or on `‖x - x'‖` that no property of the problem supplies, and imposing one changes the
+stopping behaviour of every Euclidean solve to guard a state that is now unreachable. It is
+documented as a warning on `convergence_measures`.
+
+On a manifold this is not actually ambiguous: `‖Y‖_F = √n` exactly, so the denominator is a
+*constant* and a large one is itself the divergence signal. The information is available; the
+function just does not have it.
+
+#### A5. `geodesic(Y, Δ)` and `cayley(Y, Δ)` are not deterministic and consume global RNG state
+
+**Severity: medium.** Found in the PR #36 review, when an equality assertion between two calls of the
+same retraction failed. Pre-existing on `main`; PR #36 neither causes nor fixes it.
+
+Both tangent-vector entry points open with `GlobalSection(Y)`, and `global_section(::StiefelManifold)`
+(`src/manifolds/stiefel_manifold.jl:126-133`) completes `Y` with a **random** basis of its orthogonal
+complement:
+
+```julia
+A = KernelAbstractions.allocate(backend, T, N, N - n)
+randn!(A)
+A = A - Y.A * (Y.A' * A)
+typeof(Y.A)(qr!(A).Q)
+```
+
+Two consequences, both measured on `St(20, 3)`:
+
+- **The same call twice gives different answers.** Consecutive `geodesic(Y, Δ)` differ by `1.2e-14`
+  in Frobenius norm. That is round-off, not a wrong answer — the retracted point genuinely does not
+  depend on the section, and *that* is what the difference measures — but it means no test can assert
+  equality between two retractions of the same input, only `isapprox`. Anything downstream that
+  hashes, caches or bitwise-compares a retracted point is unsound.
+- **It perturbs the global RNG stream.** After `Random.seed!(11)`, taking one retraction changes the
+  next `rand()`. So a seeded run is reproducible only if the number of retractions taken is also
+  fixed — which it is not, under any line search that adapts its trial count. Verified directly:
+  `seed!(11); geodesic(Y, Δ); rand()` ≠ `seed!(11); rand()`.
+
+The optimizer path is mostly insulated, because the section is built once at initialization and
+thereafter parallel-transported by `update_section!`. The exposure is the direct `geodesic(Y, Δ)` /
+`cayley(Y, Δ)` API and anything built on it.
+
+A section is not unique, so drawing one is legitimate; taking it from the *global* RNG without the
+caller being able to see or supply it is the problem. An `rng` argument threaded through
+`GlobalSection`, or a deterministic completion (a Householder completion of `Y`, which needs no
+randomness at all), would close it.
+
+#### A6. `ScaledSquaring` takes about twice the squarings it needs
+
+**Severity: low**, and a refinement rather than a defect — from the PR #36 review, where it was
+deliberately left alone because changing it invalidates every table in that PR.
+
+`ScaledSquaring`'s own docstring states the cause: `X = (B'')ᵀB'` has `‖X‖ ≈ ‖B̄‖²/4` while its
+spectral radius is only `≈ ‖B̄‖`, because the eigenvalues of `X` are the nonzero (purely imaginary)
+eigenvalues of the skew `B̄`. The halving count is taken from the norm, `s = ⌈log₂(‖X‖₁/θ)⌉`, so
+`s ≈ 2log₂‖B̄‖` where `log₂‖B̄‖` would do.
+
+Each squaring is an error amplification, so this costs both time and accuracy. Measured forward error
+is `1e-14` in `Float64`, which is why it is not urgent — but `Float32` `check` reaches `2.3e-5` over
+the sweep, and halving `s` is the obvious lever if that ever becomes the constraint.
+
+The constraint on any replacement bound is that `ScaledSquaring` is the default *because* it is free
+of scalar indexing and dense LAPACK, which is what lets it run on a GPU backend (see the `opnorm₁`
+docstring). That rules out reaching for the spectral radius directly — an eigenvalue computation
+would give the tighter bound and forfeit the reason the algorithm was chosen.
+
+---
+
+### B. This package — observability
+
+#### B1. A line search failure is invisible in the returned status
+
+PR #35 makes `solver_step!` act on `LINESEARCH_FLOOR` / `LINESEARCH_EXHAUSTED` /
+`LINESEARCH_NO_DESCENT`, but nothing records that it happened. `OptimizerStatus` has no field for it
+(verified: no reference to the outcome in `optimizer_status.jl`), so a solve that needed a
+quasi-Newton restart on half its iterations is indistinguishable, in the object the caller gets,
+from one that never needed one. Only a `verbosity ≥ 2` log message with `maxlog = 1` shows it.
+
+#### B2. `show_trace` and `extended_trace` are still accepted and ignored
+
+PR #35 implements `store_trace`. The other two remain dead in this package *and* upstream (verified:
+no reads of either in `SimpleSolvers/src/` outside `options.jl`'s struct, constructor and `show`).
+Setting them gets neither output nor an error. Both are now cheap, since the per-iteration record
+exists.
+
+---
+
+### C. This package — dead code and bookkeeping
+
+#### C1. `f_converged_strong` is computed and thrown away
+
+`convergence_measures` computes it at `src/optimizers/optimizer_status.jl:194` and returns it at
+`:201`; the `OptimizerStatus` constructor destructures it at `:100` and never stores it. Nothing else
+in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
+on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
+and `Options.f_stall_window` were meant to drive — both of which are also unread here.
+
+#### C2. `compute_direction!` for the quasi-Newton methods is dead
+
+`src/optimizers/iterative_hessians/iterative_hessians_direction.jl:1-3` defines
+`compute_direction!(opt, ::Union{BFGSState,DFPState})`. There is no call site (verified: the only
+live callers are the `Newton` methods in `newton_optimizer_direction.jl`). The direction is formed
+inline at the end of the cache `update!` instead — `bfgs_cache.jl:153`, `dfp_cache.jl:121`.
+
+#### C3. `Random` and `LinearAlgebra` have no `[compat]` entries
+
+`Project.toml` gives `Printf = "1"` but nothing for `Random` or `LinearAlgebra`, though all three are
+stdlibs listed in `[deps]` and used the same way.
+
+#### C4. The 0.2.0 release notes are not closed out
+
+`Project.toml` says `version = "0.2.0"` while `CHANGELOG.md:9` still reads
+`## [Unreleased] — targeting 0.2.0`, and the compare link at the bottom is `v0.1.0...main`.
+
+#### C5. `_DFP` + `Backtracking(expand = true)` is documented rather than run, on stale grounds
+
+`test/optimizer_convergence/svd_optim.jl` excludes that pair because its iteration count ranged
+`512..77_890` over eight starting points. The curvature condition in PR #35 brings that to
+`387..845` (`Geodesic`) and `466..1_366` (`Cayley`), comfortably inside the 5 000 cap the file
+already uses, so the stated reason no longer holds. Left out only because there is no CI measurement
+of the post-fix spread yet — the original surprise was a factor of four between platforms.
+
+#### C6. Two figures in the 0.2.0 notes do not match the measurements they describe
+
+From the PR #36 review. Four other mis-stated numbers in that PR were corrected in it; these two
+were found afterwards, while re-running `scripts/retraction_accuracy.jl`, and are still wrong.
+
+- **`ProjectedSkew` does not cost "about an order of magnitude".** The `Added` entry that [#36]
+  writes for the exponential algorithms says it "costs about an order of magnitude on the *typical*
+  case". Measured against `ScaledSquaring`, one retraction, minimum of 50, one BLAS thread:
+
+  | `N`, `n` | 10, 2 | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 500, 50 | 1000, 20 |
+  |---|---|---|---|---|---|---|---|---|
+  | `ScaledSquaring` | 0.003 | 0.005 | 0.016 | 0.023 | 0.095 | 0.443 | 3.100 | 2.586 |
+  | `ProjectedSkew` | 0.005 | 0.009 | 0.023 | 0.033 | 0.137 | 0.530 | 4.142 | 3.044 |
+  | ratio | 1.7 | 1.8 | 1.4 | 1.4 | 1.4 | 1.2 | 1.3 | 1.2 |
+
+  So 1.2×–1.8×, never above two. The algorithm's own docstring in
+  `src/retractions/exponential_algorithms.jl` does *not* make the claim — it says only "a QR plus an
+  eigendecomposition instead of matrix products", which is right — so this is the CHANGELOG line
+  alone, and it understates how attractive `ProjectedSkew` is. A one-line fix.
+
+- **`θ = 0.5` is not "the measured middle of that range".** `ScaledSquaring`'s docstring says so.
+  Over `θ ∈ {0.125, 0.25, 0.5, 1, 2, 4}` at `‖B̄‖ = 155` the measured `check` is
+  `9.94e-15, 1.76e-14, 2.82e-14, 2.11e-14, 1.18e-14, 4.97e-14` — `0.5` is the third largest of six,
+  and `θ = 0.125` and `θ = 2` both beat it. The paragraph's actual point, that the choice barely
+  matters across a 32× range, is correct and is what the numbers support; only the justification for
+  the specific value is not.
+
+---
+
+### D. Upstream
+
+#### D1. Julia 1.12: nested `kwargs...` feeding a call in the same inferred body
+
+**Root-caused and worked around in this package by PR #35, but the behaviour is upstream.**
+
+Constructing an `Optimizer` through three nested levels of `kwargs...` splatting and calling `solve!`
+on it *in the same inferred function body* cost **940.86 s** of compile time on 1.12.6 against
+**4.35 s** on 1.13.0-rc2. Neither half is slow alone (0.99 s for the constructor, 2.35 s for
+`solve!`). Flattening to one level: 6.53 s. A `@noinline` barrier around the construction does not
+help (925.27 s), and neither does `@nospecialize` on the enclosing function (965 s).
+
+Effect on this project before the fix: the CI suite took 31–42 minutes on 1.12 on all three
+operating systems, against 3–5 minutes on 1.10, 1.13 and nightly, with a single test file accounting
+for the whole difference.
+
+1.13 and nightly are unaffected, so this needs an upstream report only if 1.12 is still receiving
+backports. `/tmp/go_diag/isolate2.jl` is a ~10-line reproducer (three variants, one per process).
+
+#### D2. SimpleSolvers 0.11: three `Options` fields that nothing reads
+
+`store_trace`, `show_trace` and `extended_trace` exist as fields of `SimpleSolvers.Options`
+(`src/base/options.jl:458-460`), as constructor keywords (`:489-491`) and in its `show` (`:521-523`),
+with **zero readers** anywhere in `SimpleSolvers/src/`. Anyone setting them on a SimpleSolvers solver
+gets silence rather than a trace or an error. PR #35 implements `store_trace` at the
+GeometricOptimizers level, which is arguably the right layer since `solve!` is ours, but the upstream
+options remain misleading.
+
+#### D3. SimpleSolvers `Bisection` reports success when it cannot bracket
+
+`_bisection_core` (`src/linesearch/bisection.jl:81-84`):
+
+```julia
+if y₀ * y₁ > zero(y₀)                                  # no sign change
+    report_bisection_nobracket(α₀, α₁, y₀, y₁, config)
+    return (abs(y₀) ≤ abs(y₁) ? α₀ : α₁), true, n      # ← converged = true
+end
+```
+
+The intent is that a flat derivative at a minimum is benign, but the effect is that the core cannot
+distinguish "found the root" from "gave up", and this sits upstream of the `LINESEARCH_FLOOR` path
+that produced the divergence in A1/PR #35.
+
+#### D4. `maxlog` on the SimpleSolvers line-search warnings is per session, not per solve
+
+Documented upstream at `src/linesearch/linesearch_status.jl:221-229`: `maxlog` is keyed on source
+location, so a genuine line-search failure in the tenth solve of a run is silent if the first solve
+already used the budget. Relevant because it is the only channel by which a rejected line search was
+visible before PR #35, and still the only channel for B1.
+
+#### D5. Documenter does not catch an `@ref` to a method signature that no longer exists
+
+From the PR #36 review. That PR replaced `geodesic(::StiefelLieAlgHorMatrix)` and
+`geodesic(::GrassmannLieAlgHorMatrix)` with one method on `AbstractLieAlgHorMatrix`, and left a
+docstring pointing at `[`geodesic(::StiefelLieAlgHorMatrix)`](@ref)` — a method the same PR deletes.
+
+I expected the docs build to fail on it. It does not: `makedocs` completes with exit 0 and no
+warning, because Documenter falls back to the **binding**-level docs for `geodesic` when the
+signature matches no documented method. Verified by reintroducing the dead reference and rebuilding.
+
+So the guarantee is weaker than it looks. A `@ref` to a *name* that does not exist is caught; a
+`@ref` to a name that exists with a signature that does not is silently redirected to some other
+method's page. This is worth knowing here specifically because the commit immediately before that one
+on the same branch was "mend four dead doc links" — the build cannot be what certifies that work.
+`checkdocs = :all` does not help: it checks that docstrings are *included*, not that references
+resolve to what they name.
+
+---
+
+### E. Reported and then withdrawn
+
+Three things reported as problems during the investigation that are **not**:
+
+- `test/grassmann_test_help.jl` is not orphaned — it is `include`d by
+  `test/global_sections/global_sections.jl:8`, `test/global_sections/omega_functions.jl:8` and
+  `test/retractions/retractions.jl:9`.
+- `test/optimizers_problems.jl` is not dead code — `test/optimizer_tests.jl:12` includes it.
+- `NaNMath` is used, at `test/optimizer_tests.jl:2`.
+
+---
+
+### F. Loose ends from the geodesic-retraction review
+
+Neither is a defect in the code; both are things a later reader would otherwise have to rediscover.
+
+- **The PR #36 description still says the MNIST scripts use the geodesic retraction.** The claim was
+  corrected in `docs/src/manifold_optimizers.md`, but it also appears in the pull request body, where
+  it is the stated justification for making `ScaledSquaring` the default. None of the five MNIST
+  scripts passes `retraction`, so they all take the `Optimizer` default, which is `Cayley()`. The
+  default is still the right choice — being free of dense LAPACK is reason enough — but if that PR
+  body becomes a squashed commit message, the wrong reason goes into the history with it.
+- **`svd_tables()` was not independently reproduced.** The PR #36 review re-ran
+  `scripts/retraction_accuracy.jl`'s `exponential_tables()` and confirmed every accuracy figure to
+  the digit. The iteration and evaluation counts in `test/optimizer_convergence/svd_optim.jl` and in
+  `default_linesearch`'s docstring come from `svd_tables()`, which was not re-run — it is the slow
+  half, and the `Geodesic` columns all moved in that PR. They rest on the author's measurement alone.
+
 [#14]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/14
 [#16]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16
 [#17]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/17
@@ -433,5 +843,7 @@ Euclidean optimizer machinery from SimpleSolvers into one package.
 [#25]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/25
 [#27]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/27
 [#28]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28
+[#33]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/33
+[#36]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/36
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
