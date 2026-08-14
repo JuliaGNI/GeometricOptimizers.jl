@@ -100,7 +100,9 @@ untouched, which is why the `Backtracking` default — the one search that evalu
 
 The merit *value* was always exact for either retraction, so what this changes is the searches that
 read ``\varphi'``: `Bisection`, the two polynomial fits, and
-[`SimpleSolvers.StrongWolfe`](@extref).
+[`SimpleSolvers.StrongWolfe`](@extref). With the differential in place the two retractions no longer
+differ in what a derivative-based search sees, and the choice between them is the cost one — see the
+[Retractions](@ref) page for what [`Geodesic`](@ref) costs now that it is the cheaper of the two.
 
 ## Preserve symmetry in the DFP inverse Hessian
 

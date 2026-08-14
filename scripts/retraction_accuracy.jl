@@ -8,7 +8,9 @@
 #
 #   * `exponential_tables()` — the accuracy and cost of the four `AbstractExponentialAlgorithm`s.
 #     Feeds the tables in `src/retractions/exponential_algorithms.jl` and the note on `Cayley` in
-#     `src/retractions/retraction_types.jl`.
+#     `src/retractions/retraction_types.jl`. `docs/src/retractions.md` recomputes the accuracy
+#     tables when the documentation is built, from the same seed and the same `SCALES`, so this
+#     script and that page print the same rows.
 #   * `svd_tables()` — iterations, objective evaluations, `‖∇f‖` and `check` for every (method, line
 #     search, retraction) combination of `test/optimizer_convergence/svd_optim.jl`, on the seed that
 #     file uses and across eight starting points. Feeds the tables in that file and in
@@ -43,28 +45,36 @@ function best(f, repetitions::Integer=20)
     end
 end
 
+# The scales every accuracy table below sweeps over. All three use the *same* eight, drawn from the
+# same seed, so a row of one is the same lift as the row of another — and so that
+# `docs/src/retractions.md`, which recomputes these tables when the documentation is built, gets the
+# figures this script prints rather than figures that merely resemble them.
+const SCALES = (0.1, 1.0, 3.0, 6.0, 12.0, 30.0, 60.0, 120.0)
+
+"A sweep of horizontal lifts of increasing norm, all drawn from the same seed."
+function sweep(T, N, n)
+    Random.seed!(1234)
+    [T(s) * rand(StiefelLieAlgHorMatrix{T}, N, n) for s in SCALES]
+end
+
 function exponential_tables(; N::Integer=20, n::Integer=3)
     BLAS.set_num_threads(1)
 
     println("== check(geodesic(B, algorithm)), St($N, $n), Float64 ==")
     print(rpad("‖B̄‖", 10))
     foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES)
-    println()
-    Random.seed!(1234)
-    for s in (0.1, 1.0, 3.0, 6.0, 12.0, 30.0, 60.0, 120.0)
-        B = s * rand(StiefelLieAlgHorMatrix{Float64}, N, n)
+    println(lpad("Cayley", 16))
+    for B in sweep(Float64, N, n)
         @printf("%9.2f", norm(Matrix(B)))
         foreach(a -> @printf("%16.2e", check(geodesic(B, a))), ALGORITHMS)
-        println()
+        @printf("%16.2e\n", check(cayley(B)))
     end
 
     println("\n== relative error against exp(Matrix(B)) ==")
     print(rpad("‖B̄‖", 10))
     foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES[2:end])
     println()
-    Random.seed!(1234)
-    for s in (1.0, 6.0, 30.0, 120.0)
-        B = s * rand(StiefelLieAlgHorMatrix{Float64}, N, n)
+    for B in sweep(Float64, N, n)
         reference = exp(Matrix(B))
         @printf("%9.2f", norm(Matrix(B)))
         foreach(ALGORITHMS[2:end]) do a
@@ -77,9 +87,7 @@ function exponential_tables(; N::Integer=20, n::Integer=3)
     print(rpad("‖B̄‖", 10))
     foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES[2:end])
     println()
-    Random.seed!(1234)
-    for s in (1.0f0, 6.0f0, 30.0f0, 120.0f0)
-        B = s * rand(StiefelLieAlgHorMatrix{Float32}, N, n)
+    for B in sweep(Float32, N, n)
         @printf("%9.2f", norm(Matrix(B)))
         foreach(a -> @printf("%16.2e", check(geodesic(B, a))), ALGORITHMS[2:end])
         println()
