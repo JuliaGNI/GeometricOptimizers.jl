@@ -80,9 +80,66 @@ place of `solve` for exactly this reason.
     terminal gradient residual at `1.8e-5`, where restarting on the outcome brings it to `2.9e-7`.
     A search that ends on the floor has stopped making progress along *this* direction, and the
     cheapest thing to do about it is to pick a different one.
+
+!!! info "It applies to every method, including `Adam` and `MomentumMethod`"
+    Those two used to be exempt, on the grounds that [`ensure_descent!`](@ref) exempts them: a moving
+    average is *allowed* not to descend on an individual step. That is a true statement about the
+    direction and the wrong conclusion about the step. A rejected search returns ``\alpha = 1``
+    untouched, so the exemption did not permit a non-descent step, it took the *longest* step
+    available along one.
+
+    Issue A7 is what that cost. On Rosenbrock from ``(-1.2, 1)`` with `MomentumMethod(0.1)` under the
+    expanding `Backtracking` default, the solve reaches `f = 7.8e-5` by iteration 400 and then:
+
+    | iteration | outcome | ``\alpha`` | ``f`` |
+    |---|---|---|---|
+    | 441 | `LINESEARCH_NO_DESCENT` | 1.0 | 4.97e-2 → 4.65e3 |
+    | 443 | `LINESEARCH_NO_DESCENT` | 1.0 | 8.16e1 → 5.33e9 |
+    | 449 | `LINESEARCH_NO_DESCENT` | 1.0 | 2.87e2 → 9.12e7 |
+    | 453 | `LINESEARCH_NO_DESCENT` | 1.0 | 1.46e3 → 4.41e19 |
+    | 455 | `LINESEARCH_NO_DESCENT` | 1.0 | 8.20e16 → 1.51e61 |
+
+    Thirteen such events over 457 iterations, each multiplying ``f`` by between ``10^3`` and
+    ``10^{42}``; the steps in between do descend and cannot make it back. `LINESEARCH_EXHAUSTED`
+    does the same thing — under `BierlaireQuadratic` it takes the same solve to `Inf` in six
+    iterations, at ``\alpha = 1`` every time — which is why the test here is the whole of
+    `linesearch_rejected` and not just the ascent outcome.
+
+    The momentum recursion is untouched by this: ``p \gets \alpha{}p + \nabla{}f`` is evaluated in
+    `update!(::MomentumState, …)` from `gradient_array(cache)` after the step, so which direction the
+    step was taken along does not enter it. Only the step changes. `ensure_descent!`, which acts on
+    the direction *before* the search, still exempts them.
 """
 linesearch_rejected(status::LinesearchStatus) =
     outcome(status) ∈ (LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT)
+
+@doc raw"""
+    steepest_descent!(cache)
+
+Replace the direction stored in `cache` by ``-\nabla{}f``, the one direction that always descends.
+
+# Implementation
+
+[`rhs`](@ref) *is* ``-\nabla{}f`` on the (quasi-)Newton caches, so the default copies it across —
+which is what [`solver_step!`](@ref) did inline before this existed.
+
+It is not on the three first-order caches, where `rhs` is an alias for [`direction`](@ref) itself, so
+copying would be a silent no-op. `GradientCache`'s direction already *is* ``-\nabla{}f`` and the
+no-op is correct there; `MomentumCache` and `AdamCache` hold a moving average and have to be given
+the gradient explicitly.
+"""
+function steepest_descent!(cache::OptimizerCache)
+    _copyto!(direction(cache), rhs(cache))
+
+    cache
+end
+
+function _steepest_descent_from_gradient!(cache::OptimizerCache)
+    _copyto!(direction(cache), gradient_array(cache))
+    _rmul!(direction(cache), -1)
+
+    cache
+end
 
 """
     restart!(state)

@@ -14,7 +14,10 @@
 #   * `svd_tables()` — iterations, objective evaluations, `‖∇f‖` and `check` for every (method, line
 #     search, retraction) combination of `test/optimizer_convergence/svd_optim.jl`, on the seed that
 #     file uses and across eight starting points. Feeds the tables in that file and in
-#     `default_linesearch`'s docstring.
+#     `default_linesearch`'s docstring. Its `max_iterations` is the cap those tables report against,
+#     so it belongs here and not at a call site: `_BFGS` with either polynomial search does not
+#     converge on two of the eight under `Cayley` (open issue A1b), and what the tables print for
+#     those is the cap itself.
 #
 # The timings are a `minimum` over repetitions with a single BLAS thread, which is the only form that
 # is stable enough to quote. They are still machine-dependent; the accuracy figures are not.
@@ -136,13 +139,20 @@ const COMBINATIONS = (
     ("_DFP   Quadratic           ", _DFP(), () -> Quadratic(Float64)),
 )
 
+# The cap the "iters over 8 seeds" column of `svd_optim.jl` reports against, and the value that makes
+# its "cap" entries mean something: `_BFGS` with either polynomial search runs out of iterations on
+# two of the eight under `Cayley` rather than converging (open issue A1b). It has to be a constant
+# rather than a call-site keyword, because a sweep run at a different cap prints a different table for
+# those rows and the table does not say which cap it was.
+const SVD_MAX_ITERATIONS = 20_000
+
 """
     solve_once(algorithm, linesearch, retraction, seed; max_iterations)
 
 One solve of the SVD problem, returning its iteration count, objective evaluations, final `‖∇f‖`,
 worst `check` over the two factors, and relative error against the best rank-3 approximation.
 """
-function solve_once(algorithm, linesearch, retraction, seed::Integer; max_iterations::Integer=100_000)
+function solve_once(algorithm, linesearch, retraction, seed::Integer; max_iterations::Integer=SVD_MAX_ITERATIONS)
     evaluations = Ref(0)
     objective(ps::NamedTuple) = (evaluations[] += 1; norm(A - ps.w₁ * ps.w₂' * A))
 
@@ -163,7 +173,8 @@ end
 
 function svd_tables(; seeds=1:8)
     for (name, retraction) in (("Geodesic", Geodesic()), ("Cayley", Cayley()))
-        println("\n== $name: seed 1234, then the spread over seeds $(first(seeds))..$(last(seeds)) ==")
+        println("\n== $name: seed 1234, then the spread over seeds $(first(seeds))..$(last(seeds)), " *
+                "cap $(SVD_MAX_ITERATIONS) ==")
         println(rpad("combination", 30) * lpad("iters", 8) * lpad("evals", 11) *
                 lpad("rg", 11) * lpad("check", 11) * "   iters over the seeds")
         for (label, algorithm, linesearch) in COMBINATIONS

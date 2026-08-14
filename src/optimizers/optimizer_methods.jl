@@ -95,6 +95,16 @@ from which the direction is computed as ``-m_1/(\sqrt{m_2} + \delta)``.
 [`MomentumMethod`](@ref), `Adam` is *not* converted by [`Optimizer`](@ref), so
 `Adam(Float32)` is needed for `Float32` parameters.
 
+!!! info "A searching line search is not the way to make this converge"
+    Because the direction has magnitude ``\approx{}1`` per component whatever the gradient is,
+    a step that does not shrink leaves `Adam` circling the minimiser at that distance rather
+    than settling on it. A *searching* line search does not fix that — it picks each step from
+    the merit and has no reason to drive the sequence to zero — it only makes each step a
+    better one: on the two-sphere problem of `test/manifold_linesearch_tests.jl` the searching
+    options need 251–331 iterations where [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
+    need 9–64. [`DecayingStatic`](@ref) is the setting under which `Adam` terminates on a
+    criterion by construction, because its schedule drives the step to zero itself.
+
 !!! info "The learning rate is not stored here"
     `Adam` only produces a direction, of magnitude ``\approx{}1`` per component; the learning
     rate ``\eta`` is the line search's `α`, i.e. it is passed as `linesearch = Static(η)`,
@@ -230,6 +240,11 @@ Hessian branch because `NoHessian` is all that branch needs from it.
 a momentum and a moment average are deliberately allowed not to descend on an individual step,
 and the decay of [`AdamWithEuclideanDecay`](@ref) tilts the direction further away from the
 gradient still.
+
+That exemption is about the direction *before* the search, and it used to be extended to the
+restart *after* it as well. It no longer is — see [`linesearch_rejected`](@ref) and issue A7.
+Declining to overrule the direction is not the same as taking the longest step along it, which
+is what a rejected search hands back.
 """
 const FirstOrderMethodWithState = Union{MomentumMethod,AdamFamily}
 
@@ -330,10 +345,10 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     reason `_DFP` had a reputation for being unpredictable.
 
     `StrongWolfe(T; c₂ = 0.1)` remains the choice to pass explicitly on a DFP-heavy workload, now on
-    cost rather than on reliability: 218 and 279 iterations on that starting point, 296–868 and 215–447
+    cost rather than on reliability: 218 and 279 iterations on that starting point, 296–868 and 198–515
     across the eight, 18 117 and 23 818 evaluations against the default's 19 991 and 35 329, and 1.6×
     to 2.2× faster in wall clock (0.155 s against 0.246 s on `Geodesic`, 0.205 s against 0.451 s on
-    `Cayley`). `Bisection` is steadier still (87–141 / 88–129) at four to five times the work.
+    `Cayley`). `Bisection` is steadier still (87–141 / 102–124) at four to five times the work.
 
     `c₂ = 0.1` and not `StrongWolfe`'s own default of `0.9`: at `0.9` the strong Wolfe conditions are
     already satisfied at `α = 1` on 99.4% of iterations, so its bracketing phase never fires and it
@@ -341,10 +356,12 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     value [nocedal2006numerical](@cite) recommends where a more accurate line search is needed, and it
     makes the expansion fire on 94.5% of iterations.
 
-    `Quadratic` is competitive on `Geodesic` (175 iterations) and falls apart on `Cayley` (550) —
-    probably because [`trial_slope`](@ref) is only first-order correct there and `Quadratic` uses
-    ``\varphi'`` *quantitatively* in its polynomial fit, where `Bisection` uses only its sign and
-    `StrongWolfe` only compares it against ``\varphi'(0)``.
+    `Quadratic` is competitive on `Geodesic` (175 iterations) and falls apart on `Cayley` (529) — and
+    the explanation this entry used to give for that is now measured and wrong. It read "probably
+    because [`trial_slope`](@ref) is only first-order correct there"; `trial_slope` is exact under
+    `Cayley` as of the [`retraction_differential`](@ref), which moves this figure from 550 to 529 and
+    leaves the gap. What the polynomial searches are actually sensitive to is the size of the step
+    they occasionally ask for — see the CHANGELOG entry for issue A1b.
 
     None of this is a property of DFP as such: given a search that can exceed `α = 1` it is competitive
     with `_BFGS`. The expansion phase exists because of this package — see

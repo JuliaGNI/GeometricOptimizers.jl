@@ -70,6 +70,8 @@ invalidate_latest_gradient!(cache::AdamCache) = _invalidate_latest_gradient!(cac
 gradient_difference!(cache::AdamCache, ::OptimizerState) = _latest_gradient_difference!(cache)
 direction(cache::AdamCache) = cache.δ
 rhs(cache::AdamCache) = direction(cache)
+# As for `MomentumCache`: `rhs` aliases the direction, which is `-m₁/(√m₂ + δ)` and not `-∇f`.
+steepest_descent!(cache::AdamCache) = _steepest_descent_from_gradient!(cache)
 section(cache::AdamCache) = cache.section
 
 """

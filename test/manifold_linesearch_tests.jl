@@ -3,6 +3,8 @@ using GeometricOptimizers: Cayley, Geodesic, _BFGS, _DFP, StiefelManifold, check
                            status, DecayingStatic, step_size, increase_iteration_number!,
                            solver_step!, update!
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew
+using GeometricOptimizers: linesearch_problem, retraction_differential, retraction, initialize!,
+                           cache, gradient, hessian, problem, StiefelProjection
 using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe, l2norm
 using LinearAlgebra: norm
 using Test
@@ -36,6 +38,103 @@ end
 # quasi-Newton run of 17-27 iterations accumulates more again. This is the tolerance
 # `optimizer_convergence/svd_optim.jl` uses for the same reason.
 const MANIFOLD_TOLERANCE = 1e-12
+
+# `trial_slope` used to pair the gradient with the direction `B` itself. That is `φ'(α)` only where
+# `α ↦ retract(αB)` is a one-parameter subgroup -- `Geodesic` is and `Cayley` is not -- so under
+# `Cayley` the slope was exact at `α = 0` and drifted from there. Measured on the `St(6, 3)` problem
+# below, against a central difference of the merit the search itself evaluates:
+#
+#     α                 0.25     0.5      1.0      2.0
+#     paired with B     2.2%    8.9%      36%     143%
+#     with D(α)        4e-10   1e-9     4e-9    4e-10
+#
+# `Backtracking`, the default, never saw it: it evaluates `φ'` at `α = 0` only, where the two agree.
+# `Bisection` uses the sign and `StrongWolfe` compares against `φ'(0)`, so both merely paid a few
+# iterations. `Quadratic` and `BierlaireQuadratic` fit a polynomial to it *quantitatively*, and on the
+# SVD problem that took `_BFGS` off the manifold on two of eight starting points -- open issue A1b.
+# `retraction_differential` supplies the generator that turns with the step.
+#
+# The tolerance is set by the central difference, not by the slope: `h = 1e-6` leaves a truncation
+# error of order `1e-9`, which is what the "with D(α)" row above is.
+const SLOPE_TOLERANCE = 1e-7
+
+"""
+    slope_errors(ps, F, retraction, αs)
+
+The relative error of `φ'(α)` against a central difference of `φ(α)`, both taken from the
+`LinesearchProblem` the optimizer actually builds, at each `α`.
+"""
+function slope_errors(ps, F, retraction, αs; h=1e-6)
+    Random.seed!(7)
+    opt = Optimizer(ps, F; algorithm=_BFGS(), retraction=retraction, linesearch=Backtracking(Float64))
+    state = OptimizerState(_BFGS(), ps)
+    c = cache(opt)
+    initialize!(c, ps)
+    update!(c, state, gradient(opt), hessian(opt), ps)
+
+    ls = linesearch_problem(problem(opt), gradient(opt), c, retraction)
+    params = (x=ps, state=state)
+
+    map(αs) do α
+        φ′ = ls.D(α, params)
+        difference = (ls.F(α + h, params) - ls.F(α - h, params)) / (2h)
+        abs(φ′ - difference) / abs(difference)
+    end
+end
+
+@testset "φ' is the derivative of φ, under both retractions" begin
+    αs = (0.0, 0.25, 0.5, 1.0, 2.0)
+
+    Random.seed!(1234)
+    Y = rand(StiefelManifold, 6, 3)
+    # a `NamedTuple` mixing a manifold with an ordinary array, so that the pass-through for a
+    # Euclidean block is covered too -- its retraction is addition, so `D(α) = B` there
+    mixed = (w=rand(StiefelManifold, 6, 3), b=randn(4))
+
+    for retraction in (Geodesic(), Cayley())
+        for e in slope_errors(Y, Z -> sum(abs2, Z .- 0.3) + sum(sin.(Z)), retraction, αs)
+            @test e < SLOPE_TOLERANCE
+        end
+
+        objective(p) = sum(abs2, p.w .- 0.3) + sum(sin.(p.w)) + sum(abs2, p.b) + sum(p.b)
+        for e in slope_errors(mixed, objective, retraction, αs)
+            @test e < SLOPE_TOLERANCE
+        end
+    end
+end
+
+# `GrassmannManifold` parameters cannot be driven through an `Optimizer` at all -- issue #27, and the
+# same limitation `adam_with_euclidean_decay.jl` records -- so the Grassmann branch of
+# `retraction_differential` is checked directly instead of through a merit: `D(α)` against a central
+# difference of the retraction it is the derivative of. This is also the only place the identity is
+# checked against `retract` rather than against `f ∘ retract`, which is what makes it independent of
+# `global_rep` and `_dot`.
+struct UncoveredRetraction <: GeometricOptimizers.AbstractRetraction end
+
+@testset "retraction_differential is d/dα retract(αB), for both lifts" begin
+    for LT in (StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix)
+        Random.seed!(1234)
+        B = rand(LT{Float64}, 6, 3)
+        E = StiefelProjection(B)
+        frame(retr, α) = Matrix(retraction(retr, α * B))
+
+        for retr in (Geodesic(), Cayley()), α in (0.25, 0.5, 1.0, 2.0)
+            h = 1e-6
+            difference = (frame(retr, α + h) * E - frame(retr, α - h) * E) / (2h)
+            velocity = frame(retr, α) * Matrix(retraction_differential(retr, B, α)) * E
+
+            @test norm(velocity - difference) / norm(difference) < SLOPE_TOLERANCE
+        end
+
+        # `α = 0` returns the direction untouched, which is what keeps `Backtracking` free
+        @test retraction_differential(Cayley(), B, 0.0) === B
+
+        # A retraction with no differential of its own has to say so here rather than fail with a
+        # `MethodError` from inside a merit evaluation, three frames down. Same reason `retraction`
+        # carries an explicit error for the combinations it does not cover.
+        @test_throws ErrorException retraction_differential(UncoveredRetraction(), B, 1.0)
+    end
+end
 
 @testset "a searching line search runs on a Manifold at all" begin
     # every one of these threw `Not implemented for StiefelManifold{...}` from
@@ -121,8 +220,11 @@ end
 #
 # Two spheres rather than the SVD problem of the testset above: the first-order methods do not
 # converge on that one at all (1000 iterations at `err = 1.71`), and `Quadratic` and
-# `BierlaireQuadratic` leave the manifold there under `Cayley` (`check = 5.3e-4` and `1.9e-3`), which
-# is open issue A1b and not this file's subject.
+# `BierlaireQuadratic` leave the manifold there under `Cayley` -- `check` of `7.1e-4` and `4.8e-3`
+# for `GradientMethod` against `5.8e-14` for `Backtracking` -- which is open issue A1b and not this
+# file's subject. The exact `Cayley` differential improves the `Quadratic` column by about 2.5x
+# (`1.8e-3` to `7.1e-4`) and leaves `BierlaireQuadratic` bit-identical, so it does not close that
+# issue; see the CHANGELOG.
 const TARGET₂ = [0.0, 1.5, 0.0]
 const MINIMIZER₂ = StiefelManifold([0.0; 1.0; 0.0;;])
 two_spheres(ps::NamedTuple) = l2norm(vec(ps.w₁), TARGET) + l2norm(vec(ps.w₂), TARGET₂)
@@ -149,7 +251,7 @@ const NT_LINESEARCHES = (Static(0.1), Backtracking(Float64), Backtracking(Float6
         solve!(ps, state, opt)
 
         # 64 is the worst of the 28, and it is a `Static` one: every searching line search here is
-        # under 22
+        # under 25
         @test iteration_number(state) < 100                     # terminates on a criterion ...
         @test isapprox(ps.w₁, MINIMIZER; atol=1e-6)             # ... at the minimiser ...
         @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-6)
@@ -162,13 +264,22 @@ end
 @testset "Adam runs on a manifold NamedTuple under a searching line search" begin
     # `Adam` is in this file's coverage but not in the loop above, and the reason is the one the
     # `DecayingStatic` testset states: its direction has magnitude ≈1 per component whatever the
-    # gradient is, so with a step that does not shrink it circles the minimiser at that distance.
-    # That is also why `default_linesearch` keeps `Static` for `AdamFamily` -- a sufficient-decrease
-    # search has nothing to work with when the direction is a moving average that is deliberately
-    # allowed not to descend. It needs 267-1000 iterations here where the two methods above need
-    # 9-64, and under `BierlaireQuadratic` it does not terminate on a criterion at all. What it has
-    # to do is run and stay on the manifold, which before this branch it did only because the
-    # `NamedTuple` path never called `gradient(cache)`.
+    # gradient is, so with a step that does not shrink it circles the minimiser at that distance. It
+    # needs 251-331 iterations here where the two methods above need 9-64, which is why
+    # `default_linesearch` keeps `Static` for `AdamFamily` -- the searching alternatives cost an
+    # order of magnitude and buy nothing.
+    #
+    # It does now *terminate* under all fourteen, which is new: `Adam` + `BierlaireQuadratic` used to
+    # run out all 1000 iterations under both retractions while sitting 6.8e-6 from the minimiser,
+    # with no criterion it could meet. That was recorded as issue A9, and it was the same defect as
+    # A7 -- a rejected search returns `α = 1` and `solver_step!` exempted the `AdamFamily` methods
+    # from doing anything about it. With the exemption gone the worst of the fourteen is 331
+    # iterations, so the iteration bound below is a real one rather than a restatement of the cap.
+    #
+    # The distance tolerance moves with it, 1e-4 to 1e-6. The worst of the fourteen is now 5.0e-7 and
+    # that one is `Static`, i.e. the orbit of radius ∝ α this comment opens with, which no line-search
+    # change can touch; every *searching* one is at 1.8e-8 or better, against the 6.8e-6 that
+    # `BierlaireQuadratic` used to sit at while exhausting the cap.
     for linesearch in NT_LINESEARCHES, retraction in (Geodesic(), Cayley())
         ps = ps₀()
         state = OptimizerState(Adam(Float64), ps)
@@ -177,8 +288,9 @@ end
 
         solve!(ps, state, opt)
 
-        @test isapprox(ps.w₁, MINIMIZER; atol=1e-4)             # 6.8e-6 is the worst of the 14
-        @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-4)
+        @test iteration_number(state) < 1000                    # terminates on a criterion ...
+        @test isapprox(ps.w₁, MINIMIZER; atol=1e-6)             # ... 5.0e-7 is the worst of the 14
+        @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-6)
         for Y in values(ps)
             @test check(Y) < MANIFOLD_TOLERANCE
         end
