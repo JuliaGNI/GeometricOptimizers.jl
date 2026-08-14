@@ -23,13 +23,15 @@ the direction and the state updates need to keep reading unchanged.
 
 # Implementation
 
-The default aliases the two together, which is what the quasi-Newton caches did before there was a
-name for the distinction. Nothing refreshes it for them — `refresh_latest_gradient!` is a no-op on
-`NewtonOptimizerCache`, `BFGSCache` and `DFPCache` — so for those `rg` is still ``\|\nabla{}f(x_k)\|``
-and every measurement in this package that involves them is unchanged.
+Every cache in this package carries a scratch array of its own for this and implements the three
+methods that go with it ([`refresh_latest_gradient!`](@ref), [`latest_gradient_is_current`](@ref),
+[`invalidate_latest_gradient!`](@ref)); see [`GradientCache`](@ref) for the field and for why it may
+not be shared with `gradient`.
 
-The three first-order caches override it with a scratch array of their own; see
-[`GradientCache`](@ref).
+The default here aliases the two together, which is what all six caches did before there was a name
+for the distinction, and is what a cache that does not refresh anything should keep doing: nothing
+sets the pairing [`store_gradient!`](@ref) relies on, [`latest_gradient_is_current`](@ref) defaults to
+`false`, and `rg` then means ``\|\nabla{}f(x_k)\|`` at the iterate the step started from.
 """
 latest_gradient(cache::OptimizerCache) = gradient(cache)
 

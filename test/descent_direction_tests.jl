@@ -22,11 +22,23 @@ F(x) = sum(sin.(x) .^ 2)
 
                 # Every minimum of `F` has `F = 0`, every maximum has `F = 3`. Without
                 # `ensure_descent!` the `x₀ = 1.0` cases converge to `π/2` and land on `F = 3`; all
-                # 48 combinations here reach the minimizer, and the worst of them gets to 1.1e-28,
-                # so this is a machine-precision tolerance and not a "close enough" one.
-                @test F(x) < 1e-27
+                # 48 combinations here reach the minimizer.
+                #
+                # `1e-15` and not the `1e-27` this used to assert. That value was measured before
+                # `rg` was the residual at the iterate the solve returns (open issue A8): the
+                # (quasi-)Newton caches reported `‖∇F‖` at whatever point the line search had last
+                # probed, which overestimates it near a minimiser, so `g_converged` fired late and
+                # these solves *overshot* their own stopping criterion. They now stop when they meet
+                # it, one iteration earlier in 20 of the 48 cases.
+                #
+                # What the criterion guarantees is the tolerance to use: it stops at
+                # `‖∇F‖ ≤ f_reltol = √eps ≈ 1.5e-8`, and `sin²` has curvature `2` at its minima, so
+                # `F ≈ ‖∇F‖²/4 ≈ 5.6e-17` is where that lands. The worst of the 48 is `4.2e-17`,
+                # right at that bound; `1e-15` is a factor of 24 above it and still fifteen orders
+                # of magnitude below the `F = 3` this test exists to exclude.
+                @test F(x) < 1e-15
 
-                # and they get there fast -- the slowest is seven iterations
+                # and they get there fast -- the slowest is six iterations
                 @test iteration_number(state) ≤ 10
             end
         end

@@ -65,23 +65,28 @@ Write the gradient difference `∇f(xᵏ) - ∇f(xᵏ⁻¹)` into `cache.Δg`, f
 
 # Implementation
 
-The default forms it from the gradient the cache holds and the previous gradient the state holds. The
-quasi-Newton caches have already formed exactly this difference -- it is the `γ` of their secant pair
--- and have advanced `state.ḡ` past it in doing so, so for them this is a no-op.
+Every cache in this package overrides this with the difference of the two gradients it holds itself,
+`latest_gradient` at ``x_{k+1}`` and `gradient` at ``x_k``, which is the successive difference the
+status prints and needs no `state.ḡ`. The default -- `cache.g` against `state.ḡ` -- was wrong for
+each of them in a different way:
 
-The three first-order caches use neither: they take the difference of the two gradients they hold
-themselves, `latest_gradient` at ``x_{k+1}`` and `gradient` at ``x_k``. `state.ḡ` is the wrong operand
-for them and the default was measurably wrong here. `update!(::MomentumState, ...)` runs *after* the
-step and copies the cache's *pre-step* gradient into `state.g`, shifting the one before it into
-`state.ḡ`, so `state.ḡ` ends up two iterates behind `cache.g` rather than one: on
-``f(x) = \\sum(x^2 + 0.1x^4)`` from `[1.5, -0.8, 0.4]` with `MomentumMethod` + `Bisection`, iteration
-three reported `rgₐ = 4.976` where ``\\|\\nabla{}f(x_k) - \\nabla{}f(x_{k-1})\\| = 0.295``. On the
-first iteration it differenced against the `_similar` memory `MomentumState` never writes. It also
-kept `rgₐ` and `rg` from being about the same step, now that [`latest_gradient`](@ref) has made `rg` a
-statement about ``x_{k+1}``; see [`convergence_measures`](@ref).
+- for the three first-order caches, `update!(::MomentumState, ...)` runs *after* the step and copies
+  the cache's *pre-step* gradient into `state.g`, shifting the one before it into `state.ḡ`, so
+  `state.ḡ` ends up two iterates behind `cache.g` rather than one: on
+  ``f(x) = \\sum(x^2 + 0.1x^4)`` from `[1.5, -0.8, 0.4]` with `MomentumMethod` + `Bisection`,
+  iteration three reported `rgₐ = 4.976` where ``\\|\\nabla{}f(x_k) - \\nabla{}f(x_{k-1})\\| = 0.295``.
+  On the first iteration it differenced against the `_similar` memory `MomentumState` never writes.
+- for `BFGSCache` and `DFPCache` it was the `γ` of the secant pair, ``\\nabla{}f(x_k) -
+  \\nabla{}f(x_{k-1})``, which those form inside `update!(cache, ...)` and which is one step behind
+  the `rg` reported next to it.
+- for `NewtonOptimizerCache` it was *structurally zero*: [`solver_step!`](@ref) advances `state.ḡ` at
+  the same iterate the cache takes its gradient at, so the difference could only ever be `0`.
 
-`state.ḡ` is still two iterates behind for these methods, and `Δf̃` above still reads it. That is
-recorded as open issue A10 in `CHANGELOG.md`.
+In all three cases the two `g` rows of a status are now about one step rather than about two
+different ones; see [`convergence_measures`](@ref) for which iterate `rg` belongs to.
+
+`state.ḡ` is still two iterates behind for the first-order methods, and `Δf̃` above still reads it.
+That is recorded as open issue A10 in `CHANGELOG.md`.
 """
 gradient_difference!(cache::OptimizerCache, state::OptimizerState) = _difference!(cache.Δg, cache.g, state.ḡ)
 
@@ -226,10 +231,14 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
 # Extended help
 
 !!! info "Which iterate `g_converged` is a statement about"
-    `rg` is [`latest_gradient`](@ref), so for the three first-order caches it is
-    ``\|\nabla{}f(x_{k+1})\|`` at the iterate the step ended at, and for the (quasi-)Newton caches it
-    is still ``\|\nabla{}f(x_k)\|`` at the one it started from — they build their gradient at the top
-    of `update!(cache, ...)` and nothing refreshes it afterwards.
+    `rg` is [`latest_gradient`](@ref), i.e. ``\|\nabla{}f(x_{k+1})\|`` at the iterate the step ended
+    at, for every method. It used to be ``\|\nabla{}f(x_k)\|`` at the one the step started from, and
+    for the (quasi-)Newton caches it was worse than that: [`trial_slope`](@ref) evaluates the trial
+    gradient into the same array, so `rg` was ``\|\nabla{}f\|`` at whatever point the line search
+    last probed. On Rosenbrock from ``(-1.2, 1)`` with the default `Backtracking` — which probes
+    ``\alpha = 0``, so that point is ``x_k`` — `rg` came out `5.8\times10^4` times the true residual
+    for `_BFGS` and `299` times it for `_DFP`. It errs high near a minimiser, so `g_converged` fired
+    *late*; that was open issue A8.
 
     The distinction is not cosmetic for a direction that carries momentum. Under
     [`SimpleSolvers.Static`](@extref) a stale `rg` is harmless, because the direction is a scaled
