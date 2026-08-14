@@ -48,6 +48,9 @@ begin
     @safetestset "Optimizer Problems           " include("optimizer_problems.jl")
 end
 begin
+    @safetestset "Optimizer Status             " include("optimizer_status_tests.jl")
+end
+begin
     @safetestset "Descent Direction            " include("descent_direction_tests.jl")
 end
 begin

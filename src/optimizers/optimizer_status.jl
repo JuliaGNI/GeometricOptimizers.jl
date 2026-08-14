@@ -87,7 +87,10 @@ gradient_difference!(cache::OptimizerCache, state::OptimizerState) = _difference
 
 function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T,OST<:OptimizerState{T},OCT<:OptimizerCache{T}}
     rxₐ = l2norm(direction(cache))
-    rxᵣ = rxₐ / l2norm(cache.x)
+    # `solution_scale`, not `l2norm`: on a manifold the norm of the iterate is a constant the geometry
+    # supplies, and a measured norm that is not that constant means the iterate has left the manifold
+    # rather than that the problem has a large scale. See `solution_scale` and `convergence_measures`.
+    rxᵣ = rxₐ / solution_scale(cache.x)
 
     Δf = f - state.f̄
     # `_dot`, not `⋅`: this is the decrease in `f` the step predicts to first order, so it has to be
@@ -105,7 +108,11 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     # the step ended at rather than at the one it started from. See `convergence_measures`.
     rg = l2norm(latest_gradient(cache))
 
-    f_increased = abs(f) > abs(state.f̄)
+    # `f > f̄` and not `abs(f) > abs(f̄)`: the question is whether the objective went up, and for an
+    # objective that takes negative values the two are different questions -- `-5 → -6` is a decrease
+    # and reads as an increase through `abs`. That was tolerable while nothing acted on the flag;
+    # `convergence_measures` now does.
+    f_increased = f > state.f̄
 
     x_nonfinite = contains_nonfinite(cache.x)
     f_nonfinite = contains_nonfinite(f)
@@ -117,6 +124,31 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
 
     OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, x_converged, f_converged, g_converged, f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
 end
+
+@doc raw"""
+    solution_scale(x)
+
+The norm the *relative* change in the iterate is measured against, i.e. the denominator of
+``\|x - x'\|/\|x'\|``.
+
+For an ordinary array this is the `l2norm` of the iterate, which is the only scale a Euclidean
+problem supplies. For a [`Manifold`](@ref) it is *not*: a point of ``St(N, n)`` or
+``Gr(n, N)`` satisfies ``Y^TY = \mathbb{I}_n``, so ``\|Y\|_F = \sqrt{\mathrm{tr}(Y^TY)} = \sqrt{n}``
+exactly, and the scale is a constant the geometry supplies rather than something to be measured off
+the iterate.
+
+That distinction is what keeps `x_converged` honest on a solve that has diverged; see
+[`convergence_measures`](@ref). While the iterate is on the manifold the two agree to round-off, so
+this changes no measurement of any converging solve — it changes what is reported once the iterate is
+somewhere ``\sqrt{n}`` no longer describes.
+
+A `NamedTuple` combines its blocks in quadrature, exactly as `l2norm` does, so a `NamedTuple` holding
+a manifold next to an ordinary array uses the nominal scale for the one and the measured scale for
+the other.
+"""
+solution_scale(x::AbstractVecOrMat) = l2norm(x)
+solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
+solution_scale(ps::ArrayNamedTuple) = √sum(abs2, values(apply_toNT(solution_scale, ps)))
 
 l2norm(a::StiefelLieAlgHorMatrix) = √(l2norm(a.A)^2 + l2norm(a.B)^2)
 
@@ -178,8 +210,9 @@ for reasons that are *not* convergence — the iteration cap, a non-finite itera
 where one is not allowed — and none of those sets a flag here, so this is what tells the two apart;
 see [`meets_stopping_criteria`](@ref).
 
-`x_converged` is the one to be careful with: it cannot be trusted on a solve that has diverged, for
-the reason recorded under [`convergence_measures`](@ref).
+`x_converged` is the one to be careful with: "the iterate stopped moving" is a statement about a
+ratio, and a diverging solve is where the denominator stops meaning anything. See the warning under
+[`convergence_measures`](@ref) for the two guards on it and for the one case they do not cover.
 """
 isconverged(status::OptimizerStatus) = status.x_converged || status.f_converged || status.g_converged
 
@@ -209,27 +242,37 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
     ``\|x\| = 1.16``, i.e. barely moved from `ones(3)`, both reporting convergence. Refreshing costs
     one gradient evaluation per iteration and never cost an iteration in any case measured.
 
-!!! warning "`x_converged` cannot be trusted on a solve that has diverged"
+!!! warning "What `x_converged` is guarded against, and what it is not"
     ``\|x - x'\|/\|x'\|`` measures "the iterate stopped moving" only while ``\|x'\|`` is bounded, and
     a diverging solve is exactly the case where it is not. On the SVD problem of
     `test/optimizer_convergence/svd_optim.jl`, `_BFGS` + `Bisection` + `Geodesic` once left the
     manifold on iteration 4 with an iterate of magnitude ``10^{100}``. The step that took it there
     had ``\|\delta\| = 345`` — not remotely a solve that has stopped moving — but the *relative*
     change was ``345/10^{100} \approx 10^{-98}``, far under `x_reltol`, so `x_converged` fired and
-    the solve reported success.
+    the solve reported success. Two guards, neither of which invents a tolerance:
 
-    That divergence is fixed at its source ([`linesearch_rejected`](@ref),
-    [`curvature_is_usable`](@ref)) and [`contains_nonfinite`](@ref) catches the `Inf`/`NaN` end of
-    the range, so nothing measured still reaches this. The hole itself is left open on purpose: every
-    way of closing it here needs a threshold on ``\|x\|`` or on ``\|x - x'\|`` that no property of
-    the problem supplies, and imposing one would change the stopping behaviour of every Euclidean
-    solve to guard a state that can no longer be reached. On a manifold the honest test is
-    `check`, which the caller has and this function does not: ``\|Y\|_F = \sqrt{n}`` exactly
-    for ``Y \in St(N, n)``, so any deviation is measurable without a tolerance being invented for it.
+    - the denominator is [`solution_scale`](@ref) and not ``\|x'\|``. On a manifold the two are the
+      same number — ``\|Y\|_F = \sqrt{n}`` exactly — right up to the point where the iterate leaves
+      the manifold, and there the constant is the honest scale and the measured norm is the
+      divergence. The trace above gives ``345/\sqrt{3} \approx 199`` in place of ``10^{-98}``.
+    - `x_converged` also requires `!f_increased`. An iterate that has stopped moving is evidence of
+      convergence only if the objective did not just go up, and in that trace it went `3.38 → 9.13 →
+      1.2\times10^{169}`. This is the only guard the *Euclidean* case has, because nothing there
+      bounds ``\|x\|``.
+
+    What is still not covered: a Euclidean solve that runs away *downhill*, where ``\|x\|`` grows
+    without bound and `f` decreases at every step, has no scale to be measured against and is still
+    reported as converged. Closing that needs a threshold on ``\|x\|`` that no property of the
+    problem supplies. Note also that the divergence above is fixed at its source
+    ([`linesearch_rejected`](@ref), [`curvature_is_usable`](@ref)) and that
+    [`contains_nonfinite`](@ref) catches the `Inf`/`NaN` end of the range, so nothing measured
+    reaches any of this.
 """
 function convergence_measures(status::OptimizerStatus, config::Options)
-    x_converged = x_abschange(status) ≤ x_abstol(config) ||
-                  x_relchange(status) ≤ x_reltol(config)
+    # `&& !f_increased`: both branches above say "the iterate stopped moving", which is evidence of
+    # convergence only if the objective did not just go up. See the warning above.
+    x_converged = (x_abschange(status) ≤ x_abstol(config) ||
+                   x_relchange(status) ≤ x_reltol(config)) && !status.f_increased
 
     # `f_relchange` is a *successive* change, so it is gated on `f_suctol`, which SimpleSolvers
     # 0.9 introduced for exactly that and gave `f_reltol`'s former default. `f_reltol` itself is
