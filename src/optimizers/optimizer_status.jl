@@ -68,6 +68,20 @@ Write the gradient difference `∇f(xᵏ) - ∇f(xᵏ⁻¹)` into `cache.Δg`, f
 The default forms it from the gradient the cache holds and the previous gradient the state holds. The
 quasi-Newton caches have already formed exactly this difference -- it is the `γ` of their secant pair
 -- and have advanced `state.ḡ` past it in doing so, so for them this is a no-op.
+
+The three first-order caches use neither: they take the difference of the two gradients they hold
+themselves, `latest_gradient` at ``x_{k+1}`` and `gradient` at ``x_k``. `state.ḡ` is the wrong operand
+for them and the default was measurably wrong here. `update!(::MomentumState, ...)` runs *after* the
+step and copies the cache's *pre-step* gradient into `state.g`, shifting the one before it into
+`state.ḡ`, so `state.ḡ` ends up two iterates behind `cache.g` rather than one: on
+``f(x) = \\sum(x^2 + 0.1x^4)`` from `[1.5, -0.8, 0.4]` with `MomentumMethod` + `Bisection`, iteration
+three reported `rgₐ = 4.976` where ``\\|\\nabla{}f(x_k) - \\nabla{}f(x_{k-1})\\| = 0.295``. On the
+first iteration it differenced against the `_similar` memory `MomentumState` never writes. It also
+kept `rgₐ` and `rg` from being about the same step, now that [`latest_gradient`](@ref) has made `rg` a
+statement about ``x_{k+1}``; see [`convergence_measures`](@ref).
+
+`state.ḡ` is still two iterates behind for these methods, and `Δf̃` above still reads it. That is
+recorded as open issue A10 in `CHANGELOG.md`.
 """
 gradient_difference!(cache::OptimizerCache, state::OptimizerState) = _difference!(cache.Δg, cache.g, state.ḡ)
 
@@ -87,13 +101,15 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     gradient_difference!(cache, state)
 
     rgₐ = l2norm(cache.Δg)
-    rg = l2norm(cache.g)
+    # `latest_gradient` and not `cache.g`: for the caches that refresh it, this is `∇f` at the iterate
+    # the step ended at rather than at the one it started from. See `convergence_measures`.
+    rg = l2norm(latest_gradient(cache))
 
     f_increased = abs(f) > abs(state.f̄)
 
     x_nonfinite = contains_nonfinite(cache.x)
     f_nonfinite = contains_nonfinite(f)
-    g_nonfinite = contains_nonfinite(cache.g)
+    g_nonfinite = contains_nonfinite(latest_gradient(cache))
 
     _status = OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false, f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
 
@@ -175,6 +191,23 @@ Checks if the optimizer converged.
 Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`SimpleSolvers.Options`](@extref) object.
 
 # Extended help
+
+!!! info "Which iterate `g_converged` is a statement about"
+    `rg` is [`latest_gradient`](@ref), so for the three first-order caches it is
+    ``\|\nabla{}f(x_{k+1})\|`` at the iterate the step ended at, and for the (quasi-)Newton caches it
+    is still ``\|\nabla{}f(x_k)\|`` at the one it started from — they build their gradient at the top
+    of `update!(cache, ...)` and nothing refreshes it afterwards.
+
+    The distinction is not cosmetic for a direction that carries momentum. Under
+    [`SimpleSolvers.Static`](@extref) a stale `rg` is harmless, because the direction is a scaled
+    gradient and a vanishing gradient means a vanishing step. Under a line search accurate enough to
+    drive ``\nabla{}f(x_{k+1}) \approx 0`` it is not: the momentum term still moves the iterate, so
+    `g_converged` fired one step *past* the minimiser. `MomentumMethod` + `Backtracking` on
+    ``f(x) = 1 + x^2`` from ``x = 1`` stopped at ``x = -0.2`` reporting `rg = 0`, where
+    ``\|\nabla{}f(x)\| = 0.4`` and the momentum was ``2``. Over `Bisection`, `Quadratic` and
+    `BierlaireQuadratic` this left `MomentumMethod` at ``\|x\| = 0.35`` and `Adam` at
+    ``\|x\| = 1.16``, i.e. barely moved from `ones(3)`, both reporting convergence. Refreshing costs
+    one gradient evaluation per iteration and never cost an iteration in any case measured.
 
 !!! warning "`x_converged` cannot be trusted on a solve that has diverged"
     ``\|x - x'\|/\|x'\|`` measures "the iterate stopped moving" only while ``\|x'\|`` is bounded, and

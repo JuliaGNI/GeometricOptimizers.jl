@@ -286,6 +286,12 @@ end
 
 update_section!(Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction) = update_section!(Λ⁽ᵗ⁻¹⁾, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
 
+# The default for a `struct` is `===`, which is `false` for two sections that hold equal frames in
+# different arrays -- and comparing the frames is exactly what `latest_gradient_is_current` needs in
+# order to tell "the cache is at the iterate the state is at" from "it is at a line-search trial
+# point". `λ === nothing` on Euclidean parameters, and `nothing == nothing` is `true`.
+Base.:(==)(Λ₁::GlobalSection, Λ₂::GlobalSection) = Λ₁.Y == Λ₂.Y && Λ₁.λ == Λ₂.λ
+
 function Base.copyto!(dest::GlobalSection{T,MT}, src::GlobalSection{T,MT}) where {T,MT<:Manifold}
     copyto!(dest.Y, src.Y)
     copyto!(dest.λ, src.λ)

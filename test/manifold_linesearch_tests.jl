@@ -1,8 +1,9 @@
 using GeometricOptimizers
 using GeometricOptimizers: Cayley, Geodesic, _BFGS, _DFP, StiefelManifold, check, iteration_number,
-                           status, DecayingStatic, step_size
+                           status, DecayingStatic, step_size, increase_iteration_number!,
+                           solver_step!, update!
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew
-using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, l2norm
+using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe, l2norm
 using LinearAlgebra: norm
 using Test
 import Random
@@ -108,6 +109,111 @@ end
         @test status(result).rg < 1e-6                          # ... with a small gradient
         for Y in values(ps)
             @test check(Y) < 1e-10                              # and still on the manifold
+        end
+    end
+end
+
+# The `NamedTuple` counterpart of `optimizer_tests.jl`'s Euclidean loop. The manifold branch of
+# `trial_slope` allocates rather than evaluating into the cache, so it never hit the
+# `gradient(cache)` `MethodError` that made that loop's Euclidean twin throw -- but nothing solved
+# here with a first-order method and a searching line search either, and that is the gap that let the
+# defect through.
+#
+# Two spheres rather than the SVD problem of the testset above: the first-order methods do not
+# converge on that one at all (1000 iterations at `err = 1.71`), and `Quadratic` and
+# `BierlaireQuadratic` leave the manifold there under `Cayley` (`check = 5.3e-4` and `1.9e-3`), which
+# is open issue A1b and not this file's subject.
+const TARGET₂ = [0.0, 1.5, 0.0]
+const MINIMIZER₂ = StiefelManifold([0.0; 1.0; 0.0;;])
+two_spheres(ps::NamedTuple) = l2norm(vec(ps.w₁), TARGET) + l2norm(vec(ps.w₂), TARGET₂)
+
+function ps₀()
+    Random.seed!(1234)
+    (w₁=StiefelManifold([0.0; sqrt(0.5); sqrt(0.5);;]),
+        w₂=StiefelManifold([sqrt(0.5); 0.0; sqrt(0.5);;]))
+end
+
+const NT_LINESEARCHES = (Static(0.1), Backtracking(Float64), Backtracking(Float64; expand=true),
+    Bisection(Float64), Quadratic(Float64), BierlaireQuadratic(Float64), StrongWolfe(Float64; c₂=0.1))
+
+@testset "the first-order methods solve on a manifold NamedTuple, on every line search" begin
+    for method in (GradientMethod(), MomentumMethod(0.1)),
+        linesearch in NT_LINESEARCHES,
+        retraction in (Geodesic(), Cayley())
+
+        ps = ps₀()
+        state = OptimizerState(method, ps)
+        opt = Optimizer(ps, two_spheres; algorithm=method, linesearch=linesearch,
+            retraction=retraction, max_iterations=1000)
+
+        solve!(ps, state, opt)
+
+        # 64 is the worst of the 28, and it is a `Static` one: every searching line search here is
+        # under 22
+        @test iteration_number(state) < 100                     # terminates on a criterion ...
+        @test isapprox(ps.w₁, MINIMIZER; atol=1e-6)             # ... at the minimiser ...
+        @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-6)
+        for Y in values(ps)
+            @test check(Y) < MANIFOLD_TOLERANCE                 # ... and still on the manifold
+        end
+    end
+end
+
+@testset "Adam runs on a manifold NamedTuple under a searching line search" begin
+    # `Adam` is in this file's coverage but not in the loop above, and the reason is the one the
+    # `DecayingStatic` testset states: its direction has magnitude ≈1 per component whatever the
+    # gradient is, so with a step that does not shrink it circles the minimiser at that distance.
+    # That is also why `default_linesearch` keeps `Static` for `AdamFamily` -- a sufficient-decrease
+    # search has nothing to work with when the direction is a moving average that is deliberately
+    # allowed not to descend. It needs 267-1000 iterations here where the two methods above need
+    # 9-64, and under `BierlaireQuadratic` it does not terminate on a criterion at all. What it has
+    # to do is run and stay on the manifold, which before this branch it did only because the
+    # `NamedTuple` path never called `gradient(cache)`.
+    for linesearch in NT_LINESEARCHES, retraction in (Geodesic(), Cayley())
+        ps = ps₀()
+        state = OptimizerState(Adam(Float64), ps)
+        opt = Optimizer(ps, two_spheres; algorithm=Adam(Float64), linesearch=linesearch,
+            retraction=retraction, max_iterations=1000, warn_iterations=0)
+
+        solve!(ps, state, opt)
+
+        @test isapprox(ps.w₁, MINIMIZER; atol=1e-4)             # 6.8e-6 is the worst of the 14
+        @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-4)
+        for Y in values(ps)
+            @test check(Y) < MANIFOLD_TOLERANCE
+        end
+    end
+end
+
+@testset "the reused gradient is the one a fresh evaluation would give" begin
+    # `solver_step!` refreshes `latest_gradient` at the accepted iterate and the next
+    # `update!(cache, ...)` reuses it rather than evaluating `∇f` again at the same point; see
+    # `store_gradient!`. The manifold case is the one where that could go wrong quietly, because the
+    # gradient is expressed in the frame of a `GlobalSection` and the cache's and the state's frames
+    # are advanced by two different calls. They are the same call underneath -- `update_section!`'s
+    # three-argument method has the body the two-argument one uses -- and this asserts it, bit for
+    # bit, rather than taking it on trust.
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
+        retraction in (Geodesic(), Cayley())
+
+        ps = ps₀()
+        state = OptimizerState(method, ps)
+        opt = Optimizer(ps, two_spheres; algorithm=method, linesearch=Bisection(Float64),
+            retraction=retraction)
+        grad = GeometricOptimizers.gradient(opt)
+
+        for k in 1:6
+            @test GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, ps) == (k > 1)
+
+            fresh = GeometricOptimizers.global_rep(GeometricOptimizers.section(state), grad(ps))
+            increase_iteration_number!(state)
+            solver_step!(ps, state, opt)
+            update!(state, opt, ps)
+
+            stored = GeometricOptimizers.gradient_array(GeometricOptimizers.cache(opt))
+            for key in keys(fresh)
+                @test stored[key] == fresh[key]
+            end
         end
     end
 end

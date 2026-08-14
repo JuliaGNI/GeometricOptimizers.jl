@@ -13,19 +13,36 @@ Cache for the gradient optimizer.
 - `g`: the gradient (for the *manifold case* this is in [`AbstractLieAlgHorMatrix`](@ref) form),
 - `δ`: the direction,
 - `Δg`: difference in gradients,
+- `g̃`: scratch for [`latest_gradient`](@ref),
+- `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
 - `section`: the [`GlobalSection`](@ref).
+
+# Implementation
+
+!!! info "Why `g̃` is a field and not an alias for `g`"
+    The line search evaluates ``\\varphi'(\\alpha)`` *into* an array of the cache — that is what makes
+    [`trial_slope`](@ref) allocation-free — and [`solver_step!`](@ref) refreshes the same array at the
+    accepted iterate. Neither may land in `g`, because `g` is ``\\nabla{}f(x_k)`` at the iterate the
+    direction was built from and the state updates read it afterwards: `update!(::MomentumState, ...)`
+    accumulates it into the momentum, and with `g` shared that recursion was measurably wrong (see
+    the CHANGELOG entry for issue A2). [`MomentumCache`](@ref) and [`AdamCache`](@ref) carry the same
+    field for the same reason.
 """
 struct GradientCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT
     Δg::VT
+    g̃::VT
+    g̃_is_current::Base.RefValue{Bool}
     section::ST
 end
 
 function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
     sec = GlobalSection(_copy(x))
-    GradientCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, sec)
+    g̃ = _similar(g)
+    _fill!(g̃, T(NaN))
+    GradientCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
 end
 
 function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
@@ -47,7 +64,20 @@ function GradientCache(x::OptimizerSolution{T}) where {T}
 end
 
 solution(cache::GradientCache) = cache.x
-gradient_array(cache::GradientCache) = cache.g
+# `gradient` and `gradient_array` are the same array here, as they are on `NewtonOptimizerCache`.
+# Only `gradient` was missing, and `trial_slope`'s `AbstractVector` branch calls it, so the three
+# first-order methods used to throw a `MethodError` on any line search that evaluates `φ'`.
+gradient(cache::GradientCache) = cache.g
+gradient_array(cache::GradientCache) = gradient(cache)
+latest_gradient(cache::GradientCache) = cache.g̃
+refresh_latest_gradient!(cache::GradientCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
+latest_gradient_is_current(cache::GradientCache, state::OptimizerState, x::OptimizerSolution) =
+    _latest_gradient_is_current(cache, state, x)
+invalidate_latest_gradient!(cache::GradientCache) = _invalidate_latest_gradient!(cache)
+# `∇f(x_{k+1}) - ∇f(x_k)`, the successive difference `OptimizerStatus` prints as `|g(x) - g(x')|`,
+# from the two gradients the cache holds rather than from a `state.ḡ` that is two iterates behind
+# here. See `gradient_difference!`.
+gradient_difference!(cache::GradientCache, ::OptimizerState) = _latest_gradient_difference!(cache)
 direction(cache::GradientCache) = cache.δ
 rhs(cache::GradientCache) = direction(cache)
 section(cache::GradientCache) = cache.section
@@ -111,8 +141,10 @@ end
 # end
 
 function update!(cache::GradientCache{T}, state::GradientState{T}, gradient::Gradient{T}, ::Hessian{T}, x::OptimizerSolution{T}) where {T}
+    # first, and before the two `_copyto!`s below: it compares `solution(cache)` against `x` and
+    # `section(cache)` against `section(state)`, which those overwrite
+    store_gradient!(cache, state, gradient, x)
     _copyto!(section(cache), section(state))
-    _copyto!(gradient_array(cache), global_rep(section(state), gradient(x)))
     _copyto!(solution(cache), x)
     _copyto!(direction(cache), gradient_array(cache))
     _rmul!(direction(cache), -1)

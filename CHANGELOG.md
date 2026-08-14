@@ -216,6 +216,82 @@ this package produces change**, in most cases substantially for the better.
 
 ### Fixed
 
+- **`GradientMethod` and `MomentumMethod` no longer throw on their own default line search.**
+  `Optimizer(ones(3), x -> sum(x.^2); algorithm = GradientMethod())` followed by a `solve!` was a
+  `MethodError`: `trial_slope`'s `AbstractVector` branch calls `gradient(cache)`, which only
+  `NewtonOptimizerCache`, `BFGSCache` and `DFPCache` defined, so none of the three first-order
+  methods could use *any* line search that evaluates ``\varphi'`` on Euclidean vector parameters.
+  That became the *default* path in 0.2.0, when `default_linesearch` started returning
+  `Backtracking(T; expand = true)` for everything outside `AdamFamily`. Manifold parameters were
+  never affected — that branch of `trial_slope` allocates and never touches the cache.
+
+  Defining the accessor is not on its own enough, and the second half is the interesting one.
+  `trial_slope` evaluates the trial gradient *into* the cache — that is what makes it
+  allocation-free — while `update!(::MomentumState, ...)` re-runs ``p \gets \alpha{}p + \nabla{}f(x_k)``
+  from the same array afterwards. Sharing one array made the momentum accumulate the gradient at
+  whatever trial step the search last probed. Worst relative error in the state's momentum over eight
+  iterations of ``f(x) = \sum(x^2 + 0.1x^4 + 0.3\sin 3x)``:
+
+  | | `Static` | `Backtracking` | `Bisection` | `Quadratic` | `BierlaireQuadratic` | `StrongWolfe` |
+  |---|---|---|---|---|---|---|
+  | shared array | 0 | 0 | **1.04** | **1.04** | **4.51** | **1.04** |
+  | scratch array | 0 | 0 | 0 | 0 | 0 | 0 |
+
+  `Backtracking` is exact by accident: it evaluates ``\varphi'`` once, at ``\alpha = 0``, where the
+  trial gradient *is* ``\nabla{}f(x_k)``. So the three first-order caches carry a scratch array of
+  their own, reached through `latest_gradient`, and `cache.g` stays what the direction and the state
+  updates need it to be.
+
+- **The gradient residual is measured at the iterate a solve returns.** `rg` was
+  ``\|\nabla{}f(x_k)\|`` at the iterate the step *started* from, for every method. Under `Static`
+  that is harmless — the direction is a scaled gradient, so a vanishing gradient means a vanishing
+  step — and under a direction that carries momentum it is not. A line search accurate enough to
+  drive ``\nabla{}f(x_1) \approx 0`` made `g_converged` fire while the momentum term was still moving
+  the iterate: `MomentumMethod` + `Backtracking` on ``f(x) = 1 + x^2`` from ``x = 1`` stopped after
+  two iterations at ``x = -0.2`` reporting `rg = 0`, where ``\|\nabla{}f(x)\| = 0.4`` and the momentum
+  was ``2``. Final ``\|x\|`` from `ones(3)`, before and after:
+
+  | objective | method | `Bisection` | `Quadratic` | `BierlaireQuadratic` |
+  |---|---|---|---|---|
+  | ``1 + \|x\|^2`` | `MomentumMethod` | 0.346 → **0** | 0.346 → **0** | 4.5e-4 → **1.1e-8** |
+  | ``1 + \|x\|^2`` | `Adam` | 1.16 → **0** | 1.16 → **7.7e-16** | 1.2e-5 → **9.5e-13** |
+  | ``\sum\sqrt{1+x^2}`` | `MomentumMethod` | 0.122 → **3.9e-16** | 0.122 → **7.9e-14** | 0.122 → **1.1e-9** |
+  | ``\sum\sqrt{1+x^2}`` | `Adam` | 1.16 → **3.9e-16** | 1.16 → **7.7e-16** | 0.104 → **4.5e-9** |
+
+  `Adam` was the worse of the two — at ``\|x\| = 1.16`` it had barely left `ones(3)` — and both
+  reported convergence. `solver_step!` now refreshes `latest_gradient` at the accepted iterate. It
+  never cost an *iteration*: across the 42 (objective, method, line search) combinations measured the
+  count is equal or one lower.
+
+  **And it costs no gradient evaluation either**, which is not obvious and was not free. The refresh
+  computes ``\nabla{}f(x_{k+1})`` in the frame of `section(cache)`, and that is bit-for-bit what
+  `update!(cache, state, …)` recomputes at the top of the next step — `update_section!`'s
+  three-argument method has the body the two-argument one `update!(::MomentumState, …)` uses, so the
+  cache's frame after a step *is* the state's frame after `update!`. `store_gradient!` therefore
+  reuses it instead of evaluating again, guarded on `solution(cache) == x` and
+  `section(cache) == section(state)` so that a caller which moves the iterate between steps falls
+  back rather than silently reusing a stale value. On the SVD problem of
+  `test/optimizer_convergence/svd_optim.jl`, `Adam` + `Static` over 2 000 iterations (`err = 1.7097`
+  in every column, i.e. one trajectory):
+
+  | | before this release | refresh, no reuse | as shipped |
+  |---|---|---|---|
+  | wall clock | 124 ms | 167 ms (1.35×) | **128 ms (1.03×)** |
+  | ``\nabla{}f`` per iteration | 1 | 2 | **1** |
+
+  `rgₐ` is formed from the same two arrays — ``\nabla{}f(x_{k+1}) - \nabla{}f(x_k)``, the successive
+  difference `OptimizerStatus` prints it as — so the two `g` rows of a status are about one step
+  rather than about two different ones. It used to come from `state.ḡ`, which is two iterates behind
+  `cache.g` for these three methods and is uninitialised on the first: on
+  ``f(x) = \sum(x^2 + 0.1x^4)`` that reported `rgₐ = 4.976` where the successive difference is
+  `0.295`. The remaining half of that — `Δf̃` still reads `state.ḡ` — is open issue A10 below.
+
+  `Newton`, `_BFGS` and `_DFP` are untouched — `latest_gradient` defaults to `gradient(cache)`,
+  nothing refreshes it for them and `store_gradient!` is not on their path. Verified bit-for-bit: 266
+  solves over Rosenbrock, the SVD problem and a two-sphere `NamedTuple`, across all seven line
+  searches, both retractions and all six methods, reproduce `rg`, the iterate, the value and `check`
+  to the last digit; `rgₐ` moves for the three first-order methods and for nothing else.
+
 - **The `Geodesic` retraction no longer silently leaves the manifold for a large step.** `geodesic`
   built the exponential by summing ``\mathfrak{A}(X) = \sum_{n\geq1}X^{n-1}/n!`` directly. That series
   converges everywhere but is only *accurate* for a small argument, and the argument here is not
@@ -500,16 +576,17 @@ are tracked with the code rather than in a scratch file. A is correctness in thi
 observability, C its dead code and bookkeeping; D is upstream, E lists things reported during the
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
-given. Entries A5, A6, C6 and D5 come from the review of [#36], the rest from unifying the optimizer
-hierarchies.
+given. Entries A5, A6, C6 and D5 come from the review of [#36]; A7, A8, A9 and the second half of A1b
+from [#38], and A10 from the review of [#38]; the rest from unifying the optimizer hierarchies.
 
-A1 and A3 are fixed by [#36] rather than by anything on `main`, so until that merges their "fixed"
-markers describe a branch and not this file; C6 likewise describes text that [#36] introduces.
+A1, A2 and A3 are fixed and are kept for the record, since later entries refer to them: A1 and A3 by
+[#36], A2 by [#38]. C6 describes text that [#36] introduced.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
 
-Ordered by severity within each section.
+Ordered by severity within each section, except that entries found after the first pass are appended
+to their section rather than interleaved, so that the labels stay stable references.
 
 ---
 
@@ -604,7 +681,49 @@ are fine. The honest fix is probably an exact `Cayley` differential in `trial_sl
 `retraction` argument is already threaded there for exactly this reason
 (`linesearch_problem.jl:69-79`) — but that needs its own investigation.
 
-#### A2. `GradientMethod` and `MomentumMethod` throw on their own default line search
+**It is not specific to `_BFGS`.** Measured while adding the first-order coverage of [#38], on the
+same problem at seed `1234` under `Cayley`, 1 000 iterations:
+
+| | `Backtracking(expand)` | `Bisection` | `Quadratic` | `BierlaireQuadratic` |
+|---|---|---|---|---|
+| `GradientMethod` | `1.7e-14` | `1.3e-14` | **`5.6e-4`** | **`1.9e-3`** |
+| `MomentumMethod` | `1.5e-14` | `2.6e-14` | **`5.3e-4`** | **`2.4e-3`** |
+| `Adam` | `1.7e-14` | `2.6e-14` | **`1.1e-5`** | **`3.1e-4`** |
+
+Same split, six more cases: whatever the method, the two polynomial searches leave the manifold under
+`Cayley` and the two that use ``\varphi'`` only qualitatively do not. That is what makes
+`trial_slope`'s `Cayley` differential the suspect rather than anything in the quasi-Newton update.
+
+(Context for the table, and not itself a defect: no first-order method converges on this problem
+within 1 000 iterations. `Backtracking(expand)` and `Bisection` reach the optimal value —
+`err = 1.7097`, the same one `_BFGS` converges to — but stop at `rg` between `4e-5` and `2e-3`,
+several orders off the gate. That is what a first-order method on a badly conditioned problem does;
+it is why `manifold_linesearch_tests.jl` uses a two-sphere problem for its first-order coverage.)
+
+#### A2. `GradientMethod` and `MomentumMethod` throw on their own default line search — fixed in 0.2.0
+
+**Fixed** by [#38]: `gradient` is defined for all three first-order caches, and `trial_slope` writes
+into `latest_gradient` — a scratch array on those caches rather than an alias for `cache.g`. Three
+notes on what the fix turned up that the diagnosis below did not anticipate:
+
+- **defining the accessor is not enough.** `trial_slope`'s vector branch evaluates *into* the cache,
+  and `update!(::MomentumState, …)` re-runs `p ← αp + ∇f(xₖ)` from the same array afterwards, so
+  aliasing `gradient(cache)` onto `cache.g` made the momentum accumulate the gradient at whatever
+  trial step the search last probed — 104% wrong under `Bisection`, `Quadratic` and `StrongWolfe`,
+  451% under `BierlaireQuadratic`. `Backtracking` was exact only because it evaluates `φ'` once, at
+  `α = 0`.
+- **`rg` was one iteration stale, and that stopped these methods early.** It was `‖∇f(xₖ)‖` at the
+  iterate the step started from — harmless under `Static`, and not harmless under a direction with
+  momentum in it, where a line search accurate enough to drive `∇f(x₁) ≈ 0` made `g_converged` fire
+  while the momentum still moved the iterate. That left `MomentumMethod` at `‖x‖ = 0.35` and `Adam`
+  at `‖x‖ = 1.16` on the bracketing searches, both reporting convergence. `solver_step!` now
+  refreshes the gradient at the accepted iterate. See the CHANGELOG entries above for the tables.
+- **the refresh is free, but only because the value is reused.** `∇f` at the accepted iterate, in the
+  frame the cache is in, is bit-for-bit the gradient the *next* `update!(cache, …)` recomputes, so
+  refreshing without reusing simply doubles the gradient evaluations of a first-order step — 1.35× on
+  `Adam` + `Static`. `store_gradient!` reuses it under a guard that compares the iterate and the
+  frame, which brings that to 1.03×. Fixing `rgₐ` fell out of the same pairing; the half that did
+  not is A10.
 
 **Severity: high** (a documented entry point fails outright), **pre-existing on `main`**.
 
@@ -718,6 +837,139 @@ of scalar indexing and dense LAPACK, which is what lets it run on a GPU backend 
 docstring). That rules out reaching for the spectral radius directly — an eigenvalue computation
 would give the tighter bound and forfeit the reason the algorithm was chosen.
 
+#### A7. `MomentumMethod` runs away when its direction ascends, and nothing stops it
+
+**Severity: high.** Found in [#38], while giving the first-order methods their first coverage on a
+badly conditioned problem. Pre-existing; [#38] neither causes nor fixes it, but it made the affected
+path the default.
+
+On Rosenbrock from `(-1.2, 1)` with `MomentumMethod(0.1)`, the iterate reaches `Inf` rather than the
+minimiser:
+
+| line search | iterations | `f` | `‖x‖` at the end |
+|---|---|---|---|
+| `Backtracking` | 379 | **`Inf`** | `3.0e200` |
+| `Backtracking(expand)` — the default | 457 | **`Inf`** | `8.7e77` |
+| `BierlaireQuadratic` | 6 | **`Inf`** | `2.0e208` |
+| `Bisection` | 636 | `3.3e-17` | ✓ |
+| `Quadratic` | 577 | `2.3e-16` | ✓ |
+| `StrongWolfe(c₂ = 0.1)` | 3 136 | `2.7e-16` | ✓ |
+
+The mechanism, counted directly over the first 200 iterations of the `Backtracking(expand)` run:
+**194 line searches report `LINESEARCH_NO_DESCENT`**, 4 report `LINESEARCH_DECREASED`. The direction
+ascends almost every step, the search says so, and the step is taken anyway — `solver_step!` excludes
+`FirstOrderMethodWithState` from both `ensure_descent!` and the `linesearch_rejected` restart. That
+exclusion is right in principle, since a moving average is deliberately allowed not to descend on an
+*individual* step, but nothing tells that apart from failing on 97% of them. `allow_f_increases`
+defaults to `true`, so the outer loop does not stop it either, and `contains_nonfinite` only catches
+it once the iterate is already past `1e200`.
+
+`MomentumMethod` is the only method exposed this way, and the comparison is what shows it:
+
+- `GradientMethod` is *not* in `FirstOrderMethodWithState`, so it keeps `ensure_descent!`, and its
+  direction is `-∇f` and always descends. It never diverges under any of the seven searches — it is
+  merely slow (10 000 iterations to `f = 6.3e-7`).
+- `Adam` *is* excluded, and does not diverge either, because its direction is normalised to magnitude
+  ≈1 per component. It converges under five of the seven.
+- `MomentumMethod`'s direction is `-(αp + ∇f)`, unnormalised **and** unguarded, so an ascending step
+  raises `‖∇f‖`, which raises `‖p‖`, which lengthens the next ascending step.
+
+(`Static(0.1)` diverges here for `GradientMethod` too, in five iterations. That is an over-large fixed
+step on a badly scaled problem and a different matter; the entry is about the searching line searches,
+where the search correctly reports that no step decreases the merit and is overruled.)
+
+Two candidate guards, neither costing an evaluation: a bound on `‖p‖` relative to `‖∇f‖`, or a count
+of consecutive `LINESEARCH_NO_DESCENT` outcomes — which is exactly the counter B1 asks for, so the
+two are worth doing together.
+
+#### A8. `rg` for the (quasi-)Newton methods is whichever point the line search last probed
+
+**Severity: medium**, and it errs in the safe direction. [#38] fixed this for the three first-order
+caches and deliberately left the (quasi-)Newton ones alone, so that every table in
+`default_linesearch`'s docstring and in `svd_optim.jl` stays bit-identical.
+
+`latest_gradient` aliases `cache.g` for `NewtonOptimizerCache`, `BFGSCache` and `DFPCache`, and
+`trial_slope` evaluates into it, so what `rg` reports depends on where the line search last evaluated
+``\varphi'``. On Rosenbrock from `(-1.2, 1)`, `rg` against `‖∇f(x)‖` at the point the solve actually
+returns:
+
+| | `Backtracking(expand)` | `Bisection` | `Quadratic` | `StrongWolfe` |
+|---|---|---|---|---|
+| `Newton` | `5.0e-14` vs `0` | 1.0× | 1.0× | 1.0× |
+| `_BFGS` | **5.8e4×** | 1.0× | 1.0× | 1.0× |
+| `_DFP` | **299×** | 1.0× | 1.0× | 1.0× |
+
+The three bracketing searches come out exact because their last ``\varphi'`` evaluation happens to
+land at the accepted ``\alpha``; `Backtracking` — the default — evaluates ``\varphi'`` only at
+``\alpha = 0``, so its `rg` is `‖∇f(xₖ)‖` at the iterate the step started from. That `rg` therefore
+means a different point depending on which line search ran, and the same number is not comparable
+across the rows of any of this package's tables.
+
+It overestimates near a minimiser, so `g_converged` fires *late* rather than early — the opposite of
+what the same staleness did to `MomentumMethod` and `Adam` before [#38], and the reason this is
+medium and not high. The fix is the one line the first-order caches already use,
+`refresh_latest_gradient!`; the cost is one gradient evaluation per iteration and a re-measurement of
+every iteration count in the package, which is why it wants its own PR.
+
+#### A9. A searching line search does not give `Adam` a criterion it can meet
+
+**Severity: low**, and a sharpening of something already documented rather than a new defect. From
+[#38], where it is why the `Adam` testset in `manifold_linesearch_tests.jl` asserts less than the one
+next to it.
+
+`Adam`'s direction has magnitude ≈1 per component whatever the gradient is, so with a step that does
+not shrink it circles the minimiser at that distance rather than settling on it. `DecayingStatic`
+exists for this, and its docstring and testset record it for `Static`. What [#38] adds is that a
+*searching* line search does not fix it either: on the two-sphere `NamedTuple` problem of
+`manifold_linesearch_tests.jl`, `Adam` + `BierlaireQuadratic` runs out all 1 000 iterations under
+both retractions while sitting `6.8e-6` (`Geodesic`) and `5.4e-7` (`Cayley`) from the minimiser — at
+the answer, with no criterion it can meet. The other six searches terminate, but take 267–855
+iterations where `GradientMethod` and `MomentumMethod` take 9–64.
+
+So `default_linesearch`'s choice of `Static` for `AdamFamily` is not merely the cheaper one, and
+`DecayingStatic` remains the only setting under which `Adam` terminates on a criterion by
+construction. Worth a sentence in `Adam`'s docstring, which currently sends the reader to
+`default_linesearch` for the cost argument and not for this one.
+
+#### A10. `state.ḡ` is two iterates behind for the three first-order states
+
+**Severity: low** — everything it still reaches is reported and not acted on. Found in the review of
+[#38], which fixes the half of it that had become visible and leaves the rest. **Pre-existing on
+`main`.**
+
+`GradientState`, `MomentumState` and `AdamState` are advanced by `update!(state, opt, x)`, which runs
+*after* the step. It writes the *post*-step iterate into `state.x` and the cache's *pre*-step gradient
+into `state.g`, shifting the one before that into `state.ḡ`:
+
+```
+after update! at the end of step k:   state.x = xₖ   state.g = ∇f(xₖ₋₁)   state.ḡ = ∇f(xₖ₋₂)
+```
+
+So `state.g` does not belong to `state.x`, and `state.ḡ` is two iterates behind `cache.g` rather than
+one. The quasi-Newton states do not have this: `update!(::BFGSCache, …)` advances `state.ḡ` itself,
+inside the step, right after forming `γ` from it.
+
+Two consumers, both in `OptimizerStatus`:
+
+- `rgₐ = ‖cache.Δg‖`. **Fixed in [#38]**: the first-order caches now override `gradient_difference!`
+  and take `latest_gradient - gradient`, which is the successive difference the status prints and
+  needs no `state.ḡ`. On `f(x) = Σ(x² + 0.1x⁴)` from `[1.5, -0.8, 0.4]` with `MomentumMethod` +
+  `Bisection` the old value was `4.976` at iteration three where the successive difference is
+  `0.295`; on iteration one it differenced against the `_similar` memory these states never write,
+  which is the same defect `test/optimizer_state_initialization.jl` exists to catch for the `Adam`
+  moments.
+- `Δf̃ = ⟨state.ḡ, δ⟩` (`optimizer_status.jl:82`), the first-order predicted decrease. **Not fixed.**
+  It is a two-step-stale gradient paired with the current direction, so the prediction it makes is
+  not one. Its only reader is `f_converged_strong`, which C1 records as computed and discarded — so
+  whichever way C1 goes, this has to be settled with it, and settling it separately would be
+  measuring a number nothing looks at.
+
+The honest fix is upstream of both: `update!(state, opt, x)` should store the gradient that belongs
+to the `x` it is storing. `latest_gradient` is exactly that gradient and is already in the cache. The
+obstacle is that the same call site feeds the momentum recursion `p ← αp + ∇f(xₖ)`, which needs the
+*pre*-step gradient and must keep getting `gradient_array(cache)` — so the two uses have to be
+separated first, and `update!(::MomentumState, …)`'s argument list says they currently are not.
+
 ---
 
 ### B. This package — observability
@@ -729,6 +981,11 @@ PR #35 makes `solver_step!` act on `LINESEARCH_FLOOR` / `LINESEARCH_EXHAUSTED` /
 (verified: no reference to the outcome in `optimizer_status.jl`), so a solve that needed a
 quasi-Newton restart on half its iterations is indistinguishable, in the object the caller gets,
 from one that never needed one. Only a `verbosity ≥ 2` log message with `maxlog = 1` shows it.
+
+A7 raises the stakes: `MomentumMethod` diverging on Rosenbrock reports `LINESEARCH_NO_DESCENT` on 194
+of its first 200 iterations, and the returned status says nothing about any of them. The counter this
+entry asks for is also the cheapest guard against that divergence, so the two are worth doing
+together.
 
 #### B2. `show_trace` and `extended_trace` are still accepted and ignored
 
@@ -748,6 +1005,11 @@ exists.
 in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
 on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
 and `Options.f_stall_window` were meant to drive — both of which are also unread here.
+
+Whichever way this goes, it has to be settled together with A10: `Δf̃` is its only input, and for the
+three first-order methods that is a two-step-stale gradient paired with the current direction. Using
+`f_converged_strong` without fixing A10 would be acting on a prediction that is not one; deleting it
+retires A10's second consumer along with it.
 
 #### C2. `compute_direction!` for the quasi-Newton methods is dead
 
@@ -910,5 +1172,6 @@ Neither is a defect in the code; both are things a later reader would otherwise 
 [#28]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28
 [#33]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/33
 [#36]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/36
+[#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
