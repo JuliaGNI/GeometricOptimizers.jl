@@ -416,6 +416,97 @@ this package produces change**, in most cases substantially for the better.
   searches, both retractions and all six methods, reproduce `rg`, the iterate, the value and `check`
   to the last digit; `rgₐ` moves for the three first-order methods and for nothing else.
 
+- **…and for the (quasi-)Newton methods too, where it was not the previous iterate but whichever
+  point the line search last probed.** `latest_gradient` aliased `cache.g` on `NewtonOptimizerCache`,
+  `BFGSCache` and `DFPCache`, and `trial_slope` evaluates the trial gradient into it, so `rg` reported
+  ``\|\nabla{}f\|`` wherever ``\varphi'`` was last asked for. The entry above left these three alone
+  so that its own tables stayed bit-identical; this is what that deferred, catalogued as A8. On
+  Rosenbrock from ``(-1.2, 1)``, `rg` against ``\|\nabla{}f\|`` at the iterate the solve returns:
+
+  | | `Backtracking(expand)` | `Bisection` | `Quadratic` | `StrongWolfe(c₂ = 0.1)` |
+  |---|---|---|---|---|
+  | `Newton` before | `4.97e-14` vs `0` | 1.0× | 1.0× | 1.0× |
+  | `_BFGS` before | **5.78e4×** | 1.0× | 1.0× | 1.0× |
+  | `_DFP` before | **299×** | 1.0× | 1.0× | 1.0× |
+  | all three after | 1.00× | 1.00× | 1.00× | 1.00× |
+
+  The three bracketing searches came out exact only because their last ``\varphi'`` evaluation happens
+  to land at the accepted ``\alpha``; the default `Backtracking` evaluates it at ``\alpha = 0`` only,
+  which is the iterate the step *started* from. So the same `rg` meant a different point depending on
+  which line search ran, and was not comparable across the rows of any table in this package.
+
+  **It costs `_BFGS` and `_DFP` no gradient evaluation.** Their `update!(cache, state, grad, x)`
+  recomputed `global_rep(section(state), grad(x))`, which is bit-for-bit what the refresh at the end
+  of the previous `solver_step!` produced, so it goes through the same `store_gradient!` the
+  first-order caches use. Over the twenty combinations of the eight-seed sweep in
+  `scripts/retraction_accuracy.jl` the objective-evaluation count rises by exactly 10 per solve — one
+  gradient evaluation on that problem, `GradientAutodiff` costing ten objective calls for its 60
+  parameters — and 10 is per *solve*, not per iteration: it is the refresh at the last iterate, the
+  one no `update!` follows and so the one nothing reuses. `Newton` does pay one gradient evaluation
+  per iteration (Rosenbrock, 103 → 124 over 25 iterations), because
+  `update!(::NewtonOptimizerState, …)` advances the state's section by the *gradient* rather than by
+  the direction, so the frames do not match and the guard correctly declines to reuse. That is the
+  path already marked "this will have to be removed later" and it is left alone.
+
+  **What moves.** A correct `rg` gates `g_converged` correctly, so a solve stops when it has met the
+  criterion instead of overshooting it. Iterations: 19 of the 20 sweep combinations are unchanged
+  (`_BFGS` + `StrongWolfe(c₂ = 0.1)` under `Geodesic`, 136 → 135, is the exception), and on Rosenbrock
+  every method loses either zero or one. The stale value overestimated the residual near a minimiser,
+  so the worst `rg` over the eighteen converging combinations × eight starting points improves from
+  `2.5e-7` to `2.0e-7` — `CONVERGED_GRADIENT_TOLERANCE` has a factor of 50 of headroom now rather than
+  40. `test/descent_direction_tests.jl` asserted `F(x) < 1e-27` on `sum(sin²)`, which was measuring
+  the overshoot; what the criterion guarantees is ``\|\nabla{}F\| \leq \sqrt{\varepsilon}``, i.e.
+  ``F \approx \|\nabla{}F\|^2/4 \approx 5.6\times10^{-17}``, and the worst of its 48 combinations is
+  `4.2e-17`. It asserts `1e-15`, still fifteen orders below the `F = 3` maximum it exists to exclude.
+
+  `gradient_difference!` moves to the same successive difference for all three caches, which **retires
+  the known issue that `|g(x) - g(x')|` is structurally zero for `Newton`**: `solver_step!` advanced
+  `state.ḡ` at the very iterate the cache took its gradient at, so the default could not have produced
+  anything else. For `_BFGS` and `_DFP` it was the `γ` of the secant pair, one step behind the `rg`
+  printed next to it.
+
+  Every objective-evaluation count for the SVD problem in `default_linesearch`'s docstring and in
+  `svd_optim.jl` is re-measured and ten higher. The *historical* before/after tables further up in
+  this file are left as they were measured: their "before" column belongs to a code state that no
+  longer exists, and moving only the "after" column would make them incomparable.
+
+- **`x_converged` no longer fires on a solve that has diverged.** `rxᵣ = rxₐ / l2norm(cache.x)`
+  measures "the iterate stopped moving" only while ``\|x\|`` is bounded. On the divergence removed
+  above, a step of ``\|\delta\| = 345`` at an iterate of magnitude ``10^{100}`` gave
+  ``rx_r \approx 3.4\times10^{-98}``, far under `x_reltol`, which is `2eps`, and the solve reported
+  success. This was catalogued as A4 and documented rather than fixed, on the grounds that closing it
+  needs a threshold on ``\|x\|`` that no property of the problem supplies. Two guards that need none:
+
+  - the denominator is the new `solution_scale` rather than `l2norm`. On a manifold ``Y^TY =
+    \mathbb{I}`` makes ``\|Y\|_F = \sqrt{n}`` *exactly*, so the scale is a constant the geometry
+    supplies and a measured norm that is not that constant is itself the divergence signal; that trace
+    reads ``345/\sqrt{3} \approx 199`` instead. A `NamedTuple` combines in quadrature, using the
+    nominal scale for its manifold blocks and the measured one for the rest, and for Euclidean
+    parameters `solution_scale` *is* `l2norm`.
+  - `x_converged` also requires `!f_increased`. A vanishing step is evidence of convergence only if
+    the objective did not just go up, and in that trace it went `3.38 → 9.13 → 1.2e169`. This is the
+    only guard the Euclidean case has.
+
+  `f_increased` itself was `abs(f) > abs(f̄)`, which is not "f increased" for an objective that takes
+  negative values — `-5 → -6` is a decrease and read as an increase. It is `f > f̄` now. Nothing acted
+  on the flag before (`allow_f_increases` defaults to `true`), so this was invisible; `x_converged`
+  acts on it now.
+
+  Measured over 264 solves — Rosenbrock, `sum(sin²)`, two Euclidean objectives, the `St(3,1)` sphere
+  and a manifold `NamedTuple`, over up to six methods and six line searches each — **every numeric
+  column is bit-identical**, and the eight-seed SVD sweep reproduces to the digit in all twenty
+  combinations.
+  What changes is eight reported flags, all on `sum(sin²)` solves whose last step raised `f` by
+  round-off around the minimum and all of which keep `g_converged`, so no solve loses a stop or an
+  iteration; and fourteen spurious `f_increased` flags on the negative-valued objective.
+
+  What is *not* closed, and is now documented on `convergence_measures` rather than in the catalogue:
+  a Euclidean solve that runs away **downhill** has no scale to be measured against and would still be
+  reported as converged. The failure is unreachable from a solve in any case (`linesearch_rejected`,
+  `curvature_is_usable`), which is why the regression test in the new
+  `test/optimizer_status_tests.jl` builds the state it produced out of the same cache and state a
+  solve hands to `OptimizerStatus`.
+
 - **The `Geodesic` retraction no longer silently leaves the manifold for a large step.** `geodesic`
   built the exponential by summing ``\mathfrak{A}(X) = \sum_{n\geq1}X^{n-1}/n!`` directly. That series
   converges everywhere but is only *accurate* for a small argument, and the argument here is not
@@ -696,11 +787,6 @@ verified, measured, and not fixed here — see [Open Issues](#open-issues) at th
   extrapolating to `α ≈ 4e7`, i.e. a *step* of `‖αδ‖ ≈ 2e8`, on a merit that a compact manifold
   leaves bounded, so nothing in the search rejects it; catalogued as A1b below, with the two
   hypotheses that have been ruled out.
-- The `|g(x) - g(x')|` convergence *measure* is structurally zero for `Newton`. `solver_step!`
-  refreshes `state.ḡ` at the same iterate the cache takes its gradient at, so the difference the
-  status reports is always `0`. It is display-only — no stopping criterion reads it — but it is the
-  same defect class as the quasi-Newton one fixed above, in the code path marked "this will have to be
-  removed later".
 
 ## [0.1.0]
 
@@ -714,15 +800,15 @@ are tracked with the code rather than in a scratch file. A is correctness in thi
 observability, C its dead code and bookkeeping; D is upstream, E lists things reported during the
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
-given. Entries A5, A6, C6 and D5 come from the review of [#36]; A8 and the second half of A1b from
-[#38], and A10 from the review of [#38]; A11, C7 and D6 from the line-search work of this release,
-and A12 and C8 from the review of [#40]; the rest from unifying the optimizer hierarchies.
+given. Entries A5, A6, C6 and D5 come from the review of [#36]; the second half of A1b from [#38] and
+A10 from the review of [#38]; A11, C7 and D6 from the line-search work of this release, and A12 and
+C8 from the review of [#40]; the rest from unifying the optimizer hierarchies.
 
-**Only open entries are listed here.** A1, A2, A3, A7 and A9 were in this catalogue and have been
-fixed; each is now described in [Unreleased](#unreleased--targeting-020) above, under the change that
-fixed it, and the entry here is gone. The labels are *not* reused and the surviving ones are not
-renumbered, so the gaps are deliberate: A1b, A4, A5, A6, A8 and A10 mean what they have always meant,
-and a reference to A1 or A7 in a commit message still resolves to the right subject.
+**Only open entries are listed here.** A1, A2, A3, A4, A7, A8 and A9 were in this catalogue and have
+been fixed; each is now described in [Unreleased](#unreleased--targeting-020) above, under the change
+that fixed it, and the entry here is gone. The labels are *not* reused and the surviving ones are not
+renumbered, so the gaps are deliberate: A1b, A5, A6 and A10 mean what they have always meant, and a
+reference to A1, A4, A7 or A8 in a commit message still resolves to the right subject.
 
 A1b is still open, and the fix it proposed for itself — and the second one proposed after that — have
 both been implemented or measured and ruled out. Read that entry before starting on it.
@@ -860,9 +946,10 @@ package untouched — over the converging solve next to it, seed 2 at 90 iterati
 ``\|\alpha\delta\|`` is ``2.03`` — while making the ``10^8`` one impossible.
 
 It is still a behaviour change on every manifold solve and it needs its own measurement of every table
-in the package, so it wants its own PR. It is *not* the same defect as A4, nor as the rejected-step
-fix in *Fixed* above (the entry that was A7), which this one previously grouped it with: that was the
-step of a *rejected* search being taken, and every search
+in the package, so it wants its own PR. It is *not* the same defect as the `x_converged` fix in
+*Fixed* above (the entry that was A4), which is only about how a stop is *reported*, nor as the
+rejected-step fix there (the entry that was A7), which this one previously grouped it with: that was
+the step of a *rejected* search being taken, and every search
 involved here reports `LINESEARCH_DECREASED` or `LINESEARCH_FLOOR` on a step that genuinely decreases
 the merit. Nothing is being overruled; the merit is simply not a bound on the step.
 
@@ -894,37 +981,6 @@ iterations. `Backtracking(expand)` and `Bisection` reach the optimal value — `
 one `_BFGS` converges to — but stop at `rg` between `4e-5` and `2e-3`, several orders off the gate.
 That is what a first-order method on a badly conditioned problem does; it is why
 `manifold_linesearch_tests.jl` uses a two-sphere problem for its first-order coverage.)
-
-#### A4. `x_converged` cannot be trusted on a solve that has diverged
-
-**Severity: medium** (a wrong "converged" report), **documented rather than fixed in PR #35**.
-
-`rxᵣ = rxₐ / l2norm(cache.x)` (`src/optimizers/optimizer_status.jl:76`) measures "the iterate stopped
-moving" only while `‖x‖` is bounded. On the diverging seed the step that left the manifold had
-`‖δ‖ = 345` and the iterate was at `1e100`, so the relative change was `≈ 1e-98`, far under
-`x_reltol = 2eps`, and `x_converged` fired. Confirmed directly: that run reported
-`x_conv = true, f_conv = false, g_conv = false`.
-
-PR #35 removes the cause and widens the non-finite check, so nothing measured still reaches this. It
-is left open because every way of closing it inside `convergence_measures` needs a threshold on
-`‖x‖` or on `‖x - x'‖` that no property of the problem supplies, and imposing one changes the
-stopping behaviour of every Euclidean solve to guard a state that is now unreachable. It is
-documented as a warning on `convergence_measures`.
-
-**Re-checked against the two divergences that were still live**, since both are exactly the shape this
-entry describes — an iterate running to `1e77`..`1e208` while the step stays large. Neither reaches
-it. `_BFGS` + `Quadratic` + `Cayley` on seed 8 of the SVD problem, and `MomentumMethod(0.1)` on
-Rosenbrock under each of the three line searches it used to diverge on, all report
-`x_converged = false`, `f_converged = false` and `g_converged = false`; they stop on the iteration cap
-and on `contains_nonfinite` respectively, so `isconverged` is `false` for all of them. A4 therefore
-remains a hole that no measured solve falls into, and the rejected-step fix removes three more of the
-candidates. It stays open on the same terms, and it is *not* the same defect as A1b or as the
-rejected-step fix: those are about which step gets taken, this one only about how the stop is
-reported.
-
-On a manifold this is not actually ambiguous: `‖Y‖_F = √n` exactly, so the denominator is a
-*constant* and a large one is itself the divergence signal. The information is available; the
-function just does not have it.
 
 #### A5. `geodesic(Y, Δ)` and `cayley(Y, Δ)` are not deterministic and consume global RNG state
 
@@ -981,35 +1037,6 @@ The constraint on any replacement bound is that `ScaledSquaring` is the default 
 of scalar indexing and dense LAPACK, which is what lets it run on a GPU backend (see the `opnorm₁`
 docstring). That rules out reaching for the spectral radius directly — an eigenvalue computation
 would give the tighter bound and forfeit the reason the algorithm was chosen.
-
-#### A8. `rg` for the (quasi-)Newton methods is whichever point the line search last probed
-
-**Severity: medium**, and it errs in the safe direction. [#38] fixed this for the three first-order
-caches and deliberately left the (quasi-)Newton ones alone, so that every table in
-`default_linesearch`'s docstring and in `svd_optim.jl` stays bit-identical.
-
-`latest_gradient` aliases `cache.g` for `NewtonOptimizerCache`, `BFGSCache` and `DFPCache`, and
-`trial_slope` evaluates into it, so what `rg` reports depends on where the line search last evaluated
-``\varphi'``. On Rosenbrock from `(-1.2, 1)`, `rg` against `‖∇f(x)‖` at the point the solve actually
-returns:
-
-| | `Backtracking(expand)` | `Bisection` | `Quadratic` | `StrongWolfe` |
-|---|---|---|---|---|
-| `Newton` | `5.0e-14` vs `0` | 1.0× | 1.0× | 1.0× |
-| `_BFGS` | **5.8e4×** | 1.0× | 1.0× | 1.0× |
-| `_DFP` | **299×** | 1.0× | 1.0× | 1.0× |
-
-The three bracketing searches come out exact because their last ``\varphi'`` evaluation happens to
-land at the accepted ``\alpha``; `Backtracking` — the default — evaluates ``\varphi'`` only at
-``\alpha = 0``, so its `rg` is `‖∇f(xₖ)‖` at the iterate the step started from. That `rg` therefore
-means a different point depending on which line search ran, and the same number is not comparable
-across the rows of any of this package's tables.
-
-It overestimates near a minimiser, so `g_converged` fires *late* rather than early — the opposite of
-what the same staleness did to `MomentumMethod` and `Adam` before [#38], and the reason this is
-medium and not high. The fix is the one line the first-order caches already use,
-`refresh_latest_gradient!`; the cost is one gradient evaluation per iteration and a re-measurement of
-every iteration count in the package, which is why it wants its own PR.
 
 #### A10. `state.ḡ` is two iterates behind for the three first-order states
 

@@ -196,7 +196,7 @@ guard on the quasi-Newton update accepted; how quickly the expansion phase dug i
 to arbitrary. Enforcing the curvature condition — see [`curvature_is_usable`](@ref) — takes a factor
 of 92 off the spread, and with it most of the reason DFP had a reputation here for being
 unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 296–868 iterations
-across the same eight, at 18 117 objective evaluations against the default's 19 991 — and remains the
+across the same eight, at 18 127 objective evaluations against the default's 20 001 — and remains the
 choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
 `StrongWolfe`'s own default of ``0.9``: at ``0.9`` the strong Wolfe conditions already hold at
 ``\alpha = 1`` on 99.4% of iterations, so the bracketing phase never fires and the solve crawls just as

@@ -300,17 +300,25 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
 
     | search | evals/iteration | `_BFGS`: iters / evals | `_DFP`: iters / evals |
     |---|---|---|---|
-    | `Backtracking(expand = true)` | **26** | **95** / **2 431** | 768 / 19 991 |
-    | `Backtracking` (shrink only) | 25 | 136 / 3 447 | 48 322 / 1 208 147 |
-    | `StrongWolfe` (`c₂ = 0.1`) | 59 | 136 / 8 074 | 218 / **18 117** |
-    | `StrongWolfe` (`c₂ = 0.9`) | 36 | 159 / 5 677 | 12 717 / 445 487 |
-    | `BierlaireQuadratic` | 106 | 130 / 13 771 | 121 / 13 481 |
-    | `Quadratic` | 138 | 111 / 15 367 | 175 / 18 112 |
-    | `Bisection` | 589 | 133 / 78 648 | 136 / 79 991 |
+    | `Backtracking(expand = true)` | **26** | **95** / **2 441** | 768 / 20 001 |
+    | `Backtracking` (shrink only) | 25 | 136 / 3 457 | 48 322 / 1 208 157 |
+    | `StrongWolfe` (`c₂ = 0.1`) | 58 | 135 / 7 893 | 218 / **18 127** |
+    | `StrongWolfe` (`c₂ = 0.9`) | 36 | 159 / 5 687 | 12 717 / 445 497 |
+    | `BierlaireQuadratic` | 106 | 130 / 13 781 | 121 / 13 491 |
+    | `Quadratic` | 138 | 111 / 15 377 | 175 / 18 122 |
+    | `Bisection` | 589 | 133 / 78 658 | 136 / 80 001 |
 
     (Regenerate with `scripts/retraction_accuracy.jl`. Every number here moved by a few percent in
     0.2.0 when the geodesic retraction stopped losing accuracy on a large lift — a more accurate
     exponential is a different trajectory. The ordering, which is what the table is for, did not.)
+
+    Every evaluation count in this table is ten higher than it was before `rg` became the residual at
+    the iterate a solve returns (issue A8), and every iteration count but one is unchanged
+    (`StrongWolfe (c₂ = 0.1)` for `_BFGS`, 136 → 135). Ten is exactly one gradient evaluation on this
+    problem — `GradientAutodiff` costs ten objective calls for its 60 parameters, and the count above
+    includes those — and it is the refresh at the *last* iterate, the one no `update!` follows and so
+    the one nothing reuses. Per solve, not per iteration: the reuse in `store_gradient!` is what makes
+    the difference `10` rather than `10 × iterations`.
 
     A shrink-only backtracking search starts at `α = 1` and can never exceed it, which is right for a
     direction already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its iterations —
@@ -335,7 +343,8 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     DFP's direction stays under-scaled — the expansion phase makes that harmless rather than absent, so
     `_DFP` needs 768 iterations on `Geodesic` and 1 366 on `Cayley` where `_BFGS` needs 95 and 118, on
     the starting point the test suite uses. Over eight starting points on the same problem it ranges
-    over 385–1 118 (`Geodesic`) and 466–1 366 (`Cayley`).
+    over 385–1 118 (`Geodesic`) and 466–1 177 (`Cayley`). (That upper bound read 1 366 — the *pinned*
+    value rather than the spread's — which `svd_optim.jl` corrected and this docstring did not.)
 
     Those ranges used to be 512–77 890 and 465–3 834, and the difference is
     [`curvature_is_usable`](@ref). `Q` became badly conditioned (κ ≈ 1e9) because it was being built
@@ -346,7 +355,7 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
 
     `StrongWolfe(T; c₂ = 0.1)` remains the choice to pass explicitly on a DFP-heavy workload, now on
     cost rather than on reliability: 218 and 279 iterations on that starting point, 296–868 and 198–515
-    across the eight, 18 117 and 23 818 evaluations against the default's 19 991 and 35 329, and 1.6×
+    across the eight, 18 127 and 23 828 evaluations against the default's 20 001 and 35 339, and 1.6×
     to 2.2× faster in wall clock (0.155 s against 0.246 s on `Geodesic`, 0.205 s against 0.451 s on
     `Cayley`). `Bisection` is steadier still (87–141 / 102–124) at four to five times the work.
 
