@@ -6,7 +6,103 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased] — targeting 0.2.0
+## [0.2.1]
+
+### Added
+
+- **`𝔄exp(B̂, B̄, algorithm = ScaledSquaring())`**, computing
+  ``\exp(B'(B'')^T)`` as ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T`` — the identity
+  [`𝔄`](@ref) exists for, packaged as the exponential it computes. [`geodesic`](@ref) already
+  computed this product inline; this is for callers that want the exponential of a low-rank product
+  on its own, at a cost set by ``n`` rather than by ``N``.
+
+  It comes from `GeometricMachineLearning`, which carried it as a one-line wrapper over this
+  package's `𝔄` and is dropping it as replicated functionality
+  (GeometricMachineLearning#230). Not exported, as `𝔄` is not.
+
+  **The default is `ScaledSquaring`, as [`geodesic`](@ref)'s is**, and deliberately not the unscaled
+  series that `𝔄(B̂, B̄)` is. The reason is the one under geodesic's "The default changed in 0.2.0":
+  the series cancels catastrophically once ``\|\bar{B}\| \gtrsim 50``, which is not a regime a
+  function presenting itself as *the exponential* may quietly get wrong. Relative error against
+  `exp(Matrix(B))` for `B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)`:
+
+  | `scale` | 1 | 10 | 50 | 100 |
+  | --- | --- | --- | --- | --- |
+  | ``\|\bar{B}\|`` | 3.8 | 36.3 | 145.8 | 324.9 |
+  | `TaylorSeries` | 5.3e-16 | 1.1e-7 | 1.8e24 | 1.7e79 |
+  | `ScaledSquaring` | 4.0e-16 | 1.9e-15 | 7.8e-15 | 1.9e-14 |
+
+  `algorithm` is defined exactly where `𝔄(X, algorithm)` is — `TaylorSeries`, `ScaledSquaring`,
+  `AugmentedPade` — and so, like `𝔄(B̂, B̄, algorithm)`, its `AbstractExponentialAlgorithm` signature
+  also admits `ProjectedSkew`, for which there is no `𝔄` method. That hole is `𝔄`'s and is left as
+  it is rather than papered over here; the docstring says which three are supported.
+
+  GML's test for it came over too, into `test/retractions/exponential_accuracy.jl`: the identity
+  swept over `Float32`/`Float64` and every shape with `N = 1:10`, `n = 1:N`, plus the `algorithm`
+  form. The docstring jldoctests assert it for one 10×2 `Float64` lift, which cannot pin the element
+  type of the result or reach rectangular arguments, so this is new coverage of `𝔄` as much as of
+  `𝔄exp`. That sweep scales its arguments by `0.1`, so it is silent about the default; a second
+  testset asserts the identity at lift norms up to ~600 and against `geodesic`, and fails on three
+  of its four scales if the default moves back to the unscaled series.
+
+### Fixed
+
+- **The optimizer caches and states no longer take an hour to compile through a function.** The
+  cache and state structs bounded their type parameters by `OptimizerSolution`,
+  `GradientArrayOrNamedTuple` and `GlobalSectionSingleOrNamedTuple`. Those bounds are now gone, from
+  every optimizer: `GradientCache`/`GradientState`, `MomentumCache`/`MomentumState`,
+  `AdamCache`/`AdamState`, `BFGSCache`/`BFGSState` (which is also `DFPState`), `DFPCache` and the
+  `VT` of `OptimizerResult`, which is on the return path of every `solve!`.
+  `NewtonOptimizerCache`/`NewtonOptimizerState` follow suit although their bounds
+  (`AbstractArray{T}`, `GlobalSection{T}`) were never the expensive kind — Newton is
+  `AbstractArray`-only, so nothing expands behind them — so that the family stays uniform and nobody
+  has to work out per struct whether a given bound happens to be one that costs.
+
+  The symptom was not an error but a hang, and only in callers that had to *infer* the type of an
+  optimizer rather than take it from a concrete argument — so it did not show up at the REPL, where
+  every intermediate is concrete, but did show up for anyone who wrapped training in a function.
+  `GeometricMachineLearning`'s symplectic-autoencoder test is one: nine layers, mixing
+  `StiefelManifold` weights with ordinary matrices and vectors. Compiled statement by statement it
+  takes ~14 s; compiled as one method body it did not finish in over an hour, with the time going to
+  `subtype_unionall` under `ml_matches`. It is ~14 s either way now.
+
+  Worth being precise about the cause, because the obvious reading is wrong. The bounds did not cost
+  concrete inference: `OptimizerCache(Adam(Float64), ps)` on a `NamedTuple` of parameters infers to a
+  `UnionAll` with or without them, since the outer constructors are written in the same aliases.
+  What the bounds added was *coupling* — one `T` tying all four parameters together underneath three
+  nested `Vararg` unions, the last over a three-parameter `UnionAll` — so every method-table
+  intersection involving an inferred cache had to re-solve that constraint system. Unbounded, the
+  inferred type has the same shape but independent parameters and a bare `<:Tuple`, which costs
+  nothing to intersect.
+
+  No behaviour changes and nothing is unchecked that was checked before: the invariant lives in the
+  constructors, whose signatures take `x::OptimizerSolution{T}` and
+  `g::AT where AT<:GradientArrayOrNamedTuple{T}` and build the `GlobalSection` themselves. That holds
+  for the *inner* constructors of `BFGSCache`, `BFGSState`, `DFPCache` and the two Newton structs as
+  readily as for the outer ones elsewhere — what must not carry the aliases is the `struct` parameter
+  list, not the methods. A note above the aliases in `optimizer_solution.jl` now says not to use them
+  as struct bounds and why, and `test/named_tuple_parameters.jl` pins every cache and state as
+  unbounded so reinstating any of them fails a test rather than silently costing an hour. See
+  GeometricMachineLearning#230.
+
+### Bookkeeping
+
+- **The 0.2.0 release notes are closed out** (C4). That version is tagged and registered, so its
+  section is `## [0.2.0]` rather than `## [Unreleased] — targeting 0.2.0`, it has the
+  `[0.2.0]: …/releases/tag/v0.2.0` definition that `[0.1.0]` always had, and `[Unreleased]` compares
+  against the latest tag instead of `v0.1.0`. The two links from the Open Issues catalogue into that
+  section pointed at the old heading's anchor and are repaired with it.
+
+- **`Random` and `LinearAlgebra` have `[compat]` entries** (C3), matching the `Printf = "1"` that was
+  already there. All three are stdlibs in `[deps]` and used the same way; two of them had no bound.
+
+- **A18 is new in the catalogue**: `𝔄(B̂, B̄, algorithm)` and `𝔄exp(B̂, B̄, algorithm)` accept an
+  `AbstractExponentialAlgorithm`, which admits `ProjectedSkew` — a `geodesic`-level algorithm with no
+  `𝔄` method — so that call dispatches and then fails one frame in, naming `𝔄` rather than what was
+  called. `𝔄exp` inherits the hole rather than adding one; narrowing only `𝔄exp` would put the two out
+  of step, so it is catalogued rather than half-fixed.
+
+## [0.2.0]
 
 v0.1.0 carried **two parallel optimizer hierarchies**: `src/optimizers/`, ported from
 GeometricMachineLearning, which knew about manifolds and was driven by `optimization_step!`, and
@@ -928,7 +1024,8 @@ review. Everything was verified directly — where a claim rests on a measuremen
 given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review of [#38]; A11 and C7
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
 the work on A4 and A8, A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and closing A1b, and
-A17, C12 and C13 from the review of [#44]; the rest from unifying the optimizer hierarchies.
+A17, C12 and C13 from the review of [#44] and A18 from the review of [#45]; the rest from unifying the
+optimizer hierarchies.
 
 Of that last group, **D7 is the one worth reading**, and it is the one that no longer bites here: it
 and B3 were two halves of a path on which a sound quasi-Newton direction is discarded because the
@@ -938,8 +1035,9 @@ explanatory gap now stated as one rather than guessed at (C11), a docs link lost
 inventory (D8), and three small things the review of [#44] left behind (A17, C12, C13).
 
 **Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, A15, B3, C6, D3, D4 and D6 were
-in this catalogue and have been fixed; each is now described in [Unreleased](#unreleased--targeting-020)
-above, under the change that fixed it, and the entry here is gone. The labels are *not* reused and the
+in this catalogue and have been fixed; each is now described in [0.2.0](#020)
+above, under the change that fixed it, and the entry here is gone. C3 and C4 went the same way in
+[0.2.1](#021). The labels are *not* reused and the
 surviving ones are not renumbered, so the gaps are deliberate: A5, A6 and A10 mean what they have
 always meant, and a reference to A1b, A4, A15, B3, D6 or C6 in a commit message still resolves to the
 right subject.
@@ -949,7 +1047,7 @@ Each entry says what it would take to fix it — look for **What to do**. That u
 locally), so it drifted from the catalogue twice and was invisible to anyone who cloned the
 repository — which is the failure mode the paragraph above describes, one level up. It is folded into
 the entries it planned and deleted. The one thing it had that no entry does is the sequencing: the
-observability entries (B1, B2, C1) are one PR because they are one subject, C3 and C4 are one small
+observability entries (B1, B2, C1) are one PR because they are one subject, C3 and C4 were one small
 PR, and anything that moves a number wants its own PR and its own re-measurement.
 
 A1b took three attempts and is worth remembering for the shape of it rather than for the fix. Two
@@ -977,7 +1075,7 @@ changed to get it. C9 records how much of this package's measurement apparatus i
 category.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
-[Unreleased](#unreleased--targeting-020) above; the two do not overlap.
+[0.2.0](#020) above; the two do not overlap.
 
 Ordered by severity within each section, except that entries found after the first pass are appended
 to their section rather than interleaved, so that the labels stay stable references.
@@ -1268,6 +1366,33 @@ of per-block ceilings, i.e. an allocation on every line-search call, to compute 
 
 ---
 
+#### A18. `𝔄` and `𝔄exp` accept an `AbstractExponentialAlgorithm` they cannot serve
+
+**Severity: low**, and a signature that is wider than the implementation rather than a wrong answer.
+From the review of [#45], where `𝔄exp` was added.
+
+`𝔄(X, algorithm)` is implemented for [`TaylorSeries`](@ref), [`ScaledSquaring`](@ref) and
+[`AugmentedPade`](@ref). [`ProjectedSkew`](@ref) is the fourth `AbstractExponentialAlgorithm` and has
+no `𝔄` method at all: it specialises `geodesic` directly, because it exponentiates the lift in an
+orthonormal basis of its range rather than going through ``\mathfrak{A}`` — see the *Disadvantages*
+paragraph on `docs/src/retractions.md`, which already tells readers that `𝔄(X, ProjectedSkew())` does
+not exist.
+
+The signatures `𝔄(B̂, B̄, ::AbstractExponentialAlgorithm)` and `𝔄exp(B̂, B̄, ::AbstractExponentialAlgorithm)`
+nevertheless accept it, so `𝔄exp(B̂, B̄, ProjectedSkew())` dispatches, forwards, and dies one frame in
+with a `MethodError` naming `𝔄` — not the function that was called, and not the fact that this
+algorithm lives a level up. `𝔄exp` inherits the hole rather than adding one, and narrowing only
+`𝔄exp` would put the two out of step, which is why it was left as it is.
+
+**What to do**: either give `𝔄` a `ProjectedSkew` method that errors with the explanation — that it
+is a `geodesic`-level algorithm, and to call `geodesic(B, ProjectedSkew())` — which fixes both
+entry points at once and costs one method; or introduce the subtype of `AbstractExponentialAlgorithm`
+that the three ``\mathfrak{A}``-level algorithms share and narrow both signatures to it, which makes
+it a `MethodError` at the call site instead of a frame in. The first is cheaper and says more; the
+second is the one that makes the type hierarchy match what is implemented.
+
+---
+
 ### B. This package — observability
 
 #### B1. A line search failure is invisible in the returned status
@@ -1347,22 +1472,6 @@ inline at the end of the cache `update!` instead — `bfgs_cache.jl`, `dfp_cache
 `solver_step!` through `compute_direction!` for symmetry with `Newton` — is a refactor with no
 behavioural gain, and the inline form is what the `ḡ`-ordering fix depends on. Deleting is the
 smaller and clearer change.
-
-#### C3. `Random` and `LinearAlgebra` have no `[compat]` entries
-
-`Project.toml` gives `Printf = "1"` but nothing for `Random` or `LinearAlgebra`, though all three are
-stdlibs listed in `[deps]` and used the same way.
-
-**What to do**: add `Random = "1"` and `LinearAlgebra = "1"` to `[compat]`, matching
-the existing `Printf = "1"`. One small PR together with C4.
-
-#### C4. The 0.2.0 release notes are not closed out
-
-`Project.toml` says `version = "0.2.0"` while `CHANGELOG.md:9` still reads
-`## [Unreleased] — targeting 0.2.0`, and the compare link at the bottom is `v0.1.0...main`.
-
-**What to do**: at release, retitle the section to `## [0.2.0] — <date>`, add a fresh
-`[Unreleased]` above it, and change the compare link from `v0.1.0...main` to `v0.1.0...v0.2.0`.
 
 #### C5. `_DFP` + `Backtracking(expand = true)` is documented rather than run, on stale grounds
 
@@ -1752,5 +1861,8 @@ and both are corrected: see C8.)
 [#39]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/39
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
+[#45]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/45
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
+[0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
+[0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.2.1...main

@@ -1,7 +1,7 @@
 using Test
 using LinearAlgebra: norm, opnorm, I
 using GeometricOptimizers
-using GeometricOptimizers: geodesic, check, rgrad, 𝔄, opnorm₁, Geodesic, retraction
+using GeometricOptimizers: geodesic, check, rgrad, 𝔄, 𝔄exp, opnorm₁, Geodesic, retraction
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew, TaylorSeries
 import Random
 
@@ -159,4 +159,60 @@ end
     # The threshold is what picks the number of halvings, so it has to hold across the sweep too.
     X = 𝔄(randn(6, 6))
     @test opnorm₁(X) ≈ opnorm(X, 1) rtol = 1e-12
+end
+
+# `𝔄exp`'s defining property, ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T = \exp(B'(B'')^T)``,
+# swept over shapes and both element types rather than asserted once. The docstrings' jldoctests
+# check it for a single 10×2 `StiefelLieAlgHorMatrix` lift in `Float64`; this covers rectangular
+# arguments down to 1×1 and pins the element type of the result, which a doctest printing `true`
+# cannot.
+#
+# `𝔄exp` and this sweep both come from GeometricMachineLearning, which carried the one-line wrapper
+# and tested it here. It was replicated GeometricOptimizers functionality and moved over when GML
+# went onto this package (GeometricMachineLearning#230).
+#
+# No nested `@testset` in the loop — see the note on RNG state at the top of this file.
+@testset "𝔄exp recovers the exponential across shapes and element types" begin
+    for T in (Float32, Float64), N in 1:10, n in 1:N
+        A = T(0.1) * rand(T, N, n)
+        B = T(0.1) * rand(T, N, n)
+        @test eltype(𝔄exp(A, B)) == T
+        @test exp(A * B') ≈ 𝔄exp(A, B)
+    end
+
+    # The `algorithm` form forwards to `𝔄`, so it is defined exactly where `𝔄(X, algorithm)` is:
+    # `TaylorSeries`, `ScaledSquaring` and `AugmentedPade`. `ProjectedSkew` is not among them — it is
+    # a `geodesic`-level algorithm with its own branch there and no `𝔄` method — so `ALGORITHMS`,
+    # which exists for the `geodesic` sweeps above and includes it, is not what to loop over here.
+    for algorithm in (TaylorSeries(), ScaledSquaring(), AugmentedPade()), T in (Float32, Float64)
+        A = T(0.1) * rand(T, 8, 3)
+        B = T(0.1) * rand(T, 8, 3)
+        @test eltype(𝔄exp(A, B, algorithm)) == T
+        @test exp(A * B') ≈ 𝔄exp(A, B, algorithm)
+    end
+end
+
+# The sweep above is broad in shape and element type and narrow in the one dimension that decides
+# whether the default is right: `T(0.1) * rand(T, N, n)` keeps ‖AB'‖ around 0.1, where every
+# algorithm is exact. The default has to hold where the unscaled series does not — the regime
+# `geodesic`'s "The default changed in 0.2.0" warning is about — so it is asserted here directly.
+#
+# The four scales below draw lifts of ‖B̄‖ = 3.8, 36.3, 145.8 and 324.9, at which the unscaled series
+# is off by 5e-16, 1e-7, 2e24 and 2e79 respectively; `𝔄exp` defaults to `ScaledSquaring`, which stays
+# under 2e-14 throughout. Three of the four assertions below fail if that default moves back. Those
+# are the figures the docstring and the CHANGELOG quote, which is why the seed is set here rather
+# than inherited: this testset has to draw the same lifts however much runs before it.
+@testset "𝔄exp defaults to an algorithm that survives a large argument" begin
+    Random.seed!(1234)
+
+    for scale in (1, 10, 50, 100)
+        B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)
+        B̂, B̄ = GeometricOptimizers.lift_factors(B)
+        reference = exp(Matrix(B))
+
+        @test 𝔄exp(B̂, B̄) ≈ reference rtol = 1e-10
+        # `geodesic` assembles the same product and defaults the same way, so the two agree; this is
+        # what fails if either default moves without the other.
+        @test 𝔄exp(B̂, B̄) ≈ Matrix(geodesic(B))
+    end
 end

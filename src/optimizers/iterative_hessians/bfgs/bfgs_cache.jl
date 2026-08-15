@@ -1,3 +1,6 @@
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
+# The invariant is enforced by the inner constructor's signature, which is dispatch and therefore
+# costs nothing.
 """
     BFGSCache
 
@@ -7,7 +10,7 @@ The [`OptimizerCache`](@ref) for the [`_BFGS`](@ref) algorithm. Also see [`updat
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
 [`store_gradient!`](@ref).
 """
-struct BFGSCache{T,VT<:OptimizerSolution{T},GT,MT,GS<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
+struct BFGSCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::GT    # current gradient

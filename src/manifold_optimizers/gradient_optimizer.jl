@@ -3,6 +3,8 @@ Hessian(::GradientMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} 
 
 struct NoHessian{T} <: Hessian{T} end
 
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
+# The invariant is enforced by the outer constructors below.
 """
     GradientCache <: OptimizerCache
 
@@ -28,7 +30,7 @@ Cache for the gradient optimizer.
     the CHANGELOG entry for issue A2). [`MomentumCache`](@ref) and [`AdamCache`](@ref) carry the same
     field for the same reason.
 """
-struct GradientCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
+struct GradientCache{T,MT,VT,ST} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT
@@ -82,12 +84,14 @@ direction(cache::GradientCache) = cache.δ
 rhs(cache::GradientCache) = direction(cache)
 section(cache::GradientCache) = cache.section
 
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
+# The invariant is enforced by the outer constructors below.
 """
     GradientState <: OptimizerState
 
 State for the gradient optimizer.
 """
-mutable struct GradientState{T,OT<:OptimizerSolution{T},GS<:GlobalSectionSingleOrNamedTuple{T},VT<:GradientArrayOrNamedTuple{T}} <: OptimizerState{T}
+mutable struct GradientState{T,OT,GS,VT} <: OptimizerState{T}
     section::GS
     iterations::Int
 

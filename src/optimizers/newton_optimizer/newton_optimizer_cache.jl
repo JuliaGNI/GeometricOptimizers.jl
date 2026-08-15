@@ -1,3 +1,8 @@
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`. Newton
+# is `AbstractArray`-only, so its bounds were never the expensive kind — it is unbounded so that
+# every method's cache and state read the same way, and so that nobody has to work out per struct
+# whether a given bound happens to be one of the costly ones. The invariant is enforced by the inner
+# constructors' signatures, which is dispatch and therefore costs nothing.
 """
     NewtonOptimizerCache <: OptimizerCache
 
@@ -16,7 +21,7 @@
 
 Also compare this to [`SimpleSolvers.NonlinearSolverCache`](@extref).
 """
-struct NewtonOptimizerCache{T,AT<:AbstractArray{T},HT<:AbstractMatrix{T},GS<:GlobalSection{T}} <: OptimizerCache{T}
+struct NewtonOptimizerCache{T,AT,HT,GS} <: OptimizerCache{T}
     x::AT
     Δx::AT
     g::AT

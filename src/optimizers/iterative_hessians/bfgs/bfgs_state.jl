@@ -1,3 +1,6 @@
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
+# The invariant is enforced by the inner constructor's signature, which is dispatch and therefore
+# costs nothing.
 """
     BFGSState <: OptimizerState
 
@@ -10,7 +13,7 @@ The [`OptimizerState`](@ref) corresponding to the [`_BFGS`](@ref) method.
 - `f̄`
 - `Q`
 """
-mutable struct BFGSState{T,AT<:OptimizerSolution{T},GT<:GradientArrayOrNamedTuple{T},MT<:AbstractMatrix{T},GS<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerState{T}
+mutable struct BFGSState{T,AT,GT,MT,GS} <: OptimizerState{T}
     x̄::AT
     s::GT
     ḡ::GT

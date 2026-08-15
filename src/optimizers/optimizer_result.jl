@@ -19,6 +19,10 @@ struct OptimizerTraceEntry{YT,XT}
     rg::XT
 end
 
+# `VT` is deliberately unbounded; see the warning in `optimizer_solution.jl`. This is on the return
+# path of every `solve!`, so it is one of the types an inferring caller has to intersect. `OST` keeps
+# its bound: `OptimizerStatus{XT,YT}` is a plain two-parameter struct with no union expansion behind
+# it, and it is what ties `T` and `YT` to the status the result reports.
 """
     OptimizerResult
 
@@ -33,7 +37,7 @@ Serves as a diagnostic tool for the [`Optimizer`](@ref) and is the return argume
   empty otherwise. See [`trace`](@ref).
 
 """
-mutable struct OptimizerResult{T,YT,VT<:OptimizerSolution{T},OST<:OptimizerStatus{T,YT}}
+mutable struct OptimizerResult{T,YT,VT,OST<:OptimizerStatus{T,YT}}
     status::OST
 
     x::VT    # current solution
