@@ -149,7 +149,7 @@ the manifold problem rather than of any one search:
   decreases ``f`` enough. Reach for a bracketing method when iterations rather than evaluations are
   what you pay for — a very expensive objective, or an outer loop bounded in iterations.
 - **A search that uses ``\varphi'`` quantitatively is the one that notices a bad step, not the one
-  that causes it.** [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (308 iterations
+  that causes it.** [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (175 iterations
   for `_DFP`) and falls behind on `Cayley` (529). The obvious explanation — that it fits a polynomial
   to a slope which is only first-order correct there — was measured and is not the cause: with the
   exact differential above the figure moved from 550 to 529 and the gap remained. The step ceiling
@@ -199,6 +199,13 @@ at every solver step, and cannot be measured by a line search. Hence the split:
   `c` the [`DEFAULT_STEP_CEILING`](@ref) — `1`, i.e. never more than one full turn — settable per
   solve as `Optimizer(x, F; step_ceiling = …)` and disabled with `Inf`.
 
+  On a `NamedTuple` the one ``\alpha`` scales every block, so the ceiling is derived *per block* and
+  the smallest over the blocks that live on a manifold is the one that binds
+  ([`_manifold_αmax`](@ref)). A block that is an ordinary array contributes
+  none — the ``2\pi`` is the turn of a rotation, and a vector space has no such scale either to
+  impose or to tighten its neighbours with. A `NamedTuple` of ordinary arrays therefore gets no
+  ceiling at all, exactly as a plain vector does.
+
 Over the eight starting points of `scripts/retraction_accuracy.jl`, counting the ones that end with
 both factors still on ``\operatorname{St}(20,3)``:
 
@@ -206,8 +213,8 @@ both factors still on ``\operatorname{St}(20,3)``:
 |---|---|---|---|
 | `_BFGS` `Quadratic` `Cayley` | 4 of 8 | **8 of 8** | `3.2e-1` → `6.1e-14` |
 | `_BFGS` `BierlaireQuadratic` `Cayley` | 4 of 8 | **8 of 8** | `5.5e-1` → `6.9e-14` |
-| `_BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.1e-14` |
-| `_BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.2e-14` |
+| `_BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.0e-14` |
+| `_BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.3e-14` |
 
 All twenty combinations in that sweep are now 8 of 8. The last two rows are worth reading twice: they
 were never catalogued under A1b, and a *shrink-only* `Backtracking` reaching an over-long step at all
@@ -221,11 +228,14 @@ polynomials; it is confined to steps that are long relative to ``2\pi/\|\delta\|
     safeguard. A step that is admissible but *uphill* is [`linesearch_rejected`](@ref)'s business, and
     a direction that ascends is [`ensure_descent!`](@ref)'s. The three are independent.
 
-    One interaction is worth knowing: where the ceiling binds hard, a search can report
-    `LINESEARCH_FLOOR` — "no step along this direction decreases the merit" — when what it established
-    is only that no *permitted* step does. `linesearch_rejected` then restarts ``Q``. This is
-    upstream's open issue rather than a defect here, and nothing in the sweep is affected by it, but a
-    very small `step_ceiling` would make quasi-Newton restarts more frequent than they should be.
+    One interaction is worth knowing, and it is why [`linesearch_rejected`](@ref) takes the ceiling
+    as an argument. Where the ceiling binds hard, a search can report `LINESEARCH_FLOOR` — "no step
+    along this direction decreases the merit" — when what it established is only that no *permitted*
+    step does. Read literally that is a claim about the direction, and answering it by restarting
+    ``Q`` would discard a sound quasi-Newton direction over a bound the caller imposed itself. So a
+    `LINESEARCH_FLOOR` returned *at* the ceiling is exempt and its step is taken; below the ceiling
+    it is a rejection as before. `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT` are not exempt,
+    being true of the direction whatever ceiling was in force.
 
 [`_DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled:
 across eight starting points on the SVD problem it ranges over 385–1 118 iterations on `Geodesic`.
@@ -235,7 +245,7 @@ That range used to read 512–77 890, and the difference is not the line search.
 guard on the quasi-Newton update accepted; how quickly the expansion phase dug it back out was close
 to arbitrary. Enforcing the curvature condition — see [`curvature_is_usable`](@ref) — takes a factor
 of 92 off the spread, and with it most of the reason DFP had a reputation here for being
-unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 187–868 iterations
+unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 296–868 iterations
 across the same eight, at 18 127 objective evaluations against the default's 20 001 — and remains the
 choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
 `StrongWolfe`'s own default of ``0.9``: at ``0.9`` the strong Wolfe conditions already hold at

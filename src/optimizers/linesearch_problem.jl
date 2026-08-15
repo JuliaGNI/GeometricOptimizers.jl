@@ -58,11 +58,9 @@ reach once ``\|\alpha\bar{B}\|`` passes ``2\pi`` — [`Cayley`](@ref) has conver
 by then and [`Geodesic`](@ref) is periodic. Everything past it is round-off, and on the SVD problem
 enough of it to leave the manifold; see [`DEFAULT_STEP_CEILING`](@ref) and issue A1b.
 
-The norm is `l2norm`, which on a `NamedTuple` combines the blocks in quadrature. For a
-`NamedTuple` mixing manifold and Euclidean blocks that bounds the whole direction by the scale only
-the manifold blocks supply, which is conservative in the right direction: the manifold blocks are
-bounded correctly, since their norm is at most the total, and the Euclidean blocks get a bound they
-did not need rather than missing one they did.
+`δ` is one direction and not a `NamedTuple` of them: the ``2\pi`` is a property of *a* rotation, so a
+solution built of several blocks needs one ceiling per block and the smallest of them, which is
+[`_manifold_αmax`](@ref)'s job. See [`linesearch_parameters`](@ref).
 
 # Implementation
 
@@ -79,20 +77,61 @@ function step_αmax(c::T, δ) where {T}
 end
 
 @doc raw"""
-    linesearch_parameters(cache, x, state, c)
+    _manifold_αmax(solution_blocks, direction_blocks, c)
 
-The parameters [`solver_step!`](@ref) hands the line search: the iterate `x`, the `state` whose
-section the trial steps retract from, and — on a manifold only — the step ceiling `αmax`.
+The ceiling a step ceiling of `c` imposes on a solution made of several blocks: the smallest of the
+per-block [`step_αmax`](@ref) over the blocks that live on a [`Manifold`](@ref), and `Inf` where none
+does.
+
+One `\alpha` is applied to every block, so each manifold block needs ``\|\alpha\delta_i\| \leq 2\pi{}c``
+and the binding one is the largest ``\|\delta_i\|``. A block that is an ordinary array contributes
+nothing: the ``2\pi`` is the turn of a rotation and a vector space has no such scale, so it must
+neither impose a ceiling of its own nor inflate the norm that sets one for its neighbours.
+
+That last part is what this function exists for. The ceiling used to be
+`step_αmax(c, direction(cache))` over the whole direction, whose `l2norm` combines the blocks in
+quadrature — so a `NamedTuple` of *ordinary arrays* was bounded by a rotation that does not exist in
+its problem (measured: a Euclidean `NamedTuple` solve took 3 184 iterations against 1 for the same
+problem written as a vector), and in a mixed `NamedTuple` the Euclidean blocks tightened the manifold
+blocks' bound for no reason (measured on the mixed problem of `test/named_tuple_parameters.jl`:
+``\|\delta_Y\| = 2.5\times10^{-16}`` against a total of `3.9`, bounding ``\alpha`` at `1.6` where the
+geometry of the manifold block permits ``2.6\times10^{16}``). That was catalogued as issue A15 and is
+what this closes.
 
 # Implementation
 
-Two methods, chosen on the type of the solution, as [`trial_iterate!`](@ref) is.
+Recursive over the two tuples rather than a loop over `zip`, so that a *heterogeneous* `NamedTuple`
+— a `StiefelManifold` beside a `Matrix` beside a `Vector` — stays inferable and the returned
+parameters stay concrete.
+"""
+_manifold_αmax(::Tuple{}, ::Tuple{}, c::T) where {T} = T(Inf)
 
-For a [`Manifold`](@ref) or a `NamedTuple` containing one, `αmax` is
-[`step_αmax`](@ref)`(c, direction(cache))`. This is the caller's half of the fix for issue A1b, and it
-has to be rebuilt at every solver step because ``\|\delta\|`` changes at every solver step — including
-between the two searches of one `solver_step!`, since the second runs on a direction
-[`steepest_descent!`](@ref) has just replaced.
+_manifold_αmax(ys::Tuple, δs::Tuple, c) =
+    min(_block_αmax(first(ys), first(δs), c), _manifold_αmax(Base.tail(ys), Base.tail(δs), c))
+
+_block_αmax(::Manifold, δ, c) = step_αmax(c, δ)
+_block_αmax(::Any, ::Any, c::T) where {T} = T(Inf)
+
+@doc raw"""
+    linesearch_parameters(cache, x, state, c)
+
+The parameters [`solver_step!`](@ref) hands the line search: the iterate `x`, the `state` whose
+section the trial steps retract from, and — where a manifold supplies a scale — the step ceiling
+`αmax`.
+
+# Implementation
+
+Three methods, chosen on the type of the solution, as [`trial_iterate!`](@ref)'s two are.
+
+For a [`Manifold`](@ref), `αmax` is [`step_αmax`](@ref)`(c, direction(cache))`. This is the caller's
+half of the fix for issue A1b, and it has to be rebuilt at every solver step because
+``\|\delta\|`` changes at every solver step — including between the two searches of one
+`solver_step!`, since the second runs on a direction [`steepest_descent!`](@ref) has just replaced.
+
+For a `NamedTuple` it is [`_manifold_αmax`](@ref) over the blocks, i.e. the same quantity derived per
+block and minimised over the manifold ones. A `NamedTuple` carrying no manifold block therefore gets
+`Inf`, which is what upstream reads as *"the caller has no scale of its own"*
+([`SimpleSolvers.linesearch_αmax`](@extref)) and is exactly equivalent to the omission below.
 
 For an `AbstractVector` the field is **omitted**, which is not the same as passing `Inf` only in
 spirit — upstream reads it through a `hasproperty` guard that constant-folds, so a caller that
@@ -102,15 +141,27 @@ throws an over-long step out unaided, which is why this defect went unreported u
 There is no geometric scale to supply and the method's own
 `SimpleSolvers.DEFAULT_LINESEARCH_αmax` is the whole of the bound.
 
-Both branches return a concrete `NamedTuple`, so the merit closures stay type-stable.
+Every branch returns a concrete `NamedTuple`, so the merit closures stay type-stable. That is why the
+manifold-free `NamedTuple` passes `Inf` rather than joining the `AbstractVector` branch: deciding the
+*shape* of the parameters on the block types makes the return type a `Union` of two `NamedTuple`s,
+which the merit closures then pay for on every evaluation.
 """
 linesearch_parameters(cache::OptimizerCache, x, state, c) =
     _linesearch_parameters(solution(cache), cache, x, state, c)
 
 _linesearch_parameters(::AbstractVector, ::OptimizerCache, x, state, _) = (x=x, state=state)
 
-_linesearch_parameters(::Union{Manifold,ArrayNamedTuple}, cache::OptimizerCache, x, state, c) =
+_linesearch_parameters(::Manifold, cache::OptimizerCache, x, state, c) =
     (x=x, state=state, αmax=step_αmax(c, direction(cache)))
+
+_linesearch_parameters(sol::ArrayNamedTuple, cache::OptimizerCache, x, state, c) =
+    (x=x, state=state, αmax=_manifold_αmax(values(sol), values(direction(cache)), c))
+
+# The ceiling a `linesearch_parameters` actually carries, read back by `solver_step!` so that it can
+# recognise a step of its own making; see `linesearch_rejected` and issue B3. This mirrors
+# SimpleSolvers' `caller_αmax`, which is what reads the field on the other side: `Inf` where the
+# field is absent, and `hasproperty` on a concrete `NamedTuple` constant-folds either way.
+_caller_αmax(::Type{T}, params) where {T} = hasproperty(params, :αmax) ? T(params.αmax) : T(Inf)
 
 @doc raw"""
     trial_slope(gradient_instance, cache, retraction, α)

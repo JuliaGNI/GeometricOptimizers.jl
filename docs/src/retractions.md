@@ -602,8 +602,8 @@ implausibly large step with a `check` an order of magnitude smaller — which is
 on. That argument is weaker now than it was: bounding the step ([`DEFAULT_STEP_CEILING`](@ref)) means
 an implausibly large step is no longer taken under either retraction, so the tolerance `Geodesic` has
 for one is insurance rather than a live difference. A derivative-based line search is exact under
-either since 0.2.0, so that is no longer part of the argument. [`Cayley`](@ref) remains the package default, needs no matrix function at all, and
-is unconditionally stable.
+either since 0.2.0, so that is no longer part of the argument. [`Cayley`](@ref) remains the package
+default, needs no matrix function at all, and is unconditionally stable.
 
 For the algorithm: **[`ScaledSquaring`](@ref), i.e. the default, unless one of the two special cases
 applies.**

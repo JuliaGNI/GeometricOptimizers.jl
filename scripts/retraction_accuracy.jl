@@ -191,7 +191,7 @@ How many of `results` ended with both factors still on the Stiefel manifold.
 This is the statistic issue A1b was actually about, and the one the `worst check` column only implies:
 A1b's failure is a solve that *reports success* from a point that is no longer on `St(20, 3)`, so what
 matters is the count of seeds that end inside `MANIFOLD_TOLERANCE` rather than how far the worst one
-strayed. The two say different things -- one bad seed and four bad seeds can give the same worst
+strayed. The two say different things — one bad seed and four bad seeds can give the same worst
 `check`, and the seed count is what moved from 4 to 8 when the step ceiling was passed.
 """
 on_the_manifold(results) = count(r -> r.check ≤ MANIFOLD_TOLERANCE, results)

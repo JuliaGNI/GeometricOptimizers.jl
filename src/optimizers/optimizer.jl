@@ -5,8 +5,9 @@ const SOLUTION_MAX_PRINT_LENGTH = 10
     DEFAULT_STEP_CEILING
 
 How far along its direction a manifold solve may step, in multiples of ``2\pi``: the `c` of
-[`step_αmax`](@ref)`(c, δ)`, and hence the `params.αmax` [`solver_step!`](@ref) hands the line search.
-Set per solve with `Optimizer(x, F; step_ceiling = …)`; `Inf` switches the ceiling off.
+[`step_αmax`](@ref)`(c, δ)`, and hence the `params.αmax` [`solver_step!`](@ref) hands the line search
+through [`linesearch_parameters`](@ref). Set per solve with `Optimizer(x, F; step_ceiling = …)`;
+`Inf` switches the ceiling off.
 
 # Why a ceiling is needed at all, and why the caller has to set it
 
@@ -46,9 +47,22 @@ makes a ceiling that forbids the ``10^8`` step cost the ordinary ones nothing.
     for the two defects that *are* about the direction and the outcome.
 
 !!! info "Euclidean parameters do not get one"
-    [`linesearch_parameters`](@ref) omits `αmax` for an `AbstractVector`. There is no geometric scale
-    there, and none is needed: ``f(x + \alpha{}p)`` grows with ``\alpha``, so the search's own decrease
-    test rejects an over-long step unaided.
+    [`linesearch_parameters`](@ref) omits `αmax` for an `AbstractVector`, and passes `Inf` — which
+    says the same thing — for a `NamedTuple` carrying no manifold block. There is no geometric scale
+    in either case, and none is needed: ``f(x + \alpha{}p)`` grows with ``\alpha``, so the search's
+    own decrease test rejects an over-long step unaided.
+
+    The `NamedTuple` half of that is not free: `ArrayNamedTuple` is *any* `NamedTuple` of arrays, so
+    a manifold-free one used to take the manifold branch and be bounded by a rotation its problem
+    does not have. See [`_manifold_αmax`](@ref), which derives the ceiling per block instead.
+
+!!! info "One `α`, one ceiling per block"
+    On a `NamedTuple` the same ``\alpha`` scales every block, so the ceiling is the *smallest* of the
+    per-block ones over the blocks that live on a manifold — [`_manifold_αmax`](@ref) — and not
+    ``2\pi{}c`` over the norm of the whole direction. The latter is what this was written as, and it
+    made every block pay for its neighbours: on the SVD problem, where both blocks are manifolds,
+    combining them in quadrature tightened the bound by up to ``\sqrt{2}`` and was the only reason
+    the ceiling bound anything on the pinned seed at all. That was issue A15.
 """
 const DEFAULT_STEP_CEILING = 1.0
 
@@ -328,6 +342,14 @@ julia> solver_step!(x, state, opt)
     The two are independent and both are needed. The rejected-step case is a claim about the
     direction, answered by changing it; the ceiling is a claim about the step, answered by
     shortening it. Nothing about the direction is wrong at the step A1b is about.
+
+    They do meet in one place, and that is why the rejection test takes the ceiling as an argument.
+    A search stopped *at* the ceiling with the merit still falling is classified by the same
+    round-off rule as any other step, so it can be reported as `LINESEARCH_FLOOR` — a claim about the
+    direction — when all that was established is that no step *this function permits* decreases the
+    merit measurably. Discarding ``Q`` over a bound this function imposed itself is wasted work at
+    best, so that case is exempt and the step is taken. See [`linesearch_rejected`](@ref) and issue
+    B3.
 """
 function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{T,MT}) where {T,MT}
     # update cache
@@ -375,8 +397,11 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     # `linesearch_parameters` and not a literal `(x = x, state = state)`: on a manifold it adds the
     # `αmax` of issue A1b. It is built *here*, below the `NaN` loop above, because that loop shrinks
     # the direction and the ceiling is a function of `‖δ‖`.
-    ls_status = solve_with_status(linesearch(opt), one(T),
-        linesearch_parameters(cache(opt), x, state, step_ceiling(opt)))
+    #
+    # Bound to a name rather than inlined because the ceiling is needed again below: a step that came
+    # back *at* it is not evidence against the direction. See `linesearch_rejected` and issue B3.
+    ls_params = linesearch_parameters(cache(opt), x, state, step_ceiling(opt))
+    ls_status = solve_with_status(linesearch(opt), one(T), ls_params)
 
     # A rejected search means "no step along *this* direction decreases the merit". For a
     # quasi-Newton method that is a statement about `Q`, so throw `Q` away and try the one direction
@@ -387,7 +412,12 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     # conclusion about the *step*: a rejected search returns `α = 1` untouched, so the exemption did
     # not let those methods take a non-descent step, it made them take the longest one available
     # along it. See `linesearch_rejected` and issue A7.
-    if linesearch_rejected(ls_status)
+    #
+    # The `αmax` argument is the exemption of issue B3: a `LINESEARCH_FLOOR` returned *at* the
+    # ceiling this function itself imposed says nothing about the direction, only that no step the
+    # caller permits decreases the merit measurably, so that step is taken rather than answered with
+    # a restart. Euclidean parameters carry no ceiling, so `αmax` is `Inf` and nothing changes there.
+    if linesearch_rejected(ls_status, _caller_αmax(T, ls_params))
         config(opt).verbosity ≥ 2 && @warn "the line search returned $(outcome(ls_status)), i.e. no step along the $(algorithm(opt)) direction decreased the merit; restarting the inverse Hessian and searching along the steepest-descent direction instead." maxlog = 1
         restart!(state)
         steepest_descent!(cache(opt))

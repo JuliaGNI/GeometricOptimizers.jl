@@ -304,8 +304,8 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     | `Backtracking` (shrink only) | 25 | 136 / 3 457 | 48 322 / 1 208 157 |
     | `StrongWolfe` (`c₂ = 0.1`) | 58 | 135 / 7 893 | 218 / **18 127** |
     | `StrongWolfe` (`c₂ = 0.9`) | 36 | 159 / 5 687 | 12 717 / 445 497 |
-    | `BierlaireQuadratic` | 106 | 113 / 11 959 | 121 / 13 491 |
-    | `Quadratic` | 128 | 120 / 15 422 | 308 / 29 443 |
+    | `BierlaireQuadratic` | 106 | 130 / 13 781 | 121 / 13 491 |
+    | `Quadratic` | 138 | 111 / 15 377 | 175 / 18 122 |
     | `Bisection` | 589 | 133 / 78 658 | 136 / 80 001 |
 
     (Regenerate with `scripts/retraction_accuracy.jl`. Every number here moved by a few percent in
@@ -318,13 +318,20 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     and the step ceiling. Everything else in the table is current; see the note on open issue C9 about
     which figures in this package have a named harness behind them and which do not.
 
-    What the step ceiling moved here, against SimpleSolvers 0.12 without it: only the polynomial rows,
-    and only under `Geodesic`. `Quadratic` went 111 → 120 iterations for `_BFGS` and 175 → 308 for
-    `_DFP`; `BierlaireQuadratic` went 130 → 113. Every other cell that the script regenerates is
-    reproduced to the digit with the ceiling on or off, and every `Cayley` figure is. A bound that
-    binds is a different trajectory, not a better or a worse one, and it moves in both directions —
-    what it buys is on the *other* starting points, where it is the difference between converging and
-    ending off the manifold. See [`DEFAULT_STEP_CEILING`](@ref).
+    **What the step ceiling moved here: nothing.** Every cell the script regenerates is reproduced to
+    the digit with the ceiling on and off, on both retractions, at `DEFAULT_STEP_CEILING = 1`. The
+    ceiling does not bind on this starting point, which is the whole design — what it buys is on the
+    *other* starting points, where it is the difference between converging and ending off the
+    manifold. See [`DEFAULT_STEP_CEILING`](@ref) and the seed spreads in `svd_optim.jl`.
+
+    That was not true of the ceiling as first written, and the difference is issue A15. Deriving the
+    bound from `2π` over the norm of the *whole* direction made each block of a `NamedTuple` pay for
+    its neighbours, and on this problem — where both blocks are manifolds — combining them in
+    quadrature tightened it by up to `√2`. That was enough to bind on three cells here (`_BFGS`
+    `Quadratic` 111 → 120 iterations, `_BFGS` `BierlaireQuadratic` 130 → 113, `_DFP` `Quadratic`
+    175 → 308) and on nothing under `Cayley`. Deriving it per block instead removes all three. The
+    lesson is worth keeping: those cells looked like the price of the ceiling and were the price of a
+    sloppy norm.
 
     Every evaluation count in this table but one is ten higher than it was before `rg` became the
     residual at the iterate a solve returns (issue A8), and every iteration count but one is unchanged
@@ -369,10 +376,11 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     reason `_DFP` had a reputation for being unpredictable.
 
     `StrongWolfe(T; c₂ = 0.1)` remains the choice to pass explicitly on a DFP-heavy workload, now on
-    cost rather than on reliability: 218 and 279 iterations on that starting point, 187–868 and 198–515
+    cost rather than on reliability: 218 and 279 iterations on that starting point, 296–868 and 198–515
     across the eight, 18 127 and 23 828 evaluations against the default's 20 001 and 35 339, and 1.6×
-    to 2.2× faster in wall clock (0.155 s against 0.246 s on `Geodesic`, 0.205 s against 0.451 s on
-    `Cayley`). `Bisection` is steadier still (99–141 / 102–124) at four to five times the work.
+    to 2.2× faster in wall clock (the two wall-clock figures are older measurements: 0.155 s against
+    0.246 s on `Geodesic`, 0.205 s against 0.451 s on `Cayley`, neither of which `svd_tables`
+    produces). `Bisection` is steadier still (99–141 / 102–124) at four to five times the work.
 
     `c₂ = 0.1` and not `StrongWolfe`'s own default of `0.9`: at `0.9` the strong Wolfe conditions are
     already satisfied at `α = 1` on 99.4% of iterations, so its bracketing phase never fires and it

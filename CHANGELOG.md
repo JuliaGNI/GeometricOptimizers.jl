@@ -239,11 +239,17 @@ this package produces change**, in most cases substantially for the better.
 
 ### Fixed
 
-- **A manifold solve bounds the step a line search may take (issue A1b).** `solver_step!` now hands
-  the search `params.αmax = c⋅2π/‖δ‖` through the new `linesearch_parameters`, with `c` the new
-  `DEFAULT_STEP_CEILING` (`1`, i.e. never more than one full turn), settable per solve as
-  `Optimizer(x, F; step_ceiling = …)` and disabled with `Inf`. Euclidean parameters get no ceiling and
-  need none.
+- **A manifold solve bounds the step a line search may take (issues A1b, A15 and B3).**
+  `solver_step!` now hands the search `params.αmax = c⋅2π/‖δ‖` through the new
+  `linesearch_parameters`, with `c` the new `DEFAULT_STEP_CEILING` (`1`, i.e. never more than one full
+  turn), settable per solve as `Optimizer(x, F; step_ceiling = …)` and disabled with `Inf`. Euclidean
+  parameters get no ceiling and need none — neither an `AbstractVector`, where the field is omitted,
+  nor a `NamedTuple` of ordinary arrays, where it is `Inf`.
+
+  On a `NamedTuple` the ceiling is derived **per block** and minimised over the blocks that live on a
+  manifold (`_manifold_αmax`), because the one `α` scales every block and each manifold block needs
+  `‖αδᵢ‖ ≤ 2πc`. A block that is an ordinary array contributes none: `2π` is the turn of a rotation,
+  and a vector space has no such scale either to impose or to tighten its neighbours with.
 
   **A line search bounds its step by the merit, and on a compact manifold the merit is bounded**, so
   that test never fires: `φ(α)` at `α = 1e9` can be genuinely *lower* than at `α = 0`, and a search
@@ -271,11 +277,11 @@ this package produces change**, in most cases substantially for the better.
   |---|---|---|---|
   | `_BFGS` `Quadratic` `Cayley` | 4 of 8 | **8 of 8** | `3.2e-1` → `6.1e-14` |
   | `_BFGS` `BierlaireQuadratic` `Cayley` | 4 of 8 | **8 of 8** | `5.5e-1` → `6.9e-14` |
-  | `_BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.1e-14` |
-  | `_BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.2e-14` |
+  | `_BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.0e-14` |
+  | `_BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.3e-14` |
 
   All twenty combinations of that sweep are now 8 of 8, and the runs that used to exhaust a 20 000
-  cap finish in 159 and 297 iterations. **The last two rows were never part of A1b** and are the same
+  cap finish in 176 and 281 iterations. **The last two rows were never part of A1b** and are the same
   defect: that `2.8e-12` is the `_BFGS` + `Backtracking` + `Geodesic` seed 2 that `svd_optim.jl`
   singled out as "the worst of the eight by two orders of magnitude" and attributed to accumulation
   over 147 iterations. That attribution was wrong — it is one over-long step — and bounding the step
@@ -285,17 +291,31 @@ this package produces change**, in most cases substantially for the better.
 
   Consequences for the rest of the package, all measured: the worst `check` over the whole sweep is
   `2.5e-13`, so `MANIFOLD_TOLERANCE` at `1e-12` clears it and the `1e-11`-or-`ProjectedSkew` caveat
-  in `svd_optim.jl` is retired; the worst `rg` is `2.5e-7`, giving `CONVERGED_GRADIENT_TOLERANCE` a
-  factor of 40. Costs are nil where the ceiling does not bind — every pinned `Cayley` figure is
-  reproduced to the digit with it on or off, and only three `Geodesic` cells move at all (`_BFGS`
-  `Quadratic` 111 → 120 iterations, `_BFGS` `BierlaireQuadratic` 130 → 113, `_DFP` `Quadratic`
-  175 → 308). A bound that binds is a different trajectory, not a better or worse one.
+  in `svd_optim.jl` is retired; the worst `rg` is `3.8e-7`, giving `CONVERGED_GRADIENT_TOLERANCE` a
+  factor of 27. **Cost on the pinned seed: none.** Every figure `svd_tables()` regenerates, on both
+  retractions, is reproduced to the digit with the ceiling on and off — the ceiling does not bind on
+  seed 1234 at all, and what it buys is on the other seven.
 
-  One interaction inherited from upstream and not closed by either side: where the ceiling binds hard
-  a search can report `LINESEARCH_FLOOR` — a claim about the *direction*, which `linesearch_rejected`
-  acts on by restarting `Q` — when what was established is only that no *permitted* step decreases
-  the merit measurably. Upstream tracks it; nothing in the sweep is affected, but a very small
-  `step_ceiling` would make quasi-Newton restarts more frequent than they should be.
+  That last sentence was not true of the ceiling as first written, and the reason is issue **A15**.
+  Deriving the bound from `2π` over the norm of the *whole* direction combines the blocks of a
+  `NamedTuple` in quadrature, so each block paid for its neighbours: on this problem, where both
+  blocks are manifolds, that tightened it by up to `√2` and bound three `Geodesic` cells (`_BFGS`
+  `Quadratic` 111 → 120 iterations, `_BFGS` `BierlaireQuadratic` 130 → 113, `_DFP` `Quadratic`
+  175 → 308). They looked like the price of bounding the step and were the price of a sloppy norm.
+  Worse, `ArrayNamedTuple` is *any* `NamedTuple` of arrays, so a manifold-free one was bounded by a
+  rotation its problem does not have — measured at 3 184 iterations against 1 for the same Euclidean
+  problem written as a vector. Per-block fixes both, and the three cells above go back to their
+  no-ceiling values.
+
+  One interaction with upstream, and it is why `linesearch_rejected` takes the ceiling as an argument
+  (issue **B3**). Where the ceiling binds hard a search can report `LINESEARCH_FLOOR` — a claim about
+  the *direction*, which the one-argument form acts on by restarting `Q` — when what was established
+  is only that no *permitted* step decreases the merit measurably. A `LINESEARCH_FLOOR` returned at
+  the ceiling is therefore exempt and its step is taken; below the ceiling it is a rejection as
+  before, and `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT` are never exempt, being true of the
+  direction whatever ceiling was in force. Upstream declined to flag the capped case on the
+  `LinesearchStatus` on the grounds that a caller who set the ceiling can compare it against
+  `steplength` itself (issue D7); this is that comparison.
 
 - **`Adam` and `MomentumMethod` no longer take the step a line search has rejected.** `solver_step!`
   restarts and searches along steepest descent when the outcome is `LINESEARCH_FLOOR`,
@@ -749,9 +769,9 @@ this package produces change**, in most cases substantially for the better.
 ### Added
 
 - **`Optimizer` takes a `step_ceiling`**, and `DEFAULT_STEP_CEILING` documents what it is for; see the
-  A1b entry under *Fixed*. `linesearch_parameters` and `step_αmax` are the two internal helpers behind
-  it, both in `src/optimizers/linesearch_problem.jl` next to `trial_iterate!`, whose dispatch on the
-  solution type they mirror.
+  A1b entry under *Fixed*. `linesearch_parameters`, `step_αmax` and `_manifold_αmax` are the internal
+  helpers behind it, all in `src/optimizers/linesearch_problem.jl` next to `trial_iterate!`, whose
+  dispatch on the solution type they mirror.
 - **`scripts/retraction_accuracy.jl` reports how many seeds end on the manifold**, through the new
   `on_the_manifold`. That is the statistic A1b was about and the one its `worst check` column only
   implied — one bad seed and four bad seeds can give the same worst `check`, and it is the count that
@@ -902,22 +922,21 @@ investigation that turned out not to be problems, and F the loose ends of the ge
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
 given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review of [#38]; A11 and C7
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
-the work on A4 and A8, and A15, A16, B3, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and
+the work on A4 and A8, and A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and
 closing A1b; the rest from unifying the optimizer hierarchies.
 
-Of that last group, **B3 is the one worth reading**: it and D7 are two halves of a path on which a
-sound quasi-Newton direction is discarded because the *caller* bounded the step, and the downstream
-half can be closed here without upstream moving. The rest are a documented approximation (A15), a
-default calibrated against one problem (A16), an obvious test that is not run (C10), an explanatory
-gap now stated as one rather than guessed at (C11), and a docs link lost to an upstream inventory
-(D8).
+Of that last group, **D7 is the one worth reading**, and it is the one that no longer bites here: it
+and B3 were two halves of a path on which a sound quasi-Newton direction is discarded because the
+*caller* bounded the step, and the downstream half is closed. The rest are a default calibrated
+against one problem (A16), an obvious test that is not run (C10), an explanatory gap now stated as one
+rather than guessed at (C11), and a docs link lost to an upstream inventory (D8).
 
-**Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, C6, D3, D4 and D6 were in this
-catalogue and have been fixed; each is now described in [Unreleased](#unreleased--targeting-020)
+**Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, A15, B3, C6, D3, D4 and D6 were
+in this catalogue and have been fixed; each is now described in [Unreleased](#unreleased--targeting-020)
 above, under the change that fixed it, and the entry here is gone. The labels are *not* reused and the
 surviving ones are not renumbered, so the gaps are deliberate: A5, A6 and A10 mean what they have
-always meant, and a reference to A1b, A4, D6 or C6 in a commit message still resolves to the right
-subject.
+always meant, and a reference to A1b, A4, A15, B3, D6 or C6 in a commit message still resolves to the
+right subject.
 
 Each entry says what it would take to fix it — look for **What to do**. That used to live in a
 `plan.md` that sequenced the catalogue into PRs and was never tracked here (it was excluded
@@ -1184,36 +1203,9 @@ threshold" this entry inherits from A4; it is narrower now, and it is not gone.
 
 ---
 
-#### A15. The step ceiling on a mixed `NamedTuple` bounds every block by one block's geometry
-
-**Severity: low**, and documented in place rather than hidden. From the step-ceiling work that closed
-A1b.
-
-`step_αmax(c, δ)` divides by `l2norm(δ)`, which on a `NamedTuple` combines the blocks in quadrature.
-For a `NamedTuple` mixing a `StiefelManifold` block with an ordinary array — which
-`test/manifold_linesearch_tests.jl` exercises under the name `mixed` — the `2π` that justifies the
-ceiling is a property of the *manifold* blocks only, and the resulting `αmax` is then imposed on the
-Euclidean blocks too.
-
-The direction of the error is the safe one and that is why it was left: the manifold blocks are
-bounded correctly, since their norm is at most the total, so nothing can take the step that A1b is
-about. The Euclidean blocks get a bound they did not need. What is **not** measured is what that
-costs — on a mixed problem whose Euclidean block legitimately wants a long step, the ceiling is set by
-a manifold block that has nothing to do with it, and no test here would notice the solve crawling.
-Every mixed case in the suite converges, which establishes that it is not badly wrong and not that it
-is right.
-
-**What to do**: either derive the ceiling per block and take the minimum over the manifold blocks only
-— the honest version, and it needs `step_αmax` to see the block structure rather than a single norm —
-or measure a mixed problem whose two halves want different step scales and record that the coupling
-costs nothing. The second is cheaper and would justify leaving the code alone; the first is what the
-geometry actually says.
-
----
-
 #### A16. `DEFAULT_STEP_CEILING = 1` is calibrated against one problem
 
-**Severity: low.** From the same work.
+**Severity: low.** From the step-ceiling work that closed A1b.
 
 The *shape* of the ceiling is not in question — `c⋅2π/‖δ‖` is what the geometry gives, and `c = 1`
 says "never more than one full turn", which is an argument rather than a fit. What is thin is the
@@ -1222,6 +1214,12 @@ largest `‖αδ‖` is `2.03`, comfortably inside `2π`, and every one of the t
 sweep is unmoved or improved by the ceiling. Upstream's own table brackets it from the other side —
 `αmax = 10` leaves 7 of 8 seeds on the manifold and `αmax = 1` leaves 8 of 8 — but that is the same
 problem again.
+
+The per-block ceiling that closed A15 makes this *thinner*, not less thin, and that is the reason to
+keep the entry open. Since the ceiling stopped being tightened by a block's neighbours, it no longer
+binds anywhere on the pinned seed at all — every figure in `svd_optim.jl`'s table is now identical
+with the ceiling on and off. So the SVD problem no longer bounds `c` from below in any way: it says
+only that `c = 1` is loose enough there, and nothing about where it would start to cost.
 
 So there is no measurement of a problem on which `c = 1` is too *tight*, and one plausibly exists: a
 solve whose direction is systematically under-scaled wants a large `α`, which is exactly the `_DFP`
@@ -1256,7 +1254,8 @@ object the caller gets, from one that never needed one.
 **This entry has now lost its worked example, and did not lose its point.** It read that `_BFGS` +
 `Quadratic` + `Cayley` on seed 8 of the SVD problem takes the steepest-descent branch on 4 780 of its
 20 000 iterations and says nothing about any of them. That solve no longer exists: the step ceiling
-that closed A1b takes it to 159 iterations. No replacement figure is quoted here because there is no
+that closed A1b brings that whole row inside 176 iterations. No replacement figure is quoted here
+because there is no
 way to get one from outside `solver_step!` — which *is* the defect, one level down, and it is why the
 fix below would be its own instrument. Do not replace the number by reasoning about it.
 
@@ -1277,42 +1276,6 @@ exists.
 iterations; `extended_trace` adds `rxₐ` and `Δf` to `OptimizerTraceEntry`. Small, and it retires the
 last two silently-ignored options. Belongs in one PR with B1 and C1 — all three are the same subject,
 the status object not saying enough.
-
----
-
-#### B3. `solver_step!` cannot tell a chosen step from a step it forbade
-
-**Severity: medium**, and it is the one entry from the step-ceiling work with a concrete cost. Pairs
-with D7 below, which is the upstream half.
-
-Since the ceiling went in, `solver_step!` supplies `params.αmax` and then reads only
-`steplength(ls_status)` and `outcome(ls_status)`. It never compares the two, so it cannot distinguish
-
-- *"the search looked and this is the minimiser it found"* from
-- *"the search was still descending when it hit the bound I imposed"*,
-
-which are different facts about the solve. Upstream declined to put a flag on the `LinesearchStatus`
-for exactly this and said so, noting that **a caller that supplied the ceiling can compare it against
-`steplength` itself**. This package supplied it and does not compare.
-
-That would be bookkeeping if it were not for D7. A ceiling that binds on a merit still falling can
-come back as `LINESEARCH_FLOOR`, which `linesearch_rejected` reads as a claim about the *direction*
-and answers by throwing `Q` away and re-searching along steepest descent. So the two together give a
-path on which a perfectly good quasi-Newton direction is discarded because the caller bounded the
-step — the direction is fine, the bound was the caller's own, and the restart is wasted work at best
-and a worse direction at worst.
-
-Nothing in the sweep is affected: with `DEFAULT_STEP_CEILING = 1` every one of the twenty combinations
-reproduces its no-ceiling iteration count or improves on it, which is evidence that the path is not
-being taken at the default. It is reachable by anyone who sets a smaller `step_ceiling`, and it is
-invisible if they do.
-
-**What to do**: in `solver_step!`, treat `LINESEARCH_FLOOR` as a direction failure only when the step
-returned is strictly below the ceiling that was passed; where it *is* the ceiling, the honest reading
-is "this step is as far as I allowed", so take it and do not restart. That is a three-line change and
-one `α ≈ αmax` comparison, and it wants a test that constructs a merit still descending at the
-ceiling. Doing it also gives B1 the counter it needs — the ceiling-bound case and the genuine-failure
-case become separately countable, which is the whole of B1's ask.
 
 ---
 
@@ -1493,12 +1456,18 @@ platform first, as C5 asks for the same reason.
 **Severity: low**, an explanatory gap and not a defect. Recorded because a wrong explanation for it
 was removed this round and nothing replaced it.
 
-`_DFP` + `Quadratic` takes 308 iterations under `Geodesic` and 529 under `Cayley`. `default_linesearch`
+`_DFP` + `Quadratic` takes 175 iterations under `Geodesic` and 529 under `Cayley`. `default_linesearch`
 used to attribute that to `trial_slope` being only first-order correct under `Cayley`; the exact
 `retraction_differential` disproved it (the figure moved 550 → 529 and the gap stayed). This round
-removed the second candidate too: the step ceiling narrows the gap (175 vs 529 without it, 308 vs 529
-with it) and does not account for it. Both docstring and docs page now say the remainder is
-unexplained rather than offering a third guess.
+removed the second candidate too: the step ceiling turned out to have nothing to do with it either —
+`175 vs 529` with the ceiling on is the same pair as with it off, since the per-block ceiling does not
+bind on this seed. Both docstring and docs page now say the remainder is unexplained rather than
+offering a third guess.
+
+An intermediate version of the ceiling *did* move the `Geodesic` figure, to 308, and it would have
+been easy to read that as the third explanation. It was an artefact of combining the two manifold
+blocks in quadrature (issue A15) and went away when the ceiling became per-block. Worth recording as a
+near miss of exactly the kind the A1b preamble warns about.
 
 That is the right state to be in — see the preamble on A1b, where two plausible-looking explanations
 in a row were the expensive part — but it is a loose end, and the pattern that resolved A1b applies:
@@ -1587,8 +1556,9 @@ build — which is worth knowing when a docs build suddenly fails after an upstr
 #### D7. A step ceiling that binds can be reported as `LINESEARCH_FLOOR`
 
 **Severity: medium**, inherited from SimpleSolvers 0.12 with the step ceiling and carried in
-upstream's own open-issues list. The downstream half is B3 above; this is the part that is not this
-package's to fix.
+upstream's own open-issues list. **Open upstream and without a consequence here**: the downstream
+half was B3, and it is closed — see *Fixed* above. This is the part that is not this package's to
+fix, and it stays listed because any *other* consumer of a capped search inherits it.
 
 `SimpleSolvers.capped_status` classifies the step at `αmax` by the same round-off rule `τ` as any
 other returned step. A merit that is *still falling* at the ceiling — which is what the capped case
@@ -1610,9 +1580,12 @@ it against `steplength`.
 Nothing measured here is affected at `DEFAULT_STEP_CEILING = 1`: all twenty sweep combinations
 reproduce their no-ceiling iteration counts or improve on them, so the path is not being taken.
 
-**What to do**: nothing upstream — it is filed there and the reasoning for leaving it is sound. Close
-the downstream consequence with B3, which does not need upstream to move: this package passed the
-ceiling and can therefore recognise its own bound without any new field on the status.
+**What to do**: nothing, on either side. Upstream is where it is filed and the reasoning for leaving
+it there is sound; downstream it is closed, because `linesearch_rejected` now takes the ceiling
+`solver_step!` passed and exempts a `LINESEARCH_FLOOR` returned at it. That is what upstream meant by
+"a caller who set the ceiling can compare it against `steplength`", and it needed no new field on the
+status. The entry stays here as the record of *why* that comparison is in `linesearch_rejected` — a
+reader who finds the exemption and not this will think it is guarding against nothing.
 
 ---
 
