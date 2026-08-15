@@ -425,6 +425,28 @@ isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, AugmentedPade()); rtol = 1e-12)
 true
 ```
 
+If what you want is the exponential itself rather than ``\mathfrak{A}``,
+[`GeometricOptimizers.𝔄exp`](@ref) assembles it — ``\exp(B'(B'')^T) = \mathbb{I} +
+B'\mathfrak{A}(B', B'')(B'')^T``, at a cost still set by ``n`` rather than by ``N``, since the only
+matrix function evaluated is ``\mathfrak{A}`` on the ``2n\times{}2n`` product. It is what
+[`geodesic`](@ref) computes before wrapping the result in a [`Manifold`](@ref), and it defaults to
+[`ScaledSquaring`](@ref) for the same reason `geodesic` does:
+
+```jldoctest retraction-usage
+using GeometricOptimizers: 𝔄exp, lift_factors
+import Random
+Random.seed!(1234)
+
+B = 60 * rand(StiefelLieAlgHorMatrix, 20, 3)      # ‖B̄‖ ≈ 393
+B̂, B̄ = lift_factors(B)
+
+isapprox(𝔄exp(B̂, B̄), exp(Matrix(B)); rtol = 1e-10)
+
+# output
+
+true
+```
+
 Where the algorithms part company is a large step, and that is the whole reason the default changed:
 
 ```jldoctest
