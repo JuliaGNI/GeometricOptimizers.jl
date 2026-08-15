@@ -160,3 +160,25 @@ end
     X = 𝔄(randn(6, 6))
     @test opnorm₁(X) ≈ opnorm(X, 1) rtol = 1e-12
 end
+
+# `𝔄(B̂, B̄)`'s defining property, ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T = \exp(B'(B'')^T)``,
+# swept over shapes and both element types rather than asserted once. The docstring's jldoctest
+# checks it for a single 10×2 `StiefelLieAlgHorMatrix` lift in `Float64`; this covers rectangular
+# arguments down to 1×1 and pins the element type of the result, which a doctest printing `true`
+# cannot.
+#
+# This came from GeometricMachineLearning, which carried a one-line `𝔄exp(X, Y) = I + X * 𝔄(X, Y) * Y'`
+# and tested it here. `𝔄exp` was replicated GeometricOptimizers functionality and went when GML moved
+# onto this package (GeometricMachineLearning#230); the sweep is worth keeping and belongs on this
+# side of the split, written against `𝔄` directly.
+#
+# No nested `@testset` in the loop — see the note on RNG state at the top of this file.
+@testset "𝔄 recovers the exponential across shapes and element types" begin
+    for T in (Float32, Float64), N in 1:10, n in 1:N
+        A = T(0.1) * rand(T, N, n)
+        B = T(0.1) * rand(T, N, n)
+        𝔄exp = I + A * 𝔄(A, B) * B'
+        @test eltype(𝔄exp) == T
+        @test exp(A * B') ≈ 𝔄exp
+    end
+end
