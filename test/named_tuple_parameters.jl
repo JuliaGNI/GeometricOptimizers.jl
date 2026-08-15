@@ -283,26 +283,62 @@ end
 # fail anything — it made the caller hang. The cache and state structs used to bound their type
 # parameters by `OptimizerSolution`, `GradientArrayOrNamedTuple` and
 # `GlobalSectionSingleOrNamedTuple`. Inference cannot solve those bounds down to a concrete
-# `NamedTuple` (it cannot with or without them — the outer constructors' own signatures are
-# already written in the same aliases), so the inferred cache type is a `UnionAll` either way.
+# `NamedTuple` (it cannot with or without them — the constructors' own signatures are already
+# written in the same aliases), so the inferred cache type is a `UnionAll` either way.
 # What the bounds added was *coupling*: they tied all four parameters to one shared `T` underneath
 # nested `Vararg` unions, so every method-table intersection involving an inferred cache had to
 # re-solve that constraint system in `subtype_unionall`. On a nine-layer network that did not
 # finish in over an hour; see GeometricMachineLearning#230. Unbounded, the parameters are
 # independent and the intersection is cheap.
 #
-# Reinstating any of the bounds makes the corresponding line below a `TypeError`.
-@testset "the cache and state type parameters are unbounded" begin
-    for CT in (GeometricOptimizers.GradientCache, GeometricOptimizers.MomentumCache,
-               GeometricOptimizers.AdamCache)
-        @test CT{Float64,Int,Int,Int} isa Type
-    end
-    for ST in (GradientState, MomentumState, AdamState)
-        @test ST{Float64,Int,Int,Int} isa Type
-    end
+# Every cache and state is checked, not only the ones that were measured to be slow: the rule is
+# that the family is uniform, so that nobody has to work out per struct whether a given bound
+# happens to be one that costs. `DFPState` is an alias for `BFGSState` and `AdamWithEuclideanDecay`
+# reuses `AdamCache`/`AdamState`, so between them the list below is every one there is.
+"""
+    _all_parameters_unbounded(TT)
 
-    # ...  and the constructors still produce exactly the types they always did.
+Whether `TT` declares all of its type parameters without an upper bound.
+
+A parameter written `{T}` rather than `{T<:S}` has `ub === Any` once the `where`s are peeled off,
+so this states the property directly. Asserting it as a *value* rather than by instantiating
+`TT{Float64,Int,Int,Int}` matters: instantiating a reinstated bound throws a `TypeError`, which
+would abort the loop over the remaining structs and report an error rather than naming the property
+that broke.
+"""
+function _all_parameters_unbounded(TT::UnionAll)
+    t = TT
+    while t isa UnionAll
+        t.var.ub === Any || return false
+        t = t.body
+    end
+    true
+end
+
+@testset "$(nameof(TT)) leaves its type parameters unbounded" for TT in (
+    GeometricOptimizers.GradientCache, GeometricOptimizers.MomentumCache,
+    GeometricOptimizers.AdamCache, GeometricOptimizers.BFGSCache,
+    GeometricOptimizers.DFPCache, GeometricOptimizers.NewtonOptimizerCache,
+    GradientState, MomentumState, AdamState,
+    GeometricOptimizers.BFGSState, GeometricOptimizers.NewtonOptimizerState)
+
+    @test _all_parameters_unbounded(TT)
+end
+
+@testset "the cache and state type parameters are unbounded" begin
+    # `OptimizerResult` is on the return path of every `solve!`, so it is one of the types an
+    # inferring caller has to intersect. Only `VT` is unbounded here: `OST<:OptimizerStatus{T,YT}`
+    # is a plain two-parameter struct with no union expansion behind it, and it is what ties `T` and
+    # `YT` to the status the result reports.
+    @test Base.unwrap_unionall(GeometricOptimizers.OptimizerResult).parameters[3].ub === Any
+
+    # ... and the constructors still produce exactly the types they always did.
     ps = initial_parameters(Float64)
     @test OptimizerCache(Adam(Float64), ps) isa GeometricOptimizers.AdamCache{Float64}
     @test OptimizerState(Adam(Float64), ps) isa AdamState{Float64}
+    @test OptimizerCache(GeometricOptimizers._BFGS(), ps) isa GeometricOptimizers.BFGSCache{Float64}
+    @test OptimizerState(GeometricOptimizers._BFGS(), ps) isa GeometricOptimizers.BFGSState{Float64}
+    @test OptimizerCache(GeometricOptimizers._DFP(), ps) isa GeometricOptimizers.DFPCache{Float64}
+    @test OptimizerCache(Newton(), zeros(3)) isa GeometricOptimizers.NewtonOptimizerCache{Float64}
+    @test OptimizerState(Newton(), zeros(3)) isa GeometricOptimizers.NewtonOptimizerState{Float64}
 end

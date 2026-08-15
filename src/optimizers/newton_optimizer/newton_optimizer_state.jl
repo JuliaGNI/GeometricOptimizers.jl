@@ -1,3 +1,5 @@
+# The type parameters are deliberately unbounded; see [`NewtonOptimizerCache`](@ref) for why Newton
+# follows the other methods here, and the warning in `optimizer_solution.jl` for what the rule is.
 """
     NewtonOptimizerState <: OptimizerState
 
@@ -14,7 +16,7 @@ We note that this is also used for the [`_BFGS`](@ref) and the [`_DFP`](@ref) op
 - `f̄`
 - `f̄`
 """
-mutable struct NewtonOptimizerState{T,AT<:AbstractArray{T},GT<:AbstractArray{T},GS<:GlobalSection{T}} <: OptimizerState{T}
+mutable struct NewtonOptimizerState{T,AT,GT,GS} <: OptimizerState{T}
     iterations::Int
 
     x::AT

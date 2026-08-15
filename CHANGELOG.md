@@ -10,9 +10,16 @@ breaking release).
 
 ### Fixed
 
-- **The optimizer caches and states no longer take an hour to compile through a function.** The six
+- **The optimizer caches and states no longer take an hour to compile through a function.** The
   cache and state structs bounded their type parameters by `OptimizerSolution`,
-  `GradientArrayOrNamedTuple` and `GlobalSectionSingleOrNamedTuple`. Those bounds are now gone.
+  `GradientArrayOrNamedTuple` and `GlobalSectionSingleOrNamedTuple`. Those bounds are now gone, from
+  every optimizer: `GradientCache`/`GradientState`, `MomentumCache`/`MomentumState`,
+  `AdamCache`/`AdamState`, `BFGSCache`/`BFGSState` (which is also `DFPState`), `DFPCache` and the
+  `VT` of `OptimizerResult`, which is on the return path of every `solve!`.
+  `NewtonOptimizerCache`/`NewtonOptimizerState` follow suit although their bounds
+  (`AbstractArray{T}`, `GlobalSection{T}`) were never the expensive kind — Newton is
+  `AbstractArray`-only, so nothing expands behind them — so that the family stays uniform and nobody
+  has to work out per struct whether a given bound happens to be one that costs.
 
   The symptom was not an error but a hang, and only in callers that had to *infer* the type of an
   optimizer rather than take it from a concrete argument — so it did not show up at the REPL, where
@@ -32,11 +39,14 @@ breaking release).
   nothing to intersect.
 
   No behaviour changes and nothing is unchecked that was checked before: the invariant lives in the
-  outer constructors, whose signatures take `x::OptimizerSolution{T}` and
-  `g::AT where AT<:GradientArrayOrNamedTuple{T}` and build the `GlobalSection` themselves. A note on
-  the aliases in `optimizer_solution.jl` now says not to use them as struct bounds and why, and
-  `test/named_tuple_parameters.jl` pins the parameters as unbounded so reinstating any of them fails
-  a test rather than silently costing an hour. See GeometricMachineLearning#230.
+  constructors, whose signatures take `x::OptimizerSolution{T}` and
+  `g::AT where AT<:GradientArrayOrNamedTuple{T}` and build the `GlobalSection` themselves. That holds
+  for the *inner* constructors of `BFGSCache`, `BFGSState`, `DFPCache` and the two Newton structs as
+  readily as for the outer ones elsewhere — what must not carry the aliases is the `struct` parameter
+  list, not the methods. A note above the aliases in `optimizer_solution.jl` now says not to use them
+  as struct bounds and why, and `test/named_tuple_parameters.jl` pins every cache and state as
+  unbounded so reinstating any of them fails a test rather than silently costing an hour. See
+  GeometricMachineLearning#230.
 
 ## [0.2.0]
 
@@ -1785,4 +1795,5 @@ and both are corrected: see C8.)
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
+[0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.2.0...main
