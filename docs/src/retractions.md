@@ -149,11 +149,13 @@ paired against ``\bar{B}`` regardless, which made it first-order under [`Cayley`
     same measurement on the ``\operatorname{St}(3,1)`` sphere of `manifold_linesearch_tests.jl` gives
     4.5%, 18%, 72% and 288% at ``\alpha = 0.25, 0.5, 1, 2``.
 
-The retraction still separates the two polynomial line searches on the SVD problem, where they leave
-the manifold under [`Cayley`](@ref) for every optimizer method and stay on it under
-[`Geodesic`](@ref). That is open issue A1b, and the exact differential closes only one of its four
-cases — the cause is the size of the step those searches extrapolate to, not the slope they
-extrapolate from. `CHANGELOG.md` has the diagnosis.
+The retraction used to separate the two polynomial line searches on the SVD problem, where they left
+the manifold under [`Cayley`](@ref) for every optimizer method and stayed on it under
+[`Geodesic`](@ref). That was issue A1b, and the exact differential closed only one of its four cases:
+the cause is the size of the step those searches extrapolate to, not the slope they extrapolate from.
+Bounding the step closes it — see [`DEFAULT_STEP_CEILING`](@ref) — and the retraction no longer
+separates them. It was the *amplifier* rather than the cause, which is what the `check` table further
+down measures.
 
 Cost no longer separates them the way it once did. [`cayley`](@ref) finishes with a product of two
 ``N\times{}N`` matrices, which is ``O(N^3)``, where [`geodesic`](@ref) only assembles
@@ -596,10 +598,12 @@ the exponential up to ``N \approx 50`` and loses by a factor of 15 by ``N = 1000
 
 For the retraction: **[`Geodesic`](@ref) unless you have a reason for [`Cayley`](@ref)**. It is the
 exponential map and the cheaper of the two at any size worth worrying about, and it survives an
-implausibly large step with a `check` an order of magnitude smaller — which is what open issue A1b
-turns on. A derivative-based line search is exact under either since 0.2.0, so that is no longer part
-of the argument. [`Cayley`](@ref) remains the package default, needs no matrix function at all, and
-is unconditionally stable.
+implausibly large step with a `check` an order of magnitude smaller — which is what issue A1b turned
+on. That argument is weaker now than it was: bounding the step ([`DEFAULT_STEP_CEILING`](@ref)) means
+an implausibly large step is no longer taken under either retraction, so the tolerance `Geodesic` has
+for one is insurance rather than a live difference. A derivative-based line search is exact under
+either since 0.2.0, so that is no longer part of the argument. [`Cayley`](@ref) remains the package
+default, needs no matrix function at all, and is unconditionally stable.
 
 For the algorithm: **[`ScaledSquaring`](@ref), i.e. the default, unless one of the two special cases
 applies.**

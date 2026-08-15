@@ -5,7 +5,12 @@ using GeometricOptimizers: Cayley, Geodesic, _BFGS, _DFP, StiefelManifold, check
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew
 using GeometricOptimizers: linesearch_problem, retraction_differential, retraction, initialize!,
                            cache, gradient, hessian, problem, StiefelProjection
+using GeometricOptimizers: step_αmax, _manifold_αmax, linesearch_parameters, _caller_αmax,
+                           step_ceiling, DEFAULT_STEP_CEILING, linesearch_rejected,
+                           OptimizerCache, GradientMethod, direction, StiefelLieAlgHorMatrix
 using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe, l2norm
+using SimpleSolvers: LinesearchStatus, LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT,
+                     LINESEARCH_DECREASED
 using LinearAlgebra: norm
 using Test
 import Random
@@ -378,5 +383,203 @@ end
         @test iteration_number(state) < 100          # 2 with `Bisection`, 17 and 26 with `Backtracking`
         @test status(result).rg < 1e-7
         @test isapprox(x, MINIMIZER; atol=1e-7)
+    end
+end
+
+# The step ceiling of issue A1b. A line search bounds its step by the merit, and on a compact manifold
+# `φ` is bounded, so that test never fires -- `Quadratic` returned `α = 4.3e7` on a direction of norm
+# 5.54 and reported a genuine decrease. The bound that does exist is geometric (`2π` for a rotation,
+# over `‖δ‖`) and changes at every step, which is why SimpleSolvers 0.12 takes it per call through
+# `params.αmax` and leaves the value to this package. See `DEFAULT_STEP_CEILING`.
+
+@testset "step_αmax is c⋅2π/‖δ‖, and Inf where there is no scale" begin
+    @test step_αmax(1.0, [3.0, 4.0]) ≈ 2π / 5
+    @test step_αmax(2.0, [3.0, 4.0]) ≈ 2 * 2π / 5
+
+    # `Inf` is what `SimpleSolvers.linesearch_αmax` reads as "the caller has no scale of its own", and
+    # it leaves the method's own ceiling standing. These three all have to produce it rather than a
+    # `NaN` or a non-positive value, which upstream rejects with an `ArgumentError` -- correctly, since
+    # ignoring one would hand back exactly the unbounded step the ceiling exists to rule out.
+    @test step_αmax(1.0, [0.0, 0.0]) == Inf        # a vanishing direction
+    @test step_αmax(1.0, [NaN, 1.0]) == Inf        # a direction that has already gone wrong
+    @test step_αmax(1.0, [Inf, 1.0]) == Inf
+    @test step_αmax(Inf, [3.0, 4.0]) == Inf        # the ceiling switched off
+
+    # in `T`, so that a `Float32` solve does not silently widen
+    @test step_αmax(1.0f0, Float32[3, 4]) isa Float32
+    @test step_αmax(1.0f0, Float32[3, 4]) ≈ 2.0f0π / 5.0f0
+end
+
+# `_manifold_αmax` is the block-wise half, and issue A15. One `α` is applied to every block of a
+# `NamedTuple`, so each manifold block needs `‖αδᵢ‖ ≤ 2πc` and the binding one is the largest `‖δᵢ‖`.
+# A block that is an ordinary array contributes nothing: the `2π` is the turn of a rotation, and a
+# vector space has no such scale to impose or to inflate.
+@testset "the ceiling is derived per block, over the manifold blocks only" begin
+    lift(scale) = scale * rand(Random.Xoshiro(1234), StiefelLieAlgHorMatrix{Float64}, 6, 3)
+
+    # two manifold blocks: the *smallest* per-block ceiling, i.e. the largest direction, and not the
+    # quadrature combination of the two that `l2norm` over the whole `NamedTuple` would give
+    let sol = (a=rand(StiefelManifold, 6, 3), b=rand(StiefelManifold, 6, 3)),
+        δ = (a=lift(1.0), b=lift(3.0))
+
+        @test _manifold_αmax(values(sol), values(δ), 1.0) ==
+              min(step_αmax(1.0, δ.a), step_αmax(1.0, δ.b))
+        @test _manifold_αmax(values(sol), values(δ), 1.0) == step_αmax(1.0, δ.b)
+        # looser than the quadrature version, and necessarily so: `‖δ‖ ≥ maxᵢ‖δᵢ‖`, so bounding by
+        # the total tightened every block by the presence of its neighbours
+        @test _manifold_αmax(values(sol), values(δ), 1.0) > step_αmax(1.0, δ)
+    end
+
+    # mixed: the Euclidean block neither imposes a ceiling nor tightens the manifold block's. This is
+    # the direction of the A15 error -- a Euclidean block of large norm used to drag the whole
+    # ceiling down with it through the quadrature norm.
+    let sol = (Y=rand(StiefelManifold, 6, 3), W=zeros(3, 4)),
+        δ = (Y=lift(1.0), W=fill(1.0e3, 3, 4))
+
+        @test _manifold_αmax(values(sol), values(δ), 1.0) == step_αmax(1.0, δ.Y)
+        @test _manifold_αmax(values(sol), values(δ), 1.0) > step_αmax(1.0, δ)
+    end
+
+    # no manifold block at all: no scale exists, so there is no ceiling. `Inf` and not a number:
+    # `SimpleSolvers.linesearch_αmax` reads it as "the caller has no scale of its own".
+    let sol = (W=zeros(3, 4), b=zeros(3)), δ = (W=fill(2.0, 3, 4), b=fill(5.0, 3))
+        @test _manifold_αmax(values(sol), values(δ), 1.0) == Inf
+    end
+
+    # in `T`, as `step_αmax` is
+    let sol = (W=zeros(Float32, 2, 2),), δ = (W=fill(2.0f0, 2, 2),)
+        @test _manifold_αmax(values(sol), values(δ), 1.0f0) isa Float32
+    end
+end
+
+@testset "linesearch_parameters supplies αmax where a manifold supplies a scale" begin
+    # Euclidean: no geometric scale exists and none is needed, since `f(x + αp)` grows with `α` and
+    # the search's own decrease test rejects an over-long step unaided. Omitting the field (rather
+    # than passing `Inf`) is also what keeps upstream's `hasproperty` guard constant-folded.
+    let x = [1.0, 2.0]
+        algorithm = GradientMethod()
+        state = OptimizerState(algorithm, x)
+        c = OptimizerCache(algorithm, x)
+        params = linesearch_parameters(c, x, state, DEFAULT_STEP_CEILING)
+        @test !hasproperty(params, :αmax)
+        @test params.x === x && params.state === state
+    end
+
+    # Manifold: the ceiling is there, and it is the one `step_αmax` computes from the direction the
+    # cache holds at that moment.
+    let x = x₀()
+        algorithm = _BFGS()
+        state = OptimizerState(algorithm, x)
+        opt = Optimizer(x, f; algorithm=algorithm)
+        # the same two calls `slope_errors` above makes to get a cache holding a real direction
+        initialize!(cache(opt), x)
+        update!(cache(opt), state, gradient(opt), hessian(opt), x)
+
+        params = linesearch_parameters(cache(opt), x, state, DEFAULT_STEP_CEILING)
+        @test hasproperty(params, :αmax)
+        @test params.αmax == step_αmax(DEFAULT_STEP_CEILING, direction(cache(opt)))
+        @test 0 < params.αmax < Inf
+    end
+
+    # A `NamedTuple` of manifolds: block-wise, and finite.
+    let ps = ps₀()
+        algorithm = _BFGS()
+        state = OptimizerState(algorithm, ps)
+        opt = Optimizer(ps, two_spheres; algorithm=algorithm)
+        initialize!(cache(opt), ps)
+        update!(cache(opt), state, gradient(opt), hessian(opt), ps)
+
+        params = linesearch_parameters(cache(opt), ps, state, DEFAULT_STEP_CEILING)
+        @test params.αmax ==
+              _manifold_αmax(values(ps), values(direction(cache(opt))), DEFAULT_STEP_CEILING)
+        @test 0 < params.αmax < Inf
+    end
+
+    # A `NamedTuple` with *no* manifold block is Euclidean, whatever `ArrayNamedTuple` says: it is
+    # any `NamedTuple` of arrays, so this used to take the manifold branch and be handed a ceiling
+    # derived from a rotation the problem does not have. See the solve below.
+    let ps = (W=[1.0 2.0; 3.0 4.0], b=[5.0, 6.0])
+        algorithm = GradientMethod()
+        state = OptimizerState(algorithm, ps)
+        c = OptimizerCache(algorithm, ps)
+        params = linesearch_parameters(c, ps, state, DEFAULT_STEP_CEILING)
+        @test params.αmax == Inf     # equivalent to the omission in the `AbstractVector` branch
+    end
+end
+
+# The regression test for that last case. `‖αδ‖ ≤ 2π` on a problem whose optimum is 10⁴ away is a
+# step-size cap of `6e-4`, so the solve crawls where it should converge outright -- measured at 3 184
+# iterations against 1 before the ceiling became block-wise. The assertion is *relative*, between the
+# ceiling and no ceiling on the same problem, so it pins no figure of its own.
+@testset "a NamedTuple with no manifold block is not bounded by a manifold's geometry" begin
+    target = fill(1.0e4, 4)
+    far_away(ps::NamedTuple) = sum(abs2, ps.w .- target) / 2
+    far_away(x::AbstractVector) = sum(abs2, x .- target) / 2
+
+    iterations(x, ceiling) = let state = OptimizerState(_BFGS(), x)
+        solve!(x, state, Optimizer(x, far_away; algorithm=_BFGS(), max_iterations=20_000,
+            warn_iterations=0, step_ceiling=ceiling))
+        iteration_number(state)
+    end
+
+    @test iterations((w=zeros(4),), DEFAULT_STEP_CEILING) == iterations((w=zeros(4),), Inf)
+    # ... and the same problem written as a vector, which never had a ceiling, agrees with both
+    @test iterations((w=zeros(4),), DEFAULT_STEP_CEILING) == iterations(zeros(4), DEFAULT_STEP_CEILING)
+end
+
+# Issue B3. A search stopped *at* the ceiling `solver_step!` itself imposed, with the merit still
+# falling, is classified by the same round-off rule as any other step and so can come back as
+# `LINESEARCH_FLOOR` -- which is a claim about the *direction*, and which `linesearch_rejected`
+# answers by throwing `Q` away. What was established is only that no *permitted* step decreases the
+# merit measurably, so the ceiling case is exempt and the step is taken.
+@testset "a step at the caller's own ceiling is not a rejected direction" begin
+    αmax = 2.5
+
+    @test !linesearch_rejected(LinesearchStatus(αmax, LINESEARCH_FLOOR), αmax)
+    @test linesearch_rejected(LinesearchStatus(1.0, LINESEARCH_FLOOR), αmax)
+
+    # the other two outcomes are not confusable with a bound step and stay rejections: the budget
+    # running out and `φ'(0) ≥ 0` are true of the direction whatever ceiling was in force
+    @test linesearch_rejected(LinesearchStatus(αmax, LINESEARCH_EXHAUSTED), αmax)
+    @test linesearch_rejected(LinesearchStatus(αmax, LINESEARCH_NO_DESCENT), αmax)
+
+    # a successful search is not a rejection either way
+    @test !linesearch_rejected(LinesearchStatus(αmax, LINESEARCH_DECREASED), αmax)
+
+    # with no ceiling -- every Euclidean solve, since `linesearch_parameters` omits the field there
+    # and `_caller_αmax` reads that as `Inf` -- the two forms agree on every outcome
+    for oc in (LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT, LINESEARCH_DECREASED)
+        status = LinesearchStatus(1.0e9, oc)
+        @test linesearch_rejected(status, Inf) == linesearch_rejected(status)
+    end
+
+    @test _caller_αmax(Float64, (x=1, state=2, αmax=3.0)) == 3.0
+    @test _caller_αmax(Float64, (x=1, state=2)) == Inf
+end
+
+@testset "the ceiling is a per-Optimizer knob, and Inf switches it off" begin
+    x = x₀()
+    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS())) == DEFAULT_STEP_CEILING
+    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=0.5)) == 0.5
+    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=Inf)) == Inf
+
+    # carried in the element type of the parameters, not in whatever the keyword was written as
+    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=1)) isa Float64
+end
+
+# The regression test for A1b itself. `svd_optim.jl` runs the two polynomial searches on seed `1234`
+# only, where they always passed; the failure lives on other starting points. This is the smallest
+# problem that reproduces the mechanism -- a bounded merit on a compact manifold -- rather than the
+# `St(20, 3)²` SVD problem, whose eight-seed sweep is in `scripts/retraction_accuracy.jl`.
+@testset "a bounded merit does not produce an unbounded step" begin
+    for retraction in (Geodesic(), Cayley()), linesearch in (Quadratic(Float64), BierlaireQuadratic(Float64))
+        x = x₀()
+        state = OptimizerState(_BFGS(), x)
+        opt = Optimizer(x, f; algorithm=_BFGS(), linesearch=linesearch, retraction=retraction)
+
+        solve!(x, state, opt)
+
+        @test check(x) < MANIFOLD_TOLERANCE
+        @test isapprox(x, MINIMIZER; atol=1e-6)
     end
 end

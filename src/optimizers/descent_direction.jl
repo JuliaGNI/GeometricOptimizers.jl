@@ -58,9 +58,13 @@ end
 
 @doc raw"""
     linesearch_rejected(status)
+    linesearch_rejected(status, αmax)
 
 Whether a line search reported that it could not decrease the merit along the direction it was
 given.
+
+The second form takes the ceiling the caller passed as `params.αmax` and is what
+[`solver_step!`](@ref) uses; see *A step the caller forbade is not a failed direction* below.
 
 `SimpleSolvers.solve` returns only the step length, so an outcome of `LINESEARCH_FLOOR`,
 `LINESEARCH_EXHAUSTED` or `LINESEARCH_NO_DESCENT` used to be indistinguishable from a successful
@@ -69,8 +73,13 @@ decrease achieved was no larger than the merit's own round-off resolution, that 
 the merit could not be bracketed, and that ``\varphi'(0) \geq 0``. In none of them does the returned
 ``\alpha`` carry a guarantee, and taking it anyway is how a solve can walk *uphill*.
 
-The outcome comes from [`SimpleSolvers.solve_with_status`](@extref), which `solver_step!` calls in
-place of `solve` for exactly this reason.
+The outcome comes from `SimpleSolvers.solve_with_status`, which `solver_step!` calls in place of
+`solve` for exactly this reason.
+
+(Plain code and not an `@extref`: SimpleSolvers documents `solve_with_status` per method and not as a
+binding, so there is no binding-level entry in its inventory to link to. Documenter reports an
+unresolvable external link as an error, unlike the `@ref`-to-a-dead-signature case of issue D5, which
+it resolves silently to the wrong page.)
 
 !!! info "This is deliberately the outcome and not `φ > φ₀`"
     Testing the merit directly — "reject the step only if it actually made things worse" — is the
@@ -109,9 +118,36 @@ place of `solve` for exactly this reason.
     `update!(::MomentumState, …)` from `gradient_array(cache)` after the step, so which direction the
     step was taken along does not enter it. Only the step changes. `ensure_descent!`, which acts on
     the direction *before* the search, still exempts them.
+
+!!! info "A step the caller forbade is not a failed direction"
+    This is the `αmax` form, and it closes issue B3. Since [`DEFAULT_STEP_CEILING`](@ref),
+    `solver_step!` hands the search a `params.αmax` of its own, and a search stopped *at* that
+    ceiling with the merit still falling is classified by the same round-off rule ``\tau`` as any
+    other returned step — so it comes back as `LINESEARCH_FLOOR` when the fall over the whole
+    admissible range was smaller than ``\tau``. That outcome is a claim about the **direction**, and
+    the one-argument form above answers it by throwing ``Q`` away and re-searching along steepest
+    descent. What was actually established is only that no step *this caller permits* decreases the
+    merit measurably, which is not a fact about the direction at all: the bound was the caller's own.
+
+    So `LINESEARCH_FLOOR` counts as a rejection only where the step returned is strictly below the
+    ceiling that was passed. Where it *is* the ceiling, the honest reading is "this step is as far as
+    I allowed", and the step is taken. The remedy is here rather than upstream because this package
+    supplied the ceiling and can therefore recognise its own bound without any new field on the
+    status — which is what upstream said when it declined to add one (issue D7, still open there and
+    now without a consequence here).
+
+    `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT` are deliberately not exempted. Neither is
+    confusable with a bound step: the first says the budget ran out or the merit could not be
+    bracketed, the second that ``\varphi'(0) \geq 0``, and both are true of the direction whatever
+    ceiling was in force. A Euclidean solve passes no ceiling at all, so `αmax` is `Inf` there, the
+    exemption is unreachable and the two forms agree.
 """
 linesearch_rejected(status::LinesearchStatus) =
     outcome(status) ∈ (LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT)
+
+linesearch_rejected(status::LinesearchStatus, αmax) =
+    linesearch_rejected(status) &&
+    !(outcome(status) == LINESEARCH_FLOOR && steplength(status) ≥ αmax)
 
 @doc raw"""
     steepest_descent!(cache)

@@ -147,12 +147,18 @@ const COMBINATIONS = (
 const SVD_MAX_ITERATIONS = 20_000
 
 """
-    solve_once(algorithm, linesearch, retraction, seed; max_iterations)
+    solve_once(algorithm, linesearch, retraction, seed; max_iterations, step_ceiling)
 
 One solve of the SVD problem, returning its iteration count, objective evaluations, final `‖∇f‖`,
 worst `check` over the two factors, and relative error against the best rank-3 approximation.
+
+`step_ceiling` is the knob of issue A1b, in multiples of `2π` (see `DEFAULT_STEP_CEILING`). It is a
+keyword rather than a constant because the *comparison* between a ceiling and none is the measurement
+the entry rests on, and both halves of it have to come from this harness rather than from a REPL:
+`svd_tables(step_ceiling = Inf)` is the "before" column of every table this script feeds.
 """
-function solve_once(algorithm, linesearch, retraction, seed::Integer; max_iterations::Integer=SVD_MAX_ITERATIONS)
+function solve_once(algorithm, linesearch, retraction, seed::Integer; max_iterations::Integer=SVD_MAX_ITERATIONS,
+    step_ceiling=GeometricOptimizers.DEFAULT_STEP_CEILING)
     evaluations = Ref(0)
     objective(ps::NamedTuple) = (evaluations[] += 1; norm(A - ps.w₁ * ps.w₂' * A))
 
@@ -160,7 +166,8 @@ function solve_once(algorithm, linesearch, retraction, seed::Integer; max_iterat
     ps = (w₁=rand(StiefelManifold, size(A, 1), 3), w₂=rand(StiefelManifold, size(A, 1), 3))
     state = OptimizerState(algorithm, ps)
     optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
-        linesearch=linesearch, max_iterations=max_iterations, warn_iterations=0)
+        linesearch=linesearch, max_iterations=max_iterations, warn_iterations=0,
+        step_ceiling=step_ceiling)
     result = solve!(ps, state, optimizer)
 
     U, _, _ = svd(A)
@@ -171,18 +178,38 @@ function solve_once(algorithm, linesearch, retraction, seed::Integer; max_iterat
         error=abs((objective(ps) - err_best) / err_best))
 end
 
-function svd_tables(; seeds=1:8)
+# The tolerance `test/optimizer_convergence/svd_optim.jl` and `test/manifold_linesearch_tests.jl` both
+# use for "still on the manifold". Both iterates stay on `St(N, 3)` when a solve behaves, so this is a
+# round-off bound and nothing else; the values observed are of the order of `1e-14`.
+const MANIFOLD_TOLERANCE = 1e-12
+
+"""
+    on_the_manifold(results)
+
+How many of `results` ended with both factors still on the Stiefel manifold.
+
+This is the statistic issue A1b was actually about, and the one the `worst check` column only implies:
+A1b's failure is a solve that *reports success* from a point that is no longer on `St(20, 3)`, so what
+matters is the count of seeds that end inside `MANIFOLD_TOLERANCE` rather than how far the worst one
+strayed. The two say different things — one bad seed and four bad seeds can give the same worst
+`check`, and the seed count is what moved from 4 to 8 when the step ceiling was passed.
+"""
+on_the_manifold(results) = count(r -> r.check ≤ MANIFOLD_TOLERANCE, results)
+
+function svd_tables(; seeds=1:8, step_ceiling=GeometricOptimizers.DEFAULT_STEP_CEILING)
     for (name, retraction) in (("Geodesic", Geodesic()), ("Cayley", Cayley()))
         println("\n== $name: seed 1234, then the spread over seeds $(first(seeds))..$(last(seeds)), " *
-                "cap $(SVD_MAX_ITERATIONS) ==")
+                "cap $(SVD_MAX_ITERATIONS), step_ceiling $(step_ceiling) ==")
         println(rpad("combination", 30) * lpad("iters", 8) * lpad("evals", 11) *
                 lpad("rg", 11) * lpad("check", 11) * "   iters over the seeds")
         for (label, algorithm, linesearch) in COMBINATIONS
-            pinned = solve_once(algorithm, linesearch(), retraction, 1234)
-            over_seeds = [solve_once(algorithm, linesearch(), retraction, seed) for seed in seeds]
-            @printf("%-30s%8d%11d%11.2e%11.2e   %d..%d  (worst rg %.2e, worst check %.2e)\n",
+            pinned = solve_once(algorithm, linesearch(), retraction, 1234; step_ceiling=step_ceiling)
+            over_seeds = [solve_once(algorithm, linesearch(), retraction, seed; step_ceiling=step_ceiling)
+                          for seed in seeds]
+            @printf("%-30s%8d%11d%11.2e%11.2e   %d..%d  (%d/%d on the manifold, worst rg %.2e, worst check %.2e)\n",
                 label, pinned.iterations, pinned.evaluations, pinned.rg, pinned.check,
                 minimum(r -> r.iterations, over_seeds), maximum(r -> r.iterations, over_seeds),
+                on_the_manifold(over_seeds), length(over_seeds),
                 maximum(r -> r.rg, over_seeds), maximum(r -> r.check, over_seeds))
         end
     end

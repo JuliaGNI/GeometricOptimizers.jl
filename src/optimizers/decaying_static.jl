@@ -46,9 +46,14 @@ DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
 ```
 
 !!! info "The iteration number comes from the state"
-    `solve` reads `iteration_number(params.state)`, which [`solver_step!`](@ref) puts into the line
-    search's parameters. A `DecayingStatic` handed a `params` without a `state` therefore cannot
-    work, and says so.
+    `solve_with_status` reads `iteration_number(params.state)`, which [`solver_step!`](@ref) puts into
+    the line search's parameters. A `DecayingStatic` handed a `params` without a `state` therefore
+    cannot work, and says so.
+
+!!! info "A caller's ceiling still binds"
+    Like [`SimpleSolvers.Static`](@extref), this has no `αmax` field of its own — the schedule is the
+    caller's to fix — but a `params.αmax` clamps the step it hands back. On a manifold
+    [`solver_step!`](@ref) supplies one; see [`linesearch_parameters`](@ref).
 """
 struct DecayingStatic{T<:Number} <: LinesearchMethod{T}
     η₁::T
@@ -73,16 +78,27 @@ solve asks for (see the remark on ``\\alpha(0)`` in [`DecayingStatic`](@ref)).
 """
 step_size(method::DecayingStatic{T}, t::Integer) where {T} = method.γ^t * method.η₁
 
-function solve(ls::Linesearch{T,<:DecayingStatic}, ::T, params) where {T}
+# `solve_with_status` and not `solve`: since SimpleSolvers 0.12 a `LinesearchMethod` implements this
+# one and gets `solve` — the call plus `linesearch_warnings` — derived from it for free. The generic
+# `solve_with_status` raises rather than deriving itself from `solve`, so a method that implements
+# only the latter is reached through the reporting path from inside every iteration of a solve, which
+# is the one thing the `LinesearchMethod` contract promises does not happen.
+#
+# The outcome is `LINESEARCH_UNKNOWN`, as it is for `Static`: nothing is searched and no merit is ever
+# evaluated, so no decrease has been established to report.
+#
+# `min(…, linesearch_αmax(…))` is clause 6 of that contract. `DecayingStatic` has no ceiling of its
+# own — the schedule is the caller's to fix, exactly as `Static`'s `α` is — so only a caller's
+# `params.αmax` can bind here, and a caller that says no step above a given length is admissible means
+# a scheduled one too. See `linesearch_parameters`, which is what supplies it on a manifold.
+function solve_with_status(ls::Linesearch{T,<:DecayingStatic}, ::T, params) where {T}
     hasproperty(params, :state) ||
         error("DecayingStatic needs the iteration number and therefore the `state` in the line " *
               "search parameters; `solver_step!` passes it, a bare `solve(ls, α)` does not.")
-    step_size(method(ls), iteration_number(params.state))
+    α = min(step_size(method(ls), iteration_number(params.state)),
+        linesearch_αmax(method(ls), params))
+    LinesearchStatus(α, LINESEARCH_UNKNOWN)
 end
-
-# see the remark on `Static`: nothing is searched, so there is no decrease to report
-solve_with_status(ls::Linesearch{T,<:DecayingStatic}, α::T, params) where {T} =
-    LinesearchStatus(solve(ls, α, params), LINESEARCH_UNKNOWN)
 
 function change_precision(::Type{T}, method::DecayingStatic) where {T}
     T ≠ eltype(method) || return method
