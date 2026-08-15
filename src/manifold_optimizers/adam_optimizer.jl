@@ -1,6 +1,8 @@
 OptimizerCache(::Adam{T}, x::OptimizerSolution{T}) where {T} = AdamCache(_copy(x), _zero(x), _zero(x))
 Hessian(::Adam, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
 
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
+# The invariant is enforced by the outer constructors below.
 """
     AdamCache <: OptimizerCache
 
@@ -15,7 +17,7 @@ Cache for the gradient optimizer.
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 """
-struct AdamCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
+struct AdamCache{T,MT,VT,ST} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT
@@ -74,12 +76,14 @@ rhs(cache::AdamCache) = direction(cache)
 steepest_descent!(cache::AdamCache) = _steepest_descent_from_gradient!(cache)
 section(cache::AdamCache) = cache.section
 
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
+# The invariant is enforced by the outer constructors below.
 """
     AdamState <: OptimizerState
 
 State for the gradient optimizer.
 """
-mutable struct AdamState{T,OT<:OptimizerSolution{T},GS<:GlobalSectionSingleOrNamedTuple{T},VT<:GradientArrayOrNamedTuple{T}} <: OptimizerState{T}
+mutable struct AdamState{T,OT,GS,VT} <: OptimizerState{T}
     section::GS
     iterations::Int
 

@@ -6,7 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased] — targeting 0.2.0
+## [Unreleased] — targeting 0.2.1
+
+### Fixed
+
+- **The optimizer caches and states no longer take an hour to compile through a function.** The six
+  cache and state structs bounded their type parameters by `OptimizerSolution`,
+  `GradientArrayOrNamedTuple` and `GlobalSectionSingleOrNamedTuple`. Those bounds are now gone.
+
+  The symptom was not an error but a hang, and only in callers that had to *infer* the type of an
+  optimizer rather than take it from a concrete argument — so it did not show up at the REPL, where
+  every intermediate is concrete, but did show up for anyone who wrapped training in a function.
+  `GeometricMachineLearning`'s symplectic-autoencoder test is one: nine layers, mixing
+  `StiefelManifold` weights with ordinary matrices and vectors. Compiled statement by statement it
+  takes ~14 s; compiled as one method body it did not finish in over an hour, with the time going to
+  `subtype_unionall` under `ml_matches`. It is ~14 s either way now.
+
+  Worth being precise about the cause, because the obvious reading is wrong. The bounds did not cost
+  concrete inference: `OptimizerCache(Adam(Float64), ps)` on a `NamedTuple` of parameters infers to a
+  `UnionAll` with or without them, since the outer constructors are written in the same aliases.
+  What the bounds added was *coupling* — one `T` tying all four parameters together underneath three
+  nested `Vararg` unions, the last over a three-parameter `UnionAll` — so every method-table
+  intersection involving an inferred cache had to re-solve that constraint system. Unbounded, the
+  inferred type has the same shape but independent parameters and a bare `<:Tuple`, which costs
+  nothing to intersect.
+
+  No behaviour changes and nothing is unchecked that was checked before: the invariant lives in the
+  outer constructors, whose signatures take `x::OptimizerSolution{T}` and
+  `g::AT where AT<:GradientArrayOrNamedTuple{T}` and build the `GlobalSection` themselves. A note on
+  the aliases in `optimizer_solution.jl` now says not to use them as struct bounds and why, and
+  `test/named_tuple_parameters.jl` pins the parameters as unbounded so reinstating any of them fails
+  a test rather than silently costing an hour. See GeometricMachineLearning#230.
+
+## [0.2.0]
 
 v0.1.0 carried **two parallel optimizer hierarchies**: `src/optimizers/`, ported from
 GeometricMachineLearning, which knew about manifolds and was driven by `optimization_step!`, and

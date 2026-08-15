@@ -277,3 +277,32 @@ end
     # `Adam(Float32)` is what the message asks for, and it works
     @test OptimizerCache(Adam(Float32), ps) isa GeometricOptimizers.AdamCache{Float32}
 end
+
+
+# This guards a property that no other test can see, because the bug it protects against did not
+# fail anything — it made the caller hang. The cache and state structs used to bound their type
+# parameters by `OptimizerSolution`, `GradientArrayOrNamedTuple` and
+# `GlobalSectionSingleOrNamedTuple`. Inference cannot solve those bounds down to a concrete
+# `NamedTuple` (it cannot with or without them — the outer constructors' own signatures are
+# already written in the same aliases), so the inferred cache type is a `UnionAll` either way.
+# What the bounds added was *coupling*: they tied all four parameters to one shared `T` underneath
+# nested `Vararg` unions, so every method-table intersection involving an inferred cache had to
+# re-solve that constraint system in `subtype_unionall`. On a nine-layer network that did not
+# finish in over an hour; see GeometricMachineLearning#230. Unbounded, the parameters are
+# independent and the intersection is cheap.
+#
+# Reinstating any of the bounds makes the corresponding line below a `TypeError`.
+@testset "the cache and state type parameters are unbounded" begin
+    for CT in (GeometricOptimizers.GradientCache, GeometricOptimizers.MomentumCache,
+               GeometricOptimizers.AdamCache)
+        @test CT{Float64,Int,Int,Int} isa Type
+    end
+    for ST in (GradientState, MomentumState, AdamState)
+        @test ST{Float64,Int,Int,Int} isa Type
+    end
+
+    # ...  and the constructors still produce exactly the types they always did.
+    ps = initial_parameters(Float64)
+    @test OptimizerCache(Adam(Float64), ps) isa GeometricOptimizers.AdamCache{Float64}
+    @test OptimizerState(Adam(Float64), ps) isa AdamState{Float64}
+end
