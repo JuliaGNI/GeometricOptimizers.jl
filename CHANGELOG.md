@@ -25,6 +25,12 @@ breaking release).
   `AbstractExponentialAlgorithm` signature also admits `ProjectedSkew`, for which there is no `𝔄`
   method. That hole is `𝔄`'s and is left as it is rather than papered over here.
 
+  GML's test for it came over too, into `test/retractions/exponential_accuracy.jl`: the identity
+  swept over `Float32`/`Float64` and every shape with `N = 1:10`, `n = 1:N`, plus the `algorithm`
+  form. The docstring jldoctests assert it for one 10×2 `Float64` lift, which cannot pin the element
+  type of the result or reach rectangular arguments, so this is new coverage of `𝔄` as much as of
+  `𝔄exp`.
+
 ### Fixed
 
 - **The optimizer caches and states no longer take an hour to compile through a function.** The
