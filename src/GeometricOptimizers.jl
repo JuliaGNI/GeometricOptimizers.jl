@@ -25,6 +25,9 @@ export Options
 import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache, l2norm
 import SimpleSolvers: change_precision, solve_with_status
 using SimpleSolvers: method, LinesearchStatus, LINESEARCH_UNKNOWN
+# The ceiling on the step a line search may return, SimpleSolvers 0.12's half of issue A1b. Read by
+# `DecayingStatic`, which has to honour a caller's ceiling itself; supplied by `linesearch_parameters`.
+using SimpleSolvers: linesearch_αmax
 # `solver_step!` decides whether to keep the step a line search returned, so it needs the outcome
 # and not only the step length. See `linesearch_rejected`.
 using SimpleSolvers: outcome, steplength

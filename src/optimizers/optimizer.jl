@@ -1,6 +1,57 @@
 
 const SOLUTION_MAX_PRINT_LENGTH = 10
 
+@doc raw"""
+    DEFAULT_STEP_CEILING
+
+How far along its direction a manifold solve may step, in multiples of ``2\pi``: the `c` of
+[`step_αmax`](@ref)`(c, δ)`, and hence the `params.αmax` [`solver_step!`](@ref) hands the line search.
+Set per solve with `Optimizer(x, F; step_ceiling = …)`; `Inf` switches the ceiling off.
+
+# Why a ceiling is needed at all, and why the caller has to set it
+
+A line search bounds the step it returns by the merit — it stops when ``\varphi`` stops falling. On a
+**compact** manifold ``\varphi`` is *bounded*, so that test never fires: at ``\alpha = 10^9``,
+``\varphi`` can be genuinely lower than at ``\alpha = 0``, and a search that reports a decrease there
+is telling the truth. Measured on the SVD problem of `test/optimizer_convergence/svd_optim.jl`,
+[`SimpleSolvers.Quadratic`](@extref) returned ``\alpha = 4.3\times10^7`` on a direction of norm 5.54 —
+a step of ``\|\alpha\delta\| = 2.4\times10^8`` — and did it again two steps later on a
+*steepest-descent* direction, so the behaviour belonged to the search and not to what it was handed.
+Retracting a lift of that norm loses the manifold, and the solve then reported convergence from a
+point that was no longer on ``St(20, 3)``. That was issue A1b.
+
+**The merit is not a bound on the step**, and the bound that does exist is not a property of
+``\varphi`` at all: it is the ``2\pi`` of a rotation divided by ``\|\delta\|``, it changes at every
+solver step, and nothing a line search can measure reveals it. SimpleSolvers 0.12 therefore splits the
+ceiling in two — a method's own `DEFAULT_LINESEARCH_αmax` backstop, and a per-call `params.αmax` — and
+leaves this half here deliberately. Upstream measured why the backstop alone cannot close it: at
+``\|\delta\| \approx 5.5`` its `65536` still permits ``\|\alpha\delta\| = 3.6\times10^5``, five orders
+above the ``2\pi`` past which a rotation stops going anywhere, and four of the eight starting points
+still diverge.
+
+# Why `1`
+
+`c` is the ceiling in multiples of ``2\pi``, so `1` says *"never step further along the direction than
+one full turn"*. That is the scale the geometry gives; the value is not tuned to the SVD problem
+beyond confirming that it leaves it alone. Over the converging solve next to the diverging one — seed
+2 at 90 iterations — the largest ``\|\alpha\delta\|`` is `2.03`, well inside ``2\pi``, which is what
+makes a ceiling that forbids the ``10^8`` step cost the ordinary ones nothing.
+
+!!! info "This bounds the step, not the direction and not `α`"
+    The same solve accepts ``\alpha = 18.4`` on an iteration where ``\|\delta\| = 5.8\times10^{-5}``,
+    i.e. a perfectly ordinary step of ``10^{-3}``, and converges. A ceiling on ``\alpha`` alone would
+    reject it. The direction is not what is wrong either: at the step that loses the manifold
+    ``\|\delta\| = 5.54``, in the same range as the two before it, and ``Q`` is well conditioned
+    (``\lambda_\mathrm{max} = 3.86``). See [`ensure_descent!`](@ref) and [`linesearch_rejected`](@ref)
+    for the two defects that *are* about the direction and the outcome.
+
+!!! info "Euclidean parameters do not get one"
+    [`linesearch_parameters`](@ref) omits `αmax` for an `AbstractVector`. There is no geometric scale
+    there, and none is needed: ``f(x + \alpha{}p)`` grows with ``\alpha``, so the search's own decrease
+    test rejects an over-long step unaided.
+"""
+const DEFAULT_STEP_CEILING = 1.0
+
 """
     Optimizer
 
@@ -77,18 +128,19 @@ struct Optimizer{T,
     cache::OCT
     linesearch::LST
     retraction::RT
+    step_ceiling::T
 
     # Everything positional, and in particular the `Options` already built. See the note on Julia 1.12
     # below `Optimizer(x, F)`.
-    function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod, config::Options{T}, gradient::Gradient{T}, retraction::AbstractRetraction) where {T}
+    function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod, config::Options{T}, gradient::Gradient{T}, retraction::AbstractRetraction, step_ceiling::Real=DEFAULT_STEP_CEILING) where {T}
         ls_problem = linesearch_problem(problem, gradient, cache, retraction)
         ls = Linesearch(ls_problem, linesearch)
-        new{T,typeof(algorithm),typeof(problem),typeof(gradient),typeof(hessian),typeof(cache),typeof(ls),typeof(retraction)}(algorithm, problem, gradient, hessian, config, cache, ls, retraction)
+        new{T,typeof(algorithm),typeof(problem),typeof(gradient),typeof(hessian),typeof(cache),typeof(ls),typeof(retraction)}(algorithm, problem, gradient, hessian, config, cache, ls, retraction, T(step_ceiling))
     end
 end
 
-function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=default_gradient(problem, cache.x), retraction=Cayley(), options_kwargs...) where {T}
-    Optimizer(algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...), gradient, retraction)
+function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=default_gradient(problem, cache.x), retraction=Cayley(), step_ceiling=DEFAULT_STEP_CEILING, options_kwargs...) where {T}
+    Optimizer(algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...), gradient, retraction, step_ceiling)
 end
 
 """
@@ -120,20 +172,20 @@ Takes every argument positionally on purpose; see the note on Julia 1.12 below
 """
 function _optimizer(x::OptimizerSolution{T}, problem::OptimizerProblem{T}, algorithm::OptimizerMethod,
     linesearch::LinesearchMethod, gradient::Gradient{T}, retraction::AbstractRetraction,
-    config::Options{T}) where {T}
+    config::Options{T}, step_ceiling::Real) where {T}
     # translate to the correct type if we use the momentum method
     algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) : algorithm
     cache = OptimizerCache(algorithm, x)
     hes = Hessian(algorithm, problem, x)
-    Optimizer(algorithm, problem, hes, cache, linesearch, config, gradient, retraction)
+    Optimizer(algorithm, problem, hes, cache, linesearch, config, gradient, retraction, step_ceiling)
 end
 
 function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=_BFGS(),
     linesearch::LinesearchMethod=default_linesearch(T, algorithm),
     gradient::Union{Gradient,Nothing}=nothing, retraction::AbstractRetraction=Cayley(),
-    options_kwargs...) where {T,VT<:OptimizerSolution{T}}
+    step_ceiling=DEFAULT_STEP_CEILING, options_kwargs...) where {T,VT<:OptimizerSolution{T}}
     G = isnothing(gradient) ? default_gradient(problem, x) : gradient
-    _optimizer(x, problem, algorithm, linesearch, G, retraction, Options(T; options_kwargs...))
+    _optimizer(x, problem, algorithm, linesearch, G, retraction, Options(T; options_kwargs...), step_ceiling)
 end
 
 @doc raw"""
@@ -169,7 +221,8 @@ Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
 """
 function Optimizer(x::VT, F::Function; (∇F!)=nothing, mode=:autodiff,
     algorithm::OptimizerMethod=_BFGS(), linesearch::Union{LinesearchMethod,Nothing}=nothing,
-    retraction::AbstractRetraction=Cayley(), options_kwargs...) where {T,VT<:OptimizerSolution{T}}
+    retraction::AbstractRetraction=Cayley(), step_ceiling=DEFAULT_STEP_CEILING,
+    options_kwargs...) where {T,VT<:OptimizerSolution{T}}
     # `T` comes from the `OptimizerSolution{T}` bound and not from `eltype(x)`: for a `NamedTuple` of
     # manifolds the latter is `StiefelManifold{Float64, Matrix{Float64}}` rather than `Float64`.
     G = if (ismissing(∇F!) | isnothing(∇F!))
@@ -183,7 +236,7 @@ function Optimizer(x::VT, F::Function; (∇F!)=nothing, mode=:autodiff,
     end
     problem = (ismissing(∇F!) | isnothing(∇F!)) ? OptimizerProblem(F, x) : OptimizerProblem(F, ∇F!, x)
     ls = isnothing(linesearch) ? default_linesearch(T, algorithm) : linesearch
-    _optimizer(x, problem, algorithm, ls, G, retraction, Options(T; options_kwargs...))
+    _optimizer(x, problem, algorithm, ls, G, retraction, Options(T; options_kwargs...), step_ceiling)
 end
 
 config(opt::Optimizer) = opt.config
@@ -195,6 +248,9 @@ direction(opt::Optimizer) = direction(cache(opt))
 rhs(opt::Optimizer) = rhs(cache(opt))
 cache(opt::Optimizer) = opt.cache
 gradient(opt::Optimizer) = opt.gradient
+# The step ceiling in multiples of 2π, not the `αmax` derived from it: that one depends on `‖δ‖` and
+# so changes at every step. See `DEFAULT_STEP_CEILING` and `step_αmax`.
+step_ceiling(opt::Optimizer) = opt.step_ceiling
 
 check_gradient(opt::Optimizer) = check_gradient(gradient(problem(opt)))
 print_gradient(opt::Optimizer) = print_gradient(gradient(problem(opt)))
@@ -257,9 +313,21 @@ julia> solver_step!(x, state, opt)
     the manifold completely: `check(Y) = 1.07e200`. The solve then reported *convergence*, because
     ``\\|\\delta\\|/\\|x\\|`` is tiny once ``\\|x\\|`` is at `1e100`.
 
-    [`SimpleSolvers.solve_with_status`](@extref) reports the outcome alongside the step length, so
+    `SimpleSolvers.solve_with_status` reports the outcome alongside the step length, so
     the two cases can be told apart; see [`linesearch_rejected`](@ref) and [`restart!`](@ref). With
     the restart the same starting point converges in 121 iterations at `check(Y) = 6e-14`.
+
+!!! info "A line search that succeeds can still return a step too long for the manifold"
+    The safeguard above is about a search that *failed* and said so. The other half of the problem is
+    a search that succeeded and was right to: on a compact manifold ``\\varphi`` is bounded, so a step
+    nine orders of magnitude too long can genuinely decrease the merit and no test the search has will
+    reject it. That is issue A1b, and it is why this function hands the search a `params.αmax` through
+    [`linesearch_parameters`](@ref) — a bound the *geometry* supplies, since ``\\varphi`` does not. See
+    [`DEFAULT_STEP_CEILING`](@ref).
+
+    The two are independent and both are needed. The rejected-step case is a claim about the
+    direction, answered by changing it; the ceiling is a claim about the step, answered by
+    shortening it. Nothing about the direction is wrong at the step A1b is about.
 """
 function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{T,MT}) where {T,MT}
     # update cache
@@ -298,8 +366,17 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     #
     # `solve_with_status` and not `solve`: the latter returns only the step length, which is
     # indistinguishable between a search that found a decrease and one that gave up. See
-    # `linesearch_rejected` for what the difference costs.
-    ls_status = solve_with_status(linesearch(opt), one(T), (x=x, state=state))
+    # `linesearch_rejected` for what the difference costs. Since SimpleSolvers 0.12 it is also what
+    # keeps the line search's warnings off the user's terminal -- `solve` is `solve_with_status`
+    # plus `linesearch_warnings`, and a solve that cannot progress asks for an impossible decrease
+    # at every one of its iterations. The outcome is this function's to act on, not the user's to
+    # read about.
+    #
+    # `linesearch_parameters` and not a literal `(x = x, state = state)`: on a manifold it adds the
+    # `αmax` of issue A1b. It is built *here*, below the `NaN` loop above, because that loop shrinks
+    # the direction and the ceiling is a function of `‖δ‖`.
+    ls_status = solve_with_status(linesearch(opt), one(T),
+        linesearch_parameters(cache(opt), x, state, step_ceiling(opt)))
 
     # A rejected search means "no step along *this* direction decreases the merit". For a
     # quasi-Newton method that is a statement about `Q`, so throw `Q` away and try the one direction
@@ -316,7 +393,10 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
         steepest_descent!(cache(opt))
         update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
         _copyto!(solution(cache(opt)), section(cache(opt)))
-        ls_status = solve_with_status(linesearch(opt), one(T), (x=x, state=state))
+        # rebuilt rather than reused: `steepest_descent!` has just replaced the direction, so `‖δ‖`
+        # and with it the ceiling are not what they were for the first search.
+        ls_status = solve_with_status(linesearch(opt), one(T),
+            linesearch_parameters(cache(opt), x, state, step_ceiling(opt)))
     end
 
     # Whatever the second search reports, its step is taken. Substituting `α = 0` instead -- "if even

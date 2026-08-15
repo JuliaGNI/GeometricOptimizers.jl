@@ -204,7 +204,7 @@ this package produces change**, in most cases substantially for the better.
   objective of a small parameter set, which is what ForwardDiff is good at — and **ParameterHandling**,
   whose `flatten` / `unflatten` pair turns a `NamedTuple` of arrays into the vector the Euclidean
   methods want.
-- **SimpleSolvers is now `0.10`** (was `0.8`), and the **minimum Julia version is 1.10** (was 1.0),
+- **SimpleSolvers is now `0.12`** (was `0.8`), and the **minimum Julia version is 1.10** (was 1.0),
   which is SimpleSolvers 0.10's floor and the oldest version CI has ever tested.
 
   SimpleSolvers 0.9 reworked `Options`, so several keywords that used to be accepted here are gone:
@@ -214,7 +214,88 @@ this package produces change**, in most cases substantially for the better.
   `g_restol` used to default to. The successive change in `f` is gated on the new `f_suctol`, which
   inherited `f_reltol`'s former default.
 
+  SimpleSolvers 0.12 then arrived with the three defects this package had reported against it —
+  **D3** (`Bisection` reporting success when it cannot bracket), **D4** (`maxlog` on the line-search
+  warnings being per session rather than per solve) and **D6** (the polynomial searches extrapolating
+  `α` without bound), all now closed and gone from the catalogue below — and two breaking changes, of
+  which one reaches this package:
+
+  - **A `LinesearchMethod` implements `solve_with_status`, and `solve` is derived from it.** The
+    generic `solve_with_status` used to derive itself from `solve` and now raises instead, so a
+    third-party method that implements only `solve` is broken. [`DecayingStatic`](@ref) implemented
+    both and its body has moved into `solve_with_status`; the custom `solve` is deleted and the
+    derived one — the call plus `linesearch_warnings` — replaces it exactly. This is not
+    housekeeping: the old direction meant a method reached through `solve` emitted its messages from
+    inside *every iteration* of a solve, which is the one thing the `LinesearchMethod` contract
+    promises does not happen, and 0.12 removed the `maxlog` caps that used to hold that back.
+  - `DecayingStatic` also honours a caller's `params.αmax` now, as `Static` does. It has no ceiling
+    of its own — the schedule is the caller's to fix — but a caller that says no step above a given
+    length is admissible means a scheduled one too.
+
+  Nothing else here changed for it. `solver_step!` already called `solve_with_status` and never
+  `linesearch_warnings`, so this package was already on the quiet channel that 0.12 makes structural,
+  and it reads the outcome rather than the log (see `linesearch_rejected`). The whole test suite
+  passes under 0.12 with no other edit.
+
 ### Fixed
+
+- **A manifold solve bounds the step a line search may take (issue A1b).** `solver_step!` now hands
+  the search `params.αmax = c⋅2π/‖δ‖` through the new `linesearch_parameters`, with `c` the new
+  `DEFAULT_STEP_CEILING` (`1`, i.e. never more than one full turn), settable per solve as
+  `Optimizer(x, F; step_ceiling = …)` and disabled with `Inf`. Euclidean parameters get no ceiling and
+  need none.
+
+  **A line search bounds its step by the merit, and on a compact manifold the merit is bounded**, so
+  that test never fires: `φ(α)` at `α = 1e9` can be genuinely *lower* than at `α = 0`, and a search
+  reporting a decrease there is telling the truth. On the SVD problem `Quadratic` returned
+  `α = 4.3e7` on a direction of norm `5.54` — a step of `‖αδ‖ = 2.4e8` — and the solve then reported
+  *convergence* from a point no longer on `St(20, 3)`.
+
+  Nothing about the direction was wrong at that step (`‖δ‖` in the same range as the two before it,
+  `λmax(Q) = 3.86`), and two iterations later, with `Q` restarted to the identity so the direction
+  *was* `-∇f`, the same search returned `8.6e7`. Both of the fixes this entry's own catalogue entry
+  proposed for itself — an exact `Cayley` differential, then damping the quasi-Newton update — were
+  implemented or measured and ruled out. The bound had to be on the **step**, and it is not a property
+  of `φ`: it is the `2π` of a rotation over `‖δ‖`, which changes at every solver step.
+
+  Hence the split. SimpleSolvers 0.12 takes the per-call ceiling (issue D6, filed from here) and
+  stops its bracketing *at* it rather than clamping afterwards, so the merit is measured at the step
+  handed back; this package supplies the value, because choosing it is a statement about the geometry.
+  Upstream is explicit that its own `65536` backstop cannot close this: at `‖δ‖ ≈ 5.5` it still permits
+  `‖αδ‖ = 3.6e5`.
+
+  Over the eight starting points of `scripts/retraction_accuracy.jl`, counting solves that end with
+  both factors still on the manifold (`check ≤ 1e-12`), ceiling off → on:
+
+  | combination | before | after | worst `check` |
+  |---|---|---|---|
+  | `_BFGS` `Quadratic` `Cayley` | 4 of 8 | **8 of 8** | `3.2e-1` → `6.1e-14` |
+  | `_BFGS` `BierlaireQuadratic` `Cayley` | 4 of 8 | **8 of 8** | `5.5e-1` → `6.9e-14` |
+  | `_BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.1e-14` |
+  | `_BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.2e-14` |
+
+  All twenty combinations of that sweep are now 8 of 8, and the runs that used to exhaust a 20 000
+  cap finish in 159 and 297 iterations. **The last two rows were never part of A1b** and are the same
+  defect: that `2.8e-12` is the `_BFGS` + `Backtracking` + `Geodesic` seed 2 that `svd_optim.jl`
+  singled out as "the worst of the eight by two orders of magnitude" and attributed to accumulation
+  over 147 iterations. That attribution was wrong — it is one over-long step — and bounding the step
+  removes it. A *shrink-only* `Backtracking` getting there at all is the surprise, and the answer is
+  that its expansion phase can exceed `α = 1` while `‖δ‖` is what makes `α = 1` too far: the mechanism
+  is not confined to the searches that extrapolate polynomials.
+
+  Consequences for the rest of the package, all measured: the worst `check` over the whole sweep is
+  `2.5e-13`, so `MANIFOLD_TOLERANCE` at `1e-12` clears it and the `1e-11`-or-`ProjectedSkew` caveat
+  in `svd_optim.jl` is retired; the worst `rg` is `2.5e-7`, giving `CONVERGED_GRADIENT_TOLERANCE` a
+  factor of 40. Costs are nil where the ceiling does not bind — every pinned `Cayley` figure is
+  reproduced to the digit with it on or off, and only three `Geodesic` cells move at all (`_BFGS`
+  `Quadratic` 111 → 120 iterations, `_BFGS` `BierlaireQuadratic` 130 → 113, `_DFP` `Quadratic`
+  175 → 308). A bound that binds is a different trajectory, not a better or worse one.
+
+  One interaction inherited from upstream and not closed by either side: where the ceiling binds hard
+  a search can report `LINESEARCH_FLOOR` — a claim about the *direction*, which `linesearch_rejected`
+  acts on by restarting `Q` — when what was established is only that no *permitted* step decreases
+  the merit measurably. Upstream tracks it; nothing in the sweep is affected, but a very small
+  `step_ceiling` would make quasi-Newton restarts more frequent than they should be.
 
 - **`Adam` and `MomentumMethod` no longer take the step a line search has rejected.** `solver_step!`
   restarts and searches along steepest descent when the outcome is `LINESEARCH_FLOOR`,
@@ -320,12 +401,14 @@ this package produces change**, in most cases substantially for the better.
   over the eight starting points tightens, 88–129 to 102–124 for `_DFP`. The clearest gain is
   `_DFP` + `Quadratic`, whose spread goes from 168–1 211 to 164–735.
 
-  **It does not close issue A1b**, which is what it was written for, and that is the more useful
+  **It did not close issue A1b**, which is what it was written for, and that was the more useful
   result. A1b proposed an exact `Cayley` differential as the likely fix for `_BFGS` +
   `Quadratic`/`BierlaireQuadratic` running to the iteration cap and ending off the manifold on two of
-  eight starting points. One of those four cases is fixed — `Quadratic` on seed 2 goes from the
-  20 000-iteration cap at `check = 5.0e-2` to **90 iterations at `check = 6.4e-15`** — and three are
-  not. See the rewritten A1b entry for where the cause actually is.
+  eight starting points. One of those four cases was fixed — `Quadratic` on seed 2 went from the
+  20 000-iteration cap at `check = 5.0e-2` to **90 iterations at `check = 6.4e-15`** — and three were
+  not. Ruling the slope out is what moved the diagnosis onto the *step*, which is where the cause was;
+  see the step-ceiling entry above. This differential is worth having on its own account and is not a
+  fix for A1b.
 
   Two things from the review of [#40], both in the *Retractions* page rather than here. That
   `α ↦ Cayley(αB̄)` is not a one-parameter subgroup is now *shown* and not asserted: everything in
@@ -665,6 +748,20 @@ this package produces change**, in most cases substantially for the better.
 
 ### Added
 
+- **`Optimizer` takes a `step_ceiling`**, and `DEFAULT_STEP_CEILING` documents what it is for; see the
+  A1b entry under *Fixed*. `linesearch_parameters` and `step_αmax` are the two internal helpers behind
+  it, both in `src/optimizers/linesearch_problem.jl` next to `trial_iterate!`, whose dispatch on the
+  solution type they mirror.
+- **`scripts/retraction_accuracy.jl` reports how many seeds end on the manifold**, through the new
+  `on_the_manifold`. That is the statistic A1b was about and the one its `worst check` column only
+  implied — one bad seed and four bad seeds can give the same worst `check`, and it is the count that
+  moved from 4 to 8. `solve_once` and `svd_tables` also take a `step_ceiling` keyword, so the
+  before/after comparison every table in this release quotes is regenerated by the named harness
+  rather than recalled: `svd_tables(step_ceiling = Inf)` is the "before" column throughout.
+
+  Writing the `_BFGS + StrongWolfe(c₂ = 0.1)` row into `svd_optim.jl`'s table while re-measuring
+  closes half of open issue C8 — the row was already being computed by every run of the sweep and
+  printed to nobody, so adding it cost a line rather than the sweep time the entry assumed.
 - **`Geodesic` takes an algorithm for the matrix exponential.** `Geodesic(ScaledSquaring())` is the
   default and is the fix described under *Fixed*; `AugmentedPade()` gets ``\mathfrak{A}`` out of a
   block of `Base.exp`'s Padé approximant, and `ProjectedSkew()` exponentiates the lift in an
@@ -790,11 +887,6 @@ verified, measured, and not fixed here — see [Open Issues](#open-issues) at th
   the two failures are catalogued as A11 below.
 - `mode = :finitediff` throws a `MethodError` on `NamedTuple` parameters ([#24]).
 - No documentation page describes the unified optimizer interface yet ([#25]).
-- `_BFGS` with either polynomial line search runs to the iteration cap and ends off the manifold on
-  two of eight starting points of the SVD problem, under `Cayley`. The cause is a line search
-  extrapolating to `α ≈ 4e7`, i.e. a *step* of `‖αδ‖ ≈ 2e8`, on a merit that a compact manifold
-  leaves bounded, so nothing in the search rejects it; catalogued as A1b below, with the two
-  hypotheses that have been ruled out.
 
 ## [0.1.0]
 
@@ -808,16 +900,24 @@ are tracked with the code rather than in a scratch file. A is correctness in thi
 observability, C its dead code and bookkeeping; D is upstream, E lists things reported during the
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
-given. Entries A5, A6 and D5 come from the review of [#36]; the second half of A1b from [#38] and A10
-from the review of [#38]; A11, C7 and D6 from the line-search work of this release, A12 and C8 from
-the review of [#40], and A13, A14 and C9 from the work on A4 and A8; the rest from unifying the
-optimizer hierarchies.
+given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review of [#38]; A11 and C7
+from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
+the work on A4 and A8, and A15, A16, B3, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and
+closing A1b; the rest from unifying the optimizer hierarchies.
 
-**Only open entries are listed here.** A1, A2, A3, A4, A7, A8, A9 and C6 were in this catalogue and
-have been fixed; each is now described in [Unreleased](#unreleased--targeting-020) above, under the
-change that fixed it, and the entry here is gone. The labels are *not* reused and the surviving ones
-are not renumbered, so the gaps are deliberate: A1b, A5, A6 and A10 mean what they have always meant,
-and a reference to A1, A4, A7, A8 or C6 in a commit message still resolves to the right subject.
+Of that last group, **B3 is the one worth reading**: it and D7 are two halves of a path on which a
+sound quasi-Newton direction is discarded because the *caller* bounded the step, and the downstream
+half can be closed here without upstream moving. The rest are a documented approximation (A15), a
+default calibrated against one problem (A16), an obvious test that is not run (C10), an explanatory
+gap now stated as one rather than guessed at (C11), and a docs link lost to an upstream inventory
+(D8).
+
+**Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, C6, D3, D4 and D6 were in this
+catalogue and have been fixed; each is now described in [Unreleased](#unreleased--targeting-020)
+above, under the change that fixed it, and the entry here is gone. The labels are *not* reused and the
+surviving ones are not renumbered, so the gaps are deliberate: A5, A6 and A10 mean what they have
+always meant, and a reference to A1b, A4, D6 or C6 in a commit message still resolves to the right
+subject.
 
 Each entry says what it would take to fix it — look for **What to do**. That used to live in a
 `plan.md` that sequenced the catalogue into PRs and was never tracked here (it was excluded
@@ -827,21 +927,29 @@ the entries it planned and deleted. The one thing it had that no entry does is t
 observability entries (B1, B2, C1) are one PR because they are one subject, C3 and C4 are one small
 PR, and anything that moves a number wants its own PR and its own re-measurement.
 
-A1b is still open, and the fix it proposed for itself — and the second one proposed after that — have
-both been implemented or measured and ruled out. Read that entry before starting on it.
+A1b took three attempts and is worth remembering for the shape of it rather than for the fix. Two
+remedies were proposed from a correct-looking diagnosis and both were implemented or measured before
+being ruled out — an exact `Cayley` differential, then damping the quasi-Newton update — because the
+thing that looked wrong (the retraction, then `Q`) was in each case an *amplifier* rather than the
+cause. What settled it was instrumenting the one quantity nobody had looked at, `‖αδ‖`, and finding
+that the direction was unremarkable and the step was nine orders of magnitude too long. **When two
+plausible fixes in a row fail to move the symptom, stop proposing a third and go and measure the
+thing that is actually large.**
 
-**Five measurements in this catalogue and its tables have now failed to reproduce**, each corrected in
+**Six measurements in this catalogue and its tables have now failed to reproduce**, each corrected in
 place or before its entry moved: A1b's first-order `check` table, A7's `194 of 200` outcome count,
 A1b's step-by-step trace of the divergence — found in the review of [#40], and an order of magnitude
-out on two of its three rows — and, found while re-measuring for A8, the `_DFP + Backtracking` row of
-`svd_optim.jl` (see C8) and a `Cayley` spread in `default_linesearch` that quoted the pinned value as
-its upper bound. The *conclusion* held every time and the supporting figures did not, which is a
-consistent enough pattern to state as a rule: **treat a number here as reproducible only where the
-harness that produced it is named**, and prefer a figure that a committed script or test regenerates
-to one that was measured once at a REPL. Where a measurement needs code that is not in the package —
-the A1b trace needs `α`, `‖δ‖` and `λmax(Q)`, none of which is observable from outside
-`solver_step!` — say so and say what was changed to get it. C9 records how much of this package's
-measurement apparatus is still in that category.
+out on two of its three rows — the `_DFP + Backtracking` row of `svd_optim.jl` (see C8) and a `Cayley`
+spread in `default_linesearch` that quoted the pinned value as its upper bound, both found while
+re-measuring for A8; and, found while fixing A1b, `svd_optim.jl`'s attribution of its worst `Geodesic`
+`check` to "accumulation over 147 iterations", which was one over-long step. The *conclusion* held
+every time except the last, and the supporting figures never did, which is a consistent enough pattern
+to state as a rule: **treat a number here as reproducible only where the harness that produced it is
+named**, and prefer a figure that a committed script or test regenerates to one that was measured once
+at a REPL. Where a measurement needs code that is not in the package — the A1b trace needed `α`,
+`‖δ‖` and `λmax(Q)`, none of which is observable from outside `solver_step!` — say so and say what was
+changed to get it. C9 records how much of this package's measurement apparatus is still in that
+category.
 
 This is the detailed catalogue. The short, issue-tracker-facing list is *Known issues* under
 [Unreleased](#unreleased--targeting-020) above; the two do not overlap.
@@ -852,155 +960,6 @@ to their section rather than interleaved, so that the labels stay stable referen
 ---
 
 ### A. This package — correctness
-
-#### A1b. `Quadratic` and `BierlaireQuadratic` diverge on `Cayley` on two of eight starting points
-
-**Severity: high.** Found while re-measuring the tables after the geodesic-retraction fix of [#36],
-and *not* caused by it — `cayley` is bitwise unchanged by that fix (every `Cayley` figure in
-`svd_optim.jl` reproduces to the digit).
-
-**Still open, and the diagnosis below has been narrowed by ruling its own proposed fix out.** The
-entry originally read "the honest fix is probably an exact `Cayley` differential in `trial_slope`".
-That differential now exists (`retraction_differential`, see *Fixed* above) and is verified exact
-against a central difference of the merit at every ``\alpha``; it closes **one of the four** cases
-below and leaves three. So the slope error was real — 8.9% at ``\alpha = 0.5``, 143% at
-``\alpha = 2`` — and was worth fixing on its own account, but it is not what this entry is about.
-Anyone picking this up should not spend the effort a second time.
-
-On the SVD problem of `test/optimizer_convergence/svd_optim.jl`, `_BFGS` with either polynomial line
-search on the `Cayley` retraction runs to the iteration cap and ends off the manifold. Before the
-differential, and after it:
-
-| | seed | before | after |
-|---|---|---|---|
-| `Quadratic` | 2 | 20 000 (cap), `check` **5.0e-2** | **90 iterations, `check` 6.4e-15** |
-| `Quadratic` | 8 | 20 000 (cap), `check` **1.7e-1** | 20 000 (cap), `check` **4.0e-1** |
-| `BierlaireQuadratic` | 2 | 20 000 (cap), `check` **6.9e-2** | 20 000 (cap), `check` **6.9e-2** |
-| `BierlaireQuadratic` | 8 | 20 000 (cap), `check` **2.0e-1** | 20 000 (cap), `check` **1.3e-1** |
-
-The other six seeds converge in 90–159 iterations, and every one of these cases converges on
-`Geodesic`. The `BierlaireQuadratic` rows are *bit-identical* across the differential, which is
-itself informative: on this problem that search never asks for ``\varphi'`` away from
-``\alpha = 0``, where the old and new slopes agree exactly. So for half these cases the slope was
-never the mechanism, and it could not have been.
-
-**Where the cause actually is: the line search returns an absurd ``\alpha``, and on a compact
-manifold nothing tells it not to.** Tracing seed 8 under `Cayley` + `Quadratic` step by step — `α`,
-`‖δ‖` and `λmax(Q)` are not observable from outside `solver_step!`, so this is the loop with three
-`push!`es added and nothing else changed — the damage is done on the *third* step, and it takes three
-more to become irrecoverable:
-
-| iteration | 1 | 2 | **3** | 4 | 5 | 6 |
-|---|---|---|---|---|---|---|
-| ``\alpha`` | 0.176 | 0.473 | **4.29e7** | 8.59e7 | 2.15e7 | 1.0 |
-| ``\|\delta\|`` | 3.48 | 2.91 | **5.54** | 3.48 | 3.48 | 6.65e13 |
-| ``\|\alpha\delta\|`` | 0.61 | 1.38 | **2.38e8** | 2.99e8 | 7.47e7 | 6.65e13 |
-| ``\lambda_\mathrm{max}(Q)`` | 1.0 | 1.54 | **3.86** | 1.0 | 1.0 | 1.91e13 |
-| `check` *after* the step | 2.0e-14 | 3.8e-14 | **5.7e-7** | 3.0e-6 | 3.3e-6 | 0.75 |
-
-Three things the trace settles, in order of how much they narrow the entry:
-
-- **The direction is fine and the step is not.** ``\|\delta\| = 5.54`` at the step that loses the
-  manifold, in the same range as the two before it; the ``2.38\times10^8`` is entirely the line
-  search's ``\alpha``, which the polynomial fit extrapolates to ``4.3\times10^7``.
-- **``Q`` is well conditioned there** — ``\lambda_\mathrm{max} = 3.86``, and it grew from 1.0 over
-  three steps. **So damping the quasi-Newton update is not the remedy**; that was the first
-  hypothesis after the slope one, and this rules it out. ``\lambda_\mathrm{max} = 1.9\times10^{13}``
-  at iteration 6 is the *consequence* of the wild step, four iterations later: a secant pair taken
-  across a step of norm ``10^8`` is what poisons ``Q``, and from there ``\|\delta\|`` is ``10^{13}``
-  and the solve never returns.
-- **It is not a quasi-Newton phenomenon at all.** Iterations 4 and 5 run on ``Q = \mathbb{I}`` — both
-  follow a rejected search, so `restart!` has just fired and the direction *is* ``-\nabla{}f`` — and
-  `Quadratic` still hands back ``\alpha = 8.6\times10^7`` and ``2.1\times10^7``. Steepest descent
-  buys nothing here, which is why the remedy below is a bound on the step and not a change of
-  direction.
-
-!!! warning "This table replaces one that did not reproduce"
-    The entry previously put the damaging step at iteration 8 with
-    ``\|\alpha\delta\| = 1.85\times10^9``, ``\lambda_\mathrm{max}(Q) = 38.6`` and "restarted twice
-    before this". Re-measured on this branch and on `main` — the two agree to three digits up to the
-    step in question — it is iteration 3, ``2.38\times10^8``, ``3.86``, and no restart yet. Iteration
-    1 reproduces (``0.61``, ``1.0``) and nothing after it does. Every conclusion the old table was
-    used for survives, and two of them get sharper; the figures did not, and are replaced rather
-    than carried forward.
-
-What makes such an ``\alpha`` acceptable to a line search is the geometry, and it is specific to a
-*compact* manifold. ``\varphi(\alpha) = f(\Lambda\mathrm{retract}(\alpha\bar{B})E)`` is **bounded**
-in ``\alpha``: `Cayley` converges to a fixed rotation as ``\alpha \to \infty`` and `Geodesic` is
-periodic in it. Measured on `St(10, 3)` against a random target:
-
-| ``\alpha`` | 0 | 1 | 1e2 | 1e4 | 1e6 | 1e9 |
-|---|---|---|---|---|---|---|
-| ``\varphi``, `Cayley` | 4.8499 | 4.9648 | 5.4758 | 5.4861 | 5.4862 | 5.4862 |
-| ``\varphi``, `Geodesic` | 4.8499 | 5.1399 | 5.0538 | 5.1601 | 4.9046 | **4.7299** |
-| Euclidean ``f(x + \alpha{}p)`` | 1.1e1 | 1.1e1 | 3.3e4 | 3.4e8 | 3.4e12 | 3.4e18 |
-
-The `Geodesic` row at ``\alpha = 10^9`` is *lower* than at ``\alpha = 0``, so a search that finds it
-has found a genuine decrease and is right to report one. In the Euclidean row the same ``\alpha``
-would be rejected by the merit alone, which is why no line search carries a guard against it. On a
-manifold the merit gives the search no signal at all, and the only thing wrong with the step is that
-retracting a lift of that norm loses the manifold.
-
-That last part is *not* a defect in either retraction. `check` after a retraction grows like
-``\varepsilon\|\bar{B}\|`` for both, which is conditioning and not a summation that cancels. On
-`St(20, 3)`:
-
-| ``\|\bar{B}\|`` | 1e2 | 1e4 | 1e6 | 1e7 | 1e8 | 1e9 |
-|---|---|---|---|---|---|---|
-| `Cayley` | 5.3e-14 | 3.0e-12 | 4.2e-10 | 1.1e-8 | 9.3e-8 | 7.7e-7 |
-| `Geodesic` | 2.4e-14 | 1.7e-12 | 1.5e-10 | 2.7e-9 | 6.1e-9 | 3.7e-8 |
-
-Both degrade; `Cayley` is about three to fifteen times worse across the range. That factor is the
-whole of the `Geodesic`/`Cayley` split this entry opens with — `Geodesic` survives the same wild step
-with a `check` an order of magnitude smaller, stays inside what the solve can recover from, and
-converges. So the retraction is the *amplifier*, exactly as it was for the `𝔄` series [#36]
-replaced, and the cause is upstream of it:
-the quasi-Newton direction and the step the polynomial search accepts for it.
-
-**What the remedy has to be.** A bound on the *step*, ``\|\alpha\delta\|``, and not on the
-direction, on ``Q``, or on the outcome the search reports — none of which is wrong at the step that
-does the damage. The scale is supplied by the geometry rather than invented: the retraction of a lift
-is a rotation, so beyond ``\|\alpha\bar{B}\| \approx 2\pi`` a larger step adds nothing but the
-round-off in the table above. A cap of a few multiples of that would leave every solve in this
-package untouched — over the converging solve next to it, seed 2 at 90 iterations, the largest
-``\|\alpha\delta\|`` is ``2.03`` — while making the ``10^8`` one impossible.
-
-It is still a behaviour change on every manifold solve and it needs its own measurement of every table
-in the package, so it wants its own PR. It is *not* the same defect as the `x_converged` fix in
-*Fixed* above (the entry that was A4), which is only about how a stop is *reported*, nor as the
-rejected-step fix there (the entry that was A7), which this one previously grouped it with: that was
-the step of a *rejected* search being taken, and every search
-involved here reports `LINESEARCH_DECREASED` or `LINESEARCH_FLOOR` on a step that genuinely decreases
-the merit. Nothing is being overruled; the merit is simply not a bound on the step.
-
-Coverage: `svd_optim.jl` now runs both polynomial searches in its convergence loop, but only on seed
-`1234`, where they pass — so the loop covers the searches and does **not** guard this. Reproducing it
-needs the eight-seed sweep of `scripts/retraction_accuracy.jl`.
-
-**It is not specific to `_BFGS`.** On the same problem at seed `1234` under `Cayley`, 1 000
-iterations, `check` at the end, before the differential and after:
-
-| | `Backtracking(expand)` | `Bisection` | `Quadratic` | `BierlaireQuadratic` |
-|---|---|---|---|---|
-| `GradientMethod` | `5.8e-14` → `5.8e-14` | `7.1e-14` → `6.7e-14` | **`1.8e-3`** → **`7.1e-4`** | **`4.8e-3`** → **`4.8e-3`** |
-| `MomentumMethod` | `6.0e-14` → `6.0e-14` | `5.7e-14` → `4.6e-14` | **`1.4e-3`** → **`5.8e-4`** | **`4.9e-3`** → **`4.9e-3`** |
-| `Adam` | `8.5e-14` → `8.5e-14` | `8.7e-14` → `9.2e-14` | **`4.2e-3`** → **`9.7e-3`** | **`7.6e-4`** → **`7.6e-4`** |
-
-Same split, six more cases, and the differential improves the `Quadratic` column by about 2.5× for
-the two gradient methods while leaving `BierlaireQuadratic` untouched to the digit — none of them
-anywhere near round-off either way. The `Backtracking` column is bit-identical, which is the control:
-that search evaluates ``\varphi'`` at ``\alpha = 0`` only.
-
-(The "before" columns here are a re-measurement on `main`. They do not match the numbers this entry
-carried when it was written — `1.7e-14` / `5.6e-4` / `1.9e-3` for `GradientMethod` — which do not
-reproduce from the harness described. The split they document is real and is what the re-measurement
-shows; the individual figures were not. Take the table above as the record.)
-
-(Context, and not itself a defect: no first-order method converges on this problem within 1 000
-iterations. `Backtracking(expand)` and `Bisection` reach the optimal value — `err = 1.7097`, the same
-one `_BFGS` converges to — but stop at `rg` between `4e-5` and `2e-3`, several orders off the gate.
-That is what a first-order method on a badly conditioned problem does; it is why
-`manifold_linesearch_tests.jl` uses a two-sphere problem for its first-order coverage.)
 
 #### A5. `geodesic(Y, Δ)` and `cayley(Y, Δ)` are not deterministic and consume global RNG state
 
@@ -1225,6 +1184,57 @@ threshold" this entry inherits from A4; it is narrower now, and it is not gone.
 
 ---
 
+#### A15. The step ceiling on a mixed `NamedTuple` bounds every block by one block's geometry
+
+**Severity: low**, and documented in place rather than hidden. From the step-ceiling work that closed
+A1b.
+
+`step_αmax(c, δ)` divides by `l2norm(δ)`, which on a `NamedTuple` combines the blocks in quadrature.
+For a `NamedTuple` mixing a `StiefelManifold` block with an ordinary array — which
+`test/manifold_linesearch_tests.jl` exercises under the name `mixed` — the `2π` that justifies the
+ceiling is a property of the *manifold* blocks only, and the resulting `αmax` is then imposed on the
+Euclidean blocks too.
+
+The direction of the error is the safe one and that is why it was left: the manifold blocks are
+bounded correctly, since their norm is at most the total, so nothing can take the step that A1b is
+about. The Euclidean blocks get a bound they did not need. What is **not** measured is what that
+costs — on a mixed problem whose Euclidean block legitimately wants a long step, the ceiling is set by
+a manifold block that has nothing to do with it, and no test here would notice the solve crawling.
+Every mixed case in the suite converges, which establishes that it is not badly wrong and not that it
+is right.
+
+**What to do**: either derive the ceiling per block and take the minimum over the manifold blocks only
+— the honest version, and it needs `step_αmax` to see the block structure rather than a single norm —
+or measure a mixed problem whose two halves want different step scales and record that the coupling
+costs nothing. The second is cheaper and would justify leaving the code alone; the first is what the
+geometry actually says.
+
+---
+
+#### A16. `DEFAULT_STEP_CEILING = 1` is calibrated against one problem
+
+**Severity: low.** From the same work.
+
+The *shape* of the ceiling is not in question — `c⋅2π/‖δ‖` is what the geometry gives, and `c = 1`
+says "never more than one full turn", which is an argument rather than a fit. What is thin is the
+evidence for that particular `c`. It rests on the SVD problem: over the converging solves there the
+largest `‖αδ‖` is `2.03`, comfortably inside `2π`, and every one of the twenty combinations in the
+sweep is unmoved or improved by the ceiling. Upstream's own table brackets it from the other side —
+`αmax = 10` leaves 7 of 8 seeds on the manifold and `αmax = 1` leaves 8 of 8 — but that is the same
+problem again.
+
+So there is no measurement of a problem on which `c = 1` is too *tight*, and one plausibly exists: a
+solve whose direction is systematically under-scaled wants a large `α`, which is exactly the `_DFP`
+story that motivated `Backtracking(expand = true)`. `_DFP` passes here, so the two do not collide on
+this problem; nothing says they cannot.
+
+**What to do**: measure `c ∈ {0.5, 1, 2, 4, Inf}` across the sweep and record where the iteration
+counts start to move. If they move at `c = 1` on any row, the default is too tight and the entry
+becomes a real defect; if they move only below it, the default is justified and this entry closes with
+a table. `svd_tables(step_ceiling = …)` takes the keyword already, so this is a loop and not new code.
+
+---
+
 ### B. This package — observability
 
 #### B1. A line search failure is invisible in the returned status
@@ -1241,11 +1251,14 @@ over 457 iterations rather than 194 over 200, and it is fixed by *acting* on the
 counting them — so the counter is not a guard against anything, it is what would have made the
 thirteen visible. It is still worth having on its own terms: after that fix, a solve that needed a
 steepest-descent substitution on a quarter of its iterations is *still* indistinguishable, in the
-object the caller gets, from one that never needed one. `_BFGS` + `Quadratic` + `Cayley` on seed 8 of
-the SVD problem takes the steepest-descent branch on **4 780 of its 20 000 iterations** and says
-nothing about any of them. (That count is `linesearch_rejected`, i.e. the three outcomes together;
-this entry previously attributed all 4 780 to `LINESEARCH_FLOOR`, which the re-measurement in the
-review of [#40] did not separate and so does not support.)
+object the caller gets, from one that never needed one.
+
+**This entry has now lost its worked example, and did not lose its point.** It read that `_BFGS` +
+`Quadratic` + `Cayley` on seed 8 of the SVD problem takes the steepest-descent branch on 4 780 of its
+20 000 iterations and says nothing about any of them. That solve no longer exists: the step ceiling
+that closed A1b takes it to 159 iterations. No replacement figure is quoted here because there is no
+way to get one from outside `solver_step!` — which *is* the defect, one level down, and it is why the
+fix below would be its own instrument. Do not replace the number by reasoning about it.
 
 **What to do**: one counter, `linesearch_restarts`,
 and not one field per outcome — the question a caller has is "did this solve need help". Accumulate
@@ -1264,6 +1277,42 @@ exists.
 iterations; `extended_trace` adds `rxₐ` and `Δf` to `OptimizerTraceEntry`. Small, and it retires the
 last two silently-ignored options. Belongs in one PR with B1 and C1 — all three are the same subject,
 the status object not saying enough.
+
+---
+
+#### B3. `solver_step!` cannot tell a chosen step from a step it forbade
+
+**Severity: medium**, and it is the one entry from the step-ceiling work with a concrete cost. Pairs
+with D7 below, which is the upstream half.
+
+Since the ceiling went in, `solver_step!` supplies `params.αmax` and then reads only
+`steplength(ls_status)` and `outcome(ls_status)`. It never compares the two, so it cannot distinguish
+
+- *"the search looked and this is the minimiser it found"* from
+- *"the search was still descending when it hit the bound I imposed"*,
+
+which are different facts about the solve. Upstream declined to put a flag on the `LinesearchStatus`
+for exactly this and said so, noting that **a caller that supplied the ceiling can compare it against
+`steplength` itself**. This package supplied it and does not compare.
+
+That would be bookkeeping if it were not for D7. A ceiling that binds on a merit still falling can
+come back as `LINESEARCH_FLOOR`, which `linesearch_rejected` reads as a claim about the *direction*
+and answers by throwing `Q` away and re-searching along steepest descent. So the two together give a
+path on which a perfectly good quasi-Newton direction is discarded because the caller bounded the
+step — the direction is fine, the bound was the caller's own, and the restart is wasted work at best
+and a worse direction at worst.
+
+Nothing in the sweep is affected: with `DEFAULT_STEP_CEILING = 1` every one of the twenty combinations
+reproduces its no-ceiling iteration count or improves on it, which is evidence that the path is not
+being taken at the default. It is reachable by anyone who sets a smaller `step_ceiling`, and it is
+invisible if they do.
+
+**What to do**: in `solver_step!`, treat `LINESEARCH_FLOOR` as a direction failure only when the step
+returned is strictly below the ceiling that was passed; where it *is* the ceiling, the honest reading
+is "this step is as far as I allowed", so take it and do not restart. That is a three-line change and
+one `α ≈ αmax` comparison, and it wants a test that constructs a merit still descending at the
+ceiling. Doing it also gives B1 the counter it needs — the ceiling-bound case and the genuine-failure
+case become separately countable, which is the whole of B1's ask.
 
 ---
 
@@ -1368,14 +1417,17 @@ Both are ten (method, line search) pairs and eight of the ten agree. The two tha
   the table is the `α = 1` ceiling argument below it — and it now says so in place. Its spread
   (`10_448..114_116`) is an older measurement at a cap high enough not to bind, which is why it
   exceeds the `SVD_MAX_ITERATIONS = 20_000` the rest of the column is quoted against.
-- **`_BFGS + StrongWolfe(c₂ = 0.1)`** is in `COMBINATIONS` and not in the table. Nothing records why.
-  It is measured on every run of the sweep, over the pinned seed and all eight, and printed to
-  nobody — the `StrongWolfe` argument in `default_linesearch` is about `_DFP`, which has its own row.
+- ~~**`_BFGS + StrongWolfe(c₂ = 0.1)`** is in `COMBINATIONS` and not in the table.~~ **Closed.** It
+  was measured on every run of the sweep and printed to nobody; the row is in the table now
+  (`135 / 135` iterations, `7 893 / 7 880` evaluations), written down while re-measuring for the step
+  ceiling. The two options this entry offered were to add the row or drop it from `COMBINATIONS`, and
+  adding it turned out to cost one line rather than the sweep time the entry assumed — it was already
+  being computed.
 
-Either add the `_BFGS + StrongWolfe` row to the table or drop it from `COMBINATIONS`; the second is
-the cheaper of the two and loses nothing that is quoted anywhere. The general point is the one the
-preamble now makes: a table that names a script as its source should be checkable against that
-script row by row, or say which rows are exceptions and why.
+So one of the two discrepancies is closed and the other is documented rather than removed. The general
+point stands: a table that names a script as its source should be checkable against that script row by
+row, or say which rows are exceptions and why. `svd_optim.jl` now marks its three non-regenerated
+cells explicitly, which is what makes the remaining gap safe.
 
 **The first bullet is why this is worth doing rather than filing.** Running the A8 sweep found that
 the `_DFP + Backtracking` row had been *wrong* on `Geodesic` since the curvature-condition fix —
@@ -1413,6 +1465,53 @@ stop quoting figures that nothing can re-run.
 
 ---
 
+#### C10. The eight-seed sweep is now inside `MANIFOLD_TOLERANCE` and is still not a test
+
+**Severity: low**, and it is the cheapest open item here.
+
+`svd_optim.jl` used to say that enabling the eight-seed sweep as a test would need either
+`ProjectedSkew` or a tolerance of `1e-11`, because the worst `check` over the eight was `2.8e-12`
+against a `MANIFOLD_TOLERANCE` of `1e-12`. The step ceiling removed that outlier — it was one
+over-long step and not the accumulation the file attributed it to — and the worst `check` over all
+twenty combinations and all eight seeds is now `2.5e-13`. **The stated obstacle is gone.**
+
+What is in the suite instead is the four A1b cases at seeds 2 and 8, added with the ceiling. That
+covers the defect that was found and not the twenty-by-eight surface the sweep measures, which is
+where both A1b and the previously unnoticed `Geodesic` 7-of-8 rows were found in the first place —
+neither by the pinned seed the suite otherwise runs.
+
+**What to do**: run the sweep in CI, not in `Pkg.test()` — at `SVD_MAX_ITERATIONS = 20_000` it is
+minutes rather than seconds, which is why it is not simply added to the driver loop. A scheduled
+workflow asserting `on_the_manifold(...) == 8` for every row and `rg < CONVERGED_GRADIENT_TOLERANCE`
+would have caught A1b years earlier than a sweep someone remembered to run. Gate on one green run per
+platform first, as C5 asks for the same reason.
+
+---
+
+#### C11. The `Quadratic` `Geodesic`/`Cayley` gap is unexplained, and now explicitly so
+
+**Severity: low**, an explanatory gap and not a defect. Recorded because a wrong explanation for it
+was removed this round and nothing replaced it.
+
+`_DFP` + `Quadratic` takes 308 iterations under `Geodesic` and 529 under `Cayley`. `default_linesearch`
+used to attribute that to `trial_slope` being only first-order correct under `Cayley`; the exact
+`retraction_differential` disproved it (the figure moved 550 → 529 and the gap stayed). This round
+removed the second candidate too: the step ceiling narrows the gap (175 vs 529 without it, 308 vs 529
+with it) and does not account for it. Both docstring and docs page now say the remainder is
+unexplained rather than offering a third guess.
+
+That is the right state to be in — see the preamble on A1b, where two plausible-looking explanations
+in a row were the expensive part — but it is a loose end, and the pattern that resolved A1b applies:
+stop proposing mechanisms and instrument the quantity that differs. Here that is the sequence of
+brackets the fit is built on, which is not observable from outside SimpleSolvers.
+
+**What to do**: nothing, unless the gap starts to matter. `Quadratic` is not a default under either
+retraction and both figures converge. If it does matter, the measurement is the per-iteration `α`,
+bracket width and fit residual under the two retractions from one starting point — the same
+instrumentation A1b needed, and the same reason it is not in the package.
+
+---
+
 ### D. Upstream
 
 #### D1. Julia 1.12: nested `kwargs...` feeding a call in the same inferred body
@@ -1441,7 +1540,7 @@ explanations: 940.86 s plain, 925.27 s behind `@noinline`, 6.53 s at one level, 
 1.13.0-rc2 (aarch64-darwin). The reproducer this was measured with lived in `/tmp` and is gone; it
 has to be rewritten, which is the case for writing it into `test/` or `scripts/` this time.
 
-#### D2. SimpleSolvers 0.11: three `Options` fields that nothing reads
+#### D2. SimpleSolvers 0.12: three `Options` fields that nothing reads
 
 `store_trace`, `show_trace` and `extended_trace` exist as fields of `SimpleSolvers.Options`
 (`src/base/options.jl:458-460`), as constructor keywords (`:489-491`) and in its `show` (`:521-523`),
@@ -1456,36 +1555,10 @@ the three fields and let each caller own its trace, which is what GeometricOptim
 Either is better than a field that accepts a value and discards it. If the first, this package's
 local implementation should be retired in favour of it.
 
-#### D3. SimpleSolvers `Bisection` reports success when it cannot bracket
-
-`_bisection_core` (`src/linesearch/bisection.jl:81-84`):
-
-```julia
-if y₀ * y₁ > zero(y₀)                                  # no sign change
-    report_bisection_nobracket(α₀, α₁, y₀, y₁, config)
-    return (abs(y₀) ≤ abs(y₁) ? α₀ : α₁), true, n      # ← converged = true
-end
-```
-
-The intent is that a flat derivative at a minimum is benign, but the effect is that the core cannot
-distinguish "found the root" from "gave up", and this sits upstream of the `LINESEARCH_FLOOR` path
-that produced the divergence PR #35 fixed.
-
-**What to do**: file against JuliaGNI/SimpleSolvers.jl, proposing that
-`_bisection_core` distinguish "no sign change" from "converged" — the caller already has a
-`LinesearchOutcome` enum with room for it — and reference this package's `linesearch_rejected` path
-as the case where the conflation mattered.
-
-#### D4. `maxlog` on the SimpleSolvers line-search warnings is per session, not per solve
-
-Documented upstream at `src/linesearch/linesearch_status.jl:221-229`: `maxlog` is keyed on source
-location, so a genuine line-search failure in the tenth solve of a run is silent if the first solve
-already used the budget. Relevant because it is the only channel by which a rejected line search was
-visible before PR #35, and still the only channel for B1.
-
-**What to do**: a feature request rather than a bug report, since the behaviour is
-documented upstream. Lower priority than D2 and D3, and largely mitigated here once B1 puts the
-information in the status object instead of in a log line.
+**Still open in 0.12**, and now confirmed from both sides: upstream's own open-issues list carries it
+under *"Reported by GeometricOptimizers.jl, not addressed in 0.12.0"*, naming the same three fields
+and the same two resolutions, and noting that both are breaking so neither belonged in a release
+driven by something else. The header of this entry moved from 0.11 to 0.12 and nothing else in it did.
 
 #### D5. Documenter does not catch an `@ref` to a method signature that no longer exists
 
@@ -1504,35 +1577,68 @@ on the same branch was "mend four dead doc links" — the build cannot be what c
 `checkdocs = :all` does not help: it checks that docstrings are *included*, not that references
 resolve to what they name.
 
+The `@extref` half behaves the *opposite* way and D8 below is the case: an external link that does not
+resolve is a hard error and fails the build. So the two halves of the same feature have opposite
+failure modes — a dead internal reference is silently redirected, a dead external one stops the
+build — which is worth knowing when a docs build suddenly fails after an upstream release.
+
 ---
 
-#### D6. SimpleSolvers: the polynomial line searches extrapolate ``\alpha`` without bound
+#### D7. A step ceiling that binds can be reported as `LINESEARCH_FLOOR`
 
-Issue against JuliaGNI/SimpleSolvers.jl, and the upstream half of A1b.
+**Severity: medium**, inherited from SimpleSolvers 0.12 with the step ceiling and carried in
+upstream's own open-issues list. The downstream half is B3 above; this is the part that is not this
+package's to fix.
 
-`Quadratic` and `BierlaireQuadratic` fit a polynomial to ``\varphi`` and step to its stationary
-point. Where the fit is nearly flat that point is arbitrarily far away, and neither search bounds it:
-measured on the SVD problem of `test/optimizer_convergence/svd_optim.jl`, `Quadratic` returns
-``\alpha = 4.3e7`` on the third iteration of seed 8, which turns a direction of norm `5.54` into a
-step of ``\|\alpha\delta\| = 2.4e8``. It does the same two steps later on a *steepest-descent*
-direction, so this is a property of the search and not of what it is handed.
+`SimpleSolvers.capped_status` classifies the step at `αmax` by the same round-off rule `τ` as any
+other returned step. A merit that is *still falling* at the ceiling — which is what the capped case
+means — but has fallen by less than `τ` over the whole admissible range therefore comes back as
+`LINESEARCH_FLOOR`. That outcome is a claim about the **direction**, that no line search can make
+progress along it, and consumers act on it: SimpleSolvers' own solver through `flag_stall!` and
+`max_stalls`, and this package through `linesearch_rejected`, which throws `Q` away and re-searches
+along steepest descent. What was actually established is only that no step the *caller permits*
+decreases the merit measurably.
 
-In a Euclidean problem this is self-correcting and that is presumably why it has never been reported:
-``f(x + \alpha{}p)`` grows with ``\alpha`` — as ``\alpha^2`` for the quadratic in A1b's table — so
-the search's own sufficient-decrease test throws the step out. The report should be framed that way
-rather than as "the step is too large", because on a *compact* manifold it is not too large by any
-test the search has: ``\varphi`` is bounded there, and at ``\alpha = 10^9`` it can be genuinely
-*lower* than at ``\alpha = 0``. See the tables under A1b.
+Upstream is explicit that this is the same shape as the two unearned floors 0.12 removed from
+`Bisection`, reached through a third door, and that it is reachable exactly where the caller's ceiling
+is tightest — the case the ceiling exists for. It was left standing because the alternatives are not
+obviously better: `LINESEARCH_EXHAUSTED` would say "no step was found" about a step that was found and
+returned, and closing it properly means a boolean on the `LinesearchStatus`, which upstream declined
+on the grounds that the struct is copied per solver step and a caller who set the ceiling can compare
+it against `steplength`.
 
-The bound has to be on the *step* and not on ``\alpha``, incidentally: the same solve accepts
-``\alpha = 18.4`` on an iteration where ``\|\delta\| = 5.8\times10^{-5}``, i.e. a perfectly ordinary
-step of ``10^{-3}``, and converges.
+Nothing measured here is affected at `DEFAULT_STEP_CEILING = 1`: all twenty sweep combinations
+reproduce their no-ceiling iteration counts or improve on them, so the path is not being taken.
 
-Two defensible resolutions and the issue should name one: bound the extrapolation to a multiple of the
-bracketing interval, which is what most implementations do and costs nothing; or expose the fitted
-``\alpha`` before it is taken so a caller with a scale of its own — which a manifold solver has, in
-the ``2\pi`` of the rotation — can clamp it. GeometricOptimizers needs the second regardless, since
-the bound it wants is geometric and not a property of the merit.
+**What to do**: nothing upstream — it is filed there and the reasoning for leaving it is sound. Close
+the downstream consequence with B3, which does not need upstream to move: this package passed the
+ceiling and can therefore recognise its own bound without any new field on the status.
+
+---
+
+#### D8. `SimpleSolvers.solve_with_status` has no binding-level entry to link to
+
+**Severity: low**, and it cost this package two documentation links this round.
+
+SimpleSolvers documents `solve_with_status` per *method*, so its `objects.inv` carries entries like
+`SimpleSolvers.solve_with_status-Union{Tuple{T}, Tuple{Linesearch{...}}}` and no bare
+`SimpleSolvers.solve_with_status` binding. `solve_with_status!` does have one. A binding-level
+`[`SimpleSolvers.solve_with_status`](@extref)` therefore cannot resolve, and — unlike the internal
+`@ref` case of D5 — DocumenterInterLinks makes that a **hard error** that terminates the build.
+
+This surfaced when SimpleSolvers' published docs were rebuilt for 0.12, and is *not* caused by
+depending on 0.12: the inventory is fetched from the `stable` URL regardless of which version is
+resolved, so `main` had the same broken build the moment those docs went up. Two docstrings here
+carried the reference — `solver_step!` and `linesearch_rejected` — and both are now plain code, which
+fixes the build and loses the link.
+
+**What to do**: ask upstream for a binding-level docstring on `solve_with_status`, as
+`solve_with_status!` already has; it is one `@docs` entry and it restores the link for every
+downstream package. Failing that, this package can pin the local fallback inventory that
+`docs/make.jl` already names — `docs/inventories/SimpleSolvers.toml`, which does not currently
+exist — so that an upstream docs rebuild cannot break this build again. The second is worth doing
+regardless: relying on a fetched inventory means a docs build that passes today can fail tomorrow with
+no commit here.
 
 ---
 

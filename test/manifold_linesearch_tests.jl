@@ -5,6 +5,8 @@ using GeometricOptimizers: Cayley, Geodesic, _BFGS, _DFP, StiefelManifold, check
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew
 using GeometricOptimizers: linesearch_problem, retraction_differential, retraction, initialize!,
                            cache, gradient, hessian, problem, StiefelProjection
+using GeometricOptimizers: step_αmax, linesearch_parameters, step_ceiling, DEFAULT_STEP_CEILING,
+                           OptimizerCache, GradientMethod, direction
 using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe, l2norm
 using LinearAlgebra: norm
 using Test
@@ -378,5 +380,86 @@ end
         @test iteration_number(state) < 100          # 2 with `Bisection`, 17 and 26 with `Backtracking`
         @test status(result).rg < 1e-7
         @test isapprox(x, MINIMIZER; atol=1e-7)
+    end
+end
+
+# The step ceiling of issue A1b. A line search bounds its step by the merit, and on a compact manifold
+# `φ` is bounded, so that test never fires -- `Quadratic` returned `α = 4.3e7` on a direction of norm
+# 5.54 and reported a genuine decrease. The bound that does exist is geometric (`2π` for a rotation,
+# over `‖δ‖`) and changes at every step, which is why SimpleSolvers 0.12 takes it per call through
+# `params.αmax` and leaves the value to this package. See `DEFAULT_STEP_CEILING`.
+
+@testset "step_αmax is c⋅2π/‖δ‖, and Inf where there is no scale" begin
+    @test step_αmax(1.0, [3.0, 4.0]) ≈ 2π / 5
+    @test step_αmax(2.0, [3.0, 4.0]) ≈ 2 * 2π / 5
+
+    # `Inf` is what `SimpleSolvers.linesearch_αmax` reads as "the caller has no scale of its own", and
+    # it leaves the method's own ceiling standing. These three all have to produce it rather than a
+    # `NaN` or a non-positive value, which upstream rejects with an `ArgumentError` -- correctly, since
+    # ignoring one would hand back exactly the unbounded step the ceiling exists to rule out.
+    @test step_αmax(1.0, [0.0, 0.0]) == Inf        # a vanishing direction
+    @test step_αmax(1.0, [NaN, 1.0]) == Inf        # a direction that has already gone wrong
+    @test step_αmax(1.0, [Inf, 1.0]) == Inf
+    @test step_αmax(Inf, [3.0, 4.0]) == Inf        # the ceiling switched off
+
+    # in `T`, so that a `Float32` solve does not silently widen
+    @test step_αmax(1.0f0, Float32[3, 4]) isa Float32
+    @test step_αmax(1.0f0, Float32[3, 4]) ≈ 2.0f0π / 5.0f0
+end
+
+@testset "linesearch_parameters supplies αmax on a manifold and omits it in R^n" begin
+    # Euclidean: no geometric scale exists and none is needed, since `f(x + αp)` grows with `α` and
+    # the search's own decrease test rejects an over-long step unaided. Omitting the field (rather
+    # than passing `Inf`) is also what keeps upstream's `hasproperty` guard constant-folded.
+    let x = [1.0, 2.0]
+        algorithm = GradientMethod()
+        state = OptimizerState(algorithm, x)
+        c = OptimizerCache(algorithm, x)
+        params = linesearch_parameters(c, x, state, DEFAULT_STEP_CEILING)
+        @test !hasproperty(params, :αmax)
+        @test params.x === x && params.state === state
+    end
+
+    # Manifold: the ceiling is there, and it is the one `step_αmax` computes from the direction the
+    # cache holds at that moment.
+    let x = x₀()
+        algorithm = _BFGS()
+        state = OptimizerState(algorithm, x)
+        opt = Optimizer(x, f; algorithm=algorithm)
+        # the same two calls `slope_errors` above makes to get a cache holding a real direction
+        initialize!(cache(opt), x)
+        update!(cache(opt), state, gradient(opt), hessian(opt), x)
+
+        params = linesearch_parameters(cache(opt), x, state, DEFAULT_STEP_CEILING)
+        @test hasproperty(params, :αmax)
+        @test params.αmax == step_αmax(DEFAULT_STEP_CEILING, direction(cache(opt)))
+        @test 0 < params.αmax < Inf
+    end
+end
+
+@testset "the ceiling is a per-Optimizer knob, and Inf switches it off" begin
+    x = x₀()
+    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS())) == DEFAULT_STEP_CEILING
+    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=0.5)) == 0.5
+    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=Inf)) == Inf
+
+    # carried in the element type of the parameters, not in whatever the keyword was written as
+    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=1)) isa Float64
+end
+
+# The regression test for A1b itself. `svd_optim.jl` runs the two polynomial searches on seed `1234`
+# only, where they always passed; the failure lives on other starting points. This is the smallest
+# problem that reproduces the mechanism -- a bounded merit on a compact manifold -- rather than the
+# `St(20, 3)²` SVD problem, whose eight-seed sweep is in `scripts/retraction_accuracy.jl`.
+@testset "a bounded merit does not produce an unbounded step" begin
+    for retraction in (Geodesic(), Cayley()), linesearch in (Quadratic(Float64), BierlaireQuadratic(Float64))
+        x = x₀()
+        state = OptimizerState(_BFGS(), x)
+        opt = Optimizer(x, f; algorithm=_BFGS(), linesearch=linesearch, retraction=retraction)
+
+        result = solve!(x, state, opt)
+
+        @test check(x) < MANIFOLD_TOLERANCE
+        @test isapprox(x, MINIMIZER; atol=1e-6)
     end
 end

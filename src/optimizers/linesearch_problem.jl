@@ -47,6 +47,72 @@ function _trial_iterate!(::Union{Manifold,ArrayNamedTuple}, cache::OptimizerCach
 end
 
 @doc raw"""
+    step_αmax(c, δ)
+
+The ceiling on the line search's ``\alpha`` that a step ceiling of `c` imposes on the direction `δ`:
+``c\,2\pi/\|\delta\|``.
+
+`c` is in multiples of ``2\pi`` because that is the scale the *geometry* supplies. Retracting a
+horizontal lift is a rotation, so ``\alpha\mapsto\mathrm{retract}(\alpha\bar{B})`` has nothing left to
+reach once ``\|\alpha\bar{B}\|`` passes ``2\pi`` — [`Cayley`](@ref) has converged to a fixed rotation
+by then and [`Geodesic`](@ref) is periodic. Everything past it is round-off, and on the SVD problem
+enough of it to leave the manifold; see [`DEFAULT_STEP_CEILING`](@ref) and issue A1b.
+
+The norm is `l2norm`, which on a `NamedTuple` combines the blocks in quadrature. For a
+`NamedTuple` mixing manifold and Euclidean blocks that bounds the whole direction by the scale only
+the manifold blocks supply, which is conservative in the right direction: the manifold blocks are
+bounded correctly, since their norm is at most the total, and the Euclidean blocks get a bound they
+did not need rather than missing one they did.
+
+# Implementation
+
+A direction whose norm is zero or not finite yields `Inf`, which
+[`SimpleSolvers.linesearch_αmax`](@extref) reads as *"the caller has no scale of its own"* and which
+leaves the method's own ceiling standing. That is a guard and not a formality: upstream raises an
+`ArgumentError` on a `NaN` or non-positive `params.αmax` before it evaluates the merit — correctly,
+since silently ignoring one would hand back exactly the unbounded step the caller was ruling out — so
+a vanishing direction has to be special-cased here rather than there.
+"""
+function step_αmax(c::T, δ) where {T}
+    n = l2norm(δ)
+    (isfinite(n) && n > zero(n)) ? c * T(2π) / T(n) : T(Inf)
+end
+
+@doc raw"""
+    linesearch_parameters(cache, x, state, c)
+
+The parameters [`solver_step!`](@ref) hands the line search: the iterate `x`, the `state` whose
+section the trial steps retract from, and — on a manifold only — the step ceiling `αmax`.
+
+# Implementation
+
+Two methods, chosen on the type of the solution, as [`trial_iterate!`](@ref) is.
+
+For a [`Manifold`](@ref) or a `NamedTuple` containing one, `αmax` is
+[`step_αmax`](@ref)`(c, direction(cache))`. This is the caller's half of the fix for issue A1b, and it
+has to be rebuilt at every solver step because ``\|\delta\|`` changes at every solver step — including
+between the two searches of one `solver_step!`, since the second runs on a direction
+[`steepest_descent!`](@ref) has just replaced.
+
+For an `AbstractVector` the field is **omitted**, which is not the same as passing `Inf` only in
+spirit — upstream reads it through a `hasproperty` guard that constant-folds, so a caller that
+supplies nothing pays nothing. Omitting it is also the right answer and not merely the cheap one: a
+Euclidean ``f(x + \alpha{}p)`` *grows* with ``\alpha``, so the search's own sufficient-decrease test
+throws an over-long step out unaided, which is why this defect went unreported upstream for so long.
+There is no geometric scale to supply and the method's own
+`SimpleSolvers.DEFAULT_LINESEARCH_αmax` is the whole of the bound.
+
+Both branches return a concrete `NamedTuple`, so the merit closures stay type-stable.
+"""
+linesearch_parameters(cache::OptimizerCache, x, state, c) =
+    _linesearch_parameters(solution(cache), cache, x, state, c)
+
+_linesearch_parameters(::AbstractVector, ::OptimizerCache, x, state, _) = (x=x, state=state)
+
+_linesearch_parameters(::Union{Manifold,ArrayNamedTuple}, cache::OptimizerCache, x, state, c) =
+    (x=x, state=state, αmax=step_αmax(c, direction(cache)))
+
+@doc raw"""
     trial_slope(gradient_instance, cache, retraction, α)
 
 Return ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), D(\alpha)\rangle`` at the iterate currently
@@ -83,7 +149,9 @@ exact for both retractions at every ``\alpha``.
     `Backtracking` — the default — evaluates ``\varphi'`` at ``\alpha = 0`` only, where the two agree
     exactly. The two polynomial searches fit a curve to it *quantitatively*, and on the SVD problem of
     `test/optimizer_convergence/svd_optim.jl` that took `_BFGS` off the manifold altogether on two of
-    eight starting points. See the CHANGELOG entry for issue A1b.
+    eight starting points. The exact slope did *not* fix that — the cause was the size of the step,
+    not the slope, and [`DEFAULT_STEP_CEILING`](@ref) is what closed it. See the CHANGELOG entry for
+    issue A1b; this differential remains worth having on its own account.
 
     `α = 0` still returns `B` untouched, so the `Backtracking` default costs nothing for this.
 """

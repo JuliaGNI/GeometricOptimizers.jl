@@ -149,53 +149,93 @@ the manifold problem rather than of any one search:
   decreases ``f`` enough. Reach for a bracketing method when iterations rather than evaluations are
   what you pay for — a very expensive objective, or an outer loop bounded in iterations.
 - **A search that uses ``\varphi'`` quantitatively is the one that notices a bad step, not the one
-  that causes it.** [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (175 iterations
-  for `_DFP`) and falls apart on `Cayley` (529). The obvious explanation — that it fits a polynomial
+  that causes it.** [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (308 iterations
+  for `_DFP`) and falls behind on `Cayley` (529). The obvious explanation — that it fits a polynomial
   to a slope which is only first-order correct there — was measured and is not the cause: with the
-  exact differential above the figure moves from 550 to 529 and the gap remains. On two of eight
-  starting points the same pair with `_BFGS` still runs to the iteration cap and ends off the
-  manifold. That is open issue A1b, and the sharpened diagnosis is in `CHANGELOG.md`: the *direction*
-  is unremarkable — ``\|\delta\| = 5.5`` at the step that does the damage, with a well-conditioned
-  ``Q`` behind it — and the polynomial fit multiplies it by ``\alpha = 4\times10^7``. `check` after a
-  retraction grows like ``\varepsilon\|\bar{B}\|`` for *both* retractions, three to fifteen times
-  faster for `Cayley` than for `Geodesic`, which is why only one of the two survives such a step.
+  exact differential above the figure moved from 550 to 529 and the gap remained. The step ceiling
+  below narrows it without accounting for the rest, and nothing measured here explains the remainder.
 
-  The reason this is a statement about the *search* and not about the quasi-Newton update is two
-  iterations further along the same trace. The step above is rejected, so [`restart!`](@ref) fires,
-  ``Q`` goes back to the identity and the direction becomes ``-\nabla{}f`` — and `Quadratic` hands
-  back ``\alpha = 8.6\times10^7``, then ``2.1\times10^7``, on *steepest descent*. Substituting a
-  better direction is not a remedy for this, which is why the entry asks for a bound on
-  ``\|\alpha\delta\|`` instead.
+  The *divergence* that used to accompany it is a different matter and is fixed; see the next section.
 
-!!! danger "A merit bounded in ``\alpha`` is not a bound on the step"
-    This is the property of a compact manifold that no line search is written to expect, and it is
-    worth knowing before choosing a search that extrapolates.
-    ``\varphi(\alpha) = f(\Lambda\,\mathrm{retract}(\alpha\bar{B})E)`` is **bounded** in ``\alpha``:
-    [`Cayley`](@ref) converges to a fixed rotation as ``\alpha \to \infty`` and [`Geodesic`](@ref) is
-    periodic in it. On ``\operatorname{St}(10,3)`` against a random target, ``\varphi`` at
-    ``\alpha = 10^9`` is `5.4862` under `Cayley` and `4.7299` under `Geodesic`, against `4.8499` at
-    ``\alpha = 0`` — so under `Geodesic` a step of ``10^9`` is a *genuine decrease* and a search that
-    reports one is right.
+## A bounded merit is not a bound on the step
 
-    In the Euclidean case the same ``\alpha`` gives ``f(x + \alpha{}p) = 3.4\times10^{18}`` against
-    `1.1e1`, and the search's own sufficient-decrease test throws it out. That is why no line search
-    carries a guard here: on a vector space the merit *is* the guard. On a manifold it is not, and
-    the only thing wrong with the step is that retracting a lift of that norm loses the manifold.
+This is the property of a compact manifold that no line search is written to expect, and it is the
+subject of issue A1b.
 
-    Practical consequence: with [`SimpleSolvers.Quadratic`](@extref) or
-    [`SimpleSolvers.BierlaireQuadratic`](@extref) on a manifold, watch [`check`](@ref) rather than
-    the reported convergence — see open issue A4 for why the convergence measures do not catch it.
-    `Backtracking`, `Bisection` and `StrongWolfe` never extrapolate this way and are unaffected.
+``\varphi(\alpha) = f(\Lambda\,\mathrm{retract}(\alpha\bar{B})E)`` is **bounded** in ``\alpha``:
+[`Cayley`](@ref) converges to a fixed rotation as ``\alpha \to \infty`` and [`Geodesic`](@ref) is
+periodic in it. On ``\operatorname{St}(10,3)`` against a random target, ``\varphi`` at
+``\alpha = 10^9`` is `5.4862` under `Cayley` and `4.7299` under `Geodesic`, against `4.8499` at
+``\alpha = 0`` — so under `Geodesic` a step of ``10^9`` is a *genuine decrease*, and a search that
+reports one is telling the truth.
+
+In the Euclidean case the same ``\alpha`` gives ``f(x + \alpha{}p) = 3.4\times10^{18}`` against
+`1.1e1`, and the search's own sufficient-decrease test throws it out. That is why no line search
+carried a guard here for so long: **on a vector space the merit is the guard.** On a manifold it is
+not, and the only thing wrong with the step is that retracting a lift of that norm loses the manifold.
+
+Measured on the SVD problem, `Quadratic` returned ``\alpha = 4.3\times10^7`` on a direction of norm
+`5.54`, a step of ``\|\alpha\delta\| = 2.4\times10^8``. Nothing about the direction was wrong there —
+``\|\delta\|`` was in the same range as the two steps before it and ``Q`` was well conditioned
+(``\lambda_\mathrm{max} = 3.86``) — and two iterations later, after [`restart!`](@ref) had put ``Q``
+back to the identity so that the direction *was* ``-\nabla{}f``, the same search handed back
+``8.6\times10^7`` on steepest descent. So a better direction was never the remedy; a bound on the step
+was.
+
+### The fix, and why it takes two packages
+
+The bound is geometric. Retracting a lift is a rotation, so past ``\|\alpha\bar{B}\| \approx 2\pi``
+a longer step reaches nothing new — and ``2\pi/\|\delta\|`` is not a property of ``\varphi``, changes
+at every solver step, and cannot be measured by a line search. Hence the split:
+
+- **SimpleSolvers 0.12** takes a per-call ceiling as `params.αmax`, honoured by all six of its line
+  searches, and stops the bracketing *at* the ceiling rather than clamping afterwards — so the merit
+  is measured at the step that is handed back, and the evaluations past it are saved rather than
+  wasted. Its own default of `65536` is a backstop against unbounded extrapolation and, upstream is
+  explicit about this, is nowhere near tight enough to fix A1b: at ``\|\delta\| \approx 5.5`` it still
+  permits ``\|\alpha\delta\| = 3.6\times10^5``.
+- **This package** supplies the value, because choosing it is a statement about the geometry.
+  [`solver_step!`](@ref) passes ``c\,2\pi/\|\delta\|`` through [`linesearch_parameters`](@ref), with
+  `c` the [`DEFAULT_STEP_CEILING`](@ref) — `1`, i.e. never more than one full turn — settable per
+  solve as `Optimizer(x, F; step_ceiling = …)` and disabled with `Inf`.
+
+Over the eight starting points of `scripts/retraction_accuracy.jl`, counting the ones that end with
+both factors still on ``\operatorname{St}(20,3)``:
+
+| combination | ceiling off | ceiling on | worst `check` |
+|---|---|---|---|
+| `_BFGS` `Quadratic` `Cayley` | 4 of 8 | **8 of 8** | `3.2e-1` → `6.1e-14` |
+| `_BFGS` `BierlaireQuadratic` `Cayley` | 4 of 8 | **8 of 8** | `5.5e-1` → `6.9e-14` |
+| `_BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.1e-14` |
+| `_BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.2e-14` |
+
+All twenty combinations in that sweep are now 8 of 8. The last two rows are worth reading twice: they
+were never catalogued under A1b, and a *shrink-only* `Backtracking` reaching an over-long step at all
+is surprising until you notice that its expansion phase can exceed ``\alpha = 1`` and that ``\|\delta\|``
+is what makes ``\alpha = 1`` too far. The mechanism is not confined to the searches that extrapolate
+polynomials; it is confined to steps that are long relative to ``2\pi/\|\delta\|``.
+
+!!! info "What the ceiling does not do"
+    It costs nothing on a solve that never approaches it — on this problem every pinned figure under
+    `Cayley` is reproduced to the digit with the ceiling on or off — and it is not a convergence
+    safeguard. A step that is admissible but *uphill* is [`linesearch_rejected`](@ref)'s business, and
+    a direction that ascends is [`ensure_descent!`](@ref)'s. The three are independent.
+
+    One interaction is worth knowing: where the ceiling binds hard, a search can report
+    `LINESEARCH_FLOOR` — "no step along this direction decreases the merit" — when what it established
+    is only that no *permitted* step does. `linesearch_rejected` then restarts ``Q``. This is
+    upstream's open issue rather than a defect here, and nothing in the sweep is affected by it, but a
+    very small `step_ceiling` would make quasi-Newton restarts more frequent than they should be.
 
 [`_DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled:
-across eight starting points on the SVD problem it ranges over 387–845 iterations on `Geodesic`.
+across eight starting points on the SVD problem it ranges over 385–1 118 iterations on `Geodesic`.
 
 That range used to read 512–77 890, and the difference is not the line search. A badly conditioned
 ``Q`` on this problem was a ``Q`` built from secant pairs with ``\delta^T\gamma \leq 0``, which the
 guard on the quasi-Newton update accepted; how quickly the expansion phase dug it back out was close
 to arbitrary. Enforcing the curvature condition — see [`curvature_is_usable`](@ref) — takes a factor
 of 92 off the spread, and with it most of the reason DFP had a reputation here for being
-unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 296–868 iterations
+unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 187–868 iterations
 across the same eight, at 18 127 objective evaluations against the default's 20 001 — and remains the
 choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
 `StrongWolfe`'s own default of ``0.9``: at ``0.9`` the strong Wolfe conditions already hold at

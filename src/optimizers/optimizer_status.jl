@@ -279,8 +279,13 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
     What is still not covered: a Euclidean solve that runs away *downhill*, where ``\|x\|`` grows
     without bound and `f` decreases at every step, has no scale to be measured against and is still
     reported as converged. Closing that needs a threshold on ``\|x\|`` that no property of the
-    problem supplies. Note also that the divergence above is fixed at its source
-    ([`linesearch_rejected`](@ref), [`curvature_is_usable`](@ref)) and that
+    problem supplies — which is the *same* shape of gap as the one
+    [`DEFAULT_STEP_CEILING`](@ref) closes on a manifold, and the reason it stays open here: on a
+    manifold the geometry supplies the threshold and in ``\mathbb{R}^n`` nothing does.
+
+    Note also that the divergences above are fixed at their source — [`linesearch_rejected`](@ref)
+    and [`curvature_is_usable`](@ref) for a search that *failed* and was believed anyway,
+    `DEFAULT_STEP_CEILING` for one that *succeeded* on a step too long for the manifold — and that
     [`contains_nonfinite`](@ref) catches the `Inf`/`NaN` end of the range, so nothing measured
     reaches any of this.
 """

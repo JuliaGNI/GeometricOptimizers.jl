@@ -69,8 +69,13 @@ decrease achieved was no larger than the merit's own round-off resolution, that 
 the merit could not be bracketed, and that ``\varphi'(0) \geq 0``. In none of them does the returned
 ``\alpha`` carry a guarantee, and taking it anyway is how a solve can walk *uphill*.
 
-The outcome comes from [`SimpleSolvers.solve_with_status`](@extref), which `solver_step!` calls in
-place of `solve` for exactly this reason.
+The outcome comes from `SimpleSolvers.solve_with_status`, which `solver_step!` calls in place of
+`solve` for exactly this reason.
+
+(Plain code and not an `@extref`: SimpleSolvers documents `solve_with_status` per method and not as a
+binding, so there is no binding-level entry in its inventory to link to. Documenter reports an
+unresolvable external link as an error, unlike the `@ref`-to-a-dead-signature case of issue D5, which
+it resolves silently to the wrong page.)
 
 !!! info "This is deliberately the outcome and not `φ > φ₀`"
     Testing the merit directly — "reject the step only if it actually made things worse" — is the
