@@ -1,7 +1,7 @@
 using Test
 using LinearAlgebra: norm, opnorm, I
 using GeometricOptimizers
-using GeometricOptimizers: geodesic, check, rgrad, 𝔄, opnorm₁, Geodesic, retraction
+using GeometricOptimizers: geodesic, check, rgrad, 𝔄, 𝔄exp, opnorm₁, Geodesic, retraction
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew, TaylorSeries
 import Random
 
@@ -161,24 +161,33 @@ end
     @test opnorm₁(X) ≈ opnorm(X, 1) rtol = 1e-12
 end
 
-# `𝔄(B̂, B̄)`'s defining property, ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T = \exp(B'(B'')^T)``,
-# swept over shapes and both element types rather than asserted once. The docstring's jldoctest
-# checks it for a single 10×2 `StiefelLieAlgHorMatrix` lift in `Float64`; this covers rectangular
+# `𝔄exp`'s defining property, ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T = \exp(B'(B'')^T)``,
+# swept over shapes and both element types rather than asserted once. The docstrings' jldoctests
+# check it for a single 10×2 `StiefelLieAlgHorMatrix` lift in `Float64`; this covers rectangular
 # arguments down to 1×1 and pins the element type of the result, which a doctest printing `true`
 # cannot.
 #
-# This came from GeometricMachineLearning, which carried a one-line `𝔄exp(X, Y) = I + X * 𝔄(X, Y) * Y'`
-# and tested it here. `𝔄exp` was replicated GeometricOptimizers functionality and went when GML moved
-# onto this package (GeometricMachineLearning#230); the sweep is worth keeping and belongs on this
-# side of the split, written against `𝔄` directly.
+# `𝔄exp` and this sweep both come from GeometricMachineLearning, which carried the one-line wrapper
+# and tested it here. It was replicated GeometricOptimizers functionality and moved over when GML
+# went onto this package (GeometricMachineLearning#230).
 #
 # No nested `@testset` in the loop — see the note on RNG state at the top of this file.
-@testset "𝔄 recovers the exponential across shapes and element types" begin
+@testset "𝔄exp recovers the exponential across shapes and element types" begin
     for T in (Float32, Float64), N in 1:10, n in 1:N
         A = T(0.1) * rand(T, N, n)
         B = T(0.1) * rand(T, N, n)
-        𝔄exp = I + A * 𝔄(A, B) * B'
-        @test eltype(𝔄exp) == T
-        @test exp(A * B') ≈ 𝔄exp
+        @test eltype(𝔄exp(A, B)) == T
+        @test exp(A * B') ≈ 𝔄exp(A, B)
+    end
+
+    # The `algorithm` form forwards to `𝔄`, so it is defined exactly where `𝔄(X, algorithm)` is:
+    # `TaylorSeries`, `ScaledSquaring` and `AugmentedPade`. `ProjectedSkew` is not among them — it is
+    # a `geodesic`-level algorithm with its own branch there and no `𝔄` method — so `ALGORITHMS`,
+    # which exists for the `geodesic` sweeps above and includes it, is not what to loop over here.
+    for algorithm in (TaylorSeries(), ScaledSquaring(), AugmentedPade()), T in (Float32, Float64)
+        A = T(0.1) * rand(T, 8, 3)
+        B = T(0.1) * rand(T, 8, 3)
+        @test eltype(𝔄exp(A, B, algorithm)) == T
+        @test exp(A * B') ≈ 𝔄exp(A, B, algorithm)
     end
 end

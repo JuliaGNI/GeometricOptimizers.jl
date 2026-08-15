@@ -170,3 +170,45 @@ end
 function 𝔄(B̂::AbstractMatrix, B̄::AbstractMatrix, algorithm::AbstractExponentialAlgorithm)
     𝔄(B̄' * B̂, algorithm)
 end
+
+@doc raw"""
+    𝔄exp(B̂, B̄)
+    𝔄exp(B̂, B̄, algorithm)
+
+Compute ``\exp(B'(B'')^T)`` as ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T``, i.e. the identity
+[`𝔄`](@ref) exists for, packaged as the exponential it computes.
+
+This is what makes a geodesic retraction cheap: the argument handed to [`𝔄`](@ref) is
+``(B'')^TB'``, which is ``2n\times{}2n``, so the cost is set by ``n`` and not by ``N`` even though
+the result is ``N\times{}N``. [`geodesic`](@ref) computes this same product inline — it needs to wrap
+the result in `manifold_type(B)` and to take the lift factors apart itself — so this is for callers
+that want the matrix exponential of a low-rank product on its own.
+
+`algorithm` is forwarded to [`𝔄`](@ref); without it the Taylor series is used, as there.
+
+# Examples
+
+```jldoctest
+using GeometricOptimizers
+using GeometricOptimizers: 𝔄exp
+import Random
+Random.seed!(123)
+
+B = rand(StiefelLieAlgHorMatrix, 10, 2)
+B̂ = hcat(vcat(.5 * B.A, B.B), vcat(one(B.A), zero(B.B)))
+B̄ = hcat(vcat(one(B.A), zero(B.B)), vcat(-.5 * B.A, -B.B))
+
+𝔄exp(B̂, B̄) ≈ exp(Matrix(B))
+
+# output
+
+true
+```
+"""
+function 𝔄exp(B̂::AbstractMatrix, B̄::AbstractMatrix)
+    I + B̂ * 𝔄(B̂, B̄) * B̄'
+end
+
+function 𝔄exp(B̂::AbstractMatrix, B̄::AbstractMatrix, algorithm::AbstractExponentialAlgorithm)
+    I + B̂ * 𝔄(B̂, B̄, algorithm) * B̄'
+end

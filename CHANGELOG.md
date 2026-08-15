@@ -8,6 +8,23 @@ breaking release).
 
 ## [Unreleased] — targeting 0.2.1
 
+### Added
+
+- **`𝔄exp(B̂, B̄)`**, and `𝔄exp(B̂, B̄, algorithm)`, computing
+  ``\exp(B'(B'')^T)`` as ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T`` — the identity
+  [`𝔄`](@ref) exists for, packaged as the exponential it computes. [`geodesic`](@ref) already
+  computed this product inline; this is for callers that want the exponential of a low-rank product
+  on its own, at a cost set by ``n`` rather than by ``N``.
+
+  It comes from `GeometricMachineLearning`, which carried it as a one-line wrapper over this
+  package's `𝔄` and is dropping it as replicated functionality
+  (GeometricMachineLearning#230). Not exported, as `𝔄` is not.
+
+  The `algorithm` form is defined exactly where `𝔄(X, algorithm)` is — `TaylorSeries`,
+  `ScaledSquaring`, `AugmentedPade` — and so, like `𝔄(B̂, B̄, algorithm)`, its
+  `AbstractExponentialAlgorithm` signature also admits `ProjectedSkew`, for which there is no `𝔄`
+  method. That hole is `𝔄`'s and is left as it is rather than papered over here.
+
 ### Fixed
 
 - **The optimizer caches and states no longer take an hour to compile through a function.** The
