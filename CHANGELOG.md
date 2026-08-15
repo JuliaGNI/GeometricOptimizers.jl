@@ -10,7 +10,7 @@ breaking release).
 
 ### Added
 
-- **`𝔄exp(B̂, B̄)`**, and `𝔄exp(B̂, B̄, algorithm)`, computing
+- **`𝔄exp(B̂, B̄, algorithm = ScaledSquaring())`**, computing
   ``\exp(B'(B'')^T)`` as ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T`` — the identity
   [`𝔄`](@ref) exists for, packaged as the exponential it computes. [`geodesic`](@ref) already
   computed this product inline; this is for callers that want the exponential of a low-rank product
@@ -20,16 +20,30 @@ breaking release).
   package's `𝔄` and is dropping it as replicated functionality
   (GeometricMachineLearning#230). Not exported, as `𝔄` is not.
 
-  The `algorithm` form is defined exactly where `𝔄(X, algorithm)` is — `TaylorSeries`,
-  `ScaledSquaring`, `AugmentedPade` — and so, like `𝔄(B̂, B̄, algorithm)`, its
-  `AbstractExponentialAlgorithm` signature also admits `ProjectedSkew`, for which there is no `𝔄`
-  method. That hole is `𝔄`'s and is left as it is rather than papered over here.
+  **The default is `ScaledSquaring`, as [`geodesic`](@ref)'s is**, and deliberately not the unscaled
+  series that `𝔄(B̂, B̄)` is. The reason is the one under geodesic's "The default changed in 0.2.0":
+  the series cancels catastrophically once ``\|\bar{B}\| \gtrsim 50``, which is not a regime a
+  function presenting itself as *the exponential* may quietly get wrong. Relative error against
+  `exp(Matrix(B))` for `B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)`:
+
+  | `scale` | 1 | 10 | 50 | 100 |
+  | --- | --- | --- | --- | --- |
+  | ``\|\bar{B}\|`` | 3.8 | 36.3 | 145.8 | 324.9 |
+  | `TaylorSeries` | 5.3e-16 | 1.1e-7 | 1.8e24 | 1.7e79 |
+  | `ScaledSquaring` | 4.0e-16 | 1.9e-15 | 7.8e-15 | 1.9e-14 |
+
+  `algorithm` is defined exactly where `𝔄(X, algorithm)` is — `TaylorSeries`, `ScaledSquaring`,
+  `AugmentedPade` — and so, like `𝔄(B̂, B̄, algorithm)`, its `AbstractExponentialAlgorithm` signature
+  also admits `ProjectedSkew`, for which there is no `𝔄` method. That hole is `𝔄`'s and is left as
+  it is rather than papered over here; the docstring says which three are supported.
 
   GML's test for it came over too, into `test/retractions/exponential_accuracy.jl`: the identity
   swept over `Float32`/`Float64` and every shape with `N = 1:10`, `n = 1:N`, plus the `algorithm`
   form. The docstring jldoctests assert it for one 10×2 `Float64` lift, which cannot pin the element
   type of the result or reach rectangular arguments, so this is new coverage of `𝔄` as much as of
-  `𝔄exp`.
+  `𝔄exp`. That sweep scales its arguments by `0.1`, so it is silent about the default; a second
+  testset asserts the identity at lift norms up to ~600 and against `geodesic`, and fails on three
+  of its four scales if the default moves back to the unscaled series.
 
 ### Fixed
 

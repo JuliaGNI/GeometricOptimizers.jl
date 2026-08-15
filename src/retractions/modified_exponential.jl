@@ -172,8 +172,7 @@ function 𝔄(B̂::AbstractMatrix, B̄::AbstractMatrix, algorithm::AbstractExpon
 end
 
 @doc raw"""
-    𝔄exp(B̂, B̄)
-    𝔄exp(B̂, B̄, algorithm)
+    𝔄exp(B̂, B̄, algorithm = ScaledSquaring())
 
 Compute ``\exp(B'(B'')^T)`` as ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T``, i.e. the identity
 [`𝔄`](@ref) exists for, packaged as the exponential it computes.
@@ -184,7 +183,27 @@ the result is ``N\times{}N``. [`geodesic`](@ref) computes this same product inli
 the result in `manifold_type(B)` and to take the lift factors apart itself — so this is for callers
 that want the matrix exponential of a low-rank product on its own.
 
-`algorithm` is forwarded to [`𝔄`](@ref); without it the Taylor series is used, as there.
+`algorithm` is forwarded to [`𝔄`](@ref), which supplies [`TaylorSeries`](@ref),
+[`ScaledSquaring`](@ref) and [`AugmentedPade`](@ref). [`ProjectedSkew`](@ref) is *not* among them: it
+is a [`geodesic`](@ref)-level algorithm with its own branch there and no `𝔄` method, so
+`𝔄exp(B̂, B̄, ProjectedSkew())` fails inside `𝔄` exactly as `𝔄(B̂, B̄, ProjectedSkew())` does.
+
+# Implementation
+
+The default is [`ScaledSquaring`](@ref) and not the unscaled series, for the reason given under
+[`geodesic`](@ref): the series cancels catastrophically once ``\|\bar{B}\| \gtrsim 50``, which is not
+a regime a function that presents itself as an exponential may quietly get wrong. Relative error
+against `exp(Matrix(B))` for `B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)`, as
+`test/retractions/exponential_accuracy.jl` draws it:
+
+| `scale` | 1 | 10 | 50 | 100 |
+| --- | --- | --- | --- | --- |
+| ``\|\bar{B}\|`` | 3.8 | 36.3 | 145.8 | 324.9 |
+| [`TaylorSeries`](@ref) | 5.3e-16 | 1.1e-7 | 1.8e24 | 1.7e79 |
+| [`ScaledSquaring`](@ref) | 4.0e-16 | 1.9e-15 | 7.8e-15 | 1.9e-14 |
+
+Note that this differs from `𝔄(B̂, B̄)`, which has no `algorithm` argument at all and is the
+unscaled series. That one is a kernel, and [`𝔄`](@ref) carries the warning; this one is a result.
 
 # Examples
 
@@ -205,10 +224,6 @@ B̄ = hcat(vcat(one(B.A), zero(B.B)), vcat(-.5 * B.A, -B.B))
 true
 ```
 """
-function 𝔄exp(B̂::AbstractMatrix, B̄::AbstractMatrix)
-    I + B̂ * 𝔄(B̂, B̄) * B̄'
-end
-
-function 𝔄exp(B̂::AbstractMatrix, B̄::AbstractMatrix, algorithm::AbstractExponentialAlgorithm)
+function 𝔄exp(B̂::AbstractMatrix, B̄::AbstractMatrix, algorithm::AbstractExponentialAlgorithm=ScaledSquaring())
     I + B̂ * 𝔄(B̂, B̄, algorithm) * B̄'
 end

@@ -191,3 +191,28 @@ end
         @test exp(A * B') ≈ 𝔄exp(A, B, algorithm)
     end
 end
+
+# The sweep above is broad in shape and element type and narrow in the one dimension that decides
+# whether the default is right: `T(0.1) * rand(T, N, n)` keeps ‖AB'‖ around 0.1, where every
+# algorithm is exact. The default has to hold where the unscaled series does not — the regime
+# `geodesic`'s "The default changed in 0.2.0" warning is about — so it is asserted here directly.
+#
+# The four scales below draw lifts of ‖B̄‖ = 3.8, 36.3, 145.8 and 324.9, at which the unscaled series
+# is off by 5e-16, 1e-7, 2e24 and 2e79 respectively; `𝔄exp` defaults to `ScaledSquaring`, which stays
+# under 2e-14 throughout. Three of the four assertions below fail if that default moves back. Those
+# are the figures the docstring and the CHANGELOG quote, which is why the seed is set here rather
+# than inherited: this testset has to draw the same lifts however much runs before it.
+@testset "𝔄exp defaults to an algorithm that survives a large argument" begin
+    Random.seed!(1234)
+
+    for scale in (1, 10, 50, 100)
+        B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)
+        B̂, B̄ = GeometricOptimizers.lift_factors(B)
+        reference = exp(Matrix(B))
+
+        @test 𝔄exp(B̂, B̄) ≈ reference rtol = 1e-10
+        # `geodesic` assembles the same product and defaults the same way, so the two agree; this is
+        # what fails if either default moves without the other.
+        @test 𝔄exp(B̂, B̄) ≈ Matrix(geodesic(B))
+    end
+end
