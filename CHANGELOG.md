@@ -96,11 +96,25 @@ breaking release).
 - **`Random` and `LinearAlgebra` have `[compat]` entries** (C3), matching the `Printf = "1"` that was
   already there. All three are stdlibs in `[deps]` and used the same way; two of them had no bound.
 
-- **A18 is new in the catalogue**: `𝔄(B̂, B̄, algorithm)` and `𝔄exp(B̂, B̄, algorithm)` accept an
-  `AbstractExponentialAlgorithm`, which admits `ProjectedSkew` — a `geodesic`-level algorithm with no
-  `𝔄` method — so that call dispatches and then fails one frame in, naming `𝔄` rather than what was
-  called. `𝔄exp` inherits the hole rather than adding one; narrowing only `𝔄exp` would put the two out
-  of step, so it is catalogued rather than half-fixed.
+### Known issues
+
+Four entries are new in [Open Issues](#open-issues) below, all from the review of this release. None
+is fixed here, and each says what closing it would take:
+
+- **A18** — `𝔄(B̂, B̄, algorithm)` and `𝔄exp(B̂, B̄, algorithm)` accept an
+  `AbstractExponentialAlgorithm`, which admits `ProjectedSkew`: a `geodesic`-level algorithm with no
+  `𝔄` method. The call dispatches and then fails one frame in, naming `𝔄` rather than what was
+  called. `𝔄exp` inherits the hole rather than adding one, and narrowing only `𝔄exp` would put the
+  two out of step.
+- **A19** — nothing in this repository exercises `geodesic` on a GPU backend, and `𝔄` reaches
+  `Base.one`, whose diagonal write is scalar indexing. The documented claim that `ScaledSquaring` is
+  "the only usable algorithm that runs unchanged on a `KernelAbstractions` GPU backend" is therefore
+  unverified here, and there is a concrete reason to check it.
+- **C14** — `geodesic` and the new `𝔄exp` assemble the same ``\mathbb{I} + B'\mathfrak{A}B''^T``
+  independently, and now default the same way in two places rather than one.
+- **C15** — the compile-time figures quoted above were measured against the six first-order structs.
+  The quasi-Newton and Newton paths were widened on the strength of their *inferred types*, which is
+  a sound argument and not a measurement.
 
 ## [0.2.0]
 
@@ -1024,8 +1038,8 @@ review. Everything was verified directly — where a claim rests on a measuremen
 given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review of [#38]; A11 and C7
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
 the work on A4 and A8, A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and closing A1b, and
-A17, C12 and C13 from the review of [#44] and A18 from the review of [#45]; the rest from unifying the
-optimizer hierarchies.
+A17, C12 and C13 from the review of [#44] and A18, A19, C14 and C15 from the review of [#45]; the rest
+from unifying the optimizer hierarchies.
 
 Of that last group, **D7 is the one worth reading**, and it is the one that no longer bites here: it
 and B3 were two halves of a path on which a sound quasi-Newton direction is discarded because the
@@ -1033,6 +1047,14 @@ and B3 were two halves of a path on which a sound quasi-Newton direction is disc
 calibration problem stopped constraining it (A16), an obvious test that is not run (C10), an
 explanatory gap now stated as one rather than guessed at (C11), a docs link lost to an upstream
 inventory (D8), and three small things the review of [#44] left behind (A17, C12, C13).
+
+The [#45] group has a shape of its own worth naming: three of its four entries are things that were
+*not verified* rather than things that are wrong. A19 is a documented property that nothing here
+exercises, C15 is a fix argued from inferred types where the measurement covers only part of it, and
+C14 is a duplication whose cost depends on A19. Only A18 is a defect you can point at. That is the
+residue of a review that widened a fix on the strength of a static argument, and the argument is
+sound — but it is worth knowing which claims in [0.2.1](#021) rest on a measurement and which rest on
+reading a type.
 
 **Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, A15, B3, C6, D3, D4 and D6 were
 in this catalogue and have been fixed; each is now described in [0.2.0](#020)
@@ -1393,6 +1415,48 @@ second is the one that makes the type hierarchy match what is implemented.
 
 ---
 
+#### A19. `ScaledSquaring`'s GPU claim is untested here, and `𝔄` reaches `Base.one`
+
+**Severity: unknown, which is the point.** From the review of [#45].
+
+The documentation states the property in three places and rests the default on it:
+`docs/src/retractions.md:241` calls [`ScaledSquaring`](@ref) "the only usable algorithm that runs
+unchanged on a `KernelAbstractions` GPU backend, which is why it is the default", and
+`docs/src/manifold_optimizers.md:89` repeats it. `GeometricOptimizers.opnorm₁` exists solely to keep
+it: its docstring says `LinearAlgebra.opnorm(X, 1)` "is a scalar-indexing double loop, and scalar
+indexing is exactly what a GPU array cannot serve."
+
+Two things sit against that, both verified by reading:
+
+- `𝔄(A)` — the series `ScaledSquaring` sums, on the ``2n\times{}2n`` argument — opens with
+  `Aⁿ = one(A)` and `𝔄A = one(A)`. `Base.one(::AbstractMatrix)` is `Base._one` in
+  `base/abstractarray.jl`, which does `similar`, `fill!` and then **a scalar-indexed loop over the
+  diagonal**. So the path is not "nothing but matrix products and norms"; it reaches the same
+  construct `opnorm₁` was written to avoid, one level down. `StiefelLieAlgHorMatrix` has a
+  `Base.one` of its own that is a KernelAbstractions kernel precisely to avoid this
+  (`src/lie_algebras/stiefel_lie_algebra_horizontal.jl:314`) — but `𝔄`'s argument is a bare matrix,
+  so that method does not apply to it.
+- **No run in this repository exercises it.** `scripts/mnist_cuda.jl` and `scripts/mnist_metal.jl` are
+  the only GPU code here, and none of the five MNIST scripts passes `retraction`, so all of them take
+  the `Optimizer` default, which is `Cayley()` — the same fact recorded under F below. The 6 h 53 min
+  RTX 4090 run whose figures the documentation carries therefore never called `geodesic`, `𝔄` or
+  `ScaledSquaring` at all.
+
+What is *not* established is whether this actually breaks. CUDA.jl and Metal.jl error on disallowed
+scalar indexing, which would make it a hard failure rather than a slow one, but no GPU was available
+to the review and the claim is not being called false — only unverified, with a specific reason to
+doubt it and a one-line way to find out.
+
+**What to do**: run `geodesic(60 * rand(StiefelLieAlgHorMatrix{Float32}, 20, 3) |> gpu)` on a CUDA or
+Metal backend. If it errors on scalar indexing, `𝔄` needs the identity built the way
+`one(::StiefelLieAlgHorMatrix)` builds it — `KernelAbstractions.zeros` plus `write_ones_kernel!`,
+which `src/utils.jl:2` already provides and three other types already use — and the docs claim holds
+again once it does. If it runs, the claim is confirmed and this entry closes with the transcript,
+which is worth having either way given that three documentation passages depend on it. Do it together
+with C14, which decides where the identity is assembled.
+
+---
+
 ### B. This package — observability
 
 #### B1. A line search failure is invisible in the returned status
@@ -1681,6 +1745,65 @@ would surface as a table that no longer matches a passing suite.
 **What to do**: one `test/manifold_tolerance.jl` holding the constant and a comment, `include`d by all
 three. That the script reaches into `test/` is already true — it takes its matrix from
 `test/optimizer_convergence/svd_matrix.jl` — so this adds no new coupling, only removes two copies.
+
+---
+
+#### C14. `geodesic` and `𝔄exp` assemble the same product independently
+
+**Severity: low**, and a duplication that was created deliberately rather than found. From the review
+of [#45], where `𝔄exp` was added.
+
+Both compute ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T``:
+
+```julia
+geodesic(B, algorithm) = manifold_type(B)(one(B) + B̂ * 𝔄(B̂, B̄, algorithm) * B̄')   # retractions.jl:128
+𝔄exp(B̂, B̄, algorithm) = I + B̂ * 𝔄(B̂, B̄, algorithm) * B̄'                          # modified_exponential.jl
+```
+
+`𝔄exp` was added as a name for what `geodesic` already did, not as a replacement for the inline
+expression, on the grounds that `geodesic` also takes the lift apart and wraps the result. Both of
+those are one call each, so `manifold_type(B)(𝔄exp(lift_factors(B)..., algorithm))` is the whole of
+it, and the reason not to fold them is thinner than it looked when the two lines were written a
+commit apart.
+
+Two things now live in two places rather than one. The **default algorithm** is the first: both say
+`ScaledSquaring`, and they have to, because a lift retracted through `geodesic` and the same lift
+exponentiated through `𝔄exp` are meant to agree — a testset asserts exactly that, which is a test
+existing to catch a duplication rather than a defect. The **identity** is the second, and the two do
+not spell it the same way: `geodesic` uses `one(B)`, the KernelAbstractions kernel on
+`StiefelLieAlgHorMatrix`, and `𝔄exp` uses `I + …`, whose `LinearAlgebra` method writes the diagonal
+by scalar indexing. Whether that difference costs anything is A19's question.
+
+**What to do**: decide A19 first, since it decides how the identity should be built, then have
+`geodesic` call `𝔄exp` and delete the inline expression. The default then has one home, and the
+testset that pins the two together can go with it.
+
+---
+
+#### C15. The compile-time figures cover the first-order caches only
+
+**Severity: low**, and a gap in evidence rather than in code. From the review of [#45].
+
+The measurements in [0.2.1](#021) — 14.25 s / 14.48 s cold against a run that did not finish in seven
+or in ten minutes — were taken on `GeometricMachineLearning`'s symplectic-autoencoder test against a
+branch on which only `GradientCache`/`GradientState`, `MomentumCache`/`MomentumState` and
+`AdamCache`/`AdamState` had been unbound. That test drives `Adam`, so those six are the whole of what
+it exercises.
+
+`BFGSCache`, `BFGSState`, `DFPCache`, `NewtonOptimizerCache`, `NewtonOptimizerState` and the `VT` of
+`OptimizerResult` were unbound afterwards on the strength of their *inferred types* — for the
+quasi-Newton three, `Base.return_types` showed the same coupled shape the six had, and worse for
+`BFGSState`, which carried a free `T` across four parameters and the three-parameter `GlobalSection`
+`UnionAll` under a `Vararg`; after, all five parameters are independent. That is a sound argument from
+the same root cause, and it is not a measurement: no quasi-Newton or Newton solve was ever timed
+through a function, before or after, so the claim that they hung is an inference and the claim that
+they no longer do is untested.
+
+**What to do**: the cheap version is the one already written — the repro in the release notes with
+`algorithm = _BFGS()` and with `Newton()` on Euclidean parameters, cold, before and after, which is
+two runs of an existing harness. Do it before quoting these numbers for anything but `Adam`. The
+version worth more is C9's: a compile-time measurement that lives in `scripts/` rather than in a
+`/tmp` file that is gone by the time anyone asks.
 
 ---
 
