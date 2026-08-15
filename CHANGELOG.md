@@ -63,8 +63,11 @@ breaking release).
   every intermediate is concrete, but did show up for anyone who wrapped training in a function.
   `GeometricMachineLearning`'s symplectic-autoencoder test is one: nine layers, mixing
   `StiefelManifold` weights with ordinary matrices and vectors. Compiled statement by statement it
-  takes ~14 s; compiled as one method body it did not finish in over an hour, with the time going to
-  `subtype_unionall` under `ml_matches`. It is ~14 s either way now.
+  takes ~14 s; compiled as one method body it took **10 h 11 min**, with the time going to
+  `subtype_unionall` under `ml_matches`. It is ~14 s either way now. (That figure is a contended
+  upper bound — the machine was busy throughout — and it is the reason the symptom reads as a hang:
+  the work finishes, just not inside anything anyone waits for, which is why CI showed jobs past
+  1 h 15 min and one cancelled at 6 h rather than a deadlock.)
 
   Worth being precise about the cause, because the obvious reading is wrong. The bounds did not cost
   concrete inference: `OptimizerCache(Adam(Float64), ps)` on a `NamedTuple` of parameters infers to a
