@@ -80,7 +80,8 @@ this package produces change**, in most cases substantially for the better.
 
   The `Backtracking` is `Backtracking(T; expand = true)`, which is *not* SimpleSolvers' own default —
   see the next entry.
-- **Requires SimpleSolvers 0.11, and the line search may now lengthen a step.** A shrink-only
+- **The line search may now lengthen a step**, which is what SimpleSolvers 0.11 was needed for at the
+  time this entry was written; the floor is `0.12` now, see below. A shrink-only
   backtracking search starts its trial step at `α = 1` and can never exceed it. That is right for a
   direction already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its iterations — but
   wrong for one that is systematically under-scaled. `_DFP`'s wants a median `α` of 8, so on the SVD
@@ -110,8 +111,9 @@ this package produces change**, in most cases substantially for the better.
   `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — see the next entry.
 
   0.11 also removes `Backtracking.α₀`, the field that appeared to configure the trial step and was never
-  read — unused here, so nothing in this package changes for it. The compat bound is `"0.11"` rather
-  than `"0.10, 0.11"` because `expand` does not exist in 0.10.
+  read — unused here, so nothing in this package changes for it. The compat bound went to `"0.11"` and
+  not `"0.10, 0.11"` because `expand` does not exist in 0.10; it is `"0.12"` as released, for the step
+  ceiling of issue A1b.
 - **`StrongWolfe` is re-exported.** It was the only one of SimpleSolvers' six line searches this
   package did not pass through. It is not a default, but it is the better explicit choice for a
   DFP-heavy workload: `StrongWolfe(T; c₂ = 0.1)` takes `_DFP` to 207 / 279 iterations and
@@ -820,7 +822,8 @@ this package produces change**, in most cases substantially for the better.
 - **`Options(store_trace = true)` does something.** `OptimizerResult` gains a `trace` of one
   `OptimizerTraceEntry` — `(iteration, f, rg)` — per iteration, reachable through `trace(result)` and
   empty unless the option asked for it. The option existed before and was accepted and ignored, by
-  this package *and* by SimpleSolvers 0.11, where it is a field of `Options` that nothing reads: code
+  this package *and* by SimpleSolvers, where it is still a field of `Options` that nothing reads as of
+  0.12 (open issue D2): code
   that set it got neither a trace nor an error.
 
   The entries come from the `OptimizerStatus` that `solve!` already computes on every iteration, so
