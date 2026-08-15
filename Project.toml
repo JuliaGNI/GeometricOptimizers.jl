@@ -25,7 +25,7 @@ NaNMath = "1"
 ParameterHandling = "0.5"
 Printf = "1"
 SafeTestsets = "0.1"
-SimpleSolvers = "0.11"
+SimpleSolvers = "0.11, 0.12"
 julia = "1.10"
 
 [extras]
