@@ -296,7 +296,9 @@ this package produces change**, in most cases substantially for the better.
   retractions, is reproduced to the digit with the ceiling on and off — the ceiling does not bind on
   seed 1234 at all, and what it buys is on the other seven.
 
-  That last sentence was not true of the ceiling as first written, and the reason is issue **A15**.
+  That last sentence was not true of the ceiling as first written, and the reason is issue **A15**,
+  which the review of [#44] closed along with **B3**, three paragraphs down. Both were opened by this
+  same change and shut within it, which is why they are described here rather than in the catalogue.
   Deriving the bound from `2π` over the norm of the *whole* direction combines the blocks of a
   `NamedTuple` in quadrature, so each block paid for its neighbours: on this problem, where both
   blocks are manifolds, that tightened it by up to `√2` and bound three `Geodesic` cells (`_BFGS`
@@ -922,14 +924,15 @@ investigation that turned out not to be problems, and F the loose ends of the ge
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
 given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review of [#38]; A11 and C7
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
-the work on A4 and A8, and A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and
-closing A1b; the rest from unifying the optimizer hierarchies.
+the work on A4 and A8, A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and closing A1b, and
+A17, C12 and C13 from the review of [#44]; the rest from unifying the optimizer hierarchies.
 
 Of that last group, **D7 is the one worth reading**, and it is the one that no longer bites here: it
 and B3 were two halves of a path on which a sound quasi-Newton direction is discarded because the
-*caller* bounded the step, and the downstream half is closed. The rest are a default calibrated
-against one problem (A16), an obvious test that is not run (C10), an explanatory gap now stated as one
-rather than guessed at (C11), and a docs link lost to an upstream inventory (D8).
+*caller* bounded the step, and the downstream half is closed. The rest are a default whose one
+calibration problem stopped constraining it (A16), an obvious test that is not run (C10), an
+explanatory gap now stated as one rather than guessed at (C11), a docs link lost to an upstream
+inventory (D8), and three small things the review of [#44] left behind (A17, C12, C13).
 
 **Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, A15, B3, C6, D3, D4 and D6 were
 in this catalogue and have been fixed; each is now described in [Unreleased](#unreleased--targeting-020)
@@ -1230,6 +1233,35 @@ this problem; nothing says they cannot.
 counts start to move. If they move at `c = 1` on any row, the default is too tight and the entry
 becomes a real defect; if they move only below it, the default is justified and this entry closes with
 a table. `svd_tables(step_ceiling = …)` takes the keyword already, so this is a loop and not new code.
+Note that the sweep can no longer answer the *upper* half of that question — see the paragraph above.
+
+---
+
+#### A17. `_manifold_αmax` pairs solution and direction blocks positionally
+
+**Severity: low**, and an unasserted assumption rather than a live defect. From the review of [#44],
+where the per-block ceiling that closed A15 was written.
+
+`_manifold_αmax(values(sol), values(direction(cache)), c)` walks the two tuples in step and decides
+from `sol`'s block whether `δ`'s block is a manifold direction. It therefore assumes the two
+`NamedTuple`s have the same keys in the same order, and it checks nothing.
+
+The assumption holds, and holds by construction: the cache's direction is built from the solution by
+`_similar`, which is `apply_toNT`, and `apply_toNT` (`src/utils.jl:7-12`) `@assert`s
+`keys(ps[1]) == keys(p)` for every argument and rebuilds the result with `NamedTuple{keys(ps[1])}`.
+Verified directly on a mixed `(Y::StiefelManifold, W::Matrix, b::Vector)` problem: the direction comes
+back as `(Y::StiefelLieAlgHorMatrix, W::Matrix, b::Vector)` with `keys` equal.
+
+What is not good about it is that this is the one place in the package that pairs two block
+structures *without* going through the construction that checks. Everything else — `_copyto!`,
+`_difference!`, the `GlobalSection` copies — is `apply_toNT` and would fail loudly. If a future cache
+ever built its direction some other way, the ceiling would silently be derived from the wrong block,
+which is a wrong `αmax` and not an error.
+
+**What to do**: cheapest is one `@assert keys(sol) == keys(δ)` where the cache is constructed, so the
+invariant is stated once and costs nothing per solver step. Routing `_manifold_αmax` itself through
+`apply_toNT` is the *obviously* correct version and is why it was not done: it builds a `NamedTuple`
+of per-block ceilings, i.e. an allocation on every line-search call, to compute one scalar.
 
 ---
 
@@ -1420,6 +1452,11 @@ What is quoted somewhere and has no committed harness:
 - **the `Adam` cross-version statistic**, quoted in `svd_optim.jl` as a 1.06× spread over three Julia
   versions and reproducible only by running three Julia versions.
 - **the 1.12 compile-time reproducer** (D1), which no longer exists at all.
+- **the wall-clock timings** in `default_linesearch` — `0.155 s` against `0.246 s` on `Geodesic`,
+  `0.205 s` against `0.451 s` on `Cayley`, and the "1.6× to 2.2× faster" they support. `svd_tables`
+  reports iterations and evaluations and not time, so the step-ceiling round regenerated every other
+  figure in that docstring and left these four untouched. They now say so in place, which is the
+  minimum this entry asks for and not a fix.
 
 The pattern is C8's worked example: a number that no committed script regenerates is a number that
 goes stale silently, and the ones this catalogue has caught were all of that kind. Either put them
@@ -1478,6 +1515,60 @@ brackets the fit is built on, which is not observable from outside SimpleSolvers
 retraction and both figures converge. If it does matter, the measurement is the per-iteration `α`,
 bracket width and fit residual under the two retractions from one starting point — the same
 instrumentation A1b needed, and the same reason it is not in the package.
+
+---
+
+#### C12. `step_αmax` takes its element type from the ceiling alone
+
+**Severity: low**, a sharp edge on an internal helper. From the review of [#44].
+
+```julia
+function step_αmax(c::T, δ) where {T}
+    n = l2norm(δ)
+    (isfinite(n) && n > zero(n)) ? c * T(2π) / T(n) : T(Inf)
+end
+```
+
+`T` comes from `c` and from nothing else, so `step_αmax(1, δ)` on an integer ceiling throws an
+`InexactError` at `T(2π)` rather than promoting. `T(n)` is the mirror image and is the worse of the
+two, because it does not throw: with `c` a `Float32` and `δ` a `Float64` direction whose norm exceeds
+`3.4e38` — finite in `Float64`, `Inf32` on conversion — the guard above sees a finite `n`, the
+division underflows and `step_αmax` returns **`0.0f0`**. Measured: `step_αmax(1.0f0, [1e39, 1e39])` is
+`0.0`. Upstream then raises an `ArgumentError`, correctly, because a ceiling of zero asks for a step
+that violates `α > 0`; so the failure is loud, but it is raised for the wrong reason and blames the
+caller for what is a conversion in this function.
+
+Neither is reachable through an `Optimizer`. The struct stores `step_ceiling::T` and the constructor
+writes `T(step_ceiling)`, so `c` arrives in the element type of the problem and `l2norm(δ)` is already
+in it — the two types cannot differ; `manifold_linesearch_tests.jl` pins exactly that (`step_ceiling =
+1` gives a `Float64` field). So this is about calling the helper directly, which the tests do.
+
+**What to do**: `promote_type(typeof(c), typeof(l2norm(δ)))` and take the one `T` from that, which is
+a one-line change, kills both halves, and leaves every existing assertion true — the `Float32` test
+promotes to `Float32`. What is not worth doing is guarding the narrowing separately; the promotion is
+the guard.
+
+---
+
+#### C13. `MANIFOLD_TOLERANCE` is defined three times
+
+**Severity: low**, and the one on this list with a way to go wrong quietly. From the review of [#44].
+
+`const MANIFOLD_TOLERANCE = 1e-12` appears in `test/optimizer_convergence/svd_optim.jl:19`,
+`test/manifold_linesearch_tests.jl:45` and — added with the step ceiling —
+`scripts/retraction_accuracy.jl:184`. Three copies of one number with no import path between them: a
+script cannot `include` a test file that runs a suite as a side effect, and the constant is a property
+of the tests rather than of the package, so it does not belong in `src/`.
+
+The reason it matters more than ordinary duplication is what the third copy does. `on_the_manifold`
+counts seeds against it, and that count is what every "8 of 8" in this release means. If the script's
+copy and the suite's copy ever drift, the sweep and the tests will disagree about whether a solve is
+on the manifold and nothing will say so — the sweep is not run in CI (see C10), so the disagreement
+would surface as a table that no longer matches a passing suite.
+
+**What to do**: one `test/manifold_tolerance.jl` holding the constant and a comment, `include`d by all
+three. That the script reaches into `test/` is already true — it takes its matrix from
+`test/optimizer_convergence/svd_matrix.jl` — so this adds no new coupling, only removes two copies.
 
 ---
 
@@ -1657,5 +1748,6 @@ and both are corrected: see C8.)
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#39]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/39
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
+[#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.1.0...main
