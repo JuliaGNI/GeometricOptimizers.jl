@@ -111,7 +111,12 @@ _zero(a::ArrayNamedTuple) = apply_toNT(_zero, a)
 _copy(a::AbstractArray) = copy(a)
 _copy(a::ArrayNamedTuple) = apply_toNT(_copy, a)
 
-_similar(a::StiefelManifold{T}) where {T} = rand(StiefelManifold{T}, size(a)...)
+# `Base.similar` is deliberately an error on a `Manifold` — an arbitrary array of that shape is not a
+# point of it — so a fresh *random* point stands in for it. `Manifold` and not `StiefelManifold`, and
+# reconstructed from the type name for the same reason `flatten` above is: a `NamedTuple` holding a
+# `GrassmannManifold` used to reach the `AbstractArray` method below and raise that error while
+# building an `AdamState` or a `MomentumState`. See issue A11.
+_similar(a::Manifold{T}) where {T} = rand(Base.typename(typeof(a)).wrapper{T}, size(a)...)
 _similar(a::AbstractArray) = similar(a)
 _similar(a::ArrayNamedTuple) = apply_toNT(_similar, a)
 
@@ -153,7 +158,7 @@ function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple
     Λ₁
 end
 
-function _copyto!(Λ₁::GlobalSection{T,MT}, Λ₂::GlobalSection{T,MT}) where {T,MT<:StiefelManifold{T}}
+function _copyto!(Λ₁::GlobalSection{T,MT}, Λ₂::GlobalSection{T,MT}) where {T,MT<:Manifold{T}}
     _copyto!(Λ₁.Y, Λ₂.Y)
     _copyto!(Λ₁.λ, Λ₂.λ)
     Λ₁
@@ -175,9 +180,15 @@ function _difference!(c::SkewSymMatrix, a::SkewSymMatrix, b::SkewSymMatrix)
     c
 end
 
-function _difference!(c::StiefelLieAlgHorMatrix, a::StiefelLieAlgHorMatrix, b::StiefelLieAlgHorMatrix)
-    _difference!(c.A, a.A, b.A)
-    _difference!(c.B, a.B, b.B)
+# The elementwise helpers on a horizontal lift act on its *free parameters* and not on the ambient
+# `N × N` matrix, which has no `setindex!` and would count each off-diagonal block twice besides.
+# `Base.parent` is the tuple of those blocks — `(A, B)` for `StiefelLieAlgHorMatrix`, `(B,)` for
+# `GrassmannLieAlgHorMatrix` — so one method over it covers both lifts and whatever is added next.
+# These used to be written out for the Stiefel lift only, which is half of why a `GrassmannManifold`
+# could not be optimized over (issue A11); the Stiefel bodies were exactly this `foreach`, so nothing
+# about that path changes. The Stiefel `A` block still routes through the `SkewSymMatrix` method.
+function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b::AbstractLieAlgHorMatrix)
+    foreach(_difference!, parent(c), parent(a), parent(b))
     c
 end
 
@@ -268,9 +279,8 @@ function _add!(a::SkewSymMatrix{T}, b::T) where {T}
     a
 end
 
-function _add!(a::StiefelLieAlgHorMatrix{T}, b::T) where {T}
-    _add!(a.A, b)
-    _add!(a.B, b)
+function _add!(a::AbstractLieAlgHorMatrix{T}, b::T) where {T}
+    foreach(aᵢ -> _add!(aᵢ, b), parent(a))
     a
 end
 
@@ -292,9 +302,8 @@ function _rac!(B::SkewSymMatrix, A::SkewSymMatrix)
     B
 end
 
-function _rac!(B::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix)
-    _rac!(B.A, A.A)
-    _rac!(B.B, A.B)
+function _rac!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
+    foreach(_rac!, parent(B), parent(A))
     B
 end
 
@@ -317,9 +326,8 @@ function _div!(C::SkewSymMatrix, A::SkewSymMatrix, B::SkewSymMatrix)
     C
 end
 
-function _div!(C::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    _div!(C.A, A.A, B.A)
-    _div!(C.B, A.B, B.B)
+function _div!(C::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix, B::AbstractLieAlgHorMatrix)
+    foreach(_div!, parent(C), parent(A), parent(B))
     C
 end
 
@@ -341,9 +349,8 @@ function _square!(B::SkewSymMatrix, A::SkewSymMatrix)
     B
 end
 
-function _square!(B::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix)
-    _square!(B.A, A.A)
-    _square!(B.B, A.B)
+function _square!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
+    foreach(_square!, parent(B), parent(A))
     B
 end
 

@@ -132,13 +132,6 @@ function global_section(Y::StiefelManifold{T}) where {T}
     typeof(Y.A)(qr!(A).Q)
 end
 
-function Base.copyto!(A::StiefelManifold, B::StiefelManifold)
-    A.A .= B.A
-    nothing
-end
-
-Base.copy(A::StiefelManifold) = StiefelManifold(copy(A.A))
-
 function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::Integer) where {T,AT<:AbstractMatrix{T},MT<:StiefelManifold{T,AT}}
     @assert N ≥ n
     A = randn(rng, T, N, n)

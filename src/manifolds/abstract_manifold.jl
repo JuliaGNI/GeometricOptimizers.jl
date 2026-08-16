@@ -148,6 +148,13 @@ Base.parent(A::Manifold) = A.A
 Base.getindex(A::Manifold, i::Int, j::Int) = A.A[i, j]
 Base.copy(A::MT) where {MT<:Manifold} = MT(copy(A.A))
 
+# No `Manifold` defines `setindex!`, so the generic `AbstractArray` `copyto!` — which routes through
+# it — is not available to any of them. This method existed for `StiefelManifold` alone, which is why
+# a `NamedTuple` holding a `GrassmannManifold` died with a `CanonicalIndexError` in
+# `update!(::BFGSCache, …)`; see issue A11. It returns `A` and not `nothing`, which is the `copyto!`
+# contract and what `Base.copyto!(::GlobalSection, …)` reads.
+Base.copyto!(A::MT, B::MT) where {MT<:Manifold} = (A.A .= B.A; A)
+
 Base.similar(::Manifold) = error("The function `similar` does not make sense in this context. Consider using rand.")
 
 Base.fill!(::Manifold, b) = error("The function `fill!` does not make sense in this context.")

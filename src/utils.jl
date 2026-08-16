@@ -21,7 +21,13 @@ function add!(dx₁::NamedTuple, dx₂::NamedTuple, dx₃::NamedTuple)
 end
 
 (grad::Gradient{T})(x::Manifold{T}) where {T} = rgrad(x, reshape(grad(vec(x)), size(x)...))
-GradientAutodiff(F, x::StiefelManifold) = GradientAutodiff(_x -> F(StiefelManifold(reshape(_x, size(x)...))), vec(x))
+
+# `Manifold` and not `StiefelManifold`: hardcoding the latter is what made a bare
+# `GrassmannManifold` a `MethodError` at `Optimizer` construction (issue A11). The manifold is
+# rebuilt from the type *name* and not from `typeof(x)`, for the reason
+# `ParameterHandling.flatten(::Type, ::Manifold)` gives: the argument this closure is called on is a
+# vector of `ForwardDiff.Dual`s, whose element type is not `x`'s.
+GradientAutodiff(F, x::Manifold) = GradientAutodiff(_x -> F(Base.typename(typeof(x)).wrapper(reshape(_x, size(x)...))), vec(x))
 
 (grad::Gradient{T})(x::Matrix{T}) where {T} = rgrad(x, reshape(grad(vec(x)), size(x)...))
 GradientAutodiff(F, x::Matrix{T}) where {T} = GradientAutodiff(_x -> F(reshape(_x, size(x)...)), vec(x))

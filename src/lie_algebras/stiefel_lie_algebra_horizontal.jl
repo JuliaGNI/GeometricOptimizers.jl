@@ -143,13 +143,6 @@ end
 
 Base.:+(A::AbstractMatrix, B::StiefelLieAlgHorMatrix) = B + A
 
-function _add!(A::StiefelLieAlgHorMatrix{T}, B::StiefelLieAlgHorMatrix{T}) where {T}
-    _add!(A.A, B.A)
-    _add!(A.B, B.B)
-
-    A
-end
-
 Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
 
 function Base.zeros(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
@@ -229,37 +222,6 @@ end
 LinearAlgebra.mul!(C::StiefelLieAlgHorMatrix, α::Real, A::StiefelLieAlgHorMatrix) = mul!(C, A, α)
 LinearAlgebra.rmul!(C::StiefelLieAlgHorMatrix, α::Real) = mul!(C, C, α)
 
-@doc raw"""
-    vec(A::StiefelLieAlgHorMatrix)
-
-Vectorize `A`.
-
-# Examples
-
-```jldoctest
-using GeometricOptimizers
-
-A = SkewSymMatrix([1, ], 2)
-B = [2 3; ]
-B̄ = StiefelLieAlgHorMatrix(A, B, 3, 2)
-B̄ |> vec
-
-# output
-
-vcat(1-element Vector{Int64}, 2-element Vector{Int64}):
- 1
- 2
- 3
-```
-
-# Implementation
-
-This is using `Vcat` from the package `LazyArrays`.
-"""
-function Base.vec(A::StiefelLieAlgHorMatrix)
-    LazyArrays.Vcat(vec(A.A), vec(A.B))
-end
-
 function StiefelLieAlgHorMatrix(V::AbstractVector, N::Int, n::Int)
     # length of skew-symmetric matrix
     skew_sym_size = n * (n - 1) ÷ 2
@@ -287,14 +249,6 @@ function KernelAbstractions.get_backend(B::StiefelLieAlgHorMatrix)
     KernelAbstractions.get_backend(B.B)
 end
 
-# assign funciton; also implement this for other arrays!
-function assign!(B::StiefelLieAlgHorMatrix{T}, C::StiefelLieAlgHorMatrix{T}) where {T}
-    assign!(B.A, C.A)
-    assign!(B.B, C.B)
-
-    nothing
-end
-
 function Base.copy(B::StiefelLieAlgHorMatrix)
     StiefelLieAlgHorMatrix(
         copy(B.A),
@@ -309,15 +263,6 @@ function assign!(A::AbstractArray, B::AbstractArray)
     A .= B
 
     nothing
-end
-
-function Base.one(B::StiefelLieAlgHorMatrix{T}) where {T}
-    backend = KernelAbstractions.get_backend(B)
-    oneB = KernelAbstractions.zeros(backend, T, B.N, B.N)
-    write_ones! = write_ones_kernel!(backend)
-    write_ones!(oneB; ndrange=B.N)
-
-    oneB
 end
 
 function _round(B::StiefelLieAlgHorMatrix; kwargs...)

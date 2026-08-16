@@ -63,6 +63,9 @@ begin
     @safetestset "Manifold Optimizers         " include("manifold_optimizers_with_new_interface.jl")
 end
 begin
+    @safetestset "Grassmann Optimizers         " include("grassmann_optimizer_tests.jl")
+end
+begin
     @safetestset "Optimizer State Init         " include("optimizer_state_initialization.jl")
 end
 begin

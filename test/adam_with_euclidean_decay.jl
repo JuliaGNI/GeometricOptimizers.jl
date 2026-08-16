@@ -2,7 +2,7 @@ using GeometricOptimizers
 using GeometricOptimizers: AdamState, Manifold, first_moment, second_moment, check,
     increase_iteration_number!, solver_step!, update!, _square, _weight_decay!, _is_decayable
 using SimpleSolvers: Static
-using LinearAlgebra: I, norm
+using LinearAlgebra: I, norm, tr, Symmetric
 using Test
 import Random
 
@@ -165,13 +165,33 @@ end
     end
 end
 
-# The `GrassmannManifold` is *not* covered by an optimizer run, and cannot be as things stand:
-# `GradientAutodiff(F, ::GrassmannManifold)` does not exist for a bare one, and a `NamedTuple`
-# holding one dies in `_similar` (`similar` is deliberately undefined for its horizontal lift).
-# Both are issue #27, "bare Manifold parameters are only partially supported", and neither is
-# specific to weight decay. What *can* be checked of the Grassmann case is checked: the `rgrad`
-# identity above and the `_weight_decay!` dispatch below.
+# The same run on a `GrassmannManifold`, which this file used to record as impossible: a bare one had
+# no `GradientAutodiff` method and a `NamedTuple` holding one died in `_similar`. That was issue A11
+# — the concrete content of issue #27 — and it is closed; see `test/grassmann_optimizer_tests.jl`,
+# which covers the solve itself. What this testset adds is that the *weight-decay* claim above holds
+# on the second manifold and not only on the first, which is what the `rgrad` identity two testsets
+# up predicts and what could not be checked end to end before.
 #
+# The objective is the Rayleigh quotient rather than a distance to a target point: on the Grassmann
+# manifold `Y` and `YO` are the same point, and a distance is not a function of it.
+@testset "weight decay does nothing to a Grassmann weight either" begin
+    for T in (Float64, Float32)
+        M = Symmetric(T[3.0 0.5 0.0; 0.5 2.0 0.1; 0.0 0.1 1.0])
+        f(Y::GrassmannManifold) = -tr(Y' * M * Y)
+        Random.seed!(1234)
+        x₀ = rand(GrassmannManifold{T}, 3, 1)
+
+        adam = run!(deepcopy(x₀), Adam(T), f, 25; α=T(0.1))
+        adamw = @test_logs (:warn, r"none of the parameters") match_mode = :any run!(
+            deepcopy(x₀), AdamWithEuclideanDecay(T; λ=T(λ)), f, 25; α=T(0.1))
+
+        @test adamw isa GrassmannManifold{T}
+        @test adamw.A == adam.A                     # bit for bit, as on the Stiefel manifold
+        @test check(adamw) < 100 * eps(T)
+        @test f(adamw) < f(x₀)
+    end
+end
+
 # `_weight_decay!` directly, rather than only through a 25-step run. The no-op is not an omission:
 # the direction on a manifold is a horizontal lift, of a different shape from the point, so `λx`
 # could not be subtracted from it even if it were nonzero.
