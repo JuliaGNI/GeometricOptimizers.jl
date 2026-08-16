@@ -40,8 +40,14 @@ const M₅ = Symmetric([5.0 0.4 0.1 0.0 0.2
     0.0 0.1 0.2 2.0 0.3
     0.2 0.0 0.1 0.3 1.0])
 
-"The problem matrix for `Gr(n, N)`, in element type `T`."
-problem_matrix(::Type{T}, N::Integer) where {T} = Symmetric(T.(N == 3 ? M₃ : M₅))
+# The problem matrix for `Gr(n, N)`, in element type `T`. The fallthrough is an error rather than
+# `M₅`, so that a wrong `N` says so here instead of surfacing as a `DimensionMismatch` several frames
+# into a solve.
+function problem_matrix(::Type{T}, N::Integer) where {T}
+    N == 3 && return Symmetric(T.(M₃))
+    N == 5 && return Symmetric(T.(M₅))
+    error("no problem matrix for N = $N; this file covers Gr(1, 3) and Gr(2, 5)")
+end
 
 objective(::Type{T}, N::Integer) where {T} = let M = problem_matrix(T, N)
     Y -> -tr(Y' * M * Y)
@@ -78,8 +84,8 @@ end
 # a fixed step never lets it settle; it gets a searching line search here for the reason
 # `manifold_optimizers_with_new_interface.jl` gives it one. `Bisection` rather than the
 # `Backtracking` default because Adam's direction is deliberately not required to descend.
-linesearch_for(algorithm) = algorithm isa Adam ? Bisection(Float64) : nothing
 linesearch_for(::Type{T}, algorithm) where {T} = algorithm isa Adam ? Bisection(T) : nothing
+linesearch_for(algorithm) = linesearch_for(Float64, algorithm)
 
 # `check` measures the deviation from the manifold, so this is a round-off tolerance. The worst
 # observed over every case below is 9.5e-15 (`Float64`) and 5.4e-6 (`Float32`).
@@ -166,7 +172,7 @@ end
     end
 end
 
-# `GradientMethod` on a bare manifold, run twice from the same seed, has to give the same answer.
+# `_BFGS` on a bare manifold, run twice from the same seed, has to give the same answer.
 # Not a determinism claim about the retraction — that is open issue A5, and `GlobalSection` draws a
 # random complement from the *global* RNG — but a check that seeding the run is enough to reproduce
 # it, which is what the rest of this file relies on.

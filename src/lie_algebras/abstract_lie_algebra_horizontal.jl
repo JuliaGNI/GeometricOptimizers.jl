@@ -21,8 +21,9 @@ function manifold_type end
 @doc raw"""
     parent(B::AbstractLieAlgHorMatrix)
 
-The tuple of blocks `B`'s free parameters are stored in: `(A, B)` for a
-[`StiefelLieAlgHorMatrix`](@ref), `(B,)` for a [`GrassmannLieAlgHorMatrix`](@ref).
+The tuple of blocks `B`'s free parameters are stored in — `(A, B)` for a
+[`StiefelLieAlgHorMatrix`](@ref), `(B,)` for a [`GrassmannLieAlgHorMatrix`](@ref) — and *not* the
+single array every other `parent` this package defines returns.
 
 Every operation on a lift that is elementwise *in the free parameters* — as opposed to in the ambient
 ``N\times{}N`` matrix, which has no `setindex!` and counts each off-diagonal block twice — is written
@@ -30,8 +31,13 @@ once over this tuple rather than once per lift type. That is the four methods be
 and the `_difference!` / `_add!` / `_rac!` / `_div!` / `_square!` family in `named_tuple_wrapper.jl`.
 They used to exist for the Stiefel lift alone, which is half of why a [`GrassmannManifold`](@ref)
 could not be driven through an [`Optimizer`](@ref) at all (issue A11).
+
+The docstring is attached to the *signature* and not to the bare `Base.parent`: the package also
+defines `parent` for [`Manifold`](@ref), `SkewSymMatrix`, `SymmetricMatrix` and `AbstractTriangular`,
+each of which returns the single array it wraps, and a signature-less docstring would be shown as the
+general meaning of `parent` for all of them.
 """
-Base.parent
+Base.parent(::AbstractLieAlgHorMatrix)
 
 _add!(A::AbstractLieAlgHorMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T} =
     (foreach(_add!, parent(A), parent(B)); A)

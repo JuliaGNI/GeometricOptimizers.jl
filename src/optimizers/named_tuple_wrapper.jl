@@ -17,10 +17,8 @@ function ParameterHandling.flatten(::Type{T}, x::Manifold{R}) where {T<:Abstract
     v, unflatten = ParameterHandling.flatten(T, x.A)
     # The manifold has to come back as the *same* kind of manifold — hardcoding
     # `StiefelManifold` here silently turned a `GrassmannManifold` into a `StiefelManifold` on
-    # every round trip. It is reconstructed from the type *name* and not from `typeof(x)`,
-    # because `unflatten` may return an array of a different element type: `ForwardDiff.Dual`s,
-    # when the flattened parameters are differentiated through.
-    MT = Base.typename(typeof(x)).wrapper
+    # every round trip. See `manifold_constructor` for why it is the type *name*.
+    MT = manifold_constructor(x)
     v, _v -> MT(unflatten(_v))
 end
 
@@ -113,10 +111,10 @@ _copy(a::ArrayNamedTuple) = apply_toNT(_copy, a)
 
 # `Base.similar` is deliberately an error on a `Manifold` — an arbitrary array of that shape is not a
 # point of it — so a fresh *random* point stands in for it. `Manifold` and not `StiefelManifold`, and
-# reconstructed from the type name for the same reason `flatten` above is: a `NamedTuple` holding a
+# built with `manifold_constructor` for the same reason `flatten` above is: a `NamedTuple` holding a
 # `GrassmannManifold` used to reach the `AbstractArray` method below and raise that error while
 # building an `AdamState` or a `MomentumState`. See issue A11.
-_similar(a::Manifold{T}) where {T} = rand(Base.typename(typeof(a)).wrapper{T}, size(a)...)
+_similar(a::Manifold{T}) where {T} = rand(manifold_constructor(a){T}, size(a)...)
 _similar(a::AbstractArray) = similar(a)
 _similar(a::ArrayNamedTuple) = apply_toNT(_similar, a)
 

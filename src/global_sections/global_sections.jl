@@ -105,7 +105,7 @@ function apply_section(λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:Grassman
     Y
 end
 
-function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:GrassmannManifold{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::MT) where {T,AT<:GrassmannManifold{T},MT<:GrassmannManifold{T}}
     N, n = size(λY.Y)
 
     # `.=` and not `=`, as in the Stiefel method above: assigning the field replaced `Y`'s array on

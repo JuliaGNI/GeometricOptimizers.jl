@@ -1494,10 +1494,12 @@ Two things sit against that, both verified by reading:
   `Aⁿ = one(A)` and `𝔄A = one(A)`. `Base.one(::AbstractMatrix)` is `Base._one` in
   `base/abstractarray.jl`, which does `similar`, `fill!` and then **a scalar-indexed loop over the
   diagonal**. So the path is not "nothing but matrix products and norms"; it reaches the same
-  construct `opnorm₁` was written to avoid, one level down. `StiefelLieAlgHorMatrix` has a
+  construct `opnorm₁` was written to avoid, one level down. `AbstractLieAlgHorMatrix` has a
   `Base.one` of its own that is a KernelAbstractions kernel precisely to avoid this
-  (`src/lie_algebras/stiefel_lie_algebra_horizontal.jl:314`) — but `𝔄`'s argument is a bare matrix,
-  so that method does not apply to it.
+  (`src/lie_algebras/abstract_lie_algebra_horizontal.jl:88`) — but `𝔄`'s argument is a bare matrix,
+  so that method does not apply to it. (It was written for `StiefelLieAlgHorMatrix` alone and moved
+  to the abstract type in [Unreleased](#unreleased), which is why the Grassmann retraction was on the
+  scalar-indexed path as well until then; that is *a piece of* this entry and not a fix for it.)
 - **No run in this repository exercises it.** `scripts/mnist_cuda.jl` and `scripts/mnist_metal.jl` are
   the only GPU code here, and none of the five MNIST scripts passes `retraction`, so all of them take
   the `Optimizer` default, which is `Cayley()` — the same fact recorded under F below. The 6 h 53 min
@@ -1511,7 +1513,7 @@ doubt it and a one-line way to find out.
 
 **What to do**: run `geodesic(60 * rand(StiefelLieAlgHorMatrix{Float32}, 20, 3) |> gpu)` on a CUDA or
 Metal backend. If it errors on scalar indexing, `𝔄` needs the identity built the way
-`one(::StiefelLieAlgHorMatrix)` builds it — `KernelAbstractions.zeros` plus `write_ones_kernel!`,
+`one(::AbstractLieAlgHorMatrix)` builds it — `KernelAbstractions.zeros` plus `write_ones_kernel!`,
 which `src/utils.jl:2` already provides and three other types already use — and the docs claim holds
 again once it does. If it runs, the claim is confirmed and this entry closes with the transcript,
 which is worth having either way given that three documentation passages depend on it. Do it together
@@ -1569,8 +1571,8 @@ the status object not saying enough.
 
 #### C1. `f_converged_strong` is computed and thrown away
 
-`convergence_measures` computes it at `src/optimizers/optimizer_status.jl:194` and returns it at
-`:201`; the `OptimizerStatus` constructor destructures it at `:100` and never stores it. Nothing else
+`convergence_measures` computes it at `src/optimizers/optimizer_status.jl:312` and returns it at
+`:319`; the `OptimizerStatus` constructor destructures it at `:135` and never stores it. Nothing else
 in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
 on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
 and `Options.f_stall_window` were meant to drive — both of which are also unread here.
