@@ -336,9 +336,9 @@ end
     ps = initial_parameters(Float64)
     @test OptimizerCache(Adam(Float64), ps) isa GeometricOptimizers.AdamCache{Float64}
     @test OptimizerState(Adam(Float64), ps) isa AdamState{Float64}
-    @test OptimizerCache(GeometricOptimizers._BFGS(), ps) isa GeometricOptimizers.BFGSCache{Float64}
-    @test OptimizerState(GeometricOptimizers._BFGS(), ps) isa GeometricOptimizers.BFGSState{Float64}
-    @test OptimizerCache(GeometricOptimizers._DFP(), ps) isa GeometricOptimizers.DFPCache{Float64}
+    @test OptimizerCache(GeometricOptimizers.BFGS(), ps) isa GeometricOptimizers.BFGSCache{Float64}
+    @test OptimizerState(GeometricOptimizers.BFGS(), ps) isa GeometricOptimizers.BFGSState{Float64}
+    @test OptimizerCache(GeometricOptimizers.DFP(), ps) isa GeometricOptimizers.DFPCache{Float64}
     @test OptimizerCache(Newton(), zeros(3)) isa GeometricOptimizers.NewtonOptimizerCache{Float64}
     @test OptimizerState(Newton(), zeros(3)) isa GeometricOptimizers.NewtonOptimizerState{Float64}
 end

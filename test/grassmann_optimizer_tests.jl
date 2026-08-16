@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: Cayley, Geodesic, check, _BFGS, _DFP
+using GeometricOptimizers: Cayley, Geodesic, check, BFGS, DFP
 using SimpleSolvers
 using SimpleSolvers: Bisection
 using LinearAlgebra
@@ -8,7 +8,7 @@ import Random
 
 # A `GrassmannManifold` can be driven through an `Optimizer`, which until this file it could not:
 # `GradientAutodiff(F, ::GrassmannManifold)` did not exist, so a bare one was a `MethodError` at
-# construction, and a `NamedTuple` holding one died in the first step — under `_BFGS` with
+# construction, and a `NamedTuple` holding one died in the first step — under `BFGS` with
 # `CanonicalIndexError: setindex! not defined for GrassmannManifold`, under `Adam` with `The function
 # `similar` does not make sense in this context`. That was issue A11, the concrete content of
 # issue #27. Every `GrassmannManifold` test in the suite exercised the manifold, its lift, its
@@ -95,7 +95,7 @@ manifold_tolerance(::Type{T}) where {T} = 1000 * eps(T)
 # is 4.6e-8 (`Float64`) and 2.6e-3 (`Float32`); the first-order methods are the loose ones.
 subspace_tolerance(::Type{T}) where {T} = 100 * sqrt(eps(T))
 
-const METHODS = (GradientMethod(), MomentumMethod(0.1), Adam(Float64), _BFGS(), _DFP())
+const METHODS = (GradientMethod(), MomentumMethod(0.1), Adam(Float64), BFGS(), DFP())
 
 @testset "a bare GrassmannManifold can be optimized" begin
     for (N, n) in ((3, 1), (5, 2)), retraction in (Geodesic(), Cayley()), algorithm in METHODS
@@ -114,7 +114,7 @@ end
 # have caught it, because nothing here could run at all.
 @testset "…in Float32 as well as Float64" begin
     for (N, n) in ((3, 1), (5, 2)), retraction in (Geodesic(), Cayley())
-        for algorithm in (GradientMethod(), MomentumMethod(0.1f0), Adam(Float32), _BFGS(), _DFP())
+        for algorithm in (GradientMethod(), MomentumMethod(0.1f0), Adam(Float32), BFGS(), DFP())
             x, x₀, f = optimize(Float32, N, n, algorithm; retraction=retraction,
                 linesearch=linesearch_for(Float32, algorithm))
 
@@ -161,8 +161,8 @@ end
         ps = (Y=rand(GrassmannManifold{Float64}, 5, 2), S=rand(StiefelManifold{Float64}, 5, 1))
         f = p -> -tr(p.Y' * M₅ * p.Y) - tr(p.S' * M₅ * p.S)
         f₀ = f(ps)
-        optimizer = Optimizer(ps, f; algorithm=_BFGS(), retraction=retraction)
-        solve!(ps, OptimizerState(_BFGS(), ps), optimizer)
+        optimizer = Optimizer(ps, f; algorithm=BFGS(), retraction=retraction)
+        solve!(ps, OptimizerState(BFGS(), ps), optimizer)
 
         @test ps.Y isa GrassmannManifold{Float64}       # each block keeps its own manifold type
         @test ps.S isa StiefelManifold{Float64}
@@ -172,12 +172,12 @@ end
     end
 end
 
-# `_BFGS` on a bare manifold, run twice from the same seed, has to give the same answer.
+# `BFGS` on a bare manifold, run twice from the same seed, has to give the same answer.
 # Not a determinism claim about the retraction — that is open issue A5, and `GlobalSection` draws a
 # random complement from the *global* RNG — but a check that seeding the run is enough to reproduce
 # it, which is what the rest of this file relies on.
 @testset "a seeded Grassmann solve reproduces" begin
-    x₁, _, _ = optimize(Float64, 5, 2, _BFGS())
-    x₂, _, _ = optimize(Float64, 5, 2, _BFGS())
+    x₁, _, _ = optimize(Float64, 5, 2, BFGS())
+    x₂, _, _ = optimize(Float64, 5, 2, BFGS())
     @test x₁.A == x₂.A
 end

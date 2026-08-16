@@ -4,7 +4,7 @@
 """
     DFPCache <: OptimizerCache
 
-The [`OptimizerCache`](@ref) corresponding to the [`_DFP`](@ref) method.
+The [`OptimizerCache`](@ref) corresponding to the [`DFP`](@ref) method.
 
 `g̃` is the scratch for [`latest_gradient`](@ref) and `g̃_is_current` says whether it is the gradient at
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
@@ -44,7 +44,7 @@ struct DFPCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
     end
 end
 
-OptimizerCache(::_DFP, x::OptimizerSolution) = DFPCache(x)
+OptimizerCache(::DFP, x::OptimizerSolution) = DFPCache(x)
 
 section(cache::DFPCache) = cache.section
 

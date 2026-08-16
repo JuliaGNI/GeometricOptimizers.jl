@@ -81,15 +81,14 @@ export Optimizer,
     OptimizerProblem,
     OptimizerState, isaOptimizerState,
     NewtonOptimizerState,
-    NewtonOptimizer,
-    BFGSOptimizer,
-    DFPOptimizer,
     HessianAutodiff,
     HessianBFGS,
     HessianDFP
 
 import SimpleSolvers: solve!, solve
-export solve!, solve, value, gradient, Newton
+# `Newton`, `BFGS` and `DFP` are the optimizer methods; `BFGSState`/`DFPState` and the caches stay
+# internal, as they do for the first-order methods further down.
+export solve!, solve, value, gradient, Newton, BFGS, DFP
 
 include("optimizer_solution.jl")
 include("optimizers/optimizer_problems.jl")

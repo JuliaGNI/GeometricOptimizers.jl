@@ -1,10 +1,10 @@
 using GeometricOptimizers
-using GeometricOptimizers: _BFGS, _DFP, cache, solver_step!, initialize_state!, inverse_hessian,
+using GeometricOptimizers: BFGS, DFP, cache, solver_step!, initialize_state!, inverse_hessian,
                            increase_iteration_number!, iteration_number, update!
 using LinearAlgebra: norm, dot
 using Test
 
-# `_BFGS` and `_DFP` build their inverse Hessian `Q` from the secant pair
+# `BFGS` and `DFP` build their inverse Hessian `Q` from the secant pair
 #
 #     δ = x⁽ᵏ⁾ - x⁽ᵏ⁻¹⁾,    γ = ∇f(x⁽ᵏ⁾) - ∇f(x⁽ᵏ⁻¹⁾),
 #
@@ -26,7 +26,7 @@ rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i+1] - x[i]^2)^2 for i in 1:(length(
     # this window has a genuine secant pair, and `Q` has to move on each of them.
     ITERATIONS = 10
 
-    for algorithm in (_BFGS(), _DFP())
+    for algorithm in (BFGS(), DFP())
         x = [-1.2, 1.0]
         state = OptimizerState(algorithm, x)
         opt = Optimizer(x, rosenbrock; algorithm=algorithm, linesearch=Backtracking())
@@ -57,13 +57,13 @@ end
 
 # How many iterations either method may take on Rosenbrock from `(-1.2, 1)` with the `Backtracking`
 # search that `default_linesearch` returns for both of them, i.e. the expanding one. Measured: 20 for
-# `_BFGS` and 34 for `_DFP`, and both are *invariant* over 900 starting points one ulp either side of
+# `BFGS` and 34 for `DFP`, and both are *invariant* over 900 starting points one ulp either side of
 # `(-1.2, 1)` in each coordinate. One bound covers both with a factor of three to spare.
 #
 # The search has to be the expanding one. A shrink-only `Backtracking` starts at `α = 1` and can
 # never exceed it, which is right for a direction already scaled like a Newton step but wrong for
-# `_DFP`, whose direction is systematically under-scaled and which wants a median `α` of 8 (see
-# `default_linesearch`). Starved of the step length it needs, `_DFP` picks its way to the minimizer
+# `DFP`, whose direction is systematically under-scaled and which wants a median `α` of 8 (see
+# `default_linesearch`). Starved of the step length it needs, `DFP` picks its way to the minimizer
 # along a path that is *chaotic* in the last bits of the arithmetic: over 400 starting points one ulp
 # apart the count ranges over `108 .. 591_735`, median 1 784, while `f < 1e-12` holds in every one of
 # them. That is not a quantity a test can bound — an earlier version of this file bounded it at 2 000
@@ -75,18 +75,18 @@ end
 # here (`GradientMethod` with the best fixed step found for it, `Static(0.001)`), three orders of
 # magnitude above this bound.
 #
-# What the shrink-only search costs `_DFP` — and that it costs `_BFGS` nothing — is documented where
+# What the shrink-only search costs `DFP` — and that it costs `BFGS` nothing — is documented where
 # it belongs, in `curvature_is_usable` and `default_linesearch`, both of which carry the measured
 # figures. `max_iterations` is set past the bound so that a solve which did drift cannot be truncated
 # by the cap and fail the `f < 1e-12` assertion for a different reason than the one being tested.
 const ROSENBROCK_MAX_ITERATIONS = 100
 
 @testset "the quasi-Newton methods beat gradient descent on Rosenbrock" begin
-    # `Q ≡ I` makes `_BFGS`/`_DFP` identical to `GradientMethod`, which is what this separates. On
+    # `Q ≡ I` makes `BFGS`/`DFP` identical to `GradientMethod`, which is what this separates. On
     # Rosenbrock, gradient descent is famously slow while a working quasi-Newton method is not.
     x₀ = [-1.2, 1.0]
 
-    for algorithm in (_BFGS(), _DFP())
+    for algorithm in (BFGS(), DFP())
         x = copy(x₀)
         state = OptimizerState(algorithm, x)
         opt = Optimizer(x, rosenbrock; algorithm=algorithm, linesearch=Backtracking(expand=true),
@@ -111,7 +111,7 @@ end
     x = [0.1, 0.2, 0.3]
 
     cache = GeometricOptimizers.DFPCache(x)
-    state = OptimizerState(_DFP(), x)
+    state = OptimizerState(DFP(), x)
     inverse_hessian(state) .= one(inverse_hessian(state))
     state.s .= δ
     state.ḡ .= ḡ
@@ -138,7 +138,7 @@ end
     x = [0.1, 0.2, 0.3]
 
     cache = GeometricOptimizers.BFGSCache(x)
-    state = OptimizerState(_BFGS(), x)
+    state = OptimizerState(BFGS(), x)
     inverse_hessian(state) .= one(inverse_hessian(state))
     state.s .= δ
     state.ḡ .= ḡ

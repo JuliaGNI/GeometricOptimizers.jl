@@ -11,7 +11,7 @@ using Test
 F(x) = sum(sin.(x) .^ 2)
 
 @testset "the (quasi-)Newton methods descend from an indefinite Hessian" begin
-    for algorithm in (Newton(), GeometricOptimizers._BFGS(), GeometricOptimizers._DFP())
+    for algorithm in (Newton(), GeometricOptimizers.BFGS(), GeometricOptimizers.DFP())
         for linesearch in (Bisection(), Backtracking(), Quadratic(), BierlaireQuadratic())
             for x₀ in (0.5, 1.0, 2.0, 3.0)
                 x = fill(x₀, 3)

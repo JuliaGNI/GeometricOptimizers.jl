@@ -217,11 +217,11 @@ here, because the pairs being rejected are the ones that are non-positive rather
 
 !!! info "Rejecting an update is not free"
     A skipped update leaves ``Q`` where it was, so the next direction is built from staler curvature.
-    For `_DFP` on Rosenbrock from ``x_0 = (-1.2, 1)`` with shrink-only `Backtracking` that costs a
-    factor of seventeen -- 50 iterations against 851, both reaching `f ≈ 3e-24`. `_DFP` was
+    For `DFP` on Rosenbrock from ``x_0 = (-1.2, 1)`` with shrink-only `Backtracking` that costs a
+    factor of seventeen -- 50 iterations against 851, both reaching `f ≈ 3e-24`. `DFP` was
     exploiting the invalid updates: it produces a systematically under-scaled direction (see
     [`default_linesearch`](@ref)), and a negative-curvature update happens to inflate ``Q`` in a way
-    that partly compensates. `_BFGS` is unaffected, at 22 iterations either way. In exchange, `_DFP`
+    that partly compensates. `BFGS` is unaffected, at 22 iterations either way. In exchange, `DFP`
     stops being wildly sensitive to its starting point -- over eight starting points of the SVD
     problem with an expanding `Backtracking` its iteration count goes from `512..77_890` to
     `512..845`.
