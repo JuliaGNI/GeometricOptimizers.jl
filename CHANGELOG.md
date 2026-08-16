@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased]
+## [0.3.0]
 
 ### Changed (breaking)
 
@@ -54,6 +54,9 @@ breaking release).
 
   `filter(n -> !isdefined(GeometricOptimizers, n), names(GeometricOptimizers))` is now empty, and
   `test/exports.jl` asserts that it stays empty.
+
+  All of the above is [#47]; the three `### Added` entries are what its review turned up, and none
+  of them left an entry open in [Open Issues](#open-issues).
 
 ## [0.2.2]
 
@@ -2184,8 +2187,10 @@ and both are corrected: see C8.)
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
 [#45]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/45
 [#46]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/46
+[#47]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/47
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
 [0.2.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.2
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.2.2...main
+[0.3.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.0
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.3.0...main
