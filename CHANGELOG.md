@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased]
+## [0.2.2]
 
 ### Fixed
 
@@ -1128,7 +1128,7 @@ verified, measured, and not fixed here — see [Open Issues](#open-issues) at th
   dispatching on them is dispatching on Base; a wrapper `struct` would make most of it legal. ([#16])
 - Bare `Manifold` parameters are only partially supported ([#27]). In particular a
   `GrassmannManifold` cannot be optimized over *at all*, as a bare point or inside a `NamedTuple`.
-  **Closed in [Unreleased](#unreleased)**; the catalogue entry it pointed at (A11) is described
+  **Closed in [0.2.2](#022)**; the catalogue entry it pointed at (A11) is described
   there, under the change that fixed it. What is left of [#27] is `mode = :finitediff`, which has no
   `GradientFiniteDifferences` method for a bare `Manifold` of either kind, and `default_gradient`,
   which has no `Manifold` method and silently takes its `AbstractArray` one (A20).
@@ -1179,7 +1179,7 @@ executing before it is written down.
 **Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, A15, B3, C6, D3, D4 and D6 were
 in this catalogue and have been fixed; each is now described in [0.2.0](#020)
 above, under the change that fixed it, and the entry here is gone. C3 and C4 went the same way in
-[0.2.1](#021), and A11 in [Unreleased](#unreleased). The labels are *not* reused and the
+[0.2.1](#021), and A11 in [0.2.2](#022). The labels are *not* reused and the
 surviving ones are not renumbered, so the gaps are deliberate: A5, A6 and A10 mean what they have
 always meant, and a reference to A1b, A4, A11, A15, B3, D6 or C6 in a commit message still resolves
 to the right subject.
@@ -1523,7 +1523,7 @@ Two things sit against that, both verified by reading:
   `Base.one` of its own that is a KernelAbstractions kernel precisely to avoid this
   (`src/lie_algebras/abstract_lie_algebra_horizontal.jl:88`) — but `𝔄`'s argument is a bare matrix,
   so that method does not apply to it. (It was written for `StiefelLieAlgHorMatrix` alone and moved
-  to the abstract type in [Unreleased](#unreleased), which is why the Grassmann retraction was on the
+  to the abstract type in [0.2.2](#022), which is why the Grassmann retraction was on the
   scalar-indexed path as well until then; that is *a piece of* this entry and not a fix for it.)
 - **No run in this repository exercises it.** `scripts/mnist_cuda.jl` and `scripts/mnist_metal.jl` are
   the only GPU code here, and none of the five MNIST scripts passes `retraction`, so all of them take
@@ -1561,7 +1561,7 @@ default_gradient(problem::OptimizerProblem, x::ArrayNamedTuple) = GradientAutodi
 
 `Manifold <: AbstractMatrix`, so a bare manifold takes the first. That builds the gradient from the
 *length* and composes `problem.F` with a flat vector, where the point of `GradientAutodiff(F, ::Manifold)`
-— added in [Unreleased](#unreleased) at `src/utils.jl:30` — is that it rebuilds the manifold before
+— added in [0.2.2](#022) at `src/utils.jl:30` — is that it rebuilds the manifold before
 calling `F`. The `NamedTuple` method is already the delegating form, and the reason it exists is
 recorded in `default_gradient`'s own docstring one screen up: a `Gradient` for a `NamedTuple` "has to
 be constructed from `x` itself". A bare manifold is the same argument and did not get the same
@@ -2138,4 +2138,5 @@ and both are corrected: see C8.)
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.2.1...main
+[0.2.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.2
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.2.2...main
