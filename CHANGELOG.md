@@ -10,7 +10,7 @@ breaking release).
 
 ### Removed
 
-- **The MNIST material has moved to [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl).**
+- **The MNIST material has moved to [GMLDatasets.jl](https://github.com/JuliaGNI/GMLDatasets.jl).**
   Nothing in `src/` changes and nothing a user calls goes away; what leaves the repository is the
   experiment that was run *against* the package. That is the nine files of `scripts/` that carry it
   — `mnist.jl`, `mnist_cuda.jl`, `mnist_cuda_repetitions.jl`, `mnist_metal.jl`,
@@ -27,13 +27,13 @@ breaking release).
 
   `docs/src/manifold_optimizers.md` keeps its derivation, which documents this package's own
   construction rather than a run of it, and its experiment section becomes a paragraph pointing at
-  GMLDatasets. `scripts/retraction_accuracy.jl` **stays**: it regenerates this package's own
+  GMLDatasets.jl. `scripts/retraction_accuracy.jl` **stays**: it regenerates this package's own
   retraction tables, from the root project rather than from `scripts/Project.toml`, and C9 below is
   about how few harnesses of that kind there are.
 
   `MNIST_PORT.md` is deleted with them. Its account of what was done duplicates the changelog; its
   two findings about `src/` that were *not* in the changelog now are, under 0.2.2's known issues and
-  as A21 in [Open Issues](#open-issues) below; and its operational half went to the GMLDatasets
+  as A21 in [Open Issues](#open-issues) below; and its operational half went to the GMLDatasets.jl
   documentation, which those known issues link.
 
 ## [0.3.0]
@@ -216,14 +216,14 @@ here to fix:
 - **Two `Zygote` pullback workarounds lived in the scripts rather than in `src/`**: `mat_tensor_mul`'s
   pullback indexes scalars, which a GPU array cannot serve, and it produces lazy `Transpose`s that
   have to be materialized. The scripts moved to
-  [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl) and carried the workarounds with them, so
+  [GMLDatasets.jl](https://github.com/JuliaGNI/GMLDatasets.jl) and carried the workarounds with them, so
   this is recorded rather than tracked: it is not an open issue in this package.
 
 The operational half of `MNIST_PORT.md` — what the four training configurations are for, why the
 unconstrained baseline is *expected* to plateau at ``\sqrt{2 \cdot 0.9} \approx 1.342``, and the
 `Metal` unified-memory handling the GPU scripts needed — is now
 [Running the Experiments](https://juliagni.github.io/GMLDatasets.jl/latest/running_the_experiments/)
-in the GMLDatasets documentation.
+in the GMLDatasets.jl documentation.
 
 ## [0.2.1]
 
@@ -1640,7 +1640,7 @@ Two things sit against that, both verified by reading:
   scalar-indexed path as well until then; that is *a piece of* this entry and not a fix for it.)
 - **No run in this repository exercises it**, and there is no GPU code left here to change that:
   `mnist_cuda.jl`, `mnist_metal.jl`, `mnist_metal_short.jl` and `metal_memory_probe.jl` were all of
-  it, and they moved to [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl) with the rest of
+  it, and they moved to [GMLDatasets.jl](https://github.com/JuliaGNI/GMLDatasets.jl) with the rest of
   the MNIST material. None of the five MNIST scripts passed `retraction`, so all of them took the
   `Optimizer` default, which is `Cayley()` — the same fact recorded under F below. The 6 h 53 min
   RTX 4090 run whose figures that package's documentation carries therefore never called `geodesic`,
@@ -1941,7 +1941,7 @@ What is quoted somewhere and has no committed harness:
 - **the MNIST run**, as of [Unreleased](#unreleased) above: the 6 h 53 min RTX 4090 figures that A19
   and A21 rest on, the ``\sqrt{1.8} \approx 1.342`` plateau and the per-configuration losses are
   still quoted here, while `distill_mnist_results.jl` and the five scripts that produced them are now
-  in GMLDatasets. This is the one entry on the list whose harness *exists* and is merely elsewhere,
+  in GMLDatasets.jl. This is the one entry on the list whose harness *exists* and is merely elsewhere,
   which makes it the mildest case and the easiest to get wrong: a figure quoted in this repository
   and regenerated in another one goes stale exactly as quietly, and nothing here will notice.
 
@@ -2274,7 +2274,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   scripts passed `retraction`, so they all took the `Optimizer` default, which is `Cayley()`. The
   default is still the right choice — being free of dense LAPACK is reason enough — but if that PR
   body becomes a squashed commit message, the wrong reason goes into the history with it. The
-  scripts have since moved to GMLDatasets (see [Unreleased](#unreleased)), which changes nothing
+  scripts have since moved to GMLDatasets.jl (see [Unreleased](#unreleased)), which changes nothing
   about the PR body this entry is about.
 
 (The second loose end here — that `svd_tables()` had never been re-run, so the iteration and
