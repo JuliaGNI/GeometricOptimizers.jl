@@ -15,8 +15,8 @@ HessianBFGS{T}(F::Callable, n::Integer) where {T} = HessianBFGS(F, zeros(T, n))
 
 HessianBFGS(obj::OptimizerProblem, x::OptimizerSolution) = HessianBFGS(obj.F, x)
 
-Hessian(::_BFGS, ForOBJ::Callable, x::OptimizerSolution) = HessianBFGS(ForOBJ, x)
+Hessian(::BFGS, ForOBJ::Callable, x::OptimizerSolution) = HessianBFGS(ForOBJ, x)
 
-Hessian(::_BFGS, ForOBJ::OptimizerProblem, x::OptimizerSolution) = HessianBFGS(ForOBJ.F, x)
+Hessian(::BFGS, ForOBJ::OptimizerProblem, x::OptimizerSolution) = HessianBFGS(ForOBJ.F, x)
 
 (hes::Hessian)(::AbstractMatrix, ::OptimizerSolution) = error("This has to be called together with a cache.")

@@ -4,7 +4,7 @@
 """
     BFGSCache
 
-The [`OptimizerCache`](@ref) for the [`_BFGS`](@ref) algorithm. Also see [`update!(::BFGSCache, ::OptimizerState, ::AbstractVector, ::AbstractVector`)](@ref).
+The [`OptimizerCache`](@ref) for the [`BFGS`](@ref) algorithm. Also see [`update!(::BFGSCache, ::OptimizerState, ::AbstractVector, ::AbstractVector`)](@ref).
 
 `g̃` is the scratch for [`latest_gradient`](@ref) and `g̃_is_current` says whether it is the gradient at
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
@@ -40,7 +40,7 @@ struct BFGSCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
     end
 end
 
-OptimizerCache(::_BFGS, x::OptimizerSolution) = BFGSCache(x)
+OptimizerCache(::BFGS, x::OptimizerSolution) = BFGSCache(x)
 
 section(cache::BFGSCache) = cache.section
 
@@ -103,7 +103,7 @@ Like the `ArrayNamedTuple` method above, this exists because the quasi-Newton `Q
 gradient are handed around in the *ambient* horizontal-lift representation. For a bare
 `StiefelManifold` of size `(3, 1)` those are 2 and `3 × 3` respectively, so `SimpleSolvers.outer!`,
 which indexes its arguments linearly against `axes(m)`, would assert on the mismatch. Flattening first
-is what the `NamedTuple` case has always done; without the same method here `_BFGS` and `_DFP` cannot
+is what the `NamedTuple` case has always done; without the same method here `BFGS` and `DFP` cannot
 run on a *bare* `Manifold` at all.
 """
 function outer!(m::AbstractMatrix{T}, g₁::AbstractLieAlgHorMatrix{T}, g₂::AbstractLieAlgHorMatrix{T}) where {T}
@@ -129,7 +129,7 @@ It does:
 \gamma & \gets \nabla{}f^{(k)} - \nabla{}f^{(k-1)}, \\
 T_1 & \gets \delta\gamma^TQ, \\
 T_2 & \gets Q\gamma\delta^T, \\
-T_3 & \gets (1 + \frac{\gamma^TQ\gamma}{\delta^\gamma})\delta\delta^T,\\
+T_3 & \gets (1 + \frac{\gamma^TQ\gamma}{\delta^T\gamma})\delta\delta^T,\\
 Q & \gets Q - (T_1 + T_2 - T_3)/{\delta^T\gamma}
 \end{aligned}
 ```
@@ -180,7 +180,7 @@ end
 # `store_gradient!` and not `global_rep(section(state), grad(x))` directly: the two are the same
 # computation, and `solver_step!` has already done it at the end of the previous step -- see
 # `store_gradient!`, which reuses `latest_gradient` when the pairing holds and evaluates afresh when
-# it does not. This is what keeps `refresh_latest_gradient!` from costing `_BFGS` a second gradient
+# it does not. This is what keeps `refresh_latest_gradient!` from costing `BFGS` a second gradient
 # evaluation per iteration. It has to run *before* `update!(cache, state, x)` overwrites `cache.x`,
 # which is what the pairing is checked against.
 #

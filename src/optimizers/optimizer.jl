@@ -194,7 +194,7 @@ function _optimizer(x::OptimizerSolution{T}, problem::OptimizerProblem{T}, algor
     Optimizer(algorithm, problem, hes, cache, linesearch, config, gradient, retraction, step_ceiling)
 end
 
-function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=_BFGS(),
+function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=BFGS(),
     linesearch::LinesearchMethod=default_linesearch(T, algorithm),
     gradient::Union{Gradient,Nothing}=nothing, retraction::AbstractRetraction=Cayley(),
     step_ceiling=DEFAULT_STEP_CEILING, options_kwargs...) where {T,VT<:OptimizerSolution{T}}
@@ -234,7 +234,7 @@ Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
     flat call chain.
 """
 function Optimizer(x::VT, F::Function; (∇F!)=nothing, mode=:autodiff,
-    algorithm::OptimizerMethod=_BFGS(), linesearch::Union{LinesearchMethod,Nothing}=nothing,
+    algorithm::OptimizerMethod=BFGS(), linesearch::Union{LinesearchMethod,Nothing}=nothing,
     retraction::AbstractRetraction=Cayley(), step_ceiling=DEFAULT_STEP_CEILING,
     options_kwargs...) where {T,VT<:OptimizerSolution{T}}
     # `T` comes from the `OptimizerSolution{T}` bound and not from `eltype(x)`: for a `NamedTuple` of
@@ -312,7 +312,7 @@ julia> solver_step!(x, state, opt)
 !!! info "A line search that fails does not get its step taken"
     `SimpleSolvers.solve` returns a step length whether or not the search succeeded, so taking it
     unconditionally lets a failed search drive the iteration. On the SVD problem of
-    `test/optimizer_convergence/svd_optim.jl`, `_BFGS` + `Bisection` + `Geodesic` used to diverge
+    `test/optimizer_convergence/svd_optim.jl`, `BFGS` + `Bisection` + `Geodesic` used to diverge
     outright on one of eight starting points, and this is the mechanism:
 
     | iteration | outcome | ``\\alpha`` | ``f`` |

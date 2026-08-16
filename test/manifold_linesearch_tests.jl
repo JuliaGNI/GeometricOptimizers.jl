@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: Cayley, Geodesic, _BFGS, _DFP, StiefelManifold, check, iteration_number,
+using GeometricOptimizers: Cayley, Geodesic, StiefelManifold, check, iteration_number,
                            status, DecayingStatic, step_size, increase_iteration_number!,
                            solver_step!, update!
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew
@@ -23,7 +23,7 @@ import Random
 
 # Every `GlobalSection` -- one per `OptimizerState`, one per cache -- completes the frame with
 # `global_section`, which draws from the *global* RNG. So a solve on a manifold is only reproducible if
-# the RNG is seeded before the state and the optimizer are built: unseeded, `_BFGS` + `Backtracking`
+# the RNG is seeded before the state and the optimizer are built: unseeded, `BFGS` + `Backtracking`
 # below takes 17 or 18 iterations from run to run and `check(x)` wanders between 2e-16 and 4e-14.
 # `x₀` therefore seeds, and is called immediately before every state/optimizer pair in this file.
 # `manifold_optimizers_with_new_interface.jl` seeds inside its `optimize` for the same reason.
@@ -56,7 +56,7 @@ const MANIFOLD_TOLERANCE = 1e-12
 # `Backtracking`, the default, never saw it: it evaluates `φ'` at `α = 0` only, where the two agree.
 # `Bisection` uses the sign and `StrongWolfe` compares against `φ'(0)`, so both merely paid a few
 # iterations. `Quadratic` and `BierlaireQuadratic` fit a polynomial to it *quantitatively*, and on the
-# SVD problem that took `_BFGS` off the manifold on two of eight starting points -- open issue A1b.
+# SVD problem that took `BFGS` off the manifold on two of eight starting points -- open issue A1b.
 # `retraction_differential` supplies the generator that turns with the step.
 #
 # The tolerance is set by the central difference, not by the slope: `h = 1e-6` leaves a truncation
@@ -71,8 +71,8 @@ The relative error of `φ'(α)` against a central difference of `φ(α)`, both t
 """
 function slope_errors(ps, F, retraction, αs; h=1e-6)
     Random.seed!(7)
-    opt = Optimizer(ps, F; algorithm=_BFGS(), retraction=retraction, linesearch=Backtracking(Float64))
-    state = OptimizerState(_BFGS(), ps)
+    opt = Optimizer(ps, F; algorithm=BFGS(), retraction=retraction, linesearch=Backtracking(Float64))
+    state = OptimizerState(BFGS(), ps)
     c = cache(opt)
     initialize!(c, ps)
     update!(c, state, gradient(opt), hessian(opt), ps)
@@ -198,7 +198,7 @@ end
     # This is the SVD problem of `optimizer_convergence/svd_optim.jl`, which no algorithm could
     # converge before: with `Static(0.01)` the three first-order methods exhaust 1000 iterations at
     # a relative error of 1e-2 and a gradient of 8e-2, seven orders of magnitude off the gate.
-    # `_BFGS` needs a searching line search, so it could not be used on a manifold at all.
+    # `BFGS` needs a searching line search, so it could not be used on a manifold at all.
     Random.seed!(1234)
     A = rand(10, 10)
     n = 3
@@ -207,8 +207,8 @@ end
     for linesearch in (Backtracking(Float64), Bisection(Float64))
         Random.seed!(1234)
         ps = (w₁=rand(StiefelManifold, 10, n), w₂=rand(StiefelManifold, 10, n))
-        state = OptimizerState(_BFGS(), ps)
-        opt = Optimizer(ps, err; algorithm=_BFGS(), linesearch=linesearch, retraction=Cayley())
+        state = OptimizerState(BFGS(), ps)
+        opt = Optimizer(ps, err; algorithm=BFGS(), linesearch=linesearch, retraction=Cayley())
 
         result = solve!(ps, state, opt)
 
@@ -372,9 +372,9 @@ end
     # `Q` is sized by the *intrinsic* dimension -- the length of the flattening, 2 for `St(3, 1)` --
     # while the gradient and the direction are horizontal lifts of the ambient shape, `3 × 3`. Four
     # methods that the `NamedTuple` case had and the bare case did not (`outer!`, `_mul!`, `alloc_h`
-    # and `_copyto!` for a section) sat on that boundary; without them `_BFGS` on a bare `Manifold`
+    # and `_copyto!` for a section) sat on that boundary; without them `BFGS` on a bare `Manifold`
     # died in `outer!` with `AssertionError: axes(O, 1) == axes(x, 1)`.
-    for algorithm in (_BFGS(), _DFP()), linesearch in (Backtracking(Float64), Bisection(Float64))
+    for algorithm in (BFGS(), DFP()), linesearch in (Backtracking(Float64), Bisection(Float64))
         x = x₀()
         state = OptimizerState(algorithm, x)
         opt = Optimizer(x, f; algorithm=algorithm, linesearch=linesearch)
@@ -471,7 +471,7 @@ end
     # Manifold: the ceiling is there, and it is the one `step_αmax` computes from the direction the
     # cache holds at that moment.
     let x = x₀()
-        algorithm = _BFGS()
+        algorithm = BFGS()
         state = OptimizerState(algorithm, x)
         opt = Optimizer(x, f; algorithm=algorithm)
         # the same two calls `slope_errors` above makes to get a cache holding a real direction
@@ -486,7 +486,7 @@ end
 
     # A `NamedTuple` of manifolds: block-wise, and finite.
     let ps = ps₀()
-        algorithm = _BFGS()
+        algorithm = BFGS()
         state = OptimizerState(algorithm, ps)
         opt = Optimizer(ps, two_spheres; algorithm=algorithm)
         initialize!(cache(opt), ps)
@@ -519,8 +519,8 @@ end
     far_away(ps::NamedTuple) = sum(abs2, ps.w .- target) / 2
     far_away(x::AbstractVector) = sum(abs2, x .- target) / 2
 
-    iterations(x, ceiling) = let state = OptimizerState(_BFGS(), x)
-        solve!(x, state, Optimizer(x, far_away; algorithm=_BFGS(), max_iterations=20_000,
+    iterations(x, ceiling) = let state = OptimizerState(BFGS(), x)
+        solve!(x, state, Optimizer(x, far_away; algorithm=BFGS(), max_iterations=20_000,
             warn_iterations=0, step_ceiling=ceiling))
         iteration_number(state)
     end
@@ -562,12 +562,12 @@ end
 
 @testset "the ceiling is a per-Optimizer knob, and Inf switches it off" begin
     x = x₀()
-    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS())) == DEFAULT_STEP_CEILING
-    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=0.5)) == 0.5
-    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=Inf)) == Inf
+    @test step_ceiling(Optimizer(x, f; algorithm=BFGS())) == DEFAULT_STEP_CEILING
+    @test step_ceiling(Optimizer(x, f; algorithm=BFGS(), step_ceiling=0.5)) == 0.5
+    @test step_ceiling(Optimizer(x, f; algorithm=BFGS(), step_ceiling=Inf)) == Inf
 
     # carried in the element type of the parameters, not in whatever the keyword was written as
-    @test step_ceiling(Optimizer(x, f; algorithm=_BFGS(), step_ceiling=1)) isa Float64
+    @test step_ceiling(Optimizer(x, f; algorithm=BFGS(), step_ceiling=1)) isa Float64
 end
 
 # The regression test for A1b itself. `svd_optim.jl` runs the two polynomial searches on seed `1234`
@@ -577,8 +577,8 @@ end
 @testset "a bounded merit does not produce an unbounded step" begin
     for retraction in (Geodesic(), Cayley()), linesearch in (Quadratic(Float64), BierlaireQuadratic(Float64))
         x = x₀()
-        state = OptimizerState(_BFGS(), x)
-        opt = Optimizer(x, f; algorithm=_BFGS(), linesearch=linesearch, retraction=retraction)
+        state = OptimizerState(BFGS(), x)
+        opt = Optimizer(x, f; algorithm=BFGS(), linesearch=linesearch, retraction=retraction)
 
         solve!(x, state, opt)
 

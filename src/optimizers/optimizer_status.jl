@@ -118,7 +118,7 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     # and reads as an increase through `abs`. That was tolerable while nothing acted on the flag;
     # `convergence_measures` now does.
     #
-    # On the *first* iteration of `_BFGS` and `_DFP` this compares against `INITIAL_BFGS_F`, the
+    # On the *first* iteration of `BFGS` and `DFP` this compares against `INITIAL_BFGS_F`, the
     # sentinel `initialize_state!` seeds `f̄` with, so it is not a statement about the objective at
     # all: minimising `f(x) = 1 + ‖x‖²` from `x = 0` -- already the minimiser -- reports
     # `f_increased = true`, and `x_converged` is suppressed with it. `g_converged` still fires there,
@@ -251,7 +251,7 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
     gradient into the same array, so `rg` was ``\|\nabla{}f\|`` at whatever point the line search
     last probed. On Rosenbrock from ``(-1.2, 1)`` with the default `Backtracking` — which probes
     ``\alpha = 0``, so that point is ``x_k`` — `rg` came out `5.8\times10^4` times the true residual
-    for `_BFGS` and `299` times it for `_DFP`. It errs high near a minimiser, so `g_converged` fired
+    for `BFGS` and `299` times it for `DFP`. It errs high near a minimiser, so `g_converged` fired
     *late*; that was issue A8.
 
     The distinction is not cosmetic for a direction that carries momentum. Under
@@ -268,7 +268,7 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
 !!! warning "What `x_converged` is guarded against, and what it is not"
     ``\|x - x'\|/\|x'\|`` measures "the iterate stopped moving" only while ``\|x'\|`` is bounded, and
     a diverging solve is exactly the case where it is not. On the SVD problem of
-    `test/optimizer_convergence/svd_optim.jl`, `_BFGS` + `Bisection` + `Geodesic` once left the
+    `test/optimizer_convergence/svd_optim.jl`, `BFGS` + `Bisection` + `Geodesic` once left the
     manifold on iteration 4 with an iterate of magnitude ``10^{100}``. The step that took it there
     had ``\|\delta\| = 345`` — not remotely a solve that has stopped moving — but the *relative*
     change was ``345/10^{100} \approx 10^{-98}``, far under `x_reltol`, so `x_converged` fired and

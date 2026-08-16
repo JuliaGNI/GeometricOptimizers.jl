@@ -4,7 +4,7 @@
 """
     BFGSState <: OptimizerState
 
-The [`OptimizerState`](@ref) corresponding to the [`_BFGS`](@ref) method.
+The [`OptimizerState`](@ref) corresponding to the [`BFGS`](@ref) method.
 
 # Keys
 - `x̄`
@@ -48,7 +48,7 @@ function alloc_h(x::Union{ArrayNamedTuple{T},Manifold{T}}) where {T}
     fill!(h, T(NaN))
 end
 
-OptimizerState(::_BFGS, x_args...) = BFGSState(x_args...)
+OptimizerState(::BFGS, x_args...) = BFGSState(x_args...)
 
 inverse_hessian(state::BFGSState) = state.Q
 
@@ -59,7 +59,7 @@ Reset the inverse-Hessian approximation to the identity, so that the next direct
 steepest-descent one.
 
 This is the `BFGSState` method of [`restart!`](@ref); `DFPState` is an alias for `BFGSState`, so it
-covers `_DFP` as well. [`solver_step!`](@ref) calls it when a line search reports that it could not
+covers `DFP` as well. [`solver_step!`](@ref) calls it when a line search reports that it could not
 decrease the merit — see [`linesearch_rejected`](@ref).
 
 !!! info "Why the direction alone is not enough"

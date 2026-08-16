@@ -1,7 +1,6 @@
 using LinearAlgebra
 using NaNMath: log
 using GeometricOptimizers
-using GeometricOptimizers: Newton, _DFP, _BFGS
 using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
 using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
 using GeometricOptimizers: iteration_number, increase_iteration_number!, status
@@ -29,7 +28,7 @@ test_obj = OptimizerProblem(F, test_x)
 @test_throws MethodError solver_step!(test_x, test_optim)
 
 for T in (Float64, Float32)
-    for method in (Newton(), _DFP(), _BFGS())
+    for method in (Newton(), DFP(), BFGS())
         for _linesearch in (Static(T(0.1)), Backtracking(T), Backtracking(T; expand=true),
             BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂=T(0.1)))
             @testset "$(method) & $(_linesearch) & $(T)" begin
@@ -89,15 +88,15 @@ end
 
         # Everything else searches. `GradientMethod` and `MomentumMethod` joined this group in 0.2.0,
         # once a line search could take its trial step through a retraction; before that `Static` was
-        # the only thing that worked on manifold parameters, so they had no choice. `_DFP` rejoined it
+        # the only thing that worked on manifold parameters, so they had no choice. `DFP` rejoined it
         # in SimpleSolvers 0.11: it needs a search that can *lengthen* a step, and until `expand` that
         # ruled `Backtracking` out for it entirely (47_115 iterations on the SVD problem, against 702
         # with the expansion phase). See `default_linesearch`.
-        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), _BFGS(), _DFP())
+        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), BFGS(), DFP())
             ls = default_linesearch(T, method)
             @test ls isa Backtracking{T}
             # the property the default turns on, and the one a future SimpleSolvers bump could drop
-            # silently: without it `_DFP` does not converge on the SVD problem at all
+            # silently: without it `DFP` does not converge on the SVD problem at all
             @test ls.expand
 
             x = ones(T, 3)
@@ -118,7 +117,7 @@ end
     @test_throws MethodError Adam(0.01)
 end
 
-# The loop above covers `Newton`, `_BFGS` and `_DFP` only, and the one above that checks which line
+# The loop above covers `Newton`, `BFGS` and `DFP` only, and the one above that checks which line
 # search the first-order methods *default* to without ever solving with it. Between them they missed
 # that `GradientMethod` and `MomentumMethod` threw a `MethodError` on their own default:
 # `trial_slope`'s `AbstractVector` branch calls `gradient(cache)`, which only the (quasi-)Newton
@@ -217,11 +216,11 @@ end
     # The (quasi-)Newton caches were left out of that fix and are covered here too now. For them the
     # stale `rg` was not `‖∇f(xₖ)‖` but `‖∇f‖` at whatever point the line search last probed, because
     # `trial_slope` evaluates into the same array -- on Rosenbrock from `(-1.2, 1)` with the default
-    # `Backtracking` that read `5.8e4` times the true residual for `_BFGS` and `299` times it for
-    # `_DFP`. That was issue A8; `Backtracking` is in the list below for exactly that reason.
+    # `Backtracking` that read `5.8e4` times the true residual for `BFGS` and `299` times it for
+    # `DFP`. That was issue A8; `Backtracking` is in the list below for exactly that reason.
     ∇F(x) = 2 .* x
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), _BFGS(), _DFP()),
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), BFGS(), DFP()),
         _linesearch in (Backtracking(; expand=true), Bisection(), Quadratic(), BierlaireQuadratic(),
             StrongWolfe(; c₂=0.1))
 
@@ -251,7 +250,7 @@ end
     f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4 .+ 0.3 .* sin.(3x))
     ∇f!(g, x) = (g .= 2 .* x .+ 0.4 .* x .^ 3 .+ 0.9 .* cos.(3x))
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), _BFGS(), _DFP()),
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), BFGS(), DFP()),
         _linesearch in (Static(0.1), Backtracking(; expand=true), Bisection(), Quadratic(),
             BierlaireQuadratic(), StrongWolfe(; c₂=0.1))
 
@@ -348,7 +347,7 @@ end
     ∇f(x) = 2 .* x .+ 0.4 .* x .^ 3
     ∇f!(g, x) = (g .= ∇f(x))
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), _BFGS(), _DFP()),
+    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), BFGS(), DFP()),
         _linesearch in (Static(0.1), Bisection(), Quadratic())
 
         x = [1.5, -0.8, 0.4]

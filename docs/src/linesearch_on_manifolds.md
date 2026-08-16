@@ -39,7 +39,7 @@ That turns a fixed-step workaround into a genuine search:
 | --- | --- | --- |
 | Sphere, [`GradientMethod`](@ref) | 28 iterations | 2 iterations, ``\|\nabla f\| = 2.7\times10^{-16}`` |
 | Sphere, [`MomentumMethod`](@ref) | 23 iterations | 2 iterations, ``\|\nabla f\| = 1.7\times10^{-15}`` |
-| SVD, best available | 1000 iterations, relative error ``10^{-2}`` | [`_BFGS`](@ref) in 93 iterations, relative error below ``10^{-8}`` |
+| SVD, best available | 1000 iterations, relative error ``10^{-2}`` | [`BFGS`](@ref) in 93 iterations, relative error below ``10^{-8}`` |
 
 The fixed-step column is not merely slower. With `Static(0.01)` the SVD solve reaches only
 ``\|\nabla f\| = 8\times10^{-2}`` after 1000 iterations, and ``1.9\times10^{-3}``,
@@ -69,7 +69,7 @@ check showed the consequence: paired ambiently, the slope came out as ``2\varphi
 3. The predicted decrease ``\widetilde{\Delta f}``, so that it is comparable with the measured
    ``\Delta f``.
 
-Getting that scale right improved [`_BFGS`](@ref) on the SVD problem from 176 to 113 iterations on
+Getting that scale right improved [`BFGS`](@ref) on the SVD problem from 176 to 113 iterations on
 [`Geodesic`](@ref) with a shrink-only [`SimpleSolvers.Backtracking`](@extref), and from 197 to 93 on
 [`Cayley`](@ref) with [`SimpleSolvers.Bisection`](@extref).
 
@@ -122,8 +122,8 @@ where ``T_2`` is built as the exact transpose of ``T_1``.
 ## A manifold step does not want ``\alpha \le 1``
 
 A shrink-only backtracking search starts at ``\alpha = 1`` and can never exceed it. That ceiling is
-right for a direction already scaled like a Newton step — [`_BFGS`](@ref) accepts ``\alpha = 1`` on
-74% of its iterations — and wrong for one that is systematically *under*-scaled. [`_DFP`](@ref) wants
+right for a direction already scaled like a Newton step — [`BFGS`](@ref) accepts ``\alpha = 1`` on
+74% of its iterations — and wrong for one that is systematically *under*-scaled. [`DFP`](@ref) wants
 a median ``\alpha`` of 8, so under a shrink-only search it accepts the ceiling on 100% of its
 iterations and crawls to the gradient gate in 47 115 of them. Raising only the initial trial step,
 from 1 to 3, brought the same solve to 229 — which is what identifies the ceiling rather than DFP
@@ -150,7 +150,7 @@ the manifold problem rather than of any one search:
   what you pay for — a very expensive objective, or an outer loop bounded in iterations.
 - **A search that uses ``\varphi'`` quantitatively is the one that notices a bad step, not the one
   that causes it.** [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (175 iterations
-  for `_DFP`) and falls behind on `Cayley` (529). The obvious explanation — that it fits a polynomial
+  for `DFP`) and falls behind on `Cayley` (529). The obvious explanation — that it fits a polynomial
   to a slope which is only first-order correct there — was measured and is not the cause: with the
   exact differential above the figure moved from 550 to 529 and the gap remained. The step ceiling
   below narrows it without accounting for the rest, and nothing measured here explains the remainder.
@@ -211,10 +211,10 @@ both factors still on ``\operatorname{St}(20,3)``:
 
 | combination | ceiling off | ceiling on | worst `check` |
 |---|---|---|---|
-| `_BFGS` `Quadratic` `Cayley` | 4 of 8 | **8 of 8** | `3.2e-1` → `6.1e-14` |
-| `_BFGS` `BierlaireQuadratic` `Cayley` | 4 of 8 | **8 of 8** | `5.5e-1` → `6.9e-14` |
-| `_BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.0e-14` |
-| `_BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.3e-14` |
+| `BFGS` `Quadratic` `Cayley` | 4 of 8 | **8 of 8** | `3.2e-1` → `6.1e-14` |
+| `BFGS` `BierlaireQuadratic` `Cayley` | 4 of 8 | **8 of 8** | `5.5e-1` → `6.9e-14` |
+| `BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.0e-14` |
+| `BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.3e-14` |
 
 All twenty combinations in that sweep are now 8 of 8. The last two rows are worth reading twice: they
 were never catalogued under A1b, and a *shrink-only* `Backtracking` reaching an over-long step at all
@@ -237,7 +237,7 @@ polynomials; it is confined to steps that are long relative to ``2\pi/\|\delta\|
     it is a rejection as before. `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT` are not exempt,
     being true of the direction whatever ceiling was in force.
 
-[`_DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled:
+[`DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled:
 across eight starting points on the SVD problem it ranges over 385–1 118 iterations on `Geodesic`.
 
 That range used to read 512–77 890, and the difference is not the line search. A badly conditioned
@@ -274,8 +274,8 @@ search reaches about ``10^{-7}`` on the same Adam problem.
 
 ## Quasi-Newton caches on manifold solutions
 
-[`_DFP`](@ref) used to be restricted to `AbstractVector` solutions, and the restriction was
-accidental: like [`_BFGS`](@ref) it is built from a secant pair and never needs a vector-valued point.
+[`DFP`](@ref) used to be restricted to `AbstractVector` solutions, and the restriction was
+accidental: like [`BFGS`](@ref) it is built from a secant pair and never needs a vector-valued point.
 The cache operates at the [`OptimizerSolution`](@ref) level, with separate type parameters for the
 solution and the gradient, because a manifold point and its horizontal lift need not have the same
 shape. Its section may be a `NamedTuple`, ``Q`` is sized by the *intrinsic* dimension rather than by
@@ -293,6 +293,6 @@ exist for. The supporting pieces are [`outer!`](@ref) and `_mul!` for
 [`global_section`](@ref) draws from Julia's global RNG, and both [`OptimizerState`](@ref) and each
 quasi-Newton cache construct a [`GlobalSection`](@ref). A manifold solve is therefore reproducible
 only if the RNG is seeded *before* the state and the optimizer are built — not merely before the
-starting point is drawn. Unseeded, `_BFGS` with `Backtracking` varied between 17 and 18 iterations on
+starting point is drawn. Unseeded, `BFGS` with `Backtracking` varied between 17 and 18 iterations on
 the sphere problem, with a final `check(x)` anywhere from ``2\times10^{-16}`` to
 ``4.5\times10^{-14}``.

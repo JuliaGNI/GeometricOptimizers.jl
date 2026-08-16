@@ -8,7 +8,7 @@ abstract type OptimizerMethod <: SolverMethod end
 """
     QuasiNewtonOptimizerMethod <: OptimizerMethod
 
-Includes [`_BFGS`](@ref) and [`_DFP`](@ref).
+Includes [`BFGS`](@ref) and [`DFP`](@ref).
 """
 abstract type QuasiNewtonOptimizerMethod <: OptimizerMethod end
 
@@ -28,7 +28,7 @@ const DEFAULT_WEIGHT_DECAY = 1.0e-2
 Newton's method: the direction solves ``\nabla^2f(x)\delta = -\nabla{}f(x)`` with the exact Hessian,
 which [`SimpleSolvers.HessianAutodiff`](@extref) supplies.
 
-Unlike [`_BFGS`](@ref) and [`_DFP`](@ref) this needs no approximation to build up, so it converges in
+Unlike [`BFGS`](@ref) and [`DFP`](@ref) this needs no approximation to build up, so it converges in
 few iterations, but it also inherits the Hessian's indefiniteness: where ``\nabla^2f`` is not positive
 definite the direction ascends, and [`ensure_descent!`](@ref) substitutes the steepest-descent
 direction for it.
@@ -38,15 +38,59 @@ struct Newton <: OptimizerMethod end
 Hessian(::Newton, ForOBJ::Union{Callable,OptimizerProblem}, x::AbstractVector) = HessianAutodiff(ForOBJ, x)
 HessianAutodiff(F::OptimizerProblem, x) = HessianAutodiff(F.F, x)
 
-"""
-Algorithm taken from [nocedal2006numerical](@cite).
-"""
-struct _DFP <: QuasiNewtonOptimizerMethod end
+@doc raw"""
+    DFP
 
+The Davidon–Fletcher–Powell method, from [nocedal2006numerical](@cite): the direction is
+``-Q\nabla{}f(x)`` for an approximate *inverse* Hessian ``Q``, updated from the secant pair
+``\delta = x^{(k)} - x^{(k-1)}``, ``\gamma = \nabla{}f^{(k)} - \nabla{}f^{(k-1)}`` by
+```math
+Q \gets Q - \frac{Q\gamma\gamma^TQ}{\gamma^TQ\gamma} + \frac{\delta\delta^T}{\delta^T\gamma}
+```
+(equation 6.15 there). Its state is [`BFGSState`](@ref), under the alias [`DFPState`](@ref), and the
+update itself lives in [`DFPCache`](@ref), which symmetrizes ``Q\gamma\gamma^TQ`` explicitly and
+skips the update when the secant pair fails [`curvature_is_usable`](@ref).
+
+Where [`BFGS`](@ref) is the better-conditioned choice and the default, `DFP` is here because it is
+the other classical member of the family and because the two differ in exactly the way that shows
+what the line search is doing: DFP's direction is systematically *under*-scaled, so it wants a
+median ``\alpha`` well above 1 and is starved by a search that cannot exceed it. See
+[`default_linesearch`](@ref), which measures this, converges `DFP` under the default expanding
+`Backtracking`, and gives `StrongWolfe(T; c₂ = 0.1)` as the steadier explicit choice for a
+DFP-heavy workload.
+
+Takes no parameters: like every [`OptimizerMethod`](@ref) it only produces a direction, and how far
+the optimizer travels along it is the line search's business.
 """
-Algorithm taken from [nocedal2006numerical](@cite).
+struct DFP <: QuasiNewtonOptimizerMethod end
+
+@doc raw"""
+    BFGS
+
+The Broyden–Fletcher–Goldfarb–Shanno method, from [nocedal2006numerical](@cite), and the default
+`algorithm` of [`Optimizer`](@ref). The direction is ``-Q\nabla{}f(x)`` for an approximate *inverse*
+Hessian ``Q``, updated from the secant pair ``\delta = x^{(k)} - x^{(k-1)}``,
+``\gamma = \nabla{}f^{(k)} - \nabla{}f^{(k-1)}`` by
+```math
+Q \gets Q - \frac{\delta\gamma^TQ + Q\gamma\delta^T
+    - \left(1 + \frac{\gamma^TQ\gamma}{\delta^T\gamma}\right)\delta\delta^T}{\delta^T\gamma}
+```
+Its state is [`BFGSState`](@ref) and the update itself lives in [`BFGSCache`](@ref), which skips the
+update when the secant pair fails [`curvature_is_usable`](@ref) — the condition that keeps ``Q``
+positive definite. [`restart!(::BFGSState)`](@ref) discards ``Q`` when a line search reports that it
+could not decrease the merit.
+
+Unlike [`Newton`](@ref) this builds its curvature up over the iterations rather than evaluating a
+Hessian, so it takes more of them; unlike [`DFP`](@ref) it produces a direction already scaled like
+a Newton step, and accepts ``\alpha = 1`` on most of them. Both run on an `AbstractVector`, a
+`NamedTuple` of parameters and a bare `Manifold` alike: ``Q`` is sized by the *intrinsic* dimension
+and the secant pair is taken in the horizontal lift, so nothing in the update needs a vector-valued
+point.
+
+Takes no parameters: like every [`OptimizerMethod`](@ref) it only produces a direction, and how far
+the optimizer travels along it is the line search's business.
 """
-struct _BFGS <: QuasiNewtonOptimizerMethod end
+struct BFGS <: QuasiNewtonOptimizerMethod end
 
 """
 The gradient descent algorithm.
@@ -298,7 +342,7 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     evaluations instead, on the SVD problem of `test/optimizer_convergence/svd_optim.jl` (`Geodesic`;
     `Static` needs ≈4 evaluations per iteration, so subtract that for the search's own cost):
 
-    | search | evals/iteration | `_BFGS`: iters / evals | `_DFP`: iters / evals |
+    | search | evals/iteration | `BFGS`: iters / evals | `DFP`: iters / evals |
     |---|---|---|---|
     | `Backtracking(expand = true)` | **26** | **95** / **2 441** | 768 / 20 001 |
     | `Backtracking` (shrink only) | 25 | 136 / 3 457 | 48 322 / 1 208 157 |
@@ -313,7 +357,7 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     exponential is a different trajectory. The ordering, which is what the table is for, did not.)
 
     Three cells are **not** regenerated by that script and are older measurements: the two
-    `StrongWolfe (c₂ = 0.9)` cells and the `_DFP` cells of `Backtracking (shrink only)` and
+    `StrongWolfe (c₂ = 0.9)` cells and the `DFP` cells of `Backtracking (shrink only)` and
     `BierlaireQuadratic`, none of which is one of its `COMBINATIONS`. They predate SimpleSolvers 0.12
     and the step ceiling. Everything else in the table is current; see the note on open issue C9 about
     which figures in this package have a named harness behind them and which do not.
@@ -327,15 +371,15 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     That was not true of the ceiling as first written, and the difference is issue A15. Deriving the
     bound from `2π` over the norm of the *whole* direction made each block of a `NamedTuple` pay for
     its neighbours, and on this problem — where both blocks are manifolds — combining them in
-    quadrature tightened it by up to `√2`. That was enough to bind on three cells here (`_BFGS`
-    `Quadratic` 111 → 120 iterations, `_BFGS` `BierlaireQuadratic` 130 → 113, `_DFP` `Quadratic`
+    quadrature tightened it by up to `√2`. That was enough to bind on three cells here (`BFGS`
+    `Quadratic` 111 → 120 iterations, `BFGS` `BierlaireQuadratic` 130 → 113, `DFP` `Quadratic`
     175 → 308) and on nothing under `Cayley`. Deriving it per block instead removes all three. The
     lesson is worth keeping: those cells looked like the price of the ceiling and were the price of a
     sloppy norm.
 
     Every evaluation count in this table but one is ten higher than it was before `rg` became the
     residual at the iterate a solve returns (issue A8), and every iteration count but one is unchanged
-    — and it is the same row both times: `StrongWolfe (c₂ = 0.1)` for `_BFGS` went 136 → 135
+    — and it is the same row both times: `StrongWolfe (c₂ = 0.1)` for `BFGS` went 136 → 135
     iterations and so 8 074 → 7 893 evaluations, which is the one cell that moved *down*. Ten is
     exactly one gradient evaluation on this problem — `GradientAutodiff` costs ten objective calls for
     its 60 parameters, and the count above includes those — and it is the refresh at the *last*
@@ -343,14 +387,14 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     the reuse in `store_gradient!` is what makes the difference `10` rather than `10 × iterations`.
 
     A shrink-only backtracking search starts at `α = 1` and can never exceed it, which is right for a
-    direction already scaled like a Newton step — `_BFGS` accepts `α = 1` on 74% of its iterations —
-    but wrong for one that is systematically *under*-scaled. `_DFP` wants a median `α` of 8, so it
+    direction already scaled like a Newton step — `BFGS` accepts `α = 1` on 74% of its iterations —
+    but wrong for one that is systematically *under*-scaled. `DFP` wants a median `α` of 8, so it
     accepts the ceiling on **100%** of its iterations and crawls to the gate in 48 322 of them.
     `expand = true` lets an accepted *first* trial step be lengthened while each longer trial still
     satisfies sufficient decrease and strictly improves the merit, at most `nexpand = 3` rounds of at
     most `q = 10` each.
 
-    That fixes `_DFP` outright and makes `_BFGS` slightly better as well, at a cost of under 4% per
+    That fixes `DFP` outright and makes `BFGS` slightly better as well, at a cost of under 4% per
     iteration — and of exactly nothing on a well-scaled problem, since the extrapolation reuses
     ``\varphi(0)``, ``\varphi'(0)`` and ``\varphi(\alpha)``, all known once the trial step is accepted,
     so declining to expand costs no evaluation at all. On the sphere problem the evaluation counts are
@@ -361,9 +405,9 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     first-order methods that trade is poor: `Bisection` burns 1.8M evaluations against
     `Backtracking`'s 79 500 for the same 3 000 iterations.
 
-!!! note "[`_DFP`](@ref) converges under the default, and [`SimpleSolvers.StrongWolfe`](@extref) is still the steadier explicit choice"
+!!! note "[`DFP`](@ref) converges under the default, and [`SimpleSolvers.StrongWolfe`](@extref) is still the steadier explicit choice"
     DFP's direction stays under-scaled — the expansion phase makes that harmless rather than absent, so
-    `_DFP` needs 768 iterations on `Geodesic` and 1 366 on `Cayley` where `_BFGS` needs 95 and 118, on
+    `DFP` needs 768 iterations on `Geodesic` and 1 366 on `Cayley` where `BFGS` needs 95 and 118, on
     the starting point the test suite uses. Over eight starting points on the same problem it ranges
     over 385–1 118 (`Geodesic`) and 466–1 177 (`Cayley`). (That upper bound read 1 366 — the *pinned*
     value rather than the spread's — which `svd_optim.jl` corrected and this docstring did not.)
@@ -373,7 +417,7 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     from secant pairs with ``\delta^T\gamma \leq 0``, which the guard on the update did not reject; how
     quickly the expansion phase dug it back out was close to arbitrary. Enforcing the curvature
     condition removes a factor of 92 from the spread on `Geodesic` and, on this problem, most of the
-    reason `_DFP` had a reputation for being unpredictable.
+    reason `DFP` had a reputation for being unpredictable.
 
     `StrongWolfe(T; c₂ = 0.1)` remains the choice to pass explicitly on a DFP-heavy workload, now on
     cost rather than on reliability: 218 and 279 iterations on that starting point, 296–868 and 198–515
@@ -399,7 +443,7 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     ceiling narrows it rather than explaining it, and no measurement here accounts for the rest.
 
     None of this is a property of DFP as such: given a search that can exceed `α = 1` it is competitive
-    with `_BFGS`. The expansion phase exists because of this package — see
+    with `BFGS`. The expansion phase exists because of this package — see
     JuliaGNI/SimpleSolvers.jl#174, which was filed from these measurements and released in
     SimpleSolvers 0.11.
 """
@@ -407,5 +451,5 @@ default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T; exp
 default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNING_RATE))
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
-Base.show(io::IO, alg::_DFP) = print(io, "DFP")
-Base.show(io::IO, alg::_BFGS) = print(io, "BFGS")
+Base.show(io::IO, alg::DFP) = print(io, "DFP")
+Base.show(io::IO, alg::BFGS) = print(io, "BFGS")

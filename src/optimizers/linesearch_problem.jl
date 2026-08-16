@@ -199,7 +199,7 @@ exact for both retractions at every ``\alpha``.
     for a sign change, [`SimpleSolvers.StrongWolfe`](@extref) compares against ``\varphi'(0)``, and
     `Backtracking` — the default — evaluates ``\varphi'`` at ``\alpha = 0`` only, where the two agree
     exactly. The two polynomial searches fit a curve to it *quantitatively*, and on the SVD problem of
-    `test/optimizer_convergence/svd_optim.jl` that took `_BFGS` off the manifold altogether on two of
+    `test/optimizer_convergence/svd_optim.jl` that took `BFGS` off the manifold altogether on two of
     eight starting points. The exact slope did *not* fix that — the cause was the size of the step,
     not the slope, and [`DEFAULT_STEP_CEILING`](@ref) is what closed it. See the CHANGELOG entry for
     issue A1b; this differential remains worth having on its own account.

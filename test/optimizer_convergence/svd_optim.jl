@@ -42,7 +42,7 @@ const CONVERGED_ERROR_TOLERANCE = 1e-8
 # Which is not arbitrary, just not `√eps`. Near a minimizer `f - f_min ≈ ‖∇f‖²/2λ`, so `f` stops
 # changing in double precision once `‖∇f‖ ≈ √(eps ⋅ f ⋅ 2λ)`, i.e. around `1e-8` for a well-scaled
 # problem and higher where the curvature is poor. Before the fixes described further down the worst
-# case over those eighty runs was `1.8e-5` (`_DFP` + `StrongWolfe(c₂ = 0.1)` + `Cayley`), so `1e-5`
+# case over those eighty runs was `1.8e-5` (`DFP` + `StrongWolfe(c₂ = 0.1)` + `Cayley`), so `1e-5`
 # sat *inside* the natural spread of the quantity it was bounding and CI's `1.354e-5` on
 # Julia 1.13/Linux was unremarkable rather than a regression.
 #
@@ -55,12 +55,12 @@ const CONVERGED_ERROR_TOLERANCE = 1e-8
 # whichever point the line search last probed (issue A8): the stale value overestimated the
 # residual near a minimiser. Over the eighteen converging combinations of the eight-seed sweep in
 # `scripts/retraction_accuracy.jl` the worst `rg` goes from `2.5e-7` to `2.0e-7`, i.e. a factor of 50
-# of headroom. (The two that did not converge -- `_BFGS` with either polynomial search under `Cayley`,
+# of headroom. (The two that did not converge -- `BFGS` with either polynomial search under `Cayley`,
 # then open issue A1b -- reported `rg` of order `1e0` on two of their eight seeds, which was the
 # divergence and not the tolerance.)
 #
 # With the step ceiling that closes A1b, all *twenty* combinations converge and the worst `rg` over the
-# whole sweep is `3.8e-7` (`_BFGS` + `BierlaireQuadratic` under `Cayley`), so the qualifier is gone and
+# whole sweep is `3.8e-7` (`BFGS` + `BierlaireQuadratic` under `Cayley`), so the qualifier is gone and
 # the factor is 27. It fell rather than grew because the two combinations that used to be excluded from
 # the count are now in it: those are the ones the ceiling brought back, and a solve that has just been
 # rescued from the manifold is not the one with the smallest terminal residual. `g_converged` is still
@@ -253,7 +253,7 @@ end
 
 The same problem as the fixed-budget loop above, solved to convergence rather than to a fixed budget.
 
-`_BFGS` needs a line search that actually searches, and until the line search learned to take its
+`BFGS` needs a line search that actually searches, and until the line search learned to take its
 trial step through the retraction that was impossible on manifold parameters — `Static` was the only
 one that worked, because it is the only one that never evaluates the merit. So this problem had no
 algorithm that converged on it at all: the three first-order methods above exhaust 1000 iterations at
@@ -277,7 +277,7 @@ function svd_convergence_check(n, ps, state, result, max_iterations)
     end
 end
 
-# `_DFP` needed the same lift to `OptimizerSolution` that `_BFGS` already had; before it, its cache was
+# `DFP` needed the same lift to `OptimizerSolution` that `BFGS` already had; before it, its cache was
 # `AbstractVector`-only, so a `NamedTuple` fell through to a `NewtonOptimizerCache` and a `MethodError`.
 # Every combination of retraction, method and line search converges on this problem now, but the cost
 # is uneven, and the ordering by *iterations* is not the ordering by *work* -- a `Bisection` iteration
@@ -285,25 +285,25 @@ end
 # evaluations, Geodesic / Cayley:
 #
 #                                     iterations          evaluations       iters over 8 seeds
-#     _BFGS  Backtracking(expand)     95 /   118        2_441 /  3_031     104..161 /  91..170
-#     _BFGS  Backtracking            136 /   136        3_457 /  3_456     146..192 / 118..201
-#     _BFGS  Bisection               133 /   114       78_658 / 67_030       93..147 / 102..137
-#     _BFGS  StrongWolfe(c₂=0.1)     135 /   135        7_893 /  7_880       91..146 / 107..152
-#     _BFGS  Quadratic               111 /    98       15_377 / 12_213       99..159 /  99..176
-#     _BFGS  BierlaireQuadratic      130 /   119       13_781 / 12_776      102..182 / 107..281
-#     _DFP   Backtracking(expand)   768 / 1_366       20_001 / 35_339     385..1_118 / 466..1_177
-#     _DFP   Backtracking        48_322 / 26_479    1_208_157 / 662_029  10_448..114_116 / 5_596..26_479
-#     _DFP   StrongWolfe(c₂=0.1)    218 /   279       18_127 / 23_828      296..868 / 198..515
-#     _DFP   Bisection               136 /   111       80_001 / 65_447       99..141 / 102..124
-#     _DFP   Quadratic               175 /   529       18_122 / 50_666       92..868 / 164..735
+#     BFGS  Backtracking(expand)     95 /   118        2_441 /  3_031     104..161 /  91..170
+#     BFGS  Backtracking            136 /   136        3_457 /  3_456     146..192 / 118..201
+#     BFGS  Bisection               133 /   114       78_658 / 67_030       93..147 / 102..137
+#     BFGS  StrongWolfe(c₂=0.1)     135 /   135        7_893 /  7_880       91..146 / 107..152
+#     BFGS  Quadratic               111 /    98       15_377 / 12_213       99..159 /  99..176
+#     BFGS  BierlaireQuadratic      130 /   119       13_781 / 12_776      102..182 / 107..281
+#     DFP   Backtracking(expand)   768 / 1_366       20_001 / 35_339     385..1_118 / 466..1_177
+#     DFP   Backtracking        48_322 / 26_479    1_208_157 / 662_029  10_448..114_116 / 5_596..26_479
+#     DFP   StrongWolfe(c₂=0.1)    218 /   279       18_127 / 23_828      296..868 / 198..515
+#     DFP   Bisection               136 /   111       80_001 / 65_447       99..141 / 102..124
+#     DFP   Quadratic               175 /   529       18_122 / 50_666       92..868 / 164..735
 #
 # **All twenty are now 8/8 on the manifold**, which is the column that matters and the one the sweep
-# now prints (`on_the_manifold`). It was 8/8 in sixteen of them and not in four: `_BFGS` with either
-# polynomial search under `Cayley` was 4/8 -- open issue A1b, now closed -- and `_BFGS` with either
+# now prints (`on_the_manifold`). It was 8/8 in sixteen of them and not in four: `BFGS` with either
+# polynomial search under `Cayley` was 4/8 -- open issue A1b, now closed -- and `BFGS` with either
 # `Backtracking` under `Geodesic` was 7/8, which nothing had noticed. Both are the same defect and the
 # same fix, the step ceiling of `DEFAULT_STEP_CEILING`; see the paragraphs below the `α` table.
 #
-# The `_BFGS  StrongWolfe(c₂=0.1)` row is new *here* and not new to the measurement: it has always been
+# The `BFGS  StrongWolfe(c₂=0.1)` row is new *here* and not new to the measurement: it has always been
 # one of the script's `COMBINATIONS` and was simply missing from this table, which is the half of open
 # issue C8 that could be closed by writing a row down.
 #
@@ -316,21 +316,21 @@ end
 # It is worth recording that this was *not* true of the ceiling as first written, because the reason is
 # instructive. Deriving the bound from `2π` over the norm of the whole direction combined the two
 # `StiefelManifold` blocks of this problem in quadrature, which tightened it by up to `√2` -- enough to
-# bind on three cells (`_BFGS  Quadratic` 111 -> 120 iterations, `_BFGS  BierlaireQuadratic` 130 -> 113,
-# `_DFP   Quadratic` 175 -> 308, all under `Geodesic`) and on nothing under `Cayley`. Those three looked
+# bind on three cells (`BFGS  Quadratic` 111 -> 120 iterations, `BFGS  BierlaireQuadratic` 130 -> 113,
+# `DFP   Quadratic` 175 -> 308, all under `Geodesic`) and on nothing under `Cayley`. Those three looked
 # like the price of bounding the step and were the price of a sloppy norm; deriving the ceiling per
 # block, which is what the geometry says, removes all three. That was issue A15.
 #
 # The seed spreads are where the fix lives. The four rows that were not 8/8:
 #
 #                                        before          after
-#     _BFGS  Quadratic     Cayley     90..cap  (4/8)   99..176  (8/8)   worst check 3.2e-1 -> 6.1e-14
-#     _BFGS  Bierlaire     Cayley     93..cap  (4/8)  107..281  (8/8)   worst check 5.5e-1 -> 6.9e-14
-#     _BFGS  Backtr(exp)   Geodesic  104..161  (7/8)  104..161  (8/8)   worst check 2.8e-12 -> 6.0e-14
-#     _BFGS  Backtracking  Geodesic  114..192  (7/8)  146..192  (8/8)   worst check 2.8e-12 -> 6.3e-14
+#     BFGS  Quadratic     Cayley     90..cap  (4/8)   99..176  (8/8)   worst check 3.2e-1 -> 6.1e-14
+#     BFGS  Bierlaire     Cayley     93..cap  (4/8)  107..281  (8/8)   worst check 5.5e-1 -> 6.9e-14
+#     BFGS  Backtr(exp)   Geodesic  104..161  (7/8)  104..161  (8/8)   worst check 2.8e-12 -> 6.0e-14
+#     BFGS  Backtracking  Geodesic  114..192  (7/8)  146..192  (8/8)   worst check 2.8e-12 -> 6.3e-14
 #
 # The first two are A1b as it was catalogued. The second two were not catalogued at all and are the
-# same defect: that `2.8e-12` is the `_BFGS` + `Backtracking` + `Geodesic` seed 2 the paragraph on
+# same defect: that `2.8e-12` is the `BFGS` + `Backtracking` + `Geodesic` seed 2 the paragraph on
 # `ProjectedSkew` below already singles out as "the worst of the eight by two orders of magnitude".
 # It was read there as accumulation over 147 iterations, and that reading was wrong -- it is one
 # over-long step, of exactly the kind A1b describes, and bounding the step removes it. `Backtracking`
@@ -344,22 +344,22 @@ end
 #
 # That has a consequence for this file. The `1e-11` tolerance the `ProjectedSkew` paragraph says an
 # eight-seed sweep would need is no longer needed: the worst `check` over all twenty combinations and
-# all eight seeds is `2.5e-13` (`_DFP  Backtracking(expand)  Cayley`) and over the twelve `_BFGS`
+# all eight seeds is `2.5e-13` (`DFP  Backtracking(expand)  Cayley`) and over the twelve `BFGS`
 # rows it is `6.9e-14`, so `MANIFOLD_TOLERANCE` at `1e-12` clears the whole sweep with a factor of 4.
 #
-# Worst `rg` over all twenty and all eight seeds is `3.8e-07` (`_BFGS  BierlaireQuadratic  Cayley`),
+# Worst `rg` over all twenty and all eight seeds is `3.8e-07` (`BFGS  BierlaireQuadratic  Cayley`),
 # against `3.1e-01` with the ceiling off -- that one being the diverging solve rather than a tolerance.
 # See `CONVERGED_GRADIENT_TOLERANCE`.
 #
 # Every evaluation count here is ten higher than it was before `rg` became the residual at the iterate
 # a solve returns (issue A8), and every iteration count and seed spread is unchanged under it
-# (the one iteration count that does move is the `_DFP  Backtracking` correction below). Ten is one
+# (the one iteration count that does move is the `DFP  Backtracking` correction below). Ten is one
 # gradient evaluation on this problem -- `GradientAutodiff` costs exactly ten objective calls for these
 # 60 parameters, and the counter above counts those too -- and it is the refresh at the *last* iterate,
 # the one no `update!` follows and so the one nothing reuses. Per solve and not per iteration: the
 # reuse in `store_gradient!` is what makes the difference `10` rather than `10 x iterations`.
 #
-# Re-measuring also corrected the `_DFP  Backtracking` row, whose `Geodesic` figures read 47_115 and
+# Re-measuring also corrected the `DFP  Backtracking` row, whose `Geodesic` figures read 47_115 and
 # 1_177_919 -- a state of the code that predates `curvature_is_usable`, and which `default_linesearch`'s
 # own table already disagreed with. Both columns are now `solve_once` from `scripts/retraction_accuracy.jl`
 # at a cap of 200_000, like everything else here; its *spread* is still the older measurement it has
@@ -367,35 +367,35 @@ end
 #
 # Every `Geodesic` figure here moved when the retraction was fixed (see `ScaledSquaring`): a more
 # accurate exponential is a different trajectory, so the counts shift by a few percent in both
-# directions. Every row but `_DFP  Backtracking` is regenerated by `svd_tables()` in
+# directions. Every row but `DFP  Backtracking` is regenerated by `svd_tables()` in
 # `scripts/retraction_accuracy.jl`, which measures the same matrix this file does -- it is
 # `svd_matrix.jl` for both -- and whose default cap is the 20_000 the last column reports against.
 # No entry in that column reads "cap" any more: it used to, for the two combinations of issue A1b that
 # ran out of iterations on two of their eight seeds, and with the step ceiling all twenty converge.
 #
-# `_DFP  Backtracking` is deliberately not one of the script's `COMBINATIONS` -- it is the shrink-only
+# `DFP  Backtracking` is deliberately not one of the script's `COMBINATIONS` -- it is the shrink-only
 # search whose only purpose here is the ceiling argument three paragraphs down, and at 48_322
 # iterations on the pinned seed it would dominate the runtime of every sweep. Its spread is an older
 # measurement at a cap high enough not to bind, which is why it exceeds 20_000.
 #
 # The `Cayley` column moved again when `trial_slope` got an exact `Cayley` differential; the
 # `Geodesic` column is bit-identical under that change, and so are both `Backtracking` rows, which
-# evaluate `φ'` at `α = 0` only. What moved: `_BFGS  Bisection` 92 -> 114 iterations (54_970 ->
-# 67_020 evaluations), `_DFP  Bisection` 96 -> 110 (56_106 -> 64_306), `_DFP  Quadratic` 550 -> 529
-# (54_176 -> 50_656, and its spread 168..1_211 -> 164..735), and `_BFGS  Quadratic` 101 -> 98. A more
+# evaluate `φ'` at `α = 0` only. What moved: `BFGS  Bisection` 92 -> 114 iterations (54_970 ->
+# 67_020 evaluations), `DFP  Bisection` 96 -> 110 (56_106 -> 64_306), `DFP  Quadratic` 550 -> 529
+# (54_176 -> 50_656, and its spread 168..1_211 -> 164..735), and `BFGS  Quadratic` 101 -> 98. A more
 # accurate `φ'` is a different trajectory in the same way a more accurate exponential is; `Bisection`
 # needing a few more iterations for a *correct* slope than for a wrong one is not a regression, it is
 # a different sequence of brackets. (Those "after" evaluation counts are what the differential left
 # behind; each is ten below the table above, which was measured after A8 added the final gradient.)
 #
 # Four stale `Cayley` bounds in the table above are corrected here -- three lower and one upper:
-# `_BFGS  Backtracking(expand)` read 114 where it measures 91, `_BFGS  Backtracking` 131 where it
-# measures 118, `_DFP  StrongWolfe` 215 where it measures 198, and `_DFP  Backtracking(expand)`'s
+# `BFGS  Backtracking(expand)` read 114 where it measures 91, `BFGS  Backtracking` 131 where it
+# measures 118, `DFP  StrongWolfe` 215 where it measures 198, and `DFP  Backtracking(expand)`'s
 # upper bound read 1_366 -- the pinned value -- where the spread is 466..1_177. All four are
 # unchanged between `main` and the differential, so they are bookkeeping and not a behaviour change.
 #
 # What the fix bought, over the same eight starting points: the worst `check` on `Geodesic` was
-# `2.45e-5` -- `_BFGS` + `Backtracking` on seed 2, five orders of magnitude past
+# `2.45e-5` -- `BFGS` + `Backtracking` on seed 2, five orders of magnitude past
 # `MANIFOLD_TOLERANCE`, and passing here only because this file uses seed `1234`. That same solve was
 # `2.8e-12` after it, a factor of 10^7, and is inside `6.3e-14` now -- that being the worst of the eight
 # for the combination, which is the resolution `svd_tables` reports. Per-seed `check` for it, as
@@ -419,7 +419,7 @@ end
 # need either `ProjectedSkew` or a tolerance of `1e-11` -- is no longer true. The worst `check` over
 # the whole sweep is `2.5e-13`, and `MANIFOLD_TOLERANCE` at `1e-12` clears it with `ScaledSquaring`.
 #
-# The `_BFGS` + `Bisection` + `Geodesic` row used to read "see note below", because on one of those
+# The `BFGS` + `Bisection` + `Geodesic` row used to read "see note below", because on one of those
 # eight starting points that combination *diverged*: it stopped after 4 iterations with
 # `check(Y) = 1e200`, i.e. off the manifold altogether, and reported convergence while doing it. That
 # is fixed. `Bisection` bisects `φ'`, so on a non-convex ray it can settle on a stationary point of
@@ -430,15 +430,15 @@ end
 # `NaN` to `2.9e-7` -- see `CONVERGED_GRADIENT_TOLERANCE`, which is the other issue the same fix
 # closed.
 #
-# The `_DFP  Backtracking` row is a property of the *line search*, not of DFP. A shrink-only backtracking
+# The `DFP  Backtracking` row is a property of the *line search*, not of DFP. A shrink-only backtracking
 # search starts its trial step at `α = 1` and can never exceed it; measuring the `α` it returns settles
 # what happens:
 #
 #                       fraction α == 1   fraction α > 1   median α   iterations
-#     _BFGS  Backtracking         73.5%             0%          1.0          113
-#     _BFGS  Bisection               0%          67.8%          1.42         143
-#     _DFP   Backtracking        100.0%             0%          1.0       49_679
-#     _DFP   Bisection               0%          94.8%         11.1          134
+#     BFGS  Backtracking         73.5%             0%          1.0          113
+#     BFGS  Bisection               0%          67.8%          1.42         143
+#     DFP   Backtracking        100.0%             0%          1.0       49_679
+#     DFP   Bisection               0%          94.8%         11.1          134
 #
 # (The `α` columns were measured on the code as it stood before `linesearch_rejected` and
 # `curvature_is_usable`, which is why the iteration column here does not quite match the table above
@@ -446,8 +446,8 @@ end
 # characterise is the *line search*, and that has not changed; the point they make about the ceiling
 # at `α = 1` stands either way.)
 #
-# `_BFGS` produces a direction already scaled like a Newton step, so `α = 1` is the right answer and
-# accepting it is not a failure. `_DFP` produces a systematically *under-scaled* direction that wants a
+# `BFGS` produces a direction already scaled like a Newton step, so `α = 1` is the right answer and
+# accepting it is not a failure. `DFP` produces a systematically *under-scaled* direction that wants a
 # median `α` of 8, and a shrink-only search cannot get there: it accepts `α = 1` on every single
 # iteration and the solve crawls -- steps of `‖Δx‖ ≈ 1e-5` against a gradient of `≈ 1e-4`, the gradient
 # falling by less than a factor of two over 19_500 iterations. It is not stuck (it terminates on a
@@ -461,7 +461,7 @@ end
 # That measurement became JuliaGNI/SimpleSolvers.jl#174 and, in SimpleSolvers 0.11, the `expand` key
 # that `default_linesearch` now switches on: an accepted *first* trial step is lengthened while each
 # longer trial still satisfies sufficient decrease and strictly improves the merit. It costs under 4%
-# per iteration, and it takes `_DFP` from no practical convergence to 702 and 1_366 iterations on the
+# per iteration, and it takes `DFP` from no practical convergence to 702 and 1_366 iterations on the
 # seed used here.
 #
 # That pair is still *not* run below, but the reason has weakened considerably. Its iteration count
@@ -494,17 +494,17 @@ const CONVERGENCE_MAX_ITERATIONS = 5000
 # As in the fixed-budget loop above, the `Optimizer` is constructed here rather than inside
 # `svd_convergence_check`; see the comment there for why that used to matter on Julia 1.12.
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
-    for (algorithm, linesearch) in ((GeometricOptimizers._BFGS(), Backtracking(Float64)),
-        (GeometricOptimizers._BFGS(), Backtracking(Float64; expand=true)),
-        (GeometricOptimizers._BFGS(), Bisection(Float64)),
+    for (algorithm, linesearch) in ((GeometricOptimizers.BFGS(), Backtracking(Float64)),
+        (GeometricOptimizers.BFGS(), Backtracking(Float64; expand=true)),
+        (GeometricOptimizers.BFGS(), Bisection(Float64)),
         # The two polynomial searches. On *this* starting point they converge and always did, so this
         # loop is coverage of the searches; the starting points that failed are covered by
         # `a1b_seeds` below, which is the regression test for A1b proper.
-        (GeometricOptimizers._BFGS(), Quadratic(Float64)),
-        (GeometricOptimizers._BFGS(), BierlaireQuadratic(Float64)),
-        # `_DFP` with the two searches whose cost on this problem is stable across starting points
-        (GeometricOptimizers._DFP(), Bisection(Float64)),
-        (GeometricOptimizers._DFP(), StrongWolfe(Float64; c₂=0.1)))
+        (GeometricOptimizers.BFGS(), Quadratic(Float64)),
+        (GeometricOptimizers.BFGS(), BierlaireQuadratic(Float64)),
+        # `DFP` with the two searches whose cost on this problem is stable across starting points
+        (GeometricOptimizers.DFP(), Bisection(Float64)),
+        (GeometricOptimizers.DFP(), StrongWolfe(Float64; c₂=0.1)))
         ps = starting_point(3)
         state = OptimizerState(algorithm, ps)
         optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
@@ -539,7 +539,7 @@ end
 
 @testset "a bounded merit does not produce an unbounded step (issue A1b)" begin
     for linesearch in (Quadratic(Float64), BierlaireQuadratic(Float64)), seed in A1B_SEEDS
-        algorithm = GeometricOptimizers._BFGS()
+        algorithm = GeometricOptimizers.BFGS()
         ps = a1b_starting_point(seed)
         state = OptimizerState(algorithm, ps)
         optimizer = Optimizer(ps, objective; retraction=GeometricOptimizers.Cayley(),
