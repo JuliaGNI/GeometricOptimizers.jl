@@ -558,7 +558,7 @@ more accurate than what is being measured against it.
 
 ### `Float32`
 
-The same `check`, in the format the MNIST experiment of
+The same `check`, in the format the MNIST experiment described in
 [Optimization on Homogeneous Spaces](@ref) actually runs in. Nothing can do better than about
 ``10^{-6}`` here, but the three do not degrade alike.
 
