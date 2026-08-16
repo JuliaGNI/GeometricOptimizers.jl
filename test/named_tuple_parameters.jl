@@ -5,8 +5,8 @@ using SimpleSolvers: Static, l2norm
 using Test
 import Random
 
-# `scripts/mnist.jl` stores the parameters of a transformer in a flat `NamedTuple` that mixes
-# `StiefelManifold`s with ordinary matrices and vectors, that is made up of `Float32`s and
+# The MNIST scripts of `GMLDatasets` store the parameters of a transformer in a flat `NamedTuple`
+# that mixes `StiefelManifold`s with ordinary matrices and vectors, that is made up of `Float32`s and
 # whose gradient is computed by hand. These three cases are covered below, together with the
 # property that matters for all of them: the `StiefelManifold` entries have to *stay* on the
 # manifold over the course of the optimization (this is what `check` measures).
@@ -168,7 +168,7 @@ const MANIFOLD_TOLERANCE_IN_EPS = 100
     end
 end
 
-# Only the projections of the attention layers of `scripts/mnist.jl` are on a manifold, so
+# Only the projections of the attention layers of those scripts are on a manifold, so
 # the ordinary entries must be updated as ordinary (Euclidean) parameters.
 @testset "the parameters that are not on a manifold are optimized as well" begin
     for T in (Float64, Float32)
@@ -180,7 +180,7 @@ end
     end
 end
 
-# `GradientFunction(F, ∇F!, nt::NamedTuple)` is what lets `scripts/mnist.jl` use `Zygote`
+# `GradientFunction(F, ∇F!, nt::NamedTuple)` is what lets those scripts use `Zygote`
 # instead of the default `ForwardDiff`; `∇F!` is called on the flattened parameters.
 @testset "a hand written gradient gives the same result as the default one" begin
     for T in (Float64, Float32), algorithm in algorithms(T)

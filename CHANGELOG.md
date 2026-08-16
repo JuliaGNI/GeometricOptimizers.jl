@@ -167,6 +167,37 @@ here, and it says what closing it would take:
   objective that names its argument type, which is why nothing in the suite shows it. The fix is one
   method delegating to the `GradientAutodiff(F, ::Manifold)` this release added.
 
+Two more come from the MNIST port of [#14], which found them but did not fix them. They were
+recorded in a `MNIST_PORT.md` at the repository root; that file is gone and this is what it said
+that is still true of `src/`:
+
+- **The optimizer interface cannot hold GPU arrays**, so a GPU run keeps its parameters on the host.
+  This is a regression against `GeometricMachineLearning`, whose optimizers did run on
+  `CUDABackend()`. Two things block it. `ParameterHandling.flatten` has no method for GPU arrays —
+  the optimizer flattens its parameter `NamedTuple` on *every* step, in
+  `(grad::Gradient)(::ArrayNamedTuple)` in `src/optimizers/named_tuple_wrapper.jl`, and a `CuVector`
+  misses `flatten(::Type{T}, ::Vector{R})`, so it falls through to ParameterHandling's
+  `flatten(::Type{T}, ::AbstractVector)`, which `map`s over the *elements*. And
+  `_similar(::StiefelManifold)` is `rand(StiefelManifold{T}, size(a)...)`, i.e. always
+  `rand(CPU(), ...)`; it backs `x̄` and the `BFGS`/`DFP` caches, so the state would mix host and
+  device arrays. Everything else in `src/` is written against `KernelAbstractions` and is
+  backend-agnostic.
+
+  It costs little in practice for a network of this shape — the optimizer touches only the 154938
+  parameters, ≈1.2 MB up and down per step, against ≈3 GB of device-side activations — which is why
+  the port left it. It would matter for a parameter set large enough to be worth keeping resident.
+
+- **Two `Zygote` pullback workarounds live in the scripts rather than in `src/`**: `mat_tensor_mul`'s
+  pullback indexes scalars, which a GPU array cannot serve, and it produces lazy `Transpose`s that
+  have to be materialized. The scripts moved to
+  [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl) and carried the workarounds with them.
+
+The operational half of `MNIST_PORT.md` — what the four training configurations are for, why the
+unconstrained baseline is *expected* to plateau at ``\sqrt{2 \cdot 0.9} \approx 1.342``, and the
+`Metal` unified-memory handling the GPU scripts need — is now
+[Running the Experiments](https://juliagni.github.io/GMLDatasets.jl/latest/running_the_experiments/)
+in the GMLDatasets documentation.
+
 ## [0.2.1]
 
 ### Added
@@ -1577,11 +1608,12 @@ Two things sit against that, both verified by reading:
   so that method does not apply to it. (It was written for `StiefelLieAlgHorMatrix` alone and moved
   to the abstract type in [0.2.2](#022), which is why the Grassmann retraction was on the
   scalar-indexed path as well until then; that is *a piece of* this entry and not a fix for it.)
-- **No run in this repository exercises it.** `scripts/mnist_cuda.jl` and `scripts/mnist_metal.jl` are
-  the only GPU code here, and none of the five MNIST scripts passes `retraction`, so all of them take
-  the `Optimizer` default, which is `Cayley()` — the same fact recorded under F below. The 6 h 53 min
-  RTX 4090 run whose figures the documentation carries therefore never called `geodesic`, `𝔄` or
-  `ScaledSquaring` at all.
+- **No run in this repository exercises it.** There is no GPU code here at all any more: the five
+  MNIST scripts that were the only such code moved to
+  [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl). None of them passed `retraction`, so
+  all of them took the `Optimizer` default, which is `Cayley()` — the same fact recorded under F
+  below. The 6 h 53 min RTX 4090 run whose figures that package's documentation carries therefore
+  never called `geodesic`, `𝔄` or `ScaledSquaring` at all.
 
 What is *not* established is whether this actually breaks. CUDA.jl and Metal.jl error on disallowed
 scalar indexing, which would make it a hard failure rather than a slow one, but no GPU was available
