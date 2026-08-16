@@ -3,6 +3,9 @@ using SafeTestsets
 using Test
 
 begin
+    @safetestset "Exports                      " include("exports.jl")
+end
+begin
     @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")
 end
 begin

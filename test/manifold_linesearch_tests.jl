@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: Cayley, Geodesic, BFGS, DFP, StiefelManifold, check, iteration_number,
+using GeometricOptimizers: Cayley, Geodesic, StiefelManifold, check, iteration_number,
                            status, DecayingStatic, step_size, increase_iteration_number!,
                            solver_step!, update!
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew

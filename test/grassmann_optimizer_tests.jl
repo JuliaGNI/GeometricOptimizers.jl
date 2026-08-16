@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: Cayley, Geodesic, check, BFGS, DFP
+using GeometricOptimizers: Cayley, Geodesic, check
 using SimpleSolvers
 using SimpleSolvers: Bisection
 using LinearAlgebra

@@ -38,13 +38,57 @@ struct Newton <: OptimizerMethod end
 Hessian(::Newton, ForOBJ::Union{Callable,OptimizerProblem}, x::AbstractVector) = HessianAutodiff(ForOBJ, x)
 HessianAutodiff(F::OptimizerProblem, x) = HessianAutodiff(F.F, x)
 
-"""
-Algorithm taken from [nocedal2006numerical](@cite).
+@doc raw"""
+    DFP
+
+The Davidon–Fletcher–Powell method, from [nocedal2006numerical](@cite): the direction is
+``-Q\nabla{}f(x)`` for an approximate *inverse* Hessian ``Q``, updated from the secant pair
+``\delta = x^{(k)} - x^{(k-1)}``, ``\gamma = \nabla{}f^{(k)} - \nabla{}f^{(k-1)}`` by
+```math
+Q \gets Q - \frac{Q\gamma\gamma^TQ}{\gamma^TQ\gamma} + \frac{\delta\delta^T}{\delta^T\gamma}
+```
+(equation 6.15 there). Its state is [`BFGSState`](@ref), under the alias [`DFPState`](@ref), and the
+update itself lives in [`DFPCache`](@ref), which symmetrizes ``Q\gamma\gamma^TQ`` explicitly and
+skips the update when the secant pair fails [`curvature_is_usable`](@ref).
+
+Where [`BFGS`](@ref) is the better-conditioned choice and the default, `DFP` is here because it is
+the other classical member of the family and because the two differ in exactly the way that shows
+what the line search is doing: DFP's direction is systematically *under*-scaled, so it wants a
+median ``\alpha`` well above 1 and is starved by a search that cannot exceed it. See
+[`default_linesearch`](@ref), which measures this, converges `DFP` under the default expanding
+`Backtracking`, and gives `StrongWolfe(T; c₂ = 0.1)` as the steadier explicit choice for a
+DFP-heavy workload.
+
+Takes no parameters: like every [`OptimizerMethod`](@ref) it only produces a direction, and how far
+the optimizer travels along it is the line search's business.
 """
 struct DFP <: QuasiNewtonOptimizerMethod end
 
-"""
-Algorithm taken from [nocedal2006numerical](@cite).
+@doc raw"""
+    BFGS
+
+The Broyden–Fletcher–Goldfarb–Shanno method, from [nocedal2006numerical](@cite), and the default
+`algorithm` of [`Optimizer`](@ref). The direction is ``-Q\nabla{}f(x)`` for an approximate *inverse*
+Hessian ``Q``, updated from the secant pair ``\delta = x^{(k)} - x^{(k-1)}``,
+``\gamma = \nabla{}f^{(k)} - \nabla{}f^{(k-1)}`` by
+```math
+Q \gets Q - \frac{\delta\gamma^TQ + Q\gamma\delta^T
+    - \left(1 + \frac{\gamma^TQ\gamma}{\delta^T\gamma}\right)\delta\delta^T}{\delta^T\gamma}
+```
+Its state is [`BFGSState`](@ref) and the update itself lives in [`BFGSCache`](@ref), which skips the
+update when the secant pair fails [`curvature_is_usable`](@ref) — the condition that keeps ``Q``
+positive definite. [`restart!(::BFGSState)`](@ref) discards ``Q`` when a line search reports that it
+could not decrease the merit.
+
+Unlike [`Newton`](@ref) this builds its curvature up over the iterations rather than evaluating a
+Hessian, so it takes more of them; unlike [`DFP`](@ref) it produces a direction already scaled like
+a Newton step, and accepts ``\alpha = 1`` on most of them. Both run on an `AbstractVector`, a
+`NamedTuple` of parameters and a bare `Manifold` alike: ``Q`` is sized by the *intrinsic* dimension
+and the secant pair is taken in the horizontal lift, so nothing in the update needs a vector-valued
+point.
+
+Takes no parameters: like every [`OptimizerMethod`](@ref) it only produces a direction, and how far
+the optimizer travels along it is the line search's business.
 """
 struct BFGS <: QuasiNewtonOptimizerMethod end
 

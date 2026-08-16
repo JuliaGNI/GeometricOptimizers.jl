@@ -129,7 +129,7 @@ It does:
 \gamma & \gets \nabla{}f^{(k)} - \nabla{}f^{(k-1)}, \\
 T_1 & \gets \delta\gamma^TQ, \\
 T_2 & \gets Q\gamma\delta^T, \\
-T_3 & \gets (1 + \frac{\gamma^TQ\gamma}{\delta^\gamma})\delta\delta^T,\\
+T_3 & \gets (1 + \frac{\gamma^TQ\gamma}{\delta^T\gamma})\delta\delta^T,\\
 Q & \gets Q - (T_1 + T_2 - T_3)/{\delta^T\gamma}
 \end{aligned}
 ```

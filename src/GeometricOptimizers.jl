@@ -86,9 +86,11 @@ export Optimizer,
     HessianDFP
 
 import SimpleSolvers: solve!, solve
-# `Newton`, `BFGS` and `DFP` are the optimizer methods; `BFGSState`/`DFPState` and the caches stay
-# internal, as they do for the first-order methods further down.
-export solve!, solve, value, gradient, Newton, BFGS, DFP
+# `Newton`, `BFGS` and `DFP` are the optimizer methods, and `BFGSState`/`DFPState` are the states
+# that go with them -- as `GradientState`, `MomentumState` and `AdamState` are exported with the
+# first-order methods further down, and `NewtonOptimizerState` above. `DFPState` is an alias for
+# `BFGSState`. Only the *caches* stay internal, for every method alike.
+export solve!, solve, value, gradient, Newton, BFGS, DFP, BFGSState, DFPState
 
 include("optimizer_solution.jl")
 include("optimizers/optimizer_problems.jl")

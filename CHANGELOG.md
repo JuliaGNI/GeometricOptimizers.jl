@@ -15,6 +15,27 @@ breaking release).
   and they are what the tests construct — an unexported, underscore-prefixed name for the primary
   entry point of a package. There is no compatibility alias: the underscore spelling is gone.
 
+### Added
+
+- **`BFGSState` and `DFPState` are exported**, which they had to be for the entry above to be true
+  of the whole family. Every other state already was — `GradientState`, `MomentumState` and
+  `AdamState` alongside their methods, `NewtonOptimizerState` above them — so `BFGSState` was the
+  one state type a user had to reach into the module for, and `test/named_tuple_parameters.jl`
+  printed the asymmetry in a single expression: three bare names followed by
+  `GeometricOptimizers.BFGSState`. `DFPState` is an alias for `BFGSState`. The *caches* stay
+  internal, for every method alike, and that is the line the export list now draws.
+- **Docstrings for `BFGS` and `DFP`.** Both said only "Algorithm taken from `nocedal2006numerical`"
+  — the same sentence twice, with no signature line, so the two were indistinguishable in the
+  rendered reference. That was tolerable while they were unexported names; `docs/src/index.md` is a
+  whole-module `@autodocs`, so exporting them promotes two near-empty entries into the public
+  reference next to `Newton`'s. Each now states its update, and `BFGS` says that it is
+  `Optimizer`'s default `algorithm` — the reason it is exported at all.
+- **A test that every exported name is defined**, `test/exports.jl`. The check below is what
+  surfaced the dead exports, and calling it "worth keeping in mind" is exactly the guarantee that
+  had already failed once: a dangling export is silent *because* nothing resolves the name, so
+  nothing but the check itself will ever notice. It runs on every `Pkg.test()` now, together with a
+  spot check that the methods and their states are exported and the caches are not.
+
 ### Removed (breaking)
 
 - **The exports `NewtonOptimizer`, `BFGSOptimizer` and `DFPOptimizer`, none of which existed.**
@@ -31,8 +52,8 @@ breaking release).
   users at `_BFGS()` as the replacement for its own removed `BFGSOptimizer`, and a user following
   that to this package found neither name.
 
-  `filter(n -> !isdefined(GeometricOptimizers, n), names(GeometricOptimizers))` is now empty, which is
-  the check that surfaced this and is worth keeping in mind.
+  `filter(n -> !isdefined(GeometricOptimizers, n), names(GeometricOptimizers))` is now empty, and
+  `test/exports.jl` asserts that it stays empty.
 
 ## [0.2.2]
 

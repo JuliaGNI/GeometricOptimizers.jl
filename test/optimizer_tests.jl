@@ -1,7 +1,6 @@
 using LinearAlgebra
 using NaNMath: log
 using GeometricOptimizers
-using GeometricOptimizers: Newton, DFP, BFGS
 using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
 using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
 using GeometricOptimizers: iteration_number, increase_iteration_number!, status

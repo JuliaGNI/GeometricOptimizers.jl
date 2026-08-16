@@ -115,7 +115,7 @@ end
     # `f_increased` gate -- and a solve that ends on a decrease is unaffected by it.
     F(x) = sum(x .^ 2)
 
-    for method in (Newton(), GeometricOptimizers.BFGS(), GradientMethod())
+    for method in (Newton(), BFGS(), GradientMethod())
         x = ones(3)
         result = solve!(x, OptimizerState(method, x), Optimizer(x, F; algorithm=method))
 
