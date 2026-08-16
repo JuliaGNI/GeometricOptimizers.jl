@@ -94,9 +94,26 @@ breaking release).
   target point — could not be reused for exactly that reason: ``Y`` and ``-Y`` are the same point of
   ``Gr(1, 3)`` and are at different distances from it.
 
-  The Grassmann half of [#27] closes with this. What remains under that issue is
-  `mode = :finitediff`, which has no `GradientFiniteDifferences` method for a bare `Manifold` of
-  *either* kind and is the same gap [#24] records for a `NamedTuple`.
+  The Grassmann half of [#27] closes with this. **Two** things remain under that issue, not one —
+  this paragraph said only the first until the review of [#46] checked the second against merged
+  `main` rather than taking the issue's own wording for it:
+
+  - `mode = :finitediff` has no `GradientFiniteDifferences` method for a bare `Manifold` of *either*
+    kind, which is the same gap [#24] records for a `NamedTuple`.
+  - `default_gradient` for a bare `Manifold` still falls through to its `AbstractArray` method, which
+    is [#27]'s *second* bullet and is untouched by the change above. It is A20 below.
+
+### Known issues
+
+One entry is new in [Open Issues](#open-issues) below, from the review of [#46]. It is not fixed
+here, and it says what closing it would take:
+
+- **A20** — `default_gradient(problem, x)` has methods for `AbstractArray` and for
+  `ArrayNamedTuple`, and `Manifold <: AbstractMatrix`, so a bare manifold takes the first: a gradient
+  sized by `length(x)` that composes `problem.F` with a flat vector instead of rebuilding the point.
+  It does not raise where it is built — it raises at the first gradient evaluation, and only on an
+  objective that names its argument type, which is why nothing in the suite shows it. The fix is one
+  method delegating to the `GradientAutodiff(F, ::Manifold)` this release added.
 
 ## [0.2.1]
 
@@ -1113,7 +1130,8 @@ verified, measured, and not fixed here — see [Open Issues](#open-issues) at th
   `GrassmannManifold` cannot be optimized over *at all*, as a bare point or inside a `NamedTuple`.
   **Closed in [Unreleased](#unreleased)**; the catalogue entry it pointed at (A11) is described
   there, under the change that fixed it. What is left of [#27] is `mode = :finitediff`, which has no
-  `GradientFiniteDifferences` method for a bare `Manifold` of either kind.
+  `GradientFiniteDifferences` method for a bare `Manifold` of either kind, and `default_gradient`,
+  which has no `Manifold` method and silently takes its `AbstractArray` one (A20).
 - `mode = :finitediff` throws a `MethodError` on `NamedTuple` parameters ([#24]) — and, as the
   entry above records, on a bare `Manifold` too.
 - No documentation page describes the unified optimizer interface yet ([#25]).
@@ -1133,8 +1151,8 @@ review. Everything was verified directly — where a claim rests on a measuremen
 given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review of [#38]; C7
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
 the work on A4 and A8, A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and closing A1b, and
-A17, C12 and C13 from the review of [#44] and A18, A19, C14 and C15 from the review of [#45]; the rest
-from unifying the optimizer hierarchies.
+A17, C12 and C13 from the review of [#44], A18, A19, C14 and C15 from the review of [#45] and A20
+from the review of [#46]; the rest from unifying the optimizer hierarchies.
 
 Of that last group, **D7 is the one worth reading**, and it is the one that no longer bites here: it
 and B3 were two halves of a path on which a sound quasi-Newton direction is discarded because the
@@ -1150,6 +1168,13 @@ C14 is a duplication whose cost depends on A19. Only A18 is a defect you can poi
 residue of a review that widened a fix on the strength of a static argument, and the argument is
 sound — but it is worth knowing which claims in [0.2.1](#021) rest on a measurement and which rest on
 reading a type.
+
+The [#46] group is one entry, and how it was found is the transferable part. That PR closed A11 and
+stated what it left open under [#27]; the statement was taken from [#27]'s own text, which names two
+bullets, and only the first of them was re-checked. Running the second against merged `main` is what
+turned up A20. **A PR's account of what it leaves behind is a claim like any other in this file, and
+the issue it is quoting is not the code** — where an entry says "what remains is X", X is worth
+executing before it is written down.
 
 **Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, A15, B3, C6, D3, D4 and D6 were
 in this catalogue and have been fixed; each is now described in [0.2.0](#020)
@@ -1518,6 +1543,66 @@ which `src/utils.jl:2` already provides and three other types already use — an
 again once it does. If it runs, the claim is confirmed and this entry closes with the transcript,
 which is worth having either way given that three documentation passages depend on it. Do it together
 with C14, which decides where the identity is assembled.
+
+---
+
+#### A20. `default_gradient` has no `Manifold` method and silently takes the `AbstractArray` one
+
+**Severity: medium**, and narrow — it is unreachable through the constructor anyone actually calls.
+From the review of [#46], found by checking that PR's claim about what it left open against merged
+`main` instead of against the wording of [#27]. Pre-existing; [#46] neither causes nor fixes it.
+
+`default_gradient` has two methods (`src/optimizers/optimizer.jl:175-176`):
+
+```julia
+default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
+default_gradient(problem::OptimizerProblem, x::ArrayNamedTuple) = GradientAutodiff(problem.F, x)
+```
+
+`Manifold <: AbstractMatrix`, so a bare manifold takes the first. That builds the gradient from the
+*length* and composes `problem.F` with a flat vector, where the point of `GradientAutodiff(F, ::Manifold)`
+— added in [Unreleased](#unreleased) at `src/utils.jl:30` — is that it rebuilds the manifold before
+calling `F`. The `NamedTuple` method is already the delegating form, and the reason it exists is
+recorded in `default_gradient`'s own docstring one screen up: a `Gradient` for a `NamedTuple` "has to
+be constructed from `x` itself". A bare manifold is the same argument and did not get the same
+treatment.
+
+It does not raise where it is built. It raises at the first gradient evaluation, and only on an
+objective that names its argument type — so an `F(Y) = -tr(Y'MY)` written without the annotation
+computes something plausible off the flattened vector and never says anything. Reproduced on `main`
+at 6166479:
+
+```julia
+F(Y::GrassmannManifold) = -tr(Y' * M * Y)
+x = rand(GrassmannManifold{Float64}, 3, 1)
+
+default_gradient(OptimizerProblem(F, x), x)(x)
+# MethodError: no method matching F(::Vector{ForwardDiff.Dual{…}})
+
+GradientAutodiff(F, x)(x)          # the method [#46] added, for comparison
+# [-0.28344900891714625; -0.660038737272924; -0.4099740609429401;;]
+```
+
+The same on a `StiefelManifold`, which is why this is not a Grassmann entry: it is the half of [#27]'s
+second bullet that survived A11.
+
+Nothing in the test suite reaches it. `Optimizer(x, F; …)` builds its own gradient at
+`src/optimizers/optimizer.jl:244` and never consults `default_gradient`; the constructor that does is
+the lower-level `Optimizer(algorithm, problem, hessian, cache, linesearch; gradient = default_gradient(problem, cache.x), …)`
+at `:156`, and `_optimizer` at `:201`. So the gap is real and unreachable by the documented entry
+point at the same time, which is the reason it outlived a PR that fixed everything around it.
+
+**What to do**: one method,
+
+```julia
+default_gradient(problem::OptimizerProblem, x::Manifold) = GradientAutodiff(problem.F, x)
+```
+
+next to the two above, and a test that goes through the `:156` constructor with an objective that
+annotates its argument — the annotation is the part that matters, since without it the wrong gradient
+is silent rather than loud. Worth doing together with the other half of [#27], `mode = :finitediff`
+(`:246`), which has no `Manifold` method either and no `NamedTuple` one ([#24]); the three are one
+subject, which is "every entry point that builds a gradient should agree about what a manifold is".
 
 ---
 
@@ -2049,6 +2134,7 @@ and both are corrected: see C8.)
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
 [#45]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/45
+[#46]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/46
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
