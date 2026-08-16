@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Removed
+
+- **The MNIST material has moved to [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl).**
+  Nothing in `src/` changes and nothing a user calls goes away; what leaves the repository is the
+  experiment that was run *against* the package. That is the nine files of `scripts/` that carry it
+  — `mnist.jl`, `mnist_cuda.jl`, `mnist_cuda_repetitions.jl`, `mnist_metal.jl`,
+  `mnist_metal_short.jl`, `metal_memory_probe.jl`, `distill_mnist_results.jl` and the two `screen`
+  wrappers — together with `scripts/Project.toml`, the three checked-in result series under
+  `docs/src/data/`, and the "Reproducing the experiment" half of `docs/src/manifold_optimizers.md`,
+  which plotted them.
+
+  All of it arrived with [#14], and it earned its place: it found three limitations of the optimizer
+  interface and two bugs in `Adam` and `MomentumMethod`, every one of them fixed in `src/` and
+  recorded under [0.2.0](#020) below. But this is a library for scientific machine learning, and an
+  image data set is not part of its subject — nor is a documentation build that ships 540 rows of
+  somebody else's training run.
+
+  `docs/src/manifold_optimizers.md` keeps its derivation, which documents this package's own
+  construction rather than a run of it, and its experiment section becomes a paragraph pointing at
+  GMLDatasets. `scripts/retraction_accuracy.jl` **stays**: it regenerates this package's own
+  retraction tables, from the root project rather than from `scripts/Project.toml`, and C9 below is
+  about how few harnesses of that kind there are.
+
+  `MNIST_PORT.md` is deleted with them. Its account of what was done duplicates the changelog; its
+  two findings about `src/` that were *not* in the changelog now are, under 0.2.2's known issues and
+  as A21 in [Open Issues](#open-issues) below; and its operational half went to the GMLDatasets
+  documentation, which those known issues link.
+
 ## [0.3.0]
 
 ### Changed (breaking)
@@ -168,33 +198,30 @@ here, and it says what closing it would take:
   method delegating to the `GradientAutodiff(F, ::Manifold)` this release added.
 
 Two more come from the MNIST port of [#14], which found them but did not fix them. They were
-recorded in a `MNIST_PORT.md` at the repository root; that file is gone and this is what it said
-that is still true of `src/`:
+recorded in a `MNIST_PORT.md` at the repository root; that file went with the scripts it described
+(see [Unreleased](#unreleased) above), and this is what it said that is still true of `src/`. The
+first is an entry in the catalogue below as well; the second is a note about code that is no longer
+here to fix:
 
-- **The optimizer interface cannot hold GPU arrays**, so a GPU run keeps its parameters on the host.
-  This is a regression against `GeometricMachineLearning`, whose optimizers did run on
-  `CUDABackend()`. Two things block it. `ParameterHandling.flatten` has no method for GPU arrays —
-  the optimizer flattens its parameter `NamedTuple` on *every* step, in
-  `(grad::Gradient)(::ArrayNamedTuple)` in `src/optimizers/named_tuple_wrapper.jl`, and a `CuVector`
-  misses `flatten(::Type{T}, ::Vector{R})`, so it falls through to ParameterHandling's
-  `flatten(::Type{T}, ::AbstractVector)`, which `map`s over the *elements*. And
-  `_similar(::StiefelManifold)` is `rand(StiefelManifold{T}, size(a)...)`, i.e. always
-  `rand(CPU(), ...)`; it backs `x̄` and the `BFGS`/`DFP` caches, so the state would mix host and
-  device arrays. Everything else in `src/` is written against `KernelAbstractions` and is
-  backend-agnostic.
+- **A21** — **the optimizer interface cannot hold GPU arrays**, so a GPU run keeps its parameters on
+  the host. This is a regression against `GeometricMachineLearning`, whose optimizers did run on
+  `CUDABackend()`. Two things block it: `ParameterHandling.flatten` has no method that a GPU array
+  reaches, and the optimizer flattens its parameter `NamedTuple` on every step; and
+  `_similar(::Manifold)` always allocates on the host, so the state would mix host and device arrays
+  even if the flattening did not. It cost the port little at the size of network it ran — ≈1.2 MB up
+  and down per step against ≈3 GB of device-side activations — which is why it was left. It would
+  matter for a parameter set large enough to be worth keeping resident. Both causes, the
+  measurement, and what closing it would take are in the entry below.
 
-  It costs little in practice for a network of this shape — the optimizer touches only the 154938
-  parameters, ≈1.2 MB up and down per step, against ≈3 GB of device-side activations — which is why
-  the port left it. It would matter for a parameter set large enough to be worth keeping resident.
-
-- **Two `Zygote` pullback workarounds live in the scripts rather than in `src/`**: `mat_tensor_mul`'s
+- **Two `Zygote` pullback workarounds lived in the scripts rather than in `src/`**: `mat_tensor_mul`'s
   pullback indexes scalars, which a GPU array cannot serve, and it produces lazy `Transpose`s that
   have to be materialized. The scripts moved to
-  [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl) and carried the workarounds with them.
+  [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl) and carried the workarounds with them, so
+  this is recorded rather than tracked: it is not an open issue in this package.
 
 The operational half of `MNIST_PORT.md` — what the four training configurations are for, why the
 unconstrained baseline is *expected* to plateau at ``\sqrt{2 \cdot 0.9} \approx 1.342``, and the
-`Metal` unified-memory handling the GPU scripts need — is now
+`Metal` unified-memory handling the GPU scripts needed — is now
 [Running the Experiments](https://juliagni.github.io/GMLDatasets.jl/latest/running_the_experiments/)
 in the GMLDatasets documentation.
 
@@ -1235,7 +1262,10 @@ given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review 
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
 the work on A4 and A8, A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and closing A1b, and
 A17, C12 and C13 from the review of [#44], A18, A19, C14 and C15 from the review of [#45] and A20
-from the review of [#46]; the rest from unifying the optimizer hierarchies.
+from the review of [#46]; the rest from unifying the optimizer hierarchies. A21 is older than any of
+them — it comes from the MNIST port of [#14] and was catalogued only when that material left the
+repository, which is this section's own case made once more: a finding kept in a file beside the work
+that found it leaves with that work.
 
 Of that last group, **D7 is the one worth reading**, and it is the one that no longer bites here: it
 and B3 were two halves of a path on which a sound quasi-Newton direction is discarded because the
@@ -1608,12 +1638,13 @@ Two things sit against that, both verified by reading:
   so that method does not apply to it. (It was written for `StiefelLieAlgHorMatrix` alone and moved
   to the abstract type in [0.2.2](#022), which is why the Grassmann retraction was on the
   scalar-indexed path as well until then; that is *a piece of* this entry and not a fix for it.)
-- **No run in this repository exercises it.** There is no GPU code here at all any more: the five
-  MNIST scripts that were the only such code moved to
-  [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl). None of them passed `retraction`, so
-  all of them took the `Optimizer` default, which is `Cayley()` — the same fact recorded under F
-  below. The 6 h 53 min RTX 4090 run whose figures that package's documentation carries therefore
-  never called `geodesic`, `𝔄` or `ScaledSquaring` at all.
+- **No run in this repository exercises it**, and there is no GPU code left here to change that:
+  `mnist_cuda.jl`, `mnist_metal.jl`, `mnist_metal_short.jl` and `metal_memory_probe.jl` were all of
+  it, and they moved to [GMLDatasets](https://github.com/JuliaGNI/GMLDatasets.jl) with the rest of
+  the MNIST material. None of the five MNIST scripts passed `retraction`, so all of them took the
+  `Optimizer` default, which is `Cayley()` — the same fact recorded under F below. The 6 h 53 min
+  RTX 4090 run whose figures that package's documentation carries therefore never called `geodesic`,
+  `𝔄` or `ScaledSquaring` at all.
 
 What is *not* established is whether this actually breaks. CUDA.jl and Metal.jl error on disallowed
 scalar indexing, which would make it a hard failure rather than a slow one, but no GPU was available
@@ -1687,6 +1718,47 @@ annotates its argument — the annotation is the part that matters, since withou
 is silent rather than loud. Worth doing together with the other half of [#27], `mode = :finitediff`
 (`:246`), which has no `Manifold` method either and no `NamedTuple` one ([#24]); the three are one
 subject, which is "every entry point that builds a gradient should agree about what a manifold is".
+
+---
+
+#### A21. The optimizer interface cannot hold GPU arrays
+
+**Severity: medium**, and a regression rather than a gap: `GeometricMachineLearning`'s optimizers ran
+on `CUDABackend()`, and the port of [#14] could not keep that. Found by that port, recorded in the
+`MNIST_PORT.md` it wrote, and moved here when the MNIST material left (see [Unreleased](#unreleased)
+above) — this entry is that file's finding restated against current `src/`, not a new measurement.
+
+The parameters of a GPU run stay on the host. Two independent things put them there:
+
+- **The per-step flattening.** `(grad::Gradient{T})(nt::ArrayNamedTuple{T})`
+  (`src/optimizers/named_tuple_wrapper.jl:88`) calls `ParameterHandling.flatten(nt)` on *every*
+  gradient evaluation. The vector method this package provides, `flatten(::Type{T}, ::Vector{R})` at
+  `:56`, is concrete in `Vector`, so a `CuVector` misses it and falls through to ParameterHandling's
+  own `flatten(::Type{T}, ::AbstractVector)`, which `map`s over the *elements*. The matrix method at
+  `:62` is written against `AbstractMatrix` and does accept a device matrix, but its body is
+  `flatten(T, vec(x))`, so it lands in the same place one call down.
+- **The state.** `_similar(a::Manifold{T}) = rand(manifold_constructor(a){T}, size(a)...)` at `:117`
+  goes to `rand(manifold_type, N, n)` (`src/manifolds/abstract_manifold.jl:110`) and from there to
+  `rand(CPU(), …)` at `:43` — always the host, whatever `a` is. It backs `x̄` and the `BFGS`/`DFP`
+  caches, so even a flattening that worked would leave the state mixing host and device arrays.
+
+What this cost the run it was found in is small: the optimizer touches only the parameters — 154938
+of them, 620 kB in `Float32`, so ≈1.2 MB uploaded and downloaded per step — against ≈3 GB of
+device-side activations in the forward and backward passes, which stayed on the device throughout.
+That is why the port left it, and it is a statement about that network and not about the interface.
+A parameter set large enough to be worth keeping resident would pay the transfer on every step.
+
+The rest of `src/` is written against `KernelAbstractions` and *looks* backend-agnostic; whether it
+is has not been established, and A19 above is one specific reason to doubt it.
+
+**What to do**: give `flatten` an `AbstractVector` method of this package's own, so a device vector
+stops reaching ParameterHandling's element-wise one, and thread the backend through `_similar` —
+`rand(backend, MT{T}, N, n)` already exists (`src/manifolds/abstract_manifold.jl:70`, allocating
+through `KernelAbstractions` at `:28`), and `KernelAbstractions.get_backend` is how `global_section`
+and `Base.zero` already find the backend of a point they are given
+(`src/manifolds/stiefel_manifold.jl:128,143`). Neither is large, and neither is worth doing blind:
+the check is a GPU run of the optimizer, which nothing in this repository does any more, so this
+should be closed together with A19 — one backend, one session, both claims settled.
 
 ---
 
@@ -1866,6 +1938,12 @@ What is quoted somewhere and has no committed harness:
   reports iterations and evaluations and not time, so the step-ceiling round regenerated every other
   figure in that docstring and left these four untouched. They now say so in place, which is the
   minimum this entry asks for and not a fix.
+- **the MNIST run**, as of [Unreleased](#unreleased) above: the 6 h 53 min RTX 4090 figures that A19
+  and A21 rest on, the ``\sqrt{1.8} \approx 1.342`` plateau and the per-configuration losses are
+  still quoted here, while `distill_mnist_results.jl` and the five scripts that produced them are now
+  in GMLDatasets. This is the one entry on the list whose harness *exists* and is merely elsewhere,
+  which makes it the mildest case and the easiest to get wrong: a figure quoted in this repository
+  and regenerated in another one goes stale exactly as quietly, and nothing here will notice.
 
 The pattern is C8's worked example: a number that no committed script regenerates is a number that
 goes stale silently, and the ones this catalogue has caught were all of that kind. Either put them
@@ -2193,9 +2271,11 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - **The PR #36 description still says the MNIST scripts use the geodesic retraction.** The claim was
   corrected in `docs/src/manifold_optimizers.md`, but it also appears in the pull request body, where
   it is the stated justification for making `ScaledSquaring` the default. None of the five MNIST
-  scripts passes `retraction`, so they all take the `Optimizer` default, which is `Cayley()`. The
+  scripts passed `retraction`, so they all took the `Optimizer` default, which is `Cayley()`. The
   default is still the right choice — being free of dense LAPACK is reason enough — but if that PR
-  body becomes a squashed commit message, the wrong reason goes into the history with it.
+  body becomes a squashed commit message, the wrong reason goes into the history with it. The
+  scripts have since moved to GMLDatasets (see [Unreleased](#unreleased)), which changes nothing
+  about the PR body this entry is about.
 
 (The second loose end here — that `svd_tables()` had never been re-run, so the iteration and
 evaluation counts rested on the author's measurement alone — is closed. It was run on `main` before
