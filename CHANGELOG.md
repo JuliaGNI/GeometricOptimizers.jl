@@ -6,6 +6,98 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Fixed
+
+- **A `GrassmannManifold` can be optimized over.** It could not, at all — as a bare point or inside a
+  `NamedTuple` — which was catalogue entry A11 and is the concrete content of [#27]. Every
+  `GrassmannManifold` test in the suite exercised the manifold, its lift, its retraction and its
+  `check`; none exercised a solve, because none could. The three failures, reproduced on `main`
+  before anything was changed:
+
+  ```
+  Optimizer(rand(GrassmannManifold, 5, 3), F)
+  # MethodError: no method matching GradientAutodiff(::typeof(F), ::GrassmannManifold{Float64, Matrix{Float64}})
+
+  solve!(ps, OptimizerState(_BFGS(), ps), Optimizer(ps, F; algorithm = _BFGS()))
+  # CanonicalIndexError: setindex! not defined for GrassmannManifold{Float64, Matrix{Float64}}
+
+  solve!(ps, OptimizerState(Adam(Float64), ps), Optimizer(ps, F; algorithm = Adam(Float64)))
+  # The function `similar` does not make sense in this context. Consider using rand.
+  ```
+
+  The retraction layer was already generic — `lift_factors`, `geodesic`, `cayley`,
+  `lift_from_columns` and `retraction_differential` all had Grassmann methods — so nothing about the
+  geometry was missing. What was missing was **a set of helpers in the optimizer plumbing written
+  against `StiefelManifold` / `StiefelLieAlgHorMatrix` instead of against the abstract types**, and
+  A11's estimate that the fix was "small and in two places" was the count of the ones that raise on
+  the first step rather than of the ones a solve needs:
+
+  | | site | what it broke |
+  |---|---|---|
+  | `GradientAutodiff` | `utils.jl` | `Optimizer` construction, for a bare point |
+  | `_similar` | `named_tuple_wrapper.jl` | the `Adam` / `Momentum` / `Gradient` state constructors |
+  | `copyto!` | `stiefel_manifold.jl` | `update!(::BFGSCache, …)` |
+  | `_copyto!` on a `GlobalSection` | `named_tuple_wrapper.jl` | the frame comparison in `store_gradient!` |
+  | `_difference!` | `named_tuple_wrapper.jl` | the quasi-Newton secant pair |
+  | `_add!`, `_rac!`, `_div!`, `_square!` | `named_tuple_wrapper.jl`, `stiefel_lie_algebra_horizontal.jl` | the momentum recursion and the `Adam` moments |
+  | `assign!`, `vec` | `stiefel_lie_algebra_horizontal.jl` | — |
+  | `l2norm` | `optimizer_status.jl` | **see below** |
+  | `one` | `stiefel_lie_algebra_horizontal.jl` | **see below** |
+
+  Every one of them is now a single method over an abstract type, and for those that act on a
+  lift, over `Base.parent` — the tuple of blocks a lift stores its free parameters in, `(A, B)` for
+  the Stiefel lift and `(B,)` for the Grassmann one. The Stiefel bodies *were* that `foreach`, so
+  the generic form is bit-identical for them and the next lift type inherits it rather than
+  rediscovering the gap. `apply_section!` on a `GrassmannManifold` also assigned `Y.A = …` where the
+  Stiefel method writes `@views Y.A .= …`, i.e. it replaced the point's array on every solver step
+  and returned that array rather than the point.
+
+  **Two of the nine would not have raised.** `l2norm` on a horizontal lift is the norm of its
+  *flattening* — the coordinates `Q` is sized by, `outer!` forms its outer product in and a line
+  search's `α` parameterizes. Without its own method the Grassmann lift fell through to
+  `l2norm(::AbstractMatrix)`, the *ambient* Frobenius norm, which counts each off-diagonal block
+  twice and so is `√2` too large; it feeds `step_αmax` (the step ceiling of A1b),
+  `curvature_is_usable`, `rxₐ` and `rg`. And `Base.one` — which `geodesic` calls on every retraction
+  — existed as a `KernelAbstractions` kernel for the Stiefel lift and fell through to `Base._one`,
+  whose diagonal write is the scalar indexing that kernel exists to avoid, for the Grassmann one.
+  That second is a piece of issue A19 rather than a fix for it: A19 is about `𝔄`, whose argument is
+  a bare matrix and which is still on the scalar-indexed path.
+
+  **Two corrections to A11's own text**, both found by reproducing it. It says the `NamedTuple` case
+  fails because `GrassmannManifold` does not define `setindex!` while `StiefelManifold` does; neither
+  defines it, and what `StiefelManifold` had is the `copyto!` above, which is why the generic
+  `AbstractArray` path was never reached for it. And A11 names `_copyto!` as the `NamedTuple`
+  failure where `test/adam_with_euclidean_decay.jl` named `_similar` — both are right, they are the
+  `_BFGS` path and the `Adam` path, which is why they are two rows of the table and not one.
+
+  **No Stiefel figure moves**, which is the bar rather than "the tests pass": every change is either
+  a widened signature that resolves to the same body for a `StiefelManifold` or a method only the
+  Grassmann types reach. Verified with `svd_tables()` from `scripts/retraction_accuracy.jl` — all
+  twenty (method, line search) combinations over eight starting points, iterations, evaluations, `rg`
+  and `check` — which reproduces `main` **to the digit in every cell**.
+
+  New coverage in `test/grassmann_optimizer_tests.jl`: `Gr(1, 3)` and `Gr(2, 5)`, all five methods,
+  both retractions, `Float32` and `Float64`, plus a `NamedTuple` holding a `GrassmannManifold`
+  beside an ordinary `Matrix` and one holding both kinds of manifold at once. That last is what
+  would have caught the 0.2.0 defect in `ParameterHandling.flatten(T, ::Manifold)` — that it rebuilt
+  a `StiefelManifold` for every kind of manifold, so a `GrassmannManifold` came back Stiefel with a
+  different `rgrad` and a different retraction and no error anywhere — which until now had no
+  end-to-end test, because a solve could not reach it.
+
+  A11 asked for "a decision about what the Grassmann *tests* should then assert, since the quotient
+  means two representatives of the same point are equally correct answers". The decision is that the
+  objective is the Rayleigh quotient ``-\mathrm{tr}(Y^TMY)``, which is constant on the class
+  ``Y \sim YO`` by construction, and that every assertion is made about the projector ``YY^T`` and
+  never about ``Y``. `test/manifold_optimizers_with_new_interface.jl`'s problem — the distance to a
+  target point — could not be reused for exactly that reason: ``Y`` and ``-Y`` are the same point of
+  ``Gr(1, 3)`` and are at different distances from it.
+
+  The Grassmann half of [#27] closes with this. What remains under that issue is
+  `mode = :finitediff`, which has no `GradientFiniteDifferences` method for a bare `Manifold` of
+  *either* kind and is the same gap [#24] records for a `NamedTuple`.
+
 ## [0.2.1]
 
 ### Added
@@ -1018,9 +1110,12 @@ verified, measured, and not fixed here — see [Open Issues](#open-issues) at th
   source. `ArrayNamedTuple` and `GlobalSectionNamedTuple` are type *aliases* for `NamedTuple`, so
   dispatching on them is dispatching on Base; a wrapper `struct` would make most of it legal. ([#16])
 - Bare `Manifold` parameters are only partially supported ([#27]). In particular a
-  `GrassmannManifold` cannot be optimized over *at all*, as a bare point or inside a `NamedTuple`;
-  the two failures are catalogued as A11 below.
-- `mode = :finitediff` throws a `MethodError` on `NamedTuple` parameters ([#24]).
+  `GrassmannManifold` cannot be optimized over *at all*, as a bare point or inside a `NamedTuple`.
+  **Closed in [Unreleased](#unreleased)**; the catalogue entry it pointed at (A11) is described
+  there, under the change that fixed it. What is left of [#27] is `mode = :finitediff`, which has no
+  `GradientFiniteDifferences` method for a bare `Manifold` of either kind.
+- `mode = :finitediff` throws a `MethodError` on `NamedTuple` parameters ([#24]) — and, as the
+  entry above records, on a bare `Manifold` too.
 - No documentation page describes the unified optimizer interface yet ([#25]).
 
 ## [0.1.0]
@@ -1035,7 +1130,7 @@ are tracked with the code rather than in a scratch file. A is correctness in thi
 observability, C its dead code and bookkeeping; D is upstream, E lists things reported during the
 investigation that turned out not to be problems, and F the loose ends of the geodesic-retraction
 review. Everything was verified directly — where a claim rests on a measurement, the measurement is
-given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review of [#38]; A11 and C7
+given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review of [#38]; C7
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
 the work on A4 and A8, A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and closing A1b, and
 A17, C12 and C13 from the review of [#44] and A18, A19, C14 and C15 from the review of [#45]; the rest
@@ -1059,10 +1154,10 @@ reading a type.
 **Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, A15, B3, C6, D3, D4 and D6 were
 in this catalogue and have been fixed; each is now described in [0.2.0](#020)
 above, under the change that fixed it, and the entry here is gone. C3 and C4 went the same way in
-[0.2.1](#021). The labels are *not* reused and the
+[0.2.1](#021), and A11 in [Unreleased](#unreleased). The labels are *not* reused and the
 surviving ones are not renumbered, so the gaps are deliberate: A5, A6 and A10 mean what they have
-always meant, and a reference to A1b, A4, A15, B3, D6 or C6 in a commit message still resolves to the
-right subject.
+always meant, and a reference to A1b, A4, A11, A15, B3, D6 or C6 in a commit message still resolves
+to the right subject.
 
 Each entry says what it would take to fix it — look for **What to do**. That used to live in a
 `plan.md` that sequenced the catalogue into PRs and was never tracked here (it was excluded
@@ -1200,39 +1295,6 @@ to the `x` it is storing. `latest_gradient` is exactly that gradient and is alre
 obstacle is that the same call site feeds the momentum recursion `p ← αp + ∇f(xₖ)`, which needs the
 *pre*-step gradient and must keep getting `gradient_array(cache)` — so the two uses have to be
 separated first, and `update!(::MomentumState, …)`'s argument list says they currently are not.
-
----
-
-#### A11. A `GrassmannManifold` cannot be driven through an `Optimizer` at all
-
-**Severity: medium.** Found while giving `retraction_differential` its test coverage, where
-the intended end-to-end check on a Grassmann problem could not be written. This is the concrete
-content of issue [#27], "bare `Manifold` parameters are only partially supported", which until now
-recorded the conclusion without the two failures behind it. Pre-existing; nothing in this release
-causes or fixes it.
-
-Both halves of the obvious API fail, and they fail differently:
-
-- **A bare `GrassmannManifold`** has no gradient. `Optimizer(Y, F)` reaches
-  `GradientAutodiff(F, ::GrassmannManifold)`, which does not exist — only the `StiefelManifold`,
-  `Matrix` and `NamedTuple` methods do (`src/utils.jl:24-27`) — so it is a `MethodError` at
-  construction.
-- **A `NamedTuple` holding one** gets past construction and dies in the first step, inside
-  `update!(::BFGSCache, …)`: `_copyto!` on a `GrassmannManifold` falls through to the generic
-  `AbstractArray` `copyto!`, which routes through `setindex!`, which `GrassmannManifold` does not
-  define. `StiefelManifold` does, which is why only one of the two manifolds this package provides
-  can be optimized over.
-
-So every `GrassmannManifold` test in the suite exercises the manifold, its lift, its retraction and
-its `check` — and none exercises a solve, because none can. `adam_with_euclidean_decay.jl:168-173`
-records the same limitation from the other end.
-
-The fix is small and in two places: a `GradientAutodiff` method for `Manifold` rather than for
-`StiefelManifold`, and `setindex!`/`copyto!` on `GrassmannManifold` — the latter alongside the
-`copy`, `zero`, `copyto!`, `fill!` and `similar` methods `GrassmannLieAlgHorMatrix` already gained
-this release for exactly this class of reason. What it needs beyond that is a decision about what the
-Grassmann *tests* should then assert, since the quotient means two representatives of the same point
-are equally correct answers.
 
 ---
 
@@ -1432,10 +1494,12 @@ Two things sit against that, both verified by reading:
   `Aⁿ = one(A)` and `𝔄A = one(A)`. `Base.one(::AbstractMatrix)` is `Base._one` in
   `base/abstractarray.jl`, which does `similar`, `fill!` and then **a scalar-indexed loop over the
   diagonal**. So the path is not "nothing but matrix products and norms"; it reaches the same
-  construct `opnorm₁` was written to avoid, one level down. `StiefelLieAlgHorMatrix` has a
+  construct `opnorm₁` was written to avoid, one level down. `AbstractLieAlgHorMatrix` has a
   `Base.one` of its own that is a KernelAbstractions kernel precisely to avoid this
-  (`src/lie_algebras/stiefel_lie_algebra_horizontal.jl:314`) — but `𝔄`'s argument is a bare matrix,
-  so that method does not apply to it.
+  (`src/lie_algebras/abstract_lie_algebra_horizontal.jl:88`) — but `𝔄`'s argument is a bare matrix,
+  so that method does not apply to it. (It was written for `StiefelLieAlgHorMatrix` alone and moved
+  to the abstract type in [Unreleased](#unreleased), which is why the Grassmann retraction was on the
+  scalar-indexed path as well until then; that is *a piece of* this entry and not a fix for it.)
 - **No run in this repository exercises it.** `scripts/mnist_cuda.jl` and `scripts/mnist_metal.jl` are
   the only GPU code here, and none of the five MNIST scripts passes `retraction`, so all of them take
   the `Optimizer` default, which is `Cayley()` — the same fact recorded under F below. The 6 h 53 min
@@ -1449,7 +1513,7 @@ doubt it and a one-line way to find out.
 
 **What to do**: run `geodesic(60 * rand(StiefelLieAlgHorMatrix{Float32}, 20, 3) |> gpu)` on a CUDA or
 Metal backend. If it errors on scalar indexing, `𝔄` needs the identity built the way
-`one(::StiefelLieAlgHorMatrix)` builds it — `KernelAbstractions.zeros` plus `write_ones_kernel!`,
+`one(::AbstractLieAlgHorMatrix)` builds it — `KernelAbstractions.zeros` plus `write_ones_kernel!`,
 which `src/utils.jl:2` already provides and three other types already use — and the docs claim holds
 again once it does. If it runs, the claim is confirmed and this entry closes with the transcript,
 which is worth having either way given that three documentation passages depend on it. Do it together
@@ -1507,8 +1571,8 @@ the status object not saying enough.
 
 #### C1. `f_converged_strong` is computed and thrown away
 
-`convergence_measures` computes it at `src/optimizers/optimizer_status.jl:194` and returns it at
-`:201`; the `OptimizerStatus` constructor destructures it at `:100` and never stores it. Nothing else
+`convergence_measures` computes it at `src/optimizers/optimizer_status.jl:312` and returns it at
+`:319`; the `OptimizerStatus` constructor destructures it at `:135` and never stores it. Nothing else
 in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
 on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
 and `Options.f_stall_window` were meant to drive — both of which are also unread here.

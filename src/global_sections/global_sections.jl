@@ -85,6 +85,9 @@ function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::MT) where {T,AT<:
     Y
 end
 
+# This one is `StiefelManifold`-only and stays so: it has no live caller — the only `apply_section!`
+# call sites in the package are the two in `src/utils.jl` — and the commented-out `update_section!`
+# below is what it was written for. Widening it to `Manifold` would be widening dead code.
 function apply_section!(Λᵗ::GlobalSection{T,MT}, λY::GlobalSection{T,MT}, Y₂::MT) where {T,MT<:StiefelManifold{T}}
     N, n = size(Λᵗ.Y)
     @assert size(Y₂) == size(Λᵗ) == size(λY)
@@ -102,10 +105,16 @@ function apply_section(λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:Grassman
     Y
 end
 
-function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:GrassmannManifold{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::MT) where {T,AT<:GrassmannManifold{T},MT<:GrassmannManifold{T}}
     N, n = size(λY.Y)
 
-    @views Y.A = λY.Y * Y₂.A[1:n, :] + λY.λ * Y₂.A[(n+1):N, :]
+    # `.=` and not `=`, as in the Stiefel method above: assigning the field replaced `Y`'s array on
+    # every solver step rather than writing into it, and returned that array instead of `Y`. Safe
+    # where `Y === Y₂`, which `update_section!` relies on -- the two products are materialised before
+    # the broadcast assignment.
+    @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n+1):N, :]
+
+    Y
 end
 
 function apply_section(λY::GlobalSection{T}, Y₂::AbstractVecOrMat{T}) where {T}

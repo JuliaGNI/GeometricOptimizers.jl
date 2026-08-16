@@ -162,7 +162,14 @@ solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
 solution_scale(ps::ArrayNamedTuple) = √sum(abs2, values(apply_toNT(solution_scale, ps)))
 
-l2norm(a::StiefelLieAlgHorMatrix) = √(l2norm(a.A)^2 + l2norm(a.B)^2)
+# The norm of a horizontal lift is taken over its *free parameters*, i.e. over `Base.parent`, and in
+# quadrature -- the same intrinsic-versus-ambient distinction `_dot` documents. Leaving it to the
+# `AbstractMatrix` fallback below would give the ambient Frobenius norm, which counts each
+# off-diagonal block twice and so comes out `√2` times too large; that is what a
+# `GrassmannLieAlgHorMatrix` used to get, silently, in `step_αmax`, `curvature_is_usable`, `rxₐ` and
+# `rg`. Written out for `StiefelLieAlgHorMatrix` this is `√(l2norm(a.A)^2 + l2norm(a.B)^2)`, which is
+# what it was.
+l2norm(a::AbstractLieAlgHorMatrix) = √sum(abs2 ∘ l2norm, parent(a))
 
 l2norm(a::SkewSymMatrix) = l2norm(a.S)
 # Type piracy: `l2norm` is `GeometricBase.Utils.l2norm` (SimpleSolvers only re-exports it)

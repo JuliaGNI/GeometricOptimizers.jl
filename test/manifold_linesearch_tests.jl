@@ -108,12 +108,15 @@ end
     end
 end
 
-# `GrassmannManifold` parameters cannot be driven through an `Optimizer` at all -- issue #27, and the
-# same limitation `adam_with_euclidean_decay.jl` records -- so the Grassmann branch of
-# `retraction_differential` is checked directly instead of through a merit: `D(α)` against a central
-# difference of the retraction it is the derivative of. This is also the only place the identity is
-# checked against `retract` rather than against `f ∘ retract`, which is what makes it independent of
-# `global_rep` and `_dot`.
+# The Grassmann branch of `retraction_differential` is checked directly rather than through a merit:
+# `D(α)` against a central difference of the retraction it is the derivative of. This is the only
+# place the identity is checked against `retract` rather than against `f ∘ retract`, which is what
+# makes it independent of `global_rep` and `_dot`.
+#
+# It was written this way because a `GrassmannManifold` could not be driven through an `Optimizer` at
+# all (issue A11, the concrete content of issue #27). That is fixed, and
+# `test/grassmann_optimizer_tests.jl` now covers the end-to-end solve — but the direct check is worth
+# keeping for the independence above, so it stays.
 struct UncoveredRetraction <: GeometricOptimizers.AbstractRetraction end
 
 @testset "retraction_differential is d/dα retract(αB), for both lifts" begin

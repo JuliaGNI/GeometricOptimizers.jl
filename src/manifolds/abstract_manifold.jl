@@ -148,6 +148,32 @@ Base.parent(A::Manifold) = A.A
 Base.getindex(A::Manifold, i::Int, j::Int) = A.A[i, j]
 Base.copy(A::MT) where {MT<:Manifold} = MT(copy(A.A))
 
+@doc raw"""
+    manifold_constructor(x::Manifold)
+
+The one-argument constructor of `x`'s manifold: `GrassmannManifold` for a
+`GrassmannManifold{Float32, Matrix{Float32}}`.
+
+The type *name* and not `typeof(x)`, because the array the result is applied to may have a different
+element type from `x`'s: `ParameterHandling.flatten`'s `unflatten` and the closure `GradientAutodiff`
+differentiates are both handed a vector of `ForwardDiff.Dual`s. And `x`'s manifold rather than a
+hardcoded `StiefelManifold`, which is what used to turn a [`GrassmannManifold`](@ref) into a
+[`StiefelManifold`](@ref) on a `flatten` round trip and to make a bare one a `MethodError` at
+[`Optimizer`](@ref) construction (issue A11).
+
+Its three callers are `ParameterHandling.flatten(::Type, ::Manifold)`,
+`GeometricOptimizers._similar(::Manifold)` and `GradientAutodiff(F, ::Manifold)`.
+"""
+manifold_constructor(x::Manifold) = Base.typename(typeof(x)).wrapper
+
+# No `Manifold` defines `setindex!`, so the generic `AbstractArray` `copyto!` — which routes through
+# it — is not available to any of them. This method existed for `StiefelManifold` alone, which is why
+# a `NamedTuple` holding a `GrassmannManifold` died with a `CanonicalIndexError` in
+# `update!(::BFGSCache, …)`; see issue A11. It returns `A` and not `nothing`: that is the `copyto!`
+# contract, and it is what `copyto!(::GrassmannLieAlgHorMatrix, …)` and
+# `copyto!(::GlobalSection, …)` next to it already do.
+Base.copyto!(A::MT, B::MT) where {MT<:Manifold} = (A.A .= B.A; A)
+
 Base.similar(::Manifold) = error("The function `similar` does not make sense in this context. Consider using rand.")
 
 Base.fill!(::Manifold, b) = error("The function `fill!` does not make sense in this context.")
