@@ -15,7 +15,7 @@
 #     search, retraction) combination of `test/optimizer_convergence/svd_optim.jl`, on the seed that
 #     file uses and across eight starting points. Feeds the tables in that file and in
 #     `default_linesearch`'s docstring. Its `max_iterations` is the cap those tables report against,
-#     so it belongs here and not at a call site: `_BFGS` with either polynomial search does not
+#     so it belongs here and not at a call site: `BFGS` with either polynomial search does not
 #     converge on two of the eight under `Cayley` (open issue A1b), and what the tables print for
 #     those is the cap itself.
 #
@@ -25,7 +25,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: geodesic, cayley, check, 𝔄, lift_factors, Geodesic, Cayley
 using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew, TaylorSeries
-using GeometricOptimizers: _BFGS, _DFP, iteration_number, status
+using GeometricOptimizers: iteration_number, status
 using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe
 using LinearAlgebra
 using Printf
@@ -127,20 +127,20 @@ end
 const A = include(joinpath(@__DIR__, "..", "test", "optimizer_convergence", "svd_matrix.jl"))
 
 const COMBINATIONS = (
-    ("_BFGS  Backtracking(expand)", _BFGS(), () -> Backtracking(Float64; expand=true)),
-    ("_BFGS  Backtracking        ", _BFGS(), () -> Backtracking(Float64)),
-    ("_BFGS  Bisection           ", _BFGS(), () -> Bisection(Float64)),
-    ("_BFGS  StrongWolfe(c₂=0.1) ", _BFGS(), () -> StrongWolfe(Float64; c₂=0.1)),
-    ("_BFGS  Quadratic           ", _BFGS(), () -> Quadratic(Float64)),
-    ("_BFGS  BierlaireQuadratic  ", _BFGS(), () -> BierlaireQuadratic(Float64)),
-    ("_DFP   Backtracking(expand)", _DFP(), () -> Backtracking(Float64; expand=true)),
-    ("_DFP   Bisection           ", _DFP(), () -> Bisection(Float64)),
-    ("_DFP   StrongWolfe(c₂=0.1) ", _DFP(), () -> StrongWolfe(Float64; c₂=0.1)),
-    ("_DFP   Quadratic           ", _DFP(), () -> Quadratic(Float64)),
+    ("BFGS  Backtracking(expand)", BFGS(), () -> Backtracking(Float64; expand=true)),
+    ("BFGS  Backtracking        ", BFGS(), () -> Backtracking(Float64)),
+    ("BFGS  Bisection           ", BFGS(), () -> Bisection(Float64)),
+    ("BFGS  StrongWolfe(c₂=0.1) ", BFGS(), () -> StrongWolfe(Float64; c₂=0.1)),
+    ("BFGS  Quadratic           ", BFGS(), () -> Quadratic(Float64)),
+    ("BFGS  BierlaireQuadratic  ", BFGS(), () -> BierlaireQuadratic(Float64)),
+    ("DFP   Backtracking(expand)", DFP(), () -> Backtracking(Float64; expand=true)),
+    ("DFP   Bisection           ", DFP(), () -> Bisection(Float64)),
+    ("DFP   StrongWolfe(c₂=0.1) ", DFP(), () -> StrongWolfe(Float64; c₂=0.1)),
+    ("DFP   Quadratic           ", DFP(), () -> Quadratic(Float64)),
 )
 
 # The cap the "iters over 8 seeds" column of `svd_optim.jl` reports against, and the value that makes
-# its "cap" entries mean something: `_BFGS` with either polynomial search runs out of iterations on
+# its "cap" entries mean something: `BFGS` with either polynomial search runs out of iterations on
 # two of the eight under `Cayley` rather than converging (open issue A1b). It has to be a constant
 # rather than a call-site keyword, because a sweep run at a different cap prints a different table for
 # those rows and the table does not say which cap it was.
