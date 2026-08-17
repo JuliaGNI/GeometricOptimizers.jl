@@ -335,8 +335,25 @@ lift_from_columns(B::StiefelLieAlgHorMatrix, V::AbstractMatrix) =
 lift_from_columns(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix) =
     GrassmannLieAlgHorMatrix(V[(B.n+1):(B.N), :], B.N, B.n)
 
-# This used to be an empty method body, i.e. every combination that is not covered below
-# returned `nothing` and failed somewhere downstream with an unrelated message.
+@doc raw"""
+    retraction(R::AbstractRetraction, x)
+
+Apply the retraction `R` to `x`, i.e. dispatch on the retraction *type* rather than calling
+[`geodesic`](@ref) or [`cayley`](@ref) by name.
+
+This is what a caller who has been handed a `retraction = …` keyword uses: the two shipped types,
+[`Geodesic`](@ref) and [`Cayley`](@ref), select the two functions, and a `Geodesic` also carries the
+[`AbstractExponentialAlgorithm`](@ref) its `geodesic` is evaluated with. `R(x)` is the same thing
+written as a call.
+
+`x` is an [`AbstractLieAlgHorMatrix`](@ref) on a manifold — the retractions this package is about map
+``\mathfrak{g}^\mathrm{hor}\to{}G`` — a `NamedTuple` of parameters, or an ordinary array, on which
+every retraction is the identity because the extended retraction on a vector space is addition and
+[`update_section!`](@ref) does the adding.
+
+An `R` and an `x` that do not go together is an error that says so, rather than a `nothing` that
+fails further downstream.
+"""
 function retraction(R::AbstractRetraction, x::AbstractArray)
     error("retraction is not implemented for $(typeof(R)) and $(typeof(x)).")
 end

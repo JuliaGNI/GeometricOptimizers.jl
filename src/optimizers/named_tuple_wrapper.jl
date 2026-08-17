@@ -25,8 +25,8 @@ end
 # The `flatten` methods below that dispatch on Base types (`NamedTuple`, `Tuple`, `Vector`,
 # `AbstractMatrix`/`AbstractArray{,3}`) are type piracy, and they shadow methods that
 # ParameterHandling already defines: `T<:AbstractFloat` is narrower than its `T<:Real`. The
-# methods for `Manifold`, `SkewSymMatrix` and `StiefelLieAlgHorMatrix` are fine, those types
-# are ours. See issue #16.
+# methods for `Manifold`, `VectorStorageMatrix` and `StiefelLieAlgHorMatrix` are fine, those
+# types are ours. See issue #16.
 function ParameterHandling.flatten(::Type{T}, x::NamedTuple) where {T<:AbstractFloat}
     x_vec, unflatten = ParameterHandling.flatten(T, values(x))
     function unflatten_to_NamedTuple(v::Vector{R}) where {R<:Real}
@@ -65,9 +65,18 @@ function ParameterHandling.flatten(::Type{T}, x::Union{AbstractMatrix{R},Abstrac
     return x_vec, Array_from_vec
 end
 
-function ParameterHandling.flatten(::Type{T}, s::SkewSymMatrix{R}) where {T<:AbstractFloat,R<:Real}
+# One method for all four of them: the free parameters are `vec(s)` and the two-argument constructor
+# is its inverse, for every [`VectorStorageMatrix`](@ref) alike. Without it the `AbstractMatrix`
+# method above applies, and `reshape`ing `n(n±1)/2` numbers to `n × n` is a `DimensionMismatch` --
+# which is where a `SymmetricMatrix` or a triangular parameter used to die, at `Optimizer`
+# construction, before any of the elementwise primitives were reached.
+#
+# The type *name* and not `typeof(s)`, for the reason [`manifold_constructor`](@ref) gives: the vector
+# `from_vec` is handed may be one of `ForwardDiff.Dual`s, whose element type is not `R`.
+function ParameterHandling.flatten(::Type{T}, s::VectorStorageMatrix{R}) where {T<:AbstractFloat,R<:Real}
     x_vec, from_vec = ParameterHandling.flatten(T, vec(s))
-    Array_from_vec(x_vec) = SkewSymMatrix(from_vec(x_vec), s.n)
+    constructor = Base.typename(typeof(s)).wrapper
+    Array_from_vec(x_vec) = constructor(from_vec(x_vec), s.n)
     return x_vec, Array_from_vec
 end
 
@@ -173,8 +182,8 @@ function _difference!(c::AbstractArray{T}, a::AbstractArray{T}, b::AbstractArray
     c .= a .- b
 end
 
-function _difference!(c::SkewSymMatrix, a::SkewSymMatrix, b::SkewSymMatrix)
-    _difference!(c.S, a.S, b.S)
+function _difference!(c::MT, a::MT, b::MT) where {MT<:VectorStorageMatrix}
+    _difference!(parent(c), parent(a), parent(b))
     c
 end
 
@@ -184,7 +193,7 @@ end
 # `GrassmannLieAlgHorMatrix` — so one method over it covers both lifts and whatever is added next.
 # These used to be written out for the Stiefel lift only, which is half of why a `GrassmannManifold`
 # could not be optimized over (issue A11); the Stiefel bodies were exactly this `foreach`, so nothing
-# about that path changes. The Stiefel `A` block still routes through the `SkewSymMatrix` method.
+# about that path changes. The Stiefel `A` block still routes through the method above.
 function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b::AbstractLieAlgHorMatrix)
     foreach(_difference!, parent(c), parent(a), parent(b))
     c
@@ -194,8 +203,8 @@ _difference!(c::ArrayNamedTuple{T}, a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}
 
 _rmul!(a::AbstractArray, b) = rmul!(a, b)
 
-# `LinearAlgebra.rmul!` writes back through `setindex!`, which none of these have; scaling the free
-# parameters is the same operation and is what the matrix they represent scales by.
+# `LinearAlgebra.rmul!` writes back through `setindex!`, which three of these four do not have;
+# scaling the free parameters is the same operation and is what the matrix they represent scales by.
 function _rmul!(a::VectorStorageMatrix, b)
     rmul!(parent(a), b)
     a

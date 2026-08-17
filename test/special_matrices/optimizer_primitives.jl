@@ -1,5 +1,7 @@
 using GeometricOptimizers
-using GeometricOptimizers: VectorStorageMatrix, _add!, _rac!, _square!, _div!, _rmul!
+using GeometricOptimizers: VectorStorageMatrix, _add!, _rac!, _square!, _div!, _rmul!,
+    _difference!, ParameterHandling, increase_iteration_number!, solver_step!
+using SimpleSolvers: Static, l2norm
 using Test
 import Random
 
@@ -7,10 +9,10 @@ Random.seed!(1234)
 
 # The four types that store their free parameters in one vector. Everything below is written on
 # `parent`, which is that vector, because that is the whole point of `VectorStorageMatrix`: the
-# generic `AbstractArray` methods broadcast, and none of these four has a `setindex!` to broadcast
-# through. Before these methods existed, a `SymmetricMatrix` or a triangular matrix could not be an
-# optimizer parameter at all -- `GeometricMachineLearning` carried its own copies of them to work
-# around it (GeometricMachineLearning#234).
+# generic `AbstractArray` methods broadcast, and only `SymmetricMatrix` has a `setindex!` for them to
+# broadcast through. Before these methods existed, a `SymmetricMatrix` or a triangular matrix could
+# not be an optimizer parameter at all -- `GeometricMachineLearning` carried its own copies of them
+# to work around it (GeometricMachineLearning#234).
 const TYPES = (SkewSymMatrix, SymmetricMatrix, LowerTriangular, UpperTriangular)
 
 const N = 5
@@ -66,6 +68,38 @@ const N = 5
         m = copy(A)
         @test _rmul!(m, 2.0) === m
         @test parent(m) ≈ 2 .* parent(A)
+
+        # `_difference!` belongs to the same family and is reached from a different place: not from
+        # `update!` but from `gradient_difference!`, on *every* `OptimizerStatus`. It was the one
+        # member left on `SkewSymMatrix` alone, which made the two triangular types unusable as
+        # parameters -- they are the two of the four with neither a `setindex!` for the generic
+        # broadcast nor a method of their own.
+        c = similar(A)
+        @test _difference!(c, A, B) === c
+        @test parent(c) ≈ parent(A) .- parent(B)
+        @test Matrix(c) ≈ Matrix(A) .- Matrix(B)
+    end
+
+    @testset "l2norm is taken over the free parameters" begin
+        A = rand(MT{Float64}, N)
+        @test l2norm(A) ≈ sqrt(sum(abs2, parent(A)))
+    end
+
+    @testset "flatten round trips through the free parameters" begin
+        # The `AbstractMatrix` method reshapes the flattened vector to `n × n`, which for `n(n±1)/2`
+        # numbers is a `DimensionMismatch`. That is where a `SymmetricMatrix` or a triangular
+        # parameter used to die -- inside `Optimizer`, before a single primitive was reached.
+        for T in (Float32, Float64)
+            A = rand(MT{T}, N)
+            # the two-argument form, because the one-argument one defaults to `Float64` for anything
+            # that is not an `ArrayNamedTuple` and the element type is the point here
+            v, unflatten = ParameterHandling.flatten(T, A)
+            @test v isa Vector{T}
+            @test length(v) == length(parent(A))
+            A′ = unflatten(v)
+            @test typeof(A′) == typeof(A)
+            @test A′ ≈ A
+        end
     end
 
     @testset "the primitives leave the represented matrix consistent" begin
@@ -118,4 +152,47 @@ end
     B = rand(N, N)
     @test A + B ≈ B + A
     @test A + B ≈ Matrix(A) + B
+end
+
+# The claim the methods above are here for, stated once and end to end: an optimizer *runs* over one
+# of these types. Nothing else in the suite asserts it, and testing the primitives one at a time does
+# not -- both `_difference!` and `ParameterHandling.flatten` were missing while every direct test of
+# `_add!` and friends passed, because neither is called from `update!`. `flatten` fails inside the
+# `Optimizer` constructor and `_difference!` on the first `OptimizerStatus`, so a run of a few steps
+# is what covers the whole path.
+"""
+    optimize(MT, algorithm; steps, η)
+
+Minimize ``\\frac{1}{2}\\|A - A_\\star\\|^2`` over the free parameters of an `MT`, and return the
+objective before and after `steps` steps.
+"""
+function optimize(MT, algorithm; steps=5, η=0.1)
+    Random.seed!(1234)
+    A_target = rand(MT{Float64}, N)
+    ps = (A=rand(MT{Float64}, N),)
+    # on `parent`, i.e. on the free parameters: the ambient Frobenius norm would count the strict
+    # triangle of a `SkewSymMatrix` twice and the objective is not the point here
+    F(p) = sum(abs2, parent(p.A) .- parent(A_target)) / 2
+
+    optimizer = Optimizer(ps, F; algorithm=algorithm, linesearch=Static(η))
+    state = OptimizerState(algorithm, ps)
+
+    before = F(ps)
+    for _ in 1:steps
+        increase_iteration_number!(state)
+        solver_step!(ps, state, optimizer)
+        update!(state, optimizer, ps)
+    end
+
+    before, F(ps), ps
+end
+
+@testset "an optimizer runs over a $(nameof(MT)) parameter -- $(nameof(typeof(algorithm)))" for
+MT in TYPES, algorithm in (GradientMethod(), MomentumMethod(0.1), Adam(Float64))
+
+    before, after, ps = optimize(MT, algorithm)
+    @test after < before
+    # and it is still the type it went in as, rather than a dense matrix the round trip lost the
+    # structure of
+    @test typeof(ps.A) <: MT{Float64}
 end
