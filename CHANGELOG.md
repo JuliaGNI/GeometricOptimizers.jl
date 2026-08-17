@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased] — targeting 0.4.0
+## [0.4.0]
 
 **The manifold geometry becomes public API, and its documentation moves here.** The types were always
 this package's; what changes is that a downstream package can now reach them without qualifying, and
@@ -140,6 +140,21 @@ which deletes GML's own copies of eleven of these types.
 
 - Twelve bibliography entries arrive with the moved chapters, and `docs/make.jl` gains the
   `Main.definition`/`Main.theorem`/`Main.proof` helpers they are written against.
+
+Almost all of the above is [#50]; the two `scripts/retraction_accuracy.jl` and
+`GeometricMachineLearning`-bound bullets under *Fixed* are [#49], which merged first and is
+unreleased, so it ships here. A minor bump and therefore breaking, for the reason the *Changed
+(breaking)* section gives: the newly exported names can collide downstream.
+
+[#50]'s review is where the two missing primitives came from. `ParameterHandling.flatten` and
+`_difference!` had not moved onto `VectorStorageMatrix` with the rest of the family, and both are
+reached from outside `update!` — `flatten` from the `Optimizer` constructor, `_difference!` from
+`gradient_difference!` on every `OptimizerStatus` — so every direct test of `_add!` and friends
+passed while none of the three newly supported types could actually be optimized. The end-to-end
+testset in `test/special_matrices/optimizer_primitives.jl` is what closes that gap, and it is the
+reason the *Added* entry above lists nine methods rather than seven. The review also found the
+missing `docs/src/assets/extra_styles.css`, without which every figure on the moved pages rendered
+twice.
 
 ## [0.3.1]
 
@@ -2440,10 +2455,13 @@ and both are corrected: see C8.)
 [#46]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/46
 [#47]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/47
 [#48]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/48
+[#49]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/49
+[#50]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/50
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
 [0.2.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.2
 [0.3.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.0
 [0.3.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.1
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.3.1...main
+[0.4.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.0
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.4.0...main
