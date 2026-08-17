@@ -131,10 +131,8 @@ function add!(C::SkewSymMatrix, A::SkewSymMatrix, B::SkewSymMatrix)
     add!(C.S, A.S, B.S)
 end
 
-function _add!(A::SkewSymMatrix{T}, B::SkewSymMatrix{T}) where {T}
-    _add!(A.S, B.S)
-    A
-end
+# `_add!` and the other optimizer primitives for this type are generic over `VectorStorageMatrix`,
+# next to the rest of them in `optimizers/named_tuple_wrapper.jl`.
 
 function Base.:-(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
@@ -316,6 +314,9 @@ function Base.copy(A::SkewSymMatrix)
     SkewSymMatrix(copy(A.S), A.n)
 end
 
+# see the comment on `similar(::SymmetricMatrix)`
+Base.similar(A::SkewSymMatrix) = SkewSymMatrix(similar(A.S), A.n)
+
 @kernel function assign_Skew_val_kernel!(S, A_skew, i)
     j = @index(Global)
     S[((i-2)*(i-1)÷2+j)] = A_skew[i, j]
@@ -348,6 +349,10 @@ function Base.copyto!(A::SkewSymMatrix, B::SkewSymMatrix)
     nothing
 end
 
+# this fills the *storage*: `fill!(A, val)` gives a matrix whose strict lower triangle is `val`, whose
+# strict upper triangle is `-val` and whose diagonal stays zero. A skew-symmetric matrix cannot hold a
+# constant, and this is the only sensible reading of `fill!` for it. The optimizer caches use it to
+# poison scratch arrays with `NaN`, where the sign does not matter.
 Base.fill!(A::SkewSymMatrix, val) = (fill!(A.S, val); A)
 
 function _round(A::SkewSymMatrix; kwargs...)

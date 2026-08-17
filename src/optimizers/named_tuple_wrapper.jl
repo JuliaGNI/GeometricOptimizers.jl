@@ -194,6 +194,13 @@ _difference!(c::ArrayNamedTuple{T}, a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}
 
 _rmul!(a::AbstractArray, b) = rmul!(a, b)
 
+# `LinearAlgebra.rmul!` writes back through `setindex!`, which none of these have; scaling the free
+# parameters is the same operation and is what the matrix they represent scales by.
+function _rmul!(a::VectorStorageMatrix, b)
+    rmul!(parent(a), b)
+    a
+end
+
 function _rmul!(a::ArrayNamedTuple, b)
     rmul_closure!(a) = _rmul!(a, b)
     apply_toNT(rmul_closure!, a)
@@ -265,6 +272,11 @@ _dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} =
 
 _add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
 
+function _add!(a::MT, b::MT) where {MT<:VectorStorageMatrix}
+    _add!(parent(a), parent(b))
+    a
+end
+
 function _add!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
     apply_toNT(_add!, a, b)
     a
@@ -272,8 +284,8 @@ end
 
 _add!(a::AbstractArray{T}, b::T) where {T} = a .+= b
 
-function _add!(a::SkewSymMatrix{T}, b::T) where {T}
-    _add!(a.S, b)
+function _add!(a::VectorStorageMatrix{T}, b::T) where {T}
+    _add!(parent(a), b)
     a
 end
 
@@ -295,8 +307,8 @@ Compute the element-wise square-root of `A`.
 """
 _rac!(B::AbstractArray, A::AbstractArray) = B .= sqrt.(A)
 
-function _rac!(B::SkewSymMatrix, A::SkewSymMatrix)
-    _rac!(B.S, A.S)
+function _rac!(B::MT, A::MT) where {MT<:VectorStorageMatrix}
+    _rac!(parent(B), parent(A))
     B
 end
 
@@ -319,8 +331,8 @@ function _div!(C::AbstractArray, A::AbstractArray, B::AbstractArray)
     C .= A ./ B
 end
 
-function _div!(C::SkewSymMatrix, A::SkewSymMatrix, B::SkewSymMatrix)
-    _div!(C.S, A.S, B.S)
+function _div!(C::MT, A::MT, B::MT) where {MT<:VectorStorageMatrix}
+    _div!(parent(C), parent(A), parent(B))
     C
 end
 
@@ -342,8 +354,8 @@ _div!(a, b) = _div!(a, a, b)
 """
 _square!(B::AbstractArray, A::AbstractArray) = B .= A .^ 2
 
-function _square!(B::SkewSymMatrix, A::SkewSymMatrix)
-    _square!(B.S, A.S)
+function _square!(B::MT, A::MT) where {MT<:VectorStorageMatrix}
+    _square!(parent(B), parent(A))
     B
 end
 

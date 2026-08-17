@@ -133,6 +133,15 @@ function Base.zero(A::AT) where AT <: AbstractTriangular
     AT(zero(A.S), A.n)
 end
 
+# see the comment on `similar(::SymmetricMatrix)`
+function Base.similar(A::AT) where AT <: AbstractTriangular
+    AT(similar(A.S), A.n)
+end
+
+# this fills the *storage*, i.e. the strict triangle; the rest of the matrix stays zero, because a
+# triangular matrix cannot hold a constant everywhere. See the comment on `fill!(::SkewSymMatrix, …)`.
+Base.fill!(A::AbstractTriangular, val) = (fill!(A.S, val); A)
+
 function KernelAbstractions.get_backend(A::AbstractTriangular)
     KernelAbstractions.get_backend(A.S)
 end

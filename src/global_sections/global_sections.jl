@@ -286,6 +286,15 @@ function update_section!(Λᵗ::GlobalSection{T,AT,Nothing}, Λ⁽ᵗ⁻¹⁾::G
     Λᵗ
 end
 
+# Same update as the one above -- these are ordinary vector-space parameters and the extended
+# retraction on a vector space is addition -- but written on the free parameters, because the
+# broadcast above needs a `setindex!` that no [`VectorStorageMatrix`](@ref) has.
+function update_section!(Λᵗ::GlobalSection{T,AT,Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T,AT}, B⁽ᵗ⁻¹⁾::AT, retraction) where {T,AT<:VectorStorageMatrix{T}}
+    parent(Λᵗ.Y) .= parent(Λ⁽ᵗ⁻¹⁾.Y) .+ parent(B⁽ᵗ⁻¹⁾)
+
+    Λᵗ
+end
+
 function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::NamedTuple, retraction)
     update_section_closure!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾) = update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
     apply_toNT(update_section_closure!, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾)
