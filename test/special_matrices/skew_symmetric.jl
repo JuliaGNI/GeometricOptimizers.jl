@@ -62,16 +62,36 @@ function check_map_to_Skew(N::Integer, T::DataType=Float64)
     @test A.S ≈ map_to_Skew(A)
 end
 
+# `SkewSymMatrix(α * A) == α * SkewSymMatrix(A)`, i.e. skew-symmetrization is linear.
+#
+# This was `SkeySymMatrix(A)` until the loop at the bottom of the file started calling it: a typo in
+# a function nothing invoked, so the suite passed and the property went untested. It is tested in
+# `GeometricMachineLearning` (`test/arrays/scalar_multiplication_for_custom_arrays.jl`), which is
+# where it was found when those tests were folded into this suite.
 function scalar_multiplication(n::Integer, T::DataType)
     A = rand(T, n, n)
     α = rand(T)
 
     # SkewSymMatrix
     Aα_sym = SkewSymMatrix(α * A)
-    Aα_sym2 = α * SkeySymMatrix(A)
+    Aα_sym2 = α * SkewSymMatrix(A)
     @test Aα_sym ≈ Aα_sym2
     @test typeof(Aα_sym) <: SkewSymMatrix{T}
     @test typeof(Aα_sym2) <: SkewSymMatrix{T}
+end
+
+# `SkewSymMatrix(A + B) == SkewSymMatrix(A) + SkewSymMatrix(B)`, the other half of linearity.
+# `skew_mat_add_sub` above adds two matrices that are already `SkewSymMatrix`es; this one adds the
+# dense matrices first, so it tests the constructor and not only `+`.
+function addition_is_linear(n::Integer, T::DataType)
+    A = rand(T, n, n)
+    B = rand(T, n, n)
+
+    AB = SkewSymMatrix(A + B)
+    AB₂ = SkewSymMatrix(A) + SkewSymMatrix(B)
+    @test AB ≈ AB₂
+    @test typeof(AB) <: SkewSymMatrix{T}
+    @test typeof(AB₂) <: SkewSymMatrix{T}
 end
 
 function test_random_array_generation(n::Int, N::Int, T::DataType)
@@ -108,5 +128,24 @@ for T ∈ (Float32, Float64)
         skew_mat_add_sub(N, T)
         skew_mat_mul(N, T)
         skew_mat_mul_from_the_right(N, T)
+        # `check_map_to_Skew`, `scalar_multiplication` and `test_random_array_generation` were
+        # defined above but never called, which is how the typo in the second one survived. Their
+        # properties were covered only by `GeometricMachineLearning`'s copies of these tests.
+        check_map_to_Skew(N, T)
+        scalar_multiplication(N, T)
+        addition_is_linear(N, T)
+        test_random_array_generation(N, N + 5, T)
     end
+end
+
+# The storage layout is public: `vec` returns it and the two-argument constructor takes it. Spelling
+# it out for one matrix pins the index arithmetic, which a change that kept `vec` and the constructor
+# consistent with *each other* would otherwise slip past. From
+# `GeometricMachineLearning`'s `test/arrays/{triangular,constructor_tests_for_custom_arrays}.jl`.
+@testset "storage layout" begin
+    M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
+    @test vec(SkewSymMatrix(M)) ≈ [1.5, 3.0, 1.5, 4.5, 3.0, 1.5]
+
+    @test SkewSymMatrix([1, 2, 3, 4, 5, 6], 4) == [0 -1 -2 -4; 1 0 -3 -5; 2 3 0 -6; 4 5 6 0]
+    @test SkewSymMatrix(vec(SkewSymMatrix(M)), 4) ≈ SkewSymMatrix(M)
 end
