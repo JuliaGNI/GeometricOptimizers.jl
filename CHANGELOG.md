@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Fixed
+
+- **`scripts/retraction_accuracy.jl` loads again.** [0.3.0](#030)'s rename of `_BFGS`/`_DFP` to
+  `BFGS`/`DFP` reached `src/`, `test/` and `docs/` and missed the one script the repository kept,
+  which still opened with `using GeometricOptimizers: _BFGS, _DFP` and named the old spelling in ten
+  `COMBINATIONS` entries and two comments. `UndefVarError` on the fourth line of the file, since
+  0.3.0.
+
+  Nothing in `src/` changes and no figure moves. The point of saying so is that this script is where
+  every iteration and evaluation count the package quotes comes from — the tables in
+  [`default_linesearch`](@ref)'s docstring and in `test/optimizer_convergence/svd_optim.jl` — so for
+  two releases the only way to check any of them was to reconstruct the harness by hand. Confirmed
+  against the docstring after the fix: `BFGS` with `Backtracking(expand = true)` under `Geodesic`
+  gives 95 iterations and 2 441 objective evaluations, which is the cell that table prints.
+
+  This is the kind of gap open issue **C9** is about — the entry counts how few of this package's
+  quoted figures have a named harness behind them, and here the one that does had been broken since
+  the release that renamed the methods it drives.
+
+- **Downstream: `GeometricMachineLearning` is on 0.3.** Its bound was `"0.2.1"`. Nothing it calls was
+  touched by 0.3.0 — it reaches this package through a qualified `import` plus a named `using` list
+  that holds neither `BFGS` nor `DFP`, and the three exports 0.3.0 removed never existed — so the
+  adoption is the bound and a re-resolve. Recorded here because 0.3.0's entry named GML as the place
+  the dead-export bug had already been fixed, and this closes that thread.
+
 ## [0.3.1]
 
 ### Removed
