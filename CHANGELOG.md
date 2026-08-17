@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [0.3.2]
+## [0.3.1]
 
 ### Removed
 
@@ -39,15 +39,6 @@ breaking release).
   All of the above is [#48]. A21 and C9's sixth bullet are what its review turned up — A21 is the
   only catalogue entry this release adds, and the finding in it dates from [#14] rather than from
   this work. Nothing in `src/` changed, which is why this is a patch and not a minor bump.
-
-  **There is no 0.3.1.** This section was written as one, and then `register.yml` was dispatched
-  with `version: patch` against a `Project.toml` that had *already* been bumped to `0.3.1` — the
-  input names a component to increment, not the version to register, so `RegisterAction` incremented
-  it again and registered `0.3.2`. The number is cosmetic and the registry is not, so the section was
-  renumbered to match what shipped rather than the other way round. The lesson for the next release
-  is to pass the version explicitly (`version: 0.3.2`) whenever the close-out commit has already set
-  it, and it is C9's rule one level up: an input whose meaning you infer is a figure nothing
-  regenerates.
 
 ## [0.3.0]
 
@@ -212,7 +203,7 @@ here, and it says what closing it would take:
 
 Two more come from the MNIST port of [#14], which found them but did not fix them. They were
 recorded in a `MNIST_PORT.md` at the repository root; that file went with the scripts it described
-(see [0.3.2](#032) above), and this is what it said that is still true of `src/`. The
+(see [0.3.1](#031) above), and this is what it said that is still true of `src/`. The
 first is an entry in the catalogue below as well; the second is a note about code that is no longer
 here to fix:
 
@@ -1738,7 +1729,7 @@ subject, which is "every entry point that builds a gradient should agree about w
 
 **Severity: medium**, and a regression rather than a gap: `GeometricMachineLearning`'s optimizers ran
 on `CUDABackend()`, and the port of [#14] could not keep that. Found by that port, recorded in the
-`MNIST_PORT.md` it wrote, and moved here when the MNIST material left (see [0.3.2](#032)
+`MNIST_PORT.md` it wrote, and moved here when the MNIST material left (see [0.3.1](#031)
 above) — this entry is that file's finding restated against current `src/`, not a new measurement.
 
 The parameters of a GPU run stay on the host. Two independent things put them there:
@@ -1951,7 +1942,7 @@ What is quoted somewhere and has no committed harness:
   reports iterations and evaluations and not time, so the step-ceiling round regenerated every other
   figure in that docstring and left these four untouched. They now say so in place, which is the
   minimum this entry asks for and not a fix.
-- **the MNIST run**, as of [0.3.2](#032) above: the 6 h 53 min RTX 4090 figures that A19
+- **the MNIST run**, as of [0.3.1](#031) above: the 6 h 53 min RTX 4090 figures that A19
   and A21 rest on, the ``\sqrt{1.8} \approx 1.342`` plateau and the per-configuration losses are
   still quoted here, while `distill_mnist_results.jl` and the five scripts that produced them are now
   in GMLDatasets.jl. This is the one entry on the list whose harness *exists* and is merely elsewhere,
@@ -2287,7 +2278,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   scripts passed `retraction`, so they all took the `Optimizer` default, which is `Cayley()`. The
   default is still the right choice — being free of dense LAPACK is reason enough — but if that PR
   body becomes a squashed commit message, the wrong reason goes into the history with it. The
-  scripts have since moved to GMLDatasets.jl (see [0.3.2](#032)), which changes nothing
+  scripts have since moved to GMLDatasets.jl (see [0.3.1](#031)), which changes nothing
   about the PR body this entry is about.
 
 (The second loose end here — that `svd_tables()` had never been re-run, so the iteration and
@@ -2319,5 +2310,5 @@ and both are corrected: see C8.)
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
 [0.2.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.2
 [0.3.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.0
-[0.3.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.2
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.3.2...main
+[0.3.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.1
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.3.1...main
