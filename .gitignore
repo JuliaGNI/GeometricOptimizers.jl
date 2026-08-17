@@ -42,3 +42,7 @@ docs/site/
 # committed for packages, but should be committed for applications that require a static
 # environment.
 Manifest.toml
+
+# TikZ intermediates. The `.png`s the figures end up as are already covered by the `*.png` rule
+# above; `docs/src/tikz/Makefile` regenerates both from the committed `.tex` sources.
+docs/src/tikz/*.pdf
