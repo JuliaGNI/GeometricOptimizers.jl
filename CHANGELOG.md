@@ -6,6 +6,108 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased] — targeting 0.4.0
+
+**The manifold geometry becomes public API, and its documentation moves here.** The types were always
+this package's; what changes is that a downstream package can now reach them without qualifying, and
+that the chapters explaining them live next to them. Driven by
+[GeometricMachineLearning#239](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/239),
+which deletes GML's own copies of eleven of these types.
+
+### Added
+
+- **Optimizer primitives for `SymmetricMatrix` and the triangular types.** `similar`, `fill!` and the
+  elementwise `_add!`, `_rac!`, `_square!`, `_div!`, `_rmul!`, plus `update_section!` on a
+  `GlobalSection` over one of them. Without these, a `SymmetricMatrix` or a `LowerTriangular` could
+  not be an optimizer parameter at all — the generic methods broadcast, and none of these types has a
+  `setindex!` to broadcast through.
+
+  They are written once, over the new `VectorStorageMatrix` alias for the four types that keep their
+  free parameters in one vector (`SkewSymMatrix`, `SymmetricMatrix` and the two `AbstractTriangular`s),
+  which is also what the four `SkewSymMatrix`-specific methods that existed before collapse into.
+  `GeometricMachineLearning` carried the missing ones itself, in a `go_bridges.jl` that is deleted
+  with this.
+
+  This is what its SympNet, symplectic-attention and volume-preserving layers are parametrized by, so
+  it is the difference between those networks being trainable here and not.
+
+- **`test/special_matrices/triangular.jl`** — there were no tests for the triangular types at all.
+  Storage layout, the two-triangles-plus-diagonal partition, multiplication against a dense matrix,
+  linearity, and the `vec`/constructor round trip. Adapted from GML's `test/arrays/triangular.jl`,
+  whose remaining half tests GML's own tensor kernels.
+
+- **`test/special_matrices/optimizer_primitives.jl`** for the methods above, including that
+  `_rmul!` scales the *matrix* and not merely its storage — which differ by a sign in the upper
+  triangle of a skew-symmetric matrix.
+
+### Changed (breaking)
+
+- **The manifold, section and retraction interface is exported.** Previously internal, so downstream
+  code named them `GeometricOptimizers.`-qualified:
+
+  | | |
+  |---|---|
+  | geometry | `metric`, `check`, `Ω` (`rgrad` was already exported) |
+  | matrices | `AbstractTriangular`, `StiefelProjection`, `AbstractLieAlgHorMatrix` |
+  | sections | `global_section`, `apply_section`, `apply_section!`, `update_section!` |
+  | retractions | `AbstractRetraction`, `Geodesic`, `Cayley`, `geodesic`, `cayley`, `retraction` |
+  | optimizer | `OptimizerMethod`, `OptimizerSolution` |
+
+  Breaking because a name that is now exported can collide with a downstream one. `Optimizer`,
+  `Manifold`, `SkewSymMatrix` and eight others *did* collide with `GeometricMachineLearning` until
+  #239 aliased them; that is the whole point of exporting them.
+
+  The **caches stay internal**, for every method alike — `GradientCache`, `MomentumCache`,
+  `AdamCache`, `BFGSCache`, `DFPCache`, `NewtonOptimizerCache` and the `OptimizerCache` supertype.
+  They are `solver_step!` scratch and nothing outside a step should read one. `test/exports.jl`
+  pins both halves of this.
+
+### Fixed
+
+- **Three tests in `test/special_matrices/skew_symmetric.jl` were defined but never called**, so
+  `scalar_multiplication` carried a `SkeySymMatrix` typo that would have failed immediately had it
+  run. `check_map_to_Skew`, `scalar_multiplication` and `test_random_array_generation` are now
+  invoked, the typo is fixed, and the linearity of `+` is covered too. Their properties were tested
+  only by GML's copies of these tests, which is where the omission surfaced.
+
+- **`test/global_sections/global_sections.jl` never tested the Stiefel global section.**
+  `stiefel_global_section` built a `GrassmannManifold`, making it a second copy of
+  `grassmann_global_section`. It now asserts the defining property, `λ(Y)E == Y`, and a new
+  `global_tangent_space_rep` asserts that `global_rep` and `apply_section` are inverse — which
+  nothing covered, the `Ω` tests reaching only the first of the two isomorphisms `global_rep`
+  composes.
+
+- **`stiefel_proj`'s element type defaulted to `Flaot32`.** Harmless, since every call passes `T`,
+  but a default nothing reaches is a default nothing checks; it is gone rather than spelled
+  correctly. The same file now also asserts that `E` *is* `[I; O]`, which orthonormality does not
+  imply.
+
+### Documentation
+
+- **The manifold, special-matrix and optimizer chapters move here from
+  `GeometricMachineLearning`**, thirteen pages in all: the seven-page `Manifolds` chapter (general
+  topology through homogeneous spaces), `special_matrices.md` and `global_tangent_spaces.md`, and the
+  four-page `Optimizer` chapter, whose framework half merges into `manifold_optimizers.md` and whose
+  retraction theory merges into `retractions.md`. They document types that live here.
+
+  The `Optimizer Methods` examples are rewritten against this package's own API — `OptimizerState`
+  and the moment accessors — where they used to construct GML's `Optimizer` and call its
+  `optimization_step!`.
+
+- **The TikZ figures come with them**, as sources: `docs/src/tikz` holds the six `.tex` files and a
+  Makefile, and `Documenter.yml` compiles them before `make.jl`. That needs `texlive-xetex`,
+  `texlive-science` and `poppler-utils` in the docs job. Committing the PNGs instead would have let
+  them drift from the sources.
+
+- **`DocumenterInterLinks` gains a `GeometricMachineLearning` entry.** Nine references on the moved
+  pages point at chapters that stayed there — the pullback machinery, the SympNet and transformer
+  architectures — and they stay references. This is a documentation-only edge: nothing under `src/`
+  or `test/` depends on GML, and `InterLinks` reads a published `objects.inv` rather than a local
+  build, so linking both ways creates no build-order cycle.
+
+- Twelve bibliography entries arrive with the moved chapters, and `docs/make.jl` gains the
+  `Main.definition`/`Main.theorem`/`Main.proof` helpers they are written against.
+
 ## [0.3.1]
 
 ### Removed
