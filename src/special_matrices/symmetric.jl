@@ -122,6 +122,16 @@ function Base.zero(A::SymmetricMatrix)
     SymmetricMatrix(zero(A.S), A.n)
 end
 
+# `similar` has to preserve the type: the optimizer caches allocate their scratch arrays with it and
+# then require every one of them to have the same type as the parameter. The generic `AbstractArray`
+# fallback returns a dense `Matrix` and makes the cache constructors inapplicable.
+Base.similar(A::SymmetricMatrix) = SymmetricMatrix(similar(A.S), A.n)
+
+# This fills the *storage*, so `fill!(A, val)` gives a matrix whose entries are all `val` — the
+# diagonal included, since it is part of `S` for a symmetric matrix. The optimizer caches use it to
+# poison scratch arrays with `NaN`.
+Base.fill!(A::SymmetricMatrix, val) = (fill!(A.S, val); A)
+
 function Base.getindex(A::SymmetricMatrix,i::Int,j::Int)
     if i ≥ j
         A.S[((i-1)*i)÷2+j]

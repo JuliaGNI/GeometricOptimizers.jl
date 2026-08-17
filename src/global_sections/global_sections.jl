@@ -260,6 +260,29 @@ end
 #     Λᵗ
 # end
 
+@doc raw"""
+    update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
+    update_section!(Λ, B, retraction)
+
+Transport the [`GlobalSection`](@ref) `Λ⁽ᵗ⁻¹⁾` along the step `B⁽ᵗ⁻¹⁾` and write the result into `Λᵗ`:
+
+```math
+\Lambda^{(t)} \leftarrow \Lambda^{(t-1)}\mathrm{Retraction}(B^{(t-1)}).
+```
+
+This is the fourth of the five steps an optimizer step consists of on a homogeneous space — see
+[Optimization on Homogeneous Spaces](@ref) — and the one that makes the cache independent of the
+iterate: the new point is read back out of the section afterwards with [`apply_section!`](@ref),
+rather than the section being recomputed at the new point.
+
+`B⁽ᵗ⁻¹⁾` is the final velocity the optimizer method produced, already scaled by the step length. It is
+an [`AbstractLieAlgHorMatrix`](@ref) when the parameter is on a manifold, and of the parameter's own
+type when it is not — a vector-space parameter carries no ``\lambda``, and the extended retraction on
+a vector space is addition, so `retraction` is then ignored.
+
+The three-argument form is the two-argument section written in place, `Λᵗ === Λ⁽ᵗ⁻¹⁾`. A `NamedTuple`
+of parameters is walked leaf by leaf.
+"""
 function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T,MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T,MT<:Manifold{T}}
     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
     expB = retraction(B⁽ᵗ⁻¹⁾)
@@ -282,6 +305,16 @@ end
 
 function update_section!(Λᵗ::GlobalSection{T,AT,Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T,AT}, B⁽ᵗ⁻¹⁾::AT, retraction) where {T,AT<:AbstractVecOrMat{T}}
     Λᵗ.Y .= Λ⁽ᵗ⁻¹⁾.Y .+ B⁽ᵗ⁻¹⁾
+
+    Λᵗ
+end
+
+# Same update as the one above -- these are ordinary vector-space parameters and the extended
+# retraction on a vector space is addition -- but written on the free parameters, which is where a
+# [`VectorStorageMatrix`](@ref) keeps them. Three of the four have no `setindex!` for the broadcast
+# above to write through, and for the fourth (`SymmetricMatrix`) it would visit each entry twice.
+function update_section!(Λᵗ::GlobalSection{T,AT,Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T,AT}, B⁽ᵗ⁻¹⁾::AT, retraction) where {T,AT<:VectorStorageMatrix{T}}
+    parent(Λᵗ.Y) .= parent(Λ⁽ᵗ⁻¹⁾.Y) .+ parent(B⁽ᵗ⁻¹⁾)
 
     Λᵗ
 end

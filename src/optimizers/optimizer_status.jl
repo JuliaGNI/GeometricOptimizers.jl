@@ -171,7 +171,10 @@ solution_scale(ps::ArrayNamedTuple) = √sum(abs2, values(apply_toNT(solution_sc
 # what it was.
 l2norm(a::AbstractLieAlgHorMatrix) = √sum(abs2 ∘ l2norm, parent(a))
 
-l2norm(a::SkewSymMatrix) = l2norm(a.S)
+# The same over the free parameters, for the same reason, for the four types that keep theirs in one
+# vector. The `AbstractMatrix` fallback below happens to agree, `vec` on a [`VectorStorageMatrix`](@ref)
+# *being* that vector, but only by way of a `vec` that is not the ambient one -- so this says it.
+l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 # Type piracy: `l2norm` is `GeometricBase.Utils.l2norm` (SimpleSolvers only re-exports it)
 # and both argument types are Base's, so every package that loads GeometricOptimizers
 # inherits these. They should be upstreamed to GeometricBase. See issue #16.

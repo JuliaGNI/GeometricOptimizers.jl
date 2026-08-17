@@ -60,10 +60,9 @@ end
 end
 
 @testset "AdamOptimizerWithDecay reproduces GML's schedule" begin
-    # `GeometricMachineLearning`'s method of this name stores γ = exp(log(η₂/η₁)/n_epochs) and takes
-    # the step η₁·γ^t in iteration t (`src/optimizers/adam_optimizer_with_learning_rate_decay.jl`;
-    # its docstring prints the reciprocal, the code is the reference). This is the claim that lets
-    # GML delete it.
+    # `GeometricMachineLearning`'s method of this name stored γ = exp(log(η₂/η₁)/n_epochs) and took
+    # the step η₁·γ^t in iteration t. This is the claim that let GML delete it, which it did in 0.5;
+    # these assertions are what that deletion rests on, so they stay.
     n_epochs, η₁, η₂ = 100, 1.0e-2, 1.0e-6
     γ_gml = exp(log(η₂ / η₁) / n_epochs)
     o = AdamOptimizerWithDecay(n_epochs; η₁=η₁, η₂=η₂)

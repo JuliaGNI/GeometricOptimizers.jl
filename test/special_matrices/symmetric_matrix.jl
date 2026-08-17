@@ -69,3 +69,10 @@ for T ∈ (Float32, Float64)
         scalar_multiplication(n, T)
     end
 end
+# see the note on `storage layout` in `skew_symmetric.jl`
+@testset "storage layout" begin
+    M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
+    @test SymmetricMatrix([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4) ==
+        [1 2 4 7; 2 3 5 8; 4 5 6 9; 7 8 9 10]
+    @test SymmetricMatrix(vec(SymmetricMatrix(M)), 4) ≈ SymmetricMatrix(M)
+end

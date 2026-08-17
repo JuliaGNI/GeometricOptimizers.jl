@@ -129,13 +129,14 @@ There is no new type here and no schedule of its own: this is exactly `Adam(T)` 
 
 # Why it exists
 
-`GeometricMachineLearning` carries an `AdamOptimizerWithDecay` that bundles Adam's `ρ₁`, `ρ₂`, `δ`
-with a learning-rate schedule `η₁`, `η₂`, `n_epochs`, and computes the same
+`GeometricMachineLearning` carried an `AdamOptimizerWithDecay` that bundled Adam's `ρ₁`, `ρ₂`, `δ`
+with a learning-rate schedule `η₁`, `η₂`, `n_epochs`, and computed the same
 ``\gamma = \exp(\log(\eta_2/\eta_1)/n)``. Since 0.2.0 the two halves of that live in different
 places here — the direction in an [`OptimizerMethod`](@ref), the step size in a
-`SimpleSolvers.LinesearchMethod` — which is the right split but leaves no single name to migrate
-that method to. This is it, so GML can delete its own copy; see
-[GeometricMachineLearning#230](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/230).
+`SimpleSolvers.LinesearchMethod` — which is the right split but left no single name to migrate that
+method to. This is it, and GML deleted its own copy in 0.5, where both packages exporting the name
+made `using` the two of them together an error; see
+[GeometricMachineLearning#239](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/239).
 
 !!! warning "This decays the learning rate, not the weights"
     Despite the shared word, this has nothing to do with [`AdamWithEuclideanDecay`](@ref). That one
