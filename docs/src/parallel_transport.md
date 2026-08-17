@@ -166,9 +166,6 @@ fig_light, ax_light = plot_parallel_transport(; theme = :light) # hide
 fig_dark, ax_dark = plot_parallel_transport(; theme = :dark) # hide
 CairoMakie.save("parallel_transport_light.png", fig_light; px_per_unit = Main.output_type == :html ? 1.5 : 2) # hide
 CairoMakie.save("parallel_transport_dark.png", fig_dark; px_per_unit = Main.output_type == :html ? 1.5 : 2) # hide
-hidedecorations!(ax_light)  # hide
-hidespines!(ax_light) # hide
-CairoMakie.save("parallel_transport_naked.png", fig_light; px_per_unit = Main.output_type == :html ? 1.5 : 2) # hide
 
 nothing # hide
 ```

@@ -28,7 +28,7 @@ Main.proof(raw"We first show that for every ``B^Y\in\mathfrak{g}^{\mathrm{hor},Y
 
 We should note that we have written all Lie group and Lie algebra actions as simple matrix multiplications, like ``AE = Y``. For some Lie groups and Lie algebras, as the Lie group of isomorphisms on some domain ``\mathcal{D}``, this notation may not be appropriate [holm2009geometric](@cite). These Lie groups are however not relevant for what we use in `GeometricOptimizers` and we will stick to regular matrix notation.
 
-## Global Sections 
+## Global Sections
 
 Note that the theorem above requires us to find an element ``A\in{}G`` such that ``AE = Y``. We will call such a mapping ``\lambda:\mathcal{M}\to{}G`` a *global section*[^1]. 
 
@@ -216,7 +216,9 @@ This is equivalent to the horizontal component of ``\mathfrak{g}`` for the Stief
 
 ## Library functions
 
-[`AbstractLieAlgHorMatrix`](@ref), [`StiefelLieAlgHorMatrix`](@ref), [`StiefelLieAlgHorMatrix`](@ref)), [`GrassmannLieAlgHorMatrix`](@ref), [`GrassmannLieAlgHorMatrix`](@ref)), [`vec`](@ref)), [`global_section`](@ref) where T) and [`global_section`](@ref) where T). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
+[`AbstractLieAlgHorMatrix`](@ref), [`StiefelLieAlgHorMatrix`](@ref),
+[`GrassmannLieAlgHorMatrix`](@ref), [`StiefelProjection`](@ref), [`GlobalSection`](@ref),
+[`global_section`](@ref), [`global_rep`](@ref) and [`apply_section`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 [`GeometricMachineLearning`](@extref GeometricMachineLearning :doc:`index`) re-exports all of these,
 so a neural network built there is optimized with exactly the machinery described above.

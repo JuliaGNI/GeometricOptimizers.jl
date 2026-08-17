@@ -51,7 +51,7 @@ It is therefore customary to introduce the *exponential map* ``\exp:T_x\mathcal{
 \exp(v_x) := \gamma_{v_x}(1),
 ```
 
-and we see that ``\gamma_{v_x}(t) = \exp(t\cdot{}v_x)``. In `GeometricOptimizers` we denote the exponential map by [`geodesic`](@ref) where T) to avoid confusion with the matrix exponential map[^2] which is called as `exp` in `Julia`. So we use the definition:
+and we see that ``\gamma_{v_x}(t) = \exp(t\cdot{}v_x)``. In `GeometricOptimizers` we denote the exponential map by [`geodesic`](@ref) to avoid confusion with the matrix exponential map[^2] which is called as `exp` in `Julia`. So we use the definition:
 
 [^2]: The Riemannian exponential map and the matrix exponential map coincide for many matrix Lie groups.
 
@@ -128,7 +128,7 @@ nothing # hide
 ![A tangent vector on ``\mathcal{M}`` determines a direction.](sphere_with_tangent_vec_dark.png)
 
 
-We now solve the geodesic spray for ``\eta\cdot\Delta`` for ``\eta = 0.1, 0.2, \ldots, 5.5`` with the function [`geodesic`](@ref) where T) and plot the corresponding points:
+We now solve the geodesic spray for ``\eta\cdot\Delta`` for ``\eta = 0.1, 0.2, \ldots, 5.5`` with the function [`geodesic`](@ref) and plot the corresponding points:
 
 ```@example s2_retraction
 Δ_increments = [Δ * η for η in 0.1 : 0.1 : 5.5]
@@ -207,7 +207,7 @@ we call the *gradient optimization scheme*.
 
 ## Library functions
 
-[`geodesic`](@ref) where T). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
+[`geodesic`](@ref), [`metric`](@ref) and [`rgrad`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 ```@raw latex
 \begin{comment}

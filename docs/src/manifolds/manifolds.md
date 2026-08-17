@@ -84,7 +84,7 @@ Main.proof(raw"Consider a point ``x\in\mathcal{N},`` a coordinate chart ``\varph
 
 We will use the immersion theorem when discussing the [symplectic solution manifold](@extref GeometricMachineLearning The-Symplectic-Solution-Manifold).
 
-## Tangent Spaces 
+## Tangent Spaces
 
 We already alluded to tangent spaces when talking about the preimage and the immersion theorems. Here we will give a precise definition. A tangent space can be seen as the *collection of all possible velocities a curve can take at a point on a manifold*. For this consider a manifold ``\mathcal{M}`` and a point ``x`` on it and the collection of ``C^\infty`` curves through ``x``: 
 
@@ -239,15 +239,16 @@ T\mathcal{M} = \{ (x, v_x): x\in\mathcal{M},\, v_x\in{}T_x\mathcal{M} \}.
 
 Coordinate charts on this manifold can be constructed in a straightforward manner; for every coordinate chart ``\varphi_U`` the map ``\varphi_U'(x)`` gives a homeomorphism between ``T_x\mathcal{M}`` and ``\mathbb{R}^n`` for any ``x\in{}U``. We can then find a neighborhood of any point ``(x, v_x)`` by taking ``\pi^{-1}(U) = \{(x, v_x): x\in{}U, v_x\in{}T_x\mathcal{M}\}`` and this neighborhood is isomorphic to ``\mathbb{R}^{2n}`` via ``(x, v_x) \mapsto (\varphi_U(x), \varphi'(x)v_x)``. The [geodesic spray](@ref "Geodesic Sprays and the Exponential Map") is an important vector field defined on ``T\mathcal{M}``.
 
-## Library functions 
+## Library functions
 
-[`Manifold`](@ref), [`rand`](@ref) where MT <: Manifold) and [`rand`](@ref) where MT <: Manifold). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
+[`Manifold`](@ref), [`StiefelManifold`](@ref) and [`GrassmannManifold`](@ref) — the last two are the
+two manifolds this package implements, and `rand` on either of them draws a random point. Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 ```@raw latex
 \begin{comment}
 ```
 
-## References 
+## References
 
 ```@bibliography
 Pages = []

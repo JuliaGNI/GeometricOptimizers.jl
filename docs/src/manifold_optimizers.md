@@ -68,7 +68,7 @@ Converts the Euclidean gradient into a Riemannian one, i.e. into an element of `
 \mathrm{Tr}\!\left((\nabla_YL)^TV\right) = g_Y(\mathtt{rgrad}(Y, \nabla_YL), V) \quad \forall V \in T_Y\mathcal{M}.
 ```
 
-For the Stiefel manifold with the canonical metric ``g_Y(V_1, V_2) = \mathrm{Tr}(V_1^T(\mathbb{I} - \tfrac{1}{2}YY^T)V_2)`` this is ``\mathrm{grad}_YL = \nabla{}L - Y\nabla{}L^TY``. In the package: [`rgrad`](@ref)).
+For the Stiefel manifold with the canonical metric ``g_Y(V_1, V_2) = \mathrm{Tr}(V_1^T(\mathbb{I} - \tfrac{1}{2}YY^T)V_2)`` this is ``\mathrm{grad}_YL = \nabla{}L - Y\nabla{}L^TY``. In the package: [`rgrad`](@ref).
 
 ### The lift to the global tangent space
 
@@ -78,7 +78,7 @@ Maps ``T_Y\mathcal{M} \to \mathfrak{g}^\mathrm{hor}``. It is the composition of 
 \Omega(V_Y) = \left(\mathbb{I} - \tfrac{1}{2}YY^T\right)V_YY^T - YV_Y^T\left(\mathbb{I} - \tfrac{1}{2}YY^T\right),
 ```
 
-and the conjugation ``Z \mapsto \Lambda^{-1}Z\Lambda`` that moves ``\mathfrak{g}^{\mathrm{hor},Y}`` to ``\mathfrak{g}^{\mathrm{hor},E}``. In practice the two are done at once: with ``\Lambda = [Y, Y_\perp]`` the result is just ``A = Y^T\Delta`` and ``B = Y_\perp^T\Delta``. In the package: [`global_rep`](@ref) where {T, AT<:StiefelManifold{T}}).
+and the conjugation ``Z \mapsto \Lambda^{-1}Z\Lambda`` that moves ``\mathfrak{g}^{\mathrm{hor},Y}`` to ``\mathfrak{g}^{\mathrm{hor},E}``. In practice the two are done at once: with ``\Lambda = [Y, Y_\perp]`` the result is just ``A = Y^T\Delta`` and ``B = Y_\perp^T\Delta``. In the package: [`global_rep`](@ref).
 
 ### The extended retraction
 
@@ -136,7 +136,7 @@ by means of an Euler time-stepping scheme:
 ```math
 \Theta^{t+1} = \Theta^{t} - h\nabla_{\Theta^{t}}L,
 ```
-where ``\eta`` (the time step of the Euler scheme) is referred to as the *learning rate*. 
+where ``h`` (the time step of the Euler scheme) is referred to as the *learning rate*. 
 
 This equation can easily be generalized to [manifolds](@ref "(Matrix) Manifolds") with the following two steps:
 1. modify ``-\nabla_{\Theta^{t}}L\implies{}-h\mathrm{grad}_{\Theta^{t}}L,`` i.e. replace the Euclidean gradient by a [Riemannian gradient](@ref "The Riemannian Gradient") and

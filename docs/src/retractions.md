@@ -54,7 +54,7 @@ Main.proof(raw"The Cayley transform trivially satisfies ``\mathrm{Cayley}(\mathb
 " * Main.indentation * raw"```math
 " * Main.indentation * raw"\frac{d}{dt}\bigg|_{t = 0}(\mathrm{Cayley}(tV))^T\mathrm{Cayley}(tV) = (\frac{1}{2}V - \frac{1}{2}V^T)^T + \frac{1}{2}V - \frac{1}{2}V^T = 0.
 " * Main.indentation * raw"```
-" * Main.indentation * raw"This proofs that the Cayley transform maps to ``SO(N)``.")
+" * Main.indentation * raw"This proves that the Cayley transform maps to ``SO(N)``.")
 ```
 
 We should mention that the factor ``\frac{1}{2}`` is sometimes left out in the definition of the Cayley transform when used in different contexts. But it is necessary for defining a retraction as without it the second condition is not satisfied.
@@ -67,7 +67,7 @@ Main.remark(raw"We can also use the Cayley retraction at a different point than 
 " * Main.indentation * raw"is a retraction ``\forall{}\bar{A}\in{}SO(N)``.")
 ```
 
-As a retraction is always an approximation of the geodesic map, we now compare the [`cayley`](@ref)) retraction for the example we introduced along [Riemannian manifolds](@ref "Geodesic Sprays and the Exponential Map"):
+As a retraction is always an approximation of the geodesic map, we now compare the [`cayley`](@ref) retraction for the example we introduced along [Riemannian manifolds](@ref "Geodesic Sprays and the Exponential Map"):
 
 ```@setup s2_retraction
 using CairoMakie
@@ -242,7 +242,7 @@ The *geodesic retraction* is a retraction whose associated curve is also the uni
 ```@eval
 Main.theorem(raw"The geodesic on a compact matrix Lie group ``G`` with bi-invariant metric for ``\bar{B}\in{}T_{\bar{A}}G`` is simply
 " * Main.indentation * raw"```math
-" * Main.indentation * raw"\gamma(t) = \exp(t\cdot{}\bar{B}\bar{A}^{-1})\bar{A} = A\exp(t\cdot{}\bar{A}^{-1}\bar{B}^n),
+" * Main.indentation * raw"\gamma(t) = \exp(t\cdot{}\bar{B}\bar{A}^{-1})\bar{A} = \bar{A}\exp(t\cdot{}\bar{A}^{-1}\bar{B}),
 " * Main.indentation * raw"```
 " * Main.indentation * raw"where ``\exp:\mathfrak{g}\to{}G`` is the matrix exponential map.")
 ```
@@ -251,7 +251,7 @@ The last equality in the equation above is a result of:
 
 ```math
 \begin{aligned}
-\exp(\bar{A}^{-1}\hat{B}\bar{A}) = \sum_{k=1}^\infty\frac{1}{k!}(\bar{A}^{-1}\hat{B}\bar{A})^k & = \sum_{k=1}^\infty \frac{1}{k!}\underbrace{(\bar{A}^{-1}\hat{B}\bar{A})\cdots(A^{-1}\hat{B}\bar{A})}_{\text{$k$ times}} \\ & = \sum_{k=1}^\infty \frac{1}{k!} \bar{A}^{-1} \hat{B}^k \bar{A} = \bar{A}^{-1}\exp(\hat{B})\bar{A}.
+\exp(\bar{A}^{-1}\hat{B}\bar{A}) = \sum_{k=0}^\infty\frac{1}{k!}(\bar{A}^{-1}\hat{B}\bar{A})^k & = \sum_{k=0}^\infty \frac{1}{k!}\underbrace{(\bar{A}^{-1}\hat{B}\bar{A})\cdots(\bar{A}^{-1}\hat{B}\bar{A})}_{\text{$k$ times}} \\ & = \sum_{k=0}^\infty \frac{1}{k!} \bar{A}^{-1} \hat{B}^k \bar{A} = \bar{A}^{-1}\exp(\hat{B})\bar{A}.
 \end{aligned}
 ```
 
@@ -327,7 +327,7 @@ and
 \mathtt{cayley}: \mathfrak{g}^\mathrm{hor} \to G, \bar{B} \mapsto \mathrm{Cayley}(\bar{B}),
 ```
 
-where ``\bar{B} = \lambda(Y)^{-1}\Omega(\Delta)\lambda(Y)``. These expressions for [`geodesic`](@ref)) and [`cayley`](@ref)) are the ones that we typically use in `GeometricOptimizers` for computational reasons. We show how we can utilize the sparse structure of ``\mathfrak{g}^\mathrm{hor}`` for computing the geodesic retraction and the Cayley retraction (i.e. the expressions ``\exp(\bar{B})`` and ``\mathrm{Cayley}(\bar{B})`` for ``\bar{B}\in\mathfrak{g}^\mathrm{hor}``). Similar derivations can be found in [celledoni2000approximating, fraikin2007optimization, bendokat2021real](@cite).
+where ``\bar{B} = \lambda(Y)^{-1}\Omega(\Delta)\lambda(Y)``. These expressions for [`geodesic`](@ref) and [`cayley`](@ref) are the ones that we typically use in `GeometricOptimizers` for computational reasons. We show how we can utilize the sparse structure of ``\mathfrak{g}^\mathrm{hor}`` for computing the geodesic retraction and the Cayley retraction (i.e. the expressions ``\exp(\bar{B})`` and ``\mathrm{Cayley}(\bar{B})`` for ``\bar{B}\in\mathfrak{g}^\mathrm{hor}``). Similar derivations can be found in [celledoni2000approximating, fraikin2007optimization, bendokat2021real](@cite).
 
 ```@eval
 Main.remark(raw"Further note that, even though the global section ``\lambda:\mathcal{M} \to G`` is not unique, the final geodesic ``\gamma_\Delta(t) = \lambda(Y)\exp(\lambda(Y)^{-1}\Omega(\Delta)\lambda(Y))E`` does not depend on the particular section we choose.")
@@ -1045,7 +1045,11 @@ here.
 
 ## The retractions on the two manifolds
 
-[`geodesic`](@ref)), [`geodesic`](@ref)), [`cayley`](@ref)), [`cayley`](@ref)) and [`cayley`](@ref) where T). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
+[`AbstractRetraction`](@ref), [`Geodesic`](@ref), [`Cayley`](@ref), [`geodesic`](@ref),
+[`cayley`](@ref) and [`retraction`](@ref). `geodesic` and `cayley` each have a method on an
+[`AbstractLieAlgHorMatrix`](@ref) — the efficient form this page derives, for both the Stiefel and
+the Grassmann lift — and one on a point together with a tangent vector, which is the classical
+retraction of the footnote above. Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 ## Reference
 

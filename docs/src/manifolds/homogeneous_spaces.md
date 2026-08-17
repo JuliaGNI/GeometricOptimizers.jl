@@ -1,4 +1,4 @@
-# Homogeneous Spaces 
+# Homogeneous Spaces
 
 *Homogeneous spaces* are very important in `GeometricOptimizers` as we can generalize existing neural network optimizers from vector spaces to such homogenous spaces. They are intricately linked to the notion of a *Lie Group* and its *Lie Algebra*[^1].
 
@@ -40,7 +40,7 @@ Main.example(raw"The Lie algebra of ``SO(N)`` are the skew-symmetric matrices ``
 ```
 
 
-# The Stiefel Manifold 
+# The Stiefel Manifold
 
 The Stiefel manifold ``St(n, N)`` is the space of all orthonormal frames in ``\mathbb{R}^{N\times{}n}``, i.e. matrices ``Y\in\mathbb{R}^{N\times{}n}`` s.t. ``Y^TY = \mathbb{I}_n``. It can also be seen as ``SO(N)`` modulo an equivalence relation: ``A\sim{}B\iff{}AE = BE`` for 
 
@@ -212,13 +212,14 @@ Main.proof(raw"In a first step we identify charts on the Grassmann manifold to m
 
  ## Library functions 
 
-[`StiefelManifold`](@ref), [`StiefelProjection`](@ref), [`GrassmannManifold`](@ref), [`metric`](@ref)), [`rgrad`](@ref)), [`metric`](@ref)), [`rgrad`](@ref)), [`Ω`](@ref) where T) and [`Ω`](@ref) where T). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
+[`StiefelManifold`](@ref), [`GrassmannManifold`](@ref), [`StiefelProjection`](@ref),
+[`metric`](@ref), [`rgrad`](@ref) and [`Ω`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 ```@raw latex
 \begin{comment}
 ```
 
-## References 
+## References
 
 ```@bibliography
 Pages = []

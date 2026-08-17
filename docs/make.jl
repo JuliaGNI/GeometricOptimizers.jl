@@ -126,7 +126,9 @@ makedocs(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://JuliaGNI.github.io/GeometricOptimizers.jl",
         edit_link="main",
-        assets=String[],
+        # The moved chapters include each of their figures twice, once per theme; without this
+        # stylesheet both variants render, stacked. See `docs/src/assets/extra_styles.css`.
+        assets=["assets/extra_styles.css"],
         # `index.md` still ends in a catch-all `@autodocs` for everything the topic pages do not
         # document by hand, so it is large. It is smaller than it was — the manifold, matrix,
         # global-section and retraction docstrings now sit on the pages that explain them — and

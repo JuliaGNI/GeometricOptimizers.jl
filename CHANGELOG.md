@@ -16,15 +16,16 @@ which deletes GML's own copies of eleven of these types.
 
 ### Added
 
-- **Optimizer primitives for `SymmetricMatrix` and the triangular types.** `similar`, `fill!` and the
-  elementwise `_add!`, `_rac!`, `_square!`, `_div!`, `_rmul!`, plus `update_section!` on a
-  `GlobalSection` over one of them. Without these, a `SymmetricMatrix` or a `LowerTriangular` could
-  not be an optimizer parameter at all — the generic methods broadcast, and none of these types has a
-  `setindex!` to broadcast through.
+- **Optimizer primitives for `SymmetricMatrix` and the triangular types.** `similar`, `fill!`, the
+  elementwise `_add!`, `_rac!`, `_square!`, `_div!`, `_rmul!`, `_difference!`, then `l2norm`,
+  `ParameterHandling.flatten` and `update_section!` on a `GlobalSection` over one of them. Without
+  these, a `SymmetricMatrix` or a `LowerTriangular` could not be an optimizer parameter at all: the
+  generic methods either broadcast — and three of these four types have no `setindex!` to broadcast
+  through — or reshape, and ``n(n\pm1)/2`` numbers do not reshape back to ``n \times n``.
 
   They are written once, over the new `VectorStorageMatrix` alias for the four types that keep their
   free parameters in one vector (`SkewSymMatrix`, `SymmetricMatrix` and the two `AbstractTriangular`s),
-  which is also what the four `SkewSymMatrix`-specific methods that existed before collapse into.
+  which is also what the `SkewSymMatrix`-specific methods that existed before collapse into.
   `GeometricMachineLearning` carried the missing ones itself, in a `go_bridges.jl` that is deleted
   with this.
 
@@ -38,7 +39,10 @@ which deletes GML's own copies of eleven of these types.
 
 - **`test/special_matrices/optimizer_primitives.jl`** for the methods above, including that
   `_rmul!` scales the *matrix* and not merely its storage — which differ by a sign in the upper
-  triangle of a skew-symmetric matrix.
+  triangle of a skew-symmetric matrix — and that an optimizer *runs* over one of these types, for
+  each of the four types and each of the three first-order methods. The end-to-end case is the one
+  that covers `_difference!` and `flatten`: neither is called from `update!`, so testing the
+  primitives one at a time leaves both of them out.
 
 ### Changed (breaking)
 
@@ -95,9 +99,15 @@ which deletes GML's own copies of eleven of these types.
   `optimization_step!`.
 
 - **The TikZ figures come with them**, as sources: `docs/src/tikz` holds the six `.tex` files and a
-  Makefile, and `Documenter.yml` compiles them before `make.jl`. That needs `texlive-xetex`,
-  `texlive-science` and `poppler-utils` in the docs job. Committing the PNGs instead would have let
-  them drift from the sources.
+  Makefile, and `Documenter.yml` compiles them before `make.jl` — as does `docs/Makefile`, for a local
+  build. That needs `texlive-xetex`, `texlive-science` and `poppler-utils` in the docs job. Committing
+  the PNGs instead would have let them drift from the sources.
+
+- **`docs/src/assets/extra_styles.css`** comes with them too. Each figure on the moved pages exists
+  twice, once per Documenter theme, and both are included; this is what hides the one that does not
+  belong to the active theme, keyed on Documenter's own theme class. Without it every one of those
+  pages shows both, stacked. The `_light`/`_dark` suffix is therefore load bearing: a figure with only
+  one variant must not carry it, which is why the two on `linesearch.md` no longer do.
 
 - **`DocumenterInterLinks` gains a `GeometricMachineLearning` entry.** Nine references on the moved
   pages point at chapters that stayed there — the pullback machinery, the SympNet and transformer

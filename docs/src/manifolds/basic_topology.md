@@ -142,7 +142,7 @@ We will come back to the notion of *denseness* when talking about the [universal
 \begin{comment}
 ```
 
-## References 
+## References
 
 references = raw"""
 ```@bibliography

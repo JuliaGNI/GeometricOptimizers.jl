@@ -83,15 +83,15 @@ typeof(GeometricOptimizers.momentum(OptimizerState(method, manifold_weight)).Y)
 
 So if the weight is ``Y\in{}St(n,N)`` the corresponding cache is initialized as the zero element on ``\mathfrak{g}^\mathrm{hor}\subset\mathbb{R}^{N\times{}N}`` as this is the global tangent space representation corresponding to the StiefelManifold.
 
-## The Adam Optimizer 
+## The Adam Optimizer
 
-The Adam Optimizer is one of the most widely neural network optimizers. The cache of the Adam optimizer consists of *first and second moments*. The *first moments* ``B_1``, similar to the momentum optimizer, store linear information about the current and previous gradients, and the *second moments* ``B_2`` store quadratic information about current and previous gradients. These second moments can be interpreted as approximating the curvature of the optimization landscape.  
+The Adam Optimizer is one of the most widely used neural network optimizers. The cache of the Adam optimizer consists of *first and second moments*. The *first moments* ``B_1``, similar to the momentum optimizer, store linear information about the current and previous gradients, and the *second moments* ``B_2`` store quadratic information about current and previous gradients. These second moments can be interpreted as approximating the curvature of the optimization landscape.  
 
 If all the weights are on a vector space, then we directly compute updates for ``B_1`` and ``B_2``:
 1. ``B_1 \gets ((\rho_1 - \rho_1^t)/(1 - \rho_1^t))\cdot{}B_1 + (1 - \rho_1)/(1 - \rho_1^t)\cdot{}\nabla{}L,``
 2. ``B_2 \gets ((\rho_2 - \rho_1^t)/(1 - \rho_2^t))\cdot{}B_2 + (1 - \rho_2)/(1 - \rho_2^t)\cdot\nabla{}L\odot\nabla{}L,``
 
-where ``\odot:\mathbb{R}^n\times\mathbb{R}^n\to\mathbb{R}^n`` is the *Hadamard product*: ``[a\odot{}b]_i = a_ib_i.`` ``\rho_1`` and ``\rho_2`` are hyperparameters. Their defaults, $\rho_1=0.9$ and $\rho_2=0.99$, are taken from [goodfellow2016deep; page 301](@cite). After having updated the `cache` (i.e. ``B_1`` and ``B_2``) we compute a *velocity* with which the parameters of the network are then updated:
+where ``\odot:\mathbb{R}^n\times\mathbb{R}^n\to\mathbb{R}^n`` is the *Hadamard product*: ``[a\odot{}b]_i = a_ib_i.`` ``\rho_1`` and ``\rho_2`` are hyperparameters. Their defaults, ``\rho_1=0.9`` and ``\rho_2=0.99``, are taken from [goodfellow2016deep; page 301](@cite). After having updated the `cache` (i.e. ``B_1`` and ``B_2``) we compute a *velocity* with which the parameters of the network are then updated:
 * ``W_t\gets -\eta{}B_1/\sqrt{B_2 + \delta},``
 * ``Y^{(t+1)} \gets Y^{(t)} + W^{(t)},``
 
@@ -122,7 +122,7 @@ and the second moment alongside it:
 GeometricOptimizers.second_moment(state).A
 ```
 
-### Weights on Manifolds 
+### Weights on Manifolds
 
 The problem with generalizing Adam to manifolds is that the Hadamard product ``\odot`` as well as the other element-wise operations (``/``, ``\sqrt{}`` and ``+``) lack a clear geometric interpretation. In `GeometricOptimizers` we get around this issue by utilizing the [global tangent space representation](@ref "Global Tangent Spaces"). A similar approach is shown in [kong2023momentum](@cite).
 
@@ -158,8 +158,9 @@ docstrings are on the [reference page](@ref GeometricOptimizers), where every do
 package is rendered once; the names above link to them.
 
 Taking a step with one of these over the parameter tree of a *neural network* is
-[`GeometricMachineLearning`](@extref GeometricMachineLearning :doc:`index`)'s job; see
-[its optimizer page](@extref GeometricMachineLearning :doc:`index`).
+[`GeometricMachineLearning`](@extref GeometricMachineLearning :doc:`index`)'s job: it wraps an
+[`OptimizerState`](@ref) and a cache in an optimizer of its own and walks the tree with them. The
+framework it does that within is described [here](@ref "The optimizer framework, step by step").
 
 ```@raw latex
 \begin{comment}

@@ -1,4 +1,4 @@
-# (Topological) Metric Spaces 
+# (Topological) Metric Spaces
 
 A metric space is a certain class of a topological space where the topology is *induced through a metric*. We define this notion now:
 

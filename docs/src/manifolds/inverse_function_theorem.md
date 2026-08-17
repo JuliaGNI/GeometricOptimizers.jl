@@ -2,7 +2,7 @@
 
 Here we state and proof all the theorems necessary to define [differential manifolds](@ref "(Matrix) Manifolds"). All these theorems (including proofs) can be found in e.g. [lang2012fundamentals](@cite).
 
-## The Fixed-Point Theorem 
+## The Fixed-Point Theorem
 
 The fixed-point theorem will be used in the proof of the inverse function theorem below and the [existence-and-uniqueness theorem](@ref "The Existence-And-Uniqueness Theorem"). 
 
@@ -67,7 +67,7 @@ Main.indentation * raw"```
 Main.indentation * raw"and the rightmost expression is bounded because of the mean value theorem: ``F(z + h) - F(z) \leq sup_{0<t<1}|h| \cdot ||F'(z + th)||``.")
 ```
 
-## The Implicit Function Theorem 
+## The Implicit Function Theorem
 
 This theorem is a direct consequence of the inverse function theorem. 
 

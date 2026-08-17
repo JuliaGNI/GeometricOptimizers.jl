@@ -65,11 +65,11 @@ ax = Axis(fig[1, 1])
 alpha = -3.:.01:3.
 lines!(ax, alpha, fˡˢ.(alpha); label = L"f^\mathrm{ls}_\mathrm{opt}(\alpha)")
 axislegend(ax)
-save("f_ls_optimizer_light.png", fig)
+save("f_ls_optimizer.png", fig)
 nothing # hide
 ```
 
-![](f_ls_optimizer_light.png)
+![](f_ls_optimizer.png)
 
 !!! info
     Note the different shape of the line search problem in the case of the optimizer, especially that the line search problem can take negative values in this case!
@@ -109,11 +109,11 @@ lines!(ax, alpha, fˡˢ.(alpha); label = L"f^\mathrm{ls}_\mathrm{opt}(\alpha)")
 lines!(ax, alpha, p.(alpha); label = L"p^{(1)}(\alpha)")
 scatter!(ax, α₁, p(α₁); color = mred, label = L"\alpha_1")
 axislegend(ax)
-save("f_ls_opt1_light.png", fig)
+save("f_ls_opt1.png", fig)
 nothing # hide
 ```
 
-![](f_ls_opt1_light.png)
+![](f_ls_opt1.png)
 
 We now again move the original ``x`` in the Newton direction with step length ``\alpha_1``:
 

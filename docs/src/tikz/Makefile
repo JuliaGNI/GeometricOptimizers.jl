@@ -2,7 +2,9 @@
 #
 # They came here from `GeometricMachineLearning`'s `docs/src/tikz/Makefile` along with the chapters
 # that use them, trimmed to the six sources those chapters reference. Each figure exists twice, once
-# for each Documenter theme; the pages include both and CSS shows the right one.
+# for each Documenter theme; the pages include both and `docs/src/assets/extra_styles.css` hides the
+# one that does not belong to the active theme -- which is why the `_light`/`_dark` suffix is load
+# bearing and not decoration.
 #
 # `all` is what the documentation workflow runs before `make.jl`. The PNGs are build products and
 # are not committed — `.gitignore` covers them — so a local `julia --project=docs docs/make.jl`

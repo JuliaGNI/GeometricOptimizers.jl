@@ -1,8 +1,8 @@
 ```@raw latex
-\texttt{GeometricOptimizers} has custom versions of matrices such as the symmetric and the skew-symmetric matrix implemented. These are important ingredients in e.g. SympNets and volume-preserving transformers and it is therefore important that those implementations also run efficiently on GPU. We also show how to build custom pullbacks for specific functions in \texttt{Julia}.
+\texttt{GeometricOptimizers} has custom versions of matrices such as the symmetric and the skew-symmetric matrix implemented. These are important ingredients in e.g. SympNets and volume-preserving transformers and it is therefore important that those implementations also run efficiently on GPU. We also show how their storage layout is what an optimizer has to update them through.
 ```
 
-# Symmetric, Skew-Symmetric and Triangular Matrices.
+# Symmetric, Skew-Symmetric and Triangular Matrices
 
 Among the special arrays implemented in `GeometricOptimizers` [`SymmetricMatrix`](@ref), [`SkewSymMatrix`](@ref), [`UpperTriangular`](@ref) and [`LowerTriangular`](@ref) are the most common ones and similar implementations can also be found in other libraries; `LinearAlgebra.jl` has an implementation of a symmetric matrix called [`Symmetric`](https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/#LinearAlgebra.Symmetric) for example. The versions of these matrices in `GeometricOptimizers` are however more memory efficient as they only store as many parameters as are necessary, i.e. ``n(n+1)/2`` for the symmetric matrix and ``n(n-1)/2`` for the other three. In addition, `GeometricMachineLearning` implements matrix and tensor multiplication for these matrices so that they work in parallel on GPU; see [Tensors](@extref GeometricMachineLearning Tensors-in-GeometricMachineLearning) there. We here give an overview of *elementary* custom matrices that are implemented in `GeometricOptimizers`. More *involved* matrices are the so-called [global tangent spaces](@ref "Global Tangent Spaces").
 
@@ -156,7 +156,9 @@ use one or more of them. That package also batches them over the third axis of a
 ## Why the storage matters here
 
 Because these types keep only their free parameters, they are also what an optimizer has to be able
-to *update*: there is no `setindex!` to broadcast an elementwise operation through. See
+to *update* — and the generic array methods cannot do it: three of the four have no `setindex!` for an
+elementwise operation to broadcast through, `similar` has to preserve the type rather than widen to a
+dense `Matrix`, and ``n(n\pm1)/2`` numbers do not reshape back to ``n \times n``. See
 [`VectorStorageMatrix`](@ref GeometricOptimizers.VectorStorageMatrix) for the methods that make them usable as optimizer parameters.
 
 ## Library functions
