@@ -10,7 +10,7 @@ breaking release).
 
 ### Added
 
-- **`NonGeometricAdam`, a Stiefel-only baseline to compare [`Adam`](@ref) against.** It is *Cayley
+- **`ScalarMomentAdam`, a Stiefel-only baseline to compare [`Adam`](@ref) against.** It is *Cayley
   ADAM*, Algorithm 2 of Li, Li and Todorovic, [*Efficient Riemannian Optimization on the Stiefel
   Manifold via the Cayley Transform*](https://arxiv.org/abs/2002.01113) (ICLR 2020), the
   `li2020efficient` entry added to the bibliography by this PR's first round. It is reproduced with
@@ -19,23 +19,37 @@ breaking release).
   **scalar**,
   ``v \gets \beta_2v + (1-\beta_2)\lVert\mathcal{G}(X)\rVert^2`` — one adaptive learning rate for the
   whole matrix instead of one per coordinate. That is the source's entire departure from ordinary Adam
-  and the reason for the name: reducing the second moments to a scalar drops their structure, where
+  and it is what the name says: reducing the second moments to a scalar drops their structure, where
   this package's `Adam` keeps it by accumulating ``\bar{G}\odot\bar{G}`` in
   ``\mathfrak{g}^\mathrm{hor}``. Everything else is shared with `Adam` — the gradient, its global
   tangent space representation, the bias-correction convention, the section/retraction path and the
-  line search — which is what makes the two comparable on the same problem.
+  line search — which is what makes the two comparable on the same problem. One thing about that
+  comparison is not shared and is worth knowing before running it: `Adam` normalizes componentwise, so
+  its direction has norm ``\approx\sqrt{\dim}``, while this one normalizes the whole lift at once and
+  has norm ``\approx1``. Both take the same `Static(DEFAULT_LEARNING_RATE)`, so the same ``\eta`` is a
+  step ``\sqrt{\dim}`` shorter here.
 
   The port needs less machinery than it looks like it should, because the source's lines 8-10 — its
   auxiliary matrix ``\hat{W} = ZY^T - \frac{1}{2}Y(Y^TZY^T)``, the skew-symmetrization
-  ``W = \hat{W} - \hat{W}^T`` and the projection ``\pi(Z) = WX`` — are this package's
+  ``W = \hat{W} - \hat{W}^T`` and the projection ``\pi(Z) = WY`` — are this package's
   ``\Omega(Y, \cdot)``, and `global_rep` is that map conjugated into
   ``\mathfrak{g}^\mathrm{hor}``. The source's ``W_k`` *is* the horizontal lift the first-order caches
-  already receive their gradient in.
-  `ADAM_MATHS.md` derives that block by block, maps every symbol of Algorithm 2 onto the code, and
+  already receive their gradient in. The *Optimizer Methods* manual page derives that block by
+  block; the method's docstring maps every symbol of Algorithm 2 onto the code and
   records the three places where the reproduction deliberately departs from the source: the exact
   retraction and with it the source's step cap, which norm is squared, and how the momentum is
-  transported. `NonGeometricAdamState` is public; the cache is not. Ordinary arrays, `NamedTuple`s,
-  Grassmann solutions and mixed parameter trees are rejected with an `ArgumentError`. ([#51])
+  transported.
+
+  The second of those three is a keyword. `ambient_norm = false`, the default, squares the horizontal
+  lift, which is free and keeps the gradient identical to `Adam`'s; `ambient_norm = true` squares the
+  source's ambient Euclidean ``\lVert\nabla{}L\rVert_F`` and costs one extra gradient evaluation per
+  step. The two are not interchangeable up to a constant — `rgrad` annihilates the normal component,
+  so for ``\nabla{}L = YS`` with ``S`` symmetric the lift norm is zero where the ambient one is not.
+
+  `ScalarMomentAdamState` is public; the cache is not. Ordinary arrays, `NamedTuple`s, Grassmann
+  solutions, mixed parameter trees and a `StiefelManifold` whose element type does not match the
+  method's are rejected with an `ArgumentError`, on the `Optimizer` path as well as the
+  `OptimizerState` one. ([#51])
 
 ## [0.4.0]
 

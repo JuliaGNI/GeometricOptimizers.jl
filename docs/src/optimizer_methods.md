@@ -126,9 +126,9 @@ GeometricOptimizers.second_moment(state).A
 
 The problem with generalizing Adam to manifolds is that the Hadamard product ``\odot`` as well as the other element-wise operations (``/``, ``\sqrt{}`` and ``+``) lack a clear geometric interpretation. In `GeometricOptimizers` we get around this issue by utilizing the [global tangent space representation](@ref "Global Tangent Spaces"). A similar approach is shown in [kong2023momentum](@cite).
 
-### The non-geometric Adam baseline
+### Cayley ADAM: a scalar second moment
 
-[`NonGeometricAdam`](@ref) is the other published answer to that problem, available here as a
+[`ScalarMomentAdam`](@ref) is the other published answer to that problem, available here as a
 baseline to compare against: it is *Cayley ADAM*, [li2020efficient; Algorithm 2](@cite), which avoids
 the Hadamard product by **collapsing the second moment to a scalar**. Where `Adam` accumulates
 ``\bar{G}\odot\bar{G}\in\mathfrak{g}^\mathrm{hor}``, it accumulates ``\lVert\bar{G}\rVert^2``, one
@@ -143,24 +143,64 @@ W_t \gets -\frac{m_1}{\sqrt{m_2 + \delta}}.
 ```
 
 So the whole matrix gets one adaptive learning rate instead of one per coordinate, and the second
-moment carries no direction — which is what *non-geometric* names here, and the reason this is a
+moment carries no direction — which is what the method is named for, and the reason this is a
 baseline rather than the package's recommended method. It is nonetheless a reproduction of a
 published algorithm, not a straw man: on a given objective it may well beat [`Adam`](@ref).
 
 Everything else is shared with [`Adam`](@ref) — the gradient, its
 [global tangent space representation](@ref "Global Tangent Spaces"), the bias-correction convention,
 the section/retraction path and the line search — which is what makes the two comparable on the same
-problem. Two things in the source are deliberately *not* reproduced: its two-step approximation of the
+problem. One thing about that comparison is worth knowing before running it: `Adam` normalizes
+*componentwise*, so ``\lVert{}W_t\rVert \approx \sqrt{\dim}``, while the divisor above normalizes the
+whole lift at once, so ``\lVert{}W_t\rVert \approx 1``. Both methods take the same default
+``\eta``, so the same number is a step ``\sqrt{\dim}`` shorter here.
+
+Two things in the source are deliberately *not* reproduced: its two-step approximation of the
 Cayley transform, because this package's [`Cayley`](@ref) retraction is exact and any other
 [`AbstractRetraction`](@ref) may be used instead, and the step-length cap that approximation needs,
-because bounding the step is [`GeometricOptimizers.step_αmax`](@ref)'s job here.
+because bounding the step is [`GeometricOptimizers.step_αmax`](@ref)'s job here. A third difference —
+which ``\lVert\cdot\rVert^2`` the second moment takes — is a keyword,
+`ScalarMomentAdam(; ambient_norm = true)` being the source's ambient Euclidean choice. The method's
+docstring maps every symbol of Algorithm 2 onto the code and records all three.
 
 The source's algorithm is Stiefel-only and so is this: the method accepts exactly one
 `StiefelManifold`, and ordinary arrays, `NamedTuple`s, Grassmann solutions and mixed trees throw an
-`ArgumentError`. `ADAM_MATHS.md` maps every symbol of Algorithm 2 onto the code — including the
-identity that makes the source's auxiliary matrix ``\hat{W}``, skew-symmetrized, *be* the horizontal
-lift `global_rep` already computes — and records the three places where the port departs from the
-source.
+`ArgumentError`.
+
+#### The source's projection *is* `global_rep`
+
+Algorithm 2 spends three of its lines building the tangent-space projection it needs — an auxiliary
+matrix ``\hat{W} = ZY^T - \frac{1}{2}Y(Y^TZY^T)``, its skew-symmetrization ``W = \hat{W} - \hat{W}^T``
+and the projection ``\pi_{T_Y}(Z) = WY`` (its equation (2)). None of it has to be implemented here,
+because that map is [`GeometricOptimizers.Ω`](@ref) and its conjugate is
+[`global_rep`](@ref). Writing ``\hat{W} = (\mathbb{I} - \frac{1}{2}YY^T)ZY^T``,
+
+```math
+W = \hat{W} - \hat{W}^T
+  = \left(\mathbb{I} - \tfrac{1}{2}YY^T\right)ZY^T - YZ^T\left(\mathbb{I} - \tfrac{1}{2}YY^T\right)
+  = \Omega(Y, Z),
+```
+
+and conjugating by the global section ``\lambda(Y) = [\,Y \mid \lambda\,]`` gives, using
+``Y^T(\mathbb{I} - \frac{1}{2}YY^T) = \frac{1}{2}Y^T`` and ``\lambda^TY = \mathbb{O}``, block by block
+
+| block of ``\lambda(Y)^TW\lambda(Y)`` | value | field of [`StiefelLieAlgHorMatrix`](@ref) |
+| --- | --- | --- |
+| ``Y^TWY`` | ``\frac{1}{2}(Y^TZ - Z^TY) = \mathrm{skew}(Y^TZ)`` | ``A`` |
+| ``\lambda^TWY`` | ``\lambda^TZ`` | ``B`` |
+| ``Y^TW\lambda`` | ``-(\lambda^TZ)^T`` | ``-B^T`` |
+| ``\lambda^TW\lambda`` | ``\mathbb{O}`` | the zero block |
+
+which is exactly `global_rep(GlobalSection(Y), Z)` — for *any* ``Z``, tangent or not. So
+``W = \lambda(Y)\bar{G}\lambda(Y)^T`` for ``\bar{G} = `` `global_rep(λY, Z)`, the source's ``W_k`` *is*
+the horizontal lift the first-order caches already receive their gradient in, and its ``\pi_{T_Y}(Z)``
+is that lift read back at ``Y``. `test/scalar_moment_adam.jl` pins the identity numerically against a
+literal transcription of the source's formula, so it cannot silently stop holding.
+
+What the source needs those lines for a *second* time — re-projecting the momentum onto the tangent
+space at the new iterate, its equation (6) — is [`update_section!`](@ref)'s job here, and that one is
+a genuine departure: transport by the global section and transport by re-projection agree for a Lie
+group and differ on a proper homogeneous space.
 
 ## The Adam Optimizer with Decay
 The Adam optimizer with decay is similar to the standard Adam optimizer with the difference that the learning rate ``\eta`` decays exponentially. We start with a relatively high learning rate ``\eta_1`` (e.g. ``10^{-2}``) and end with a low learning rate ``\eta_2`` (e.g. ``10^{-8}``). If we want to use this optimizer we have to tell it beforehand how many epochs we train for such that it can adjust the learning rate decay accordingly:
@@ -188,7 +228,7 @@ typeof(GeometricOptimizers.first_moment(state).A)
 
 ## Library functions
 
-[`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`NonGeometricAdam`](@ref),
+[`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref),
 [`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and [`OptimizerState`](@ref). Their
 docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the
 package is rendered once; the names above link to them.
