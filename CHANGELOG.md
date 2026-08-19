@@ -65,6 +65,33 @@ independent implementation that had been missing there.
   ``\theta = 3``, and nothing about the result says so. `NativePade(θ)` therefore rejects
   ``\theta > 1/2``, which is also the default.
 
+- **`NonGeometricAdam`, a Stiefel-only baseline to compare [`Adam`](@ref) against.** It is *Cayley
+  ADAM*, Algorithm 2 of Li, Li and Todorovic, [*Efficient Riemannian Optimization on the Stiefel
+  Manifold via the Cayley Transform*](https://arxiv.org/abs/2002.01113) (ICLR 2020), the
+  `li2020efficient` entry added to the bibliography by this PR's first round. It is reproduced with
+  this package's infrastructure, with one difference: any of the package's retractions may be used in
+  place of the source's two-step approximation of the Cayley transform. Its second moment is a
+  **scalar**,
+  ``v \gets \beta_2v + (1-\beta_2)\lVert\mathcal{G}(X)\rVert^2`` — one adaptive learning rate for the
+  whole matrix instead of one per coordinate. That is the source's entire departure from ordinary Adam
+  and the reason for the name: reducing the second moments to a scalar drops their structure, where
+  this package's `Adam` keeps it by accumulating ``\bar{G}\odot\bar{G}`` in
+  ``\mathfrak{g}^\mathrm{hor}``. Everything else is shared with `Adam` — the gradient, its global
+  tangent space representation, the bias-correction convention, the section/retraction path and the
+  line search — which is what makes the two comparable on the same problem.
+
+  The port needs less machinery than it looks like it should, because the source's lines 8-10 — its
+  auxiliary matrix ``\hat{W} = ZY^T - \frac{1}{2}Y(Y^TZY^T)``, the skew-symmetrization
+  ``W = \hat{W} - \hat{W}^T`` and the projection ``\pi(Z) = WX`` — are this package's
+  ``\Omega(Y, \cdot)``, and `global_rep` is that map conjugated into
+  ``\mathfrak{g}^\mathrm{hor}``. The source's ``W_k`` *is* the horizontal lift the first-order caches
+  already receive their gradient in.
+  `ADAM_MATHS.md` derives that block by block, maps every symbol of Algorithm 2 onto the code, and
+  records the three places where the reproduction deliberately departs from the source: the exact
+  retraction and with it the source's step cap, which norm is squared, and how the momentum is
+  transported. `NonGeometricAdamState` is public; the cache is not. Ordinary arrays, `NamedTuple`s,
+  Grassmann solutions and mixed parameter trees are rejected with an `ArgumentError`. ([#51])
+
 ### Fixed
 
 - **`ScaledSquaring` did not in fact run on a backend that forbids scalar indexing, which is the
@@ -2679,6 +2706,7 @@ and both are corrected: see C8.)
 [#48]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/48
 [#49]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/49
 [#50]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/50
+[#51]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/51
 [#52]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52
 [#54]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/54
 [#59]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/59
