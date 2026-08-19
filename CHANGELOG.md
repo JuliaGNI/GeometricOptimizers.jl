@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Added
+
+- **`NonGeometricAdam`, a Stiefel-only baseline to compare [`Adam`](@ref) against.** It is *Cayley
+  ADAM*, Algorithm 2 of Li, Li and Todorovic, [*Efficient Riemannian Optimization on the Stiefel
+  Manifold via the Cayley Transform*](https://arxiv.org/abs/2002.01113) (ICLR 2020), the
+  `li2020efficient` entry added to the bibliography by this PR's first round. It is reproduced with
+  this package's infrastructure, with one difference: any of the package's retractions may be used in
+  place of the source's two-step approximation of the Cayley transform. Its second moment is a
+  **scalar**,
+  ``v \gets \beta_2v + (1-\beta_2)\lVert\mathcal{G}(X)\rVert^2`` — one adaptive learning rate for the
+  whole matrix instead of one per coordinate. That is the source's entire departure from ordinary Adam
+  and the reason for the name: reducing the second moments to a scalar drops their structure, where
+  this package's `Adam` keeps it by accumulating ``\bar{G}\odot\bar{G}`` in
+  ``\mathfrak{g}^\mathrm{hor}``. Everything else is shared with `Adam` — the gradient, its global
+  tangent space representation, the bias-correction convention, the section/retraction path and the
+  line search — which is what makes the two comparable on the same problem.
+
+  The port needs less machinery than it looks like it should, because the source's lines 8-10 — its
+  auxiliary matrix ``\hat{W} = ZY^T - \frac{1}{2}Y(Y^TZY^T)``, the skew-symmetrization
+  ``W = \hat{W} - \hat{W}^T`` and the projection ``\pi(Z) = WX`` — are this package's
+  ``\Omega(Y, \cdot)``, and `global_rep` is that map conjugated into
+  ``\mathfrak{g}^\mathrm{hor}``. The source's ``W_k`` *is* the horizontal lift the first-order caches
+  already receive their gradient in.
+  `ADAM_MATHS.md` derives that block by block, maps every symbol of Algorithm 2 onto the code, and
+  records the three places where the reproduction deliberately departs from the source: the exact
+  retraction and with it the source's step cap, which norm is squared, and how the momentum is
+  transported. `NonGeometricAdamState` is public; the cache is not. Ordinary arrays, `NamedTuple`s,
+  Grassmann solutions and mixed parameter trees are rejected with an `ArgumentError`. ([#51])
+
 ## [0.4.0]
 
 **The manifold geometry becomes public API, and its documentation moves here.** The types were always
@@ -2457,6 +2488,7 @@ and both are corrected: see C8.)
 [#48]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/48
 [#49]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/49
 [#50]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/50
+[#51]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/51
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
