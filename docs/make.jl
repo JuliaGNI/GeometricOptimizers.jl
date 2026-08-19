@@ -35,7 +35,7 @@ const output_type = isempty(ARGS) ? :html : ARGS[1] == "html_output" ? :html : :
 
 function theorem(statement::String, name::Nothing; label::Union{Nothing, String} = nothing)
     if Main.output_type == :html
-        Markdown.parse("""!!! info "Theorem" 
+        Markdown.parse("""!!! info "Theorem"
             \t $(statement)""")
     else
         theorem_label = isnothing(label) ? "" : raw"\label{th:" * label * raw"}"
@@ -45,7 +45,7 @@ end
 
 function theorem(statement::String, name::String; label::Union{Nothing, String} = nothing)
     if Main.output_type == :html
-        Markdown.parse("""!!! info "Theorem ($(name))" 
+        Markdown.parse("""!!! info "Theorem ($(name))"
             \t $(statement)""")
     else
         theorem_label = isnothing(label) ? "" : raw"\label{th:" * label * raw"}"
@@ -59,7 +59,7 @@ end
 
 function definition(statement::String; label::Union{Nothing, String} = nothing)
     if Main.output_type == :html
-        Markdown.parse("""!!! info "Definition" 
+        Markdown.parse("""!!! info "Definition"
             \t $(statement)""")
     else
         theorem_label = isnothing(label) ? "" : raw"\label{def:" * label * raw"}"
@@ -69,7 +69,7 @@ end
 
 function example(statement::String; label::Union{Nothing, String} = nothing)
     if Main.output_type == :html
-        Markdown.parse("""!!! info "Example" 
+        Markdown.parse("""!!! info "Example"
             \t $(statement)""")
     else
         theorem_label = isnothing(label) ? "" : raw"\label{xmpl:" * label * raw"}"
@@ -79,7 +79,7 @@ end
 
 function remark(statement::String; label::Union{Nothing, String} = nothing)
     if Main.output_type == :html
-        Markdown.parse("""!!! tip "Remark" 
+        Markdown.parse("""!!! tip "Remark"
             \t $(statement)""")
     else
         theorem_label = isnothing(label) ? "" : raw"\label{rmrk:" * label * raw"}"
@@ -89,7 +89,7 @@ end
 
 function proof(statement::String)
     if Main.output_type == :html
-        Markdown.parse("""!!! details "Proof" 
+        Markdown.parse("""!!! details "Proof"
             \t $(statement)""")
     else
         Markdown.parse(raw"\begin{proof}" * statement * raw"\end{proof}")
@@ -126,9 +126,7 @@ makedocs(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://JuliaGNI.github.io/GeometricOptimizers.jl",
         edit_link="main",
-        # The moved chapters include each of their figures twice, once per theme; without this
-        # stylesheet both variants render, stacked. See `docs/src/assets/extra_styles.css`.
-        assets=["assets/extra_styles.css"],
+        assets=String[],
         # `index.md` still ends in a catch-all `@autodocs` for everything the topic pages do not
         # document by hand, so it is large. It is smaller than it was — the manifold, matrix,
         # global-section and retraction docstrings now sit on the pages that explain them — and
@@ -165,6 +163,7 @@ makedocs(;
             "Weight Decay on Manifolds" => "weight_decay.md",
         ],
         "References" => "references.md",
+        "API" => "api.md",
     ],
 )
 
