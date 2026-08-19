@@ -16,17 +16,3 @@ momentum and Adam themselves.
 
 Neural networks are not here. [`GeometricMachineLearning`](@extref GeometricMachineLearning
 :doc:`index`) builds them on top of this package and re-exports most of what follows.
-
-## Index
-
-```@index
-```
-
-## Reference
-
-Every docstring in the package. The chapters above explain what these are *for* and link into this
-page; a docstring may only be rendered once, which is why they link rather than repeat.
-
-```@autodocs
-Modules = [GeometricOptimizers]
-```
