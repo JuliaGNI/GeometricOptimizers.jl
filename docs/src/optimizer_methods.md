@@ -126,6 +126,22 @@ GeometricOptimizers.second_moment(state).A
 
 The problem with generalizing Adam to manifolds is that the Hadamard product ``\odot`` as well as the other element-wise operations (``/``, ``\sqrt{}`` and ``+``) lack a clear geometric interpretation. In `GeometricOptimizers` we get around this issue by utilizing the [global tangent space representation](@ref "Global Tangent Spaces"). A similar approach is shown in [kong2023momentum](@cite).
 
+### The non-geometric Adam baseline
+
+[`NonGeometricAdam`](@ref) is an experimental, Stiefel-only comparison method derived from the
+Adam-like moment rule in [li2020efficient](@cite). Unlike `Adam`, it stores both moments as
+ambient ``N\times{}n`` tangent matrices, squares that ambient matrix elementwise, applies the
+usual bias corrections, and converts only the final normalized direction to the horizontal
+representation. The package's existing section, retraction, and line-search protocol still
+handles the accepted step.
+
+The method accepts exactly one `StiefelManifold`; ordinary arrays, `NamedTuple`s, Grassmann
+solutions, and mixed trees throw `ArgumentError`. The name describes this implementation's
+coordinatewise ambient second moment, not a name claimed by the source. That accumulator is not
+an intrinsic or transported manifold second moment, so results are illustrative and should not be
+read as a universal statement about Riemannian Adam or about convergence on every objective. The
+technical decision record and symbol mapping are in `ADAM_MATHS.md`.
+
 ## The Adam Optimizer with Decay
 The Adam optimizer with decay is similar to the standard Adam optimizer with the difference that the learning rate ``\eta`` decays exponentially. We start with a relatively high learning rate ``\eta_1`` (e.g. ``10^{-2}``) and end with a low learning rate ``\eta_2`` (e.g. ``10^{-8}``). If we want to use this optimizer we have to tell it beforehand how many epochs we train for such that it can adjust the learning rate decay accordingly:
 
@@ -152,7 +168,7 @@ typeof(GeometricOptimizers.first_moment(state).A)
 
 ## Library functions
 
-[`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref),
+[`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`NonGeometricAdam`](@ref),
 [`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and [`OptimizerState`](@ref). Their
 docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the
 package is rendered once; the names above link to them.

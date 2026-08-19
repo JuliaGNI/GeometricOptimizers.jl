@@ -87,5 +87,8 @@ begin
     @safetestset "Adam + decaying step         " include("adam_optimizer_with_decay.jl")
 end
 begin
+    @safetestset "Non-geometric Adam           " include("non_geometric_adam.jl")
+end
+begin
     @safetestset "NamedTuple Parameters        " include("named_tuple_parameters.jl")
 end

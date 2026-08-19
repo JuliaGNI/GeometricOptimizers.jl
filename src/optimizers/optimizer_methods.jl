@@ -171,6 +171,35 @@ struct Adam{T} <: OptimizerMethod
 end
 
 @doc raw"""
+    NonGeometricAdam(T; β₁, β₂, δ)
+
+An experimental, Stiefel-only baseline derived from the Adam-like moment rule in
+[li2020efficient](@cite). It stores the first and second moments as elementwise ambient tangent
+matrices, bias-corrects them, and converts the resulting direction to the package's horizontal
+representation before the existing section/retraction path applies it. This is intentionally
+different from [`Adam`](@ref), which stores and squares horizontal-representation blocks.
+
+Only a single `StiefelManifold{T}` solution is supported. Ordinary arrays, `NamedTuple`s, Grassmann
+solutions, and mixed parameter trees are rejected. The line search owns the step length, so no
+learning-rate factor is stored or applied here. See `ADAM_MATHS.md` and the optimizer-methods
+documentation for the representation limitation and the qualification that this is not a full
+reproduction of the source's Cayley retraction implementation.
+"""
+struct NonGeometricAdam{T} <: OptimizerMethod
+    β₁::T
+    β₂::T
+    δ::T
+
+    function NonGeometricAdam(::Type{T}=Float64; β₁=9.0e-1, β₂=9.9e-1, δ=1.0e-8) where {T<:AbstractFloat}
+        β₁T, β₂T, δT = T(β₁), T(β₂), T(δ)
+        0 ≤ β₁T < 1 || throw(ArgumentError("β₁ must satisfy 0 ≤ β₁ < 1"))
+        0 ≤ β₂T < 1 || throw(ArgumentError("β₂ must satisfy 0 ≤ β₂ < 1"))
+        δT ≥ 0 || throw(ArgumentError("δ must be nonnegative"))
+        new{T}(β₁T, β₂T, δT)
+    end
+end
+
+@doc raw"""
     AdamWithEuclideanDecay(T; β₁, β₂, δ, λ)
 
 [`Adam`](@ref) with the *decoupled* weight decay of [loshchilov2019decoupled](@cite), which is
@@ -269,7 +298,7 @@ end
 that share [`AdamCache`](@ref), [`AdamState`](@ref) and the moment recursion. Currently
 [`AdamWithEuclideanDecay`](@ref).
 """
-const AdamFamily = Union{Adam,AdamWithEuclideanDecay}
+const AdamFamily = Union{Adam,AdamWithEuclideanDecay,NonGeometricAdam}
 
 """
 The methods whose `update!` needs the *method* rather than a
