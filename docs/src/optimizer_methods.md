@@ -158,14 +158,82 @@ whole lift at once, so ``\lVert{}W_t\rVert \approx 1``. Both methods take the sa
 Two things in the source are deliberately *not* reproduced: its two-step approximation of the
 Cayley transform, because this package's [`Cayley`](@ref) retraction is exact and any other
 [`AbstractRetraction`](@ref) may be used instead, and the step-length cap that approximation needs,
-because bounding the step is [`GeometricOptimizers.step_αmax`](@ref)'s job here. A third difference —
-which ``\lVert\cdot\rVert^2`` the second moment takes — is a keyword,
-`ScalarMomentAdam(; ambient_norm = true)` being the source's ambient Euclidean choice. The method's
-docstring maps every symbol of Algorithm 2 onto the code and records all three.
+because bounding the step is [`GeometricOptimizers.step_αmax`](@ref)'s job here.
+
+A third difference is a keyword. The ``\lVert\bar{G}\rVert^2`` above is the norm of the horizontal
+lift's free parameters, ``\frac{1}{2}\lVert{}A\rVert_F^2 + \lVert{}B\rVert_F^2``, and it is the
+default because it is free — the lift is in the cache already — because it is the norm the rest of the
+package measures gradients and steps with, and because it leaves [`Adam`](@ref) and
+`ScalarMomentAdam` consuming an *identical* gradient, so a comparison between the two differs in the
+second moment and in nothing else. `ScalarMomentAdam(; ambient_norm = true)` selects the source's own
+quantity instead, the squared Frobenius norm of the ambient Euclidean ``\nabla{}L``, at one extra
+gradient evaluation per step.
+
+The two are not related by a constant in either direction. `rgrad` annihilates the normal component,
+so for ``\nabla{}L = YS`` with ``S`` symmetric the lift — and with it the whole second moment — is
+zero while ``\lVert\nabla{}L\rVert_F`` is not: the ratio is bounded above and has no positive lower
+bound. Reach for `ambient_norm = true` to reproduce the source, and leave it `false` to compare
+against [`Adam`](@ref).
 
 The source's algorithm is Stiefel-only and so is this: the method accepts exactly one
 `StiefelManifold`, and ordinary arrays, `NamedTuple`s, Grassmann solutions and mixed trees throw an
 `ArgumentError`.
+
+#### The source's Algorithm 2, symbol by symbol
+
+In its notation — ``\mathcal{G}`` the stochastic Euclidean gradient, ``X`` the iterate, ``l`` the
+learning rate, ``q = 0.5``, ``s = 2``:
+
+```text
+ 2  X₁ orthonormal, M₁ = 0, v₁ = 1
+ 4  M_{k+1} ← β₁ M_k + (1 - β₁) 𝒢(X_k)
+ 5  v_{k+1} ← β₂ v_k + (1 - β₂) ‖𝒢(X_k)‖²
+ 6  v̂_{k+1} ← v_{k+1} / (1 - β₂ᵏ)
+ 7  r       ← (1 - β₁ᵏ) √(v̂_{k+1} + ε)
+ 8  Ŵ_k     ← M_{k+1} X_kᵀ - ½ X_k (X_kᵀ M_{k+1} X_kᵀ)
+ 9  W_k     ← (Ŵ_k - Ŵ_kᵀ) / r
+10  M_{k+1} ← r W_k X_k                       # project the momentum onto the tangent space
+11  α       ← min{ l, 2q / (‖W_k‖ + ε) }
+12  Y⁰      ← X_k - α M_{k+1}
+13  for i = 1 to s
+14      Yⁱ  ← X_k - (α/2) W_k (X_k + Y^{i-1})
+15  X_{k+1} ← Y^s
+```
+
+Lines 8–10 are its equation (2), lines 12–15 are ``s`` fixed-point iterations of its equation (5) —
+its closed-form Cayley transform (3) written implicitly — and line 11 is the contraction condition of
+its Theorem 1, ``\alpha \in (0, \min\{1, 2/\lVert{}W\rVert\})``. The pseudocode is cross-checked
+against the authors' implementation (`stiefel_optimizer.py`, class `AdamG`, in
+`JunLi-Galios/Optimization-on-Stiefel-Manifold-via-Cayley-Transform`); where the two disagree, the
+implementation is followed, and [`ScalarMomentAdam`](@ref)'s docstring records both disagreements
+along with the three places this port departs from the source deliberately.
+
+##### Where each symbol lives
+
+For a single `Y::StiefelManifold{T}`, ``Y \in \mathbb{R}^{N\times{}n}``, at iteration
+`t = state.iterations ≥ 1`:
+
+| Source | Representation | Implementation |
+| --- | --- | --- |
+| ``X_k`` | ambient Stiefel matrix | `state.x`, `cache.x` and `state.section` |
+| ``\mathcal{G}(X_k)`` | horizontal lift in ``\mathfrak{g}^\mathrm{hor}`` | `gradient_array(cache)`, i.e. `global_rep(section(state), ∇L)` |
+| ``M_{k+1}`` | horizontal lift | `cache.m₁`, `state.m₁`, bias-corrected |
+| ``v_{k+1}`` | scalar | `cache.m₂`, `state.m₂`, bias-corrected |
+| ``\hat{m}``, ``\hat{v}`` | — | absorbed into the bias-corrected storage |
+| ``r`` | scalar | `cache.m̃₂ = √(m₂ + δ)`; the ``(1-\beta_1^k)`` half is absorbed |
+| ``W_k`` | horizontal lift | `-direction(cache)` |
+| ``\alpha`` | scalar | the line search's step length, capped by [`GeometricOptimizers.step_αmax`](@ref) |
+| lines 12–15 | — | [`update_section!`](@ref)`(section, α⋅direction, retraction)` |
+| ``\varepsilon`` | scalar | `method.δ` |
+| ``k`` | iteration counter | `state.iterations` |
+
+Bias-corrected storage is [`Adam`](@ref)'s convention here and not a departure from the source:
+substituting ``m = (1 - \beta_1^t)\hat{m}`` into line 4 gives the ``m_1`` recursion above, and
+likewise for ``v`` with line 5, after which line 7's ``r`` is ``\sqrt{\hat{v} + \varepsilon}`` alone
+and line 9 is ``W = \hat{m}/\sqrt{\hat{v}+\varepsilon}``. Lines 9 and 10 divide and re-multiply by
+``r`` so that the *stored* momentum is un-normalized; storing `m₁` un-normalized is the same thing.
+
+**Lines 8–10 cost nothing to port**, which is what the next section is about.
 
 #### The source's projection *is* `global_rep`
 

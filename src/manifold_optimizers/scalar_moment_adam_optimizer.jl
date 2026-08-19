@@ -1,7 +1,8 @@
 # Cayley ADAM, [li2020efficient](@cite) Algorithm 2, in this package's global tangent space
-# representation. The docstring of [`ScalarMomentAdam`](@ref) maps every symbol of the source's
-# pseudocode onto the code below and records where the port departs from it; the two identities the
-# code rests on are:
+# representation. The [Optimizer Methods](@ref "Standard Neural Network Optimizers") page maps every
+# symbol of the source's pseudocode onto the code below and the docstring of
+# [`ScalarMomentAdam`](@ref) records where the port departs from it; the two identities the code rests
+# on are:
 #
 #   * the paper's auxiliary matrix `Ŵ = MXᵀ - ½X(XᵀMXᵀ)`, its skew-symmetrisation `W = Ŵ - Ŵᵀ` and the
 #     projection `π_{T_X}(M) = WX` it defines (its lines 8-10, its equation (2)) are the package's
@@ -9,9 +10,8 @@
 #     `Ḡ = global_rep(λ(Y), ∇L)`. So the paper's three lines are the representation the package's
 #     first-order caches are handed their gradient in already, and there is nothing to implement for
 #     them. What the paper needs them for -- re-projecting the momentum onto the tangent space at the
-#     new iterate -- is what `update_section!` does here instead. The derivation is on the
-#     [Optimizer Methods](@ref "Standard Neural Network Optimizers") page; `test/scalar_moment_adam.jl` pins it
-#     against a literal transcription of the source's formula.
+#     new iterate -- is what `update_section!` does here instead. The derivation is on that page, and
+#     `test/scalar_moment_adam.jl` pins it against a literal transcription of the source's formula.
 #
 #   * `v` is a *scalar*: a squared gradient norm rather than a squared gradient. That single number is
 #     the whole of the difference from `Adam`, and it is what the method is named for.
@@ -182,32 +182,21 @@ function update!(state::ScalarMomentAdamState, opt::Optimizer, x::OptimizerSolut
         second_moment(opt.cache), x, problem(opt).F, opt.retraction)
 end
 
-@doc raw"""
+"""
     _squared_gradient_norm(method::ScalarMomentAdam, cache, gradient, x)
 
-The ``\lVert\cdot\rVert^2`` that [`ScalarMomentAdam`](@ref)'s second moment accumulates, selected by
+The `‖·‖²` that [`ScalarMomentAdam`](@ref)'s second moment accumulates, selected by
 `method.ambient_norm`.
 
-`false` — the default — is `l2norm(gradient_array(cache))^2`, the squared norm of the horizontal
-lift's free parameters, ``\frac{1}{2}\lVert{}A\rVert_F^2 + \lVert{}B\rVert_F^2``. It is free: the
-lift is already in the cache, it is the norm the rest of the package measures gradients and steps with
-(`rg` in [`OptimizerStatus`](@ref), [`step_αmax`](@ref)), and it makes [`Adam`](@ref) and
-`ScalarMomentAdam` consume an identical gradient, so a comparison between the two differs in the
-second moment and in nothing else.
+`false` — the default — squares the horizontal lift already in the cache; `true` squares
+[li2020efficient](@cite)'s own ambient Euclidean gradient, at one extra gradient evaluation per step.
+`Gradient` applied to a [`Manifold`](@ref) returns `rgrad(Y, ∇L)` and the ambient `∇L` is not part of
+the optimizer protocol, so `true` recovers it from the flattened closure
+`GradientAutodiff(F, ::Manifold)` builds — which is what `gradient(vec(x))` is. `store_gradient!`'s
+reuse does not help, because what it caches is the lift.
 
-`true` is [li2020efficient](@cite)'s own quantity, the squared Frobenius norm of the *ambient
-Euclidean* gradient (`torch.norm(g)**2` on `p.grad` in the authors' implementation). It costs one
-extra gradient evaluation per step, which is why it is not the default: `Gradient` applied to a
-[`Manifold`](@ref) returns `rgrad(Y, ∇L)` and the ambient ``\nabla{}L`` is not part of the optimizer
-protocol, so it has to be recovered from the flattened closure `GradientAutodiff(F, ::Manifold)`
-builds — which is what `gradient(vec(x))` is. [`store_gradient!`](@ref)'s reuse does not help here,
-because what it caches is the lift and not ``\nabla{}L``.
-
-The two are not interchangeable up to a constant. `rgrad` annihilates the normal component, so for
-``\nabla{}L = YS`` with ``S`` symmetric the lift — and with it the whole second moment — is zero
-while ``\lVert\nabla{}L\rVert_F`` is not: the ratio is bounded above and has no positive lower
-bound. Reach for `ambient_norm = true` to reproduce the source, and leave it `false` to compare
-against [`Adam`](@ref).
+The two are not interchangeable up to a constant, and which to reach for when is on the
+[Optimizer Methods](@ref "Standard Neural Network Optimizers") page.
 """
 function _squared_gradient_norm(method::ScalarMomentAdam, cache::ScalarMomentAdamCache,
     gradient::Gradient, x::StiefelManifold)
