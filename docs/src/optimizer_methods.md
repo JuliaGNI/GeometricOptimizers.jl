@@ -128,19 +128,39 @@ The problem with generalizing Adam to manifolds is that the Hadamard product ``\
 
 ### The non-geometric Adam baseline
 
-[`NonGeometricAdam`](@ref) is an experimental, Stiefel-only comparison method derived from the
-Adam-like moment rule in [li2020efficient](@cite). Unlike `Adam`, it stores both moments as
-ambient ``N\times{}n`` tangent matrices, squares that ambient matrix elementwise, applies the
-usual bias corrections, and converts only the final normalized direction to the horizontal
-representation. The package's existing section, retraction, and line-search protocol still
-handles the accepted step.
+[`NonGeometricAdam`](@ref) is the other published answer to that problem, available here as a
+baseline to compare against: it is *Cayley ADAM*, [li2020efficient; Algorithm 2](@cite), which avoids
+the Hadamard product by **collapsing the second moment to a scalar**. Where `Adam` accumulates
+``\bar{G}\odot\bar{G}\in\mathfrak{g}^\mathrm{hor}``, it accumulates ``\lVert\bar{G}\rVert^2``, one
+number, and divides the first moment by ``\sqrt{m_2 + \delta}``:
 
-The method accepts exactly one `StiefelManifold`; ordinary arrays, `NamedTuple`s, Grassmann
-solutions, and mixed trees throw `ArgumentError`. The name describes this implementation's
-coordinatewise ambient second moment, not a name claimed by the source. That accumulator is not
-an intrinsic or transported manifold second moment, so results are illustrative and should not be
-read as a universal statement about Riemannian Adam or about convergence on every objective. The
-technical decision record and symbol mapping are in `ADAM_MATHS.md`.
+```math
+m_1 \gets \frac{\beta_1 - \beta_1^t}{1 - \beta_1^t}m_1 + \frac{1 - \beta_1}{1 - \beta_1^t}\bar{G},
+\qquad
+m_2 \gets \frac{\beta_2 - \beta_2^t}{1 - \beta_2^t}m_2 + \frac{1 - \beta_2}{1 - \beta_2^t}\lVert\bar{G}\rVert^2,
+\qquad
+W_t \gets -\frac{m_1}{\sqrt{m_2 + \delta}}.
+```
+
+So the whole matrix gets one adaptive learning rate instead of one per coordinate, and the second
+moment carries no direction — which is what *non-geometric* names here, and the reason this is a
+baseline rather than the package's recommended method. It is nonetheless a reproduction of a
+published algorithm, not a straw man: on a given objective it may well beat [`Adam`](@ref).
+
+Everything else is shared with [`Adam`](@ref) — the gradient, its
+[global tangent space representation](@ref "Global Tangent Spaces"), the bias-correction convention,
+the section/retraction path and the line search — which is what makes the two comparable on the same
+problem. Two things in the source are deliberately *not* reproduced: its two-step approximation of the
+Cayley transform, because this package's [`Cayley`](@ref) retraction is exact and any other
+[`AbstractRetraction`](@ref) may be used instead, and the step-length cap that approximation needs,
+because bounding the step is [`GeometricOptimizers.step_αmax`](@ref)'s job here.
+
+The source's algorithm is Stiefel-only and so is this: the method accepts exactly one
+`StiefelManifold`, and ordinary arrays, `NamedTuple`s, Grassmann solutions and mixed trees throw an
+`ArgumentError`. `ADAM_MATHS.md` maps every symbol of Algorithm 2 onto the code — including the
+identity that makes the source's auxiliary matrix ``\hat{W}``, skew-symmetrized, *be* the horizontal
+lift `global_rep` already computes — and records the three places where the port departs from the
+source.
 
 ## The Adam Optimizer with Decay
 The Adam optimizer with decay is similar to the standard Adam optimizer with the difference that the learning rate ``\eta`` decays exponentially. We start with a relatively high learning rate ``\eta_1`` (e.g. ``10^{-2}``) and end with a low learning rate ``\eta_2`` (e.g. ``10^{-8}``). If we want to use this optimizer we have to tell it beforehand how many epochs we train for such that it can adjust the learning rate decay accordingly:
