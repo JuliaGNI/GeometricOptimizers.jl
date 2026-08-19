@@ -355,15 +355,17 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
-    # `Adam`, `AdamWithEuclideanDecay` and `MomentumMethod` need their own parameters to form the direction and
-    # have no Hessian, the other methods need the Hessian and have no parameters.
+    # The `FirstOrderMethodWithState` methods -- `MomentumMethod` and the `AdamFamily` -- need their
+    # own parameters to form the direction and have no Hessian; the other methods need the Hessian and
+    # have no parameters. Named through the aliases and not member by member, so that a new method
+    # joining one of the unions does not leave a stale list behind here.
     if MT <: FirstOrderMethodWithState
         update!(cache(opt), state, gradient(opt), algorithm(opt), x)
     else
         update!(cache(opt), state, gradient(opt), hessian(opt), x)
         # A (quasi-)Newton direction only descends where the Hessian is positive definite; see
-        # `ensure_descent!`. `Adam` and `MomentumMethod` are excluded on purpose -- their direction is
-        # a moving average and is allowed not to descend on an individual step.
+        # `ensure_descent!`. The `FirstOrderMethodWithState` methods are excluded on purpose -- their
+        # direction is a moving average and is allowed not to descend on an individual step.
         ensure_descent!(cache(opt), algorithm(opt), config(opt))
     end
     typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
