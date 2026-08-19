@@ -4,6 +4,14 @@ using GeometricOptimizers: cache, direction, first_moment, second_moment, _secon
     section, solver_step!, update!
 using LinearAlgebra: norm
 using Test
+import Random
+
+# The `GlobalSection` every testset below builds is drawn at random, and so are the iterates and the
+# objectives' coefficients. An unseeded `@testset` takes a fresh stream on every run — Julia reports
+# "RNG of the outermost testset" on failure for exactly this reason — so without this line the file is
+# a different test each time it runs. `test/optimizer_state_initialization.jl` fixes its seed for the
+# same reason.
+Random.seed!(1234)
 
 # `ScalarMomentAdam` is Cayley ADAM, Algorithm 2 of li2020efficient, in the global tangent space
 # representation. Its docstring and the *Optimizer Methods* manual page derive the port; what is
@@ -173,10 +181,45 @@ end
     # is the norm of its free parameters. There are `n(n-1)/2 + (N-n)n` of them; `Adam` drives each to
     # magnitude ≈ 1, so its `l2norm` is ≈ √dim, while one scalar divisor normalizes the whole lift to
     # ≈ 1. On the same `Static(η)` that is a step √dim shorter here.
+    #
+    # Both are pinned against their *closed forms* rather than against `√dim` and `1`, because neither
+    # ideal is reached exactly and the shortfall depends on the draw. At `t = 1` the moments are `m₁ = Ḡ`
+    # and `m₂ = Ḡ ⊙ Ḡ`, so `Adam`'s direction is `-Ḡᵢ/(|Ḡᵢ| + δ)` per component: magnitude
+    # `1/(1 + δ/|Ḡᵢ|)`, which falls short of 1 by *unboundedly* much in relative terms as a component
+    # approaches zero. `isapprox(…, √dim; rtol = 1e-6)` therefore fails whenever the draw puts a free
+    # parameter below roughly `δ/(dim·rtol) ≈ 1e-6`: measured at 0.7% of runs, and it duly failed on
+    # Julia nightly / macOS while the other twelve jobs of the same CI run passed. Nothing about the
+    # platform or the version was involved — this file seeds the RNG now, and the assertions below hold
+    # for every draw rather than for most of them.
     N, n = size(Y)
     dim = n * (n - 1) ÷ 2 + (N - n) * n
-    @test isapprox(l2norm(direction(cache(opt))), 1; rtol=1.0e-6)
-    @test isapprox(l2norm(direction(cache(opt_adam))), √dim; rtol=1.0e-6)
+    A, B = parent(gradient_array(cache(opt_adam)))
+    free = vcat(vec(parent(A)), vec(B))
+    @test length(free) == dim
+    @test l2norm(gradient_array(cache(opt_adam)))^2 ≈ sum(abs2, free)
+
+    Ḡ = gradient_array(cache(opt))
+    @test l2norm(direction(cache(opt))) ≈ l2norm(Ḡ) / √(l2norm(Ḡ)^2 + method.δ)
+    @test l2norm(direction(cache(opt_adam)))^2 ≈ sum(abs2(g / (abs(g) + adam.δ)) for g in free)
+
+    # And the scale claim itself, *exactly*. The `≈` in "≈ √dim" and "≈ 1" is entirely `δ`: at `δ = 0`
+    # `Adam`'s direction is `-sign(Ḡᵢ)` per component and this one's is `-Ḡ/‖Ḡ‖`, so the two `l2norm`s
+    # are `√dim` and `1` to machine precision for every draw. Pinning the claim at `δ = 0` is the
+    # honest form for something whose whole content is that limit — a tolerance on the `δ > 0` values
+    # is a tolerance on the draw, which is what failed in CI. It also exercises the `δ = 0` the
+    # constructors explicitly permit and nothing else covers.
+    for (δ₀_method, expected) in ((Adam(; δ=0.0), √dim), (ScalarMomentAdam(; δ=0.0), 1.0))
+        opt₀ = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm=δ₀_method,
+            linesearch=Static(0.01), retraction=Cayley())
+        state₀ = OptimizerState(δ₀_method, Y)
+        increase_iteration_number!(state₀)
+        update!(cache(opt₀), state₀, gradient(opt₀), δ₀_method, Y)
+        @test l2norm(direction(cache(opt₀))) ≈ expected rtol = 1.0e-12
+    end
+
+    # `δ > 0` then puts both strictly *below* their ideal, for every draw
+    @test l2norm(direction(cache(opt))) < 1
+    @test l2norm(direction(cache(opt_adam))) < √dim
 end
 
 # Which `‖·‖²` the second moment accumulates. `ambient_norm = false` -- the default -- squares the
