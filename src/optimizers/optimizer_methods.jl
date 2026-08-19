@@ -173,17 +173,47 @@ end
 @doc raw"""
     NonGeometricAdam(T; β₁, β₂, δ)
 
-An experimental, Stiefel-only baseline derived from the Adam-like moment rule in
-[li2020efficient](@cite). It stores the first and second moments as elementwise ambient tangent
-matrices, bias-corrects them, and converts the resulting direction to the package's horizontal
-representation before the existing section/retraction path applies it. This is intentionally
-different from [`Adam`](@ref), which stores and squares horizontal-representation blocks.
+*Cayley ADAM*, [li2020efficient; Algorithm 2](@cite), as an experimental Stiefel-only baseline for
+[`Adam`](@ref).
 
-Only a single `StiefelManifold{T}` solution is supported. Ordinary arrays, `NamedTuple`s, Grassmann
-solutions, and mixed parameter trees are rejected. The line search owns the step length, so no
-learning-rate factor is stored or applied here. See `ADAM_MATHS.md` and the optimizer-methods
-documentation for the representation limitation and the qualification that this is not a full
-reproduction of the source's Cayley retraction implementation.
+The moments are stored in *bias-corrected* form, as [`Adam`](@ref)'s are, but the second one is a
+**scalar**:
+```math
+m_1 \gets \frac{\beta_1 - \beta_1^t}{1 - \beta_1^t}m_1 + \frac{1 - \beta_1}{1 - \beta_1^t}\bar{G},
+```
+```math
+m_2 \gets \frac{\beta_2 - \beta_2^t}{1 - \beta_2^t}m_2 + \frac{1 - \beta_2}{1 - \beta_2^t}\lVert\bar{G}\rVert^2,
+```
+where ``\bar{G}\in\mathfrak{g}^\mathrm{hor}`` is the gradient in the [global tangent space
+representation](@ref "Global Tangent Spaces"), and the direction is
+``-m_1/\sqrt{m_2 + \delta}``.
+
+That one scalar is the entire difference from [`Adam`](@ref), and it is what *non-geometric* names
+here: ``\lVert\bar{G}\rVert^2`` is a squared gradient *norm* where Adam's ``m_2`` is a squared
+*gradient*, so the second moment carries no direction and the method assigns one adaptive learning
+rate to the whole matrix instead of one per coordinate. The name describes that choice — the
+source's own name for the algorithm is *Cayley ADAM*, and the source does not call it
+non-geometric. What it *is* is a reproduction of a published algorithm, so it is a baseline and not
+a lesser optimizer: on some objectives it will beat [`Adam`](@ref).
+
+Only a single `StiefelManifold{T}` solution is supported; ordinary arrays, `NamedTuple`s, Grassmann
+solutions and mixed parameter trees throw an `ArgumentError`. As for [`Adam`](@ref), `T` is the
+element type of the parameters and is not converted by [`Optimizer`](@ref).
+
+!!! info "The Cayley transform is the retraction here, and it is exact"
+    The source's lines 12–14 approximate the Cayley transform with two fixed-point iterations, and
+    its line 11 caps the step length to keep that iteration contractive. Neither is ported: this
+    package retracts exactly — [`Cayley`](@ref), the default, evaluates the transform through the
+    Sherman-Morrison-Woodbury formula — and it admits any other [`AbstractRetraction`](@ref),
+    [`Geodesic`](@ref) included. The step is bounded, but by [`step_αmax`](@ref) and for a different
+    reason; `step_ceiling = 1/2π` recovers the source's bound up to its use of the induced 1-norm.
+
+!!! info "The learning rate is not stored here"
+    As for [`Adam`](@ref): the direction has magnitude ``\approx{}1``, and the source's learning
+    rate ``l`` is the line search's `α`, i.e. `linesearch = Static(η)`.
+
+`ADAM_MATHS.md` maps every symbol of the source's Algorithm 2 onto the code, and records the three
+places where this reproduction deliberately departs from it.
 """
 struct NonGeometricAdam{T} <: OptimizerMethod
     β₁::T
