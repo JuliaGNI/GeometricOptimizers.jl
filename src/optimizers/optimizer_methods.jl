@@ -233,90 +233,23 @@ are not interchangeable up to a constant is written down.
 
 # Extended help
 
-## The source's Algorithm 2
+The source's Algorithm 2, a table mapping each of its symbols onto the code, the derivation that makes
+its lines 8–10 *be* [`global_rep`](@ref), and the two departures above with their reasons are on the
+[Optimizer Methods](@ref "Standard Neural Network Optimizers") page. The third departure is the
+momentum's transport: the source re-projects ``M_k`` onto the tangent space at the new iterate (its
+equation (6)) where [`update_section!`](@ref) carries the lift here, which agrees for a Lie group and
+differs on a proper homogeneous space — the one departure that changes the iterates against the
+authors' implementation on the same objective and seed.
 
-In its notation — ``\mathcal{G}`` the stochastic Euclidean gradient, ``X`` the iterate, ``l`` the
-learning rate, ``q = 0.5``, ``s = 2``:
+What is recorded only here is two discrepancies *between* the source and its own implementation, which
+are not departures of this port:
 
-```text
- 2  X₁ orthonormal, M₁ = 0, v₁ = 1
- 4  M_{k+1} ← β₁ M_k + (1 - β₁) 𝒢(X_k)
- 5  v_{k+1} ← β₂ v_k + (1 - β₂) ‖𝒢(X_k)‖²
- 6  v̂_{k+1} ← v_{k+1} / (1 - β₂ᵏ)
- 7  r       ← (1 - β₁ᵏ) √(v̂_{k+1} + ε)
- 8  Ŵ_k     ← M_{k+1} X_kᵀ - ½ X_k (X_kᵀ M_{k+1} X_kᵀ)
- 9  W_k     ← (Ŵ_k - Ŵ_kᵀ) / r
-10  M_{k+1} ← r W_k X_k                       # project the momentum onto the tangent space
-11  α       ← min{ l, 2q / (‖W_k‖ + ε) }
-12  Y⁰      ← X_k - α M_{k+1}
-13  for i = 1 to s
-14      Yⁱ  ← X_k - (α/2) W_k (X_k + Y^{i-1})
-15  X_{k+1} ← Y^s
-```
-
-Lines 8–10 are its equation (2), lines 12–15 are ``s`` fixed-point iterations of its equation (5) —
-its closed-form Cayley transform (3) written implicitly — and line 11 is the contraction condition of
-its Theorem 1, ``\alpha \in (0, \min\{1, 2/\lVert{}W\rVert\})``. The pseudocode is cross-checked
-against the authors' implementation (`stiefel_optimizer.py`, class `AdamG`, in
-`JunLi-Galios/Optimization-on-Stiefel-Manifold-via-Cayley-Transform`); where the two disagree, the
-implementation is followed and the disagreement is recorded below.
-
-## Symbol table
-
-For a single `Y::StiefelManifold{T}`, ``Y \in \mathbb{R}^{N\times{}n}``, at iteration
-`t = state.iterations ≥ 1`:
-
-| Source | Representation | Implementation |
-| --- | --- | --- |
-| ``X_k`` | ambient Stiefel matrix | `state.x`, `cache.x` and `state.section` |
-| ``\mathcal{G}(X_k)`` | horizontal lift in ``\mathfrak{g}^\mathrm{hor}`` | `gradient_array(cache)`, i.e. `global_rep(section(state), ∇L)` |
-| ``M_{k+1}`` | horizontal lift | `cache.m₁`, `state.m₁`, bias-corrected |
-| ``v_{k+1}`` | scalar | `cache.m₂`, `state.m₂`, bias-corrected |
-| ``\hat{m}``, ``\hat{v}`` | — | absorbed into the bias-corrected storage |
-| ``r`` | scalar | `cache.m̃₂ = √(m₂ + δ)`; the ``(1-\beta_1^k)`` half is absorbed |
-| ``W_k`` | horizontal lift | `-direction(cache)` |
-| ``\alpha`` | scalar | the line search's step length, capped by [`step_αmax`](@ref) |
-| lines 12–15 | — | [`update_section!`](@ref)`(section, α⋅direction, retraction)` |
-| ``\varepsilon`` | scalar | `method.δ` |
-| ``k`` | iteration counter | `state.iterations` |
-
-Bias-corrected storage is [`Adam`](@ref)'s convention here and not a departure from the source:
-substituting ``m = (1 - \beta_1^t)\hat{m}`` into line 4 gives the ``m_1`` recursion above, and
-likewise for ``v`` with line 5, after which line 7's ``r`` is ``\sqrt{\hat{v} + \varepsilon}`` alone
-and line 9 is ``W = \hat{m}/\sqrt{\hat{v}+\varepsilon}``. Lines 9 and 10 divide and re-multiply by
-``r`` so that the *stored* momentum is un-normalized; storing `m₁` un-normalized is the same thing.
-
-**Lines 8–10 cost nothing to port.** The source's auxiliary matrix, skew-symmetrized, *is* the
-horizontal lift the first-order caches already receive their gradient in — see the derivation on the
-[Optimizer Methods](@ref "Standard Neural Network Optimizers") page, which `test/scalar_moment_adam.jl` pins against a
-literal transcription of the source's formula.
-
-## The three deliberate departures
-
- 1. **The retraction, and with it the step cap** — see the admonition above.
- 2. **Which ``\lVert\cdot\rVert^2`` the second moment takes.** The source's is the ambient Euclidean
-    one; the default here is the horizontal lift's, which costs no second gradient evaluation and
-    keeps the gradient identical to [`Adam`](@ref)'s. `ambient_norm = true` selects the source's; see
-    [`GeometricOptimizers._squared_gradient_norm`](@ref).
- 3. **Transport of the momentum.** The source transports ``M_k`` to the new tangent space by
-    re-projecting it there (its equation (6), and the reason lines 8–10 are applied to the momentum
-    rather than only to the gradient). Here the momentum is a horizontal lift and the section carries
-    it: [`update_section!`](@ref) moves ``\lambda(Y)`` along the accepted step, and the same element
-    of ``\mathfrak{g}^\mathrm{hor}`` is the transported momentum at the new iterate. The two agree for
-    a Lie group and differ on a proper homogeneous space, so this is the one departure that changes
-    the iterates against the authors' implementation on the same objective and seed.
-
-Two further discrepancies are *between* the source and its own implementation and not departures of
-this port:
-
-  - **``v_1``.** Line 2 initializes it to ``1``, the implementation to ``0``, and line 6's
+  - **``v_1``.** Its line 2 initializes it to ``1``, `stiefel_optimizer.py` to ``0``, and line 6's
     ``1 - \beta_2^k`` is ``0`` at the ``k = 0`` its loop starts from. ``0`` is followed, which is also
-    [`Adam`](@ref)'s convention here and which makes the first direction
-    ``-\bar{G}/\sqrt{\lVert\bar{G}\rVert^2+\delta}``, a normalized gradient step.
-  - **``\varepsilon`` inside or outside the root.** Line 7 and the implementation both put it inside,
-    ``\sqrt{\hat{v}+\varepsilon}``; [`Adam`](@ref) here puts it outside, ``\sqrt{m_2}+\delta``. The
-    source's placement is used, so this is the one convention `ScalarMomentAdam` does *not* share
-    with [`Adam`](@ref).
+    [`Adam`](@ref)'s convention here and which makes the first direction a normalized gradient step.
+  - **``\varepsilon`` inside or outside the root.** Its line 7 and its implementation both put it
+    inside; [`Adam`](@ref) here puts it outside, ``\sqrt{m_2}+\delta``. The source's placement is
+    used, so this is the one convention `ScalarMomentAdam` does *not* share with [`Adam`](@ref).
 """
 struct ScalarMomentAdam{T} <: OptimizerMethod
     β₁::T
