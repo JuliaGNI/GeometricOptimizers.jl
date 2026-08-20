@@ -603,9 +603,24 @@ low-rank form is closed under squaring:
 
 so one squaring of the assembled exponential is one application of ``W \mapsto 2W + WXW`` at
 ``2n\times{}2n``, and no ``N\times{}N`` matrix is ever formed, let alone squared. With ``s`` chosen so
-that ``\|X\|_1/2^s \leq \theta``, the algorithm is `s` small matrix products on top of a series that
+that ``\|X\|_1/2^s \leq \theta``, the algorithm is `s` small-matrix updates on top of a series that
 now converges in a handful of terms. That makes it *cheaper* than summing the unscaled series, not
 merely more accurate — by 1.7× at ``N = 200``, ``n = 10`` and 4.6× at ``N = 500``, ``n = 50``.
+
+The complete computation is:
+
+1. **Choose the scaling.** Set
+   ``s = \max(0, \lceil\log_2(\|X\|_1/\theta)\rceil)`` and ``\alpha = 2^s``.
+2. **Evaluate the small series.** Compute
+   ``W = \mathfrak{A}(X/\alpha)/\alpha``. The scaled argument has
+   ``\|X/\alpha\|_1 \leq \theta``, so the Taylor series converges without catastrophic cancellation.
+3. **Undo the scaling.** Repeat ``W \leftarrow 2W + WXW`` exactly ``s`` times. Each update squares
+   the represented exponential and restores one factor of two.
+4. **Return the result.** After the loop, ``W = \mathfrak{A}(X)``, so
+   ``\mathbb{I} + B'W(B'')^T = \exp(B'(B'')^T)``.
+
+The division by ``\alpha`` in the initial ``W`` is essential: it scales the factor ``B'`` implicitly,
+allowing every subsequent squaring to remain a ``2n\times{}2n`` update.
 
 The threshold `θ` is the algorithm's one parameter — positional, `ScaledSquaring(0.5)`, and defaulted
 to `0.5` — and it barely matters: at ``\|\bar{B}\| \approx 155`` every ``\theta \in [0.125, 4]`` — a
