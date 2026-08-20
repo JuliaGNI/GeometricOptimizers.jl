@@ -7,6 +7,14 @@ rmul!(Aⁿ, T(inv(n)))
 n += 1
 end"
 
+function _identity_matrix(A::AbstractMatrix{T}) where {T}
+    backend = KernelAbstractions.get_backend(A)
+    identity = KernelAbstractions.zeros(backend, T, size(A)...)
+    write_ones! = write_ones_kernel!(backend)
+    write_ones!(identity; ndrange=min(size(A)...))
+    identity
+end
+
 @doc (raw"""
     𝔄(A)
 
@@ -34,8 +42,8 @@ The matrices `Aⁿ` and `𝔄` are initialized as the identity matrix.
 """)
 function 𝔄(A::AbstractMatrix)
     T = eltype(A)
-    Aⁿ = one(A)
-    𝔄A = one(A)
+    Aⁿ = _identity_matrix(A)
+    𝔄A = copy(Aⁿ)
     A_temp = zero(A)
     n = 2
     ε = eps(T)
@@ -79,18 +87,19 @@ which backends they run on. See [`AbstractExponentialAlgorithm`](@ref) for the c
 
 # Examples
 
-The four agree wherever the unscaled series is still accurate, and only three of them agree beyond
+The five agree wherever the unscaled series is still accurate, and only four of them agree beyond
 that:
 
 ```jldoctest
 using GeometricOptimizers
-using GeometricOptimizers: 𝔄, ScaledSquaring, AugmentedPade, TaylorSeries
+using GeometricOptimizers: 𝔄, ScaledSquaring, NativePade, AugmentedPade, TaylorSeries
 import Random
 Random.seed!(123)
 
 X = randn(6, 6)
 
-isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, AugmentedPade()); rtol = 1e-12) &&
+isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, NativePade()); rtol = 1e-12) &&
+    isapprox(𝔄(X, NativePade()), 𝔄(X, AugmentedPade()); rtol = 1e-12) &&
     isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, TaylorSeries()); rtol = 1e-12)
 
 # output
@@ -116,6 +125,45 @@ function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
     scale = eltype(X)(2)^s
 
     W = 𝔄(X / scale) / scale
+    for _ in 1:s
+        W = 2 * W + W * X * W
+    end
+
+    W
+end
+
+function _native_pade_polynomials(X::AbstractMatrix)
+    T = eltype(X)
+    identity = _identity_matrix(X)
+    X² = X * X
+    X⁴ = X² * X²
+
+    numerator = identity + T(1 // 26) * X +
+        X² * (T(5 // 156) * identity + T(1 // 858) * X) +
+        X⁴ * (T(1 // 5720) * identity + T(1 // 205920) * X + T(1 // 8648640) * X²)
+    denominator = identity - T(6 // 13) * X +
+        X² * (T(5 // 52) * identity - T(5 // 429) * X) +
+        X⁴ * (T(1 // 1144) * identity - T(1 // 25740) * X + T(1 // 1235520) * X²)
+
+    numerator, denominator
+end
+
+function 𝔄(X::AbstractMatrix, algorithm::NativePade)
+    nrm = opnorm₁(X)
+    s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
+    scale = eltype(X)(2)^s
+    scaled_X = X / scale
+    numerator, denominator = _native_pade_polynomials(scaled_X)
+    identity = _identity_matrix(X)
+
+    # Starting with `2I - q` is the first Newton--Schulz step from `I`. Four more refinements make
+    # the inverse residual `(I - q)^32`; at the default threshold its one-norm is below round-off.
+    inverse_denominator = 2 * identity - denominator
+    for _ in 1:4
+        inverse_denominator = inverse_denominator * (2 * identity - denominator * inverse_denominator)
+    end
+
+    W = inverse_denominator * numerator / scale
     for _ in 1:s
         W = 2 * W + W * X * W
     end
@@ -184,7 +232,8 @@ the result in `manifold_type(B)` and to take the lift factors apart itself — s
 that want the matrix exponential of a low-rank product on its own.
 
 `algorithm` is forwarded to [`𝔄`](@ref), which supplies [`TaylorSeries`](@ref),
-[`ScaledSquaring`](@ref) and [`AugmentedPade`](@ref). [`ProjectedSkew`](@ref) is *not* among them: it
+[`ScaledSquaring`](@ref), [`NativePade`](@ref) and [`AugmentedPade`](@ref). [`ProjectedSkew`](@ref) is
+*not* among them: it
 is a [`geodesic`](@ref)-level algorithm with its own branch there and no `𝔄` method, so
 `𝔄exp(B̂, B̄, ProjectedSkew())` fails inside `𝔄` exactly as `𝔄(B̂, B̄, ProjectedSkew())` does.
 
