@@ -73,9 +73,23 @@ matrix, which is possible because the low-rank form is closed under squaring:
 ```
 
 so one squaring of the exponential is one application of ``W \mapsto 2W + WXW``. With ``s`` chosen so
-that ``\|X\|_1/2^s \leq θ``, the whole algorithm is `s` small matrix products on top of a series that
+that ``\|X\|_1/2^s \leq θ``, the whole algorithm is `s` small-matrix updates on top of a series that
 now converges in a handful of terms — cheaper than summing the unscaled series, not just more
 accurate.
+
+# Algorithm
+
+Given ``X = (B'')^TB'`` and the threshold ``θ``:
+
+1. Set ``s = \max(0, \lceil\log_2(\|X\|_1/θ)\rceil)`` and ``α = 2^s``.
+2. Sum the Taylor series at the scaled argument to obtain
+   ``W = \mathfrak{A}(X/α)/α``.
+3. Repeat ``W \leftarrow 2W + WXW`` exactly ``s`` times.
+4. Return ``W``. It now equals ``\mathfrak{A}(X)``, and therefore
+   ``\mathbb{I} + B'W(B'')^T = \exp(B'(B'')^T)``.
+
+The factor ``1/α`` in the initial ``W`` scales ``B'`` implicitly; the recurrence then restores one
+factor of two per iteration without ever assembling the ``N\times{}N`` exponential.
 
 `θ` is the norm below which the series is summed. It barely matters: at ``\|\bar{B}\| = 155`` every
 ``θ \in [0.125, 4]`` — a 32-fold range — gives a `check` between `9.9e-15` and `5.0e-14` and a
