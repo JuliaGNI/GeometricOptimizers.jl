@@ -124,7 +124,12 @@ GeometricOptimizers.second_moment(state).A
 
 ### Weights on Manifolds
 
-The problem with generalizing Adam to manifolds is that the Hadamard product ``\odot`` as well as the other element-wise operations (``/``, ``\sqrt{}`` and ``+``) lack a clear geometric interpretation. In `GeometricOptimizers` we get around this issue by utilizing the [global tangent space representation](@ref "Global Tangent Spaces"). A similar approach is shown in [kong2023momentum](@cite).
+The problem with generalizing Adam to manifolds is that the Hadamard product ``\odot`` and the
+other element-wise operations (``/``, ``\sqrt{}`` and ``+``) are coordinate-dependent: changing the
+basis changes the update, so these operations do not define intrinsic operations on tangent vectors.
+`GeometricOptimizers` resolves this for [`Adam`](@ref) by applying them in the
+[global tangent space representation](@ref "Global Tangent Spaces"). A similar approach is shown in
+[kong2023momentum](@cite).
 
 ### Cayley ADAM: a scalar second moment
 
@@ -147,33 +152,24 @@ moment carries no direction — which is what the method is named for, and the r
 baseline rather than the package's recommended method. It is nonetheless a reproduction of a
 published algorithm, not a straw man: on a given objective it may well beat [`Adam`](@ref).
 
-Everything else is shared with [`Adam`](@ref) — the gradient, its
-[global tangent space representation](@ref "Global Tangent Spaces"), the bias-correction convention,
-the section/retraction path and the line search — which is what makes the two comparable on the same
-problem. One thing about that comparison is worth knowing before running it: `Adam` normalizes
-*componentwise*, so ``\lVert{}W_t\rVert \approx \sqrt{\dim}``, while the divisor above normalizes the
-whole lift at once, so ``\lVert{}W_t\rVert \approx 1``. Both methods take the same default
-``\eta``, so the same number is a step ``\sqrt{\dim}`` shorter here.
+The source does not require a global tangent space representation: its scalar second moment is
+already independent of the choice of coordinates. This implementation nevertheless uses the same
+horizontal lift, bias-correction convention, section update and line search as [`Adam`](@ref), so the
+two methods can be compared inside the same optimization framework.
 
-Two things in the source are deliberately *not* reproduced: its two-step approximation of the
-Cayley transform, because this package's [`Cayley`](@ref) retraction is exact and any other
-[`AbstractRetraction`](@ref) may be used instead, and the step-length cap that approximation needs,
-because bounding the step is [`GeometricOptimizers.step_αmax`](@ref)'s job here.
+By default, ``\lVert\bar{G}\rVert^2`` is the norm of that horizontal lift. This is the quotient-space
+quantity naturally available to the optimizer and avoids another gradient evaluation.
+`ScalarMomentAdam(; ambient_norm = true)` instead uses the squared Frobenius norm of the ambient
+Euclidean gradient ``\nabla{}L``, as the source does. These norms come from different views of the
+Stiefel manifold — as a homogeneous quotient and as an embedded matrix manifold — and need not agree.
 
-A third difference is a keyword. The ``\lVert\bar{G}\rVert^2`` above is the norm of the horizontal
-lift's free parameters, ``\frac{1}{2}\lVert{}A\rVert_F^2 + \lVert{}B\rVert_F^2``, and it is the
-default because it is free — the lift is in the cache already — because it is the norm the rest of the
-package measures gradients and steps with, and because it leaves [`Adam`](@ref) and
-`ScalarMomentAdam` consuming an *identical* gradient, so a comparison between the two differs in the
-second moment and in nothing else. `ScalarMomentAdam(; ambient_norm = true)` selects the source's own
-quantity instead, the squared Frobenius norm of the ambient Euclidean ``\nabla{}L``, at one extra
-gradient evaluation per step.
-
-The two are not related by a constant in either direction. `rgrad` annihilates the normal component,
-so for ``\nabla{}L = YS`` with ``S`` symmetric the lift — and with it the whole second moment — is
-zero while ``\lVert\nabla{}L\rVert_F`` is not: the ratio is bounded above and has no positive lower
-bound. Reach for `ambient_norm = true` to reproduce the source, and leave it `false` to compare
-against [`Adam`](@ref).
+!!! info "Why the source is Cayley-specific"
+    A retraction is a two-argument map: its update depends on both the current point and a tangent
+    vector at that point. Algorithm 2 specializes this map to the Cayley retraction and evaluates the
+    resulting implicit equation with two fixed-point iterations. Its step-length cap guarantees that
+    this iteration is a contraction. `GeometricOptimizers` separates the optimizer from the
+    retraction, evaluates [`Cayley`](@ref) directly, and enforces admissible step lengths through
+    [`GeometricOptimizers.step_αmax`](@ref); consequently any [`AbstractRetraction`](@ref) may be used.
 
 The source's algorithm is Stiefel-only and so is this: the method accepts exactly one
 `StiefelManifold`, and ordinary arrays, `NamedTuple`s, Grassmann solutions and mixed trees throw an
@@ -184,7 +180,7 @@ The source's algorithm is Stiefel-only and so is this: the method accepts exactl
 In its notation — ``\mathcal{G}`` the stochastic Euclidean gradient, ``X`` the iterate, ``l`` the
 learning rate, ``q = 0.5``, ``s = 2``:
 
-```text
+```
  2  X₁ orthonormal, M₁ = 0, v₁ = 1
  4  M_{k+1} ← β₁ M_k + (1 - β₁) 𝒢(X_k)
  5  v_{k+1} ← β₂ v_k + (1 - β₂) ‖𝒢(X_k)‖²
