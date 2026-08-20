@@ -1,8 +1,9 @@
 using Test
+using JLArrays: JLArray
 using LinearAlgebra: norm, opnorm, I
 using GeometricOptimizers
 using GeometricOptimizers: geodesic, check, rgrad, 𝔄, 𝔄exp, opnorm₁, Geodesic, retraction
-using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew, TaylorSeries
+using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
 import Random
 
 Random.seed!(1234)
@@ -23,7 +24,7 @@ Random.seed!(1234)
 # nested set would draw an identical lift and the sweep would silently collapse to one matrix.
 const NORM_SCALES = (0.1, 0.5, 1.0, 3.0, 6.0, 12.0, 30.0, 60.0)
 
-const ALGORITHMS = (ScaledSquaring(), AugmentedPade(), ProjectedSkew())
+const ALGORITHMS = (ScaledSquaring(), NativePade(), AugmentedPade(), ProjectedSkew())
 
 stiefel_lift(T, N, n, s) = T(s) * rand(StiefelLieAlgHorMatrix{T}, N, n)
 grassmann_lift(T, N, n, s) = T(s) * rand(GrassmannLieAlgHorMatrix{T}, N, n)
@@ -55,6 +56,16 @@ end
         for algorithm in ALGORITHMS[2:end]
             @test norm(Matrix(geodesic(B, algorithm)) - Y) / norm(Y) < 1e-10
         end
+    end
+end
+
+@testset "NativePade agrees with AugmentedPade across manifolds and element types" begin
+    N, n = 20, 3
+    for T in (Float64, Float32), (_, lift) in LIFTS, s in NORM_SCALES
+        B = lift(T, N, n, s)
+        reference = Matrix(geodesic(B, AugmentedPade()))
+        relative_error = norm(Matrix(geodesic(B, NativePade())) - reference) / norm(reference)
+        @test relative_error < (T === Float64 ? 1e-10 : 1e-4)
     end
 end
 
@@ -138,9 +149,9 @@ end
     @test !(check(geodesic(Y, 300 * Δ, TaylorSeries())) < 1e-6)
 end
 
-# `ScaledSquaring` is the default because it is the only algorithm free of dense LAPACK, which makes
-# it the only one that runs on a `KernelAbstractions` GPU backend. `LinearAlgebra.opnorm(X, 1)` is a
-# scalar-indexing double loop and would give that up, so the 1-norm is taken as a reduction instead.
+# `ScaledSquaring` and `NativePade` are free of dense LAPACK and run on a `KernelAbstractions` GPU
+# backend. `LinearAlgebra.opnorm(X, 1)` is a scalar-indexing double loop and would give that up, so
+# the 1-norm is taken as a reduction instead.
 # GPU-ness itself is not testable without a GPU; what is testable is that the substitute is the same
 # number, which is the part that could silently regress.
 @testset "the scaling threshold is the 1-norm, taken as a reduction" begin
@@ -159,6 +170,20 @@ end
     # The threshold is what picks the number of halvings, so it has to hold across the sweep too.
     X = 𝔄(randn(6, 6))
     @test opnorm₁(X) ≈ opnorm(X, 1) rtol = 1e-12
+end
+
+
+@testset "NativePade does not require scalar indexing" begin
+    Random.seed!(52)
+    X = JLArray(100 * randn(8, 8))
+    native = 𝔄(X, NativePade())
+    scaled = 𝔄(X, ScaledSquaring())
+    reference = 𝔄(Array(X), AugmentedPade())
+
+    @test native isa JLArray
+    @test scaled isa JLArray
+    @test Array(native) ≈ reference rtol = 1e-10
+    @test Array(scaled) ≈ reference rtol = 1e-10
 end
 
 # `𝔄exp`'s defining property, ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T = \exp(B'(B'')^T)``,
@@ -181,10 +206,10 @@ end
     end
 
     # The `algorithm` form forwards to `𝔄`, so it is defined exactly where `𝔄(X, algorithm)` is:
-    # `TaylorSeries`, `ScaledSquaring` and `AugmentedPade`. `ProjectedSkew` is not among them — it is
+    # `TaylorSeries`, `ScaledSquaring`, `NativePade` and `AugmentedPade`. `ProjectedSkew` is not among them — it is
     # a `geodesic`-level algorithm with its own branch there and no `𝔄` method — so `ALGORITHMS`,
     # which exists for the `geodesic` sweeps above and includes it, is not what to loop over here.
-    for algorithm in (TaylorSeries(), ScaledSquaring(), AugmentedPade()), T in (Float32, Float64)
+    for algorithm in (TaylorSeries(), ScaledSquaring(), NativePade(), AugmentedPade()), T in (Float32, Float64)
         A = T(0.1) * rand(T, 8, 3)
         B = T(0.1) * rand(T, 8, 3)
         @test eltype(𝔄exp(A, B, algorithm)) == T

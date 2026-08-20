@@ -6,7 +6,7 @@
 #
 # Two independent parts, both cheap enough to run on a laptop:
 #
-#   * `exponential_tables()` — the accuracy and cost of the four `AbstractExponentialAlgorithm`s.
+#   * `exponential_tables()` — the accuracy and cost of the five `AbstractExponentialAlgorithm`s.
 #     Feeds the tables in `src/retractions/exponential_algorithms.jl` and the note on `Cayley` in
 #     `src/retractions/retraction_types.jl`. `docs/src/retractions.md` recomputes the accuracy
 #     tables when the documentation is built, from the same seed and the same `SCALES`, so this
@@ -24,15 +24,15 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: geodesic, cayley, check, 𝔄, lift_factors, Geodesic, Cayley
-using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew, TaylorSeries
+using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
 using GeometricOptimizers: iteration_number, status
 using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe
 using LinearAlgebra
 using Printf
 import Random
 
-const ALGORITHMS = (TaylorSeries(), ScaledSquaring(), AugmentedPade(), ProjectedSkew())
-const ALGORITHM_NAMES = ("TaylorSeries", "ScaledSquaring", "AugmentedPade", "ProjectedSkew")
+const ALGORITHMS = (TaylorSeries(), ScaledSquaring(), NativePade(), AugmentedPade(), ProjectedSkew())
+const ALGORITHM_NAMES = ("TaylorSeries", "ScaledSquaring", "NativePade", "AugmentedPade", "ProjectedSkew")
 
 """
     best(f, repetitions = 20)
@@ -106,6 +106,16 @@ function exponential_tables(; N::Integer=20, n::Integer=3)
         @printf("θ = %5.3f   check %9.2e   error %9.2e\n", θ, check(Y),
             norm(Matrix(Y) - reference) / norm(reference))
     end
+
+    println("\n== cost of the 𝔄 call, ms, minimum of 50, 1 BLAS thread ==")
+    Random.seed!(7)
+    B = rand(StiefelLieAlgHorMatrix{Float64}, 200, 10)
+    B̂, B̄ = lift_factors(B)
+    X = B̄' * B̂
+    foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES[2:4])
+    println()
+    foreach(a -> @printf("%16.3f", best(() -> 𝔄(X, a), 50)), ALGORITHMS[2:4])
+    println()
 
     println("\n== cost of one retraction, ms, minimum of 50, 1 BLAS thread ==")
     print(rpad("N", 7) * rpad("n", 6))
