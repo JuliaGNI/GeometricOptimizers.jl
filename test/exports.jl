@@ -16,9 +16,9 @@ end
 # `BFGS()`, which is the reason these in particular are exported rather than internal.
 @testset "the optimizer methods and their states are exported" begin
     for name in (:Newton, :BFGS, :DFP,
-        :GradientMethod, :MomentumMethod, :Adam,
+        :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam,
         :NewtonOptimizerState, :BFGSState, :DFPState,
-        :GradientState, :MomentumState, :AdamState)
+        :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState)
         @test name in names(GeometricOptimizers)
     end
 
@@ -27,7 +27,7 @@ end
     # re-exported the three first-order ones until 0.5, which is the only reason exporting them was
     # ever considered; it reaches them qualified now.
     for name in (:BFGSCache, :DFPCache, :NewtonOptimizerCache,
-        :GradientCache, :MomentumCache, :AdamCache, :OptimizerCache)
+        :GradientCache, :MomentumCache, :AdamCache, :ScalarMomentAdamCache, :OptimizerCache)
         @test isdefined(GeometricOptimizers, name)
         @test !(name in names(GeometricOptimizers))
     end
