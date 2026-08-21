@@ -17,10 +17,11 @@ so the whole computation reduces to one ``2n\times{}2n`` matrix function — the
 ``\varphi_1(X) = (\exp(X) - \mathbb{I})X^{-1}``, though it is defined by the series and is perfectly
 regular at a singular ``X``.
 
-The subtypes differ only in how that ``2n\times{}2n`` function is evaluated, and they are
-mathematically identical — every one of them returns the exponential map, so the one-parameter
-subgroup property [`Geodesic`](@ref) relies on holds for all of them. They differ in accuracy at a
-large lift, in cost, and in which backends they run on. On a random `StiefelLieAlgHorMatrix(20, 3)`
+Three subtypes evaluate that ``2n\times{}2n`` function, while [`ProjectedSkew`](@ref) bypasses it and
+exponentiates the lift in a basis of its range. All four are mathematically identical — every one
+returns the exponential map, so the one-parameter subgroup property [`Geodesic`](@ref) relies on
+holds for all of them. They differ in approximation kernel, recovery strategy, accuracy at a large
+lift, cost, and backend support. On a random `StiefelLieAlgHorMatrix(20, 3)`
 scaled to ``\|\bar{B}\| = 361``, against the cost of one retraction at ``N = 200``, ``n = 10``:
 
 | | `check` | forward error | cost | backend |
@@ -49,11 +50,11 @@ abstract type AbstractExponentialAlgorithm end
 @doc raw"""
     ScaledSquaring(θ = 0.5) <: AbstractExponentialAlgorithm
 
-Evaluate ``\mathfrak{A}`` by scaling and squaring, and the default.
+Evaluate ``\mathfrak{A}`` with a Taylor kernel and low-rank modified squaring, and the default.
 
-This is the standard scaling-and-squaring framework for the matrix exponential
-[higham2005scaling, higham2008functions, almohy2010new](@cite), specialised to the low-rank
-factorisation used here.
+This is not the Padé kernel used by the conventional dense matrix-exponential algorithm. It applies
+the scaling idea to the same Taylor evaluator as [`TaylorSeries`](@ref), then recovers the original
+argument with a recurrence specialized to the low-rank factorization [skaflestad2009scaling](@cite).
 
 The series for ``\mathfrak{A}`` converges for every argument but is only *accurate* for a small one:
 at ``\|X\| \gg 1`` its terms cancel catastrophically, and the partial sum reaches ``2.5\cdot10^{18}``
@@ -75,17 +76,19 @@ accurate.
 
 # Algorithm
 
-Given ``X = (B'')^TB'`` and the threshold ``θ``:
+Given ``L = B'(B'')^T``, ``X = (B'')^TB'``, and the threshold ``θ``:
 
 1. Set ``s = \max(0, \lceil\log_2(\|X\|_1/θ)\rceil)`` and ``α = 2^s``.
 2. Sum the Taylor series at the scaled argument to obtain
-   ``W = \mathfrak{A}(X/α)/α``.
-3. Repeat ``W \leftarrow 2W + WXW`` exactly ``s`` times.
-4. Return ``W``. It now equals ``\mathfrak{A}(X)``, and therefore
-   ``\mathbb{I} + B'W(B'')^T = \exp(B'(B'')^T)``.
+   ``W_s = \mathfrak{A}(X/α)/α``, so
+   ``\exp(L/α) = \mathbb{I} + B'W_s(B'')^T``.
+3. For ``k=s,s-1,\ldots,1``, set ``W_{k-1} = 2W_k + W_kXW_k``. This squares the represented
+   exponential and uses the original ``X``, not ``X/α``.
+4. Return ``W_0 = \mathfrak{A}(X)``, so
+   ``\mathbb{I} + B'W_0(B'')^T = \exp(B'(B'')^T)``.
 
-The factor ``1/α`` in the initial ``W`` scales ``B'`` implicitly; the recurrence then restores one
-factor of two per iteration without ever assembling the ``N\times{}N`` exponential.
+The factor ``1/α`` follows from the scaled-exponential identity; the recurrence restores one factor
+of two per iteration without assembling a dense ``N\times{}N`` exponential, square, or solve.
 
 `θ` is the norm below which the series is summed. It barely matters: at ``\|\bar{B}\| = 155`` every
 ``θ \in [0.125, 4]`` — a 32-fold range — gives a `check` between `9.9e-15` and `5.0e-14` and a
@@ -127,9 +130,10 @@ Evaluate ``\mathfrak{A}`` as a block of a larger *ordinary* exponential.
 ```
 
 so one call to `Base.exp` on a ``4n\times{}4n`` matrix returns ``\mathfrak{A}(X)`` in its upper-right
-block. That hands the numerics to Julia's own exponential — a degree-13 Padé approximant with its own
-scaling and squaring, and the most heavily exercised implementation available — at the cost of
-exponentiating a matrix four times the size and discarding three quarters of it.
+block. That hands the numerics to Julia's own dense matrix exponential, which uses a Padé-based
+scaling-and-squaring algorithm [higham2005scaling, almohy2010new](@cite), at the cost of
+exponentiating a matrix four times the size and discarding three quarters of it. This is the package
+algorithm corresponding directly to the conventional Padé description of scaling and squaring.
 
 Accurate to the same order as [`ScaledSquaring`](@ref), and about twice as expensive in the
 ``\mathfrak{A}`` call itself though much less than that once the ``N\times{}N`` assembly is counted.

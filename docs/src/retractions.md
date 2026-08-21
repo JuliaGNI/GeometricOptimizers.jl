@@ -553,9 +553,30 @@ so the whole computation reduces to one ``2n\times{}2n`` matrix function. ``\mat
 function usually written ``\varphi_1(X) = \left(\exp(X) - \mathbb{I}\right)X^{-1}``, though it is
 defined by the series and is perfectly regular at a singular ``X``.
 
-Evaluating ``\mathfrak{A}`` by summing that series is the obvious thing to do and it is what every
-version of this package up to 0.2.0 did. It is also wrong for any but a small argument, and the
-argument here is not small. ``X``'s lower-left block is ``\tfrac{1}{4}A^2 - B^TB``, so
+Two independent choices are easy to conflate here. An approximation kernel, such as Taylor or Padé,
+determines how a matrix function is evaluated at a manageable argument. Scaling and squaring is a
+framework that first reduces a large argument and then recovers the original value; it can be paired
+with either kind of kernel. The four package algorithms make different choices:
+
+| Package algorithm | Object evaluated | Kernel | Recovery | Backend |
+|---|---|---|---|---|
+| [`TaylorSeries`](@ref) | ``\mathfrak{A}(X)`` | Taylor series | none | any |
+| [`ScaledSquaring`](@ref) | ``\mathfrak{A}(X)`` | Taylor series | low-rank modified squaring | any |
+| [`AugmentedPade`](@ref) | augmented exponential | Julia's Padé-based `exp` | Julia's scaling and squaring | CPU |
+| [`ProjectedSkew`](@ref) | projected lift exponential | eigendecomposition | none | CPU |
+
+All four are subtypes of [`AbstractExponentialAlgorithm`](@ref) and all four return the exponential
+map, so the one-parameter subgroup property above holds for every one of them.
+
+## `TaylorSeries`
+
+[`TaylorSeries`](@ref) evaluates ``\mathfrak{A}`` directly from its defining series, without scaling,
+and stops when a term falls below `eps`. This is the behaviour of every version of this package up to
+0.2.0. The series converges mathematically for every matrix, but direct floating-point summation is
+not accurate for every matrix.
+
+The reduced argument here is particularly difficult. ``X``'s lower-left block is
+``\tfrac{1}{4}A^2 - B^TB``, so
 
 ```math
 \|X\| \approx \tfrac{1}{4}\|\bar{B}\|^2
@@ -573,7 +594,12 @@ manifold in any sense. That the direct series is not a method for the matrix exp
 old observation [moler2003nineteen](@cite); what is specific here is that the factorisation makes the
 argument *worse* than the matrix one started with.
 
-The remedy is a choice, and [`Geodesic`](@ref) makes it one the caller can see:
+!!! danger "This is not a usable retraction"
+    `TaylorSeries` is retained so that the regression is reproducible and the working algorithms
+    have a baseline. The failure is silent, and changing the stopping test does not repair the
+    cancellation. Do not select it for optimization.
+
+[`Geodesic`](@ref) makes the algorithm choice visible:
 
 ```julia
 Geodesic(ScaledSquaring())   # the default, and `Geodesic()`
@@ -582,17 +608,14 @@ Geodesic(ProjectedSkew())
 Geodesic(TaylorSeries())     # the pre-0.2.0 behaviour; not a usable retraction
 ```
 
-All four are subtypes of [`AbstractExponentialAlgorithm`](@ref) and all four return the exponential
-map, so the one-parameter subgroup property above holds for every one of them. What follows is what
-each does and what it trades.
-
 ## `ScaledSquaring`
 
-[`ScaledSquaring`](@ref) is the default. The series is only inaccurate for a large argument, so halve
-the argument until it is small, sum the series there, and undo the halving by squaring — the standard
-remedy for a matrix exponential
-[higham2005scaling, higham2008functions, almohy2010new](@cite), and what
-`Base.exp` itself does.
+[`ScaledSquaring`](@ref) is the default. Despite its name, its small-argument approximation is not the
+Padé approximant used by the conventional dense matrix-exponential algorithm. It uses the same
+Taylor evaluator as [`TaylorSeries`](@ref), but first scales the argument and then applies a
+low-rank modified-squaring recurrence. This separation between a small-argument kernel and recovery
+by modified squaring is standard for matrix functions related to the exponential
+[skaflestad2009scaling](@cite).
 
 The one thing that needs care is that squaring must not cost ``O(N^3)``. It does not, because the
 low-rank form is closed under squaring:
@@ -607,20 +630,30 @@ that ``\|X\|_1/2^s \leq \theta``, the algorithm is `s` small-matrix updates on t
 now converges in a handful of terms. That makes it *cheaper* than summing the unscaled series, not
 merely more accurate — by 1.7× at ``N = 200``, ``n = 10`` and 4.6× at ``N = 500``, ``n = 50``.
 
-The complete computation is:
+Let ``L = B'(B'')^T``, ``X = (B'')^TB'``, and ``\alpha = 2^s``. The scaled exponential is
+
+```math
+\exp(L/\alpha)
+= \mathbb{I} + B'\left[\frac{\mathfrak{A}(X/\alpha)}{\alpha}\right](B'')^T.
+```
+
+Thus the complete computation is:
 
 1. **Choose the scaling.** Set
    ``s = \max(0, \lceil\log_2(\|X\|_1/\theta)\rceil)`` and ``\alpha = 2^s``.
-2. **Evaluate the small series.** Compute
-   ``W = \mathfrak{A}(X/\alpha)/\alpha``. The scaled argument has
-   ``\|X/\alpha\|_1 \leq \theta``, so the Taylor series converges without catastrophic cancellation.
-3. **Undo the scaling.** Repeat ``W \leftarrow 2W + WXW`` exactly ``s`` times. Each update squares
-   the represented exponential and restores one factor of two.
-4. **Return the result.** After the loop, ``W = \mathfrak{A}(X)``, so
-   ``\mathbb{I} + B'W(B'')^T = \exp(B'(B'')^T)``.
+2. **Evaluate the small series.** Compute ``W_s = \mathfrak{A}(X/\alpha)/\alpha``. The scaled argument
+   has ``\|X/\alpha\|_1 \leq \theta``, so the Taylor sum avoids the catastrophic cancellation seen
+   at the original argument.
+3. **Undo the scaling.** If
+   ``\exp(L/2^k) = \mathbb{I} + B'W_k(B'')^T``, then squaring gives
+   ``W_{k-1} = 2W_k + W_kXW_k``. Apply this update for ``k=s,s-1,\ldots,1``. The recurrence uses the
+   original ``X``, not ``X/\alpha``.
+4. **Return the result.** After the loop, ``W_0 = \mathfrak{A}(X)``, so
+   ``\mathbb{I} + B'W_0(B'')^T = \exp(B'(B'')^T)``.
 
-The division by ``\alpha`` in the initial ``W`` is essential: it scales the factor ``B'`` implicitly,
-allowing every subsequent squaring to remain a ``2n\times{}2n`` update.
+The division by ``\alpha`` follows from the displayed scaled-exponential identity; it is not an
+extra approximation. Every recovery step remains a ``2n\times{}2n`` update, so no dense
+``N\times{}N`` exponential, square, or solve is formed.
 
 The threshold `θ` is the algorithm's one parameter — positional, `ScaledSquaring(0.5)`, and defaulted
 to `0.5` — and it barely matters: at ``\|\bar{B}\| \approx 155`` every ``\theta \in [0.125, 4]`` — a
@@ -662,10 +695,11 @@ the ``4n\times{}4n`` augmented matrix,
 
 which is the standard device for getting a ``\varphi`` function out of an exponential routine
 [sidje1998expokit, higham2008functions](@cite). One call to `Base.exp` therefore returns
-``\mathfrak{A}(X)`` in its upper-right block. That hands the numerics to Julia's own exponential — a
-degree-13 Padé approximant with its own scaling and squaring [higham2005scaling,
-almohy2010new](@cite) — at the cost of exponentiating a matrix four times the size and discarding
-three quarters of it.
+``\mathfrak{A}(X)`` in its upper-right block. That hands the numerics to Julia's own dense matrix
+exponential, which uses a Padé-based scaling-and-squaring algorithm [higham2005scaling,
+almohy2010new](@cite), at the cost of exponentiating a matrix four times the size and discarding
+three quarters of it. This is the package algorithm that corresponds directly to the conventional
+Padé description of scaling and squaring.
 
 **Advantages.** It introduces no new numerics at all. Everything delicate is done by the most
 heavily exercised matrix-exponential implementation available, which is why it is the reference the
@@ -722,29 +756,6 @@ products, which costs 1.2×–1.9× over the sizes measured below and rules out 
 because it bypasses ``\mathfrak{A}``, it is the one algorithm that specialises
 [`geodesic`](@ref) directly rather than supplying a method of [`GeometricOptimizers.𝔄`](@ref) — worth
 knowing if you call ``\mathfrak{A}`` yourself, since `𝔄(X, ProjectedSkew())` does not exist.
-
-## `TaylorSeries`
-
-[`TaylorSeries`](@ref) sums the series for ``\mathfrak{A}`` directly, without scaling, terminating
-when a term falls below `eps`. It is the behaviour of every version of this package up to 0.2.0.
-
-!!! danger "This is not a usable retraction"
-    It is retained only so that the regression is reproducible from the test suite and so the
-    working algorithms have a baseline to be compared against. Its column in the first table
-    below is what it does: already at ``10^{-12}`` by ``\|\bar{B}\| \approx 18``, off the manifold
-    by any standard at ``37``, meaningless at ``79``, and overflowed to `NaN` by ``767``. Do not
-    select it.
-
-Two things about it are worth recording rather than merely deprecating. The failure is *silent*: an
-optimizer using it takes a step, gets a matrix back, and nothing anywhere reports that the matrix is
-not on the manifold — which is why the defect survived until [`check`](@ref) was made generic over
-[`Manifold`](@ref) instead of being defined for [`StiefelManifold`](@ref) alone. And the obvious
-first fix does not work: making the termination test relative to the partial sum rather than absolute
-was measured to change *none* of the numbers below, at any lift norm. The loss is the cancellation
-inside the sum, not the point at which the summation stops. Scaling the argument down is the only
-thing that helps, which is [`ScaledSquaring`](@ref) — and that is also 1.7× to 4.6× *faster* here,
-because the scaled series converges in a handful of terms where the unscaled one grinds through
-hundreds.
 
 ## Using them
 
