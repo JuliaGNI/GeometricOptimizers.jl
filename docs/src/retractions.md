@@ -590,7 +590,8 @@ each does and what it trades.
 
 [`ScaledSquaring`](@ref) is the default. The series is only inaccurate for a large argument, so halve
 the argument until it is small, sum the series there, and undo the halving by squaring — the standard
-remedy for a matrix exponential [higham2005scaling, higham2008functions](@cite), and what
+remedy for a matrix exponential
+[higham2005scaling, higham2008functions, almohy2010new](@cite), and what
 `Base.exp` itself does.
 
 The one thing that needs care is that squaring must not cost ``O(N^3)``. It does not, because the

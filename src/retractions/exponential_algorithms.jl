@@ -51,6 +51,10 @@ abstract type AbstractExponentialAlgorithm end
 
 Evaluate ``\mathfrak{A}`` by scaling and squaring, and the default.
 
+This is the standard scaling-and-squaring framework for the matrix exponential
+[higham2005scaling, higham2008functions, almohy2010new](@cite), specialised to the low-rank
+factorisation used here.
+
 The series for ``\mathfrak{A}`` converges for every argument but is only *accurate* for a small one:
 at ``\|X\| \gg 1`` its terms cancel catastrophically, and the partial sum reaches ``2.5\cdot10^{18}``
 where the result is of order one. So halve the argument until it is small, sum the series there, and
