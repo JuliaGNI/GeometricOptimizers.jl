@@ -102,16 +102,15 @@ true
 𝔄(X::AbstractMatrix, ::TaylorSeries) = 𝔄(X)
 
 function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
-    # `X` is halved `s` times so that the series below is summed on an argument of norm ≤ θ, where
-    # it converges in a handful of terms and does not cancel. The halving is then undone by
-    # squaring the *assembled* exponential `I + B̂WB̄ᵗ`, which stays low-rank:
+    # `X` is halved `s` times so that the Taylor series is summed on an argument of norm ≤ θ, where
+    # it converges in a handful of terms and does not cancel. Initially
+    # `exp(B̂B̄ᵗ/2^s) = I + B̂(𝔄(X/2^s)/2^s)B̄ᵗ`. Squaring this represented exponential stays
+    # low-rank:
     #
     #     (I + B̂WB̄ᵗ)² = I + B̂(2W + WXW)B̄ᵗ,
     #
-    # so each squaring is one application of `W ↦ 2W + WXW` at 2n × 2n. Nothing is ever squared at
-    # N × N. `W` absorbs the `2^-s` that belongs to `B̂`, which is what makes `I + B̂WB̄ᵗ` the
-    # exponential of the *scaled* lift; after `s` squarings it is `𝔄(X)` itself, so every caller is
-    # unchanged.
+    # so each recovery step is `W ↦ 2W + WXW` at 2n × 2n, with the original `X`. After `s` steps
+    # `W = 𝔄(X)`. Nothing is ever squared at N × N.
     nrm = opnorm₁(X)
     s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
     scale = eltype(X)(2)^s
@@ -179,8 +178,8 @@ function 𝔄(X::AbstractMatrix, algorithm::NativePade)
 end
 
 function 𝔄(X::AbstractMatrix, ::AugmentedPade)
-    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so `Base.exp` — a degree-13 Padé approximant with its
-    # own scaling and squaring — returns `𝔄(X)` in the upper-right block.
+    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so Julia's Padé-based, scaling-and-squaring matrix
+    # exponential returns `𝔄(X)` in the upper-right block.
     m = size(X, 1)
     T = eltype(X)
     augmented = [X one(X); zeros(T, m, m) zeros(T, m, m)]
