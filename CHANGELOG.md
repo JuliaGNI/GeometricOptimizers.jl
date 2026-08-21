@@ -16,6 +16,15 @@ which deletes GML's own copies of eleven of these types.
 
 ### Added
 
+- **`NativePade`, a scalar-indexing-free Padé approximant for the geodesic retraction.** It evaluates
+  ``\mathfrak{A}=\varphi_1`` directly on the existing ``2n\times{}2n`` factor with a degree-6
+  diagonal approximant, replaces the dense solve by fixed Newton--Schulz matrix products, and uses
+  the same low-rank squaring recursion as `ScaledSquaring`. It agrees with the `Base.exp`-delegating
+  `AugmentedPade` across both supported manifolds and both floating-point types, while giving
+  `ScaledSquaring` an independent cross-check on a backend that forbids scalar indexing. Measured at
+  ``N=200``, ``n=10``, its isolated ``\mathfrak{A}`` call is `0.034 ms` against `0.018 ms` for
+  `ScaledSquaring` and `0.046 ms` for `AugmentedPade`, so `ScaledSquaring` remains the default. [#52]
+
 - **Optimizer primitives for `SymmetricMatrix` and the triangular types.** `similar`, `fill!`, the
   elementwise `_add!`, `_rac!`, `_square!`, `_div!`, `_rmul!`, `_difference!`, then `l2norm`,
   `ParameterHandling.flatten` and `update_section!` on a `GlobalSection` over one of them. Without
@@ -1914,6 +1923,21 @@ and `Base.zero` already find the backend of a point they are given
 the check is a GPU run of the optimizer, which nothing in this repository does any more, so this
 should be closed together with A19 — one backend, one session, both claims settled.
 
+#### A22. The only independent exponential implementation was CPU-only
+
+**Closed by [#52].** `ScaledSquaring` was the only usable algorithm on a backend that forbids scalar
+indexing, while its independent reference, `AugmentedPade`, embeds the argument in a matrix twice the
+dimension and calls the dense-LAPACK `Base.exp`. The squaring recursion was therefore checked on the
+CPU and unverified on the backend where it runs during training.
+
+`NativePade` closes the gap without pretending that a rational approximation's solve is portable by
+itself. It scales to ``\|X\|_1\leq0.5``, evaluates a degree-6 numerator and denominator at
+``2n\times{}2n``, and replaces the solve by five effective Newton--Schulz refinements. A test array
+that throws on scalar indexing exercises the complete path, including a lift requiring several
+squarings. The measured comparison keeps `ScaledSquaring` as the default: the two have the same
+accuracy on the norm sweep, but the native Padé does more small matrix products and is valuable as a
+portable second opinion rather than as the production choice.
+
 ---
 
 ### B. This package — observability
@@ -2457,6 +2481,7 @@ and both are corrected: see C8.)
 [#48]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/48
 [#49]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/49
 [#50]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/50
+[#52]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
