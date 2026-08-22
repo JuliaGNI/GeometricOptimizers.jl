@@ -152,3 +152,39 @@ end
     @test eltype(back.L1.W) == Float32
     @test eltype(back.L1.Y) == Float32
 end
+
+@testset "a file in GeometricMachineLearning's old layout still loads" begin
+    # GML used to write these matrices itself: a group tagged `gml_type`, holding the fields under
+    # their own names and no record of the key order. `NeuralNetworkParameters` recognises the tag
+    # and rebuilds through the registry, passing the group's fields as both storage and metadata —
+    # so the reconstructors registered here have to accept that shape too.
+    file = tempname() * ".h5"
+    try
+        A = leaves.symmetric
+        Y = leaves.stiefel
+        h5open(file, "w") do h5
+            g = HDF5.create_group(h5, "L1")
+
+            gA = HDF5.create_group(g, "W")
+            HDF5.attributes(gA)["gml_type"] = "SymmetricMatrix"
+            gA["S"] = Array(A.S)
+            gA["n"] = A.n
+
+            gY = HDF5.create_group(g, "Y")
+            HDF5.attributes(gY)["gml_type"] = "StiefelManifold"
+            gY["A"] = Array(Y.A)
+
+            g["b"] = [1.0, 2.0]
+        end
+
+        read_back = load(NetworkParameters, file)
+
+        @test read_back.L1.W isa SymmetricMatrix
+        @test read_back.L1.W ≈ A
+        @test read_back.L1.Y isa StiefelManifold
+        @test read_back.L1.Y ≈ Y
+        @test read_back.L1.b == [1.0, 2.0]
+    finally
+        isfile(file) && rm(file)
+    end
+end

@@ -53,15 +53,26 @@ rebuild(A::GrassmannLieAlgHorMatrix, data) = GrassmannLieAlgHorMatrix(data[1], A
 parameter_metadata(A::StorageMatrix) = (n = A.n,)
 parameter_metadata(A::AbstractLieAlgHorMatrix) = (N = A.N, n = A.n)
 
-# Registering the types is what lets `load(NetworkParameters, h5)` rebuild them with no prototype to
-# work from. Nothing in `NeuralNetworkParameters` has to know these types exist.
+# Reading back a file that has no prototype to rebuild against.
+#
+# `load` hands a registered reconstructor `(storage, metadata)`. For a file this protocol wrote,
+# `storage` is what `freeparameters` produced and `metadata` is `parameter_metadata`. There is also
+# an older shape to cope with: `GeometricMachineLearning` used to write these matrices itself as a
+# group tagged `gml_type`, holding the fields under their own names. `NeuralNetworkParameters` has no
+# way to tell storage from metadata in such a file, so it passes the group's fields as *both* — a
+# `NamedTuple` in each position. Normalising here is what keeps those files loading, and this is the
+# only place that can do it, since this is where the types are.
+_dense(storage) = storage isa NamedTuple ? storage.A : storage
+_vector(storage, metadata) = storage isa NamedTuple ? (storage.S, Int(storage.n)) :
+                             (storage, Int(metadata.n))
+
 function __init__()
-    register_parameter_type!("StiefelManifold", (S, md) -> StiefelManifold(S))
-    register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(S))
-    register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(S, md.n))
-    register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(S, md.n))
-    register_parameter_type!("LowerTriangular", (S, md) -> LowerTriangular(S, md.n))
-    register_parameter_type!("UpperTriangular", (S, md) -> UpperTriangular(S, md.n))
+    register_parameter_type!("StiefelManifold", (S, md) -> StiefelManifold(_dense(S)))
+    register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(_dense(S)))
+    register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
+    register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
+    register_parameter_type!("LowerTriangular", (S, md) -> LowerTriangular(_vector(S, md)...))
+    register_parameter_type!("UpperTriangular", (S, md) -> UpperTriangular(_vector(S, md)...))
     register_parameter_type!("StiefelLieAlgHorMatrix",
         (S, md) -> StiefelLieAlgHorMatrix(S[1], S[2], md.N, md.n))
     register_parameter_type!("GrassmannLieAlgHorMatrix",
