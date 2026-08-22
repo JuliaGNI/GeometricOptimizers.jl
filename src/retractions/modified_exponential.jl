@@ -26,11 +26,9 @@ The counter `n` in the above algorithm is initialized as `2`
 The matrices `Aⁿ` and `𝔄` are initialized as the identity matrix.
 
 !!! warning "Only accurate for a small argument"
-    The series converges for every `A` but cancels catastrophically for ``\|A\| \gg 1``, so this
-    method alone is not a usable exponential — see [`TaylorSeries`](@ref) for what it does at a
-    large argument. It is used here as the inner summation of [`ScaledSquaring`](@ref), which calls
-    it only on an argument that has been halved until its norm is below `θ`. Reach for it directly
-    only if you know the argument is small.
+    The series converges for every `A`, but cancellation can make direct summation inaccurate for
+    ``\|A\| \gg 1``. This method is therefore intended as a small-argument kernel. It is used by
+    [`ScaledSquaring`](@ref) only after the argument has been divided until its norm is below `θ`.
 """)
 function 𝔄(A::AbstractMatrix)
     T = eltype(A)
@@ -101,16 +99,15 @@ true
 𝔄(X::AbstractMatrix, ::TaylorSeries) = 𝔄(X)
 
 function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
-    # `X` is halved `s` times so that the series below is summed on an argument of norm ≤ θ, where
-    # it converges in a handful of terms and does not cancel. The halving is then undone by
-    # squaring the *assembled* exponential `I + B̂WB̄ᵗ`, which stays low-rank:
+    # `X` is halved `s` times so that the Taylor series is summed on an argument of norm ≤ θ, where
+    # it converges in a handful of terms and does not cancel. Initially
+    # `exp(B̂B̄ᵗ/2^s) = I + B̂(𝔄(X/2^s)/2^s)B̄ᵗ`. Squaring this represented exponential stays
+    # low-rank:
     #
     #     (I + B̂WB̄ᵗ)² = I + B̂(2W + WXW)B̄ᵗ,
     #
-    # so each squaring is one application of `W ↦ 2W + WXW` at 2n × 2n. Nothing is ever squared at
-    # N × N. `W` absorbs the `2^-s` that belongs to `B̂`, which is what makes `I + B̂WB̄ᵗ` the
-    # exponential of the *scaled* lift; after `s` squarings it is `𝔄(X)` itself, so every caller is
-    # unchanged.
+    # so each recovery step is `W ↦ 2W + WXW` at 2n × 2n, with the original `X`. After `s` steps
+    # `W = 𝔄(X)`. Nothing is ever squared at N × N.
     nrm = opnorm₁(X)
     s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
     scale = eltype(X)(2)^s
@@ -124,8 +121,8 @@ function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
 end
 
 function 𝔄(X::AbstractMatrix, ::AugmentedPade)
-    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so `Base.exp` — a degree-13 Padé approximant with its
-    # own scaling and squaring — returns `𝔄(X)` in the upper-right block.
+    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so Julia's Padé-based, scaling-and-squaring matrix
+    # exponential returns `𝔄(X)` in the upper-right block.
     m = size(X, 1)
     T = eltype(X)
     augmented = [X one(X); zeros(T, m, m) zeros(T, m, m)]
@@ -190,9 +187,8 @@ is a [`geodesic`](@ref)-level algorithm with its own branch there and no `𝔄` 
 
 # Implementation
 
-The default is [`ScaledSquaring`](@ref) and not the unscaled series, for the reason given under
-[`geodesic`](@ref): the series cancels catastrophically once ``\|\bar{B}\| \gtrsim 50``, which is not
-a regime a function that presents itself as an exponential may quietly get wrong. Relative error
+The default is [`ScaledSquaring`](@ref) rather than the unscaled series because cancellation makes
+the latter unreliable for sufficiently large lifts. Relative error
 against `exp(Matrix(B))` for `B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)`, as
 `test/retractions/exponential_accuracy.jl` draws it:
 
