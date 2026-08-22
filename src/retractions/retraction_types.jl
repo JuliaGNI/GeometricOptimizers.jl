@@ -33,20 +33,19 @@ the manifold to round-off. [`cayley`](@ref) never forms the ``N\times{}N`` inver
 ``B = B'(B'')^T`` into two ``N\times{}2n`` matrices with [`lift_factors`](@ref) and inverts a
 ``2n\times{}2n`` matrix instead.
 
-!!! note "It is no longer the cheaper of the two"
-    It was, when [`Geodesic`](@ref) summed an unscaled series. It is not now. `cayley` finishes with
-    a product of two ``N\times{}N`` matrices, which is ``O(N^3)``, where `geodesic` only assembles
-    ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` at ``O(N^2n)``. One retraction, `ScaledSquaring` against
-    `Cayley`:
+!!! note "Cost depends on the matrix dimensions"
+    `cayley` finishes with a product of two ``N\times{}N`` matrices, which is ``O(N^3)``, whereas
+    `geodesic` assembles ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` at ``O(N^2n)``. One benchmark of
+    `ScaledSquaring` against `Cayley` gives:
 
     | ``N``, ``n`` | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 1000, 20 |
     |---|---|---|---|---|---|---|
     | `Geodesic` | `0.005 ms` | `0.013 ms` | `0.021 ms` | `0.094 ms` | `0.42 ms` | `2.5 ms` |
     | `Cayley` | `0.004 ms` | `0.013 ms` | `0.060 ms` | `0.38 ms` | `5.1 ms` | `39 ms` |
 
-    They are level up to ``N \approx 50`` and `Cayley` loses by a factor of 15 by ``N = 1000``.
-    `Cayley` remains useful — it is unconditionally stable and needs no matrix function at all — but
-    cost is no longer a reason to prefer it.
+    The two are comparable at the smaller sizes in this table, while the dense product in `Cayley`
+    dominates at larger `N`. Timings are machine-dependent; see the Retractions guide for the
+    benchmark setup.
 
 # Examples
 
@@ -69,8 +68,8 @@ true
     from it as the step grows, so the generator of the curve's velocity turns with ``\alpha`` instead
     of staying ``B``. [`retraction_differential`](@ref) is what supplies it, and with it
     [`trial_slope`](@ref) is the exact derivative of a line search's merit under either retraction.
-    Before 0.2.0 the slope was paired against ``B`` regardless, which made it first-order under
-    `Cayley` — see the CHANGELOG entry for issue A1b for what that cost.
+    Before 0.2.0 the slope was paired against ``B`` regardless, which made it only a first-order
+    approximation under `Cayley`.
 
 See [`cayley`](@ref) for the implementation and [`Geodesic`](@ref) for the alternative.
 """
@@ -91,9 +90,8 @@ one-parameter subgroup: it follows the geodesic through the point in the directi
 is the property [`Cayley`](@ref) lacks, and the reason a derivative-based line search is exact here.
 
 [`geodesic`](@ref) exploits the sparsity of a horizontal lift rather than exponentiating the full
-``N\times{}N`` matrix: the only matrix function it evaluates is on a ``2n\times{}2n`` argument. Since
-0.2.0 that also makes it the *cheaper* of the two for ``N \gtrsim 50`` — see the note on
-[`Cayley`](@ref).
+``N\times{}N`` matrix: the only matrix function it evaluates is on a ``2n\times{}2n`` argument. This
+can make it cheaper than [`Cayley`](@ref) when ``N`` is large relative to ``n``.
 
 `algorithm` selects how the exponential is evaluated. All of them compute the same map — the choice
 is one of accuracy at a large lift, cost, and backend support — and the default
@@ -132,7 +130,7 @@ check(Geodesic()(B)) < 1e-12, check(Geodesic(TaylorSeries())(B)) < 1e-12
 (true, false)
 ```
 
-See [`geodesic`](@ref) for the implementation and [`Cayley`](@ref) for the cheaper alternative.
+See [`geodesic`](@ref) for the implementation and [`Cayley`](@ref) for the rational alternative.
 """
 struct Geodesic{AT<:AbstractExponentialAlgorithm} <: AbstractRetraction
     algorithm::AT

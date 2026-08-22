@@ -26,11 +26,9 @@ The counter `n` in the above algorithm is initialized as `2`
 The matrices `Aⁿ` and `𝔄` are initialized as the identity matrix.
 
 !!! warning "Only accurate for a small argument"
-    The series converges for every `A` but cancels catastrophically for ``\|A\| \gg 1``, so this
-    method alone is not a usable exponential — see [`TaylorSeries`](@ref) for what it does at a
-    large argument. It is used here as the inner summation of [`ScaledSquaring`](@ref), which calls
-    it only on an argument that has been halved until its norm is below `θ`. Reach for it directly
-    only if you know the argument is small.
+    The series converges for every `A`, but cancellation can make direct summation inaccurate for
+    ``\|A\| \gg 1``. This method is therefore intended as a small-argument kernel. It is used by
+    [`ScaledSquaring`](@ref) only after the argument has been divided until its norm is below `θ`.
 """)
 function 𝔄(A::AbstractMatrix)
     T = eltype(A)
@@ -189,9 +187,8 @@ is a [`geodesic`](@ref)-level algorithm with its own branch there and no `𝔄` 
 
 # Implementation
 
-The default is [`ScaledSquaring`](@ref) and not the unscaled series, for the reason given under
-[`geodesic`](@ref): the series cancels catastrophically once ``\|\bar{B}\| \gtrsim 50``, which is not
-a regime a function that presents itself as an exponential may quietly get wrong. Relative error
+The default is [`ScaledSquaring`](@ref) rather than the unscaled series because cancellation makes
+the latter unreliable for sufficiently large lifts. Relative error
 against `exp(Matrix(B))` for `B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)`, as
 `test/retractions/exponential_accuracy.jl` draws it:
 

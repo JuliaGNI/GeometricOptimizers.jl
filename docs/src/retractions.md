@@ -525,13 +525,10 @@ paired against ``\bar{B}`` regardless, which made it first-order under [`Cayley`
     same measurement on the ``\operatorname{St}(3,1)`` sphere of `manifold_linesearch_tests.jl` gives
     4.5%, 18%, 72% and 288% at ``\alpha = 0.25, 0.5, 1, 2``.
 
-The retraction used to separate the two polynomial line searches on the SVD problem, where they left
-the manifold under [`Cayley`](@ref) for every optimizer method and stayed on it under
-[`Geodesic`](@ref). That was issue A1b, and the exact differential closed only one of its four cases:
-the cause is the size of the step those searches extrapolate to, not the slope they extrapolate from.
-Bounding the step closes it — see [`DEFAULT_STEP_CEILING`](@ref) — and the retraction no longer
-separates them. It was the *amplifier* rather than the cause, which is what the `check` table further
-down measures.
+This distinction mattered in an earlier line-search regression: large trial steps amplified the
+difference between the Cayley curve and the geodesic. The exact differential fixed the derivative,
+while [`DEFAULT_STEP_CEILING`](@ref) fixed the excessive extrapolation. With both changes in place,
+the regression no longer depends on which retraction is selected.
 
 Cost no longer separates them the way it once did. [`cayley`](@ref) finishes with a product of two
 ``N\times{}N`` matrices, which is ``O(N^3)``, where [`geodesic`](@ref) only assembles
@@ -553,27 +550,33 @@ so the whole computation reduces to one ``2n\times{}2n`` matrix function. ``\mat
 function usually written ``\varphi_1(X) = \left(\exp(X) - \mathbb{I}\right)X^{-1}``, though it is
 defined by the series and is perfectly regular at a singular ``X``.
 
-Two independent choices are easy to conflate here. An approximation kernel, such as Taylor or Padé,
-determines how a matrix function is evaluated at a manageable argument. Scaling and squaring is a
-framework that first reduces a large argument and then recovers the original value; it can be paired
-with either kind of kernel. The four package algorithms make different choices:
+There are two separate algorithmic choices:
+
+1. how to approximate the matrix function at a small argument; and
+2. whether to scale a large argument down and recover the original value afterwards.
+
+Taylor and Padé are approximation kernels. Scaling and squaring is a framework around such a kernel,
+not a competing approximation. Classical dense matrix-exponential routines normally combine a Padé
+approximant with scaling and squaring [higham2005scaling, almohy2010new](@cite). Taylor kernels can
+also be effective when scaling keeps the argument small [skaflestad2009scaling](@cite).
+
+The algorithms currently available in this package are:
 
 | Package algorithm | Object evaluated | Kernel | Recovery | Backend |
 |---|---|---|---|---|
 | [`TaylorSeries`](@ref) | ``\mathfrak{A}(X)`` | Taylor series | none | any |
 | [`ScaledSquaring`](@ref) | ``\mathfrak{A}(X)`` | Taylor series | low-rank modified squaring | any |
-| [`AugmentedPade`](@ref) | augmented exponential | Julia's Padé-based `exp` | Julia's scaling and squaring | CPU |
+| [`AugmentedPade`](@ref) | augmented exponential | Julia's dense `exp` | scaling and squaring inside `exp` | CPU |
 | [`ProjectedSkew`](@ref) | projected lift exponential | eigendecomposition | none | CPU |
 
 All four are subtypes of [`AbstractExponentialAlgorithm`](@ref) and all four return the exponential
 map, so the one-parameter subgroup property above holds for every one of them.
 
-## `TaylorSeries`
+## 1. Direct Taylor series
 
 [`TaylorSeries`](@ref) evaluates ``\mathfrak{A}`` directly from its defining series, without scaling,
-and stops when a term falls below `eps`. This is the behaviour of every version of this package up to
-0.2.0. The series converges mathematically for every matrix, but direct floating-point summation is
-not accurate for every matrix.
+and stops when a term falls below `eps`. The series converges for every matrix, but convergence alone
+does not guarantee an accurate floating-point sum.
 
 The reduced argument here is particularly difficult. ``X``'s lower-left block is
 ``\tfrac{1}{4}A^2 - B^TB``, so
@@ -584,20 +587,15 @@ The reduced argument here is particularly difficult. ``X``'s lower-left block is
 \rho(X) \approx \|\bar{B}\|,
 ```
 
-because the eigenvalues of ``X`` are the nonzero — purely imaginary — eigenvalues of the skew matrix
-``\bar{B}``. A norm quadratically larger than the spectral radius is a strongly non-normal matrix,
-and on such an argument the terms of the series cancel catastrophically: at
-``\|\bar{B}\| \approx 79`` the partial sum reaches ``2.5\cdot10^{18}`` where the result is of order
-one. Stopping the summation when a *term* falls below `eps` then leaves a relative error of
-``\varepsilon\|\mathfrak{A}(X)\|`` rather than ``\varepsilon``, and the retracted point is not on the
-manifold in any sense. That the direct series is not a method for the matrix exponential is a very
-old observation [moler2003nineteen](@cite); what is specific here is that the factorisation makes the
-argument *worse* than the matrix one started with.
+because the eigenvalues of ``X`` are the nonzero, purely imaginary eigenvalues of the skew matrix
+``\bar{B}``. The resulting non-normality can make intermediate Taylor terms much larger than the
+final answer. Their cancellation then loses accuracy. This is the familiar reason not to evaluate a
+matrix exponential by an unscaled Taylor series [moler2003nineteen](@cite), made more pronounced here
+because the norm of the reduced matrix can grow quadratically with the norm of the lift.
 
 !!! danger "This is not a usable retraction"
-    `TaylorSeries` is retained so that the regression is reproducible and the working algorithms
-    have a baseline. The failure is silent, and changing the stopping test does not repair the
-    cancellation. Do not select it for optimization.
+    `TaylorSeries` is retained as a regression baseline for the pre-0.2.0 implementation. It can
+    silently lose orthogonality for large lifts. Do not select it for optimization.
 
 [`Geodesic`](@ref) makes the algorithm choice visible:
 
@@ -608,27 +606,44 @@ Geodesic(ProjectedSkew())
 Geodesic(TaylorSeries())     # the pre-0.2.0 behaviour; not a usable retraction
 ```
 
-## `ScaledSquaring`
+## 2. Padé approximation
 
-[`ScaledSquaring`](@ref) is the default. Despite its name, its small-argument approximation is not the
-Padé approximant used by the conventional dense matrix-exponential algorithm. It uses the same
-Taylor evaluator as [`TaylorSeries`](@ref), but first scales the argument and then applies a
-low-rank modified-squaring recurrence. This separation between a small-argument kernel and recovery
-by modified squaring is standard for matrix functions related to the exponential
-[skaflestad2009scaling](@cite).
+A Padé approximant replaces the exponential by a rational function. Combined with scaling and
+squaring, this is the standard approach for a dense matrix exponential
+[higham2005scaling, almohy2010new](@cite). The rational approximation is usually more accurate than
+an unscaled polynomial of comparable degree, but evaluating it requires solving a matrix equation or
+otherwise applying the denominator.
 
-The one thing that needs care is that squaring must not cost ``O(N^3)``. It does not, because the
-low-rank form is closed under squaring:
+[`AugmentedPade`](@ref) is the Padé-based implementation currently provided by the package. It uses
+the block identity
+
+```math
+\exp\begin{pmatrix} X & \mathbb{I} \\ \mathbb{O} & \mathbb{O} \end{pmatrix}
+= \begin{pmatrix} \exp(X) & \mathfrak{A}(X) \\ \mathbb{O} & \mathbb{I} \end{pmatrix}
+```
+
+and extracts ``\mathfrak{A}(X)`` from the upper-right block. The implementation delegates to
+Julia's dense `exp`, so it benefits from an established scaling-and-squaring implementation but
+works on a ``4n\times{}4n`` matrix to obtain a ``2n\times{}2n`` result. It also requires the dense
+linear-algebra support used by `exp`.
+
+## 3. Scaling and modified squaring
+
+Scaling and squaring first evaluates a matrix function at a smaller argument and then reconstructs
+the value at the original argument. The classical exponential algorithm repeatedly squares
+``\exp(X/2^s)``. For ``\varphi``-functions such as ``\mathfrak{A}=\varphi_1``, the corresponding
+recovery formulas are usually called *modified squaring* [skaflestad2009scaling](@cite).
+
+[`ScaledSquaring`](@ref) uses a Taylor kernel, not a Padé kernel. Its advantage over
+[`TaylorSeries`](@ref) comes from evaluating that Taylor series only after scaling the argument.
+
+The low-rank form is closed under squaring:
 
 ```math
 \left(\mathbb{I} + B'W(B'')^T\right)^2 = \mathbb{I} + B'\left(2W + WXW\right)(B'')^T,
 ```
 
-so one squaring of the assembled exponential is one application of ``W \mapsto 2W + WXW`` at
-``2n\times{}2n``, and no ``N\times{}N`` matrix is ever formed, let alone squared. With ``s`` chosen so
-that ``\|X\|_1/2^s \leq \theta``, the algorithm is `s` small-matrix updates on top of a series that
-now converges in a handful of terms. That makes it *cheaper* than summing the unscaled series, not
-merely more accurate — by 1.7× at ``N = 200``, ``n = 10`` and 4.6× at ``N = 500``, ``n = 50``.
+so recovery needs only ``2n\times{}2n`` matrix products. It never squares an ``N\times{}N`` matrix.
 
 Let ``L = B'(B'')^T``, ``X = (B'')^TB'``, and ``\alpha = 2^s``. The scaled exponential is
 
@@ -641,9 +656,9 @@ Thus the complete computation is:
 
 1. **Choose the scaling.** Set
    ``s = \max(0, \lceil\log_2(\|X\|_1/\theta)\rceil)`` and ``\alpha = 2^s``.
-2. **Evaluate the small series.** Compute ``W_s = \mathfrak{A}(X/\alpha)/\alpha``. The scaled argument
-   has ``\|X/\alpha\|_1 \leq \theta``, so the Taylor sum avoids the catastrophic cancellation seen
-   at the original argument.
+2. **Evaluate the scaled problem.** Compute
+   ``W_s = \mathfrak{A}(X/\alpha)/\alpha`` with the Taylor kernel. The argument now satisfies
+   ``\|X/\alpha\|_1 \leq \theta``.
 3. **Undo the scaling.** If
    ``\exp(L/2^k) = \mathbb{I} + B'W_k(B'')^T``, then squaring gives
    ``W_{k-1} = 2W_k + W_kXW_k``. Apply this update for ``k=s,s-1,\ldots,1``. The recurrence uses the
@@ -651,39 +666,28 @@ Thus the complete computation is:
 4. **Return the result.** After the loop, ``W_0 = \mathfrak{A}(X)``, so
    ``\mathbb{I} + B'W_0(B'')^T = \exp(B'(B'')^T)``.
 
-The division by ``\alpha`` follows from the displayed scaled-exponential identity; it is not an
-extra approximation. Every recovery step remains a ``2n\times{}2n`` update, so no dense
+The initial division by ``\alpha`` follows directly from the scaled-exponential identity; it is not
+an additional approximation. The recurrence uses the original ``X`` because it represents repeated
+squaring of ``\exp(L/2^s)``. Every recovery step remains a ``2n\times{}2n`` update, so no dense
 ``N\times{}N`` exponential, square, or solve is formed.
 
-The threshold `θ` is the algorithm's one parameter — positional, `ScaledSquaring(0.5)`, and defaulted
-to `0.5` — and it barely matters: at ``\|\bar{B}\| \approx 155`` every ``\theta \in [0.125, 4]`` — a
-32-fold range — gives a `check` between ``9.9\cdot10^{-15}`` and ``5.0\cdot10^{-14}`` and a forward
-error between ``6.4\cdot10^{-15}`` and ``8.2\cdot10^{-15}``. That sweep is [measured at build
-time](@ref "The threshold `θ` needs no tuning") below; there is no reason to tune it.
+The threshold `θ` defaults to `0.5`. A smaller value performs more scaling steps; a larger value asks
+the Taylor kernel to handle a larger argument. The sweep below shows little sensitivity over the
+tested range, but it is an empirical check rather than a general error bound.
 
-**Advantages.** The fastest, or tied fastest, of the four at every size measured below, and as close
-to `exp(Matrix(B))` as [`AugmentedPade`](@ref), which is as close as anything here gets. And —
-because it uses nothing but matrix products and norms — the only usable algorithm that runs unchanged
-on a `KernelAbstractions` GPU backend, which is why it is the default. Keeping that property is also
-why the norm is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by
-`LinearAlgebra.opnorm(X, 1)`: the latter is a scalar-indexing double loop, and scalar indexing is
-exactly what a GPU array cannot serve.
-
-**Disadvantages.** Its orthogonality is the outcome of an arithmetic cancellation rather than a
-structural property, so `check` does drift upwards with the size of the lift — from ``10^{-15}`` to
-around ``7\cdot10^{-14}`` over the sweep below, and considerably further in `Float32`. Only
-[`ProjectedSkew`](@ref) avoids that drift; [`Cayley`](@ref) has more of it. And it takes about twice
-the squarings it needs:
+Because this implementation uses matrix products, reductions, and scalar-free array operations, it
+is the default and the only usable option here that supports the package's GPU backends. The custom
+[`GeometricOptimizers.opnorm₁`](@ref) avoids the scalar indexing in
+`LinearAlgebra.opnorm(X, 1)`.
 
 !!! note "The halving count is loose"
-    ``s`` is taken from the norm, ``s = \lceil\log_2(\|X\|_1/\theta)\rceil``, and
-    ``\|X\| \approx \|\bar{B}\|^2/4`` — so ``s \approx 2\log_2\|\bar{B}\|`` where
-    ``\log_2\|\bar{B}\|`` would do, since the spectral radius is only ``\approx\|\bar{B}\|``. Each
-    squaring amplifies the error, so this costs both time and accuracy. It is left alone because the
-    tighter bound needs the spectral radius, and an eigenvalue computation would forfeit precisely
-    the freedom from dense LAPACK that makes this the default algorithm.
+    The implementation chooses `s` from ``\|X\|_1``. For these reduced matrices that norm can be
+    much larger than the spectral radius, so the rule may perform more squarings than necessary.
+    This is the overscaling phenomenon discussed for the matrix exponential by Al-Mohy and Higham
+    [almohy2010new](@cite). Replacing the norm bound by a spectral calculation would undermine the
+    backend portability that motivates this implementation.
 
-## `AugmentedPade`
+### `AugmentedPade`
 
 [`AugmentedPade`](@ref) evaluates ``\mathfrak{A}`` as a block of a larger *ordinary* exponential. For
 the ``4n\times{}4n`` augmented matrix,
@@ -693,31 +697,16 @@ the ``4n\times{}4n`` augmented matrix,
 = \begin{pmatrix} \exp(X) & \mathfrak{A}(X) \\ \mathbb{O} & \mathbb{I} \end{pmatrix},
 ```
 
-which is the standard device for getting a ``\varphi`` function out of an exponential routine
-[sidje1998expokit, higham2008functions](@cite). One call to `Base.exp` therefore returns
-``\mathfrak{A}(X)`` in its upper-right block. That hands the numerics to Julia's own dense matrix
-exponential, which uses a Padé-based scaling-and-squaring algorithm [higham2005scaling,
-almohy2010new](@cite), at the cost of exponentiating a matrix four times the size and discarding
-three quarters of it. This is the package algorithm that corresponds directly to the conventional
-Padé description of scaling and squaring.
-
-**Advantages.** It introduces no new numerics at all. Everything delicate is done by the most
-heavily exercised matrix-exponential implementation available, which is why it is the reference the
-other two are tested against in `test/retractions/exponential_accuracy.jl`. Accuracy is the same
-order as [`ScaledSquaring`](@ref)'s.
-
-**Disadvantages.** Three quarters of the work is thrown away, so the ``\mathfrak{A}`` call itself is
-about twice as expensive as [`ScaledSquaring`](@ref)'s — though much less than twice once the
-``N\times{}N`` assembly around it is counted. In `Float32` it and [`ScaledSquaring`](@ref) trade last
-place across the sweep below — it is the worse of the two on most rows, [`ScaledSquaring`](@ref) at
-the very top — and at the large lifts both are an order of magnitude behind
-[`ProjectedSkew`](@ref). And `Base.exp` on a dense matrix needs LAPACK:
+which is a standard way to obtain a ``\varphi``-function from an exponential routine
+[sidje1998expokit, higham2008functions](@cite). This method is useful as an independent reference for
+the package's direct ``\mathfrak{A}`` implementations. Its main costs are the larger augmented matrix
+and its dependence on dense LAPACK.
 
 !!! warning "CPU only"
     Neither this nor [`ProjectedSkew`](@ref) runs on a GPU backend. Use [`ScaledSquaring`](@ref)
     there.
 
-## `ProjectedSkew`
+## 4. `ProjectedSkew`
 
 [`ProjectedSkew`](@ref) does not go through ``\mathfrak{A}`` at all. It exponentiates the lift in a
 basis of the lift's own range, where it is a small skew-symmetric matrix.
@@ -737,25 +726,13 @@ for real skew ``M``, so ``M = -iV\Lambda{}V^*`` with ``V`` unitary and ``\Lambda
 \exp(M) = \Re\left(V e^{-i\Lambda} V^*\right),
 ```
 
-which is orthogonal **by construction** — a product of a unitary matrix, a diagonal of unit-modulus
-numbers, and a unitary matrix — rather than by cancellation.
+which is orthogonal up to the eigendecomposition and reconstruction errors. Unlike the other
+algorithms, `ProjectedSkew` bypasses ``\mathfrak{A}`` and implements [`geodesic`](@ref) directly.
+It therefore has no `𝔄(X, ProjectedSkew())` method.
 
-**Advantages.** It is the only algorithm whose `check` does not degrade with the size of the lift.
-Over the sweep below it stays between ``2\cdot10^{-15}`` and ``5\cdot10^{-15}`` from
-``\|\bar{B}\| \approx 6`` to ``\|\bar{B}\| \approx 770``, where the other two drift from ``10^{-15}``
-to around ``7\cdot10^{-14}``. The gap is widest in `Float32`, where the other two are at the mercy of
-the format: over the same sweep their `check` climbs into the ``10^{-5}``s while this stays at a few
-``10^{-6}`` from one end to the other. That is the case for choosing it — a long `Float32` run, where
-the departure from the manifold accumulates over thousands of steps and staying on the manifold
-matters more than agreeing with the exponential to the last bit.
-
-**Disadvantages.** It usually has the largest forward error of the three against `exp(Matrix(B))` —
-up to about 4.5× [`ScaledSquaring`](@ref)'s, and largest at all but the top of the sweep measured
-below. It needs a `qr` and an `eigen` instead of matrix
-products, which costs 1.2×–1.9× over the sizes measured below and rules out a GPU backend. And
-because it bypasses ``\mathfrak{A}``, it is the one algorithm that specialises
-[`geodesic`](@ref) directly rather than supplying a method of [`GeometricOptimizers.𝔄`](@ref) — worth
-knowing if you call ``\mathfrak{A}`` yourself, since `𝔄(X, ProjectedSkew())` does not exist.
+The method gives particularly small orthogonality residuals in the experiments below, including in
+`Float32`. Its trade-offs are the QR factorization and eigendecomposition, a somewhat larger forward
+error in most rows of the reported sweep, and dependence on dense LAPACK.
 
 ## Using them
 
@@ -785,8 +762,8 @@ optimizer = Optimizer(ps, L; algorithm  = Adam(Float32),
                              retraction = Geodesic(ProjectedSkew()))
 ```
 
-`Geodesic()` is `Geodesic(ScaledSquaring())`, and `ScaledSquaring(θ)` takes the scaling threshold if
-you want to override the default `0.5` — which, per the sweep below, you do not need to:
+`Geodesic()` is `Geodesic(ScaledSquaring())`, and `ScaledSquaring(θ)` accepts a scaling threshold;
+the default is `0.5`:
 
 ```jldoctest retraction-usage
 Geodesic().algorithm == ScaledSquaring(0.5)
@@ -850,7 +827,7 @@ isapprox(𝔄exp(B̂, B̄), exp(Matrix(B)); rtol = 1e-10)
 true
 ```
 
-Where the algorithms part company is a large step, and that is the whole reason the default changed:
+The difference between scaled and unscaled Taylor evaluation becomes visible for a large lift:
 
 ```jldoctest
 using GeometricOptimizers
@@ -867,7 +844,7 @@ check(Geodesic()(B)) < 1e-12, check(Geodesic(TaylorSeries())(B)) < 1e-12
 (true, false)
 ```
 
-## What they cost and how accurate they are
+## 5. Numerical comparison
 
 Everything in this section other than the timings is recomputed when this page is built, so the
 figures are those of the version of the package the documentation was built from rather than a quote
@@ -929,11 +906,9 @@ table(["‖B̄‖", "`ScaledSquaring`", "`AugmentedPade`", "`ProjectedSkew`", "`
         sci(check(cayley(B)))] for B in lifts])
 ```
 
-Every column but `TaylorSeries`'s stays at round-off, and only [`ProjectedSkew`](@ref)'s is *level*.
-The other three — [`Cayley`](@ref) included, and it is the one that drifts furthest — grow by two to
-three orders of magnitude across the sweep, because their orthogonality is an arithmetic outcome
-while [`ProjectedSkew`](@ref)'s is structural. Round-off at ``\|\bar{B}\| \approx 770`` is still
-round-off, so this separates the algorithms without condemning any of the three usable ones.
+`TaylorSeries` eventually fails by many orders of magnitude. The other methods remain close to
+machine precision throughout this `Float64` sweep. `ProjectedSkew` has the flattest orthogonality
+residual; `ScaledSquaring`, `AugmentedPade`, and `Cayley` show a modest increase as the lift grows.
 
 ### Agreeing with the exponential
 
@@ -951,19 +926,15 @@ table(["‖B̄‖", "`ScaledSquaring`", "`AugmentedPade`", "`ProjectedSkew`"],
        end for B in lifts])
 ```
 
-All three grow slowly with the norm of the lift, and the ordering is roughly the reverse of the
-previous table: [`ProjectedSkew`](@ref) is the furthest from the exponential at all but the largest
-of these norms. [`ScaledSquaring`](@ref) and [`AugmentedPade`](@ref) are indistinguishable — each is
-the closer of the two on half the rows — so the trade is between the pair of them and
-[`ProjectedSkew`](@ref): one is orthogonal by construction, the others agree with `exp` more closely.
-The three converge again at the top of the sweep, where the reference `exp(Matrix(B))` is itself no
-more accurate than what is being measured against it.
+All three usable exponential algorithms remain close to the dense reference. In this sweep,
+`ScaledSquaring` and `AugmentedPade` usually have the smaller forward error, while `ProjectedSkew`
+usually has the smaller orthogonality residual. The table reports an experiment, not an error bound;
+the ordering can depend on the matrix and floating-point type.
 
 ### `Float32`
 
-The same `check`, in the format the MNIST experiment described in
-[Optimization on Homogeneous Spaces](@ref) actually runs in. Nothing can do better than about
-``10^{-6}`` here, but the three do not degrade alike.
+The same orthogonality residual in `Float32`, the format used by the MNIST example in
+[Optimization on Homogeneous Spaces](@ref):
 
 ```@example retractions
 table(["‖B̄‖", "`ScaledSquaring`", "`AugmentedPade`", "`ProjectedSkew`"],
@@ -973,10 +944,8 @@ table(["‖B̄‖", "`ScaledSquaring`", "`AugmentedPade`", "`ProjectedSkew`"],
         sci(check(geodesic(B, ProjectedSkew())))] for B in sweep(Float32)])
 ```
 
-[`ProjectedSkew`](@ref) is flat here too, an order of magnitude below the others at the top of the
-sweep — where which of the other two is worse depends on the lift, and neither is close. In a
-`Float64` run that difference is academic; in a `Float32` one over thousands of steps it is the
-reason to choose it.
+`ProjectedSkew` again has the flattest residual. The difference is more visible than in `Float64`,
+but whether it matters in an optimization run depends on how errors accumulate in that application.
 
 ### The threshold `θ` needs no tuning
 
@@ -994,8 +963,8 @@ table(["θ", "`check`", "error vs `exp`"],
        end for θ in (0.125, 0.25, 0.5, 1.0, 2.0, 4.0)])
 ```
 
-Both columns move by less than a factor of six across the whole range, and not monotonically. The
-default of `0.5` sits in that band; nothing in the measurement singles it out, which is the point.
+Both columns vary modestly and non-monotonically over this range. The experiment supports the
+default `0.5` as a reasonable value; it does not establish an optimal threshold.
 
 ### What they cost
 
@@ -1012,33 +981,29 @@ Milliseconds:
 | `Geodesic(TaylorSeries())` | 0.003 | 0.006 | 0.019 | 0.040 | 0.164 | 0.550 | 14.6 | 3.60 |
 | `Cayley()` | 0.002 | 0.004 | 0.015 | 0.064 | 0.388 | 5.16 | 6.54 | 39.2 |
 
-[`ScaledSquaring`](@ref) is the fastest, or tied fastest, at every size. [`ProjectedSkew`](@ref)
-costs 1.2×–1.9× of it, never more — a QR and an eigendecomposition of a ``2n\times{}2n`` matrix are
-not expensive things — and [`AugmentedPade`](@ref) is between the two except at ``n = 50``, where
-exponentiating a ``200\times{}200`` augmented matrix begins to tell. [`Cayley`](@ref) is level with
-the exponential up to ``N \approx 50`` and loses by a factor of 15 by ``N = 1000``, which is the
-``O(N^3)`` against ``O(N^2n)`` of the previous section.
+On this machine, `ScaledSquaring` is fastest or tied for fastest at every measured size.
+`AugmentedPade` pays for the larger block exponential, and `ProjectedSkew` pays for a QR
+factorization and eigendecomposition. `Cayley` is competitive for small `N`, but its final dense
+matrix product becomes dominant as `N` grows. These timings are illustrative and should be
+remeasured on the target hardware.
 
 ## Choosing one
 
-For the retraction: **[`Geodesic`](@ref) unless you have a reason for [`Cayley`](@ref)**. It is the
-exponential map and the cheaper of the two at any size worth worrying about, and it survives an
-implausibly large step with a `check` an order of magnitude smaller — which is what issue A1b turned
-on. That argument is weaker now than it was: bounding the step ([`DEFAULT_STEP_CEILING`](@ref)) means
-an implausibly large step is no longer taken under either retraction, so the tolerance `Geodesic` has
-for one is insurance rather than a live difference. A derivative-based line search is exact under
-either since 0.2.0, so that is no longer part of the argument. [`Cayley`](@ref) remains the package
-default, needs no matrix function at all, and is unconditionally stable.
+[`Cayley`](@ref) remains the package default. It requires only a small linear solve and is robust for
+large steps. [`Geodesic`](@ref) computes the exponential map and has the one-parameter subgroup
+property. In the measurements above it also becomes cheaper once the ambient dimension is large
+relative to the manifold dimension. Choose between them according to which map the algorithm needs,
+then benchmark representative problem sizes if cost matters.
 
 For the algorithm: **[`ScaledSquaring`](@ref), i.e. the default, unless one of the two special cases
 applies.**
 
 | | choose it when | at the price of |
 |---|---|---|
-| [`ScaledSquaring`](@ref) | almost always; it is the default | `check` drifting up with the size of the lift |
-| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | 1.2×–1.9× the cost, usually the largest forward error, CPU only |
-| [`AugmentedPade`](@ref) | you want a second opinion from an implementation that introduces no numerics of its own | roughly 2× the cost of the ``\mathfrak{A}`` call, no better than [`ScaledSquaring`](@ref) on accuracy, CPU only |
-| [`TaylorSeries`](@ref) | never; it exists so the pre-0.2.0 regression stays reproducible | leaving the manifold silently above ``\Vert\bar{B}\Vert \approx 50`` |
+| [`ScaledSquaring`](@ref) | the general default, especially on GPU backends | orthogonality residual can grow with the lift |
+| [`ProjectedSkew`](@ref) | a small orthogonality residual is the priority | QR and eigendecomposition, CPU only |
+| [`AugmentedPade`](@ref) | an independent Padé-based reference is useful | larger augmented exponential, CPU only |
+| [`TaylorSeries`](@ref) | reproducing the historical implementation | unreliable for large lifts |
 
 And on a GPU backend the question does not arise: [`ScaledSquaring`](@ref) is the only *usable*
 algorithm free of dense LAPACK — [`TaylorSeries`](@ref) is too, and is no more a retraction there
