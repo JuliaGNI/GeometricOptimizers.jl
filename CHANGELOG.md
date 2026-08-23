@@ -6,6 +6,99 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased] — targeting 0.4.2
+
+**The geodesic gets a second portable exponential, and the portability the first one was chosen for
+becomes true rather than merely stated.** `ScaledSquaring` is the default because it runs on a backend
+that forbids scalar indexing; it did not, and the reason was one line. `NativePade` is the
+independent implementation that had been missing there.
+
+### Added
+
+- **`NativePade`, a fifth `AbstractExponentialAlgorithm` and the second portable one.** It evaluates
+  ``\mathfrak{A} = \varphi_1`` directly on the existing ``2n\times{}2n`` factor with the degree-6
+  diagonal Padé approximant ``q_6^{-1}p_6``, whose coefficients are the ``[7/6]`` Padé approximant of
+  ``\exp`` rearranged — ``\varphi_1 \approx (N-D)/(xD)``, and ``N-D`` divides by ``x`` because both
+  have constant term one. The dense solve a rational approximant normally needs is replaced by five
+  fixed Newton--Schulz steps, and the scale is undone by the same low-rank squaring recursion
+  `ScaledSquaring` uses, so nothing larger than the input is ever formed and the whole path is
+  reductions and matrix products.
+
+  It exists as the *independent* implementation, which is what the entry below is about: until now
+  the only cross-check on `ScaledSquaring` was `AugmentedPade`, and that one calls the dense-LAPACK
+  `Base.exp` on a matrix twice the dimension. `test/retractions/exponential_accuracy.jl` now runs
+  both portable algorithms on a `JLArray` — a backend that *errors* on scalar indexing — and against
+  `AugmentedPade` over both manifolds, both element types and the whole norm sweep.
+
+  `ScaledSquaring` stays the default, and the measurements say why rather than the other way round.
+  On the isolated ``\mathfrak{A}`` call at ``N = 200``, ``n = 10``: `0.021 ms` and `201 KiB` against
+  `0.037 ms` and `330 KiB`, with `AugmentedPade` at `0.053 ms` and `114 KiB`. `Float64` accuracy is
+  indistinguishable — `check` `3.6e-14` against `3.9e-14` at ``\|\bar{B}\| = 361``, forward error
+  `2.1e-14` for both — but `Float32` is not: at the top of the norm sweep `NativePade`'s `check` is
+  `1.0e-4` where `ScaledSquaring`'s is `4.0e-5` and `AugmentedPade`'s `3.4e-5`, the worst of the
+  three, while its *forward* error there is no outlier at all. So what `Float32` costs it is the
+  orthogonality of the retracted point, not the agreement with `exp`. It also inherits the whole of
+  open issue **A6**: `s` comes from ``\|X\|_1`` the same way, so it too takes about twice the
+  squarings it needs.
+
+  The allocation figures are new to this repository and do not rank the algorithms the way runtime
+  does: `AugmentedPade`, which builds a ``4n\times{}4n`` matrix and throws three quarters of the
+  result away, is the *lightest* allocator of the three, because `Base.exp` reuses buffers where both
+  native algorithms produce a fresh ``2n\times{}2n`` temporary per operation. On a CPU that is a
+  detail; on a backend where an allocation costs a synchronisation it may not be, which is worth
+  knowing about the algorithm whose whole purpose is portability. `scripts/retraction_accuracy.jl`
+  reports allocations for the isolated call and for one whole retraction, and
+  `docs/src/retractions.md` carries both tables.
+
+  The coefficients' provenance is written down rather than left to be re-derived: ``q_6`` is the
+  denominator of the ``[7/6]`` Padé approximant of ``\exp``, and ``p_6`` is ``(N - D)/x`` for its
+  numerator, which divides exactly and inherits the ``O(x^{13})`` order. Both that and the
+  Newton--Schulz iteration are cited to Higham. What is *not* settled is a backward-error criterion —
+  see **C16** below.
+
+  Its threshold is bounded where `ScaledSquaring`'s is not, which is the one place the two are not
+  interchangeable. `ScaledSquaring(θ)` sums its series until the terms vanish and is accurate over the
+  32-fold range its own docstring sweeps; `NativePade` does a *fixed* five Newton--Schulz steps, whose
+  residual ``(\mathbb{I}-q_6)^{32}`` stops being small once ``\theta`` grows. Worst relative error
+  over 400 random ``6\times6`` arguments of one-norm exactly ``\theta`` is `6e-16` at
+  ``\theta = 1``, `1.2e-10` at ``\theta = 3/2``, `1.1e-5` at ``\theta = 2`` and `169` at
+  ``\theta = 3``, and nothing about the result says so. `NativePade(θ)` therefore rejects
+  ``\theta > 1/2``, which is also the default.
+
+### Fixed
+
+- **`ScaledSquaring` did not in fact run on a backend that forbids scalar indexing, which is the
+  property it is the default *for*.** `𝔄(A)` — the series it sums, and the whole of `TaylorSeries` —
+  opened with `Aⁿ = one(A)` and `𝔄A = one(A)`, and `Base.one(::AbstractMatrix)` is `Base._one`:
+  `similar`, `fill!`, then a scalar-indexed loop over the diagonal. So the documented claim that the
+  default algorithm uses "nothing but matrix products and norms" was false one level down, and
+  `GeometricOptimizers.opnorm₁` — which exists solely to keep that claim — was being undone by the
+  next line.
+
+  This is the first half of open issue **A19**, and the fix is the one that entry asked for: the
+  identity is built with `KernelAbstractions.zeros` plus the `write_ones_kernel!` that
+  `src/utils.jl` already had, now shared as `unit_matrix` by all five places that need one — the
+  `Base.one` methods of `SymmetricMatrix`, `SkewSymMatrix`, the two `AbstractTriangular`s and
+  `AbstractLieAlgHorMatrix`, which each carried their own copy of it, and `𝔄`, which had none.
+
+  A19 is **not** closed. Its second half is that no run in this repository exercises `geodesic` on a
+  *GPU*, and a `JLArray` is not a GPU — it is an array type that errors on scalar indexing, which is
+  the specific failure mode CUDA.jl and Metal.jl exhibit and the specific thing that was wrong here.
+  The entry is narrowed to what is left, and the transcript of an actual CUDA or Metal run is still
+  what would close it.
+
+### Documentation
+
+- **`docs/src/retractions.md` gains an allocation account and a `Float32` forward-error table**, and
+  both cover all five algorithms rather than only the new one. The allocation figures had never been
+  reported anywhere in this repository, and the `Float32` half of the accuracy picture had `check`
+  without the forward error beside it — which turns out to matter, because the two rank the algorithms
+  differently: `ProjectedSkew` is the best of the four on `Float32` `check` by an order of magnitude
+  and the *worst* on `Float32` forward error at every norm — `1.3×` to `2.9×` over most of the sweep
+  and `14×` at the smallest lift — which is the trade it makes stated in both directions for the first
+  time. `scripts/retraction_accuracy.jl` prints both, so every figure in that section still comes from
+  one run of it. [#54]
+
 ## [0.4.1]
 
 **The structured matrices get a `NeuralNetworkParameters` protocol.** Nothing existing changes
@@ -1634,6 +1727,9 @@ of scalar indexing and dense LAPACK, which is what lets it run on a GPU backend 
 docstring). That rules out reaching for the spectral radius directly — an eigenvalue computation
 would give the tighter bound and forfeit the reason the algorithm was chosen.
 
+`NativePade`, added in [#54], takes `s` from ``\|X\|_1`` in exactly the same way and inherits the
+whole of this, so the entry now covers two algorithms and a fix would apply to both at once.
+
 #### A10. `state.ḡ` is two iterates behind for the three first-order states
 
 **Severity: low** — everything it still reaches is reported and not acted on. Found in the review of
@@ -1854,29 +1950,34 @@ second is the one that makes the type hierarchy match what is implemented.
 
 ---
 
-#### A19. `ScaledSquaring`'s GPU claim is untested here, and `𝔄` reaches `Base.one`
+#### A19. `ScaledSquaring`'s GPU claim is untested here
 
-**Severity: unknown, which is the point.** From the review of [#45].
+**Severity: unknown, which is the point.** From the review of [#45]. **Half of it is fixed** — see
+*Fixed* under [Unreleased](#unreleased--targeting-042) — and this is the half that is not.
 
 The documentation states the property in three places and rests the default on it:
-`docs/src/retractions.md:241` calls [`ScaledSquaring`](@ref) "the only usable algorithm that runs
-unchanged on a `KernelAbstractions` GPU backend, which is why it is the default", and
-`docs/src/manifold_optimizers.md:89` repeats it. `GeometricOptimizers.opnorm₁` exists solely to keep
+`docs/src/retractions.md` calls [`ScaledSquaring`](@ref) one of the two usable algorithms that run
+unchanged on a `KernelAbstractions` GPU backend and the default because it is the cheaper of them,
+and `docs/src/manifold_optimizers.md` repeats it. `GeometricOptimizers.opnorm₁` exists solely to keep
 it: its docstring says `LinearAlgebra.opnorm(X, 1)` "is a scalar-indexing double loop, and scalar
 indexing is exactly what a GPU array cannot serve."
 
-Two things sit against that, both verified by reading:
+Two things sat against that, both verified by reading. The first turned out to be a defect rather
+than a doubt, and is fixed:
 
-- `𝔄(A)` — the series `ScaledSquaring` sums, on the ``2n\times{}2n`` argument — opens with
+- `𝔄(A)` — the series `ScaledSquaring` sums, on the ``2n\times{}2n`` argument — opened with
   `Aⁿ = one(A)` and `𝔄A = one(A)`. `Base.one(::AbstractMatrix)` is `Base._one` in
   `base/abstractarray.jl`, which does `similar`, `fill!` and then **a scalar-indexed loop over the
-  diagonal**. So the path is not "nothing but matrix products and norms"; it reaches the same
-  construct `opnorm₁` was written to avoid, one level down. `AbstractLieAlgHorMatrix` has a
-  `Base.one` of its own that is a KernelAbstractions kernel precisely to avoid this
-  (`src/lie_algebras/abstract_lie_algebra_horizontal.jl:88`) — but `𝔄`'s argument is a bare matrix,
-  so that method does not apply to it. (It was written for `StiefelLieAlgHorMatrix` alone and moved
-  to the abstract type in [0.2.2](#022), which is why the Grassmann retraction was on the
-  scalar-indexed path as well until then; that is *a piece of* this entry and not a fix for it.)
+  diagonal**. So the path was not "nothing but matrix products and norms"; it reached the same
+  construct `opnorm₁` was written to avoid, one level down. `AbstractLieAlgHorMatrix` had a
+  `Base.one` of its own that is a KernelAbstractions kernel precisely to avoid this — but `𝔄`'s
+  argument is a bare matrix, so that method did not apply to it. (It was written for
+  `StiefelLieAlgHorMatrix` alone and moved to the abstract type in [0.2.2](#022), which is why the
+  Grassmann retraction was on the scalar-indexed path as well until then; that was *a piece of* this
+  entry and not a fix for it.) **Fixed in [#54]**, which is where the claim also stopped being
+  untested against an array type that errors on scalar indexing. What remains is the second bullet,
+  and a `JLArray` does not settle it — it reproduces the *failure mode* of a GPU backend, not the
+  backend.
 - **No run in this repository exercises it**, and there is no GPU code left here to change that:
   `mnist_cuda.jl`, `mnist_metal.jl`, `mnist_metal_short.jl` and `metal_memory_probe.jl` were all of
   it, and they moved to [GMLDatasets.jl](https://github.com/JuliaGNI/GMLDatasets.jl) with the rest of
@@ -1891,12 +1992,11 @@ to the review and the claim is not being called false — only unverified, with 
 doubt it and a one-line way to find out.
 
 **What to do**: run `geodesic(60 * rand(StiefelLieAlgHorMatrix{Float32}, 20, 3) |> gpu)` on a CUDA or
-Metal backend. If it errors on scalar indexing, `𝔄` needs the identity built the way
-`one(::AbstractLieAlgHorMatrix)` builds it — `KernelAbstractions.zeros` plus `write_ones_kernel!`,
-which `src/utils.jl:2` already provides and three other types already use — and the docs claim holds
-again once it does. If it runs, the claim is confirmed and this entry closes with the transcript,
-which is worth having either way given that three documentation passages depend on it. Do it together
-with C14, which decides where the identity is assembled.
+Metal backend, with `NativePade` alongside it. The identity half of this is done — `𝔄` builds it the
+way `one(::AbstractLieAlgHorMatrix)` does, through the shared `unit_matrix` — so what is left is the
+transcript, which is worth having given that three documentation passages depend on it and that the
+one thing already found here was found by reading rather than by running. Do it together with C14,
+which decides where the identity is assembled.
 
 ---
 
@@ -2355,6 +2455,43 @@ two runs of an existing harness. Do it before quoting these numbers for anything
 version worth more is C9's: a compile-time measurement that lives in `scripts/` rather than in a
 `/tmp` file that is gone by the time anyone asks.
 
+#### C16. `NativePade`'s threshold rests on a measurement, not on a backward-error criterion
+
+**Severity: low**, and a gap in evidence rather than in code — the same shape as C15. From the review
+of [#54], and it is what keeps [#52] open now that an algorithm has been added.
+
+[#52] asked for the "proposed algorithm, Padé degree, scaling threshold, and backward-error criterion
+… documented from primary references", and for a criterion "appropriate for this structured, strongly
+non-normal argument rather than importing a threshold without validation". Three of those four are
+done: the degree, the threshold, and the provenance of the coefficients as the ``[7/6]`` Padé
+approximant of ``\exp`` rearranged, cited to [higham2005scaling, higham2008functions](@cite). The
+fourth is not, and the docstring says so rather than implying otherwise.
+
+What `θ = 1/2` actually rests on is (a) the Newton--Schulz residual bound
+``\|\mathbb{I} - q_6\|_1 \leq \sum_k|q_k|\theta^k = 0.256``, hence ``0.256^{32} \approx 2e{-}19``,
+and (b) a measured forward error — the eight-point norm sweep on both manifolds in both formats, plus
+400 random ``6\times6`` arguments per ``\theta``. Both are forward statements about this family of
+arguments. Neither is a backward-error criterion, and the ``\theta_m`` tables that would supply one
+[higham2005scaling, almohy2010new](@cite) are derived for ``\exp`` rather than ``\varphi_1`` and are
+stated in ``\|X\|`` — which is precisely the norm A6 records as uninformative here, since ``X``'s
+lower-left block gives ``\|X\| \approx \|\bar{B}\|^2/4`` against a spectral radius of only
+``\approx\|\bar{B}\|``. Importing such a table without adapting it is the thing [#52] asked not to
+do, so it was not done; the honest position is that the threshold is validated and not derived.
+
+Two smaller pieces of [#52] are open with it. Its comparison of candidate designs is empirical —
+`NativePade` against `AugmentedPade` on cost, allocations, `check` and forward error — but the
+theoretical comparison of direct ``\varphi_1`` evaluation against the low-rank and augmented
+alternatives was not written; option (a) was chosen on the argument that it needs no solve, which is a
+portability argument rather than a numerical one. And no *actual* GPU backend has been exercised: the
+`JLArray` test settles scalar-index freedom, which is the failure mode, but A19 above is still open
+for the backend itself.
+
+**What to do**: derive a ``\varphi_1`` backward-error bound for a non-normal argument, or state
+plainly in the docstring that no such bound is claimed and that the threshold is a measured one — the
+latter is what is written today, and it is enough to use the algorithm honestly but not enough to
+close [#52]'s first acceptance criterion. Whichever, it belongs with A19: one session that runs the
+thing on a GPU and settles a bound is two of these entries.
+
 ---
 
 ### D. Upstream
@@ -2542,6 +2679,8 @@ and both are corrected: see C8.)
 [#48]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/48
 [#49]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/49
 [#50]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/50
+[#52]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52
+[#54]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/54
 [#59]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/59
 [#60]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/60
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0

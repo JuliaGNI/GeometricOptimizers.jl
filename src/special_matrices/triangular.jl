@@ -89,11 +89,7 @@ LinearAlgebra.mul!(C::AT, α::Real, A::AT) where AT <: AbstractTriangular = mul!
 LinearAlgebra.rmul!(C::AT, α::Real) where AT <: AbstractTriangular = mul!(C, C, α)
 
 function Base.one(A::AbstractTriangular{T}) where T
-    backend = KernelAbstractions.get_backend(A.S)
-    unit_matrix = KernelAbstractions.zeros(backend, T, A.n, A.n)
-    write_ones! = write_ones_kernel!(backend)
-    write_ones!(unit_matrix, ndrange=A.n)
-    unit_matrix
+    unit_matrix(KernelAbstractions.get_backend(A.S), T, A.n)
 end
 
 # the first matrix is multiplied onto A2 in order for it to not be SkewSymMatrix!

@@ -34,8 +34,8 @@ The matrices `Aⁿ` and `𝔄` are initialized as the identity matrix.
 """)
 function 𝔄(A::AbstractMatrix)
     T = eltype(A)
-    Aⁿ = one(A)
-    𝔄A = one(A)
+    Aⁿ = unit_matrix(A)
+    𝔄A = copy(Aⁿ)
     A_temp = zero(A)
     n = 2
     ε = eps(T)
@@ -79,18 +79,19 @@ which backends they run on. See [`AbstractExponentialAlgorithm`](@ref) for the c
 
 # Examples
 
-The four agree wherever the unscaled series is still accurate, and only three of them agree beyond
+The five agree wherever the unscaled series is still accurate, and only four of them agree beyond
 that:
 
 ```jldoctest
 using GeometricOptimizers
-using GeometricOptimizers: 𝔄, ScaledSquaring, AugmentedPade, TaylorSeries
+using GeometricOptimizers: 𝔄, ScaledSquaring, NativePade, AugmentedPade, TaylorSeries
 import Random
 Random.seed!(123)
 
 X = randn(6, 6)
 
-isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, AugmentedPade()); rtol = 1e-12) &&
+isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, NativePade()); rtol = 1e-12) &&
+    isapprox(𝔄(X, NativePade()), 𝔄(X, AugmentedPade()); rtol = 1e-12) &&
     isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, TaylorSeries()); rtol = 1e-12)
 
 # output
@@ -116,6 +117,60 @@ function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
     scale = eltype(X)(2)^s
 
     W = 𝔄(X / scale) / scale
+    for _ in 1:s
+        W = 2 * W + W * X * W
+    end
+
+    W
+end
+
+# The degree-6 diagonal Padé numerator `p₆` and denominator `q₆` of `𝔄`, sharing `X²` and `X⁴` and
+# grouped so that each costs two further matrix products.
+#
+# The coefficients are the [7/6] Padé approximant of `exp` rearranged. With `exp(x) ≈ N(x)/D(x)`,
+#
+#     φ₁(x) = (exp(x) - 1)/x ≈ (N(x) - D(x)) / (x·D(x)),
+#
+# and `N - D` is divisible by `x` because both have constant term `1`. So `q₆ = D`, of degree 6, and
+# `p₆(x) = (N(x) - D(x))/x`, also of degree 6 since `N` has degree 7 — a *diagonal* approximant, and
+# one that inherits `[7/6]`'s order: `p₆/q₆` agrees with `φ₁` to `O(x¹³)`. The identity is passed in
+# rather than rebuilt because `𝔄` below needs one of the same size anyway.
+function _native_pade_polynomials(X::AbstractMatrix, 𝕀::AbstractMatrix)
+    T = eltype(X)
+    X² = X * X
+    X⁴ = X² * X²
+
+    p = 𝕀 + T(1 // 26) * X +
+        X² * (T(5 // 156) * 𝕀 + T(1 // 858) * X) +
+        X⁴ * (T(1 // 5720) * 𝕀 + T(1 // 205920) * X + T(1 // 8648640) * X²)
+    q = 𝕀 - T(6 // 13) * X +
+        X² * (T(5 // 52) * 𝕀 - T(5 // 429) * X) +
+        X⁴ * (T(1 // 1144) * 𝕀 - T(1 // 25740) * X + T(1 // 1235520) * X²)
+
+    p, q
+end
+
+function 𝔄(X::AbstractMatrix, algorithm::NativePade)
+    nrm = opnorm₁(X)
+    s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
+    scale = eltype(X)(2)^s
+    𝕀 = unit_matrix(X)
+    p, q = _native_pade_polynomials(X / scale, 𝕀)
+
+    # `q₆` differs from the identity by at most `Σ|qₖ|θᵏ = 0.256` in one-norm, which is what the
+    # constructor's bound `θ ≤ 1/2` buys, so the dense solve `q⁻¹p` can be a Newton--Schulz iteration
+    # instead: `q⁻¹ ↦ q⁻¹(2𝕀 - q·q⁻¹)` squares the residual `𝕀 - q·q⁻¹` at every step. From `q⁻¹ = 𝕀`
+    # the first step is just `2𝕀 - q`, and four more take the residual to `(𝕀 - q)³²` —
+    # `0.256³² ≈ 2e-19`, below `Float64` round-off. Matrix products only, so this is the part that
+    # stays portable where a dense solve would not.
+    q⁻¹ = 2 * 𝕀 - q
+    for _ in 1:4
+        q⁻¹ = q⁻¹ * (2 * 𝕀 - q * q⁻¹)
+    end
+
+    # The squaring recursion of `ScaledSquaring` above, unchanged and for the same reason: `W`
+    # absorbs the `2^-s`, so `s` applications of `W ↦ 2W + WXW` undo the scaling at 2n × 2n.
+    W = q⁻¹ * p / scale
     for _ in 1:s
         W = 2 * W + W * X * W
     end
@@ -184,9 +239,10 @@ the result in `manifold_type(B)` and to take the lift factors apart itself — s
 that want the matrix exponential of a low-rank product on its own.
 
 `algorithm` is forwarded to [`𝔄`](@ref), which supplies [`TaylorSeries`](@ref),
-[`ScaledSquaring`](@ref) and [`AugmentedPade`](@ref). [`ProjectedSkew`](@ref) is *not* among them: it
-is a [`geodesic`](@ref)-level algorithm with its own branch there and no `𝔄` method, so
-`𝔄exp(B̂, B̄, ProjectedSkew())` fails inside `𝔄` exactly as `𝔄(B̂, B̄, ProjectedSkew())` does.
+[`ScaledSquaring`](@ref), [`NativePade`](@ref) and [`AugmentedPade`](@ref). [`ProjectedSkew`](@ref)
+is *not* among them: it is a [`geodesic`](@ref)-level algorithm with its own branch there and no `𝔄`
+method, so `𝔄exp(B̂, B̄, ProjectedSkew())` fails inside `𝔄` exactly as `𝔄(B̂, B̄, ProjectedSkew())`
+does.
 
 # Implementation
 
