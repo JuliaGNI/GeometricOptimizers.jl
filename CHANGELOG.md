@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased] — targeting 0.4.1
+## [0.4.1]
 
 **The structured matrices get a `NeuralNetworkParameters` protocol.** Nothing existing changes
 behaviour; what is new is that a package serialising or differentiating these types no longer has to
@@ -85,6 +85,11 @@ catch a subtype added later and hand back a densified parameter with no error an
 
   The entry now says in a comment what depends on it. It has gone missing twice: once by never
   arriving with the chapters, and once by this. [#59]
+
+[#60] and [#59] are the whole release: the protocol with its tests, and the two documentation
+entries above. A patch and not a minor bump — nothing in `src/` changed and no exported name moved.
+What is new lives in `ext/`, which Julia loads only when `NeuralNetworkParameters` is present, so a
+package that does not depend on it sees exactly the library [0.4.0](#040) shipped.
 
 ## [0.4.0]
 
@@ -2546,4 +2551,5 @@ and both are corrected: see C8.)
 [0.3.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.0
 [0.3.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.1
 [0.4.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.0
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.4.0...main
+[0.4.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.1
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.4.1...main
