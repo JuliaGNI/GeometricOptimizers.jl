@@ -1,0 +1,49 @@
+/* Theme-paired figures.
+ *
+ * Several figures exist twice, once per Documenter theme: `x_light.png` and `x_dark.png`, either a
+ * TikZ pair out of `docs/src/tikz` or a CairoMakie pair drawn twice by an `@example` block. Both are
+ * included, one after the other, and this hides whichever does not belong to the active theme.
+ * Without it every one of those pages shows both, stacked.
+ *
+ * The rule keys on Documenter's own `theme--documenter-dark` class rather than on
+ * `prefers-color-scheme`, so it follows the in-page theme switcher and not only the operating
+ * system. It also matches on the `_light`/`_dark` suffix alone, so a figure that has no pair is left
+ * where it is; that suffix therefore *means* "one of a themed pair" and a figure that has only one
+ * variant must not carry it.
+ *
+ * The two `display-*-only` classes are for the same distinction spelled out by hand, in a `@raw
+ * html` block that has more than an image in it. Nothing uses them yet.
+ *
+ * This came here from `GeometricMachineLearning`'s `docs/src/assets/extra_styles.css` with the
+ * chapters whose figures need it. */
+
+img[src$="_dark.png"],
+img[src$="_dark.svg"] {
+    display: none;
+}
+
+html.theme--documenter-dark img[src$="_dark.png"],
+html.theme--documenter-dark img[src$="_dark.svg"] {
+    display: initial;
+}
+
+html.theme--documenter-dark img[src$="_light.png"],
+html.theme--documenter-dark img[src$="_light.svg"] {
+    display: none;
+}
+
+.display-light-only {
+    display: block;
+}
+
+.display-dark-only {
+    display: none;
+}
+
+html.theme--documenter-dark .display-light-only {
+    display: none;
+}
+
+html.theme--documenter-dark .display-dark-only {
+    display: block;
+}
