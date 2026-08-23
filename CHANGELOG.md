@@ -65,6 +65,50 @@ independent implementation that had been missing there.
   ``\theta = 3``, and nothing about the result says so. `NativePade(θ)` therefore rejects
   ``\theta > 1/2``, which is also the default.
 
+- **`ScalarMomentAdam`, a Stiefel-only baseline to compare [`Adam`](@ref) against.** It is *Cayley
+  ADAM*, Algorithm 2 of Li, Li and Todorovic, [*Efficient Riemannian Optimization on the Stiefel
+  Manifold via the Cayley Transform*](https://arxiv.org/abs/2002.01113) (ICLR 2020), the
+  `li2020efficient` entry added to the bibliography by this PR's first round. It is reproduced with
+  this package's infrastructure, and departs from the source in three places, all deliberate and all
+  recorded in the method's docstring: any of the package's retractions may be used in place of the
+  source's two-step approximation of the Cayley transform (and with it the source's step cap goes),
+  which ``\lVert\cdot\rVert^2`` the second moment squares is a keyword, and the momentum is
+  transported by the global section rather than re-projected. Its second moment is a
+  **scalar**,
+  ``v \gets \beta_2v + (1-\beta_2)\lVert\mathcal{G}(X)\rVert^2`` — one adaptive learning rate for the
+  whole matrix instead of one per coordinate. That is the source's entire departure from ordinary Adam
+  and it is what the name says: reducing the second moments to a scalar drops their structure, where
+  this package's `Adam` keeps it by accumulating ``\bar{G}\odot\bar{G}`` in
+  ``\mathfrak{g}^\mathrm{hor}``. Everything else is shared with `Adam` — the gradient, its global
+  tangent space representation, the bias-correction convention, the section/retraction path and the
+  line search — which is what makes the two comparable on the same problem. One thing about that
+  comparison is not shared and is worth knowing before running it: `Adam` normalizes componentwise, so
+  its direction has norm ``\approx\sqrt{\dim}``, while this one normalizes the whole lift at once and
+  has norm ``\approx1``. Both take the same `Static(DEFAULT_LEARNING_RATE)`, so the same ``\eta`` is a
+  step ``\sqrt{\dim}`` shorter here.
+
+  The port needs less machinery than it looks like it should, because the source's lines 8-10 — its
+  auxiliary matrix ``\hat{W} = ZY^T - \frac{1}{2}Y(Y^TZY^T)``, the skew-symmetrization
+  ``W = \hat{W} - \hat{W}^T`` and the projection ``\pi(Z) = WY`` — are this package's
+  ``\Omega(Y, \cdot)``, and `global_rep` is that map conjugated into
+  ``\mathfrak{g}^\mathrm{hor}``. The source's ``W_k`` *is* the horizontal lift the first-order caches
+  already receive their gradient in. The *Optimizer Methods* manual page derives that block by
+  block; the method's docstring maps every symbol of Algorithm 2 onto the code and
+  records the three places where the reproduction deliberately departs from the source: the exact
+  retraction and with it the source's step cap, which norm is squared, and how the momentum is
+  transported.
+
+  The second of those three is a keyword. `ambient_norm = false`, the default, squares the horizontal
+  lift, which is free and keeps the gradient identical to `Adam`'s; `ambient_norm = true` squares the
+  source's ambient Euclidean ``\lVert\nabla{}L\rVert_F`` and costs one extra gradient evaluation per
+  step. The two are not interchangeable up to a constant — `rgrad` annihilates the normal component,
+  so for ``\nabla{}L = YS`` with ``S`` symmetric the lift norm is zero where the ambient one is not.
+
+  `ScalarMomentAdamState` is public; the cache is not. Ordinary arrays, `NamedTuple`s, Grassmann
+  solutions, mixed parameter trees and a `StiefelManifold` whose element type does not match the
+  method's are rejected with an `ArgumentError`, on the `Optimizer` path as well as the
+  `OptimizerState` one. ([#51])
+
 ### Fixed
 
 - **`ScaledSquaring` did not in fact run on a backend that forbids scalar indexing, which is the
@@ -98,6 +142,14 @@ independent implementation that had been missing there.
   and `14×` at the smallest lift — which is the trade it makes stated in both directions for the first
   time. `scripts/retraction_accuracy.jl` prints both, so every figure in that section still comes from
   one run of it. [#54]
+
+- **`docs/make.jl`'s `size_threshold` goes from 400 KiB to 450 KiB**, because `ScalarMomentAdam`'s
+  docstrings take `api.md` — the one catch-all `@autodocs` over the whole package — to 411.84 KiB,
+  and `size_threshold` is an error rather than a warning. This is the smaller half of the fix and
+  not the fix: the page grows with every documented addition, and what bounds it is continuing the
+  migration [#59] started, which moved the manifold, matrix, global-section and retraction
+  docstrings onto the chapters that explain them. `size_threshold_warn` stays at its default so the
+  build keeps saying so. [#51]
 
 ## [0.4.1]
 
@@ -2679,6 +2731,7 @@ and both are corrected: see C8.)
 [#48]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/48
 [#49]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/49
 [#50]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/50
+[#51]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/51
 [#52]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52
 [#54]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/54
 [#59]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/59

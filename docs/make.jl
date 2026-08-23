@@ -133,7 +133,14 @@ makedocs(;
         # `size_threshold_warn` is left at its default: the warning it prints for that one page is
         # the reminder that the docstrings are still not distributed over the chapters that explain
         # them.
-        size_threshold=400 * 2^10,
+        #
+        # The number was `400 * 2^10` and is raised because `ScalarMomentAdam` took the page to
+        # 411.84 KiB and `size_threshold` is an *error*, not a warning. Raising it is the smaller
+        # half of the fix and not the fix: the page grows with every documented addition, and what
+        # actually bounds it is continuing the migration that moved the manifold, matrix,
+        # global-section and retraction docstrings onto the chapters that explain them. Until that
+        # is done this number will need raising again, and the warning above says so on every build.
+        size_threshold=450 * 2^10,
     ),
     pages=[
         "Home" => "index.md",

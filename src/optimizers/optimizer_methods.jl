@@ -171,6 +171,110 @@ struct Adam{T} <: OptimizerMethod
 end
 
 @doc raw"""
+    ScalarMomentAdam(T; β₁, β₂, δ, ambient_norm)
+
+*Cayley ADAM*, [li2020efficient; Algorithm 2](@cite), as an experimental Stiefel-only baseline for
+[`Adam`](@ref).
+
+The moments are stored in *bias-corrected* form, as [`Adam`](@ref)'s are, but the second one is a
+**scalar**:
+```math
+m_1 \gets \frac{\beta_1 - \beta_1^t}{1 - \beta_1^t}m_1 + \frac{1 - \beta_1}{1 - \beta_1^t}\bar{G},
+```
+```math
+m_2 \gets \frac{\beta_2 - \beta_2^t}{1 - \beta_2^t}m_2 + \frac{1 - \beta_2}{1 - \beta_2^t}\lVert\bar{G}\rVert^2,
+```
+where ``\bar{G}\in\mathfrak{g}^\mathrm{hor}`` is the gradient in the [global tangent space
+representation](@ref "Global Tangent Spaces"), and the direction is
+``-m_1/\sqrt{m_2 + \delta}``.
+
+That one scalar is the entire difference from [`Adam`](@ref), and it is what the name says:
+``\lVert\bar{G}\rVert^2`` is a squared gradient *norm* where Adam's ``m_2`` is a squared *gradient*,
+so the second moment carries no direction and the method assigns one adaptive learning rate to the
+whole matrix instead of one per coordinate. That is a reproduction of a published algorithm and not a
+straw man — on some objectives it will beat [`Adam`](@ref).
+
+Only a single `StiefelManifold{T}` solution is supported; ordinary arrays, `NamedTuple`s, Grassmann
+solutions and mixed parameter trees throw an `ArgumentError`. As for [`Adam`](@ref), `T` is the
+element type of the parameters and is not converted by [`Optimizer`](@ref).
+
+!!! info "The Cayley transform is the retraction here, and it is exact"
+    The source's lines 12–14 approximate the Cayley transform with two fixed-point iterations, and
+    its line 11 caps the step length to keep that iteration contractive. Neither is ported: this
+    package retracts exactly — [`Cayley`](@ref), the default, evaluates the transform through the
+    Sherman-Morrison-Woodbury formula — and it admits any other [`AbstractRetraction`](@ref),
+    [`Geodesic`](@ref) included. The step is bounded, but by [`step_αmax`](@ref) and for a different
+    reason; `step_ceiling = 1/2π` recovers the source's bound up to its use of the induced 1-norm.
+
+!!! warning "The direction has magnitude ``\approx{}1`` *in total*, not per component"
+    This is where the shared default learning rate stops meaning the same thing in both methods, and
+    it matters for the comparison this one exists for. [`Adam`](@ref)'s direction is
+    ``-m_1/(\sqrt{m_2}+\delta)`` **componentwise**, so every entry has magnitude ``\approx{}1`` and
+    ``\lVert\delta\rVert \approx \sqrt{\dim}``. Here the divisor is one number chosen to normalize
+    the *whole* lift, so ``\lVert\delta\rVert \approx 1`` and each component is ``\approx{}1/\sqrt{\dim}``.
+
+    Both methods take [`default_linesearch`](@ref)'s `Static(DEFAULT_LEARNING_RATE)`, so the same
+    ``\eta`` buys a step ``\sqrt{\dim}`` times shorter here than it does for [`Adam`](@ref). Scale
+    ``\eta`` accordingly before reading anything into a side-by-side run. It also means
+    [`step_αmax`](@ref)'s ``2\pi{}c/\lVert\delta\rVert`` is ``\approx 2\pi{}c`` and so essentially
+    never binds on this method.
+
+!!! info "The learning rate is not stored here"
+    As for [`Adam`](@ref), the source's learning rate ``l`` is the line search's `α`, i.e. it is
+    passed as `linesearch = Static(η)`, which is also the default.
+
+# Arguments
+
+`β₁`, `β₂` and `δ` are the source's ``\beta_1``, ``\beta_2`` and ``\varepsilon``, all converted to
+`T`, with ``0 \le \beta_1, \beta_2 < 1`` and ``\delta \ge 0`` validated. `ambient_norm` selects which
+``\lVert\cdot\rVert^2`` the second moment accumulates and defaults to `false`; see
+[`GeometricOptimizers._squared_gradient_norm`](@ref), which is also where the reason the two choices
+are not interchangeable up to a constant is written down.
+
+# Extended help
+
+The source's Algorithm 2, a table mapping each of its symbols onto the code, the derivation that makes
+its lines 8–10 *be* [`global_rep`](@ref), and the two departures above with their reasons are on the
+[Optimizer Methods](@ref "Standard Neural Network Optimizers") page. The third departure is the
+momentum's transport: the source re-projects ``M_k`` onto the tangent space at the new iterate (its
+equation (6)) where [`update_section!`](@ref) carries the lift here, which agrees for a Lie group and
+differs on a proper homogeneous space — the one departure that changes the iterates against the
+authors' implementation on the same objective and seed.
+
+What is recorded only here is three discrepancies *between* the source and its own implementation,
+which are not departures of this port:
+
+  - **``v_1``.** Its line 2 initializes it to ``1``, `stiefel_optimizer.py` to ``0``
+    (`v_buffer = torch.zeros([1])`), and line 6's ``1 - \beta_2^k`` is ``0`` at the ``k = 0`` its loop
+    starts from. ``0`` is followed, which is also [`Adam`](@ref)'s convention here and which makes the
+    first direction a normalized gradient step.
+  - **``\varepsilon`` inside or outside the root.** Its line 7 and its implementation
+    (`vnew_hat.add(epsilon).sqrt()`) both put it inside; [`Adam`](@ref) here puts it outside,
+    ``\sqrt{m_2}+\delta``. The source's placement is used, so this is the one convention
+    `ScalarMomentAdam` does *not* share with [`Adam`](@ref).
+  - **``s``, the number of fixed-point iterations.** Its line 1 gives ``s = 2``; `Cayley_loop` in
+    `gutils.py` runs `for i in range(5)`. Neither number reaches this method, because the iteration
+    they count is the approximation of the Cayley transform that the admonition above says is not
+    ported — [`Cayley`](@ref) is evaluated exactly. It is recorded because a reader comparing this
+    port against the authors' code will meet it.
+"""
+struct ScalarMomentAdam{T} <: OptimizerMethod
+    β₁::T
+    β₂::T
+    δ::T
+    ambient_norm::Bool
+
+    function ScalarMomentAdam(::Type{T}=Float64; β₁=9.0e-1, β₂=9.9e-1, δ=1.0e-8,
+        ambient_norm::Bool=false) where {T<:AbstractFloat}
+        β₁T, β₂T, δT = T(β₁), T(β₂), T(δ)
+        0 ≤ β₁T < 1 || throw(ArgumentError("β₁ must satisfy 0 ≤ β₁ < 1"))
+        0 ≤ β₂T < 1 || throw(ArgumentError("β₂ must satisfy 0 ≤ β₂ < 1"))
+        δT ≥ 0 || throw(ArgumentError("δ must be nonnegative"))
+        new{T}(β₁T, β₂T, δT, ambient_norm)
+    end
+end
+
+@doc raw"""
     AdamWithEuclideanDecay(T; β₁, β₂, δ, λ)
 
 [`Adam`](@ref) with the *decoupled* weight decay of [loshchilov2019decoupled](@cite), which is
@@ -265,11 +369,23 @@ function AdamW(args...; kwargs...)
 end
 
 """
-[`Adam`](@ref) and the variants of it that differ only in how the direction is finished off, i.e.
-that share [`AdamCache`](@ref), [`AdamState`](@ref) and the moment recursion. Currently
-[`AdamWithEuclideanDecay`](@ref).
+[`Adam`](@ref) and the methods that build their direction from a pair of bias-corrected moment
+averages as it does. What the union selects for is that shared *character* and not a shared
+implementation: the direction is a moving average that is deliberately allowed not to descend on an
+individual step, which is what [`default_linesearch`](@ref)'s fixed `Static` and the
+[`ensure_descent!`](@ref) exemption in [`FirstOrderMethodWithState`](@ref) are about.
+
+The implementation is shared by only some of them, so do not read the union as a promise about the
+cache:
+
+- [`AdamWithEuclideanDecay`](@ref) differs only in how the direction is finished off, so it reuses
+  [`AdamCache`](@ref) and [`AdamState`](@ref) outright and `OptimizerState(AdamWithEuclideanDecay(), x)`
+  returns an `AdamState`.
+- [`ScalarMomentAdam`](@ref) has neither, because its second moment is a *number* rather than an
+  element of `𝔤ʰᵒʳ` and its recursion is therefore not `Adam`'s. It carries
+  `ScalarMomentAdamCache` and [`ScalarMomentAdamState`](@ref) of its own.
 """
-const AdamFamily = Union{Adam,AdamWithEuclideanDecay}
+const AdamFamily = Union{Adam,AdamWithEuclideanDecay,ScalarMomentAdam}
 
 """
 The methods whose `update!` needs the *method* rather than a
@@ -307,9 +423,14 @@ genuine descent directions, so a backtracking search always has an `α` to find.
 SimpleSolvers default — see the tip below for why it is the default here.
 
 The [`AdamFamily`](@ref) methods are the exception and keep a fixed `Static(DEFAULT_LEARNING_RATE)`.
-[`Adam`](@ref)'s direction is ``-m_1/(\sqrt{m_2} + \delta)``, a moving average that is deliberately
-*not* required to descend on any individual step, so a sufficient-decrease search has nothing to work
-with and would spend every such step reporting that it found no descent direction.
+[`Adam`](@ref)'s direction is ``-m_1/(\sqrt{m_2} + \delta)`` and [`ScalarMomentAdam`](@ref)'s is
+``-m_1/\sqrt{m_2 + \delta}``; either way it is a moving average that is deliberately *not* required to
+descend on any individual step, so a sufficient-decrease search has nothing to work with and would
+spend every such step reporting that it found no descent direction.
+
+One caveat on sharing the *value* `DEFAULT_LEARNING_RATE` across the family: [`Adam`](@ref) normalizes
+componentwise and [`ScalarMomentAdam`](@ref) normalizes the whole lift at once, so the same ``\eta``
+is a step ``\sqrt{\dim}`` shorter for the latter. See the warning in its docstring.
 
 For [`AdamWithEuclideanDecay`](@ref) a fixed step is not merely the cheaper choice but the only one
 under which ``\lambda`` means what it is documented to mean. Two reasons, and the first is the one

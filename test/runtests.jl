@@ -87,6 +87,9 @@ begin
     @safetestset "Adam + decaying step         " include("adam_optimizer_with_decay.jl")
 end
 begin
+    @safetestset "Scalar-moment Adam           " include("scalar_moment_adam.jl")
+end
+begin
     @safetestset "NamedTuple Parameters        " include("named_tuple_parameters.jl")
 end
 begin
