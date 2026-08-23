@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased] — targeting 0.4.2
+## [0.4.2]
 
 **The geodesic gets a second portable exponential, and the portability the first one was chosen for
 becomes true rather than merely stated.** `ScaledSquaring` is the default because it runs on a backend
@@ -150,6 +150,20 @@ independent implementation that had been missing there.
   migration [#59] started, which moved the manifold, matrix, global-section and retraction
   docstrings onto the chapters that explain them. `size_threshold_warn` stays at its default so the
   build keeps saying so. [#51]
+
+[#54] and [#51] are the whole release: the second portable exponential with the scalar-indexing fix
+that made the first one's portability true, and the Stiefel-only Adam baseline. A patch and not a
+minor bump — nothing existing changed name or behaviour. `NativePade`, `ScalarMomentAdam` and
+`ScalarMomentAdamState` are new public names, `ScaledSquaring` stays the default algorithm and
+`Adam` is untouched, so a package that calls neither of the new types sees exactly the library
+[0.4.1](#041) shipped — with `𝔄` now doing on a backend that forbids scalar indexing what it had
+always claimed to.
+
+Two entries in the Open Issues catalogue move with it. **A19** loses its first half — `𝔄` no longer
+builds its identity through `Base.one` — and is narrowed to what is left, which is that no run here
+exercises `geodesic` on an actual GPU. **C16** is new, from #54's review: `NativePade`'s
+``\theta \le 1/2`` is measured rather than derived from a backward-error criterion, which is the
+fourth of the four things [#52] asked for and the reason that issue stays open.
 
 ## [0.4.1]
 
@@ -2005,7 +2019,7 @@ second is the one that makes the type hierarchy match what is implemented.
 #### A19. `ScaledSquaring`'s GPU claim is untested here
 
 **Severity: unknown, which is the point.** From the review of [#45]. **Half of it is fixed** — see
-*Fixed* under [Unreleased](#unreleased--targeting-042) — and this is the half that is not.
+*Fixed* under [0.4.2](#042) — and this is the half that is not.
 
 The documentation states the property in three places and rests the default on it:
 `docs/src/retractions.md` calls [`ScaledSquaring`](@ref) one of the two usable algorithms that run
@@ -2744,4 +2758,5 @@ and both are corrected: see C8.)
 [0.3.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.3.1
 [0.4.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.0
 [0.4.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.1
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.4.1...main
+[0.4.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.2
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.4.2...main
