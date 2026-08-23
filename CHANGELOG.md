@@ -40,7 +40,7 @@ know them one by one.
   normalise it, which is something only this package can do, since this is where the types are.
 
   It matters beyond tidiness: `SymmetricMatrix <: AbstractMatrix`, so without these methods
-  `NeuralNetworkParameters`' `freeparameters(::AbstractArray) = x` fallback treats one as terminal,
+  `NeuralNetworkParameters`' `freeparameters(x::AbstractArray) = x` fallback treats one as terminal,
   flattening it as ``n^2`` numbers rather than ``n(n+1)/2`` and writing the dense form to file. For
   the skew-symmetric and triangular types there is no `setindex!` to broadcast through at all.
   `GeometricMachineLearning`'s more specific `h5save` methods currently win on the write path, so

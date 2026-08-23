@@ -80,6 +80,10 @@ function __init__()
     register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
     register_parameter_type!("LowerTriangular", (S, md) -> LowerTriangular(_vector(S, md)...))
     register_parameter_type!("UpperTriangular", (S, md) -> UpperTriangular(_vector(S, md)...))
+    # These two index positionally where the six above go by name, because they can: the older layout
+    # covered five types and never a lift, so their `storage` is only ever the `Tuple` this protocol
+    # wrote, in the order `parent` returned. A `NamedTuple` from that layout records no key order, so
+    # anything that might meet one has to reach for a field name.
     register_parameter_type!("StiefelLieAlgHorMatrix",
         (S, md) -> StiefelLieAlgHorMatrix(S[1], S[2], md.N, md.n))
     register_parameter_type!("GrassmannLieAlgHorMatrix",
