@@ -6,7 +6,8 @@
 #
 # Two independent parts, both cheap enough to run on a laptop:
 #
-#   * `exponential_tables()` — the accuracy and cost of the five `AbstractExponentialAlgorithm`s.
+#   * `exponential_tables()` — the accuracy, cost and allocations of the five
+#     `AbstractExponentialAlgorithm`s.
 #     Feeds the tables in `src/retractions/exponential_algorithms.jl` and the note on `Cayley` in
 #     `src/retractions/retraction_types.jl`. `docs/src/retractions.md` recomputes the accuracy
 #     tables when the documentation is built, from the same seed and the same `SCALES`, so this
@@ -20,7 +21,9 @@
 #     those is the cap itself.
 #
 # The timings are a `minimum` over repetitions with a single BLAS thread, which is the only form that
-# is stable enough to quote. They are still machine-dependent; the accuracy figures are not.
+# is stable enough to quote. They are still machine-dependent; the accuracy figures are not, and
+# neither are the allocation counts — `@allocated` is exact, so those are the one part of the cost
+# picture that transfers between machines.
 
 using GeometricOptimizers
 using GeometricOptimizers: geodesic, cayley, check, 𝔄, lift_factors, Geodesic, Cayley
@@ -53,6 +56,21 @@ function best(f, repetitions::Integer=20)
         f()
         (time_ns() - t₀) / 1e6
     end
+end
+
+"""
+    bytes(f)
+
+What one call to `f` allocates, in KiB, after one warm-up call.
+
+Reported alongside the timings because it is the figure that does *not* transfer from a CPU to a GPU
+backend the way a runtime ratio roughly does: none of these algorithms works in place, so each one's
+count is a count of `2n × 2n` temporaries, and on a backend where an allocation costs a
+synchronisation rather than a `malloc` that is the number that decides the cost.
+"""
+function bytes(f)
+    f()
+    (@allocated f()) / 1024
 end
 
 # The scales every accuracy table below sweeps over. All three use the *same* eight, drawn from the
@@ -103,6 +121,25 @@ function exponential_tables(; N::Integer=20, n::Integer=3)
         println()
     end
 
+    # The `Float32` companion to the forward-error table above, and the reason to print both: `check`
+    # and the forward error do not rank the algorithms the same way in this format. The reference is
+    # `exp` of the lift promoted to `Float64` and the difference is taken there too — `exp` of a
+    # `Float32` matrix is itself only accurate to `Float32`, so comparing against it would measure
+    # the reference as much as the algorithm.
+    println("\n== Float32: relative error against Float64 exp(Matrix(B)) ==")
+    print(rpad("‖B̄‖", 10))
+    foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES[2:end])
+    println()
+    for B in sweep(Float32, N, n)
+        reference = exp(Matrix{Float64}(Matrix(B)))
+        @printf("%9.2f", norm(Matrix(B)))
+        foreach(ALGORITHMS[2:end]) do a
+            Y = Matrix{Float64}(Matrix(geodesic(B, a)))
+            @printf("%16.2e", norm(Y - reference) / norm(reference))
+        end
+        println()
+    end
+
     println("\n== ScaledSquaring: sensitivity to θ ==")
     Random.seed!(99)
     B = 30 * rand(StiefelLieAlgHorMatrix{Float64}, N, n)
@@ -114,17 +151,24 @@ function exponential_tables(; N::Integer=20, n::Integer=3)
             norm(Matrix(Y) - reference) / norm(reference))
     end
 
-    println("\n== cost of the 𝔄 call, ms, minimum of 50, 1 BLAS thread ==")
+    println("\n== cost of the 𝔄 call, N = 200, n = 10, minimum of 50, 1 BLAS thread ==")
     Random.seed!(7)
     B = rand(StiefelLieAlgHorMatrix{Float64}, 200, 10)
     B̂, B̄ = lift_factors(B)
     X = B̄' * B̂
+    print(rpad("", 10))
     for (name, _) in 𝔄_ALGORITHMS
         print(lpad(name, 16))
     end
     println()
+    print(rpad("ms", 10))
     for (_, algorithm) in 𝔄_ALGORITHMS
         @printf("%16.3f", best(() -> 𝔄(X, algorithm), 50))
+    end
+    println()
+    print(rpad("KiB", 10))
+    for (_, algorithm) in 𝔄_ALGORITHMS
+        @printf("%16.1f", bytes(() -> 𝔄(X, algorithm)))
     end
     println()
 
@@ -138,6 +182,18 @@ function exponential_tables(; N::Integer=20, n::Integer=3)
         @printf("%-7d%-6d", N, n)
         foreach(a -> @printf("%16.3f", best(() -> geodesic(B, a), 50)), ALGORITHMS)
         @printf("%16.3f\n", best(() -> cayley(B), 50))
+    end
+
+    println("\n== allocations of one retraction, KiB ==")
+    print(rpad("N", 7) * rpad("n", 6))
+    foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES)
+    println(lpad("Cayley", 16))
+    Random.seed!(7)
+    for (N, n) in ((10, 2), (20, 3), (50, 5), (100, 5), (200, 10), (500, 10), (500, 50), (1000, 20))
+        B = rand(StiefelLieAlgHorMatrix{Float64}, N, n)
+        @printf("%-7d%-6d", N, n)
+        foreach(a -> @printf("%16.1f", bytes(() -> geodesic(B, a))), ALGORITHMS)
+        @printf("%16.1f\n", bytes(() -> cayley(B)))
     end
 end
 
