@@ -8,6 +8,61 @@ breaking release).
 
 ## [Unreleased] — targeting 0.4.1
 
+**The structured matrices get a `NeuralNetworkParameters` protocol.** Nothing existing changes
+behaviour; what is new is that a package serialising or differentiating these types no longer has to
+know them one by one.
+
+### Added
+
+- **A `NeuralNetworkParameters` extension**, giving the manifolds, the `VectorStorageMatrix`es and the
+  horizontal lifts that package's leaf protocol. `NeuralNetworkParameters` walks a parameter set over
+  two methods per leaf type — `freeparameters`, saying where the differentiable numbers live, and
+  `rebuild`, putting a leaf back together around them — so everything written against it (flattening,
+  the elementwise optimizer primitives, the HDF5 traversal) now works for these types without a
+  hand-written case per type in whichever package happens to need one.
+
+  `freeparameters` is a single delegating method, because the relation already exists here as
+  `Base.parent`: `A.S` for a storage matrix, `A.A` for a manifold element, the tuple of blocks
+  `(A, B)` / `(B,)` for a lift. What has to be spelled out is `rebuild` per family — which is what
+  lets the storage come back with a different element type, as it does when a flattened set is
+  differentiated — and the `parameter_metadata` a file needs when it has no prototype to rebuild
+  against: the `n` of a storage matrix, the `N` and `n` of a lift. A manifold element needs none, its
+  storage being the dense matrix. `__init__` registers each of the eight types, so
+  `load(NetworkParameters, h5)` rebuilds them with no prototype supplied.
+
+  The methods belong here and not in a package that *uses* both. `freeparameters(::SymmetricMatrix)`
+  written anywhere else is piracy twice over — on `NeuralNetworkParameters`' generic and on this
+  package's type — and two such packages can silently disagree.
+  [`GeometricMachineLearning`](https://github.com/JuliaGNI/GeometricMachineLearning.jl) carried
+  exactly that: five `h5save` methods tagging a `gml_type` attribute and a recursive reader to match,
+  which [GeometricMachineLearning#246](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/246)
+  deletes. Files already written in that layout keep loading — the reconstructors registered here
+  normalise it, which is something only this package can do, since this is where the types are.
+
+  It matters beyond tidiness: `SymmetricMatrix <: AbstractMatrix`, so without these methods
+  `NeuralNetworkParameters`' `freeparameters(x::AbstractArray) = x` fallback treats one as terminal,
+  flattening it as ``n^2`` numbers rather than ``n(n+1)/2`` and writing the dense form to file. For
+  the skew-symmetric and triangular types there is no `setindex!` to broadcast through at all.
+  `GeometricMachineLearning`'s more specific `h5save` methods currently win on the write path, so
+  nothing is silently broken today, but that specificity is the only thing standing in the way.
+
+- **`test/neural_network_parameters_protocol.jl`** — one leaf of each family plus a plain array,
+  checked for `freeparameters === parent` and non-terminality, `rebuild` inversion, `rebuild` across an
+  element-type change for a storage matrix, a manifold element and a lift, a flat length equal to the
+  sum of the *storage* lengths, `parameter_metadata`, HDF5 round trips both with and without a
+  prototype, a `Float32` set that must not widen, and a file hand-written in
+  `GeometricMachineLearning`'s old layout, so dropping its duplicated reader does not quietly make its
+  existing files unreadable.
+
+  The `(D, n)` constructors slice with `@views`, so a lift built that way holds `SubArray`s and can
+  never compare type-equal to one rebuilt from a flat vector. The tests build the blocks outright, so
+  the type assertions say something about the protocol rather than about slicing.
+
+All of the above is [#60]. Its review added the erroring `rebuild` on the three abstract families:
+`freeparameters` is defined on those, `rebuild` only on the concrete types, and since all of them are
+`AbstractMatrix`es, `NeuralNetworkParameters`' `rebuild(::AbstractArray, data) = data` would otherwise
+catch a subtype added later and hand back a densified parameter with no error anywhere.
+
 ### Documentation
 
 - **The docstrings move to a page of their own.** `index.md` ended in a catch-all `@autodocs` over
@@ -2479,6 +2534,7 @@ and both are corrected: see C8.)
 [#49]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/49
 [#50]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/50
 [#59]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/59
+[#60]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/60
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1

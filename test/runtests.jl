@@ -89,3 +89,6 @@ end
 begin
     @safetestset "NamedTuple Parameters        " include("named_tuple_parameters.jl")
 end
+begin
+    @safetestset "NeuralNetworkParameters      " include("neural_network_parameters_protocol.jl")
+end
