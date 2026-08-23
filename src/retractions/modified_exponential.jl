@@ -172,8 +172,7 @@ function 𝔄(X::AbstractMatrix, algorithm::NativePade)
 end
 
 function 𝔄(X::AbstractMatrix, ::AugmentedPade)
-    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so `Base.exp` — a degree-13 Padé approximant with its
-    # own scaling and squaring — returns `𝔄(X)` in the upper-right block.
+    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so `Base.exp` returns `𝔄(X)` in the upper-right block.
     m = size(X, 1)
     T = eltype(X)
     augmented = [X one(X); zeros(T, m, m) zeros(T, m, m)]

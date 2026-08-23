@@ -25,15 +25,16 @@ scaled to ``\|\bar{B}\| = 361``, against the cost of one retraction at ``N = 200
 
 | | `check` | forward error | cost | backend |
 |---|---|---|---|---|
-| [`ScaledSquaring`](@ref) | `3.6e-14` | `2.1e-14` | `0.083 ms` | any |
-| [`NativePade`](@ref) | `3.9e-14` | `2.1e-14` | `0.086 ms` | any |
+| [`ScaledSquaring`](@ref) | `3.6e-14` | `2.1e-14` | `0.083 ms` | no dense LAPACK |
+| [`NativePade`](@ref) | `3.9e-14` | `2.1e-14` | `0.086 ms` | no dense LAPACK |
 | [`AugmentedPade`](@ref) | `1.5e-14` | `2.0e-14` | `0.112 ms` | CPU (dense LAPACK) |
 | [`ProjectedSkew`](@ref) | `4.8e-15` | `3.0e-14` | `0.122 ms` | CPU (dense LAPACK) |
-| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.153 ms` | any |
+| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.153 ms` | no dense LAPACK |
 
 "Forward error" is the relative distance to `exp(Matrix(B))`; both it and `check` come from the same
 lift, so the columns are comparable row by row. [`ScaledSquaring`](@ref) remains the default because
-it is the cheapest portable algorithm. [`NativePade`](@ref) is the independent portable cross-check,
+it is the cheapest algorithm that avoids dense LAPACK. [`NativePade`](@ref) is an independent
+cross-check with the same property,
 [`ProjectedSkew`](@ref) if `check` matters more than the last digit of the exponential, and
 [`AugmentedPade`](@ref) as the CPU reference that delegates its numerics to `Base.exp`.
 [`TaylorSeries`](@ref) is the pre-0.2.0 behaviour and is retained only so the regression is
@@ -75,9 +76,9 @@ accurate.
 forward error between `6.4e-15` and `8.2e-15`, and neither column is monotone in `θ`. Nothing in the
 measurement singles out `0.5`; it needs no tuning because no value in that range does better.
 
-Like [`TaylorSeries`](@ref) and [`NativePade`](@ref), this uses nothing but matrix products and
-norms, so it runs unchanged on a `KernelAbstractions` GPU backend. It remains the default because it
-is the cheaper of the two usable portable algorithms. The norm
+Like [`TaylorSeries`](@ref) and [`NativePade`](@ref), this uses only reductions and matrix products
+and avoids scalar indexing in the package code. It remains the default because it is the cheaper of
+the two usable algorithms with that property. The norm
 is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by `LinearAlgebra.opnorm(X, 1)`, which
 is a scalar-indexing loop and would give up exactly the property this paragraph claims.
 
@@ -119,14 +120,15 @@ input is formed.
 The degree and threshold are paired deliberately. For ``\|X\|_1 \leq 0.5``, the denominator differs
 from the identity by less than `0.26` in one-norm, so the fixed Newton--Schulz iteration contracts;
 the degree-6 Padé error is already below `Float64` round-off on the tested lift family. Raising `θ`
-would save squarings but weaken both statements, while lowering it adds work without improving the
-measured result.
+would invalidate that contraction guarantee, so the constructor rejects thresholds above `0.5`.
+Lowering it adds work without improving the measured result.
 
 Like [`ScaledSquaring`](@ref), this uses [`GeometricOptimizers.opnorm₁`](@ref), reductions and matrix
-products only, and therefore runs without scalar indexing on a `KernelAbstractions` backend. It is
-an independent portable cross-check rather than the default: it performs more small matrix products
-than [`ScaledSquaring`](@ref), while [`AugmentedPade`](@ref) remains the CPU reference that delegates
-all numerics to `Base.exp`.
+products only, and avoids scalar indexing in the package code. The test suite checks this path with
+`JLArray`; support on a particular accelerator still depends on that backend's matrix multiplication
+and reduction support. It is an independent cross-check rather than the default because it performs
+more small matrix products than [`ScaledSquaring`](@ref), while [`AugmentedPade`](@ref) remains the
+CPU reference that delegates all numerics to `Base.exp`.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the comparison.
 """
@@ -134,7 +136,7 @@ struct NativePade{T<:Real} <: AbstractExponentialAlgorithm
     θ::T
 
     function NativePade(θ::T = 0.5) where {T<:Real}
-        @assert θ > zero(T) "the scaling threshold has to be positive, got $(θ)"
+        @assert zero(T) < θ <= T(0.5) "the scaling threshold has to be in (0, 0.5], got $(θ)"
         new{T}(θ)
     end
 end
@@ -150,9 +152,9 @@ Evaluate ``\mathfrak{A}`` as a block of a larger *ordinary* exponential.
 ```
 
 so one call to `Base.exp` on a ``4n\times{}4n`` matrix returns ``\mathfrak{A}(X)`` in its upper-right
-block. That hands the numerics to Julia's own exponential — a degree-13 Padé approximant with its own
-scaling and squaring, and the most heavily exercised implementation available — at the cost of
-exponentiating a matrix four times the size and discarding three quarters of it.
+block. That hands the numerics to Julia's dense matrix exponential and its internal scaling and
+squaring at the cost of exponentiating a matrix four times the size and discarding three quarters
+of it.
 
 Accurate to the same order as [`ScaledSquaring`](@ref), and about twice as expensive in the
 ``\mathfrak{A}`` call itself though much less than that once the ``N\times{}N`` assembly is counted.

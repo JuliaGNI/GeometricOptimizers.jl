@@ -21,7 +21,7 @@ which deletes GML's own copies of eleven of these types.
   diagonal approximant, replaces the dense solve by fixed Newton--Schulz matrix products, and uses
   the same low-rank squaring recursion as `ScaledSquaring`. It agrees with the `Base.exp`-delegating
   `AugmentedPade` across both supported manifolds and both floating-point types, while giving
-  `ScaledSquaring` an independent cross-check on a backend that forbids scalar indexing. Measured at
+  `ScaledSquaring` an independent cross-check in the `JLArray` scalar-indexing proxy. Measured at
   ``N=200``, ``n=10``, its isolated ``\mathfrak{A}`` call is `0.034 ms` against `0.018 ms` for
   `ScaledSquaring` and `0.046 ms` for `AugmentedPade`, so `ScaledSquaring` remains the default. [#52]
 

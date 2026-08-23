@@ -577,7 +577,7 @@ The remedy is a choice, and [`Geodesic`](@ref) makes it one the caller can see:
 
 ```julia
 Geodesic(ScaledSquaring())   # the default, and `Geodesic()`
-Geodesic(NativePade())       # independent and backend-portable
+Geodesic(NativePade())       # independent; avoids dense LAPACK and scalar indexing
 Geodesic(AugmentedPade())
 Geodesic(ProjectedSkew())
 Geodesic(TaylorSeries())     # the pre-0.2.0 behaviour; not a usable retraction
@@ -614,10 +614,10 @@ error between ``6.4\cdot10^{-15}`` and ``8.2\cdot10^{-15}``. That sweep is [meas
 time](@ref "The threshold `θ` needs no tuning") below; there is no reason to tune it.
 
 **Advantages.** The fastest, or tied fastest, of the five at every size measured below, and as close
-to `exp(Matrix(B))` as [`AugmentedPade`](@ref), which is as close as anything here gets. And —
-because it uses nothing but matrix products and norms — one of two usable algorithms that runs
-unchanged on a `KernelAbstractions` GPU backend. It remains the default because it is the cheaper of
-those two. Keeping that property is also
+to `exp(Matrix(B))` as [`AugmentedPade`](@ref), which is as close as anything here gets. Its package
+implementation uses only reductions and matrix products and avoids scalar indexing and dense
+LAPACK. It remains the default because it is the cheaper of the two usable algorithms with those
+properties. Keeping them is also
 why the norm is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by
 `LinearAlgebra.opnorm(X, 1)`: the latter is a scalar-indexing double loop, and scalar indexing is
 exactly what a GPU array cannot serve.
@@ -646,15 +646,17 @@ inverse residual to the 32nd power. The numerator and denominator share ``X^2`` 
 existing low-rank squaring recursion restores the scale.
 
 **Advantages.** It never forms a matrix larger than ``2n\times{}2n`` and uses only reductions and
-matrix products. That makes it the independent implementation [`ScaledSquaring`](@ref) can be
-checked against on a backend that forbids scalar indexing. At ``\|\bar{B}\| = 361`` its `check` is
+matrix products. That makes it an independent implementation against which [`ScaledSquaring`](@ref)
+can be checked without dense LAPACK or scalar indexing in the package code. The test suite verifies
+the latter property with `JLArray`; support on a particular accelerator still depends on that
+backend's matrix-multiplication and reduction support. At ``\|\bar{B}\| = 361`` its `check` is
 `3.9e-14` and its forward error is `2.1e-14`, indistinguishable in practice from both
 [`ScaledSquaring`](@ref) and [`AugmentedPade`](@ref).
 
 **Disadvantages.** Its fixed rational evaluation does more small matrix products than
 [`ScaledSquaring`](@ref). At ``N = 200``, ``n = 10`` the ``\mathfrak{A}`` call costs `0.034 ms`
 against `0.018 ms` for [`ScaledSquaring`](@ref), although it remains cheaper than
-[`AugmentedPade`](@ref)'s `0.046 ms`. It is therefore the portable cross-check, not the default.
+[`AugmentedPade`](@ref)'s `0.046 ms`. It is therefore the independent cross-check, not the default.
 
 ## `AugmentedPade`
 
@@ -668,10 +670,9 @@ the ``4n\times{}4n`` augmented matrix,
 
 which is the standard device for getting a ``\varphi`` function out of an exponential routine
 [sidje1998expokit, higham2008functions](@cite). One call to `Base.exp` therefore returns
-``\mathfrak{A}(X)`` in its upper-right block. That hands the numerics to Julia's own exponential — a
-degree-13 Padé approximant with its own scaling and squaring [higham2005scaling,
-almohy2010new](@cite) — at the cost of exponentiating a matrix four times the size and discarding
-three quarters of it.
+``\mathfrak{A}(X)`` in its upper-right block. That hands the numerics to Julia's dense matrix
+exponential and its internal scaling and squaring [higham2005scaling, almohy2010new](@cite), at the
+cost of exponentiating a matrix four times the size and discarding three quarters of it.
 
 **Advantages.** It introduces no new numerics at all. Everything delicate is done by the most
 heavily exercised matrix-exponential implementation available, which is why it remains the CPU
@@ -687,7 +688,8 @@ the very top — and at the large lifts both are an order of magnitude behind
 
 !!! warning "CPU only"
     Neither this nor [`ProjectedSkew`](@ref) runs on a GPU backend. Use [`ScaledSquaring`](@ref),
-    or [`NativePade`](@ref) for an independent portable cross-check, there.
+    or [`NativePade`](@ref) for an independent cross-check, when the accelerator backend supports
+    their matrix multiplications and reductions.
 
 ## `ProjectedSkew`
 
@@ -1039,14 +1041,15 @@ the property you specifically need.**
 | | choose it when | at the price of |
 |---|---|---|
 | [`ScaledSquaring`](@ref) | almost always; it is the default | `check` drifting up with the size of the lift |
-| [`NativePade`](@ref) | you need an independent implementation on a backend that forbids scalar indexing | about 2× the isolated ``\mathfrak{A}`` cost, with similar accuracy |
+| [`NativePade`](@ref) | you need an independent implementation without dense LAPACK or scalar indexing in the package code | about 2× the isolated ``\mathfrak{A}`` cost, with similar accuracy |
 | [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | 1.2×–1.9× the cost, usually the largest forward error, CPU only |
 | [`AugmentedPade`](@ref) | you want a second opinion from an implementation that introduces no numerics of its own | roughly 2× the cost of the ``\mathfrak{A}`` call, no better than [`ScaledSquaring`](@ref) on accuracy, CPU only |
 | [`TaylorSeries`](@ref) | never; it exists so the pre-0.2.0 regression stays reproducible | leaving the manifold silently above ``\Vert\bar{B}\Vert \approx 50`` |
 
-On a GPU backend, [`ScaledSquaring`](@ref) remains the production choice and [`NativePade`](@ref)
-provides the independent cross-check that was previously missing. Both avoid dense LAPACK and scalar
-indexing; [`ScaledSquaring`](@ref) is the default because it does less work.
+For accelerator arrays, [`ScaledSquaring`](@ref) is the production choice and [`NativePade`](@ref)
+provides the independent cross-check that was previously missing, provided the backend supports the
+required matrix multiplications and reductions. Both avoid dense LAPACK and scalar indexing in the
+package code; [`ScaledSquaring`](@ref) is the default because it does less work.
 
 ## Adding one
 

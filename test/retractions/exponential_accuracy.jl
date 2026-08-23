@@ -60,6 +60,9 @@ end
 end
 
 @testset "NativePade agrees with AugmentedPade across manifolds and element types" begin
+    @test_throws AssertionError NativePade(0.0)
+    @test_throws AssertionError NativePade(0.5001)
+
     N, n = 20, 3
     for T in (Float64, Float32), (_, lift) in LIFTS, s in NORM_SCALES
         B = lift(T, N, n, s)
