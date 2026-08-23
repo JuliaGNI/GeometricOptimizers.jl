@@ -3,7 +3,6 @@
 # back rather than a densified copy of it.
 
 using GeometricOptimizers
-using LinearAlgebra: norm
 using HDF5
 using NeuralNetworkParameters
 using NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata, flatlength,
@@ -12,6 +11,26 @@ using Random
 using Test
 
 Random.seed!(1234)
+
+# Every HDF5 testset below writes a file, reads it back and wants it gone either way.
+function withtempfile(f)
+    file = tempname() * ".h5"
+    try
+        f(file)
+    finally
+        isfile(file) && rm(file)
+    end
+end
+
+# Narrow a leaf to `Float32` the way the protocol itself would: down to the storage, convert, back up
+# through `rebuild`. Broadcasting instead would densify the structured types, which is the very thing
+# the protocol exists to avoid.
+_narrow(x::Tuple) = map(_narrow, x)
+_narrow(x) = (s = freeparameters(x); s === x ? Float32.(x) : rebuild(x, _narrow(s)))
+
+# A `Manifold` the extension has `freeparameters` for — it is defined on the abstract type — but no
+# `rebuild`, standing in for one added in a later release.
+struct DummyManifold{T} <: Manifold{T} end
 
 # `freeparameters` of a horizontal lift is a tuple of blocks, one of which is itself structured, so
 # comparing storage sizes means walking it.
@@ -54,7 +73,7 @@ end
 end
 
 @testset "rebuild inverts freeparameters" begin
-    for (k, x) in pairs(leaves)
+    for x in values(leaves)
         y = rebuild(x, freeparameters(x))
         @test typeof(y) == typeof(x)
         @test y == x
@@ -63,19 +82,39 @@ end
 
 @testset "rebuild carries the shape from the prototype, not the type" begin
     # this is what lets a flattened parameter set be differentiated: `data` comes back with a
-    # different element type from the prototype
-    A = leaves.symmetric
-    dual = rebuild(A, Float32.(freeparameters(A)))
-    @test dual isa SymmetricMatrix
-    @test eltype(dual) == Float32
-    @test size(dual) == size(A)
+    # different element type from the prototype. One of each family, because the shape each one takes
+    # from the prototype differs — the `n` of a storage matrix, nothing at all for a manifold element,
+    # and the `N`/`n` of a lift whose constructor additionally requires both blocks to share their
+    # element type, which is exactly what a `Dual` flatten produces.
+    for x in (leaves.symmetric, leaves.stiefel, leaves.stiefhor)
+        narrowed = _narrow(x)
+        @test nameof(typeof(narrowed)) === nameof(typeof(x))
+        @test eltype(narrowed) == Float32
+        @test size(narrowed) == size(x)
+        @test Array(narrowed) ≈ Array(x)
+    end
+end
+
+@testset "a family member with no rebuild says so" begin
+    # `freeparameters` is defined on the abstract types, so a `Manifold` added in a later release gets
+    # it for free. Without an erroring `rebuild`, `NeuralNetworkParameters`' `rebuild(::AbstractArray,
+    # data) = data` would catch that type and quietly hand back the bare storage — a densified
+    # parameter, no error anywhere.
+    err = try
+        rebuild(DummyManifold{Float64}(), rand(2, 2))
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("DummyManifold", err.msg)
 end
 
 @testset "the flat form has the storage length, not the dense one" begin
     ps = NetworkParameters((L1 = leaves,))
 
-    # n(n+1)/2 + n(n-1)/2 for symmetric + skew, n(n+1)/2 each for the two triangulars,
-    # N*n for each manifold element, and the horizontal lifts' blocks
+    # n(n+1)/2 for the symmetric matrix; n(n-1)/2 for the skew-symmetric one and for each of the two
+    # triangulars, which keep the strict triangle; N*n for each manifold element; and the horizontal
+    # lifts' blocks
     expected = length(parent(leaves.stiefel)) + length(parent(leaves.grassmann)) +
                length(parent(leaves.symmetric)) + length(parent(leaves.skew)) +
                length(parent(leaves.lower)) + length(parent(leaves.upper)) +
@@ -109,8 +148,7 @@ end
     # the registered form: `__init__` taught `load` how to rebuild each of these, so a file loads
     # without the caller having to supply a parameter set of the right shape
     ps = NetworkParameters((L1 = leaves,))
-    file = tempname() * ".h5"
-    try
+    withtempfile() do file
         save(file, ps)
         read_back = load(NetworkParameters, file)
 
@@ -121,24 +159,19 @@ end
             # the structure survived: the storage is the storage, not a dense n×n
             @test _storage_lengths(read_back.L1[k]) == _storage_lengths(leaves[k])
         end
-    finally
-        isfile(file) && rm(file)
     end
 end
 
 @testset "HDF5 round trip against a prototype" begin
     # the form that bypasses the registry entirely
     ps = NetworkParameters((L1 = leaves,))
-    file = tempname() * ".h5"
-    try
+    withtempfile() do file
         save(file, ps)
         read_back = load(NetworkParameters, file, ps)
         for k in keys(leaves)
             @test typeof(read_back.L1[k]) == typeof(leaves[k])
             @test read_back.L1[k] ≈ leaves[k]
         end
-    finally
-        isfile(file) && rm(file)
     end
 end
 
@@ -158,8 +191,7 @@ end
     # their own names and no record of the key order. `NeuralNetworkParameters` recognises the tag
     # and rebuilds through the registry, passing the group's fields as both storage and metadata —
     # so the reconstructors registered here have to accept that shape too.
-    file = tempname() * ".h5"
-    try
+    withtempfile() do file
         A = leaves.symmetric
         Y = leaves.stiefel
         h5open(file, "w") do h5
@@ -184,7 +216,5 @@ end
         @test read_back.L1.Y isa StiefelManifold
         @test read_back.L1.Y ≈ Y
         @test read_back.L1.b == [1.0, 2.0]
-    finally
-        isfile(file) && rm(file)
     end
 end

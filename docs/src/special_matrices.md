@@ -161,6 +161,15 @@ elementwise operation to broadcast through, `similar` has to preserve the type r
 dense `Matrix`, and ``n(n\pm1)/2`` numbers do not reshape back to ``n \times n``. See
 [`VectorStorageMatrix`](@ref GeometricOptimizers.VectorStorageMatrix) for the methods that make them usable as optimizer parameters.
 
+The same storage is what a *flat* parameter vector and a saved file have to hold, for the same reason:
+``n(n\pm1)/2`` numbers are the whole content of one of these matrices, and the ``n^2`` entries of the
+dense interface are neither the right length nor, for three of the four types, writable at all.
+[`NeuralNetworkParameters`](https://github.com/JuliaGNI/NeuralNetworkParameters.jl) asks a leaf type
+for exactly that relation, through its `freeparameters`/`rebuild` pair, and loading it alongside this
+package brings in an extension that answers for all three families here — these matrices, the
+manifolds, and the horizontal lifts. Flattening, differentiating and saving a parameter set that
+contains them therefore needs no case per type in the package doing the training.
+
 ## Library functions
 
 [`AbstractTriangular`](@ref), [`UpperTriangular`](@ref), [`LowerTriangular`](@ref),

@@ -13,25 +13,32 @@ module NeuralNetworkParametersExt
 # `NeuralNetworkParameters`' own `freeparameters` docstring points at.
 
 using GeometricOptimizers: Manifold, StiefelManifold, GrassmannManifold,
-                           SymmetricMatrix, SkewSymMatrix, AbstractTriangular,
+                           VectorStorageMatrix, SymmetricMatrix, SkewSymMatrix,
                            LowerTriangular, UpperTriangular,
                            AbstractLieAlgHorMatrix, StiefelLieAlgHorMatrix,
                            GrassmannLieAlgHorMatrix
 
-import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata,
-                                register_parameter_type!
-
-# The matrices that keep their degrees of freedom in a flat vector: a symmetric or skew-symmetric
-# ``n \times n`` matrix stores ``n(n+1)/2`` or ``n(n-1)/2`` numbers, a triangular one likewise. It is
-# those numbers that belong in a flat parameter vector, not the entries of the dense interface —
-# which do not even have the right length, and for the skew-symmetric and triangular types cannot be
-# broadcast through at all.
-const StorageMatrix = Union{SymmetricMatrix, SkewSymMatrix, AbstractTriangular}
+import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
+using NeuralNetworkParameters: register_parameter_type!
 
 # One method covers all three families: this package already exposes exactly this relation as
-# `Base.parent` — `A.S` for the storage matrices, `A.A` for a manifold element, and the tuple of
-# blocks `(A, B)` / `(B,)` for a horizontal lift.
-freeparameters(x::Union{Manifold, StorageMatrix, AbstractLieAlgHorMatrix}) = parent(x)
+# `Base.parent` — `A.S` for a `VectorStorageMatrix`, `A.A` for a manifold element, and the tuple of
+# blocks `(A, B)` / `(B,)` for a horizontal lift. `VectorStorageMatrix` is this package's alias for
+# the four types that keep their ``n(n\pm1)/2`` free parameters in one vector; its docstring says why
+# those numbers and not the entries of the dense interface, which do not even have the right length
+# and, for three of the four, cannot be broadcast through at all.
+freeparameters(x::Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix}) = parent(x)
+
+# `freeparameters` is defined on the abstract types, `rebuild` on the concrete ones below, and all of
+# these are `AbstractMatrix`es — so `NeuralNetworkParameters`' `rebuild(::AbstractArray, data) = data`
+# would catch a subtype added later and hand back the bare storage, flattening and unflattening it to
+# a dense matrix with no error anywhere. Say so instead. The methods below are strictly more specific,
+# so they win wherever they exist.
+function rebuild(x::Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix}, data)
+    throw(ArgumentError(string("no `rebuild` for `", typeof(x), "`. This package's ",
+        "`NeuralNetworkParameters` extension covers it with `freeparameters` but not with `rebuild`; ",
+        "add the missing method next to the others in `ext/NeuralNetworkParametersExt.jl`.")))
+end
 
 rebuild(::StiefelManifold, data) = StiefelManifold(data)
 rebuild(::GrassmannManifold, data) = GrassmannManifold(data)
@@ -50,7 +57,7 @@ rebuild(A::GrassmannLieAlgHorMatrix, data) = GrassmannLieAlgHorMatrix(data[1], A
 # follow from `length(S)` for the storage matrices, but only by solving a quadratic that differs per
 # family, so it is cheaper and less brittle to write it down. A manifold element needs nothing: its
 # storage is the dense matrix.
-parameter_metadata(A::StorageMatrix) = (n = A.n,)
+parameter_metadata(A::VectorStorageMatrix) = (n = A.n,)
 parameter_metadata(A::AbstractLieAlgHorMatrix) = (N = A.N, n = A.n)
 
 # Reading back a file that has no prototype to rebuild against.
@@ -63,8 +70,8 @@ parameter_metadata(A::AbstractLieAlgHorMatrix) = (N = A.N, n = A.n)
 # `NamedTuple` in each position. Normalising here is what keeps those files loading, and this is the
 # only place that can do it, since this is where the types are.
 _dense(storage) = storage isa NamedTuple ? storage.A : storage
-_vector(storage, metadata) = storage isa NamedTuple ? (storage.S, Int(storage.n)) :
-                             (storage, Int(metadata.n))
+_vector(storage, metadata) = storage isa NamedTuple ? (storage.S, storage.n) :
+                             (storage, metadata.n)
 
 function __init__()
     register_parameter_type!("StiefelManifold", (S, md) -> StiefelManifold(_dense(S)))
