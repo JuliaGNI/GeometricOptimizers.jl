@@ -54,10 +54,9 @@ end
 The induced 1-norm of `X`, i.e. its largest absolute column sum, as a reduction.
 
 `LinearAlgebra.opnorm(X, 1)` is the natural spelling and is *not* used, because
-`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. Scalar indexing is precisely what an array
-on a GPU backend cannot serve, and being free of it is the reason [`ScaledSquaring`](@ref) is the
-default algorithm — so the one norm that algorithm takes has to be expressible as `sum` and
-`maximum`, which every `KernelAbstractions` backend specializes.
+`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. The package implementations avoid that
+scalar indexing by expressing the norm as `sum` and `maximum`; accelerator execution still depends
+on the array backend's support for those reductions.
 
 The two agree to a few `eps`, not bitwise: `opnorm1` accumulates each column sequentially in at
 least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. The value is only ever
