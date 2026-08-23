@@ -56,10 +56,10 @@ end
 The induced 1-norm of `X`, i.e. its largest absolute column sum, as a reduction.
 
 `LinearAlgebra.opnorm(X, 1)` is the natural spelling and is *not* used, because
-`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. Scalar indexing is precisely what an array
-on a GPU backend cannot serve, and being free of it is the reason [`ScaledSquaring`](@ref) is the
-default algorithm — so the one norm that algorithm takes has to be expressible as `sum` and
-`maximum`, which every `KernelAbstractions` backend specializes.
+`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. Accelerator arrays generally cannot serve
+scalar indexing, and being free of it is the reason [`ScaledSquaring`](@ref) is the default algorithm
+— so the one norm that algorithm takes is expressed as `sum` and `maximum`. Support on a particular
+accelerator still depends on its backend implementations of those reductions.
 
 The two agree to a few `eps`, not bitwise: `opnorm1` accumulates each column sequentially in at
 least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. The value is only ever
@@ -179,8 +179,7 @@ function 𝔄(X::AbstractMatrix, algorithm::NativePade)
 end
 
 function 𝔄(X::AbstractMatrix, ::AugmentedPade)
-    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so `Base.exp` — a degree-13 Padé approximant with its
-    # own scaling and squaring — returns `𝔄(X)` in the upper-right block.
+    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so `Base.exp` returns `𝔄(X)` in the upper-right block.
     m = size(X, 1)
     T = eltype(X)
     augmented = [X one(X); zeros(T, m, m) zeros(T, m, m)]

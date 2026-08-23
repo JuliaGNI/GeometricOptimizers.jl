@@ -25,11 +25,11 @@ scaled to ``\|\bar{B}\| = 361``, against the cost of one retraction at ``N = 200
 
 | | `check` | forward error | cost | backend |
 |---|---|---|---|---|
-| [`ScaledSquaring`](@ref) | `3.6e-14` | `2.1e-14` | `0.087 ms` | any |
-| [`NativePade`](@ref) | `3.9e-14` | `2.1e-14` | `0.091 ms` | any |
+| [`ScaledSquaring`](@ref) | `3.6e-14` | `2.1e-14` | `0.087 ms` | no LAPACK/scalar indexing |
+| [`NativePade`](@ref) | `3.9e-14` | `2.1e-14` | `0.091 ms` | no LAPACK/scalar indexing |
 | [`AugmentedPade`](@ref) | `1.5e-14` | `2.0e-14` | `0.120 ms` | CPU (dense LAPACK) |
 | [`ProjectedSkew`](@ref) | `4.8e-15` | `3.0e-14` | `0.130 ms` | CPU (dense LAPACK) |
-| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.149 ms` | any |
+| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.149 ms` | no LAPACK/scalar indexing |
 
 "Forward error" is the relative distance to `exp(Matrix(B))`; both it and `check` come from the same
 lift, so the columns are comparable row by row. The `cost` column is one whole retraction, most of
@@ -40,11 +40,12 @@ actually separates the three algorithms that evaluate it, is `0.021 ms` and `201
 of its work, is nonetheless the *lightest* allocator, because `Base.exp` reuses buffers where these
 two build a fresh ``2n\times{}2n`` temporary per operation.
 
-[`ScaledSquaring`](@ref) remains the default because it is the cheapest portable algorithm.
-[`NativePade`](@ref) is the independent portable cross-check, [`ProjectedSkew`](@ref) if `check`
-matters more than the last digit of the exponential, and [`AugmentedPade`](@ref) as the CPU reference
-that delegates its numerics to `Base.exp`. [`TaylorSeries`](@ref) is the pre-0.2.0 behaviour and is
-retained only so the regression is reproducible; it is not a usable retraction.
+[`ScaledSquaring`](@ref) remains the default because it is the cheapest algorithm that avoids dense
+LAPACK and scalar indexing in the package code. [`NativePade`](@ref) is an independent cross-check
+with the same property, [`ProjectedSkew`](@ref) if `check` matters more than the last digit of the
+exponential, and [`AugmentedPade`](@ref) as the CPU reference that delegates its numerics to
+`Base.exp`. [`TaylorSeries`](@ref) is the pre-0.2.0 behaviour and is retained only so the regression
+is reproducible; it is not a usable retraction.
 
 A new one has to supply `𝔄(X::AbstractMatrix, ::NewAlgorithm)`; `geodesic` and everything above it
 then follow. An algorithm that does not go through ``\mathfrak{A}`` at all — [`ProjectedSkew`](@ref)
@@ -82,10 +83,10 @@ accurate.
 forward error between `6.4e-15` and `8.2e-15`, and neither column is monotone in `θ`. Nothing in the
 measurement singles out `0.5`; it needs no tuning because no value in that range does better.
 
-Like [`TaylorSeries`](@ref) and [`NativePade`](@ref), this uses nothing but matrix products and
-norms, so it runs unchanged on a `KernelAbstractions` backend — including the identities it needs,
-which come from [`GeometricOptimizers.unit_matrix`](@ref) and not from `Base.one`. It remains the
-default because it is the cheaper of the two usable portable algorithms: the isolated
+Like [`TaylorSeries`](@ref) and [`NativePade`](@ref), this uses only reductions and matrix products
+and avoids scalar indexing in the package code — including for the identities it needs, which come
+from [`GeometricOptimizers.unit_matrix`](@ref) and not from `Base.one`. It remains the default
+because it is the cheaper of the two usable algorithms with those properties: the isolated
 ``\mathfrak{A}`` call at ``N = 200``, ``n = 10`` is `0.021 ms` and `201 KiB` against
 [`NativePade`](@ref)'s `0.037 ms` and `330 KiB`. The norm is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by
 `LinearAlgebra.opnorm(X, 1)`, which is a scalar-indexing loop and would give up exactly the property
@@ -164,9 +165,11 @@ a portable solve-free inverse in place of the dense LU a rational approximant no
     non-normal argument is not settled here.
 
 Like [`ScaledSquaring`](@ref), this uses [`GeometricOptimizers.opnorm₁`](@ref),
-[`GeometricOptimizers.unit_matrix`](@ref), reductions and matrix products only, and therefore runs
-without scalar indexing on a `KernelAbstractions` backend. It is an independent portable cross-check
-rather than the default, and three measurements say why. Its fixed rational evaluation is `0.037 ms`
+[`GeometricOptimizers.unit_matrix`](@ref), reductions and matrix products only, and avoids scalar
+indexing in the package code. The test suite verifies that property with `JLArray`; support on a
+particular accelerator still depends on that backend's matrix-multiplication and reduction support.
+It is an independent cross-check rather than the default, and three measurements say why. Its fixed
+rational evaluation is `0.037 ms`
 against `0.021 ms` for [`ScaledSquaring`](@ref) on the isolated ``\mathfrak{A}`` call at
 ``N = 200``, ``n = 10``. It allocates `330 KiB` there against `201 KiB` — `1.6×`, and exactly the
 figure that does *not* stay a mere constant factor on a backend where an allocation costs a
@@ -204,9 +207,9 @@ Evaluate ``\mathfrak{A}`` as a block of a larger *ordinary* exponential.
 ```
 
 so one call to `Base.exp` on a ``4n\times{}4n`` matrix returns ``\mathfrak{A}(X)`` in its upper-right
-block. That hands the numerics to Julia's own exponential — a degree-13 Padé approximant with its own
-scaling and squaring, and the most heavily exercised implementation available — at the cost of
-exponentiating a matrix four times the size and discarding three quarters of it.
+block. That hands the numerics to Julia's dense matrix exponential and its internal scaling and
+squaring at the cost of exponentiating a matrix four times the size and discarding three quarters
+of it.
 
 Accurate to the same order as [`ScaledSquaring`](@ref), and about twice as expensive in the
 ``\mathfrak{A}`` call itself though much less than that once the ``N\times{}N`` assembly is counted.
@@ -215,7 +218,8 @@ against in `test/retractions/exponential_accuracy.jl`.
 
 !!! warning "CPU only"
     `Base.exp` on a dense matrix needs LAPACK, so this does not run on a GPU backend. Use
-    [`ScaledSquaring`](@ref) there, with [`NativePade`](@ref) as an independent cross-check.
+    [`ScaledSquaring`](@ref), with [`NativePade`](@ref) as an independent cross-check, when the
+    accelerator backend supports their matrix multiplications and reductions.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the alternatives.
 """
@@ -255,7 +259,8 @@ than agreeing with the exponential to the last bit — a long `Float32` run, for
 
 !!! warning "CPU only"
     `qr` and `eigen` on a dense matrix need LAPACK, so this does not run on a GPU backend. Use
-    [`ScaledSquaring`](@ref) there, with [`NativePade`](@ref) as an independent cross-check.
+    [`ScaledSquaring`](@ref), with [`NativePade`](@ref) as an independent cross-check, when the
+    accelerator backend supports their matrix multiplications and reductions.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the alternatives.
 """
