@@ -34,6 +34,13 @@ import Random
 const ALGORITHMS = (TaylorSeries(), ScaledSquaring(), NativePade(), AugmentedPade(), ProjectedSkew())
 const ALGORITHM_NAMES = ("TaylorSeries", "ScaledSquaring", "NativePade", "AugmentedPade", "ProjectedSkew")
 
+# The three that have an `𝔄` method, which is what the isolated-`𝔄` timing can call at all:
+# `TaylorSeries` overflows on the lift used there, and `ProjectedSkew` is a `geodesic`-level algorithm
+# with no `𝔄` method. Named rather than sliced out of `ALGORITHMS`, so reordering that tuple cannot
+# quietly change which three are measured.
+const 𝔄_ALGORITHMS = (("ScaledSquaring", ScaledSquaring()), ("NativePade", NativePade()),
+    ("AugmentedPade", AugmentedPade()))
+
 """
     best(f, repetitions = 20)
 
@@ -112,9 +119,13 @@ function exponential_tables(; N::Integer=20, n::Integer=3)
     B = rand(StiefelLieAlgHorMatrix{Float64}, 200, 10)
     B̂, B̄ = lift_factors(B)
     X = B̄' * B̂
-    foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES[2:4])
+    for (name, _) in 𝔄_ALGORITHMS
+        print(lpad(name, 16))
+    end
     println()
-    foreach(a -> @printf("%16.3f", best(() -> 𝔄(X, a), 50)), ALGORITHMS[2:4])
+    for (_, algorithm) in 𝔄_ALGORITHMS
+        @printf("%16.3f", best(() -> 𝔄(X, algorithm), 50))
+    end
     println()
 
     println("\n== cost of one retraction, ms, minimum of 50, 1 BLAS thread ==")

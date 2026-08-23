@@ -613,14 +613,21 @@ to `0.5` — and it barely matters: at ``\|\bar{B}\| \approx 155`` every ``\thet
 error between ``6.4\cdot10^{-15}`` and ``8.2\cdot10^{-15}``. That sweep is [measured at build
 time](@ref "The threshold `θ` needs no tuning") below; there is no reason to tune it.
 
-**Advantages.** The fastest, or tied fastest, of the five at every size measured below, and as close
-to `exp(Matrix(B))` as [`AugmentedPade`](@ref), which is as close as anything here gets. And —
-because it uses nothing but matrix products and norms — one of two usable algorithms that runs
-unchanged on a `KernelAbstractions` GPU backend. It remains the default because it is the cheaper of
-those two. Keeping that property is also
-why the norm is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by
-`LinearAlgebra.opnorm(X, 1)`: the latter is a scalar-indexing double loop, and scalar indexing is
-exactly what a GPU array cannot serve.
+**Advantages.** The cheapest of the five on the ``\mathfrak{A}`` call itself — `0.022 ms` at
+``N = 200``, ``n = 10``, against [`NativePade`](@ref)'s `0.034 ms` and [`AugmentedPade`](@ref)'s
+`0.047 ms` — and as close to `exp(Matrix(B))` as [`AugmentedPade`](@ref), which is as close as
+anything here gets. In the whole-retraction table below it is fastest or tied fastest at every size
+but two, where the ``N\times{}N`` assembly dominates and [`NativePade`](@ref) comes in a hundredth
+of a millisecond ahead; the isolated call is what separates the algorithms. And — because it uses
+nothing but matrix products, norms and a kernel-written identity — one of the two usable algorithms
+that run unchanged on a `KernelAbstractions` GPU backend. It remains the default because it is the
+cheaper of those two.
+
+Keeping that property is why the norm is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by
+`LinearAlgebra.opnorm(X, 1)` — the latter is a scalar-indexing double loop, and scalar indexing is
+exactly what a GPU array cannot serve — and why the identities it needs come from
+[`GeometricOptimizers.unit_matrix`](@ref) rather than from `Base.one`, whose diagonal write is the
+same hazard one level down.
 
 **Disadvantages.** Its orthogonality is the outcome of an arithmetic cancellation rather than a
 structural property, so `check` does drift upwards with the size of the lift — from ``10^{-15}`` to
@@ -634,27 +641,44 @@ the squarings it needs:
     ``\log_2\|\bar{B}\|`` would do, since the spectral radius is only ``\approx\|\bar{B}\|``. Each
     squaring amplifies the error, so this costs both time and accuracy. It is left alone because the
     tighter bound needs the spectral radius, and an eigenvalue computation would forfeit precisely
-    the freedom from dense LAPACK that makes this the default algorithm.
+    the freedom from dense LAPACK that makes this the default algorithm. [`NativePade`](@ref) takes
+    ``s`` the same way and inherits the whole of this.
 
 ## `NativePade`
 
 [`NativePade`](@ref) evaluates ``\mathfrak{A}`` directly at ``2n\times{}2n`` with the degree-6
-diagonal Padé approximant ``q_6(X)^{-1}p_6(X)``. It first scales to ``\|X\|_1 \leq 0.5``. On that
-ball the denominator differs from the identity by less than `0.26` in one-norm, so Newton--Schulz
-can replace the dense solve: starting from the identity, five effective refinements reduce the
-inverse residual to the 32nd power. The numerator and denominator share ``X^2`` and ``X^4``, and the
-existing low-rank squaring recursion restores the scale.
+diagonal Padé approximant ``q_6(X)^{-1}p_6(X)``, the coefficients being the ``[7/6]`` Padé
+approximant of ``\exp`` rearranged: with ``\exp(x) \approx N(x)/D(x)``,
+``\varphi_1(x) \approx (N(x)-D(x))/(xD(x))``, and ``N-D`` divides by ``x`` because both have
+constant term one. It scales to ``\|X\|_1 \leq 0.5`` first. There the denominator differs from the
+identity by at most `0.26` in one-norm, so Newton--Schulz can replace the dense solve: starting from
+the identity, five refinements square the inverse residual five times over, to
+``(\mathbb{I}-q_6)^{32}``. The numerator and denominator share ``X^2`` and ``X^4``, and the same
+low-rank squaring recursion [`ScaledSquaring`](@ref) uses restores the scale.
 
-**Advantages.** It never forms a matrix larger than ``2n\times{}2n`` and uses only reductions and
-matrix products. That makes it the independent implementation [`ScaledSquaring`](@ref) can be
-checked against on a backend that forbids scalar indexing. At ``\|\bar{B}\| = 361`` its `check` is
-`3.9e-14` and its forward error is `2.1e-14`, indistinguishable in practice from both
+**Advantages.** It never forms a matrix larger than ``2n\times{}2n`` and uses only reductions,
+matrix products and a kernel-written identity. That makes it the independent implementation
+[`ScaledSquaring`](@ref) can be checked against on a backend that forbids scalar indexing — which is
+what `test/retractions/exponential_accuracy.jl` does, on a `JLArray`. At ``\|\bar{B}\| = 361`` its
+`check` is `3.9e-14` and its forward error `2.1e-14`, indistinguishable in `Float64` from both
 [`ScaledSquaring`](@ref) and [`AugmentedPade`](@ref).
 
 **Disadvantages.** Its fixed rational evaluation does more small matrix products than
-[`ScaledSquaring`](@ref). At ``N = 200``, ``n = 10`` the ``\mathfrak{A}`` call costs `0.034 ms`
-against `0.018 ms` for [`ScaledSquaring`](@ref), although it remains cheaper than
-[`AugmentedPade`](@ref)'s `0.046 ms`. It is therefore the portable cross-check, not the default.
+[`ScaledSquaring`](@ref): at ``N = 200``, ``n = 10`` the ``\mathfrak{A}`` call costs `0.034 ms`
+against `0.022 ms`, though it stays under [`AugmentedPade`](@ref)'s `0.047 ms`. And the `Float64`
+indifference above does not carry to `Float32`, where at the top of the norm sweep its `check` is
+``1.0\cdot10^{-4}`` against ``4.0\cdot10^{-5}`` for [`ScaledSquaring`](@ref) and
+``3.4\cdot10^{-5}`` for [`AugmentedPade`](@ref) — the worst of the three. It is the portable
+cross-check, not the default.
+
+!!! warning "`θ` is a ceiling here, not a preference"
+    `ScaledSquaring(θ)` accepts any positive threshold and stays accurate over a 32-fold range,
+    because it sums its series until the terms vanish. `NativePade` does a *fixed* five
+    Newton--Schulz steps, so past ``\theta \approx 1`` the inverse it computes stops being one —
+    worst relative error over 400 random ``6\times6`` arguments of one-norm exactly ``\theta`` is
+    `6e-16` at ``\theta = 1``, `1.2e-10` at ``\theta = 3/2``, `1.1e-5` at ``\theta = 2`` and `169`
+    at ``\theta = 3`` — and nothing about the result says so. `NativePade(θ)` therefore refuses
+    ``\theta > 1/2``. Lowering it is safe and only adds squarings.
 
 ## `AugmentedPade`
 
@@ -675,15 +699,14 @@ three quarters of it.
 
 **Advantages.** It introduces no new numerics at all. Everything delicate is done by the most
 heavily exercised matrix-exponential implementation available, which is why it remains the CPU
-reference in `test/retractions/exponential_accuracy.jl`. Accuracy is the same
-order as [`ScaledSquaring`](@ref)'s.
+reference in `test/retractions/exponential_accuracy.jl`. Accuracy is the same order as
+[`ScaledSquaring`](@ref)'s.
 
 **Disadvantages.** Three quarters of the work is thrown away, so the ``\mathfrak{A}`` call itself is
 about twice as expensive as [`ScaledSquaring`](@ref)'s — though much less than twice once the
-``N\times{}N`` assembly around it is counted. In `Float32` it and [`ScaledSquaring`](@ref) trade last
-place across the sweep below — it is the worse of the two on most rows, [`ScaledSquaring`](@ref) at
-the very top — and at the large lifts both are an order of magnitude behind
-[`ProjectedSkew`](@ref). And `Base.exp` on a dense matrix needs LAPACK:
+``N\times{}N`` assembly around it is counted. In `Float32` it, [`ScaledSquaring`](@ref) and
+[`NativePade`](@ref) trade last place across the sweep below, and at the large lifts all three are an
+order of magnitude behind [`ProjectedSkew`](@ref). And `Base.exp` on a dense matrix needs LAPACK:
 
 !!! warning "CPU only"
     Neither this nor [`ProjectedSkew`](@ref) runs on a GPU backend. Use [`ScaledSquaring`](@ref),
@@ -714,20 +737,21 @@ numbers, and a unitary matrix — rather than by cancellation.
 
 **Advantages.** It is the only algorithm whose `check` does not degrade with the size of the lift.
 Over the sweep below it stays between ``2\cdot10^{-15}`` and ``5\cdot10^{-15}`` from
-``\|\bar{B}\| \approx 6`` to ``\|\bar{B}\| \approx 770``, where the other three drift from ``10^{-15}``
-to around ``7\cdot10^{-14}``. The gap is widest in `Float32`, where the other three are at the mercy of
-the format: over the same sweep their `check` climbs into the ``10^{-5}``s while this stays at a few
-``10^{-6}`` from one end to the other. That is the case for choosing it — a long `Float32` run, where
+``\|\bar{B}\| \approx 6`` to ``\|\bar{B}\| \approx 770``, where the other three drift from
+``10^{-15}`` to around ``7\cdot10^{-14}``. The gap is widest in `Float32`, where the other three are
+at the mercy of the format: over the same sweep their `check` climbs into the ``10^{-5}``s — into the
+``10^{-4}``s for [`NativePade`](@ref) — while this stays at a few ``10^{-6}`` from one end to the
+other. That is the case for choosing it — a long `Float32` run, where
 the departure from the manifold accumulates over thousands of steps and staying on the manifold
 matters more than agreeing with the exponential to the last bit.
 
-**Disadvantages.** It usually has the largest forward error of the three against `exp(Matrix(B))` —
-up to about 4.5× [`ScaledSquaring`](@ref)'s, and largest at all but the top of the sweep measured
-below. It needs a `qr` and an `eigen` instead of matrix
-products, which costs 1.2×–1.9× over the sizes measured below and rules out a GPU backend. And
-because it bypasses ``\mathfrak{A}``, it is the one algorithm that specialises
-[`geodesic`](@ref) directly rather than supplying a method of [`GeometricOptimizers.𝔄`](@ref) — worth
-knowing if you call ``\mathfrak{A}`` yourself, since `𝔄(X, ProjectedSkew())` does not exist.
+**Disadvantages.** It usually has the largest forward error of the four against `exp(Matrix(B))` —
+up to about 4.4× [`ScaledSquaring`](@ref)'s, and largest at all but the top of the sweep measured
+below. It needs a `qr` and an `eigen` instead of matrix products, which costs 1.2×–1.5× over the
+sizes measured below and rules out a GPU backend. And because it bypasses ``\mathfrak{A}``, it is the
+one algorithm that specialises [`geodesic`](@ref) directly rather than supplying a method of
+[`GeometricOptimizers.𝔄`](@ref) — worth knowing if you call ``\mathfrak{A}`` yourself, since
+`𝔄(X, ProjectedSkew())` does not exist.
 
 ## `TaylorSeries`
 
@@ -807,7 +831,7 @@ true
 ```
 
 and [`GeometricOptimizers.𝔄`](@ref) can be called on a bare matrix, which is the level at which four
-of the five algorithms are implemented:
+of the five algorithms are implemented — [`ProjectedSkew`](@ref) being the exception, as above:
 
 ```jldoctest retraction-usage
 using GeometricOptimizers: 𝔄
@@ -816,7 +840,8 @@ Random.seed!(123)
 
 X = randn(6, 6)
 
-isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, AugmentedPade()); rtol = 1e-12)
+isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, NativePade()); rtol = 1e-12) &&
+    isapprox(𝔄(X, NativePade()), 𝔄(X, AugmentedPade()); rtol = 1e-12)
 
 # output
 
@@ -949,10 +974,10 @@ table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`AugmentedPade`", "`Pro
 
 All four grow slowly with the norm of the lift, and the ordering is roughly the reverse of the
 previous table: [`ProjectedSkew`](@ref) is the furthest from the exponential at all but the largest
-of these norms. [`ScaledSquaring`](@ref), [`NativePade`](@ref) and [`AugmentedPade`](@ref) are
-indistinguishable in practice, so the trade is between that group and [`ProjectedSkew`](@ref): one
-is orthogonal by construction, the others agree with `exp` more closely. The four converge again at
-the top of the sweep, where the reference `exp(Matrix(B))` is itself no
+of these norms. [`ScaledSquaring`](@ref), [`NativePade`](@ref) and [`AugmentedPade`](@ref) are within
+a factor of `1.3` of each other on every row, so the trade is between that group and
+[`ProjectedSkew`](@ref): one is orthogonal by construction, the others agree with `exp` more closely.
+The four converge again at the top of the sweep, where the reference `exp(Matrix(B))` is itself no
 more accurate than what is being measured against it.
 
 ### `Float32`
@@ -970,10 +995,12 @@ table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`AugmentedPade`", "`Pro
         sci(check(geodesic(B, ProjectedSkew())))] for B in sweep(Float32)])
 ```
 
-[`ProjectedSkew`](@ref) is flat here too, an order of magnitude below the others at the top of the
-sweep — where the ordering of the other three depends on the lift, and none is close. In a
-`Float64` run that difference is academic; in a `Float32` one over thousands of steps it is the
-reason to choose it.
+[`ProjectedSkew`](@ref) is flat here too, and by the top of the sweep it is one to two orders of
+magnitude below the others. Which of the other three is worst depends on the lift over most of the
+range, but not at the top: there [`NativePade`](@ref) is the worst of them by a factor of about
+``2.5``, which is the one place the `Float64` indifference of the previous table does not carry over.
+In a `Float64` run all of this is academic; in a `Float32` one over thousands of steps it is the
+reason to choose [`ProjectedSkew`](@ref).
 
 ### The threshold `θ` needs no tuning
 
@@ -997,29 +1024,32 @@ default of `0.5` sits in that band; nothing in the measurement singles it out, w
 ### What they cost
 
 Unlike everything above, these are timings and therefore machine-dependent, so they are quoted rather
-than measured at build time. One retraction, `minimum` of 50 repetitions, a single BLAS thread, on an
-Apple M-series laptop; `julia --project=. scripts/retraction_accuracy.jl` reproduces them on yours.
-Milliseconds:
+than measured at build time. `minimum` of 50 repetitions, a single BLAS thread, on an Apple M-series
+laptop; `julia --project=. scripts/retraction_accuracy.jl` reproduces them on yours, and every figure
+in this section comes from one run of it.
 
-The isolated ``\mathfrak{A}`` call at ``N = 200``, ``n = 10`` costs `0.018 ms` for
-[`ScaledSquaring`](@ref), `0.034 ms` for [`NativePade`](@ref), and `0.046 ms` for
-[`AugmentedPade`](@ref). The full retraction includes the common ``N\times{}N`` assembly:
+The ``\mathfrak{A}`` call on its own, at ``N = 200``, ``n = 10``, is what separates the three
+algorithms that evaluate it — `0.022 ms` for [`ScaledSquaring`](@ref), `0.034 ms` for
+[`NativePade`](@ref) and `0.047 ms` for [`AugmentedPade`](@ref). One whole retraction, which adds the
+``N\times{}N`` assembly they all share, in milliseconds:
 
 | ``N``, ``n`` | 10, 2 | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 500, 50 | 1000, 20 |
 |---|---|---|---|---|---|---|---|---|
-| `Geodesic(ScaledSquaring())` | 0.003 | 0.004 | 0.010 | 0.029 | 0.083 | 0.514 | 3.35 | 3.23 |
-| `Geodesic(NativePade())` | 0.003 | 0.005 | 0.011 | 0.021 | 0.086 | 0.582 | 3.66 | 3.22 |
-| `Geodesic(AugmentedPade())` | 0.003 | 0.005 | 0.015 | 0.025 | 0.112 | 0.618 | 5.97 | 3.15 |
-| `Geodesic(ProjectedSkew())` | 0.004 | 0.007 | 0.020 | 0.037 | 0.122 | 0.688 | 4.09 | 3.71 |
-| `Geodesic(TaylorSeries())` | 0.003 | 0.005 | 0.017 | 0.032 | 0.153 | 0.610 | 14.1 | 4.04 |
-| `Cayley()` | 0.002 | 0.004 | 0.013 | 0.065 | 0.341 | 4.94 | 6.52 | 38.0 |
+| `Geodesic(ScaledSquaring())` | 0.003 | 0.005 | 0.012 | 0.022 | 0.092 | 0.420 | 3.06 | 2.63 |
+| `Geodesic(NativePade())` | 0.003 | 0.006 | 0.012 | 0.021 | 0.097 | 0.421 | 3.40 | 2.49 |
+| `Geodesic(AugmentedPade())` | 0.003 | 0.006 | 0.015 | 0.025 | 0.124 | 0.450 | 6.05 | 2.62 |
+| `Geodesic(ProjectedSkew())` | 0.004 | 0.008 | 0.018 | 0.032 | 0.135 | 0.516 | 4.09 | 2.86 |
+| `Geodesic(TaylorSeries())` | 0.003 | 0.006 | 0.017 | 0.029 | 0.157 | 0.470 | 14.2 | 3.47 |
+| `Cayley()` | 0.002 | 0.004 | 0.015 | 0.060 | 0.378 | 5.05 | 6.49 | 38.5 |
 
-[`ScaledSquaring`](@ref) and [`NativePade`](@ref) are effectively tied once the common assembly
-dominates; the isolated call shows the latter's extra rational work. [`ProjectedSkew`](@ref) remains
-close — a QR and an eigendecomposition of a ``2n\times{}2n`` matrix are not expensive things — while
-[`AugmentedPade`](@ref) pays for its ``4n\times{}4n`` embedding most clearly at ``n = 50``.
-[`Cayley`](@ref) is level with
-the exponential up to ``N \approx 50`` and loses by a factor of 15 by ``N = 1000``, which is the
+[`ScaledSquaring`](@ref) and [`NativePade`](@ref) are level here, and at ``N = 100`` and ``N = 1000``
+the latter is a hundredth of a millisecond ahead — which is the assembly and the run-to-run noise,
+not the algorithm; the isolated call above is where the extra rational work shows. The one place the
+whole retraction does separate them is ``n = 50``, where the ``2n\times{}2n`` argument is large
+enough to matter: `3.40` against `3.06`, and [`AugmentedPade`](@ref)'s `6.05` as it pays for the
+``4n\times{}4n`` embedding. [`ProjectedSkew`](@ref) stays close throughout — a QR and an
+eigendecomposition of a ``2n\times{}2n`` matrix are not expensive things. [`Cayley`](@ref) is level
+with the exponential up to ``N \approx 50`` and loses by a factor of 15 by ``N = 1000``, which is the
 ``O(N^3)`` against ``O(N^2n)`` of the previous section.
 
 ## Choosing one
@@ -1039,8 +1069,8 @@ the property you specifically need.**
 | | choose it when | at the price of |
 |---|---|---|
 | [`ScaledSquaring`](@ref) | almost always; it is the default | `check` drifting up with the size of the lift |
-| [`NativePade`](@ref) | you need an independent implementation on a backend that forbids scalar indexing | about 2× the isolated ``\mathfrak{A}`` cost, with similar accuracy |
-| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | 1.2×–1.9× the cost, usually the largest forward error, CPU only |
+| [`NativePade`](@ref) | you need an independent implementation on a backend that forbids scalar indexing | 1.5× the isolated ``\mathfrak{A}`` cost, the same accuracy in `Float64` and the worst `check` of the three in `Float32`, and `θ` bounded by `1/2` |
+| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | 1.2×–1.5× the cost, usually the largest forward error, CPU only |
 | [`AugmentedPade`](@ref) | you want a second opinion from an implementation that introduces no numerics of its own | roughly 2× the cost of the ``\mathfrak{A}`` call, no better than [`ScaledSquaring`](@ref) on accuracy, CPU only |
 | [`TaylorSeries`](@ref) | never; it exists so the pre-0.2.0 regression stays reproducible | leaving the manifold silently above ``\Vert\bar{B}\Vert \approx 50`` |
 

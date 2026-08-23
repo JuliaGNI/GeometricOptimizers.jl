@@ -2,7 +2,7 @@ using GeometricOptimizers
 using GeometricOptimizers: Cayley, Geodesic, StiefelManifold, check, iteration_number,
                            status, DecayingStatic, step_size, increase_iteration_number!,
                            solver_step!, update!
-using GeometricOptimizers: ScaledSquaring, AugmentedPade, ProjectedSkew
+using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew
 using GeometricOptimizers: linesearch_problem, retraction_differential, retraction, initialize!,
                            cache, gradient, hessian, problem, StiefelProjection
 using GeometricOptimizers: step_αmax, _manifold_αmax, linesearch_parameters, _caller_αmax,
@@ -150,11 +150,12 @@ end
     # covered, not just the two the rest of the file uses.
     searching = (Backtracking(Float64), Backtracking(Float64; expand=true), Bisection(Float64),
         Quadratic(Float64), BierlaireQuadratic(Float64))
-    # All three exponential algorithms are put through a real solve here, not just through
+    # All four exponential algorithms are put through a real solve here, not just through
     # `geodesic` in isolation: they have to agree on where the optimizer ends up, not merely on the
-    # value of one retraction.
-    retractions = (Geodesic(ScaledSquaring()), Geodesic(AugmentedPade()), Geodesic(ProjectedSkew()),
-        Cayley())
+    # value of one retraction. `TaylorSeries` is the one left out, and deliberately — it is not a
+    # retraction at a large lift and this asserts convergence.
+    retractions = (Geodesic(ScaledSquaring()), Geodesic(NativePade()), Geodesic(AugmentedPade()),
+        Geodesic(ProjectedSkew()), Cayley())
     for linesearch in searching, retraction in retractions
         x = x₀()
         opt = Optimizer(x, f; algorithm=GradientMethod(), linesearch=linesearch, retraction=retraction)

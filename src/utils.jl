@@ -1,7 +1,44 @@
-# Kernel that is needed for functions relating to `SymmetricMatrix` and `SkewSymMatrix`
-@kernel function write_ones_kernel!(unit_matrix::AbstractMatrix{T}) where {T}
+# Writes the diagonal of an identity matrix. `unit_matrix` below is the only caller; a kernel is what
+# it takes to write a diagonal without scalar indexing, and that docstring says why that matters.
+@kernel function write_ones_kernel!(matrix::AbstractMatrix{T}) where {T}
     i = @index(Global)
-    unit_matrix[i, i] = one(T)
+    matrix[i, i] = one(T)
+end
+
+@doc raw"""
+    unit_matrix(backend, T, n)
+    unit_matrix(A::AbstractMatrix)
+
+The ``n\times{}n`` identity of element type `T` on `backend`, with the diagonal written by
+`write_ones_kernel!` above.
+
+`Base.one(::AbstractMatrix)` is the natural spelling and is *not* used: `Base._one` allocates and
+then writes the diagonal in a **scalar-indexed loop**, which is precisely what an array on a
+`KernelAbstractions` backend cannot serve. It is the same hazard
+[`GeometricOptimizers.opnorm₁`](@ref) exists to avoid one level up, and every identity this package
+builds goes through here rather than through `Base.one` — `Base.one` for
+[`SymmetricMatrix`](@ref), [`SkewSymMatrix`](@ref), the two [`AbstractTriangular`](@ref)s and
+[`AbstractLieAlgHorMatrix`](@ref), and the ``2n\times{}2n`` identities that
+[`GeometricOptimizers.𝔄`](@ref) and [`NativePade`](@ref) need.
+
+`LinearAlgebra.I` covers some of those uses and is not enough either. `GPUArrays` supplies a
+kernel-based `+(::AbstractGPUMatrix, ::UniformScaling)`, so `X + I` is portable on the array types
+that package covers — but `KernelAbstractions` is the interface this package is written against, and
+a backend of its own is under no obligation to be one of them.
+
+The matrix form takes the backend and the element type from `A` and its size from
+`LinearAlgebra.checksquare`, so it throws on a non-square argument exactly as `Base.one` does.
+"""
+function unit_matrix(backend, ::Type{T}, n::Integer) where {T}
+    matrix = KernelAbstractions.zeros(backend, T, n, n)
+    write_ones! = write_ones_kernel!(backend)
+    write_ones!(matrix; ndrange=n)
+
+    matrix
+end
+
+function unit_matrix(A::AbstractMatrix{T}) where {T}
+    unit_matrix(KernelAbstractions.get_backend(A), T, LinearAlgebra.checksquare(A))
 end
 
 function apply_toNT(fun, ps::NamedTuple...)

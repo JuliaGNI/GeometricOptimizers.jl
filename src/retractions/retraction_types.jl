@@ -41,8 +41,8 @@ the manifold to round-off. [`cayley`](@ref) never forms the ``N\times{}N`` inver
 
     | ``N``, ``n`` | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 1000, 20 |
     |---|---|---|---|---|---|---|
-    | `Geodesic` | `0.005 ms` | `0.013 ms` | `0.021 ms` | `0.094 ms` | `0.42 ms` | `2.5 ms` |
-    | `Cayley` | `0.004 ms` | `0.013 ms` | `0.060 ms` | `0.38 ms` | `5.1 ms` | `39 ms` |
+    | `Geodesic` | `0.005 ms` | `0.012 ms` | `0.022 ms` | `0.092 ms` | `0.42 ms` | `2.6 ms` |
+    | `Cayley` | `0.004 ms` | `0.015 ms` | `0.060 ms` | `0.38 ms` | `5.1 ms` | `39 ms` |
 
     They are level up to ``N \approx 50`` and `Cayley` loses by a factor of 15 by ``N = 1000``.
     `Cayley` remains useful — it is unconditionally stable and needs no matrix function at all — but

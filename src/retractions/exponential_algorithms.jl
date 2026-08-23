@@ -25,11 +25,11 @@ scaled to ``\|\bar{B}\| = 361``, against the cost of one retraction at ``N = 200
 
 | | `check` | forward error | cost | backend |
 |---|---|---|---|---|
-| [`ScaledSquaring`](@ref) | `3.6e-14` | `2.1e-14` | `0.083 ms` | any |
-| [`NativePade`](@ref) | `3.9e-14` | `2.1e-14` | `0.086 ms` | any |
-| [`AugmentedPade`](@ref) | `1.5e-14` | `2.0e-14` | `0.112 ms` | CPU (dense LAPACK) |
-| [`ProjectedSkew`](@ref) | `4.8e-15` | `3.0e-14` | `0.122 ms` | CPU (dense LAPACK) |
-| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.153 ms` | any |
+| [`ScaledSquaring`](@ref) | `3.6e-14` | `2.1e-14` | `0.092 ms` | any |
+| [`NativePade`](@ref) | `3.9e-14` | `2.1e-14` | `0.097 ms` | any |
+| [`AugmentedPade`](@ref) | `1.5e-14` | `2.0e-14` | `0.124 ms` | CPU (dense LAPACK) |
+| [`ProjectedSkew`](@ref) | `4.8e-15` | `3.0e-14` | `0.135 ms` | CPU (dense LAPACK) |
+| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.157 ms` | any |
 
 "Forward error" is the relative distance to `exp(Matrix(B))`; both it and `check` come from the same
 lift, so the columns are comparable row by row. [`ScaledSquaring`](@ref) remains the default because
@@ -76,10 +76,13 @@ forward error between `6.4e-15` and `8.2e-15`, and neither column is monotone in
 measurement singles out `0.5`; it needs no tuning because no value in that range does better.
 
 Like [`TaylorSeries`](@ref) and [`NativePade`](@ref), this uses nothing but matrix products and
-norms, so it runs unchanged on a `KernelAbstractions` GPU backend. It remains the default because it
-is the cheaper of the two usable portable algorithms. The norm
-is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by `LinearAlgebra.opnorm(X, 1)`, which
-is a scalar-indexing loop and would give up exactly the property this paragraph claims.
+norms, so it runs unchanged on a `KernelAbstractions` backend — including the identities it needs,
+which come from [`GeometricOptimizers.unit_matrix`](@ref) and not from `Base.one`. It remains the
+default because it is the cheaper of the two usable portable algorithms: the isolated
+``\mathfrak{A}`` call at ``N = 200``, ``n = 10`` is `0.022 ms` against [`NativePade`](@ref)'s
+`0.034 ms`. The norm is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by
+`LinearAlgebra.opnorm(X, 1)`, which is a scalar-indexing loop and would give up exactly the property
+this paragraph claims.
 
 !!! note "The argument is worse-conditioned than the lift"
     ``X``'s lower-left block is ``\frac{1}{4}A^2 - B^TB``, so ``\|X\| \approx \|\bar{B}\|^2/4`` while
@@ -116,25 +119,47 @@ Newton--Schulz refinements start from the identity and use only matrix products.
 with the same low-rank squaring recursion as [`ScaledSquaring`](@ref), so no matrix larger than the
 input is formed.
 
-The degree and threshold are paired deliberately. For ``\|X\|_1 \leq 0.5``, the denominator differs
-from the identity by less than `0.26` in one-norm, so the fixed Newton--Schulz iteration contracts;
-the degree-6 Padé error is already below `Float64` round-off on the tested lift family. Raising `θ`
-would save squarings but weaken both statements, while lowering it adds work without improving the
-measured result.
+The degree and the threshold are paired deliberately, and unlike [`ScaledSquaring`](@ref)'s, `0.5`
+here is a **ceiling** and not a preference. The Newton--Schulz count is fixed at five, so the inverse
+residual is exactly ``(\mathbb{I} - q_6)^{32}``, and
+``\|\mathbb{I} - q_6\|_1 \leq \sum_{k\geq1}|q_k|\theta^k = 0.256`` at ``\theta = 1/2``, putting it
+at `2e-19` — below round-off, where the degree-6 Padé error already sits. Nothing bounds it above
+that. Worst relative error against [`AugmentedPade`](@ref) over 400 random ``6\times6`` arguments of
+one-norm exactly ``\theta``:
 
-Like [`ScaledSquaring`](@ref), this uses [`GeometricOptimizers.opnorm₁`](@ref), reductions and matrix
-products only, and therefore runs without scalar indexing on a `KernelAbstractions` backend. It is
-an independent portable cross-check rather than the default: it performs more small matrix products
-than [`ScaledSquaring`](@ref), while [`AugmentedPade`](@ref) remains the CPU reference that delegates
-all numerics to `Base.exp`.
+| ``\theta`` | 1/2 | 1 | 3/2 | 2 | 3 |
+|---|---|---|---|---|---|
+| relative error | `5.8e-16` | `6.4e-16` | `1.2e-10` | `1.1e-5` | `169` |
+
+It fails *silently*: a fixed number of refinements simply stops converging, and nothing in the
+result says so. [`ScaledSquaring`](@ref) has no such limit — it sums its series until the terms
+vanish, which is why its own docstring can sweep ``\theta`` over `[0.125, 4]` and find nothing to
+choose between — so the two thresholds are not interchangeable and this constructor rejects
+``\theta > 1/2``. Lowering it is safe and merely adds squarings, which is why it is a parameter at
+all.
+
+Like [`ScaledSquaring`](@ref), this uses [`GeometricOptimizers.opnorm₁`](@ref),
+[`GeometricOptimizers.unit_matrix`](@ref), reductions and matrix products only, and therefore runs
+without scalar indexing on a `KernelAbstractions` backend. It is an independent portable cross-check
+rather than the default: its fixed rational evaluation is `0.034 ms` against `0.022 ms` for
+[`ScaledSquaring`](@ref) on the isolated ``\mathfrak{A}`` call at ``N = 200``, ``n = 10``, and in
+`Float32` its `check` is the worst of the three usable ``\mathfrak{A}`` algorithms at the top of the
+norm sweep — `1.0e-4` against `4.0e-5` and `3.4e-5`. [`AugmentedPade`](@ref) remains the CPU
+reference that delegates all numerics to `Base.exp`.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the comparison.
 """
 struct NativePade{T<:Real} <: AbstractExponentialAlgorithm
     θ::T
 
+    # The upper bound is not decoration. `𝔄(X, ::NativePade)` runs a *fixed* five Newton--Schulz
+    # steps, and their residual `(𝕀 - q₆)³²` is below round-off only while `θ` is small: measured
+    # worst relative error is `6e-16` at `θ = 1`, `1.2e-10` at `θ = 3/2`, `1.1e-5` at `θ = 2` and
+    # `169` at `θ = 3`, with nothing raised. `ScaledSquaring` takes any positive `θ` because it sums
+    # its series until the terms vanish; this one does a fixed amount of work, so it has to refuse.
+    # The docstring above has the table and the norm bound behind `1/2`.
     function NativePade(θ::T = 0.5) where {T<:Real}
-        @assert θ > zero(T) "the scaling threshold has to be positive, got $(θ)"
+        @assert zero(T) < θ ≤ 1 // 2 "the scaling threshold has to be in (0, 1/2], got $(θ)"
         new{T}(θ)
     end
 end
@@ -188,13 +213,13 @@ This is the only algorithm whose `check` does not degrade with the size of the l
 `2.1e-15` and `5.3e-15` from ``\|\bar{B}\| = 5.8`` to ``\|\bar{B}\| = 767``, where the other three drift
 from `1e-15` to `7e-14`. Orthogonality is structural here — it comes from the eigenvector matrix, not
 from the accuracy of a series. The trade is the forward error against `exp(Matrix(B))`, which is the
-largest of the three at all but the very largest lifts and up to 4.5× [`ScaledSquaring`](@ref)'s, and
+largest of the four at all but the very largest lifts and up to 4.4× [`ScaledSquaring`](@ref)'s, and
 a QR plus an eigendecomposition instead of matrix products.
 
 The gap is widest in `Float32`, where the other three are at the mercy of the format: over the same
-sweep `check` climbs to `4.0e-5` for [`ScaledSquaring`](@ref) and `3.4e-5` for
-[`AugmentedPade`](@ref) — which of them is worse depends on the lift — while this stays between
-`1.0e-6` and `3.1e-6` from one end to the other. Choose it when staying on the manifold matters more
+sweep `check` climbs to `4.0e-5` for [`ScaledSquaring`](@ref), `3.4e-5` for [`AugmentedPade`](@ref)
+and `1.0e-4` for [`NativePade`](@ref), which of them is worst depending on the lift below the top of
+that sweep, while this stays between `1.0e-6` and `3.1e-6` from one end to the other. Choose it when staying on the manifold matters more
 than agreeing with the exponential to the last bit — a long `Float32` run, for instance, where
 `check` accumulates over thousands of steps.
 

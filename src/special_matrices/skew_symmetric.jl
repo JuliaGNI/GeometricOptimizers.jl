@@ -257,11 +257,7 @@ function Base.:*(A::SkewSymMatrix, b::AbstractVector{T}) where {T}
 end
 
 function Base.one(A::SkewSymMatrix{T}) where {T}
-    backend = KernelAbstractions.get_backend(A.S)
-    unit_matrix = KernelAbstractions.zeros(backend, T, A.n, A.n)
-    write_ones! = write_ones_kernel!(backend)
-    write_ones!(unit_matrix, ndrange=A.n)
-    unit_matrix
+    unit_matrix(KernelAbstractions.get_backend(A.S), T, A.n)
 end
 
 
