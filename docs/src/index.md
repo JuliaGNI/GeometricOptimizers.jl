@@ -15,4 +15,5 @@ on, and [Optimizer Methods](@ref "Standard Neural Network Optimizers") covers gr
 momentum and Adam themselves.
 
 Neural networks are not here. [`GeometricMachineLearning`](@extref GeometricMachineLearning
-:doc:`index`) builds them on top of this package and re-exports most of what follows.
+:doc:`index`) builds them on top of this package and re-exports most of what the
+[API Reference](@ref) lists.

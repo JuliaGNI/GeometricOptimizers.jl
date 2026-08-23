@@ -71,6 +71,10 @@ catch a subtype added later and hand back a densified parameter with no error an
   and the `@index` beside it, and `index.md` is the landing page it reads as. The chapters link into
   `api.md` rather than repeat a docstring, since Documenter renders each one only once.
 
+  `index.md`'s closing sentence said that `GeometricMachineLearning` "re-exports most of what
+  follows". What followed was the `@autodocs` block, and it no longer does; the sentence names the
+  page instead.
+
 - **The theme stylesheet is wired back in.** [0.4.0](#040) brought
   `docs/src/assets/extra_styles.css` over with the chapters whose figures need it — each of those
   figures exists twice, once per Documenter theme, and both are included, the stylesheet hiding
