@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased] — targeting 0.4.1
+
+### Documentation
+
+- **The docstrings move to a page of their own.** `index.md` ended in a catch-all `@autodocs` over
+  everything the topic pages did not document by hand, which made it by far the largest page in the
+  build and left the introduction sitting on top of the whole library. `api.md` now holds that block
+  and the `@index` beside it, and `index.md` is the landing page it reads as. The chapters link into
+  `api.md` rather than repeat a docstring, since Documenter renders each one only once.
+
+- **The theme stylesheet is wired back in.** [0.4.0](#040) brought
+  `docs/src/assets/extra_styles.css` over with the chapters whose figures need it — each of those
+  figures exists twice, once per Documenter theme, and both are included, the stylesheet hiding
+  whichever does not belong to the active one — and the `assets` entry that loads it was dropped
+  again by the commit that split `api.md` off. In that window all seven of those pages would have
+  shown both variants of every figure, stacked. No release fell in the window, so nothing published
+  was ever affected.
+
+  The entry now says in a comment what depends on it. It has gone missing twice: once by never
+  arriving with the chapters, and once by this. [#59]
+
 ## [0.4.0]
 
 **The manifold geometry becomes public API, and its documentation moves here.** The types were always
@@ -2457,6 +2478,7 @@ and both are corrected: see C8.)
 [#48]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/48
 [#49]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/49
 [#50]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/50
+[#59]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/59
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
