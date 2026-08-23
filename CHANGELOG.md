@@ -69,8 +69,11 @@ independent implementation that had been missing there.
   ADAM*, Algorithm 2 of Li, Li and Todorovic, [*Efficient Riemannian Optimization on the Stiefel
   Manifold via the Cayley Transform*](https://arxiv.org/abs/2002.01113) (ICLR 2020), the
   `li2020efficient` entry added to the bibliography by this PR's first round. It is reproduced with
-  this package's infrastructure, with one difference: any of the package's retractions may be used in
-  place of the source's two-step approximation of the Cayley transform. Its second moment is a
+  this package's infrastructure, and departs from the source in three places, all deliberate and all
+  recorded in the method's docstring: any of the package's retractions may be used in place of the
+  source's two-step approximation of the Cayley transform (and with it the source's step cap goes),
+  which ``\lVert\cdot\rVert^2`` the second moment squares is a keyword, and the momentum is
+  transported by the global section rather than re-projected. Its second moment is a
   **scalar**,
   ``v \gets \beta_2v + (1-\beta_2)\lVert\mathcal{G}(X)\rVert^2`` — one adaptive learning rate for the
   whole matrix instead of one per coordinate. That is the source's entire departure from ordinary Adam
@@ -139,6 +142,14 @@ independent implementation that had been missing there.
   and `14×` at the smallest lift — which is the trade it makes stated in both directions for the first
   time. `scripts/retraction_accuracy.jl` prints both, so every figure in that section still comes from
   one run of it. [#54]
+
+- **`docs/make.jl`'s `size_threshold` goes from 400 KiB to 450 KiB**, because `ScalarMomentAdam`'s
+  docstrings take `api.md` — the one catch-all `@autodocs` over the whole package — to 411.84 KiB,
+  and `size_threshold` is an error rather than a warning. This is the smaller half of the fix and
+  not the fix: the page grows with every documented addition, and what bounds it is continuing the
+  migration [#59] started, which moved the manifold, matrix, global-section and retraction
+  docstrings onto the chapters that explain them. `size_threshold_warn` stays at its default so the
+  build keeps saying so. [#51]
 
 ## [0.4.1]
 

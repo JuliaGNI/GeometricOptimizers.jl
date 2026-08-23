@@ -177,8 +177,11 @@ The source's algorithm is Stiefel-only and so is this: the method accepts exactl
 
 #### The source's Algorithm 2, symbol by symbol
 
-In its notation — ``\mathcal{G}`` the stochastic Euclidean gradient, ``X`` the iterate, ``l`` the
-learning rate, ``q = 0.5``, ``s = 2``:
+In its notation, with the numbering of its own pseudocode. Lines 1 and 3 are omitted: line 1 is the
+input list, from which ``\mathcal{G}`` is the stochastic **Euclidean** gradient, ``X`` the iterate,
+``l`` the learning rate, ``\varepsilon = 10^{-8}``, ``q = 0.5`` and ``s = 2``; line 3 is the loop
+header `for k = 0 to T do`, which is where line 6's ``1 - \beta_2^k`` gets the ``k = 0`` discussed
+below.
 
 ```
  2  X₁ orthonormal, M₁ = 0, v₁ = 1
@@ -196,13 +199,17 @@ learning rate, ``q = 0.5``, ``s = 2``:
 15  X_{k+1} ← Y^s
 ```
 
-Lines 8–10 are its equation (2), lines 12–15 are ``s`` fixed-point iterations of its equation (5) —
-its closed-form Cayley transform (3) written implicitly — and line 11 is the contraction condition of
-its Theorem 1, ``\alpha \in (0, \min\{1, 2/\lVert{}W\rVert\})``. The pseudocode is cross-checked
-against the authors' implementation (`stiefel_optimizer.py`, class `AdamG`, in
-`JunLi-Galios/Optimization-on-Stiefel-Manifold-via-Cayley-Transform`); where the two disagree, the
-implementation is followed, and [`ScalarMomentAdam`](@ref)'s docstring records both disagreements
-along with the three places this port departs from the source deliberately.
+Lines 8–10 are its equation (2), and lines 12–15 are ``s`` fixed-point iterations of its equation (5)
+— its closed-form Cayley transform (3) written implicitly. Line 11 *enforces* the contraction
+condition of its Theorem 1, and does so conservatively rather than exactly: the theorem asks for
+``\alpha \in (0, \min\{1, 2/\lVert{}W\rVert\})``, while line 11 at ``q = 0.5`` caps ``\alpha`` at
+``1/(\lVert{}W\rVert + \varepsilon)``, half of that bound, and puts the learning rate ``l`` where
+the theorem has ``1``.
+
+The pseudocode is cross-checked against the authors' implementation (`stiefel_optimizer.py`, class
+`AdamG`, in `JunLi-Galios/Optimization-on-Stiefel-Manifold-via-Cayley-Transform`); where the two
+disagree, the implementation is followed, and [`ScalarMomentAdam`](@ref)'s docstring records the three
+disagreements along with the three places this port departs from the source deliberately.
 
 ##### Where each symbol lives
 

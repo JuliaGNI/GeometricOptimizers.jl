@@ -241,15 +241,22 @@ equation (6)) where [`update_section!`](@ref) carries the lift here, which agree
 differs on a proper homogeneous space — the one departure that changes the iterates against the
 authors' implementation on the same objective and seed.
 
-What is recorded only here is two discrepancies *between* the source and its own implementation, which
-are not departures of this port:
+What is recorded only here is three discrepancies *between* the source and its own implementation,
+which are not departures of this port:
 
-  - **``v_1``.** Its line 2 initializes it to ``1``, `stiefel_optimizer.py` to ``0``, and line 6's
-    ``1 - \beta_2^k`` is ``0`` at the ``k = 0`` its loop starts from. ``0`` is followed, which is also
-    [`Adam`](@ref)'s convention here and which makes the first direction a normalized gradient step.
-  - **``\varepsilon`` inside or outside the root.** Its line 7 and its implementation both put it
-    inside; [`Adam`](@ref) here puts it outside, ``\sqrt{m_2}+\delta``. The source's placement is
-    used, so this is the one convention `ScalarMomentAdam` does *not* share with [`Adam`](@ref).
+  - **``v_1``.** Its line 2 initializes it to ``1``, `stiefel_optimizer.py` to ``0``
+    (`v_buffer = torch.zeros([1])`), and line 6's ``1 - \beta_2^k`` is ``0`` at the ``k = 0`` its loop
+    starts from. ``0`` is followed, which is also [`Adam`](@ref)'s convention here and which makes the
+    first direction a normalized gradient step.
+  - **``\varepsilon`` inside or outside the root.** Its line 7 and its implementation
+    (`vnew_hat.add(epsilon).sqrt()`) both put it inside; [`Adam`](@ref) here puts it outside,
+    ``\sqrt{m_2}+\delta``. The source's placement is used, so this is the one convention
+    `ScalarMomentAdam` does *not* share with [`Adam`](@ref).
+  - **``s``, the number of fixed-point iterations.** Its line 1 gives ``s = 2``; `Cayley_loop` in
+    `gutils.py` runs `for i in range(5)`. Neither number reaches this method, because the iteration
+    they count is the approximation of the Cayley transform that the admonition above says is not
+    ported — [`Cayley`](@ref) is evaluated exactly. It is recorded because a reader comparing this
+    port against the authors' code will meet it.
 """
 struct ScalarMomentAdam{T} <: OptimizerMethod
     β₁::T

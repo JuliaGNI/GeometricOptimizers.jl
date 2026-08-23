@@ -1,7 +1,8 @@
 using GeometricOptimizers
-using GeometricOptimizers: cache, direction, first_moment, second_moment, _second_moment,
-    gradient, gradient_array, global_rep, increase_iteration_number!, iteration_number, l2norm,
-    section, solver_step!, update!
+using GeometricOptimizers: cache, default_linesearch, direction, first_moment, second_moment,
+    _second_moment, gradient, gradient_array, global_rep, increase_iteration_number!,
+    isconverged, iteration_number, l2norm, linesearch, section, solver_step!, status, update!,
+    DEFAULT_LEARNING_RATE
 using LinearAlgebra: norm
 using Test
 import Random
@@ -82,6 +83,46 @@ end
         e
     end
     @test occursin("ScalarMomentAdam(Float32)", err.msg)
+
+    # The same check on the `OptimizerState` path, which the changelog promises and which used to be
+    # missing: `OptimizerState(::ScalarMomentAdam, ::StiefelManifold)` was untyped in `T`, so a
+    # `Float64` method handed `Float32` parameters returned a `ScalarMomentAdamState{Float32}` rather
+    # than saying that the method has to be constructed with the parameters' element type.
+    Y32 = rand(StiefelManifold{Float32}, 4, 2)
+    Ḡ32 = global_rep(GlobalSection(Y32), rgrad(Y32, randn(Float32, 4, 2)))
+    for args in ((Y32,), (Y32, Ḡ32))
+        err = try
+            OptimizerState(ScalarMomentAdam(), args...)
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("ScalarMomentAdam(Float32)", err.msg)
+    end
+    # and the matching element type still works, on both arities
+    @test OptimizerState(ScalarMomentAdam(Float32), Y32) isa ScalarMomentAdamState{Float32}
+    @test OptimizerState(ScalarMomentAdam(Float32), Y32, Ḡ32) isa ScalarMomentAdamState{Float32}
+    # the scope message, not the element-type one, when `x` is not a Stiefel manifold at all -- on the
+    # gradient-supplying arity as well
+    @test_throws ArgumentError OptimizerState(ScalarMomentAdam(), rand(3), rand(3))
+end
+
+# `ScalarMomentAdam` joins `AdamFamily`, which is what `default_linesearch` dispatches the fixed
+# `Static` on -- its direction is a moving average and is deliberately allowed not to descend on an
+# individual step, so a sufficient-decrease search has nothing to work with. `test/optimizer_tests.jl`
+# makes this assertion for `Adam` and `AdamWithEuclideanDecay` but cannot make it here: it builds its
+# optimizer on `ones(T, 3)`, which this method rejects.
+@testset "ScalarMomentAdam keeps AdamFamily's fixed Static" begin
+    for T in (Float64, Float32)
+        ls = default_linesearch(T, ScalarMomentAdam(T))
+        @test ls isa Static{T}
+        @test ls.α == T(DEFAULT_LEARNING_RATE)
+
+        Y = rand(StiefelManifold{T}, 5, 2)
+        opt = Optimizer(Y, Ỹ -> sum(abs2, Ỹ.A .- 1); algorithm=ScalarMomentAdam(T))
+        @test linesearch(opt).method isa Static{T}
+        @test linesearch(opt).method.α == T(DEFAULT_LEARNING_RATE)
+    end
 end
 
 # The identity the port rests on: the paper's auxiliary matrix, skew-symmetrized, is the horizontal
@@ -302,6 +343,42 @@ end
             end
             @test iteration_number(state) == 3
         end
+    end
+end
+
+# Everything above drives the method by hand, `increase_iteration_number!` + `solver_step!` +
+# `update!`, which is what makes the closed forms checkable. `solve!` is what a caller actually calls,
+# and it is the only thing that runs `initialize_state!`, builds an `OptimizerStatus` from the state
+# and the cache on every iteration, calls `gradient_difference!` and reaches
+# `update!(::ScalarMomentAdamState, ::Optimizer, x)` through the generic two-argument `update!` --
+# none of which the manual loops touch together. Both `ambient_norm` settings go through it, the
+# `true` one because the extra gradient evaluation it makes per step is a path nothing else in the
+# package takes.
+@testset "ScalarMomentAdam solves through solve!" begin
+    # `‖Y - 𝟙‖²_F`, whose gradient varies with the iterate — unlike the linear objective above, whose
+    # `∇L = C` everywhere — so the solve has a minimum to converge to rather than a direction to
+    # follow forever.
+    objective(Y) = sum(abs2, Y.A .- 1)
+    for ambient_norm in (false, true)
+        Y = rand(StiefelManifold, 6, 3)
+        f₀ = objective(Y)
+        method = ScalarMomentAdam(; ambient_norm)
+        opt = Optimizer(Y, objective; algorithm=method, linesearch=Static(0.05),
+            max_iterations=2000)
+        state = OptimizerState(method, Y)
+
+        result = solve!(Y, state, opt)
+
+        # it terminated on a criterion rather than on the iteration cap
+        @test iteration_number(state) < 2000
+        # ... at a point on the manifold, having decreased the objective
+        @test check(Y) < 1.0e-12
+        @test objective(Y) < f₀
+        # the status the solve reports is about the point it returns, and it is a *criterion* that
+        # stopped it rather than the cap
+        @test minimum(result) ≈ objective(Y)
+        @test isconverged(status(result))
+        @test !status(result).g_nonfinite
     end
 end
 

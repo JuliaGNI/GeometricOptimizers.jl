@@ -82,7 +82,11 @@ end
 
 function ScalarMomentAdamCache(x::StiefelManifold{T}) where {T}
     sec = GlobalSection(x)
-    g = global_rep(sec, zero(x.A))
+    # `_zero(x)` and not `global_rep(sec, zero(x.A))`: `Base.zero(::StiefelManifold)` already returns
+    # the zero of `𝔤ʰᵒʳ` for that manifold, so lifting a zero matrix through the section is a matrix
+    # product whose answer is the array `_zero` hands back for free. `OptimizerCache(::Adam{T}, x)`
+    # passes `_zero(x)` for the same reason.
+    g = _zero(x)
     δ = _zero(g)
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
@@ -130,8 +134,8 @@ mutable struct ScalarMomentAdamState{T,OT,GS,VT} <: OptimizerState{T}
 end
 
 function ScalarMomentAdamState(x::StiefelManifold{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+    g isa StiefelLieAlgHorMatrix || throw(ArgumentError("ScalarMomentAdam requires a single Stiefel gradient"))
     _g = _copy(g)
-    _g isa StiefelLieAlgHorMatrix || throw(ArgumentError("ScalarMomentAdam requires a single Stiefel gradient"))
     _x = _copy(x)
     gs = GlobalSection(_x)
     # the first moment has to be initialized with zeros and not with `_similar`: it is read in the
@@ -142,15 +146,35 @@ function ScalarMomentAdamState(x::StiefelManifold{T}, g::GradientArrayOrNamedTup
         gs, 0, _x, _copy(_x), _g, _copy(_g), _zero(_g), zero(T), T(NaN), T(NaN))
 end
 
-ScalarMomentAdamState(x::StiefelManifold{T}) where {T} =
-    ScalarMomentAdamState(x, global_rep(GlobalSection(x), zero(x.A)))
-OptimizerState(::ScalarMomentAdam, x::StiefelManifold) = ScalarMomentAdamState(x)
+# `_zero(x)` for the same reason as in the cache above -- and here it also saves a whole
+# `GlobalSection`, i.e. the QR of a random `N×N` matrix, built only to map a zero matrix to the zero
+# lift and then discarded (the inner constructor builds the section it keeps itself). This is
+# `AdamState(x) = AdamState(x, _zero(x))`.
+ScalarMomentAdamState(x::StiefelManifold{T}) where {T} = ScalarMomentAdamState(x, _zero(x))
+
+# The same three-method shape as `OptimizerCache` above, and for the same reason: the scope and the
+# element type are what this method is narrow about, so both have to be *said* rather than left to a
+# `MethodError`. `Adam`'s `OptimizerState(::Adam, x...)` is permissive here and `ScalarMomentAdam` is
+# deliberately not -- `Adam` accepts every `OptimizerSolution` there is, so for it there is nothing
+# to reject; this one accepts a single `StiefelManifold{T}` and nothing else, and a state built for
+# the wrong element type would otherwise be handed to a step that cannot use it. `CHANGELOG.md`
+# promises the check on this path as well as on `Optimizer`'s, and until this it was only on
+# `Optimizer`'s: `OptimizerState(ScalarMomentAdam(), rand(StiefelManifold{Float32}, 4, 2))` returned
+# a `ScalarMomentAdamState{Float32}` for a `Float64` method.
+OptimizerState(::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T} = ScalarMomentAdamState(x)
+OptimizerState(method::ScalarMomentAdam, x::StiefelManifold) =
+    throw(ArgumentError(_scalar_moment_adam_eltype_message(method, x)))
 # The gradient-supplying form, as [`Adam`](@ref) has through its `OptimizerState(::Adam, x...)`. It is
 # what [`ScalarMomentAdamState`](@ref)'s two-argument constructor is for, and without this method it
 # reached the generic `OptimizerState(::OptimizerMethod, args...)` and was told that
 # `OptimizerState` is "not implemented for ScalarMomentAdam", which was untrue.
-OptimizerState(::ScalarMomentAdam, x::StiefelManifold, g) = ScalarMomentAdamState(x, g)
-OptimizerState(::ScalarMomentAdam, x) = throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
+OptimizerState(::ScalarMomentAdam{T}, x::StiefelManifold{T}, g) where {T} = ScalarMomentAdamState(x, g)
+OptimizerState(method::ScalarMomentAdam, x::StiefelManifold, g) =
+    throw(ArgumentError(_scalar_moment_adam_eltype_message(method, x)))
+# `x, args...` and not just `x`: the gradient-supplying form has to reject an unsupported `x` with
+# the scope message too, and a `Vararg` tail is less specific than every `StiefelManifold` method
+# above, so it catches exactly what they do not.
+OptimizerState(::ScalarMomentAdam, x, args...) = throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
 
 solution(state::ScalarMomentAdamState) = state.x
 previous_solution(state::ScalarMomentAdamState) = state.x̄
