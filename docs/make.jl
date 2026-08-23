@@ -126,12 +126,13 @@ makedocs(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://JuliaGNI.github.io/GeometricOptimizers.jl",
         edit_link="main",
-        assets=String[],
-        # `index.md` still ends in a catch-all `@autodocs` for everything the topic pages do not
-        # document by hand, so it is large. It is smaller than it was — the manifold, matrix,
-        # global-section and retraction docstrings now sit on the pages that explain them — and
-        # `size_threshold_warn` is left at its default so the warning keeps nagging until the rest
-        # follows.
+        # The moved chapters include each of their figures twice, once per theme; without this
+        # stylesheet both variants render, stacked. See `docs/src/assets/extra_styles.css`.
+        assets=["assets/extra_styles.css"],
+        # `api.md` is one catch-all `@autodocs` over the whole package, so it is large by design.
+        # `size_threshold_warn` is left at its default: the warning it prints for that one page is
+        # the reminder that the docstrings are still not distributed over the chapters that explain
+        # them.
         size_threshold=400 * 2^10,
     ),
     pages=[
