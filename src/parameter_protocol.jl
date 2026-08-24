@@ -1,5 +1,3 @@
-module NeuralNetworkParametersExt
-
 # The `NeuralNetworkParameters` leaf protocol for this package's structured matrices.
 #
 # `NeuralNetworkParameters` walks a parameter set over two methods per leaf type — `freeparameters`,
@@ -11,15 +9,6 @@ module NeuralNetworkParametersExt
 # written anywhere else is piracy twice over — on `NeuralNetworkParameters`' generic and on this
 # package's type — and two such packages can silently disagree. This is the arrangement
 # `NeuralNetworkParameters`' own `freeparameters` docstring points at.
-
-using GeometricOptimizers: Manifold, StiefelManifold, GrassmannManifold,
-                           VectorStorageMatrix, SymmetricMatrix, SkewSymMatrix,
-                           LowerTriangular, UpperTriangular,
-                           AbstractLieAlgHorMatrix, StiefelLieAlgHorMatrix,
-                           GrassmannLieAlgHorMatrix
-
-import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
-using NeuralNetworkParameters: register_parameter_type!
 
 # One method covers all three families: this package already exposes exactly this relation as
 # `Base.parent` — `A.S` for a `VectorStorageMatrix`, `A.A` for a manifold element, and the tuple of
@@ -73,21 +62,4 @@ _dense(storage) = storage isa NamedTuple ? storage.A : storage
 _vector(storage, metadata) = storage isa NamedTuple ? (storage.S, storage.n) :
                              (storage, metadata.n)
 
-function __init__()
-    register_parameter_type!("StiefelManifold", (S, md) -> StiefelManifold(_dense(S)))
-    register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(_dense(S)))
-    register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
-    register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
-    register_parameter_type!("LowerTriangular", (S, md) -> LowerTriangular(_vector(S, md)...))
-    register_parameter_type!("UpperTriangular", (S, md) -> UpperTriangular(_vector(S, md)...))
-    # These two index positionally where the six above go by name, because they can: the older layout
-    # covered five types and never a lift, so their `storage` is only ever the `Tuple` this protocol
-    # wrote, in the order `parent` returned. A `NamedTuple` from that layout records no key order, so
-    # anything that might meet one has to reach for a field name.
-    register_parameter_type!("StiefelLieAlgHorMatrix",
-        (S, md) -> StiefelLieAlgHorMatrix(S[1], S[2], md.N, md.n))
-    register_parameter_type!("GrassmannLieAlgHorMatrix",
-        (S, md) -> GrassmannLieAlgHorMatrix(S[1], md.N, md.n))
-end
-
-end
+# The registrations live in the module's `__init__`; see the bottom of `GeometricOptimizers.jl`.

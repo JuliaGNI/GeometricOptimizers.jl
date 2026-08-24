@@ -56,8 +56,13 @@ leaves = (
     plain     = rand(2, 2),
 )
 
-@testset "the extension is loaded" begin
-    @test Base.get_extension(GeometricOptimizers, :NeuralNetworkParametersExt) !== nothing
+# `NeuralNetworkParameters` is a hard dependency as of 0.5.0, so the protocol is simply there -- no
+# extension to load and nothing to condition on. This asserts that rather than deleting the testset,
+# because "the methods are present" is the precondition every testset below relies on.
+@testset "the protocol is present unconditionally" begin
+    @test freeparameters(leaves.symmetric) === parent(leaves.symmetric)
+    @test rebuild(leaves.symmetric, parent(leaves.symmetric)) isa SymmetricMatrix
+    @test isnothing(Base.get_extension(GeometricOptimizers, :NeuralNetworkParametersExt))
 end
 
 @testset "freeparameters is Base.parent" begin
@@ -133,39 +138,44 @@ end
     end
 end
 
-# The whole `ParameterHandling` removal rests on this: the flat vector this package's protocol
-# produces has to be the *same numbers in the same order* as the one `ParameterHandling.flatten`
-# produced, because downstream code indexes it by hand. `test/named_tuple_parameters.jl` asserts
-# literal ranges, and its `∇F!` slices the flat vector with them.
+# The flat ordering, pinned absolutely.
 #
-# It holds by construction rather than by luck — `Base.vec` and `Base.parent` return the same storage
-# for every one of these types, and `NeuralNetworkParameters` copies a leaf in linear index order —
-# but "by construction" is an argument, not a test. This is the test. It is written while both
-# packages are still present precisely so that the equality is recorded before one of them goes.
-@testset "the flat ordering agrees with the one downstream code indexes by" begin
-    for (k, x) in pairs(leaves)
-        v_ph, _ = GeometricOptimizers.ParameterHandling.flatten(Float64, x)
-        v_nn, _ = NeuralNetworkParameters.flatten(Float64, x)
-        @test v_nn == v_ph
+# Downstream code indexes this vector by hand -- `test/named_tuple_parameters.jl` asserts literal
+# ranges and its `∇F!` slices with them -- so the order is part of the contract, not an implementation
+# detail. When this landed it was written as an elementwise comparison against
+# `ParameterHandling.flatten`, which was still present, and the two agreed on every leaf family; see
+# the commit that added it. With that package gone there is nothing left to compare against, so the
+# expectations are spelled out instead. Which is the better test anyway: it says what the numbers
+# *are* rather than that two implementations happen to concur.
+@testset "the flat ordering is the one downstream code indexes by" begin
+    # a manifold flattens as its dense storage, in linear index order
+    @test flatten(Float64, leaves.stiefel)[1] == vec(parent(leaves.stiefel))
+    @test flatten(Float64, leaves.grassmann)[1] == vec(parent(leaves.grassmann))
+
+    # a storage matrix flattens as the vector it keeps, which is also what `vec` returns for it --
+    # `n(n±1)/2` numbers, not `n²`
+    for x in (leaves.symmetric, leaves.skew, leaves.lower, leaves.upper)
+        @test flatten(Float64, x)[1] == parent(x)
+        @test flatten(Float64, x)[1] == vec(x)
     end
 
-    # and through a container, which is where the per-leaf orders compose. Heterogeneous on purpose:
-    # a manifold, a storage matrix, a lift and a plain array in one set.
-    ps = (Y = leaves.stiefel, S = leaves.symmetric, G = leaves.stiefhor, W = leaves.plain)
-    v_ph, _ = GeometricOptimizers.ParameterHandling.flatten(Float64, ps)
-    v_nn, layout = NeuralNetworkParameters.flatten(Float64, ps)
-    @test v_nn == v_ph
-
-    # spelled out for the two that are not simply `vec` of the leaf, so a future reader can see
-    # *which* numbers these are without running anything
-    @test NeuralNetworkParameters.flatten(Float64, leaves.symmetric)[1] == parent(leaves.symmetric)
-    @test NeuralNetworkParameters.flatten(Float64, leaves.stiefhor)[1] ==
+    # a lift flattens block by block, in the order `parent` returns them, and the first block of a
+    # `StiefelLieAlgHorMatrix` is itself structured so it contributes its own storage
+    @test flatten(Float64, leaves.stiefhor)[1] ==
           vcat(parent(parent(leaves.stiefhor)[1]), vec(parent(leaves.stiefhor)[2]))
+    @test flatten(Float64, leaves.grasshor)[1] == vec(parent(leaves.grasshor)[1])
 
-    # the ranges, in declaration order, which is what a hand-written `∇F!` relies on
+    # a plain array is itself, in linear index order
+    @test flatten(Float64, leaves.plain)[1] == vec(leaves.plain)
+
+    # and through a container the per-leaf orders compose in declaration order. Heterogeneous on
+    # purpose: a manifold, a storage matrix, a lift and a plain array in one set.
+    ps = (Y = leaves.stiefel, S = leaves.symmetric, G = leaves.stiefhor, W = leaves.plain)
+    v, layout = flatten(Float64, ps)
+    @test v == vcat(flatten(Float64, leaves.stiefel)[1], flatten(Float64, leaves.symmetric)[1],
+                    flatten(Float64, leaves.stiefhor)[1], flatten(Float64, leaves.plain)[1])
     @test parameterrange(layout.children.Y) == 1:(N * n)
-    @test parameterrange(layout.children.W) ==
-          (length(v_nn) - length(leaves.plain) + 1):length(v_nn)
+    @test parameterrange(layout.children.W) == (length(v) - length(leaves.plain) + 1):length(v)
 end
 
 @testset "parameter_metadata records what the storage does not determine" begin

@@ -15,13 +15,13 @@ Each of them stores ``n(n\pm1)/2`` numbers behind an ``n \times n`` interface, s
 - `similar` has to preserve the type, because the optimizer caches allocate their scratch with it and
   then require every array to have the same type as the parameter. The `AbstractArray` fallback
   returns a dense `Matrix`.
-- `ParameterHandling.flatten` has to round trip through the free parameters. Its `AbstractMatrix`
-  method reshapes the flattened vector back to ``n \times n``, and ``n(n\pm1)/2`` numbers do not
-  reshape to that.
+- flattening has to round trip through the free parameters. A generic `AbstractMatrix` treatment
+  reshapes the flattened vector back to ``n \times n``, and ``n(n\pm1)/2`` numbers do not reshape to
+  that. `NeuralNetworkParameters` asks [`Base.parent`](@ref) instead, through `freeparameters`.
 
 For every one of these types the free parameters *are* the coordinates the optimizer should work in,
 so each primitive is the corresponding operation on `parent`. `_add!`, `_rac!`, `_square!`, `_div!`,
-`_rmul!`, `_difference!` and `flatten` live next to the rest of their family in
+`_rmul!` and `_difference!` live next to the rest of their family in
 `optimizers/named_tuple_wrapper.jl`, `l2norm` in `optimizers/optimizer_status.jl`; `update_section!`
 in `global_sections/global_sections.jl` splits on this alias for the same reason.
 

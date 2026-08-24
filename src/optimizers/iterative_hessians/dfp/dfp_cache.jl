@@ -34,8 +34,9 @@ struct DFPCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
     # length of the *flattening*, the intrinsic dimension, which for a `NamedTuple` is emphatically
     # not `length(x)` (that is the number of entries).
     function DFPCache(x::AT) where {T,AT<:OptimizerSolution{T}}
-        v, _ = ParameterHandling.flatten(_zero(x))
-        q = zeros(T, length(v), length(v))
+        # see `BFGSCache` for why the `_zero` is load-bearing rather than redundant
+        n = flatlength(_zero(x))
+        q = zeros(T, n, n)
         section = GlobalSection(x)
         g = _zero(x)
         cache = new{T,AT,typeof(g),typeof(q),typeof(section)}(_copy(x), _similar(g), _similar(g), Ref(false), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section)
@@ -110,7 +111,7 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
     # flattened, so it is `_dot` and not the ambient `⋅`
     ΔxΔg = _dot(cache.Δx, cache.Δg)
     # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too
-    Δg2 = ParameterHandling.flatten(cache.Δg)[1]
+    Δg2 = flatten(cache.Δg)[1]
     γQγ = Δg2' * state.Q * Δg2
 
     # see the remark in `bfgs_cache.jl`: `curvature_is_usable` is the curvature condition that keeps

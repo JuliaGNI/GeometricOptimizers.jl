@@ -43,9 +43,9 @@ BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 # where the horizontal lift has only 2 free parameters, and the cache and the state then disagree
 # about how big `Q` is.
 function alloc_h(x::Union{ArrayNamedTuple{T},Manifold{T}}) where {T}
-    v, _ = ParameterHandling.flatten(_zero(x))
-    h = zeros(T, length(v), length(v))
-    fill!(h, T(NaN))
+    # `_zero(x)` for the reason `BFGSCache` gives: the lift's dimension, not the dense one
+    n = flatlength(_zero(x))
+    fill!(zeros(T, n, n), T(NaN))
 end
 
 OptimizerState(::BFGS, x_args...) = BFGSState(x_args...)
@@ -88,7 +88,7 @@ end
 function update!(state::BFGSState, gradient::Gradient, x::XT, retraction) where {T,XT<:OptimizerSolution{T}}
     _copyto!(state.x̄, x)
     XT <: ArrayNamedTuple ? gradient(state.ḡ, x, state) : gradient(state.ḡ, x)
-    state.f̄ = gradient.F(ParameterHandling.flatten(T, x)[1])
+    state.f̄ = gradient.F(flatten(T, x)[1])
 
     update_section!(section(state), state.s, retraction)
 
