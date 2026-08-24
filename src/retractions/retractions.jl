@@ -6,9 +6,9 @@ cayley(A::AbstractVecOrMat) = A
 # passes one along on every parameter type.
 geodesic(A::AbstractVecOrMat, ::AbstractExponentialAlgorithm) = A
 
-geodesic(B::NamedTuple) = apply_toNT(geodesic, B)
+geodesic(B::NamedTuple) = map(geodesic, B)
 geodesic(B::NamedTuple, algorithm::AbstractExponentialAlgorithm) =
-    apply_toNT(Bᵢ -> geodesic(Bᵢ, algorithm), B)
+    map(Bᵢ -> geodesic(Bᵢ, algorithm), B)
 
 @doc raw"""
     lift_factors(B::AbstractLieAlgHorMatrix)
@@ -147,7 +147,7 @@ function geodesic(B::AbstractLieAlgHorMatrix, ::ProjectedSkew)
     manifold_type(B)(one(B) + Q * (expM - I) * Q')
 end
 
-cayley(B::NamedTuple) = apply_toNT(cayley, B)
+cayley(B::NamedTuple) = map(cayley, B)
 
 @doc raw"""
     cayley(Y::Manifold, Δ)
@@ -300,7 +300,7 @@ retraction_differential(::Geodesic, B, α) = B
 retraction_differential(::Cayley, B::AbstractVecOrMat, α) = B
 
 retraction_differential(R::Cayley, B::NamedTuple, α) =
-    apply_toNT(Bᵢ -> retraction_differential(R, Bᵢ, α), B)
+    map(Bᵢ -> retraction_differential(R, Bᵢ, α), B)
 
 function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) where {T}
     iszero(α) && return B

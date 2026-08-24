@@ -34,10 +34,10 @@ function (grad::Gradient{T})(g::ArrayNamedTuple{T}, x::ArrayNamedTuple{T}, state
 end
 
 _zero(a::AbstractArray) = zero(a)
-_zero(a::ArrayNamedTuple) = apply_toNT(_zero, a)
+_zero(a::ArrayNamedTuple) = map(_zero, a)
 
 _copy(a::AbstractArray) = copy(a)
-_copy(a::ArrayNamedTuple) = apply_toNT(_copy, a)
+_copy(a::ArrayNamedTuple) = map(_copy, a)
 
 # `Base.similar` is deliberately an error on a `Manifold` — an arbitrary array of that shape is not a
 # point of it — so a fresh *random* point stands in for it. `Manifold` and not `StiefelManifold`, and
@@ -46,7 +46,7 @@ _copy(a::ArrayNamedTuple) = apply_toNT(_copy, a)
 # building an `AdamState` or a `MomentumState`. See issue A11.
 _similar(a::Manifold{T}) where {T} = rand(manifold_constructor(a){T}, size(a)...)
 _similar(a::AbstractArray) = similar(a)
-_similar(a::ArrayNamedTuple) = apply_toNT(_similar, a)
+_similar(a::ArrayNamedTuple) = map(_similar, a)
 
 _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
 
@@ -54,13 +54,13 @@ _fill!(a::Manifold{T}, ::T) where {T} = a
 
 _copyto!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = copyto!(a, b)
 function _copyto!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
-    apply_toNT(_copyto!, a, b)
+    map(_copyto!, a, b)
 end
 
 # Type piracy again by way of the aliases: both `GlobalSectionNamedTuple` and
 # `ArrayNamedTuple` are `NamedTuple`. See issue #16.
 function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ArrayNamedTuple{T}) where {T}
-    apply_toNT(copyto!, Λ, x)
+    map(copyto!, Λ, x)
     Λ
 end
 
@@ -77,12 +77,12 @@ _copyto!(Λ::GlobalSectionNamedTuple, x::ArrayNamedTuple) = copyto!(Λ, x)
 _copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
 
 function _copyto!(x::ArrayNamedTuple, Λ::GlobalSectionNamedTuple)
-    apply_toNT(copyto!, x, Λ)
+    map(copyto!, x, Λ)
     x
 end
 
 function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple)
-    apply_toNT(_copyto!, Λ₁, Λ₂)
+    map(_copyto!, Λ₁, Λ₂)
     Λ₁
 end
 
@@ -94,7 +94,7 @@ end
 
 function _fill!(a::ArrayNamedTuple{T}, b::T) where {T}
     fill_closure!(_a) = _fill!(_a, b)
-    apply_toNT(fill_closure!, a)
+    map(fill_closure!, a)
     a
 end
 
@@ -120,7 +120,7 @@ function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b:
     c
 end
 
-_difference!(c::ArrayNamedTuple{T}, a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T} = apply_toNT(_difference!, c, a, b)
+_difference!(c::ArrayNamedTuple{T}, a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T} = map(_difference!, c, a, b)
 
 _rmul!(a::AbstractArray, b) = rmul!(a, b)
 
@@ -133,7 +133,7 @@ end
 
 function _rmul!(a::ArrayNamedTuple, b)
     rmul_closure!(a) = _rmul!(a, b)
-    apply_toNT(rmul_closure!, a)
+    map(rmul_closure!, a)
     a
 end
 
@@ -142,7 +142,7 @@ function _mul!(c::AbstractVecOrMat, a::AbstractMatrix, b::AbstractVecOrMat)
 end
 
 function _mul!(c::ArrayNamedTuple, a::ArrayNamedTuple, b::ArrayNamedTuple)
-    apply_toNT(_mul!, c, a, b)
+    map(_mul!, c, a, b)
     c
 end
 
@@ -212,7 +212,7 @@ function _add!(a::MT, b::MT) where {MT<:VectorStorageMatrix}
 end
 
 function _add!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
-    apply_toNT(_add!, a, b)
+    map(_add!, a, b)
     a
 end
 
@@ -230,7 +230,7 @@ end
 
 function _add!(a::ArrayNamedTuple{T}, b::T) where {T}
     closure(a) = _add!(a, b)
-    apply_toNT(closure, a)
+    map(closure, a)
     a
 end
 
@@ -251,7 +251,7 @@ function _rac!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_rac!(b::ArrayNamedTuple, a::ArrayNamedTuple) = apply_toNT(_rac!, b, a)
+_rac!(b::ArrayNamedTuple, a::ArrayNamedTuple) = map(_rac!, b, a)
 
 _rac!(a) = _rac!(a, a)
 
@@ -276,7 +276,7 @@ function _div!(C::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix, B::Abstra
 end
 
 function _div!(C::ArrayNamedTuple, A::ArrayNamedTuple, B::ArrayNamedTuple)
-    apply_toNT(_div!, C, A, B)
+    map(_div!, C, A, B)
     C
 end
 
@@ -298,7 +298,7 @@ function _square!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_square!(b::ArrayNamedTuple, a::ArrayNamedTuple) = apply_toNT(_square!, b, a)
+_square!(b::ArrayNamedTuple, a::ArrayNamedTuple) = map(_square!, b, a)
 
 function _square(a)
     b = _copy(a)
@@ -309,7 +309,7 @@ end
 
 Base.copyto!(dest::AT, src::GlobalSection{T,AT}) where {T,AT<:AbstractArray{T}} = copyto!(dest, src.Y)
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)
-rgrad(ps::ArrayNamedTuple, dx::ArrayNamedTuple) = apply_toNT(rgrad, ps, dx)
+rgrad(ps::ArrayNamedTuple, dx::ArrayNamedTuple) = map(rgrad, ps, dx)
 
 function rgrad(Y::AbstractVecOrMat, dx::AbstractVecOrMat)
     @assert size(Y) == size(dx)

@@ -160,7 +160,7 @@ the other.
 """
 solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
-solution_scale(ps::ArrayNamedTuple) = √sum(abs2, values(apply_toNT(solution_scale, ps)))
+solution_scale(ps::ArrayNamedTuple) = √sum(abs2, values(map(solution_scale, ps)))
 
 # The norm of a horizontal lift is taken over its *free parameters*, i.e. over `Base.parent`, and in
 # quadrature -- the same intrinsic-versus-ambient distinction `_dot` documents. Leaving it to the
@@ -186,7 +186,7 @@ function l2norm(a::ArrayNamedTuple)
     # the block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them
     # (which this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby
     # every stopping criterion computed from it.
-    norms = apply_toNT(l2norm, a)
+    norms = map(l2norm, a)
     √sum(abs2, values(norms))
 end
 

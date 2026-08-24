@@ -189,6 +189,33 @@ end
     @test parameter_metadata(leaves.stiefel) == NamedTuple()
 end
 
+# `GlobalSection` of the container. This is one method, but it is the method that lets
+# `GeometricMachineLearning` delete its own copy of it -- `GlobalSection` is this package's function
+# and `NetworkParameters` is `NeuralNetworkParameters`', so a package that merely uses both owns
+# neither name.
+@testset "a GlobalSection can be taken of the container" begin
+    nt = (L1 = (Y = leaves.stiefel, b = rand(N)), L2 = (Z = leaves.grassmann,))
+    ps = NetworkParameters(nt)
+
+    λ_container = GlobalSection(ps)
+    λ_bare = GlobalSection(nt)
+
+    # the result is the plain tree, not a `NetworkParameters` of sections: a section is not a
+    # parameter, and everything downstream walks it as an ordinary container
+    @test λ_container isa NamedTuple
+    @test keys(λ_container) == keys(nt)
+    @test typeof(λ_container) == typeof(λ_bare)
+
+    # every leaf gets a section, a manifold one and an ordinary array alike
+    @test λ_container.L1.Y isa GlobalSection
+    @test λ_container.L1.b isa GlobalSection
+    @test λ_container.L2.Z isa GlobalSection
+
+    # and the section really is of these parameters -- `==`, not `===`, because the constructor
+    # deliberately stores a copy of the anchor
+    @test λ_container.L1.Y.Y == ps.L1.Y
+end
+
 @testset "HDF5 round trip, with no prototype" begin
     # the registered form: `__init__` taught `load` how to rebuild each of these, so a file loads
     # without the caller having to supply a parameter set of the right shape

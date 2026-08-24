@@ -41,20 +41,13 @@ function unit_matrix(A::AbstractMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A), T, LinearAlgebra.checksquare(A))
 end
 
-function apply_toNT(fun, ps::NamedTuple...)
-    for p in ps
-        @assert keys(ps[1]) == keys(p)
-    end
-    NamedTuple{keys(ps[1])}(fun(p...) for p in zip(ps...))
-end
-
 function add!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat)
     @assert size(A) == size(B) == size(C)
     C .= A + B
 end
 
 function add!(dx₁::NamedTuple, dx₂::NamedTuple, dx₃::NamedTuple)
-    apply_toNT(add!, dx₁, dx₂, dx₃)
+    map(add!, dx₁, dx₂, dx₃)
 end
 
 (grad::Gradient{T})(x::Manifold{T}) where {T} = rgrad(x, reshape(grad(vec(x)), size(x)...))
