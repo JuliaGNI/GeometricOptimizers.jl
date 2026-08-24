@@ -46,7 +46,19 @@ using ChainRulesCore: ProjectTo
 # we use the Vcat function from LazyArrays
 import LazyArrays
 
-import ParameterHandling, ForwardDiff
+# `NeuralNetworkParameters` owns the parameter container and the walks over it. This package supplies
+# the leaf protocol for its own structured matrices (`src/parameter_protocol.jl`) and uses the flat
+# form everywhere a quasi-Newton method needs coordinates.
+#
+# Deliberately *not* re-exported: `flatten` and `unflatten` are that package's names, and a downstream
+# package doing `using GeometricMachineLearning, GeometricOptimizers` would meet them twice.
+# The list is what this package actually uses, so that it says which walks these optimizers are
+# written in terms of. `ext/AbstractNeuralNetworksExt.jl` imports `mapstorage` for itself.
+using NeuralNetworkParameters: NetworkParameters, params,
+                               parameterlayout, flatlength,
+                               flatten, unflatten, unflatten!,
+                               mapparameters, register_parameter_type!
+import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
 
 # `metric`, `check` and `Ω` join `rgrad` in being public: they are the geometry a caller works in,
 # not implementation detail, and a downstream package that defines its own manifold layers on top of
@@ -74,6 +86,9 @@ include("lie_algebras/abstract_lie_algebra_horizontal.jl")
 include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
 include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
 include("lie_algebras/stiefel_projection.jl")
+
+# The leaf protocol, once `Manifold`, `VectorStorageMatrix` and `AbstractLieAlgHorMatrix` all exist.
+include("parameter_protocol.jl")
 
 # The whole global-section interface is public. Everything a caller needs in order to take one
 # optimizer step by hand — build the section, lift a gradient into `𝔤ʰᵒʳ`, transport the section
@@ -158,5 +173,26 @@ include("manifold_optimizers/momentum_optimizer.jl")
 include("manifold_optimizers/adam_optimizer.jl")
 include("manifold_optimizers/scalar_moment_adam_optimizer.jl")
 include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
+
+# Teach `NeuralNetworkParameters.load` how to rebuild each of these types from a file, which has no
+# prototype to rebuild against. Was the extension's `__init__` before the package became a hard
+# dependency; the registry lives in that package's main module, not its HDF5 extension, so this costs
+# nothing when HDF5 is not loaded.
+function __init__()
+    register_parameter_type!("StiefelManifold", (S, md) -> StiefelManifold(_dense(S)))
+    register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(_dense(S)))
+    register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
+    register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
+    register_parameter_type!("LowerTriangular", (S, md) -> LowerTriangular(_vector(S, md)...))
+    register_parameter_type!("UpperTriangular", (S, md) -> UpperTriangular(_vector(S, md)...))
+    # These two index positionally where the six above go by name, because they can: the older layout
+    # covered five types and never a lift, so their `storage` is only ever the `Tuple` this protocol
+    # wrote, in the order `parent` returned. A `NamedTuple` from that layout records no key order, so
+    # anything that might meet one has to reach for a field name.
+    register_parameter_type!("StiefelLieAlgHorMatrix",
+        (S, md) -> StiefelLieAlgHorMatrix(S[1], S[2], md.N, md.n))
+    register_parameter_type!("GrassmannLieAlgHorMatrix",
+        (S, md) -> GrassmannLieAlgHorMatrix(S[1], md.N, md.n))
+end
 
 end

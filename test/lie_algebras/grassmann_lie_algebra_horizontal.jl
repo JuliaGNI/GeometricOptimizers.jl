@@ -1,7 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: l2norm, _add!, _difference!, _square!, _rac!, _div!, assign!
 using LinearAlgebra
-using ParameterHandling
+using NeuralNetworkParameters: flatten
 using Test
 import Random
 
@@ -72,7 +72,7 @@ lifts(T, N, n) = (rand(StiefelLieAlgHorMatrix{T}, N, n), rand(GrassmannLieAlgHor
 @testset "l2norm of a horizontal lift is the norm of its flattening" begin
     for T in (Float32, Float64), N in 3:6, n in 1:(N-1)
         for B in lifts(T, N, n)
-            v, _ = ParameterHandling.flatten(T, B)
+            v, _ = flatten(T, B)
             @test l2norm(B) ≈ l2norm(v)
             @test l2norm(B) ≈ l2norm(collect(vec(B)))       # `vec` is the flattening too
             # and it is *not* the ambient norm, unless the lift is zero
@@ -83,7 +83,7 @@ lifts(T, N, n) = (rand(StiefelLieAlgHorMatrix{T}, N, n), rand(GrassmannLieAlgHor
 end
 
 # The free parameters of a lift, which is what every helper below is asserted against.
-free(::Type{T}, B) where {T} = ParameterHandling.flatten(T, B)[1]
+free(::Type{T}, B) where {T} = flatten(T, B)[1]
 
 @testset "the elementwise helpers act on the free parameters" begin
     for T in (Float32, Float64), N in 3:6, n in 1:(N-1)

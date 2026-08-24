@@ -6,6 +6,175 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased] — targeting 0.5.0
+
+**`ParameterHandling` is gone, and the package that owns a network's parameters walks them instead.**
+0.4.x already supplied the `freeparameters`/`rebuild` protocol for these types through an extension;
+this release makes [NeuralNetworkParameters.jl][nnp] a hard dependency and lets it do the flattening,
+which retires the whole `ParameterHandling` shim -- including five methods on Base types that were type
+piracy and said so, and a one-argument method that silently promoted a `Float32` network to `Float64`.
+
+**It also takes `changebackend` for these types**, which was living in
+`GeometricMachineLearning`'s HDF5 extension, a package that owns neither the function nor the types.
+
+The `NNP-D` labels below are `NeuralNetworkParameters`' `PLAN.md` numbering of the parameter-container
+consolidation this release finishes, and are written with that prefix because the *Open Issues*
+catalogue at the foot of this file numbers its own **D1**--**D8** independently: bare `D5` and `D8`
+here would name a Documenter gap and a `SimpleSolvers` documentation link, which is not what is meant.
+`A21` and `#16` are this file's own.
+
+### Removed (breaking) — dependencies
+
+- **`ParameterHandling` is no longer a dependency.** The shim it existed for is deleted in full:
+
+  - the one-argument `flatten(::ArrayNamedTuple{T})` that forwarded to `T` because
+    `ParameterHandling.flatten` otherwise defaults to `Float64`. `NeuralNetworkParameters.flatten`
+    takes the element type from the parameters, so there is nothing to work around. **NNP-D6**.
+  - the five methods on `NamedTuple`, `Tuple`, `Tuple{}`, `Vector` and
+    `AbstractMatrix`/`AbstractArray{,3}`. These were piracy -- the generic is `ParameterHandling`'s and
+    the types are Base's -- and the comment above them said so, citing issue **#16**. They also shadowed
+    methods `ParameterHandling` already defines, because `T<:AbstractFloat` is narrower than its
+    `T<:Real`. The `Vector` one was concrete in `Vector`, which is the hole a `CuVector` fell through
+    (**A21**).
+  - the four methods on this package's own types, which `src/parameter_protocol.jl` supersedes.
+
+  `manifold_constructor` loses its flattening caller with them, and with it the bug class its
+  docstring describes: reconstructing a manifold from a type name is how a `GrassmannManifold` used to
+  come back a `StiefelManifold` on every round trip. `NeuralNetworkParameters.rebuild` takes a
+  *prototype*, so that is now structurally impossible rather than guarded against. **NNP-D5** is
+  closed for the flat path.
+
+  Three test files reached `ParameterHandling` through this package and now use
+  `NeuralNetworkParameters` directly. Their assertions are unchanged -- only
+  `flatten(ps)` becomes `flatten`/`unflatten(layout, v)`, because a `ParameterLayout` is a value rather
+  than a closure.
+
+- **`ForwardDiff` is no longer a dependency either**, and it goes for the same reason rather than as a
+  separate cleanup: its only use in `src/` was the `unflatten_to_Vector(v::Vector{<:ForwardDiff.Dual})`
+  clause of the pirated `flatten(::Type{T}, ::Vector{R})` above, which existed so that a round trip
+  through the flat form would not convert `Dual`s back to the leaf's element type.
+  `NeuralNetworkParameters.unflatten` keeps `eltype(v)` by construction, so the clause has nothing to
+  do. Nothing else in `src/` or `test/` named it; `docs/Project.toml` has its own entry, which is
+  unaffected. `ForwardDiff` still arrives transitively through `SimpleSolvers`, which is what actually
+  differentiates a `GradientAutodiff`, so no caller loses anything.
+
+- **`NeuralNetworkParameters` is a hard dependency, and `NeuralNetworkParametersExt` is gone.** The
+  extension's contents moved to `src/parameter_protocol.jl` unchanged and its `__init__` became the
+  module's. Nothing about the arrangement changed; the protocol is simply always present, which is what
+  the flattening needs. A caller who was checking for the extension with `Base.get_extension` has to
+  stop.
+
+### Added
+
+- **`changebackend` for `Manifold`, `VectorStorageMatrix` and `AbstractLieAlgHorMatrix`**, in a new
+  `AbstractNeuralNetworks` weak-dependency extension. **NNP-D3** and the second half of **NNP-D8**.
+
+  The generic is `AbstractNeuralNetworks`' and the types are this package's, so a method on the pair has
+  one owned argument on each side and belongs in one of those two packages. It was in a third:
+  `GeometricMachineLearning`'s HDF5 extension, whose own comment says so and asks for this move. Two
+  consequences beyond the ownership -- `changebackend(GPU(), nn)` on a network with a manifold weight
+  was a `MethodError` unless HDF5 happened to be loaded, because the methods sat inside an HDF5
+  extension and had nothing to do with HDF5; and the horizontal lifts never had a method at all.
+
+  One method covers every family where `GeometricMachineLearning` had five and was missing three:
+  `mapstorage` hands the function the storage of a leaf and rebuilds the leaf around it, so a type added
+  to `src/parameter_protocol.jl` later is covered without a change here. `test/changebackend.jl` pins
+  the type, the metadata that is not in the storage, the element type, that a lift's structured block
+  stays structured rather than being densified, and that a transfer copies rather than aliases.
+
+- **`GlobalSection(::NetworkParameters)`.** **NNP-D11**. `GlobalSection` is this package's function and the
+  container is `NeuralNetworkParameters`', so this method is this package's to write --
+  `GeometricMachineLearning` carried it until now, owning neither name. The result is the same plain
+  tree the `NamedTuple` method returns rather than a `NetworkParameters` of sections: a section is not a
+  parameter, and everything downstream walks it as an ordinary container.
+
+### Changed
+
+- **`apply_toNT` is deleted. It was `Base.map`.** All 30 call sites call `map` instead.
+
+  ```julia
+  apply_toNT(f, a, b)   →   map(f, a, b)
+  ```
+
+  `map` over `NamedTuple`s takes any number of arguments and already throws
+  `ArgumentError: Named tuple names do not match.` on mismatched *or reordered* keys, which is what the
+  hand-rolled `@assert keys(ps[1]) == keys(p)` was approximating -- except that Base's check is
+  unconditional where an `@assert` can be compiled out. Heterogeneous values map fine, which is the case
+  `ArrayTuple` exists to permit. Verified on 1.10, the compat floor, as well as 1.13. It was unexported,
+  and `GeometricMachineLearning` reached it by qualified call; that call is gone in its 0.7.0.
+
+- **The two `Gradient` constructors close over a `ParameterLayout`** instead of the chain of nested
+  closures `ParameterHandling.flatten` returned, one per level of the tree, which was not type stable.
+
+- **`_mul!` flattens once instead of twice, and writes back in place.** The destination supplies its
+  layout, not its numbers, so only one argument needs flattening; and `unflatten!` writes through
+  `copyto!` rather than building a fresh parameter set for `_copyto!` to copy out of. Both the
+  `NamedTuple` and the horizontal-lift method.
+
+- **The `Gradient` functor uses `mapparameters`, not `mapstorage`.** `rgrad` is the Riemannian
+  projection and needs the point it projects at, not the point's storage. Same result, one walk instead
+  of a `for` loop over `keys`.
+
+### Fixed
+
+- **Three sites allocated a zeroed copy of the parameters and a vector the size of it in order to call
+  `length`.** `BFGSCache`, `DFPCache` and `alloc_h` sized `Q` with
+  `ParameterHandling.flatten(_zero(x))` and used only `length(v)`. They use `flatlength` now, which
+  counts without building the flat vector.
+
+  The `_zero(x)` stays, and a comment says why, because dropping it is a real bug that
+  `test/optimizer_convergence/svd_optim.jl` catches: `zero` of a manifold element is its *horizontal
+  lift*, whose free-parameter count is the intrinsic dimension and not the size of the dense storage --
+  12 against 18 for a `StiefelManifold(6, 3)` -- and `Q` multiplies gradients, which are lifts.
+
+### Known issues
+
+- **The container swap is not in this release.** Adopting `NetworkParameters` as the parameter container
+  -- which is what would retire the `ArrayNamedTuple` half of **#16** -- is blocked on a design question
+  upstream, not on effort. Eleven sites derive `T` from the *type* of the solution, as
+  `where {T, VT<:OptimizerSolution{T}}`: every cache and state inner constructor, both `Optimizer`
+  constructors and the `BFGSState` `update!` methods. `NetworkParameters{Keys, ValueTypes}` carries no
+  element-type parameter, and for a nested container -- which is what a network is -- `T` is not
+  recoverable from the type by any alias. So adding it to `OptimizerSolution` would leave all eleven
+  clauses unable to bind `T`.
+
+  Either the container gains an element-type parameter upstream, which is breaking for
+  `NeuralNetworkParameters` and cascades to four packages, or this package stops deriving `T` from
+  dispatch and takes it from `parameter_eltype(x)` at construction -- which also weakens the guarantee
+  `src/optimizer_solution.jl`'s warning is about. That is a decision to take deliberately.
+
+- **The flat buffers are still allocated per call.** The three sites above were the ones that
+  allocated a flat vector in order to *not* use it; the ones that use it still build a fresh one every
+  time. `_dot` flattens both arguments per inner product -- once per line-search trial slope, the
+  hottest of them -- `outer!` both per update, `_mul!` one plus a `ParameterLayout`, and the `Δg2` of
+  each quasi-Newton `update!` one more. `NeuralNetworkParameters` has the allocation-free counterparts
+  (`flatten!`, `unflatten!`) and a `FlatParameters` that carries its own layout and preserves it
+  through `similar`, so what is missing is only the scratch to write into.
+
+  Left out because of where that scratch has to live rather than because of the rewrite. It belongs on
+  the cache and the state, not on the `Gradient`: one `Gradient` is shared between `solver_step!` and
+  the line search's closure, which is why the cache already keeps `gradient` and `latest_gradient`
+  apart -- `src/optimizers/linesearch_problem.jl:211-224` records the momentum corruption that sharing
+  caused. So it is a new field and a new type parameter on `BFGSCache`, `DFPCache` and `BFGSState`,
+  which `test/named_tuple_parameters.jl` requires to be unbounded, plus the `@allocated == 0` tests
+  that are the only thing that would make "preallocated" more than a claim. That is its own release.
+
+- **`l2norm(::AbstractMatrix)` and `l2norm(::AbstractFloat)` are still piracy on Base types**
+  (`src/optimizers/optimizer_status.jl`), and no parameter container fixes them; the comment there
+  already says they belong upstream in `GeometricBase`.
+
+- **The elementwise primitives still hand-write their `parent` unwrapping.** `_add!`, `_rac!`,
+  `_square!`, `_div!` and `_rmul!` each carry a `VectorStorageMatrix` method that is a pure `parent`
+  call and, for some, a lift method that is a `foreach` over `parent` -- which is exactly
+  `mapstorage!`. Collapsing them was left out of this release on purpose: several of these families
+  have a *deliberate* manifold exception that reaching for the storage would silently bypass
+  (`_fill!(::Manifold, ::T)` returns the point untouched; `_similar(::Manifold)` draws a fresh random
+  point because `similar` is an error on purpose), and `_difference!` has no manifold method at all, so
+  a manifold leaf currently errors where storage would succeed. Each conversion needs deciding on its
+  own evidence rather than in a sweep.
+
+[nnp]: https://github.com/JuliaGNI/NeuralNetworkParameters.jl
+
 ## [0.4.2]
 
 **The geodesic gets a second portable exponential, and the portability the first one was chosen for
@@ -1971,20 +2140,28 @@ from `sol`'s block whether `δ`'s block is a manifold direction. It therefore as
 `NamedTuple`s have the same keys in the same order, and it checks nothing.
 
 The assumption holds, and holds by construction: the cache's direction is built from the solution by
-`_similar`, which is `apply_toNT`, and `apply_toNT` (`src/utils.jl:7-12`) `@assert`s
-`keys(ps[1]) == keys(p)` for every argument and rebuilds the result with `NamedTuple{keys(ps[1])}`.
-Verified directly on a mixed `(Y::StiefelManifold, W::Matrix, b::Vector)` problem: the direction comes
-back as `(Y::StiefelLieAlgHorMatrix, W::Matrix, b::Vector)` with `keys` equal.
+`_similar`, which is `Base.map` over the `NamedTuple`, and `map` throws
+`ArgumentError: Named tuple names do not match.` on keys that differ *or are merely reordered*, then
+rebuilds the result under the first argument's keys. Verified directly on a mixed
+`(Y::StiefelManifold, W::Matrix, b::Vector)` problem: the direction comes back as
+`(Y::StiefelLieAlgHorMatrix, W::Matrix, b::Vector)` with `keys` equal.
+
+That argument is stronger than it was when this entry was written. It used to rest on `apply_toNT`'s
+hand-rolled `@assert keys(ps[1]) == keys(p)`, and `@assert`'s own docstring warns that it "might be
+disabled at various optimization levels"; Base's check is part of how `map` constructs the result and
+cannot be compiled out. `apply_toNT` was
+deleted in [Unreleased](#unreleased--targeting-050), which is where all 30 of its call sites became
+`map`.
 
 What is not good about it is that this is the one place in the package that pairs two block
 structures *without* going through the construction that checks. Everything else — `_copyto!`,
-`_difference!`, the `GlobalSection` copies — is `apply_toNT` and would fail loudly. If a future cache
+`_difference!`, the `GlobalSection` copies — is a `map` and would fail loudly. If a future cache
 ever built its direction some other way, the ceiling would silently be derived from the wrong block,
 which is a wrong `αmax` and not an error.
 
 **What to do**: cheapest is one `@assert keys(sol) == keys(δ)` where the cache is constructed, so the
 invariant is stated once and costs nothing per solver step. Routing `_manifold_αmax` itself through
-`apply_toNT` is the *obviously* correct version and is why it was not done: it builds a `NamedTuple`
+`map` is the *obviously* correct version and is why it was not done: it builds a `NamedTuple`
 of per-block ceilings, i.e. an allocation on every line-search call, to compute one scalar.
 
 ---
@@ -2133,19 +2310,29 @@ on `CUDABackend()`, and the port of [#14] could not keep that. Found by that por
 `MNIST_PORT.md` it wrote, and moved here when the MNIST material left (see [0.3.1](#031)
 above) — this entry is that file's finding restated against current `src/`, not a new measurement.
 
+**This entry loses the sharpest half of its first bullet in
+[Unreleased](#unreleased--targeting-050).** The scalar-indexing fallback it described was
+`ParameterHandling`'s, and that dependency is gone: `NeuralNetworkParameters.flatten!` writes each leaf
+with one `copyto!(v, doffs, x, firstindex(x), n)` over a range the layout already knows, and indexes no
+element, so there is nothing left for a device array to fall through *to*. What is restated below is
+what survives, which is a transfer per step rather than an error.
+
 The parameters of a GPU run stay on the host. Two independent things put them there:
 
-- **The per-step flattening.** `(grad::Gradient{T})(nt::ArrayNamedTuple{T})`
-  (`src/optimizers/named_tuple_wrapper.jl:88`) calls `ParameterHandling.flatten(nt)` on *every*
-  gradient evaluation. The vector method this package provides, `flatten(::Type{T}, ::Vector{R})` at
-  `:56`, is concrete in `Vector`, so a `CuVector` misses it and falls through to ParameterHandling's
-  own `flatten(::Type{T}, ::AbstractVector)`, which `map`s over the *elements*. The matrix method at
-  `:62` is written against `AbstractMatrix` and does accept a device matrix, but its body is
-  `flatten(T, vec(x))`, so it lands in the same place one call down.
-- **The state.** `_similar(a::Manifold{T}) = rand(manifold_constructor(a){T}, size(a)...)` at `:117`
+- **The per-step flattening, now as a transfer rather than a scalar-indexing fallback.**
+  `(grad::Gradient{T})(nt::ArrayNamedTuple{T})` (`src/optimizers/named_tuple_wrapper.jl:21`) flattens
+  on *every* gradient evaluation, and `flatten` allocates its destination as a
+  `Vector{T}(undef, length(layout))` — a **host** vector, whatever the leaves are. `unflatten` is the
+  same boundary in reverse: it slices `v[l.range]`, reshapes, and hands `rebuild` a host array, so the
+  parameter set it returns is host-resident even if the one it was built from was not. A device run
+  therefore pays a download and an upload of the whole parameter set per step, which is the cost
+  measured below — a transfer that works rather than scalar indexing that does not, but the parameters
+  still do not stay resident.
+- **The state.** `_similar(a::Manifold{T}) = rand(manifold_constructor(a){T}, size(a)...)` at `:46`
   goes to `rand(manifold_type, N, n)` (`src/manifolds/abstract_manifold.jl:110`) and from there to
   `rand(CPU(), …)` at `:43` — always the host, whatever `a` is. It backs `x̄` and the `BFGS`/`DFP`
-  caches, so even a flattening that worked would leave the state mixing host and device arrays.
+  caches, so even a flattening that stayed on the device would leave the state mixing host and device
+  arrays. Untouched by the dependency change.
 
 What this cost the run it was found in is small: the optimizer touches only the parameters — 154938
 of them, 620 kB in `Float32`, so ≈1.2 MB uploaded and downloaded per step — against ≈3 GB of
@@ -2156,8 +2343,10 @@ A parameter set large enough to be worth keeping resident would pay the transfer
 The rest of `src/` is written against `KernelAbstractions` and *looks* backend-agnostic; whether it
 is has not been established, and A19 above is one specific reason to doubt it.
 
-**What to do**: give `flatten` an `AbstractVector` method of this package's own, so a device vector
-stops reaching ParameterHandling's element-wise one, and thread the backend through `_similar` —
+**What to do**: the flattening is now `NeuralNetworkParameters`' to fix rather than this package's —
+what it needs is a `flatten` that allocates its destination on the backend of the parameters, and a
+`FlatParameters` that keeps it there, which is an upstream request and not a method here. On this side
+what is left is to thread the backend through `_similar` —
 `rand(backend, MT{T}, N, n)` already exists (`src/manifolds/abstract_manifold.jl:70`, allocating
 through `KernelAbstractions` at `:28`), and `KernelAbstractions.get_backend` is how `global_section`
 and `Base.zero` already find the backend of a point they are given
@@ -2759,4 +2948,4 @@ and both are corrected: see C8.)
 [0.4.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.0
 [0.4.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.1
 [0.4.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.2
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.4.2...main
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.4.3...main

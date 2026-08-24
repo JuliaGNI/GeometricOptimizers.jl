@@ -30,8 +30,13 @@ struct BFGSCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
     section::GS
 
     function BFGSCache(x::AT) where {T,AT<:OptimizerSolution{T}}
-        v, unflatten = ParameterHandling.flatten(_zero(x))
-        q = zeros(T, length(v), length(v))
+        # `_zero(x)` is *not* redundant here, and dropping it is a real bug: `zero` of a manifold
+        # element is its horizontal lift, whose free-parameter count is the intrinsic dimension and
+        # not the size of the dense storage. For a `StiefelManifold(6, 3)` that is 12 against 18, and
+        # `Q` has to be the former -- it multiplies gradients, which are lifts. `flatlength` then
+        # counts without building the flat vector, which is what this used to allocate and discard.
+        n = flatlength(_zero(x))
+        q = zeros(T, n, n)
         section = GlobalSection(x)
         g = _zero(x)
         cache = new{T,AT,typeof(g),typeof(q),typeof(section)}(_copy(x), _similar(g), _similar(g), Ref(false), _similar(q), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section)
@@ -88,8 +93,10 @@ end
 # Type piracy: `outer!` is imported from `SimpleSolvers` and `ArrayNamedTuple` is an alias
 # for Base's `NamedTuple`. See issue #16.
 function outer!(m::AbstractMatrix{T}, arr1::ArrayNamedTuple{T}, arr2::ArrayNamedTuple{T}) where {T}
-    v1, _ = ParameterHandling.flatten(arr1)
-    v2, _ = ParameterHandling.flatten(arr2)
+    # `flatten` is given `T` explicitly for the reason `_dot` states: `m` is a `Matrix{T}`, so the
+    # flat vectors that fill it have to be `T` and not whatever a set happens to promote to
+    v1, _ = flatten(T, arr1)
+    v2, _ = flatten(T, arr2)
     outer!(m, v1, v2)
 end
 
@@ -107,8 +114,8 @@ is what the `NamedTuple` case has always done; without the same method here `BFG
 run on a *bare* `Manifold` at all.
 """
 function outer!(m::AbstractMatrix{T}, g₁::AbstractLieAlgHorMatrix{T}, g₂::AbstractLieAlgHorMatrix{T}) where {T}
-    v1, _ = ParameterHandling.flatten(g₁)
-    v2, _ = ParameterHandling.flatten(g₂)
+    v1, _ = flatten(T, g₁)
+    v2, _ = flatten(T, g₂)
     outer!(m, v1, v2)
 end
 
@@ -158,7 +165,7 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
         outer!(cache.ΔxΔg, cache.Δx, cache.Δg)
         mul!(cache.T1, cache.ΔxΔg, inverse_hessian(state))
         mul!(cache.T2, inverse_hessian(state), cache.ΔxΔg')
-        Δg2 = ParameterHandling.flatten(cache.Δg)[1]
+        Δg2 = flatten(T, cache.Δg)[1]
         γQγ = Δg2' * inverse_hessian(state) * Δg2
         cache.T3 .= (one(T) .+ γQγ ./ ΔxΔg) .* cache.ΔxΔx
         inverse_hessian(state) .-= (cache.T1 .+ cache.T2 .- cache.T3) ./ ΔxΔg

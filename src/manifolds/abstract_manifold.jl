@@ -155,14 +155,15 @@ The one-argument constructor of `x`'s manifold: `GrassmannManifold` for a
 `GrassmannManifold{Float32, Matrix{Float32}}`.
 
 The type *name* and not `typeof(x)`, because the array the result is applied to may have a different
-element type from `x`'s: `ParameterHandling.flatten`'s `unflatten` and the closure `GradientAutodiff`
-differentiates are both handed a vector of `ForwardDiff.Dual`s. And `x`'s manifold rather than a
-hardcoded `StiefelManifold`, which is what used to turn a [`GrassmannManifold`](@ref) into a
-[`StiefelManifold`](@ref) on a `flatten` round trip and to make a bare one a `MethodError` at
-[`Optimizer`](@ref) construction (issue A11).
+element type from `x`'s: the closure `GradientAutodiff` differentiates is handed a vector of
+`ForwardDiff.Dual`s. And `x`'s manifold rather than a hardcoded `StiefelManifold`, which is what used
+to make a bare one a `MethodError` at [`Optimizer`](@ref) construction (issue A11).
 
-Its three callers are `ParameterHandling.flatten(::Type, ::Manifold)`,
-`GeometricOptimizers._similar(::Manifold)` and `GradientAutodiff(F, ::Manifold)`.
+Its two callers are `GeometricOptimizers._similar(::Manifold)` and
+`GradientAutodiff(F, ::Manifold)`. It used to have a third: the flattening reconstructed a manifold
+through this, and hardcoding `StiefelManifold` there turned a [`GrassmannManifold`](@ref) into a
+[`StiefelManifold`](@ref) on every round trip. `NeuralNetworkParameters.rebuild` takes a *prototype*
+rather than a type, so that bug class is gone from the flat path rather than guarded against.
 """
 manifold_constructor(x::Manifold) = Base.typename(typeof(x)).wrapper
 

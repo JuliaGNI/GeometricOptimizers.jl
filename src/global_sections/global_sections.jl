@@ -27,8 +27,19 @@ struct GlobalSection{T,AT<:AbstractArray{T},λT<:Union{AbstractArray{T},Nothing}
 end
 
 function GlobalSection(ps::NamedTuple)
-    apply_toNT(GlobalSection, ps)
+    map(GlobalSection, ps)
 end
+
+# The container `NeuralNetworkParameters` holds a network's parameters in. `GlobalSection` is this
+# package's own function, so a method on it is this package's to write -- and it has to be, because a
+# package that merely uses both owns neither name and its method would be piracy.
+# `GeometricMachineLearning` carried exactly that method until now, with a comment saying as much.
+#
+# The result is deliberately the same `NamedTuple` tree the method above returns rather than a
+# `NetworkParameters` of sections: a section is not a parameter, and everything downstream --
+# `update_section!`, `apply_section`, `global_rep`, the four `copyto!` methods -- walks it as a plain
+# container.
+GlobalSection(ps::NetworkParameters) = GlobalSection(params(ps))
 
 Base.size(λY::GlobalSection) = (size(λY.Y, 1), size(λY.Y, 2) + size(λY.λ, 2))
 
@@ -127,15 +138,15 @@ function apply_section!(Y::AT, λY::GlobalSection{T,AT,Nothing}, Y₂::AbstractV
 end
 
 function apply_section(λY::NamedTuple, Y₂::NamedTuple)
-    apply_toNT(apply_section, λY, Y₂)
+    map(apply_section, λY, Y₂)
 end
 
 function apply_section!(Y::NamedTuple, λY::NamedTuple, Y₂::NamedTuple)
-    apply_toNT(apply_section!, Y, λY, Y₂)
+    map(apply_section!, Y, λY, Y₂)
 end
 
 function global_rep(λY::NamedTuple, gx::NamedTuple)
-    apply_toNT(global_rep, λY, gx)
+    map(global_rep, λY, gx)
 end
 
 ##auxiliary function
@@ -321,7 +332,7 @@ end
 
 function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::NamedTuple, retraction)
     update_section_closure!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾) = update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
-    apply_toNT(update_section_closure!, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾)
+    map(update_section_closure!, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾)
 
     Λᵗ
 end

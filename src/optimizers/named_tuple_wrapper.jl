@@ -1,108 +1,28 @@
-function GradientAutodiff(F, nt::NamedTuple)
-    v, unflatten = ParameterHandling.flatten(nt)
-    GradientAutodiff(_x -> F(unflatten(_x)), v)
-end
-
-# `∇F!` is called on the flattened parameters, i.e. on `ParameterHandling.flatten(nt)[1]`.
-function GradientFunction(F, ∇F!, nt::NamedTuple)
-    v, unflatten = ParameterHandling.flatten(nt)
-    GradientFunction(_x -> F(unflatten(_x)), ∇F!, v)
-end
-
-# `ParameterHandling.flatten` defaults to `Float64`, which would silently promote e.g.
-# `Float32` parameters, so we flatten to the element type of the parameters instead.
-ParameterHandling.flatten(x::ArrayNamedTuple{T}) where {T<:AbstractFloat} = ParameterHandling.flatten(T, x)
-
-function ParameterHandling.flatten(::Type{T}, x::Manifold{R}) where {T<:AbstractFloat,R<:Real}
-    v, unflatten = ParameterHandling.flatten(T, x.A)
-    # The manifold has to come back as the *same* kind of manifold — hardcoding
-    # `StiefelManifold` here silently turned a `GrassmannManifold` into a `StiefelManifold` on
-    # every round trip. See `manifold_constructor` for why it is the type *name*.
-    MT = manifold_constructor(x)
-    v, _v -> MT(unflatten(_v))
-end
-
-# The `flatten` methods below that dispatch on Base types (`NamedTuple`, `Tuple`, `Vector`,
-# `AbstractMatrix`/`AbstractArray{,3}`) are type piracy, and they shadow methods that
-# ParameterHandling already defines: `T<:AbstractFloat` is narrower than its `T<:Real`. The
-# methods for `Manifold`, `VectorStorageMatrix` and `StiefelLieAlgHorMatrix` are fine, those
-# types are ours. See issue #16.
-function ParameterHandling.flatten(::Type{T}, x::NamedTuple) where {T<:AbstractFloat}
-    x_vec, unflatten = ParameterHandling.flatten(T, values(x))
-    function unflatten_to_NamedTuple(v::Vector{R}) where {R<:Real}
-        v_vec_vec = unflatten(v)
-        return NamedTuple{keys(x),typeof(v_vec_vec)}(v_vec_vec)
-    end
-    return x_vec, unflatten_to_NamedTuple
-end
-
-function ParameterHandling.flatten(::Type{T}, x::Tuple) where {T<:AbstractFloat}
-    vec1, back1 = ParameterHandling.flatten(T, first(x))
-    vec2, back2 = ParameterHandling.flatten(T, Base.tail(x))
-    l1 = length(vec1)
-    l2 = length(vec2)
-    function unflatten_to_Tuple(v::Vector{R}) where {R<:Real}
-        return (back1(v[1:l1]), back2(v[(l1+1):(l1+l2)])...)
-    end
-    return vcat(vec1, vec2), unflatten_to_Tuple
-end
-
-function ParameterHandling.flatten(::Type{T}, x::Tuple{}) where {T<:AbstractFloat}
-    v = T[]
-    unflatten_to_empty_Tuple(::Vector{R}) where {R<:Real} = x
-    return v, unflatten_to_empty_Tuple
-end
-
-function ParameterHandling.flatten(::Type{T}, x::Vector{R}) where {T<:AbstractFloat,R<:Real}
-    unflatten_to_Vector(v::Vector{T}) = convert(Vector{R}, v)
-    unflatten_to_Vector(v::Vector{<:ForwardDiff.Dual}) = v
-    return Vector{T}(x), unflatten_to_Vector
-end
-
-function ParameterHandling.flatten(::Type{T}, x::Union{AbstractMatrix{R},AbstractArray{R,3}}) where {T<:AbstractFloat,R<:Real}
-    x_vec, from_vec = ParameterHandling.flatten(T, vec(x))
-    Array_from_vec(x_vec) = reshape(from_vec(x_vec), size(x))
-    return x_vec, Array_from_vec
-end
-
-# One method for all four of them: the free parameters are `vec(s)` and the two-argument constructor
-# is its inverse, for every [`VectorStorageMatrix`](@ref) alike. Without it the `AbstractMatrix`
-# method above applies, and `reshape`ing `n(n±1)/2` numbers to `n × n` is a `DimensionMismatch` --
-# which is where a `SymmetricMatrix` or a triangular parameter used to die, at `Optimizer`
-# construction, before any of the elementwise primitives were reached.
+# The two `Gradient` constructors that take a parameter set rather than a vector.
 #
-# The type *name* and not `typeof(s)`, for the reason [`manifold_constructor`](@ref) gives: the vector
-# `from_vec` is handed may be one of `ForwardDiff.Dual`s, whose element type is not `R`.
-function ParameterHandling.flatten(::Type{T}, s::VectorStorageMatrix{R}) where {T<:AbstractFloat,R<:Real}
-    x_vec, from_vec = ParameterHandling.flatten(T, vec(s))
-    constructor = Base.typename(typeof(s)).wrapper
-    Array_from_vec(x_vec) = constructor(from_vec(x_vec), s.n)
-    return x_vec, Array_from_vec
+# `SimpleSolvers` wants a flat vector, so the set is flattened once here and the layout is captured in
+# the closure. A `ParameterLayout` is a *value*, which is the difference that matters: the
+# `ParameterHandling` version this replaces returned a chain of nested closures, one per level of the
+# tree, and that chain was not type stable. The element type comes from the parameters themselves
+# rather than defaulting to `Float64`, which used to promote a `Float32` network silently.
+function GradientAutodiff(F, nt::NamedTuple)
+    v, layout = flatten(nt)
+    GradientAutodiff(_x -> F(unflatten(layout, _x)), v)
 end
 
-function ParameterHandling.flatten(::Type{T}, g::StiefelLieAlgHorMatrix{R}) where {T<:AbstractFloat,R<:Real}
-    x_vec, from_vec = ParameterHandling.flatten(T, (g.A, g.B))
-    Array_from_vec(x_vec) = StiefelLieAlgHorMatrix(from_vec(x_vec)..., g.N, g.n)
-    return x_vec, Array_from_vec
-end
-
-function ParameterHandling.flatten(::Type{T}, g::GrassmannLieAlgHorMatrix{R}) where {T<:AbstractFloat,R<:Real}
-    x_vec, from_vec = ParameterHandling.flatten(T, g.B)
-    Array_from_vec(x_vec) = GrassmannLieAlgHorMatrix(from_vec(x_vec), g.N, g.n)
-    return x_vec, Array_from_vec
+# `∇F!` is called on the flattened parameters, i.e. on `flatten(nt)[1]`.
+function GradientFunction(F, ∇F!, nt::NamedTuple)
+    v, layout = flatten(nt)
+    GradientFunction(_x -> F(unflatten(layout, _x)), ∇F!, v)
 end
 
 # Type piracy: `Gradient` is SimpleSolvers' and `ArrayNamedTuple` is an alias for Base's
 # `NamedTuple`. A wrapper `struct` would fix this locally. See issue #16.
 function (grad::Gradient{T})(nt::ArrayNamedTuple{T}) where {T}
-    # unflatten not needed here
-    v, unflatten = ParameterHandling.flatten(nt)
-    grads = (unflatten ∘ grad)(v)
-    vals = ()
-    for _key in keys(nt)
-        vals = (vals..., rgrad(nt[_key], grads[_key]))
-    end
-    NamedTuple{keys(nt)}(vals)
+    v, layout = flatten(nt)
+    # `rgrad` takes the *whole* leaf, not its storage: it is the Riemannian projection and needs the
+    # point it projects at, so this is `mapparameters` and not `mapstorage`.
+    mapparameters(rgrad, nt, unflatten(layout, grad(v)))
 end
 
 # This is *not* type piracy, unlike the method above: it dispatches on `OptimizerState`,
@@ -113,10 +33,10 @@ function (grad::Gradient{T})(g::ArrayNamedTuple{T}, x::ArrayNamedTuple{T}, state
 end
 
 _zero(a::AbstractArray) = zero(a)
-_zero(a::ArrayNamedTuple) = apply_toNT(_zero, a)
+_zero(a::ArrayNamedTuple) = map(_zero, a)
 
 _copy(a::AbstractArray) = copy(a)
-_copy(a::ArrayNamedTuple) = apply_toNT(_copy, a)
+_copy(a::ArrayNamedTuple) = map(_copy, a)
 
 # `Base.similar` is deliberately an error on a `Manifold` — an arbitrary array of that shape is not a
 # point of it — so a fresh *random* point stands in for it. `Manifold` and not `StiefelManifold`, and
@@ -125,7 +45,7 @@ _copy(a::ArrayNamedTuple) = apply_toNT(_copy, a)
 # building an `AdamState` or a `MomentumState`. See issue A11.
 _similar(a::Manifold{T}) where {T} = rand(manifold_constructor(a){T}, size(a)...)
 _similar(a::AbstractArray) = similar(a)
-_similar(a::ArrayNamedTuple) = apply_toNT(_similar, a)
+_similar(a::ArrayNamedTuple) = map(_similar, a)
 
 _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
 
@@ -133,13 +53,13 @@ _fill!(a::Manifold{T}, ::T) where {T} = a
 
 _copyto!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = copyto!(a, b)
 function _copyto!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
-    apply_toNT(_copyto!, a, b)
+    map(_copyto!, a, b)
 end
 
 # Type piracy again by way of the aliases: both `GlobalSectionNamedTuple` and
 # `ArrayNamedTuple` are `NamedTuple`. See issue #16.
 function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ArrayNamedTuple{T}) where {T}
-    apply_toNT(copyto!, Λ, x)
+    map(copyto!, Λ, x)
     Λ
 end
 
@@ -156,12 +76,12 @@ _copyto!(Λ::GlobalSectionNamedTuple, x::ArrayNamedTuple) = copyto!(Λ, x)
 _copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
 
 function _copyto!(x::ArrayNamedTuple, Λ::GlobalSectionNamedTuple)
-    apply_toNT(copyto!, x, Λ)
+    map(copyto!, x, Λ)
     x
 end
 
 function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple)
-    apply_toNT(_copyto!, Λ₁, Λ₂)
+    map(_copyto!, Λ₁, Λ₂)
     Λ₁
 end
 
@@ -173,7 +93,7 @@ end
 
 function _fill!(a::ArrayNamedTuple{T}, b::T) where {T}
     fill_closure!(_a) = _fill!(_a, b)
-    apply_toNT(fill_closure!, a)
+    map(fill_closure!, a)
     a
 end
 
@@ -199,7 +119,7 @@ function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b:
     c
 end
 
-_difference!(c::ArrayNamedTuple{T}, a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T} = apply_toNT(_difference!, c, a, b)
+_difference!(c::ArrayNamedTuple{T}, a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T} = map(_difference!, c, a, b)
 
 _rmul!(a::AbstractArray, b) = rmul!(a, b)
 
@@ -212,7 +132,7 @@ end
 
 function _rmul!(a::ArrayNamedTuple, b)
     rmul_closure!(a) = _rmul!(a, b)
-    apply_toNT(rmul_closure!, a)
+    map(rmul_closure!, a)
     a
 end
 
@@ -221,16 +141,20 @@ function _mul!(c::AbstractVecOrMat, a::AbstractMatrix, b::AbstractVecOrMat)
 end
 
 function _mul!(c::ArrayNamedTuple, a::ArrayNamedTuple, b::ArrayNamedTuple)
-    apply_toNT(_mul!, c, a, b)
+    map(_mul!, c, a, b)
     c
 end
 
+# `c` supplies its layout but not its numbers: it is the destination, so only its shape matters.
+# That is one flatten fewer than this used to do, and `unflatten!` writes the result back through
+# `copyto!` instead of building a fresh parameter set for `_copyto!` to copy out of.
 function _mul!(c::ArrayNamedTuple, a::AbstractMatrix, b::ArrayNamedTuple)
-    v_c, c_unflatten = ParameterHandling.flatten(c)
-    v_b, b_unflatten = ParameterHandling.flatten(b)
+    layout = parameterlayout(c)
+    v_b, _ = flatten(b)
+    v_c = similar(v_b)
 
     _mul!(v_c, a, v_b)
-    _copyto!(c, c_unflatten(v_c))
+    unflatten!(c, layout, v_c)
 end
 
 # The same ambient/intrinsic boundary as the method above, for a *bare* `Manifold`: the quasi-Newton
@@ -238,11 +162,12 @@ end
 # lifts of the ambient shape (`3 × 3` against an intrinsic 2, for `St(3, 1)`). Multiplying them
 # directly reaches `setindex!`, which the lift types do not define.
 function _mul!(c::AbstractLieAlgHorMatrix, a::AbstractMatrix, b::AbstractLieAlgHorMatrix)
-    v_c, c_unflatten = ParameterHandling.flatten(c)
-    v_b, _ = ParameterHandling.flatten(b)
+    layout = parameterlayout(c)
+    v_b, _ = flatten(b)
+    v_c = similar(v_b)
 
     _mul!(v_c, a, v_b)
-    _copyto!(c, c_unflatten(v_c))
+    unflatten!(c, layout, v_c)
 end
 
 function _mul(α::T, a::GradientArrayOrNamedTuple{T}) where {T}
@@ -273,11 +198,10 @@ _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 
 const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ArrayNamedTuple{T}}
 
-# `flatten` is given `T` explicitly: the one-argument `ParameterHandling.flatten` defaults to
-# `Float64`, which would make this return a `Float64` for `Float32` parameters and break every
-# element type the result is combined with downstream.
+# `flatten` is given `T` explicitly so that the result is a `T` even when a set happens to promote
+# to something wider; every quantity this is combined with downstream is a `T`.
 _dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} =
-    dot(ParameterHandling.flatten(T, a)[1], ParameterHandling.flatten(T, b)[1])
+    dot(flatten(T, a)[1], flatten(T, b)[1])
 
 _add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
 
@@ -287,7 +211,7 @@ function _add!(a::MT, b::MT) where {MT<:VectorStorageMatrix}
 end
 
 function _add!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
-    apply_toNT(_add!, a, b)
+    map(_add!, a, b)
     a
 end
 
@@ -305,7 +229,7 @@ end
 
 function _add!(a::ArrayNamedTuple{T}, b::T) where {T}
     closure(a) = _add!(a, b)
-    apply_toNT(closure, a)
+    map(closure, a)
     a
 end
 
@@ -326,7 +250,7 @@ function _rac!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_rac!(b::ArrayNamedTuple, a::ArrayNamedTuple) = apply_toNT(_rac!, b, a)
+_rac!(b::ArrayNamedTuple, a::ArrayNamedTuple) = map(_rac!, b, a)
 
 _rac!(a) = _rac!(a, a)
 
@@ -351,7 +275,7 @@ function _div!(C::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix, B::Abstra
 end
 
 function _div!(C::ArrayNamedTuple, A::ArrayNamedTuple, B::ArrayNamedTuple)
-    apply_toNT(_div!, C, A, B)
+    map(_div!, C, A, B)
     C
 end
 
@@ -373,7 +297,7 @@ function _square!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_square!(b::ArrayNamedTuple, a::ArrayNamedTuple) = apply_toNT(_square!, b, a)
+_square!(b::ArrayNamedTuple, a::ArrayNamedTuple) = map(_square!, b, a)
 
 function _square(a)
     b = _copy(a)
@@ -384,7 +308,7 @@ end
 
 Base.copyto!(dest::AT, src::GlobalSection{T,AT}) where {T,AT<:AbstractArray{T}} = copyto!(dest, src.Y)
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)
-rgrad(ps::ArrayNamedTuple, dx::ArrayNamedTuple) = apply_toNT(rgrad, ps, dx)
+rgrad(ps::ArrayNamedTuple, dx::ArrayNamedTuple) = map(rgrad, ps, dx)
 
 function rgrad(Y::AbstractVecOrMat, dx::AbstractVecOrMat)
     @assert size(Y) == size(dx)

@@ -1,6 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: ArrayNamedTuple, OptimizerCache, OptimizerSolution,
-    ParameterHandling, Cayley, Geodesic, check, increase_iteration_number!, solver_step!
+    Cayley, Geodesic, check, increase_iteration_number!, solver_step!
+using NeuralNetworkParameters: flatten, unflatten
 using SimpleSolvers: Static, l2norm
 using Test
 import Random
@@ -18,7 +19,7 @@ Random.seed!(1234)
 
 const B₀ = randn(N, m)
 
-# the ranges that the three parameters occupy in `ParameterHandling.flatten(ps)[1]`
+# the ranges that the three parameters occupy in `flatten(ps)[1]`
 const ranges = (1:(N*n), (N*n+1):(N*n+n*m), (N*n+n*m+1):(N*n+n*m+N))
 
 """
@@ -106,15 +107,16 @@ retractions() = (Geodesic(), Cayley())
     end
 end
 
-# `ParameterHandling.flatten` defaults to `Float64`, so `Float32` parameters were silently
-# promoted and the flattened vector no longer matched the parameters.
+# A one-argument `flatten` that defaults to `Float64` silently promotes `Float32` parameters, so the
+# flattened vector no longer matches the parameters. `NeuralNetworkParameters` takes the element type
+# from the parameters; this is what pins that.
 @testset "the parameters are flattened to their own element type" begin
     for T in (Float64, Float32)
         ps = initial_parameters(T)
-        v, unflatten = ParameterHandling.flatten(ps)
+        v, layout = flatten(ps)
         @test v isa Vector{T}
         @test length(v) == N * n + n * m + N
-        ps′ = unflatten(v)
+        ps′ = unflatten(layout, v)
         @test ps′.Y ≈ ps.Y
         @test ps′.W == ps.W
         @test ps′.b == ps.b
@@ -129,20 +131,19 @@ end
 @testset "the flattening preserves the kind of manifold" begin
     for T in (Float64, Float32), MT in (StiefelManifold, GrassmannManifold)
         Y = rand(Random.Xoshiro(1234), MT{T}, N, n)
-        # the element type has to be given explicitly here: only the `NamedTuple` method takes
-        # it from the parameters, a bare manifold goes through `ParameterHandling`'s own
-        # single-argument method, which defaults to `Float64`
-        v, unflatten = ParameterHandling.flatten(T, Y)
+        # `flatten` takes the element type from the parameters, for a bare manifold as much as for
+        # a `NamedTuple` of them, so the explicit `T` here is belt and braces rather than required
+        v, layout = flatten(T, Y)
         @test v isa Vector{T}
         @test length(v) == N * n
-        Y′ = unflatten(v)
+        Y′ = unflatten(layout, v)
         @test Y′ isa MT{T}
         @test Y′ ≈ Y
 
         # the same through a `NamedTuple`, which is how the optimizer sees it
         ps = (Y=Y, W=zeros(T, n, m))
-        vₚ, unflattenₚ = ParameterHandling.flatten(ps)
-        @test unflattenₚ(vₚ).Y isa MT{T}
+        vₚ, layoutₚ = flatten(ps)
+        @test unflatten(layoutₚ, vₚ).Y isa MT{T}
     end
 end
 
@@ -205,7 +206,7 @@ end
 
     for T in (Float64, Float32)
         ps = initial_parameters(T)
-        v, _ = ParameterHandling.flatten(ps)
+        v, _ = flatten(ps)
         @test l2norm(ps) ≈ l2norm(v)
         # ... and the sum of the blocks really is a different number here
         @test !isapprox(sum(l2norm, values(ps)), l2norm(v))

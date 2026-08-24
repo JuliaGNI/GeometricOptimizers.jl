@@ -1,6 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: VectorStorageMatrix, _add!, _rac!, _square!, _div!, _rmul!,
-    _difference!, ParameterHandling, increase_iteration_number!, solver_step!
+    _difference!, increase_iteration_number!, solver_step!
+using NeuralNetworkParameters: flatten, unflatten
 using SimpleSolvers: Static, l2norm
 using Test
 import Random
@@ -91,12 +92,10 @@ const N = 5
         # parameter used to die -- inside `Optimizer`, before a single primitive was reached.
         for T in (Float32, Float64)
             A = rand(MT{T}, N)
-            # the two-argument form, because the one-argument one defaults to `Float64` for anything
-            # that is not an `ArrayNamedTuple` and the element type is the point here
-            v, unflatten = ParameterHandling.flatten(T, A)
+            v, layout = flatten(T, A)
             @test v isa Vector{T}
             @test length(v) == length(parent(A))
-            A′ = unflatten(v)
+            A′ = unflatten(layout, v)
             @test typeof(A′) == typeof(A)
             @test A′ ≈ A
         end
@@ -156,7 +155,7 @@ end
 
 # The claim the methods above are here for, stated once and end to end: an optimizer *runs* over one
 # of these types. Nothing else in the suite asserts it, and testing the primitives one at a time does
-# not -- both `_difference!` and `ParameterHandling.flatten` were missing while every direct test of
+# not -- both `_difference!` and the flattening were missing while every direct test of
 # `_add!` and friends passed, because neither is called from `update!`. `flatten` fails inside the
 # `Optimizer` constructor and `_difference!` on the first `OptimizerStatus`, so a run of a few steps
 # is what covers the whole path.

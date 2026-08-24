@@ -95,7 +95,7 @@ end
 
 function _weight_decay!(δ::ArrayNamedTuple{T}, x::ArrayNamedTuple{T}, λ::T) where {T}
     weight_decay_closure!(δᵢ, xᵢ) = _weight_decay!(δᵢ, xᵢ, λ)
-    apply_toNT(weight_decay_closure!, δ, x)
+    map(weight_decay_closure!, δ, x)
     δ
 end
 

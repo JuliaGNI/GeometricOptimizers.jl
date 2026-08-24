@@ -6,7 +6,7 @@ using GeometricOptimizers
 using HDF5
 using NeuralNetworkParameters
 using NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata, flatlength,
-                               save, load
+                               parameterrange, save, load
 using Random
 using Test
 
@@ -56,8 +56,13 @@ leaves = (
     plain     = rand(2, 2),
 )
 
-@testset "the extension is loaded" begin
-    @test Base.get_extension(GeometricOptimizers, :NeuralNetworkParametersExt) !== nothing
+# `NeuralNetworkParameters` is a hard dependency as of 0.5.0, so the protocol is simply there -- no
+# extension to load and nothing to condition on. This asserts that rather than deleting the testset,
+# because "the methods are present" is the precondition every testset below relies on.
+@testset "the protocol is present unconditionally" begin
+    @test freeparameters(leaves.symmetric) === parent(leaves.symmetric)
+    @test rebuild(leaves.symmetric, parent(leaves.symmetric)) isa SymmetricMatrix
+    @test isnothing(Base.get_extension(GeometricOptimizers, :NeuralNetworkParametersExt))
 end
 
 @testset "freeparameters is Base.parent" begin
@@ -133,6 +138,46 @@ end
     end
 end
 
+# The flat ordering, pinned absolutely.
+#
+# Downstream code indexes this vector by hand -- `test/named_tuple_parameters.jl` asserts literal
+# ranges and its `∇F!` slices with them -- so the order is part of the contract, not an implementation
+# detail. When this landed it was written as an elementwise comparison against
+# `ParameterHandling.flatten`, which was still present, and the two agreed on every leaf family; see
+# the commit that added it. With that package gone there is nothing left to compare against, so the
+# expectations are spelled out instead. Which is the better test anyway: it says what the numbers
+# *are* rather than that two implementations happen to concur.
+@testset "the flat ordering is the one downstream code indexes by" begin
+    # a manifold flattens as its dense storage, in linear index order
+    @test flatten(Float64, leaves.stiefel)[1] == vec(parent(leaves.stiefel))
+    @test flatten(Float64, leaves.grassmann)[1] == vec(parent(leaves.grassmann))
+
+    # a storage matrix flattens as the vector it keeps, which is also what `vec` returns for it --
+    # `n(n±1)/2` numbers, not `n²`
+    for x in (leaves.symmetric, leaves.skew, leaves.lower, leaves.upper)
+        @test flatten(Float64, x)[1] == parent(x)
+        @test flatten(Float64, x)[1] == vec(x)
+    end
+
+    # a lift flattens block by block, in the order `parent` returns them, and the first block of a
+    # `StiefelLieAlgHorMatrix` is itself structured so it contributes its own storage
+    @test flatten(Float64, leaves.stiefhor)[1] ==
+          vcat(parent(parent(leaves.stiefhor)[1]), vec(parent(leaves.stiefhor)[2]))
+    @test flatten(Float64, leaves.grasshor)[1] == vec(parent(leaves.grasshor)[1])
+
+    # a plain array is itself, in linear index order
+    @test flatten(Float64, leaves.plain)[1] == vec(leaves.plain)
+
+    # and through a container the per-leaf orders compose in declaration order. Heterogeneous on
+    # purpose: a manifold, a storage matrix, a lift and a plain array in one set.
+    ps = (Y = leaves.stiefel, S = leaves.symmetric, G = leaves.stiefhor, W = leaves.plain)
+    v, layout = flatten(Float64, ps)
+    @test v == vcat(flatten(Float64, leaves.stiefel)[1], flatten(Float64, leaves.symmetric)[1],
+                    flatten(Float64, leaves.stiefhor)[1], flatten(Float64, leaves.plain)[1])
+    @test parameterrange(layout.children.Y) == 1:(N * n)
+    @test parameterrange(layout.children.W) == (length(v) - length(leaves.plain) + 1):length(v)
+end
+
 @testset "parameter_metadata records what the storage does not determine" begin
     @test parameter_metadata(leaves.symmetric) == (n = n,)
     @test parameter_metadata(leaves.skew) == (n = n,)
@@ -142,6 +187,33 @@ end
     @test parameter_metadata(leaves.grasshor) == (N = N, n = n)
     # a manifold element's storage *is* the dense matrix, so there is nothing to record
     @test parameter_metadata(leaves.stiefel) == NamedTuple()
+end
+
+# `GlobalSection` of the container. This is one method, but it is the method that lets
+# `GeometricMachineLearning` delete its own copy of it -- `GlobalSection` is this package's function
+# and `NetworkParameters` is `NeuralNetworkParameters`', so a package that merely uses both owns
+# neither name.
+@testset "a GlobalSection can be taken of the container" begin
+    nt = (L1 = (Y = leaves.stiefel, b = rand(N)), L2 = (Z = leaves.grassmann,))
+    ps = NetworkParameters(nt)
+
+    λ_container = GlobalSection(ps)
+    λ_bare = GlobalSection(nt)
+
+    # the result is the plain tree, not a `NetworkParameters` of sections: a section is not a
+    # parameter, and everything downstream walks it as an ordinary container
+    @test λ_container isa NamedTuple
+    @test keys(λ_container) == keys(nt)
+    @test typeof(λ_container) == typeof(λ_bare)
+
+    # every leaf gets a section, a manifold one and an ordinary array alike
+    @test λ_container.L1.Y isa GlobalSection
+    @test λ_container.L1.b isa GlobalSection
+    @test λ_container.L2.Z isa GlobalSection
+
+    # and the section really is of these parameters -- `==`, not `===`, because the constructor
+    # deliberately stores a copy of the anchor
+    @test λ_container.L1.Y.Y == ps.L1.Y
 end
 
 @testset "HDF5 round trip, with no prototype" begin
