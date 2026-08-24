@@ -46,8 +46,6 @@ using ChainRulesCore: ProjectTo
 # we use the Vcat function from LazyArrays
 import LazyArrays
 
-import ForwardDiff
-
 # `NeuralNetworkParameters` owns the parameter container and the walks over it. This package supplies
 # the leaf protocol for its own structured matrices (`src/parameter_protocol.jl`) and uses the flat
 # form everywhere a quasi-Newton method needs coordinates.
