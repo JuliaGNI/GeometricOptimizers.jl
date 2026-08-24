@@ -45,7 +45,7 @@ BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 function alloc_h(x::Union{ArrayNamedTuple{T},Manifold{T}}) where {T}
     # `_zero(x)` for the reason `BFGSCache` gives: the lift's dimension, not the dense one
     n = flatlength(_zero(x))
-    fill!(zeros(T, n, n), T(NaN))
+    fill(T(NaN), n, n)
 end
 
 OptimizerState(::BFGS, x_args...) = BFGSState(x_args...)

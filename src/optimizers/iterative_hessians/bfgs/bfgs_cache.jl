@@ -93,8 +93,10 @@ end
 # Type piracy: `outer!` is imported from `SimpleSolvers` and `ArrayNamedTuple` is an alias
 # for Base's `NamedTuple`. See issue #16.
 function outer!(m::AbstractMatrix{T}, arr1::ArrayNamedTuple{T}, arr2::ArrayNamedTuple{T}) where {T}
-    v1, _ = flatten(arr1)
-    v2, _ = flatten(arr2)
+    # `flatten` is given `T` explicitly for the reason `_dot` states: `m` is a `Matrix{T}`, so the
+    # flat vectors that fill it have to be `T` and not whatever a set happens to promote to
+    v1, _ = flatten(T, arr1)
+    v2, _ = flatten(T, arr2)
     outer!(m, v1, v2)
 end
 
@@ -112,8 +114,8 @@ is what the `NamedTuple` case has always done; without the same method here `BFG
 run on a *bare* `Manifold` at all.
 """
 function outer!(m::AbstractMatrix{T}, g₁::AbstractLieAlgHorMatrix{T}, g₂::AbstractLieAlgHorMatrix{T}) where {T}
-    v1, _ = flatten(g₁)
-    v2, _ = flatten(g₂)
+    v1, _ = flatten(T, g₁)
+    v2, _ = flatten(T, g₂)
     outer!(m, v1, v2)
 end
 
@@ -163,7 +165,7 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
         outer!(cache.ΔxΔg, cache.Δx, cache.Δg)
         mul!(cache.T1, cache.ΔxΔg, inverse_hessian(state))
         mul!(cache.T2, inverse_hessian(state), cache.ΔxΔg')
-        Δg2 = flatten(cache.Δg)[1]
+        Δg2 = flatten(T, cache.Δg)[1]
         γQγ = Δg2' * inverse_hessian(state) * Δg2
         cache.T3 .= (one(T) .+ γQγ ./ ΔxΔg) .* cache.ΔxΔx
         inverse_hessian(state) .-= (cache.T1 .+ cache.T2 .- cache.T3) ./ ΔxΔg

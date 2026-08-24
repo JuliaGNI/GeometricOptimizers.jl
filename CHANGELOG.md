@@ -105,7 +105,7 @@ piracy and said so, and a one-argument method that silently promoted a `Float32`
 - **Three sites allocated a zeroed copy of the parameters and a vector the size of it in order to call
   `length`.** `BFGSCache`, `DFPCache` and `alloc_h` sized `Q` with
   `ParameterHandling.flatten(_zero(x))` and used only `length(v)`. They use `flatlength` now, which
-  counts without building anything.
+  counts without building the flat vector.
 
   The `_zero(x)` stays, and a comment says why, because dropping it is a real bug that
   `test/optimizer_convergence/svd_optim.jl` catches: `zero` of a manifold element is its *horizontal
@@ -127,6 +127,22 @@ piracy and said so, and a one-argument method that silently promoted a `Float32`
   `NeuralNetworkParameters` and cascades to four packages, or this package stops deriving `T` from
   dispatch and takes it from `parameter_eltype(x)` at construction -- which also weakens the guarantee
   `src/optimizer_solution.jl`'s warning is about. That is a decision to take deliberately.
+
+- **The flat buffers are still allocated per call.** The three sites above were the ones that
+  allocated a flat vector in order to *not* use it; the ones that use it still build a fresh one every
+  time. `_dot` flattens both arguments per inner product -- once per line-search trial slope, the
+  hottest of them -- `outer!` both per update, `_mul!` one plus a `ParameterLayout`, and the `Δg2` of
+  each quasi-Newton `update!` one more. `NeuralNetworkParameters` has the allocation-free counterparts
+  (`flatten!`, `unflatten!`) and a `FlatParameters` that carries its own layout and preserves it
+  through `similar`, so what is missing is only the scratch to write into.
+
+  Left out because of where that scratch has to live rather than because of the rewrite. It belongs on
+  the cache and the state, not on the `Gradient`: one `Gradient` is shared between `solver_step!` and
+  the line search's closure, which is why the cache already keeps `gradient` and `latest_gradient`
+  apart -- `src/optimizers/linesearch_problem.jl:211-224` records the momentum corruption that sharing
+  caused. So it is a new field and a new type parameter on `BFGSCache`, `DFPCache` and `BFGSState`,
+  which `test/named_tuple_parameters.jl` requires to be unbounded, plus the `@allocated == 0` tests
+  that are the only thing that would make "preallocated" more than a claim. That is its own release.
 
 - **`l2norm(::AbstractMatrix)` and `l2norm(::AbstractFloat)` are still piracy on Base types**
   (`src/optimizers/optimizer_status.jl`), and no parameter container fixes them; the comment there

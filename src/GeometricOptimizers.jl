@@ -54,11 +54,12 @@ import ForwardDiff
 #
 # Deliberately *not* re-exported: `flatten` and `unflatten` are that package's names, and a downstream
 # package doing `using GeometricMachineLearning, GeometricOptimizers` would meet them twice.
+# The list is what this package actually uses, so that it says which walks these optimizers are
+# written in terms of. `ext/AbstractNeuralNetworksExt.jl` imports `mapstorage` for itself.
 using NeuralNetworkParameters: NetworkParameters, params,
-                               ParameterLayout, parameterlayout, parameterrange, flatlength,
-                               flatten, flatten!, unflatten, unflatten!,
-                               mapparameters, mapparameters!, mapstorage, mapstorage!,
-                               foldparameters, parameter_eltype, register_parameter_type!
+                               parameterlayout, flatlength,
+                               flatten, unflatten, unflatten!,
+                               mapparameters, register_parameter_type!
 import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
 
 # `metric`, `check` and `Ω` join `rgrad` in being public: they are the geometry a caller works in,

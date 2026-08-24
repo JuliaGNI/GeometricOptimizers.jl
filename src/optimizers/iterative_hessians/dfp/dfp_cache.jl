@@ -111,7 +111,7 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
     # flattened, so it is `_dot` and not the ambient `⋅`
     ΔxΔg = _dot(cache.Δx, cache.Δg)
     # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too
-    Δg2 = flatten(cache.Δg)[1]
+    Δg2 = flatten(T, cache.Δg)[1]
     γQγ = Δg2' * state.Q * Δg2
 
     # see the remark in `bfgs_cache.jl`: `curvature_is_usable` is the curvature condition that keeps

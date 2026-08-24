@@ -25,8 +25,8 @@ freeparameters(x::Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix})
 # so they win wherever they exist.
 function rebuild(x::Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix}, data)
     throw(ArgumentError(string("no `rebuild` for `", typeof(x), "`. This package's ",
-        "`NeuralNetworkParameters` extension covers it with `freeparameters` but not with `rebuild`; ",
-        "add the missing method next to the others in `ext/NeuralNetworkParametersExt.jl`.")))
+        "`NeuralNetworkParameters` protocol covers it with `freeparameters` but not with `rebuild`; ",
+        "add the missing method next to the others in `src/parameter_protocol.jl`.")))
 end
 
 rebuild(::StiefelManifold, data) = StiefelManifold(data)

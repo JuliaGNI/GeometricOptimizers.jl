@@ -16,7 +16,6 @@ function GradientFunction(F, ∇F!, nt::NamedTuple)
     GradientFunction(_x -> F(unflatten(layout, _x)), ∇F!, v)
 end
 
-
 # Type piracy: `Gradient` is SimpleSolvers' and `ArrayNamedTuple` is an alias for Base's
 # `NamedTuple`. A wrapper `struct` would fix this locally. See issue #16.
 function (grad::Gradient{T})(nt::ArrayNamedTuple{T}) where {T}

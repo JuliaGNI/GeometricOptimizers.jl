@@ -8,9 +8,6 @@
 
 using AbstractNeuralNetworks: changebackend, CPU
 using GeometricOptimizers
-# explicitly, because `LinearAlgebra` exports these two names as well and a bare `using` of both
-# leaves them ambiguous
-using GeometricOptimizers: LowerTriangular, UpperTriangular
 using NeuralNetworkParameters: NetworkParameters
 using Random
 using Test
@@ -35,12 +32,15 @@ leaves = (
 end
 
 @testset "every family keeps its type and its numbers" begin
+    # one testset per family, so a failure names the leaf that failed
     for (k, x) in pairs(leaves)
-        y = changebackend(CPU(), x)
-        @test typeof(y) == typeof(x)
-        @test y ≈ x
-        # a transfer copies; it does not alias the source
-        @test parent(y) !== parent(x)
+        @testset "$k" begin
+            y = changebackend(CPU(), x)
+            @test typeof(y) == typeof(x)
+            @test y ≈ x
+            # a transfer copies; it does not alias the source
+            @test parent(y) !== parent(x)
+        end
     end
 end
 
