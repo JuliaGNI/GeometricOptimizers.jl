@@ -95,3 +95,6 @@ end
 begin
     @safetestset "NeuralNetworkParameters      " include("neural_network_parameters_protocol.jl")
 end
+begin
+    @safetestset "changebackend                " include("changebackend.jl")
+end
