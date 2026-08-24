@@ -3,6 +3,7 @@
 # back rather than a densified copy of it.
 
 using GeometricOptimizers
+using GeometricOptimizers: OptimizerSolution
 using HDF5
 using NeuralNetworkParameters
 using NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata, flatlength,
@@ -289,4 +290,32 @@ end
         @test read_back.L1.Y ≈ Y
         @test read_back.L1.b == [1.0, 2.0]
     end
+end
+
+@testset "a parameter set is an OptimizerSolution and binds its element type" begin
+    # this is the reason `NeuralNetworkParameters` 0.2 carries the element type on the type. Every
+    # cache and state constructor, both `Optimizer` constructors and the `BFGSState` `update!` methods
+    # take `T` from the *type* of the solution, in one of these two shapes, so a parameter set is only
+    # usable as a solution if `T` binds for it.
+    bound(x::VT) where {T, VT <: OptimizerSolution{T}} = T
+    annotated(::OptimizerSolution{T}) where {T} = T
+
+    ps = NetworkParameters((L1 = (W = [1.0 2.0; 3.0 4.0], b = [5.0, 6.0]),))
+    @test bound(ps) === Float64
+    @test annotated(ps) === Float64
+    @test only(Base.return_types(bound, Tuple{typeof(ps)})) === Type{Float64}
+
+    ps32 = NetworkParameters((L1 = (W = Float32[1 2], b = Float32[3]),))
+    @test bound(ps32) === Float32
+    @test annotated(ps32) === Float32
+
+    # a structured leaf reaches its element type through the protocol above
+    @test bound(NetworkParameters((L1 = (W = SymmetricMatrix(rand(3, 3)),),))) === Float64
+
+    # and the members that were already there still bind, which is what the wider union must not cost
+    @test bound([1.0, 2.0]) === Float64
+    @test bound((a = [1.0], b = Float64[2 3])) === Float64
+    @test bound((a = Float32[1],)) === Float32
+    @test bound(rand(StiefelManifold{Float64}, 4, 2)) === Float64
+    @test bound((a = rand(StiefelManifold{Float64}, 4, 2), b = [1.0])) === Float64
 end

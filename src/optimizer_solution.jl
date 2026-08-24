@@ -54,9 +54,15 @@ end
 """
     OptimizerSolution
 
-A type alias for the solution of an optimizer, which can be either an `AbstractVector` or a [`Manifold`](@ref).
+A type alias for the solution of an optimizer: an `AbstractVector`, a [`Manifold`](@ref), a
+`NamedTuple` of arrays, or a `NetworkParameters` holding one.
+
+`NetworkParameters{T}` binds `T` from a direct type parameter rather than through a `Vararg` bound on
+value types, so it is the cheapest member of this union to intersect. Note that it is the only member
+whose `T` is a *promotion* over the leaves rather than a guarantee that every leaf is a `T`.
 """
-const OptimizerSolution{T} = Union{AbstractVector{T},Manifold{T},ArrayNamedTuple{T}}
+const OptimizerSolution{T} = Union{AbstractVector{T},Manifold{T},ArrayNamedTuple{T},
+                                   NetworkParameters{T}}
 
 const GradientArrayOrNamedTuple{T} = Union{AbstractArray{T},ArrayNamedTuple{T}}
 

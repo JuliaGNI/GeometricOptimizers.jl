@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased] — targeting 0.5.0
+## [0.5.0]
 
 **`ParameterHandling` is gone, and the package that owns a network's parameters walks them instead.**
 0.4.x already supplied the `freeparameters`/`rebuild` protocol for these types through an extension;
@@ -65,6 +65,20 @@ here would name a Documenter gap and a `SimpleSolvers` documentation link, which
   stop.
 
 ### Added
+
+- **`NetworkParameters{T}` is a member of `OptimizerSolution{T}`.** `NeuralNetworkParameters` 0.2
+  carries the element type of the leaves as the container's first type parameter, so a parameter set
+  binds `T` in the `where {T, VT<:OptimizerSolution{T}}` clauses the caches, states and `Optimizer`
+  constructors are written with, exactly as an `AbstractVector` or a `Manifold` does. It is the
+  cheapest member of the union to intersect: `T` comes from a direct type parameter rather than through
+  a `Vararg` bound on value types.
+
+  One caveat that the other members do not have. `NetworkParameters{T}`'s `T` is a *promotion* over the
+  leaves and not a guarantee that every leaf is a `T`, where `ArrayNamedTuple{T}` guarantees exactly
+  that. A mixed-precision set is a `NetworkParameters{Float64}` with `Float32` leaves still in it.
+
+  Like every alias in `src/optimizer_solution.jl`, this one stays out of `struct` type-parameter
+  bounds; the note at the head of that file says why.
 
 - **`changebackend` for `Manifold`, `VectorStorageMatrix` and `AbstractLieAlgHorMatrix`**, in a new
   `AbstractNeuralNetworks` weak-dependency extension. **NNP-D3** and the second half of **NNP-D8**.
@@ -129,19 +143,20 @@ here would name a Documenter gap and a `SimpleSolvers` documentation link, which
 
 ### Known issues
 
-- **The container swap is not in this release.** Adopting `NetworkParameters` as the parameter container
-  -- which is what would retire the `ArrayNamedTuple` half of **#16** -- is blocked on a design question
-  upstream, not on effort. Eleven sites derive `T` from the *type* of the solution, as
-  `where {T, VT<:OptimizerSolution{T}}`: every cache and state inner constructor, both `Optimizer`
-  constructors and the `BFGSState` `update!` methods. `NetworkParameters{Keys, ValueTypes}` carries no
-  element-type parameter, and for a nested container -- which is what a network is -- `T` is not
-  recoverable from the type by any alias. So adding it to `OptimizerSolution` would leave all eleven
-  clauses unable to bind `T`.
+- **The container swap is not in this release, but it is no longer blocked.** The blocker was upstream
+  and is gone: `NeuralNetworkParameters` 0.2 carries the element type as `NetworkParameters{T}`'s first
+  type parameter, so `NetworkParameters{T}` is a member of `OptimizerSolution{T}` and the eleven sites
+  that derive `T` from the *type* of the solution -- every cache and state inner constructor, both
+  `Optimizer` constructors and the `BFGSState` `update!` methods -- bind it for a parameter set with no
+  edit of their own. This release makes it a member.
 
-  Either the container gains an element-type parameter upstream, which is breaking for
-  `NeuralNetworkParameters` and cascades to four packages, or this package stops deriving `T` from
-  dispatch and takes it from `parameter_eltype(x)` at construction -- which also weakens the guarantee
-  `src/optimizer_solution.jl`'s warning is about. That is a decision to take deliberately.
+  What remains is the swap itself, i.e. the `ArrayNamedTuple` half of **#16**. Every elementwise
+  primitive in `src/optimizers/named_tuple_wrapper.jl` -- `_zero`, `_copy`, `_similar`, `_copyto!`,
+  `_mul!`, `_rac!`, `_div!`, `_square!`, `rgrad` -- dispatches on `ArrayNamedTuple` and none accepts a
+  container. So widening the union widens signatures without making an optimizer run on one: a
+  container handed to `Optimizer` now gets further in before failing rather than being turned away at
+  the door. Those methods, and `GlobalSection`'s deliberate unwrapping at
+  `src/global_sections/global_sections.jl:42`, are the work.
 
 - **The flat buffers are still allocated per call.** The three sites above were the ones that
   allocated a flat vector in order to *not* use it; the ones that use it still build a fresh one every
