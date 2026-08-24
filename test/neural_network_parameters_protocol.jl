@@ -6,7 +6,7 @@ using GeometricOptimizers
 using HDF5
 using NeuralNetworkParameters
 using NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata, flatlength,
-                               save, load
+                               parameterrange, save, load
 using Random
 using Test
 
@@ -131,6 +131,41 @@ end
         @test typeof(back.L1[k]) == typeof(leaves[k])
         @test back.L1[k] == leaves[k]
     end
+end
+
+# The whole `ParameterHandling` removal rests on this: the flat vector this package's protocol
+# produces has to be the *same numbers in the same order* as the one `ParameterHandling.flatten`
+# produced, because downstream code indexes it by hand. `test/named_tuple_parameters.jl` asserts
+# literal ranges, and its `∇F!` slices the flat vector with them.
+#
+# It holds by construction rather than by luck — `Base.vec` and `Base.parent` return the same storage
+# for every one of these types, and `NeuralNetworkParameters` copies a leaf in linear index order —
+# but "by construction" is an argument, not a test. This is the test. It is written while both
+# packages are still present precisely so that the equality is recorded before one of them goes.
+@testset "the flat ordering agrees with the one downstream code indexes by" begin
+    for (k, x) in pairs(leaves)
+        v_ph, _ = GeometricOptimizers.ParameterHandling.flatten(Float64, x)
+        v_nn, _ = NeuralNetworkParameters.flatten(Float64, x)
+        @test v_nn == v_ph
+    end
+
+    # and through a container, which is where the per-leaf orders compose. Heterogeneous on purpose:
+    # a manifold, a storage matrix, a lift and a plain array in one set.
+    ps = (Y = leaves.stiefel, S = leaves.symmetric, G = leaves.stiefhor, W = leaves.plain)
+    v_ph, _ = GeometricOptimizers.ParameterHandling.flatten(Float64, ps)
+    v_nn, layout = NeuralNetworkParameters.flatten(Float64, ps)
+    @test v_nn == v_ph
+
+    # spelled out for the two that are not simply `vec` of the leaf, so a future reader can see
+    # *which* numbers these are without running anything
+    @test NeuralNetworkParameters.flatten(Float64, leaves.symmetric)[1] == parent(leaves.symmetric)
+    @test NeuralNetworkParameters.flatten(Float64, leaves.stiefhor)[1] ==
+          vcat(parent(parent(leaves.stiefhor)[1]), vec(parent(leaves.stiefhor)[2]))
+
+    # the ranges, in declaration order, which is what a hand-written `∇F!` relies on
+    @test parameterrange(layout.children.Y) == 1:(N * n)
+    @test parameterrange(layout.children.W) ==
+          (length(v_nn) - length(leaves.plain) + 1):length(v_nn)
 end
 
 @testset "parameter_metadata records what the storage does not determine" begin
