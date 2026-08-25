@@ -120,17 +120,27 @@ function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
     W
 end
 
-# The degree-6 diagonal Padé numerator `p₆` and denominator `q₆` of `𝔄`, sharing `X²` and `X⁴` and
-# grouped so that each costs two further matrix products.
-#
-# The coefficients are the [7/6] Padé approximant of `exp` rearranged. With `exp(x) ≈ N(x)/D(x)`,
-#
-#     φ₁(x) = (exp(x) - 1)/x ≈ (N(x) - D(x)) / (x·D(x)),
-#
-# and `N - D` is divisible by `x` because both have constant term `1`. So `q₆ = D`, of degree 6, and
-# `p₆(x) = (N(x) - D(x))/x`, also of degree 6 since `N` has degree 7 — a *diagonal* approximant, and
-# one that inherits `[7/6]`'s order: `p₆/q₆` agrees with `φ₁` to `O(x¹³)`. The identity is passed in
-# rather than rebuilt because `𝔄` below needs one of the same size anyway.
+@doc raw"""
+    _native_pade_polynomials(X, 𝕀)
+
+Evaluate the degree-6 numerator ``p_6(X)`` and denominator ``q_6(X)`` used by [`NativePade`](@ref).
+
+If ``P^{\exp}_7/Q^{\exp}_6`` is the ``[7/6]`` Padé approximant of the exponential, then
+
+```math
+p_6(z)=\frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{z},
+\qquad
+q_6(z)=Q^{\exp}_6(z),
+```
+
+so ``q_6(X)^{-1}p_6(X)`` agrees with ``\mathfrak{A}(X)=\varphi_1(X)`` through the ``X^{12}`` term.
+The implementation shares ``X^2`` and ``X^4`` between the two polynomials and groups the remaining
+terms to avoid forming every matrix power separately. `𝕀` must be the multiplicative identity with
+the same size, element type, and backend as `X`.
+
+This is an internal kernel; [`NativePade`](@ref) supplies scaling, applies the denominator, and undoes
+the scaling with modified squaring.
+"""
 function _native_pade_polynomials(X::AbstractMatrix, 𝕀::AbstractMatrix)
     T = eltype(X)
     X² = X * X

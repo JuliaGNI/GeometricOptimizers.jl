@@ -617,9 +617,24 @@ Geodesic(TaylorSeries())     # the pre-0.2.0 behaviour; not a usable retraction
 
 ## 2. Padé approximation
 
-A Padé approximant is a rational function whose coefficients are chosen to reproduce as many terms
-of a power series as possible. For a scalar analytic function ``f``, its ``[m/n]`` Padé approximant
-has the form
+The failure of the direct Taylor algorithm suggests scaling the argument before evaluating
+``\mathfrak{A}``; that is the subject of the next section. Once the argument has been made small,
+however, one still has to choose the approximation evaluated there. A degree-``m`` Taylor polynomial
+simply keeps the first ``m+1`` terms,
+
+```math
+T_m(z)=\sum_{k=0}^m c_kz^k,
+\qquad
+f(z)-T_m(z)=O(z^{m+1}).
+```
+
+Its coefficients are fixed one by one by the series, so matching more terms requires increasing the
+polynomial degree. Padé takes a different route: it chooses a numerator *and* a denominator together,
+so that their quotient matches more series coefficients without raising the numerator to the same
+degree. It is therefore an alternative small-argument kernel, not an alternative to scaling.
+
+To see how this works, first consider a scalar analytic function ``f``. Its ``[m/n]`` Padé
+approximant is the rational function
 
 ```math
 R_{m,n}(z) = \frac{P_m(z)}{Q_n(z)},
@@ -634,8 +649,8 @@ Q_n(z)f(z)-P_m(z)=O\left(z^{m+n+1}\right).
 ```
 
 Equating powers of ``z`` determines the coefficients of ``P_m`` and ``Q_n``. The denominator is what
-makes this different from truncating a Taylor series: after division, even low-degree polynomials
-represent infinitely many powers. For example,
+makes this different from truncating a Taylor series: when the quotient is expanded again as a power
+series, even low-degree ``P_m`` and ``Q_n`` generate infinitely many powers. For example,
 
 ```math
 \frac{1+z/2}{1-z/2}=1+z+\frac{z^2}{2}+\frac{z^3}{4}+\cdots
@@ -644,17 +659,20 @@ represent infinitely many powers. For example,
 matches ``e^z`` through degree two, whereas a polynomial with numerator degree one can match only
 ``1+z``. More generally, a ``[m/n]`` Padé approximant normally matches through degree ``m+n``. This
 is why a rational kernel can capture much more local information than a Taylor polynomial with a
-similarly cheap numerator [higham2005scaling, higham2008functions](@cite). The cost is that one must
-apply ``Q_n(X)^{-1}`` accurately when the scalar argument is replaced by a matrix.
+similar polynomial degree [higham2005scaling, higham2008functions](@cite). We use the scalar variable
+``z`` only to derive these coefficients. After deriving the particular numerator and denominator
+needed for ``\mathfrak{A}``, we will substitute a matrix for ``z`` and explain what division means in
+that setting.
 
-### From a Padé approximant of ``\exp`` to one of ``\mathfrak{A}``
+### Deriving the coefficients for ``\mathfrak{A}``
 
-The implementation does not fit coefficients to ``\mathfrak{A}`` independently. Start with the
-``[7/6]`` Padé approximant of the exponential,
+The implementation does not fit coefficients to ``\mathfrak{A}`` independently. In the generic
+notation above, specialize ``P_m/Q_n`` to the ``[7/6]`` Padé approximant of the exponential and
+write its numerator and denominator as ``P^{\exp}_7`` and ``Q^{\exp}_6``:
 
 ```math
-e^z = \frac{N_7(z)}{D_6(z)} + O(z^{14}),
-\qquad N_7(0)=D_6(0)=1.
+e^z = \frac{P^{\exp}_7(z)}{Q^{\exp}_6(z)} + O(z^{14}),
+\qquad P^{\exp}_7(0)=Q^{\exp}_6(0)=1.
 ```
 
 Since ``\mathfrak{A}(z)=(e^z-1)/z``, the same approximation gives
@@ -662,13 +680,21 @@ Since ``\mathfrak{A}(z)=(e^z-1)/z``, the same approximation gives
 ```math
 \mathfrak{A}(z)
 = \frac{e^z-1}{z}
-= \frac{N_7(z)-D_6(z)}{zD_6(z)} + O(z^{13})
+= \frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{zQ^{\exp}_6(z)} + O(z^{13})
 = \frac{p_6(z)}{q_6(z)} + O(z^{13}).
 ```
 
-The quotient ``p_6(z)=(N_7(z)-D_6(z))/z`` is a polynomial because the two constant terms cancel.
-It has degree six, as does ``q_6=D_6``. Thus the result is a ``[6/6]`` approximant of
-``\mathfrak{A}`` that agrees with
+Here
+
+```math
+p_6(z)=\frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{z},
+\qquad
+q_6(z)=Q^{\exp}_6(z).
+```
+
+The numerator ``p_6`` is a polynomial because the constant terms of ``P^{\exp}_7`` and
+``Q^{\exp}_6`` cancel. It has degree six, as does ``q_6``. Thus the result is a ``[6/6]`` approximant
+of ``\mathfrak{A}`` that agrees with
 
 ```math
 \mathfrak{A}(z)=1+\frac{z}{2!}+\frac{z^2}{3!}+\cdots
@@ -686,22 +712,44 @@ q_6(z)={}&1-\frac{6z}{13}+\frac{5z^2}{52}-\frac{5z^3}{429}
 \end{aligned}
 ```
 
-For a matrix ``Y`` the same scalar coefficients define the matrix polynomials ``p_6(Y)`` and
-``q_6(Y)``. All their factors are powers of the same matrix, so they commute, and the rational
-approximant is
+### From scalar Padé to matrix Padé
+
+The scalar calculation above has done its only job: it has determined the coefficients. Matrix
+functions defined by power series use those same scalar coefficients, with each scalar power ``z^k``
+replaced by the matrix power ``Y^k``. Thus ``p_6(z)`` and ``q_6(z)`` become the matrix polynomials
+``p_6(Y)`` and ``q_6(Y)`` displayed above with ``z`` replaced by ``Y`` and ``1`` replaced by ``I``.
+The matching statement also transfers directly: the expansion of the rational matrix function agrees
+with
 
 ```math
-\mathfrak{A}(Y)\approx q_6(Y)^{-1}p_6(Y).
+\mathfrak{A}(Y)=I+\frac{Y}{2!}+\frac{Y^2}{3!}+\cdots
 ```
 
-No inverse of ``Y`` occurs: unlike the expression ``(e^Y-I)Y^{-1}``, this formula remains directly
-usable when ``Y`` is singular. In `_native_pade_polynomials`, the code first forms ``Y^2`` and
-``Y^4`` and groups the displayed polynomials around those shared powers. This evaluates both degree-6
-polynomials with matrix products instead of constructing the powers one by one.
+through the ``Y^{12}`` term.
+
+The quotient is not taken entry by entry. For scalars, ``r=p/q`` means ``qr=p``. For matrices, the
+corresponding operation is therefore to solve
+
+```math
+q_6(Y)R=p_6(Y),
+```
+
+or, when ``q_6(Y)`` is invertible, to write
+
+```math
+R=q_6(Y)^{-1}p_6(Y)\approx\mathfrak{A}(Y).
+```
+
+Because ``p_6(Y)`` and ``q_6(Y)`` are polynomials in the same matrix, they commute; the order shown is
+the one used by the implementation. Notice that no inverse of ``Y`` occurs. Unlike the expression
+``(e^Y-I)Y^{-1}``, the Padé formula remains directly usable when ``Y`` is singular. In
+[`_native_pade_polynomials`](@ref), the code first forms ``Y^2`` and ``Y^4`` and groups the displayed
+polynomials around those shared powers. This evaluates both degree-6 polynomials with matrix products
+instead of constructing the powers one by one.
 
 ### Applying the denominator without a matrix solve
 
-A conventional rational evaluation would solve
+A conventional evaluation of this rational matrix function would solve
 
 ```math
 q_6(Y)W=p_6(Y).

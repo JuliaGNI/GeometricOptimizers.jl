@@ -109,8 +109,13 @@ end
 
 Evaluate ``\mathfrak{A}=\varphi_1`` with a native degree-6 diagonal Padé approximant.
 
-For a function ``f``, the ``[m/n]`` Padé approximant is a rational function ``P_m/Q_n`` chosen so
-that
+Scaling controls the large-argument cancellation that makes [`TaylorSeries`](@ref) unreliable. At
+the resulting small argument there is still a choice of approximation kernel. A Taylor polynomial
+retains one series coefficient per degree; a Padé approximant uses a numerator and denominator whose
+quotient matches more coefficients at comparable polynomial degree.
+
+For a scalar function ``f``, the ``[m/n]`` Padé approximant is the rational function ``P_m/Q_n``
+chosen so that
 
 ```math
 Q_n(z)f(z)-P_m(z)=O(z^{m+n+1}),
@@ -118,20 +123,27 @@ Q_n(z)f(z)-P_m(z)=O(z^{m+n+1}),
 ```
 
 Unlike a degree-``m`` Taylor polynomial, division by ``Q_n`` represents infinitely many powers of
-``z``. This implementation starts from the standard ``[7/6]`` approximant
-``\exp(z)=N_7(z)/D_6(z)+O(z^{14})`` and uses
+``z``. Specializing that notation to the standard ``[7/6]`` approximant of the exponential gives
+``\exp(z)=P^{\exp}_7(z)/Q^{\exp}_6(z)+O(z^{14})``, from which this implementation uses
 
 ```math
 \mathfrak{A}(z)=\frac{\exp(z)-1}{z}
-\approx\frac{N_7(z)-D_6(z)}{zD_6(z)}=\frac{p_6(z)}{q_6(z)}.
+\approx\frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{zQ^{\exp}_6(z)}
+=\frac{p_6(z)}{q_6(z)},
 ```
 
-The constant terms of ``N_7`` and ``D_6`` are both one, so their difference is divisible by ``z``.
-Consequently ``p_6`` and ``q_6=D_6`` both have degree six, and their quotient agrees with the series
-of ``\mathfrak{A}`` through order 12; a degree-6 Taylor polynomial agrees only through order 6.
+where ``p_6=(P^{\exp}_7-Q^{\exp}_6)/z`` and ``q_6=Q^{\exp}_6``. The constant terms of
+``P^{\exp}_7`` and ``Q^{\exp}_6`` are both one, so their difference is divisible by ``z``.
+Consequently ``p_6`` and ``q_6`` both have degree six, and their quotient agrees with the series of
+``\mathfrak{A}`` through order 12; a degree-6 Taylor polynomial agrees only through order 6.
 
-Given ``X``, the algorithm chooses ``s`` such that ``Y=X/2^s`` satisfies ``\|Y\|_1\leq θ`` and
-evaluates
+The scalar variable ``z`` is used only to determine the coefficients. For a matrix ``Y``, replace
+each ``z^k`` by ``Y^k`` and the scalar constant by ``I``. Scalar division then becomes the matrix
+equation ``q_6(Y)R=p_6(Y)``, whose solution is ``R=q_6(Y)^{-1}p_6(Y)`` when ``q_6(Y)`` is invertible;
+it is not an entrywise quotient. Because both polynomials contain powers of the same ``Y``, they
+commute, and the power-series match now holds through the ``Y^{12}`` term.
+
+The algorithm chooses ``s`` such that ``Y=X/2^s`` satisfies ``\|Y\|_1\leq θ`` and evaluates
 
 ```math
 p_6(Y)={}
