@@ -56,8 +56,9 @@ import LazyArrays
 # written in terms of. `ext/AbstractNeuralNetworksExt.jl` imports `mapstorage` for itself.
 using NeuralNetworkParameters: NetworkParameters, params,
                                parameterlayout, flatlength,
-                               flatten, unflatten, unflatten!,
-                               foreachparameters, ParameterSet, register_parameter_type!
+                               flatten, flatten!, unflatten, unflatten!,
+                               FlatParameters, foreachparameters, ParameterSet,
+                               register_parameter_type!
 import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
 
 # `metric`, `check` and `Ω` join `rgrad` in being public: they are the geometry a caller works in,

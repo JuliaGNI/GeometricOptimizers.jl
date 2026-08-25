@@ -99,5 +99,8 @@ begin
     @safetestset "Container Parameters         " include("network_parameters_optimizer.jl")
 end
 begin
+    @safetestset "Flat Buffer Allocations      " include("flat_buffer_allocations.jl")
+end
+begin
     @safetestset "changebackend                " include("changebackend.jl")
 end

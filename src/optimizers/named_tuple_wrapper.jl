@@ -239,15 +239,48 @@ pairing a gradient with a direction has to happen there too.
 Used by [`trial_slope`](@ref) for ``\varphi'(\alpha)``, and by the quasi-Newton caches for
 ``\delta^T\gamma``, whose value has to be consistent with the flattened `T₁`, `T₂` and `γ^TQγ` it
 divides.
+
+!!! info "No flat vector is built"
+    This is the *value* the flattened inner product has, not the flattening. `flatten` writes the
+    leaves one after another into one vector, so ``\langle\mathrm{flatten}(a),
+    \mathrm{flatten}(b)\rangle`` is the sum of the per-leaf inner products, and the sum can be taken
+    without the vectors. Until 0.6.0 this allocated two of them per call — once per line-search trial
+    slope, which is the hottest site there is, once per `OptimizerStatus`, and twice per quasi-Newton
+    `update!`.
+
+    The summation order changes with it: per leaf and then across, rather than one `dot` over the
+    concatenation. Both are ``\sum_i a_ib_i``; they differ at round-off, and
+    `test/flat_buffer_allocations.jl` pins the two against each other.
 """
 _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 
 const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ParameterContainer{T}}
 
-# `flatten` is given `T` explicitly so that the result is a `T` even when a set happens to promote
-# to something wider; every quantity this is combined with downstream is a `T`.
-_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} =
-    dot(flatten(T, a)[1], flatten(T, b)[1])
+# `T` is named on the result rather than on a `flatten`, and for the same reason the `flatten(T, ·)`
+# this replaced named it there: every quantity this is combined with downstream is a `T`, and a
+# container's `T` is a *promotion* over its leaves rather than a guarantee about each of them, so a
+# mixed-precision set must not decide the type of the pairing. It is the one place where the two forms
+# differ by more than round-off — the old one converted the leaves and then paired them, this one
+# pairs them and then converts.
+_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} = T(_dot_leaves(a, b))
+
+# Down to the free parameters and no further, exactly as `flatten` goes: `dot` of a lift is the
+# *ambient* Frobenius product and `dot` of a [`VectorStorageMatrix`](@ref) reads a dense interface that
+# has neither the right length nor, for three of the four, any way to be read at all. `freeparameters`
+# is the same protocol `flatten` walks, so the two agree leaf for leaf by construction rather than by
+# two implementations happening to concur.
+_dot_leaves(a::Union{NamedTuple,NetworkParameters}, b) = _dot_leaves(values(a), values(_as_walkable(b)))
+
+# `false` is the strong zero: it takes its type from whatever it is added to, and there is no `T` in
+# scope to write `zero(T)` with. A one-leaf set adds it to that leaf's pairing and stays a `T`.
+_dot_leaves(::Tuple{}, ::Tuple{}) = false
+_dot_leaves(a::Tuple, b::Tuple) =
+    _dot_leaves(first(a), first(b)) + _dot_leaves(Base.tail(a), Base.tail(b))
+
+function _dot_leaves(a, b)
+    s = freeparameters(a)
+    s === a ? dot(a, b) : _dot_leaves(s, freeparameters(b))
+end
 
 _add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
 

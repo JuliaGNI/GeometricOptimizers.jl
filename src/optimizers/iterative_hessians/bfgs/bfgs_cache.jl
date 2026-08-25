@@ -10,7 +10,7 @@ The [`OptimizerCache`](@ref) for the [`BFGS`](@ref) algorithm. Also see [`update
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
 [`store_gradient!`](@ref).
 """
-struct BFGSCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
+struct BFGSCache{T,VT,GT,MT,GS,FT} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::GT    # current gradient
@@ -29,6 +29,9 @@ struct BFGSCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
 
     section::GS
 
+    # the flat buffers `outer!` and `_mul!` write through; see `_flat_scratch`
+    flat::FT
+
     function BFGSCache(x::AT) where {T,AT<:OptimizerSolution{T}}
         # `_zero(x)` is *not* redundant here, and dropping it is a real bug: `zero` of a manifold
         # element is its horizontal lift, whose free-parameter count is the intrinsic dimension and
@@ -39,7 +42,9 @@ struct BFGSCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
         q = zeros(T, n, n)
         section = GlobalSection(x)
         g = _zero(x)
-        cache = new{T,AT,typeof(g),typeof(q),typeof(section)}(_copy(x), _similar(g), _similar(g), Ref(false), _similar(q), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section)
+        # from the same `_zero(x)` as `n` above, and for the same reason
+        flat = _flat_scratch(T, g)
+        cache = new{T,AT,typeof(g),typeof(q),typeof(section),typeof(flat)}(_copy(x), _similar(g), _similar(g), Ref(false), _similar(q), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section, flat)
         initialize!(cache, x)
         cache
     end
@@ -86,7 +91,9 @@ inverse_hessian(::BFGSCache) = error("The inverse Hessian is stored in the state
 function update!(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     _copyto!(cache.x, x)
     _copyto!(direction(cache), state.s)
-    outer!(cache.ΔxΔx, direction(cache), direction(cache))
+    # `direction(cache)` *is* `cache.Δx`, so this is `δ`; `_flat_δ!` refreshes the mirror from it
+    δ = _flat_δ!(cache)
+    outer!(cache.ΔxΔx, δ, δ)
     cache
 end
 
@@ -161,12 +168,15 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
     # positive one -- as well as denominators of the order of `1e-16`, which it is about to divide a
     # rank-two correction by.
     if curvature_is_usable(ΔxΔg, cache.Δx, cache.Δg)
-        outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
-        outer!(cache.ΔxΔg, cache.Δx, cache.Δg)
+        # the secant pair in `Q`'s coordinates, written into the cache's buffers rather than into two
+        # fresh vectors per `outer!` and a third for `γ`; see `_flat_scratch`
+        δ, γ = _flat_δ!(cache), _flat_γ!(cache)
+        outer!(cache.ΔxΔx, δ, δ)
+        outer!(cache.ΔxΔg, δ, γ)
         mul!(cache.T1, cache.ΔxΔg, inverse_hessian(state))
         mul!(cache.T2, inverse_hessian(state), cache.ΔxΔg')
-        Δg2 = flatten(T, cache.Δg)[1]
-        γQγ = Δg2' * inverse_hessian(state) * Δg2
+        # `dot(γ, Q, γ)` and not `γ' * Q * γ`, which materialises `Q * γ`
+        γQγ = dot(γ, inverse_hessian(state), γ)
         cache.T3 .= (one(T) .+ γQγ ./ ΔxΔg) .* cache.ΔxΔx
         inverse_hessian(state) .-= (cache.T1 .+ cache.T2 .- cache.T3) ./ ΔxΔg
     end
@@ -178,7 +188,7 @@ function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{
     # guard above skipped the `Q` update on every single iteration.
     _copyto!(state.ḡ, gradient(cache))
 
-    _mul!(direction(cache), inverse_hessian(state), rhs(cache))
+    _flat_mul!(direction(cache), inverse_hessian(state), rhs(cache), cache.flat)
     _copyto!(state.s, direction(cache))
 
     cache

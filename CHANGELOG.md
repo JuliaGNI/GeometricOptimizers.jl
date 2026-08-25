@@ -113,6 +113,72 @@ before failing. This finishes it.
 
 ### Fixed
 
+- **The flat buffers are no longer allocated per call.** Every quantity a quasi-Newton method forms
+  lives in the *flattened* coordinates — `Q` is sized by the length of the flattening, `outer!` forms
+  its outer products there, `_dot` pairs there — while the parameters are a `NamedTuple`, a container,
+  or a horizontal lift of the ambient shape. Each crossing built a fresh flat vector: two per `_dot`,
+  two per `outer!`, one plus a `ParameterLayout` per `_mul!`, one more for the `γ` of each `update!`.
+
+  Two different fixes, because two different things were wrong.
+
+  - **`_dot` needed no buffer at all**, which is the better half: `dot` of two flattenings is the sum
+    of the per-leaf `dot`s, so the sum can be taken without the vectors. It is also the half that
+    matters most — `_dot` is the hottest of the sites, once per line-search trial slope and once per
+    `OptimizerStatus` — and it reaches *every* cache, including the first-order ones, where a buffer on
+    the quasi-Newton caches would not have.
+
+    The summation order changes with it, per leaf and then across rather than once over the
+    concatenation. Both are ``\sum_i a_ib_i`` and they differ at round-off;
+    `test/flat_buffer_allocations.jl` pins the two against each other, and
+    `test/optimizer_convergence/svd_optim.jl` — where `_dot` feeds `curvature_is_usable`'s relative
+    test and the line search's ``\varphi'`` — is unmoved.
+
+  - **`outer!` and `_mul!` genuinely need the flat form**, so `BFGSCache` and `DFPCache` carry buffers
+    to write into: one field and one unbounded type parameter each, a `NamedTuple` of
+    `NeuralNetworkParameters.FlatParameters` built from `_zero(x)` and not `x`, for the reason the
+    `flatlength(_zero(x))` beside it gives. `FlatParameters` rather than a bare `Vector` because it
+    carries its own layout and keeps it through `similar`, which is what retires the
+    `parameterlayout(c)` call inside `_mul!`. See `_flat_scratch`.
+
+    `nothing` for an `AbstractVector` solution, where the parameters *are* the flat coordinates and
+    buffering would add a copy per iteration and buy nothing.
+
+  `γᵀQγ` goes with them: `dot(γ, Q, γ)`, the three-argument `dot`, where `Δg2' * Q * Δg2` materialised
+  `Q * γ`.
+
+  `test/flat_buffer_allocations.jl` pins each site at exactly zero, for all four shapes of solution and
+  both methods. What that is worth end to end, from `scripts/optimizer_allocations.jl` — a 20-iteration
+  `solve!`, bytes allocated:
+
+  | | 0.5.0 | this release |
+  |---|---|---|
+  | `BFGS`, `Vector` | 36 312 | 24 456 |
+  | `BFGS`, bare `Manifold` | 1 473 096 | 1 067 000 |
+  | `BFGS`, flat `NamedTuple` | 2 430 488 | 1 651 416 |
+  | `BFGS`, container | `MethodError` | 1 897 752 |
+  | `DFP`, `Vector` | 35 512 | 23 160 |
+  | `DFP`, bare `Manifold` | 1 473 576 | 1 065 704 |
+  | `DFP`, flat `NamedTuple` | 2 424 184 | 1 641 800 |
+  | `DFP`, container | `MethodError` | 1 888 136 |
+
+  About a third, and the `Vector` column is not a rounding error: `flatten(T, ::Vector)` copies, and
+  `Δg2' * Q * Δg2` allocated there too.
+
+### Removed (breaking)
+
+- **`update!(::BFGSState, ::Gradient, x, retraction)` is gone.** It had no caller in `src/`, `test/`,
+  `docs/` or `scripts/`, and none in `GeometricMachineLearning` or `GMLDatasets` either: for a
+  `BFGSState` the live path is `update!(state, opt, x)`, which reaches the six-argument method and
+  hands it `problem(opt).F(x)` directly.
+
+  It is worth naming for what it did rather than because it is missed. It set `f̄` with
+  `gradient.F(flatten(T, x)[1])`, and `gradient.F` is the closure `_x -> F(unflatten(layout, _x))` — so
+  that line flattened `x` and unflattened it again to compute `F(x)`, allocating twice for a value the
+  caller already had. 0.5.0's *Known issues* counted it among the sites that wanted a scratch buffer on
+  the state; taking `f` as an argument is the fix, and a buffer would only have made the round trip
+  cheaper. **`BFGSState` gains no field and no type parameter**, which is a departure from what that
+  entry said the work would be.
+
 - **`l2norm` and `solution_scale` take any parameter shape, not just a solution's.** They dispatched on
   `ParameterContainer`, which leaves out the nested plain `NamedTuple`; `_sumsq_leaves` recurses, so
   covering it costs nothing, and leaving it out cost something. `GeometricBase.l2norm` is variadic, so an
@@ -151,6 +217,12 @@ before failing. This finishes it.
 
 ### Known issues
 
+- **A solve is not allocation-free, and this release does not make it one.** The flat vectors are gone;
+  the two thirds that remain are the gradient evaluation, the parameter trees `global_rep` and
+  `retraction_differential` build per line-search evaluation in `trial_slope`, and the `map` inside the
+  elementwise walks returning a tree of results that is then discarded. The last of those is the
+  cheapest to fix and the one to look at next: on the flat `NamedTuple` problem above it is the
+  difference between 992 bytes and none per `update!`.
 - **`src/parameter_walks.jl` should be retired in favour of `NeuralNetworkParameters.mapparameters`.**
   `_mapleaves` was written here only because that function could not be compiled on a wide-flat set;
   0.2.2 fixed it from this package's report, and the in-place half is already upstream's
@@ -180,8 +252,6 @@ before failing. This finishes it.
   alias for `Base.NamedTuple`, which is the original complaint, and `NetworkParameters` belongs to
   `NeuralNetworkParameters`, so a method pairing it with `l2norm`, `outer!` or `copyto!` owns neither
   side either. The alias' docstring says so.
-
-- **The flat buffers are still allocated per call**, unchanged from 0.5.0 — see that release's entry.
 
 [#16]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16
 
