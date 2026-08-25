@@ -123,17 +123,23 @@ Q_n(z)f(z)-P_m(z)=O(z^{m+n+1}),
 ```
 
 Unlike a degree-``m`` Taylor polynomial, division by ``Q_n`` represents infinitely many powers of
-``z``. For ``e^z``, write ``P_m=\sum_{k=0}^m a_kz^k`` and
-``Q_n=\sum_{j=0}^n b_jz^j`` with ``b_0=1``. Expanding ``Q_ne^z`` shows that its ``z^k`` coefficient
-is ``\sum_{j=0}^{\min(k,n)}b_j/(k-j)!``. Setting these coefficients to zero for
-``k=m+1,\ldots,m+n`` determines the denominator; the remaining coefficients through degree ``m``
-then determine the numerator. Equivalently,
+``z``. For ``e^z`` the coefficients are classical, and nothing is fitted numerically. Write
+``P_m=\sum_{k=0}^m a_kz^k`` and ``Q_n=\sum_{j=0}^n b_jz^j`` with ``b_0=1``; the ``z^k`` coefficient of
+``Q_ne^z`` is then the convolution ``\sum_j b_j/(k-j)!``. Requiring it to vanish for
+``k=m+1,\ldots,m+n`` is a system of ``n`` equations that fixes the denominator, after which the same
+convolution reads the numerator off for ``k\leq m`` without constraining anything further. The
+solution is
 
 ```math
-a_k=\frac{(m+n-k)!\,m!}{(m+n)!\,(m-k)!\,k!},
+a_k=\frac{(m+n-k)!}{(m+n)!}\binom{m}{k},
 \qquad
-b_k=(-1)^k\frac{(m+n-k)!\,n!}{(m+n)!\,(n-k)!\,k!}.
+b_k=(-1)^k\frac{(m+n-k)!}{(m+n)!}\binom{n}{k},
 ```
+
+both halves of which follow from
+``\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}=\binom{m}{d-n}`` at ``d=m+n-k``: the right-hand side
+vanishes on ``k\geq m+1`` and equals ``\binom{m}{k}`` on ``k\leq m``. The two formulas are the same
+expression with ``m`` and ``n`` interchanged and a sign, which is the reflection ``e^{-z}=1/e^z``.
 
 Specializing to ``m=7`` and ``n=6`` gives the standard ``[7/6]`` exponential approximant
 ``\exp(z)=P^{\exp}_7(z)/Q^{\exp}_6(z)+O(z^{14})``, from which this implementation uses
@@ -147,7 +153,9 @@ Specializing to ``m=7`` and ``n=6`` gives the standard ``[7/6]`` exponential app
 where ``p_6=(P^{\exp}_7-Q^{\exp}_6)/z`` and ``q_6=Q^{\exp}_6``. The constant terms of
 ``P^{\exp}_7`` and ``Q^{\exp}_6`` are both one, so their difference is divisible by ``z``.
 Consequently ``p_6`` and ``q_6`` both have degree six, and their quotient agrees with the series of
-``\mathfrak{A}`` through order 12; a degree-6 Taylor polynomial agrees only through order 6.
+``\mathfrak{A}`` through order 12; a degree-6 Taylor polynomial agrees only through order 6. The first
+term missed is ``z^{13}/149597947699200``, about ``8\cdot10^{-19}`` at the scaled argument
+``|z|\leq1/2`` evaluated here.
 
 The scalar variable ``z`` is used only to determine the coefficients. For a matrix ``Y``, replace
 each ``z^k`` by ``Y^k`` and the scalar constant by ``I``. Scalar division then becomes the matrix
