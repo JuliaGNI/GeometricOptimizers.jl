@@ -57,7 +57,7 @@ import LazyArrays
 using NeuralNetworkParameters: NetworkParameters, params,
                                parameterlayout, flatlength,
                                flatten, unflatten, unflatten!,
-                               register_parameter_type!
+                               foreachparameters, ParameterSet, register_parameter_type!
 import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
 
 # `metric`, `check` and `Ω` join `rgrad` in being public: they are the geometry a caller works in,

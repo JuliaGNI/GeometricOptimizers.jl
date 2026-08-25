@@ -148,7 +148,7 @@ function apply_section(λY::NamedTuple, Y₂::NamedTuple)
     _mapleaves(apply_section, λY, Y₂)
 end
 
-function apply_section!(Y, λY::NamedTuple, Y₂)
+function apply_section!(Y::ParameterSet, λY::NamedTuple, Y₂)
     _mapleaves!(apply_section!, Y, λY, Y₂)
 end
 
@@ -358,7 +358,7 @@ end
 # The direction `B⁽ᵗ⁻¹⁾` is of the parameters' shape and the two sections are plain `NamedTuple`s, so
 # this is the mixed-shape walk: `_mapleaves!` takes the section as its first argument and
 # normalises the direction, whichever of the two shapes it arrived in.
-function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::Union{NamedTuple,NetworkParameters}, retraction)
+function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::ParameterSet, retraction)
     update_section_closure!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾) = update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
     _mapleaves!(update_section_closure!, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾)
 

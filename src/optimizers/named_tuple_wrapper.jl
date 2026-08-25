@@ -6,17 +6,17 @@
 # tree, and that chain was not type stable. The element type comes from the parameters themselves
 # rather than defaulting to `Float64`, which used to promote a `Float32` network silently.
 #
-# `Union{NamedTuple,NetworkParameters}` and not `ParameterContainer`: `F` is the caller's objective and
+# `ParameterSet` and not `ParameterContainer`: `F` is the caller's objective and
 # these have to accept whatever it was written against, including a nested `NamedTuple` that no
 # `ArrayNamedTuple` bound admits. `unflatten` returns the shape the layout was built from, so a
 # container in gives a container back and `F` sees the type it was written for.
-function GradientAutodiff(F, nt::Union{NamedTuple,NetworkParameters})
+function GradientAutodiff(F, nt::ParameterSet)
     v, layout = flatten(nt)
     GradientAutodiff(_x -> F(unflatten(layout, _x)), v)
 end
 
 # `∇F!` is called on the flattened parameters, i.e. on `flatten(nt)[1]`.
-function GradientFunction(F, ∇F!, nt::Union{NamedTuple,NetworkParameters})
+function GradientFunction(F, ∇F!, nt::ParameterSet)
     v, layout = flatten(nt)
     GradientFunction(_x -> F(unflatten(layout, _x)), ∇F!, v)
 end

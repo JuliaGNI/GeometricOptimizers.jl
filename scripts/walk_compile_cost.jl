@@ -30,7 +30,7 @@
 # session that never calls `flatten` at all (`--cold-mapparameters`).
 
 using GeometricOptimizers
-using GeometricOptimizers: _mapleaves
+using GeometricOptimizers: _mapleaves, _dot, l2norm, solution_scale
 using NeuralNetworkParameters
 using NeuralNetworkParameters: mapparameters, parameterlayout
 
@@ -54,15 +54,36 @@ function first_call(f, args...)
     round(time() - t; digits = 2)
 end
 
+# `Base.map` reaches the entries of one level, so on a flat set it is the floor to beat and on a nested
+# one it hands `zero` a whole layer and raises -- which is the claim this whole file is about, so it is
+# reported rather than skipped. Written out because the script used to call it unguarded on both shapes
+# and so died on its first table, before printing anything.
+function _map_row(ps)
+    try
+        string(first_call(x -> map(zero, x), ps), " s")
+    catch e
+        string(nameof(typeof(e)), " (`map` hands `zero` a whole layer)")
+    end
+end
+
 function table(name, ps)
     println(name)
-    println("  map(zero, ·)         : ", first_call(x -> map(zero, x), ps), " s")
+    println("  map(zero, ·)         : ", _map_row(ps))
     println("  _mapleaves(zero)     : ", first_call(x -> _mapleaves(zero, x), ps), " s")
     println("  _mapleaves(copy)     : ", first_call(x -> _mapleaves(copy, x), ps), " s")
     println("  mapparameters(zero)  : ", first_call(x -> mapparameters(zero, x), ps), " s")
+    # The three folds this package writes for itself, because `NeuralNetworkParameters` has no *zipped*
+    # fold and `foldparameters` walks one tree. They are `Base.tail` recursions, which is the shape open
+    # issue D9 was about — so they are measured here rather than assumed cheap. What makes them cheap
+    # and `mapparameters` expensive before 0.2.2 is the `@inline`: these carry none.
+    println("  l2norm               : ", first_call(l2norm, ps), " s")
+    println("  solution_scale       : ", first_call(solution_scale, ps), " s")
+    println("  _dot(·, ·)           : ", first_call((a, b) -> _dot(a, b), ps, ps), " s")
     println("  parameterlayout      : ", first_call(parameterlayout, ps), " s")
     println("  flatten              : ", first_call(flatten, ps), " s")
-    println("  NetworkParameters(·) : ", first_call(NetworkParameters, ps), " s")
+    # what it costs to wrap a bare set, which the nested table arrives already wrapped for
+    ps isa NetworkParameters ||
+        println("  NetworkParameters(·) : ", first_call(NetworkParameters, ps), " s")
 end
 
 # `flatten` on the flat set is the expensive one and dominates the whole script; the nested set is
@@ -108,9 +129,12 @@ function main(args)
         return
     end
 
-    table(string("NESTED, ", NESTED_BLOCKS, " × ", NESTED_LEAVES, " = ",
+    # A `NetworkParameters` and not the bare nested `NamedTuple`, for the reason `cache_construction`
+    # gives below: the container is what makes nesting a solution at all, so it is what the rows that
+    # take a *solution* — `l2norm`, `solution_scale`, `_dot` — have a method for.
+    table(string("NESTED container, ", NESTED_BLOCKS, " × ", NESTED_LEAVES, " = ",
                  NESTED_BLOCKS * NESTED_LEAVES, " leaves"),
-          nested_set(NESTED_BLOCKS, NESTED_LEAVES))
+          NetworkParameters(nested_set(NESTED_BLOCKS, NESTED_LEAVES)))
     table(string("FLAT, ", FLAT_ENTRIES, " entries"), flat_set(FLAT_ENTRIES))
 end
 

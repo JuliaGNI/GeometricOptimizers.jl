@@ -105,8 +105,8 @@ end
 
 The outer product of two horizontal lifts, written into `m`.
 
-Like the [`ParameterContainer`](@ref) method above, this exists because the quasi-Newton `Q` is sized by the
-*intrinsic* dimension of the parameters — the length of their flattening — while the direction and the
+Like the [`ParameterContainer`](@ref) method above, this exists because the quasi-Newton `Q` is sized
+by the *intrinsic* dimension of the parameters — the length of their flattening — while the direction and the
 gradient are handed around in the *ambient* horizontal-lift representation. For a bare
 `StiefelManifold` of size `(3, 1)` those are 2 and `3 × 3` respectively, so `SimpleSolvers.outer!`,
 which indexes its arguments linearly against `axes(m)`, would assert on the mismatch. Flattening first

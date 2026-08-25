@@ -66,6 +66,18 @@ are bounded by `AbstractArray{T}`, so a nested `NamedTuple` is not one — while
 of layers. That is why the bodies walk with [`_mapleaves`](@ref) rather than with `Base.map`: `map`
 visits the entries of one level, which is the whole of a flat set and the *layers* of a nested one.
 
+!!! note "`ParameterSet` is the wider name, and the one to reach for first"
+    `T` means two different things across this union: for `ArrayNamedTuple{T}` it is a guarantee that
+    every leaf is an `AbstractArray{T}` *and* that the set is flat, while for `NetworkParameters{T}` it
+    is a promotion over leaves that may nest to any depth. So this alias means "flat and homogeneous,
+    or nested and promoted", and a method written on it accepts a nested container while rejecting the
+    nested plain `NamedTuple` describing the same network.
+
+    That is why it is only used where `T` genuinely has to bind — beside a `Matrix{T}`, an `f̄::T`, a
+    `b::T`. Everything else in this package takes `NeuralNetworkParameters.ParameterSet`, which is the
+    same union without either bound and is what the rest of the ecosystem dispatches on:
+    `AbstractNeuralNetworks`, `SymbolicNeuralNetworks` and `GeometricMachineLearning` all name it.
+
 !!! info "Widening this union did not close issue #16"
     A method on this alias is still type piracy, and for both members. `ArrayNamedTuple` is an alias
     for `Base.NamedTuple`, which is the original complaint; `NetworkParameters` belongs to
