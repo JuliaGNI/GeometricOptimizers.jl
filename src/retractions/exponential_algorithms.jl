@@ -157,7 +157,10 @@ I-\frac{6Y}{13}+\frac{5Y^2}{52}-\frac{5Y^3}{429}
 +\frac{Y^4}{1144}-\frac{Y^5}{25740}+\frac{Y^6}{1235520}.
 ```
 
-The denominator is applied without a dense solve. Starting from ``Z_0=I``, Newton--Schulz uses
+The denominator is applied without a dense solve. Newton--Schulz is Newton's method applied to the
+matrix equation ``Z^{-1}-q_6(Y)=0`` [schulz1933iterative](@cite). Since
+``D(Z^{-1})[H]=-Z^{-1}HZ^{-1}``, its correction is
+``H=Z-Zq_6(Y)Z``, and therefore, starting from ``Z_0=I``,
 
 ```math
 Z_{j+1}=Z_j(2I-q_6(Y)Z_j),
@@ -165,7 +168,9 @@ Z_{j+1}=Z_j(2I-q_6(Y)Z_j),
 I-q_6(Y)Z_{j+1}=(I-q_6(Y)Z_j)^2.
 ```
 
-The implementation computes ``Z_1=2I-q_6(Y)`` and four further updates. Because
+The update uses only matrix multiplication; it requires an initial guess whose inverse residual has
+norm below one. Here scaling makes ``Z_0=I`` sufficient. The implementation computes
+``Z_1=2I-q_6(Y)`` and four further updates. Because
 ``\|Y\|_1\leq1/2`` implies ``\|I-q_6(Y)\|_1<0.257``, the final residual is bounded by
 ``0.257^{32}<1.3\cdot10^{-19}``. It then sets
 ``W=Z_5p_6(Y)/2^s`` and applies ``W\mapsto2W+WXW`` exactly ``s`` times. This is the same low-rank
@@ -176,7 +181,7 @@ constructor requires ``0 < \theta \leq 1/2`` so the inverse iteration remains in
 convergence regime. Lowering the threshold is safe and adds modified-squaring steps.
 
 The Padé coefficients and Newton--Schulz iteration are standard
-[higham2005scaling, higham2008functions](@cite). What is assembled here is the pairing: a
+[higham2005scaling, higham2008functions, schulz1933iterative](@cite). What is assembled here is the pairing: a
 ``\mathfrak{A}`` approximant derived from the exponential approximant, a portable solve-free inverse,
 and low-rank modified squaring.
 

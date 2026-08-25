@@ -756,21 +756,46 @@ q_6(Y)W=p_6(Y).
 ```
 
 `NativePade` instead approximates ``q_6(Y)^{-1}`` with the Newton--Schulz iteration
+[schulz1933iterative](@cite). To see where the update comes from, temporarily write
+``A=q_6(Y)`` and seek a matrix ``Z`` satisfying ``Z^{-1}-A=0``. The Fréchet derivative of matrix
+inversion is
+
+```math
+D(Z^{-1})[H]=-Z^{-1}HZ^{-1}.
+```
+
+One Newton correction therefore solves
+
+```math
+-Z_j^{-1}H_jZ_j^{-1}=A-Z_j^{-1},
+```
+
+which gives ``H_j=Z_j-Z_jAZ_j`` and hence
 
 ```math
 Z_0=I,
 \qquad
-Z_{j+1}=Z_j\left(2I-q_6(Y)Z_j\right).
+Z_{j+1}=Z_j+H_j=Z_j\left(2I-AZ_j\right).
 ```
 
-If ``E_j=I-q_6(Y)Z_j`` is the inverse residual, then
+Thus Newton--Schulz is Newton's method for the inverse equation, rearranged so that every update uses
+only matrix addition and multiplication. No factorization or linear solve is required. This does not
+mean that ``Z_0=I`` is a suitable initial guess for every matrix: convergence requires the initial
+inverse residual to be smaller than one in a submultiplicative norm.
+
+For the present choice ``A=q_6(Y)`` and ``Z_0=I``, define ``E_j=I-AZ_j``. Since
+``AZ_j=I-E_j`` and ``2I-AZ_j=I+E_j``, the update gives
 
 ```math
+AZ_{j+1}=(I-E_j)(I+E_j)=I-E_j^2,
+\qquad
 E_{j+1}=E_j^2.
 ```
 
-Every iteration therefore doubles the number of correct powers of the residual. The code writes the
-first step explicitly as ``Z_1=2I-q_6(Y)`` and performs four more, giving
+Consequently ``E_j=E_0^{2^j}`` in exact arithmetic and
+``\|E_j\|\leq\|E_0\|^{2^j}``: once ``\|E_0\|<1``, the iteration converges quadratically, squaring
+the residual at every step. The code writes the first step explicitly as ``Z_1=2I-q_6(Y)`` and
+performs four more, giving
 ``E_5=(I-q_6(Y))^{32}``. Scaling ensures ``\|Y\|_1\leq 1/2``; from the displayed coefficients,
 
 ```math
