@@ -107,35 +107,66 @@ end
 @doc raw"""
     NativePade(θ = 0.5) <: AbstractExponentialAlgorithm
 
-Evaluate ``\mathfrak{A} = \varphi_1`` with a native degree-6 diagonal Padé approximant.
+Evaluate ``\mathfrak{A}=\varphi_1`` with a native degree-6 diagonal Padé approximant.
 
-The rational form captures more local series information than a polynomial of the same degree. The
-``[7/6]`` Padé approximant of ``\exp`` used here yields a degree-6 numerator and denominator for
-``\mathfrak{A}`` that agree with its Taylor series through order 12; a degree-6 Taylor polynomial
-agrees only through order 6. The trade-off is that the denominator must be applied accurately.
-
-The argument is first divided by ``2^s`` until its induced one-norm is at most `θ`. On that small
-argument the method evaluates
+For a function ``f``, the ``[m/n]`` Padé approximant is a rational function ``P_m/Q_n`` chosen so
+that
 
 ```math
-\mathfrak{A}(X) \approx q_6(X)^{-1}p_6(X)
+Q_n(z)f(z)-P_m(z)=O(z^{m+n+1}),
+\qquad Q_n(0)=1.
 ```
 
-directly at ``2n\times{}2n``. The denominator inverse is not a dense solve: five effective
-Newton--Schulz refinements start from the identity and use only matrix products. Scaling is undone
-with the same low-rank squaring recursion as [`ScaledSquaring`](@ref), so no matrix larger than the
-input is formed.
+Unlike a degree-``m`` Taylor polynomial, division by ``Q_n`` represents infinitely many powers of
+``z``. This implementation starts from the standard ``[7/6]`` approximant
+``\exp(z)=N_7(z)/D_6(z)+O(z^{14})`` and uses
+
+```math
+\mathfrak{A}(z)=\frac{\exp(z)-1}{z}
+\approx\frac{N_7(z)-D_6(z)}{zD_6(z)}=\frac{p_6(z)}{q_6(z)}.
+```
+
+The constant terms of ``N_7`` and ``D_6`` are both one, so their difference is divisible by ``z``.
+Consequently ``p_6`` and ``q_6=D_6`` both have degree six, and their quotient agrees with the series
+of ``\mathfrak{A}`` through order 12; a degree-6 Taylor polynomial agrees only through order 6.
+
+Given ``X``, the algorithm chooses ``s`` such that ``Y=X/2^s`` satisfies ``\|Y\|_1\leq θ`` and
+evaluates
+
+```math
+p_6(Y)={}
+I+\frac{Y}{26}+\frac{5Y^2}{156}+\frac{Y^3}{858}
++\frac{Y^4}{5720}+\frac{Y^5}{205920}+\frac{Y^6}{8648640},
+```
+
+```math
+q_6(Y)={}
+I-\frac{6Y}{13}+\frac{5Y^2}{52}-\frac{5Y^3}{429}
++\frac{Y^4}{1144}-\frac{Y^5}{25740}+\frac{Y^6}{1235520}.
+```
+
+The denominator is applied without a dense solve. Starting from ``Z_0=I``, Newton--Schulz uses
+
+```math
+Z_{j+1}=Z_j(2I-q_6(Y)Z_j),
+\qquad
+I-q_6(Y)Z_{j+1}=(I-q_6(Y)Z_j)^2.
+```
+
+The implementation computes ``Z_1=2I-q_6(Y)`` and four further updates. Because
+``\|Y\|_1\leq1/2`` implies ``\|I-q_6(Y)\|_1<0.257``, the final residual is bounded by
+``0.257^{32}<1.3\cdot10^{-19}``. It then sets
+``W=Z_5p_6(Y)/2^s`` and applies ``W\mapsto2W+WXW`` exactly ``s`` times. This is the same low-rank
+modified-squaring recovery as [`ScaledSquaring`](@ref); no matrix larger than the input is formed.
 
 The degree, threshold, and fixed five Newton--Schulz refinements are paired deliberately. The
 constructor requires ``0 < \theta \leq 1/2`` so the inverse iteration remains in its validated
 convergence regime. Lowering the threshold is safe and adds modified-squaring steps.
 
-The coefficients are not invented here. ``q_6`` is the denominator of the ``[7/6]`` Padé approximant
-of ``\exp``, whose closed form is standard [higham2005scaling, higham2008functions](@cite), and
-``p_6`` is ``(N - D)/x`` for that approximant's numerator ``N`` — which divides exactly, both having
-constant term one, and which inherits the ``O(x^{13})`` order. The Newton--Schulz iteration for the
-inverse is likewise classical [higham2008functions](@cite). What is assembled here is the *pairing*:
-a portable solve-free inverse in place of the dense LU a rational approximant normally needs.
+The Padé coefficients and Newton--Schulz iteration are standard
+[higham2005scaling, higham2008functions](@cite). What is assembled here is the pairing: a
+``\mathfrak{A}`` approximant derived from the exponential approximant, a portable solve-free inverse,
+and low-rank modified squaring.
 
 !!! note "The error criterion, and what it is not"
     ``\theta = 1/2`` is **not** taken from a backward-error table. The ``\theta_m`` of
