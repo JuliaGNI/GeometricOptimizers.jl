@@ -657,103 +657,134 @@ series, even low-degree ``P_m`` and ``Q_n`` generate infinitely many powers. For
 ```
 
 matches ``e^z`` through degree two, whereas a polynomial with numerator degree one can match only
-``1+z``. More generally, a ``[m/n]`` Padé approximant normally matches through degree ``m+n``. This
+``1+z``. More generally, a ``[m/n]`` Padé approximant matches through degree ``m+n`` whenever its
+matching condition is solvable — for ``e^z`` it always is, as the next section shows. This
 is why a rational kernel can capture much more local information than a Taylor polynomial with a
-similar polynomial degree [higham2005scaling, higham2008functions](@cite). We use the scalar variable
-``z`` only to derive these coefficients. After deriving the particular numerator and denominator
-needed for ``\mathfrak{A}``, we will substitute a matrix for ``z`` and explain what division means in
-that setting.
+similar polynomial degree [higham2005scaling, higham2008functions](@cite). The scalar variable ``z``
+serves only to fix the coefficients; a matrix takes its place once they are known.
 
 ### Deriving the coefficients for ``\mathfrak{A}``
 
-The implementation does not fit coefficients to ``\mathfrak{A}`` independently. In the generic
-notation above, specialize ``P_m/Q_n`` to the ``[7/6]`` Padé approximant of the exponential and
-write its numerator and denominator as ``P^{\exp}_7`` and ``Q^{\exp}_6``:
+Nothing is fitted to ``\mathfrak{A}``, and nothing is fitted numerically. The coefficients come from
+the matching condition above, applied to ``f=\exp`` at ``m=7`` and ``n=6``; one subtraction then
+converts that approximant into one for ``\mathfrak{A}``. Write its numerator and denominator as
+``P^{\exp}_7`` and ``Q^{\exp}_6``:
 
 ```math
 e^z = \frac{P^{\exp}_7(z)}{Q^{\exp}_6(z)} + O(z^{14}),
 \qquad P^{\exp}_7(0)=Q^{\exp}_6(0)=1.
 ```
 
-The coefficients are obtained directly from the matching condition; they are not fitted numerically.
-Write
+Keep ``m`` and ``n`` general for the derivation, since one formula covers every degree:
 
 ```math
-P^{\exp}_7(z)=\sum_{k=0}^7 a_kz^k,
+P_m(z)=\sum_{k=0}^m a_kz^k,
 \qquad
-Q^{\exp}_6(z)=\sum_{j=0}^6 b_jz^j,
+Q_n(z)=\sum_{j=0}^n b_jz^j,
 \qquad b_0=1.
 ```
 
-Since ``e^z=\sum_{r=0}^{\infty}z^r/r!``, the coefficient of ``z^k`` in
-``Q^{\exp}_6(z)e^z`` is the convolution
+Because ``e^z=\sum_{r\geq0}z^r/r!``, the ``z^k`` coefficient of ``Q_n(z)e^z`` is the convolution
+``\sum_j b_j/(k-j)!``, reading ``1/(k-j)!`` as zero when ``j>k``. The matching condition
+``Q_ne^z-P_m=O(z^{m+n+1})`` then says two different things, one on each of the two ranges of ``k``
+that it covers:
 
 ```math
-c_k=\sum_{j=0}^{\min(k,6)}\frac{b_j}{(k-j)!}.
-```
-
-For degrees ``k=0,\ldots,7``, the numerator can copy these coefficients, so ``a_k=c_k``. For
-``k=8,\ldots,13``, the degree-7 numerator has no coefficient available, so matching through degree
-13 requires
-
-```math
-\sum_{j=0}^6\frac{b_j}{(k-j)!}=0,
-\qquad k=8,\ldots,13.
-```
-
-These are six linear equations for ``b_1,\ldots,b_6``. Solving them, then evaluating ``a_k=c_k``,
-gives
-
-```math
-\begin{aligned}
-P^{\exp}_7(z)={}&1+\frac{7z}{13}+\frac{7z^2}{52}+\frac{35z^3}{1716}
- +\frac{7z^4}{3432}+\frac{7z^5}{51480}+\frac{7z^6}{1235520}
- +\frac{z^7}{8648640},\\
-Q^{\exp}_6(z)={}&1-\frac{6z}{13}+\frac{5z^2}{52}-\frac{5z^3}{429}
- +\frac{z^4}{1144}-\frac{z^5}{25740}+\frac{z^6}{1235520}.
-\end{aligned}
-```
-
-Equivalently, for the exponential ``[m/n]`` approximant, this linear system has the closed-form
-solution
-
-```math
-a_k=\frac{(m+n-k)!\,m!}{(m+n)!\,(m-k)!\,k!},
+a_k=\sum_{j=0}^{n}\frac{b_j}{(k-j)!}
+\quad (k=0,\ldots,m),
 \qquad
-b_k=(-1)^k\frac{(m+n-k)!\,n!}{(m+n)!\,(n-k)!\,k!}.
+\sum_{j=0}^{n}\frac{b_j}{(k-j)!}=0
+\quad (k=m+1,\ldots,m+n).
 ```
 
-Substituting ``m=7`` and ``n=6`` produces exactly the two polynomials above. This is the standard
-Padé coefficient construction for the exponential [higham2005scaling, higham2008functions](@cite).
+Only the right-hand block is a system to be solved: ``n`` equations in the ``n`` unknowns
+``b_1,\ldots,b_n``. The left-hand block constrains nothing, since each ``a_k`` occurs in one equation
+and nowhere else — with the denominator known it reads the numerator off. The construction is a
+statement about the denominator alone. For ``m=7`` and ``n=6`` the ranges are the degrees
+``0,\ldots,7`` and ``8,\ldots,13``.
 
-Since ``\mathfrak{A}(z)=(e^z-1)/z``, the same approximation gives
+The solution is
+
+```math
+a_k=\frac{(m+n-k)!}{(m+n)!}\binom{m}{k},
+\qquad
+b_k=(-1)^k\frac{(m+n-k)!}{(m+n)!}\binom{n}{k},
+```
+
+and one binomial identity settles both blocks at once. Substitute this ``b_j`` into the convolution at
+degree ``k`` and clear the constant:
+
+```math
+(m+n)!\sum_{j=0}^n\frac{b_j}{(k-j)!}
+=\sum_{j=0}^n(-1)^j\binom{n}{j}\frac{(m+n-j)!}{(k-j)!}.
+```
+
+Put ``d=m+n-k``. The ratio ``(m+n-j)!/(k-j)!`` is a product of ``d`` consecutive integers, that is
+``d!\binom{m+n-j}{d}``, which also reproduces the convention above: for ``j>k`` the binomial has
+``m+n-j<d`` and vanishes. So the right-hand side is ``d!`` times
+
+```math
+\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}=\binom{m}{d-n},
+```
+
+which is Pascal's rule applied ``n`` times — an ``n``-fold difference in the upper index — read as
+zero when the lower index turns negative. That single evaluation splits exactly where the matching
+condition splits. For ``k\geq m+1`` the lower index is ``d-n=m-k<0``, so the sum vanishes and all
+``n`` denominator equations hold; for ``k\leq m`` it is ``\binom{m}{m-k}=\binom{m}{k}``, so the
+convolution returns ``(m+n-k)!\binom{m}{k}/(m+n)!``, the claimed ``a_k``.
+
+The two formulas are one expression with ``m`` and ``n`` interchanged and a sign,
+``a_k(m,n)=(-1)^kb_k(n,m)``: the reflection that ``e^{-z}=1/e^z`` induces on the table. They are
+classical [higham2005scaling, higham2008functions](@cite); the derivation appears here so the numbers
+below are traceable rather than quoted. At ``m=7`` and ``n=6``:
+
+```math
+\begin{array}{r|ccc}
+k & a_k & b_k & a_k-b_k\\\hline
+0 & 1 & 1 & 0\\
+1 & \tfrac{7}{13} & -\tfrac{6}{13} & 1\\
+2 & \tfrac{7}{52} & \tfrac{5}{52} & \tfrac{1}{26}\\
+3 & \tfrac{35}{1716} & -\tfrac{5}{429} & \tfrac{5}{156}\\
+4 & \tfrac{7}{3432} & \tfrac{1}{1144} & \tfrac{1}{858}\\
+5 & \tfrac{7}{51480} & -\tfrac{1}{25740} & \tfrac{1}{5720}\\
+6 & \tfrac{7}{1235520} & \tfrac{1}{1235520} & \tfrac{1}{205920}\\
+7 & \tfrac{1}{8648640} & 0 & \tfrac{1}{8648640}
+\end{array}
+```
+
+The last column is the promised subtraction. Since ``\mathfrak{A}(z)=(e^z-1)/z``,
 
 ```math
 \mathfrak{A}(z)
 = \frac{e^z-1}{z}
 = \frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{zQ^{\exp}_6(z)} + O(z^{13})
-= \frac{p_6(z)}{q_6(z)} + O(z^{13}).
-```
-
-Here
-
-```math
-p_6(z)=\frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{z},
+= \frac{p_6(z)}{q_6(z)} + O(z^{13}),
 \qquad
+p_6(z)=\frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{z},
+\quad
 q_6(z)=Q^{\exp}_6(z).
 ```
 
-The numerator ``p_6`` is a polynomial because the constant terms of ``P^{\exp}_7`` and
-``Q^{\exp}_6`` cancel. Subtracting their coefficients and shifting down by one power of ``z`` gives
-``(p_6)_k=a_{k+1}-b_{k+1}`` for ``k=0,\ldots,5`` and ``(p_6)_6=a_7``. It has degree six, as does
-``q_6``. Thus the result is a ``[6/6]`` approximant of ``\mathfrak{A}`` that agrees with
+The ``k=0`` entry of that column vanishes, both constant terms being one, so the difference is
+divisible by ``z`` and ``p_6`` is a polynomial. Its coefficients are the remaining entries shifted
+down one degree, ``(p_6)_k=a_{k+1}-b_{k+1}`` for ``k=0,\ldots,6`` with ``b_7=0``. Numerator and
+denominator both have degree six, so this is a ``[6/6]`` approximant of ``\mathfrak{A}``, and it
+agrees with
 
 ```math
 \mathfrak{A}(z)=1+\frac{z}{2!}+\frac{z^2}{3!}+\cdots
 ```
 
-through the ``z^{12}`` term. By comparison, truncating that series after ``z^6`` agrees only through
-the ``z^6`` term. The polynomials used by [`NativePade`](@ref) are
+through the ``z^{12}`` term, where truncating that series after ``z^6`` agrees only through ``z^6``.
+The first term missed is small: in exact arithmetic
+
+```math
+q_6(z)\mathfrak{A}(z)-p_6(z)=\frac{z^{13}}{149597947699200}+O(z^{14}),
+```
+
+so at the scaled argument [`NativePade`](@ref) evaluates, ``|z|\leq1/2``, that term is about
+``8\cdot10^{-19}`` — the same order as the inverse-iteration residual derived below, and far under the
+`Float64` rounding of a result of size one. The polynomials the implementation uses are therefore
 
 ```math
 \begin{aligned}
