@@ -617,22 +617,144 @@ Geodesic(TaylorSeries())     # the pre-0.2.0 behaviour; not a usable retraction
 
 ## 2. Padé approximation
 
-A Padé approximant replaces the Taylor polynomial by a rational function. The advantage is local
-approximation order: the degree-6 numerator and denominator used here are obtained from the
-``[7/6]`` Padé approximant of the exponential, and the resulting approximation to ``\mathfrak{A}``
-agrees with its series through order 12. A degree-6 Taylor polynomial agrees only through order 6.
-Thus Padé captures substantially more of the local behaviour with low-degree polynomials, at the
-price of applying the denominator. Combined with scaling and squaring, Padé is the standard approach
-for a dense matrix exponential [higham2005scaling, almohy2010new](@cite).
+A Padé approximant is a rational function whose coefficients are chosen to reproduce as many terms
+of a power series as possible. For a scalar analytic function ``f``, its ``[m/n]`` Padé approximant
+has the form
 
-[`NativePade`](@ref) evaluates a degree-6 rational approximation to ``\mathfrak{A}`` directly. It
-avoids a dense solve by applying five Newton--Schulz inverse iterations, then uses the same low-rank
-modified-squaring recurrence as [`ScaledSquaring`](@ref). Its threshold is restricted to
-``0 < \theta \leq 1/2`` so the fixed inverse iteration remains in its validated regime.
+```math
+R_{m,n}(z) = \frac{P_m(z)}{Q_n(z)},
+\qquad
+\deg P_m\leq m,\quad \deg Q_n\leq n,\quad Q_n(0)=1,
+```
 
-Padé does not by itself solve the large-argument problem. A rational approximant is still most
-reliable when evaluated on a controlled small argument, which is why `NativePade` also uses scaling
-and modified squaring.
+and is defined by the matching condition
+
+```math
+Q_n(z)f(z)-P_m(z)=O\left(z^{m+n+1}\right).
+```
+
+Equating powers of ``z`` determines the coefficients of ``P_m`` and ``Q_n``. The denominator is what
+makes this different from truncating a Taylor series: after division, even low-degree polynomials
+represent infinitely many powers. For example,
+
+```math
+\frac{1+z/2}{1-z/2}=1+z+\frac{z^2}{2}+\frac{z^3}{4}+\cdots
+```
+
+matches ``e^z`` through degree two, whereas a polynomial with numerator degree one can match only
+``1+z``. More generally, a ``[m/n]`` Padé approximant normally matches through degree ``m+n``. This
+is why a rational kernel can capture much more local information than a Taylor polynomial with a
+similarly cheap numerator [higham2005scaling, higham2008functions](@cite). The cost is that one must
+apply ``Q_n(X)^{-1}`` accurately when the scalar argument is replaced by a matrix.
+
+### From a Padé approximant of ``\exp`` to one of ``\mathfrak{A}``
+
+The implementation does not fit coefficients to ``\mathfrak{A}`` independently. Start with the
+``[7/6]`` Padé approximant of the exponential,
+
+```math
+e^z = \frac{N_7(z)}{D_6(z)} + O(z^{14}),
+\qquad N_7(0)=D_6(0)=1.
+```
+
+Since ``\mathfrak{A}(z)=(e^z-1)/z``, the same approximation gives
+
+```math
+\mathfrak{A}(z)
+= \frac{e^z-1}{z}
+= \frac{N_7(z)-D_6(z)}{zD_6(z)} + O(z^{13})
+= \frac{p_6(z)}{q_6(z)} + O(z^{13}).
+```
+
+The quotient ``p_6(z)=(N_7(z)-D_6(z))/z`` is a polynomial because the two constant terms cancel.
+It has degree six, as does ``q_6=D_6``. Thus the result is a ``[6/6]`` approximant of
+``\mathfrak{A}`` that agrees with
+
+```math
+\mathfrak{A}(z)=1+\frac{z}{2!}+\frac{z^2}{3!}+\cdots
+```
+
+through the ``z^{12}`` term. By comparison, truncating that series after ``z^6`` agrees only through
+the ``z^6`` term. The polynomials used by [`NativePade`](@ref) are
+
+```math
+\begin{aligned}
+p_6(z)={}&1+\frac{z}{26}+\frac{5z^2}{156}+\frac{z^3}{858}
+          +\frac{z^4}{5720}+\frac{z^5}{205920}+\frac{z^6}{8648640},\\
+q_6(z)={}&1-\frac{6z}{13}+\frac{5z^2}{52}-\frac{5z^3}{429}
+          +\frac{z^4}{1144}-\frac{z^5}{25740}+\frac{z^6}{1235520}.
+\end{aligned}
+```
+
+For a matrix ``Y`` the same scalar coefficients define the matrix polynomials ``p_6(Y)`` and
+``q_6(Y)``. All their factors are powers of the same matrix, so they commute, and the rational
+approximant is
+
+```math
+\mathfrak{A}(Y)\approx q_6(Y)^{-1}p_6(Y).
+```
+
+No inverse of ``Y`` occurs: unlike the expression ``(e^Y-I)Y^{-1}``, this formula remains directly
+usable when ``Y`` is singular. In `_native_pade_polynomials`, the code first forms ``Y^2`` and
+``Y^4`` and groups the displayed polynomials around those shared powers. This evaluates both degree-6
+polynomials with matrix products instead of constructing the powers one by one.
+
+### Applying the denominator without a matrix solve
+
+A conventional rational evaluation would solve
+
+```math
+q_6(Y)W=p_6(Y).
+```
+
+`NativePade` instead approximates ``q_6(Y)^{-1}`` with the Newton--Schulz iteration
+
+```math
+Z_0=I,
+\qquad
+Z_{j+1}=Z_j\left(2I-q_6(Y)Z_j\right).
+```
+
+If ``E_j=I-q_6(Y)Z_j`` is the inverse residual, then
+
+```math
+E_{j+1}=E_j^2.
+```
+
+Every iteration therefore doubles the number of correct powers of the residual. The code writes the
+first step explicitly as ``Z_1=2I-q_6(Y)`` and performs four more, giving
+``E_5=(I-q_6(Y))^{32}``. Scaling ensures ``\|Y\|_1\leq 1/2``; from the displayed coefficients,
+
+```math
+\|I-q_6(Y)\|_1
+\leq \sum_{k=1}^6 |(q_6)_k|\,\|Y\|_1^k
+<0.257,
+```
+
+so ``\|E_5\|_1<0.257^{32}<1.3\cdot10^{-19}``. This explains both the fixed five Newton--Schulz
+steps and the constructor restriction ``0<\theta\leq 1/2``: together they make the solve-free inverse
+accurate to approximately `Float64` precision using matrix multiplication alone.
+
+### The complete `NativePade` algorithm
+
+Given the reduced matrix ``X=(B'')^TB'``:
+
+1. Choose ``s=\max(0,\lceil\log_2(\|X\|_1/\theta)\rceil)`` and set ``\alpha=2^s``.
+2. Set ``Y=X/\alpha``, so ``\|Y\|_1\leq\theta\leq1/2``, and evaluate ``p_6(Y)`` and ``q_6(Y)``.
+3. Compute ``Z_5\approx q_6(Y)^{-1}`` with the five Newton--Schulz steps above.
+4. Form ``W_s=Z_5p_6(Y)/\alpha``. The division by ``\alpha`` is required because
+
+   ```math
+   \exp\left(B'(B'')^T/\alpha\right)
+   =I+B'\left[\mathfrak{A}(X/\alpha)/\alpha\right](B'')^T.
+   ```
+
+5. Apply ``W\leftarrow2W+WXW`` exactly ``s`` times. These are the low-rank modified-squaring steps
+   derived below; after the last one, ``W\approx\mathfrak{A}(X)``.
+
+Padé is therefore the *small-argument kernel* in `NativePade`, not a replacement for scaling and
+squaring. Scaling makes the rational approximation and its solve-free denominator application
+reliable; modified squaring transports that small-argument result back to the original ``X``.
 
 !!! note "`AugmentedPade` is a reference implementation"
     [`AugmentedPade`](@ref) obtains ``\mathfrak{A}(X)`` from the upper-right block of
