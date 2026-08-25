@@ -3,8 +3,9 @@
 
 Supertype of the algorithms that [`Geodesic`](@ref) can use to evaluate the matrix exponential.
 
-A horizontal lift factors as ``\bar{B} = B'(B'')^T`` into two ``N\times{}2n`` matrices, and the
-exponential of a product in that order is
+A horizontal lift factors as ``\bar{B} = B'(B'')^T`` into two ``N\times{}2n`` matrices. Since
+``(B'(B'')^T)^k = B'X^{k-1}(B'')^T`` for ``X=(B'')^TB'``, substituting into the exponential series
+gives
 
 ```math
 \exp(B'(B'')^T) = \mathbb{I} + B'\,\mathfrak{A}((B'')^TB')\,(B'')^T,
@@ -12,8 +13,9 @@ exponential of a product in that order is
 \mathfrak{A}(X) = \sum_{n=1}^\infty \frac{X^{n-1}}{n!},
 ```
 
-so the whole computation reduces to one ``2n\times{}2n`` matrix function — the argument
-``X = (B'')^TB'`` is small even when ``N`` is large. ``\mathfrak{A}`` is the function usually written
+Computing ``\mathfrak{A}(X)`` is therefore the central numerical task: it preserves the low-rank
+factorization and reduces the matrix function from ``N\times{}N`` to ``2n\times{}2n``.
+``\mathfrak{A}`` is the function usually written
 ``\varphi_1(X) = (\exp(X) - \mathbb{I})X^{-1}``, though it is defined by the series and is perfectly
 regular at a singular ``X``.
 
@@ -21,8 +23,8 @@ Four subtypes evaluate that ``2n\times{}2n`` function, while [`ProjectedSkew`](@
 exponentiates the lift in a basis of its range. They compute the same exponential map but differ in
 their approximation kernel, recovery strategy, numerical behaviour, cost, and backend requirements.
 [`ScaledSquaring`](@ref) is the default; [`NativePade`](@ref) provides a direct rational alternative;
-[`AugmentedPade`](@ref) delegates to Julia's dense matrix exponential; and [`TaylorSeries`](@ref) is
-retained as a regression baseline rather than for normal use.
+and [`TaylorSeries`](@ref) is retained as a regression baseline rather than for normal use.
+[`AugmentedPade`](@ref) is a dense-CPU reference implementation, not a normal algorithm choice.
 
 A new one has to supply `𝔄(X::AbstractMatrix, ::NewAlgorithm)`; `geodesic` and everything above it
 then follow. An algorithm that does not go through ``\mathfrak{A}`` at all — [`ProjectedSkew`](@ref)
@@ -37,14 +39,16 @@ abstract type AbstractExponentialAlgorithm end
 
 Evaluate ``\mathfrak{A}`` with a Taylor kernel and low-rank modified squaring, and the default.
 
-This is not the Padé kernel used by the conventional dense matrix-exponential algorithm. It applies
-the scaling idea to the same Taylor evaluator as [`TaylorSeries`](@ref), then recovers the original
-argument with a recurrence specialized to the low-rank factorization [skaflestad2009scaling](@cite).
+This is not the Padé kernel used by the conventional dense matrix-exponential algorithm. Its
+improvement over [`TaylorSeries`](@ref) is that it first scales the argument into a regime where the
+same Taylor evaluator is accurate, then recovers the original argument with a recurrence specialized
+to the low-rank factorization [skaflestad2009scaling](@cite).
 
 The series for ``\mathfrak{A}`` converges for every argument but is only *accurate* for a small one:
-at ``\|X\| \gg 1`` its terms cancel catastrophically, and the partial sum reaches ``2.5\cdot10^{18}``
-where the result is of order one. So halve the argument until it is small, sum the series there, and
-undo the halving by squaring.
+at ``\|X\| \gg 1`` its terms can become enormous before cancelling to a result of moderate size.
+Halving the argument prevents those large intermediates. The recovery steps below are exact
+identities in exact arithmetic, so scaling changes where Taylor is evaluated without changing the
+matrix function being computed.
 
 The squaring is done on the ``2n\times{}2n`` factor rather than on the assembled ``N\times{}N``
 matrix, which is possible because the low-rank form is closed under squaring:
@@ -104,6 +108,11 @@ end
     NativePade(θ = 0.5) <: AbstractExponentialAlgorithm
 
 Evaluate ``\mathfrak{A} = \varphi_1`` with a native degree-6 diagonal Padé approximant.
+
+The rational form captures more local series information than a polynomial of the same degree. The
+``[7/6]`` Padé approximant of ``\exp`` used here yields a degree-6 numerator and denominator for
+``\mathfrak{A}`` that agree with its Taylor series through order 12; a degree-6 Taylor polynomial
+agrees only through order 6. The trade-off is that the denominator must be applied accurately.
 
 The argument is first divided by ``2^s`` until its induced one-norm is at most `θ`. On that small
 argument the method evaluates
@@ -165,6 +174,9 @@ end
 
 Evaluate ``\mathfrak{A}`` as a block of a larger *ordinary* exponential.
 
+This is an independent dense-CPU reference for testing the direct implementations, not the normal
+choice for a retraction.
+
 ```math
 \exp\begin{pmatrix} X & \mathbb{I} \\ \mathbb{O} & \mathbb{O} \end{pmatrix}
 = \begin{pmatrix} \exp(X) & \mathfrak{A}(X) \\ \mathbb{O} & \mathbb{I} \end{pmatrix}
@@ -176,8 +188,9 @@ scaling-and-squaring algorithm [higham2005scaling, almohy2010new](@cite), at the
 exponentiating a matrix four times the size and discarding three quarters of it. This is the package
 algorithm corresponding directly to the conventional Padé description of scaling and squaring.
 
-Its value is that it introduces no package-specific approximation: it is the dense-CPU reference
-against which the direct ``\mathfrak{A}`` implementations are tested.
+Its value is that it introduces no package-specific approximation. Its disadvantages are substantial
+for normal use: it exponentiates a matrix four times the size needed by the direct methods, discards
+three quarters of the result, and requires dense LAPACK.
 
 !!! warning "CPU only"
     `Base.exp` on a dense matrix needs LAPACK. [`ScaledSquaring`](@ref) and [`NativePade`](@ref)
