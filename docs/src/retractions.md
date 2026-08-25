@@ -727,11 +727,21 @@ Put ``d=m+n-k``. The ratio ``(m+n-j)!/(k-j)!`` is a product of ``d`` consecutive
 \sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}=\binom{m}{d-n},
 ```
 
-which is Pascal's rule applied ``n`` times — an ``n``-fold difference in the upper index — read as
-zero when the lower index turns negative. That single evaluation splits exactly where the matching
-condition splits. For ``k\geq m+1`` the lower index is ``d-n=m-k<0``, so the sum vanishes and all
-``n`` denominator equations hold; for ``k\leq m`` it is ``\binom{m}{m-k}=\binom{m}{k}``, so the
-convolution returns ``(m+n-k)!\binom{m}{k}/(m+n)!``, the claimed ``a_k``.
+The identity follows directly by extracting the coefficient of ``x^d``:
+
+```math
+\begin{aligned}
+\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}
+&=[x^d](1+x)^m\sum_{j=0}^n\binom{n}{j}(-1)^j(1+x)^{n-j}\\
+&=[x^d](1+x)^m((1+x)-1)^n
+ =[x^d]x^n(1+x)^m=\binom{m}{d-n}.
+\end{aligned}
+```
+
+Here ``[x^d]f(x)`` denotes the coefficient of ``x^d`` in ``f``. If ``k\geq m+1``, then
+``d-n=m-k<0`` and ``x^n(1+x)^m`` has no ``x^d`` term, so the denominator equations vanish. If
+``k\leq m``, that coefficient is ``\binom{m}{m-k}=\binom{m}{k}``; restoring ``d!/(m+n)!`` gives
+the claimed ``a_k``.
 
 The two formulas are one expression with ``m`` and ``n`` interchanged and a sign,
 ``a_k(m,n)=(-1)^kb_k(n,m)``: the reflection that ``e^{-z}=1/e^z`` induces on the table. They are
@@ -838,8 +848,16 @@ A conventional evaluation of this rational matrix function would solve
 q_6(Y)W=p_6(Y).
 ```
 
-`NativePade` instead approximates ``q_6(Y)^{-1}`` with the Newton--Schulz iteration
-[schulz1933iterative](@cite). To see where the update comes from, temporarily write
+!!! info "Why Newton--Schulz rather than LU?"
+    For dense CPU matrices, the standard choice is pivoted LU followed by triangular solves; one
+    would not normally form an explicit inverse. `NativePade` instead uses Newton--Schulz because
+    its updates need only matrix multiplication and addition, keeping the direct algorithm
+    independent of backend-specific factorization support. This is a portability choice, not a
+    generally faster solver: five matrix products may cost more than LU on a CPU. It is viable here
+    because scaling gives the initial-residual bound below, fixing both the iteration count and the
+    resulting error.
+
+To derive the iteration [schulz1933iterative](@cite), temporarily write
 ``A=q_6(Y)`` and seek a matrix ``Z`` satisfying ``Z^{-1}-A=0``. The Fréchet derivative of matrix
 inversion is
 
@@ -861,10 +879,9 @@ Z_0=I,
 Z_{j+1}=Z_j+H_j=Z_j\left(2I-AZ_j\right).
 ```
 
-Thus Newton--Schulz is Newton's method for the inverse equation, rearranged so that every update uses
-only matrix addition and multiplication. No factorization or linear solve is required. This does not
-mean that ``Z_0=I`` is a suitable initial guess for every matrix: convergence requires the initial
-inverse residual to be smaller than one in a submultiplicative norm.
+This rearrangement is Newton's method using no factorization or linear solve. It is not safe from an
+arbitrary starting point: convergence requires the initial inverse residual to be smaller than one
+in a submultiplicative norm.
 
 For the present choice ``A=q_6(Y)`` and ``Z_0=I``, define ``E_j=I-AZ_j``. Since
 ``AZ_j=I-E_j`` and ``2I-AZ_j=I+E_j``, the update gives
