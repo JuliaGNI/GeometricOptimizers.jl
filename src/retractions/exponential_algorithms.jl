@@ -123,7 +123,19 @@ Q_n(z)f(z)-P_m(z)=O(z^{m+n+1}),
 ```
 
 Unlike a degree-``m`` Taylor polynomial, division by ``Q_n`` represents infinitely many powers of
-``z``. Specializing that notation to the standard ``[7/6]`` approximant of the exponential gives
+``z``. For ``e^z``, write ``P_m=\sum_{k=0}^m a_kz^k`` and
+``Q_n=\sum_{j=0}^n b_jz^j`` with ``b_0=1``. Expanding ``Q_ne^z`` shows that its ``z^k`` coefficient
+is ``\sum_{j=0}^{\min(k,n)}b_j/(k-j)!``. Setting these coefficients to zero for
+``k=m+1,\ldots,m+n`` determines the denominator; the remaining coefficients through degree ``m``
+then determine the numerator. Equivalently,
+
+```math
+a_k=\frac{(m+n-k)!\,m!}{(m+n)!\,(m-k)!\,k!},
+\qquad
+b_k=(-1)^k\frac{(m+n-k)!\,n!}{(m+n)!\,(n-k)!\,k!}.
+```
+
+Specializing to ``m=7`` and ``n=6`` gives the standard ``[7/6]`` exponential approximant
 ``\exp(z)=P^{\exp}_7(z)/Q^{\exp}_6(z)+O(z^{14})``, from which this implementation uses
 
 ```math

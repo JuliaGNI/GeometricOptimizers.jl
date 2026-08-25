@@ -675,6 +675,57 @@ e^z = \frac{P^{\exp}_7(z)}{Q^{\exp}_6(z)} + O(z^{14}),
 \qquad P^{\exp}_7(0)=Q^{\exp}_6(0)=1.
 ```
 
+The coefficients are obtained directly from the matching condition; they are not fitted numerically.
+Write
+
+```math
+P^{\exp}_7(z)=\sum_{k=0}^7 a_kz^k,
+\qquad
+Q^{\exp}_6(z)=\sum_{j=0}^6 b_jz^j,
+\qquad b_0=1.
+```
+
+Since ``e^z=\sum_{r=0}^{\infty}z^r/r!``, the coefficient of ``z^k`` in
+``Q^{\exp}_6(z)e^z`` is the convolution
+
+```math
+c_k=\sum_{j=0}^{\min(k,6)}\frac{b_j}{(k-j)!}.
+```
+
+For degrees ``k=0,\ldots,7``, the numerator can copy these coefficients, so ``a_k=c_k``. For
+``k=8,\ldots,13``, the degree-7 numerator has no coefficient available, so matching through degree
+13 requires
+
+```math
+\sum_{j=0}^6\frac{b_j}{(k-j)!}=0,
+\qquad k=8,\ldots,13.
+```
+
+These are six linear equations for ``b_1,\ldots,b_6``. Solving them, then evaluating ``a_k=c_k``,
+gives
+
+```math
+\begin{aligned}
+P^{\exp}_7(z)={}&1+\frac{7z}{13}+\frac{7z^2}{52}+\frac{35z^3}{1716}
+ +\frac{7z^4}{3432}+\frac{7z^5}{51480}+\frac{7z^6}{1235520}
+ +\frac{z^7}{8648640},\\
+Q^{\exp}_6(z)={}&1-\frac{6z}{13}+\frac{5z^2}{52}-\frac{5z^3}{429}
+ +\frac{z^4}{1144}-\frac{z^5}{25740}+\frac{z^6}{1235520}.
+\end{aligned}
+```
+
+Equivalently, for the exponential ``[m/n]`` approximant, this linear system has the closed-form
+solution
+
+```math
+a_k=\frac{(m+n-k)!\,m!}{(m+n)!\,(m-k)!\,k!},
+\qquad
+b_k=(-1)^k\frac{(m+n-k)!\,n!}{(m+n)!\,(n-k)!\,k!}.
+```
+
+Substituting ``m=7`` and ``n=6`` produces exactly the two polynomials above. This is the standard
+Padé coefficient construction for the exponential [higham2005scaling, higham2008functions](@cite).
+
 Since ``\mathfrak{A}(z)=(e^z-1)/z``, the same approximation gives
 
 ```math
@@ -693,8 +744,9 @@ q_6(z)=Q^{\exp}_6(z).
 ```
 
 The numerator ``p_6`` is a polynomial because the constant terms of ``P^{\exp}_7`` and
-``Q^{\exp}_6`` cancel. It has degree six, as does ``q_6``. Thus the result is a ``[6/6]`` approximant
-of ``\mathfrak{A}`` that agrees with
+``Q^{\exp}_6`` cancel. Subtracting their coefficients and shifting down by one power of ``z`` gives
+``(p_6)_k=a_{k+1}-b_{k+1}`` for ``k=0,\ldots,5`` and ``(p_6)_6=a_7``. It has degree six, as does
+``q_6``. Thus the result is a ``[6/6]`` approximant of ``\mathfrak{A}`` that agrees with
 
 ```math
 \mathfrak{A}(z)=1+\frac{z}{2!}+\frac{z^2}{3!}+\cdots
