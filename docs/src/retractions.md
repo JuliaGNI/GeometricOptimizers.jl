@@ -537,8 +537,15 @@ under [What they cost](@ref) shows one representative comparison.
 
 ## The exponential needs an algorithm
 
-Exponentiating a full ``N\times{}N`` matrix would throw away the sparsity of the lift. The
-factorisation avoids it: the exponential of a product taken in this order is
+The geodesic requires ``\exp(\bar{B})``, but forming and exponentiating the full ``N\times{}N`` lift
+would throw away its low-rank structure. Writing ``\bar{B}=B'(B'')^T`` and
+``X=(B'')^TB'`` gives, for every ``k\geq 1``,
+
+```math
+\left(B'(B'')^T\right)^k = B'X^{k-1}(B'')^T.
+```
+
+Substitution into the exponential series therefore gives the exact identity
 
 ```math
 \exp\left(B'(B'')^T\right) = \mathbb{I} + B'\,\mathfrak{A}(X)\,(B'')^T,
@@ -546,9 +553,11 @@ factorisation avoids it: the exponential of a product taken in this order is
 \mathfrak{A}(X) = \sum_{k=1}^\infty \frac{X^{k-1}}{k!},
 ```
 
-so the whole computation reduces to one ``2n\times{}2n`` matrix function. ``\mathfrak{A}`` is the
-function usually written ``\varphi_1(X) = \left(\exp(X) - \mathbb{I}\right)X^{-1}``, though it is
-defined by the series and is perfectly regular at a singular ``X``.
+so computing ``\mathfrak{A}(X)`` is the central numerical task: once it is available, the
+``N\times{}N`` exponential is assembled using only the two thin factors. The argument ``X`` is only
+``2n\times{}2n``, which preserves the cost advantage when ``n\ll N``. ``\mathfrak{A}`` is the
+function usually written ``\varphi_1(X) = \left(\exp(X) - \mathbb{I}\right)X^{-1}``, though its
+series definition remains valid when ``X`` is singular.
 
 There are two separate algorithmic choices:
 
@@ -567,11 +576,10 @@ The algorithms currently available in this package are:
 | [`TaylorSeries`](@ref) | ``\mathfrak{A}(X)`` | Taylor series | none | any |
 | [`ScaledSquaring`](@ref) | ``\mathfrak{A}(X)`` | Taylor series | low-rank modified squaring | any |
 | [`NativePade`](@ref) | ``\mathfrak{A}(X)`` | degree-6 Padé | low-rank modified squaring | matrix products and reductions |
-| [`AugmentedPade`](@ref) | augmented exponential | Julia's dense `exp` | scaling and squaring inside `exp` | CPU |
 | [`ProjectedSkew`](@ref) | projected lift exponential | eigendecomposition | none | CPU |
 
-All five are subtypes of [`AbstractExponentialAlgorithm`](@ref) and all five return the exponential
-map, so the one-parameter subgroup property above holds for every one of them.
+These algorithms return the same exponential map, so the one-parameter subgroup property above
+holds for every one of them.
 
 ## 1. Direct Taylor series
 
@@ -603,36 +611,37 @@ because the norm of the reduced matrix can grow quadratically with the norm of t
 ```julia
 Geodesic(ScaledSquaring())   # the default, and `Geodesic()`
 Geodesic(NativePade())
-Geodesic(AugmentedPade())
 Geodesic(ProjectedSkew())
 Geodesic(TaylorSeries())     # the pre-0.2.0 behaviour; not a usable retraction
 ```
 
 ## 2. Padé approximation
 
-A Padé approximant replaces the exponential by a rational function. Combined with scaling and
-squaring, this is the standard approach for a dense matrix exponential
-[higham2005scaling, almohy2010new](@cite). The rational approximation is usually more accurate than
-an unscaled polynomial of comparable degree, but evaluating it requires solving a matrix equation or
-otherwise applying the denominator.
+A Padé approximant replaces the Taylor polynomial by a rational function. The advantage is local
+approximation order: the degree-6 numerator and denominator used here are obtained from the
+``[7/6]`` Padé approximant of the exponential, and the resulting approximation to ``\mathfrak{A}``
+agrees with its series through order 12. A degree-6 Taylor polynomial agrees only through order 6.
+Thus Padé captures substantially more of the local behaviour with low-degree polynomials, at the
+price of applying the denominator. Combined with scaling and squaring, Padé is the standard approach
+for a dense matrix exponential [higham2005scaling, almohy2010new](@cite).
 
 [`NativePade`](@ref) evaluates a degree-6 rational approximation to ``\mathfrak{A}`` directly. It
 avoids a dense solve by applying five Newton--Schulz inverse iterations, then uses the same low-rank
 modified-squaring recurrence as [`ScaledSquaring`](@ref). Its threshold is restricted to
 ``0 < \theta \leq 1/2`` so the fixed inverse iteration remains in its validated regime.
 
-[`AugmentedPade`](@ref) instead uses
-the block identity
+Padé does not by itself solve the large-argument problem. A rational approximant is still most
+reliable when evaluated on a controlled small argument, which is why `NativePade` also uses scaling
+and modified squaring.
 
-```math
-\exp\begin{pmatrix} X & \mathbb{I} \\ \mathbb{O} & \mathbb{O} \end{pmatrix}
-= \begin{pmatrix} \exp(X) & \mathfrak{A}(X) \\ \mathbb{O} & \mathbb{I} \end{pmatrix}
-```
-
-and extracts ``\mathfrak{A}(X)`` from the upper-right block. The implementation delegates to
-Julia's dense `exp`, so it benefits from an established scaling-and-squaring implementation but
-works on a ``4n\times{}4n`` matrix to obtain a ``2n\times{}2n`` result. It also requires the dense
-linear-algebra support used by `exp`.
+!!! note "`AugmentedPade` is a reference implementation"
+    [`AugmentedPade`](@ref) obtains ``\mathfrak{A}(X)`` from the upper-right block of
+    ``\exp\left(\begin{smallmatrix}X&I\\0&0\end{smallmatrix}\right)`` and delegates that exponential
+    to Julia's dense `exp`. It is useful for checking the direct implementations, but normally
+    should not be selected: it exponentiates a ``4n\times{}4n`` matrix to recover a
+    ``2n\times{}2n`` block, discards the other blocks, and requires dense LAPACK. The identity is a
+    standard route from an exponential routine to a ``\varphi``-function
+    [sidje1998expokit, higham2008functions](@cite).
 
 ## 3. Scaling and modified squaring
 
@@ -643,7 +652,11 @@ recovery formulas are usually called *modified squaring* [skaflestad2009scaling]
 
 [`ScaledSquaring`](@ref) uses a Taylor kernel, while [`NativePade`](@ref) uses a Padé kernel. Both
 scale the argument first and use the same recovery recurrence. `ScaledSquaring`'s advantage over
-[`TaylorSeries`](@ref) comes from evaluating the Taylor series only after scaling the argument.
+[`TaylorSeries`](@ref) comes entirely from that scaling: the Taylor series is evaluated only where
+``\|X/2^s\|_1\leq\theta``, so its terms remain modest and the catastrophic cancellation of the
+unscaled series is avoided. The subsequent modified-squaring steps are algebraic identities, not
+additional approximations. In this way `ScaledSquaring` makes the otherwise unreliable Taylor
+kernel usable for the reduced matrices encountered here.
 
 The low-rank form is closed under squaring:
 
@@ -694,25 +707,6 @@ an accelerator still depends on the backend's support for those matrix operation
     [almohy2010new](@cite). Replacing the norm bound by a spectral calculation would undermine the
     backend portability that motivates this implementation.
 
-### `AugmentedPade`
-
-[`AugmentedPade`](@ref) evaluates ``\mathfrak{A}`` as a block of a larger *ordinary* exponential. For
-the ``4n\times{}4n`` augmented matrix,
-
-```math
-\exp\begin{pmatrix} X & \mathbb{I} \\ \mathbb{O} & \mathbb{O} \end{pmatrix}
-= \begin{pmatrix} \exp(X) & \mathfrak{A}(X) \\ \mathbb{O} & \mathbb{I} \end{pmatrix},
-```
-
-which is a standard way to obtain a ``\varphi``-function from an exponential routine
-[sidje1998expokit, higham2008functions](@cite). This method is useful as an independent reference for
-the package's direct ``\mathfrak{A}`` implementations. Its main costs are the larger augmented matrix
-and its dependence on dense LAPACK.
-
-!!! warning "CPU only"
-    Neither this nor [`ProjectedSkew`](@ref) runs on a GPU backend. [`ScaledSquaring`](@ref) and
-    [`NativePade`](@ref) avoid dense LAPACK, subject to backend support for their matrix operations.
-
 ## 4. `ProjectedSkew`
 
 [`ProjectedSkew`](@ref) does not go through ``\mathfrak{A}`` at all. It exponentiates the lift in a
@@ -747,7 +741,7 @@ None of these types is exported, so import the ones you use:
 
 ```jldoctest retraction-usage
 using GeometricOptimizers
-using GeometricOptimizers: Geodesic, Cayley, ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, check
+using GeometricOptimizers: Geodesic, Cayley, ScaledSquaring, NativePade, ProjectedSkew, check
 import Random
 Random.seed!(123)
 
@@ -795,8 +789,8 @@ check(geodesic(Y, 300 * Δ, ProjectedSkew())) < 1e-13
 true
 ```
 
-and [`GeometricOptimizers.𝔄`](@ref) can be called on a bare matrix, which is the level at which four
-of the five algorithms are implemented:
+and [`GeometricOptimizers.𝔄`](@ref) can be called on a bare matrix, which is the level at which the
+Taylor- and Padé-kernel algorithms are implemented:
 
 ```jldoctest retraction-usage
 using GeometricOptimizers: 𝔄
@@ -805,8 +799,7 @@ Random.seed!(123)
 
 X = randn(6, 6)
 
-isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, NativePade()); rtol = 1e-12) &&
-    isapprox(𝔄(X, NativePade()), 𝔄(X, AugmentedPade()); rtol = 1e-12)
+isapprox(𝔄(X, ScaledSquaring()), 𝔄(X, NativePade()); rtol = 1e-12)
 
 # output
 
@@ -861,7 +854,7 @@ timings — from the command line.
 
 ```@setup retractions
 using GeometricOptimizers
-using GeometricOptimizers: geodesic, cayley, check, ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
+using GeometricOptimizers: geodesic, cayley, check, ScaledSquaring, NativePade, ProjectedSkew, TaylorSeries
 using LinearAlgebra: norm
 using Markdown
 using Printf
@@ -905,11 +898,10 @@ reference, since it evaluates no matrix function at all.
 ```@example retractions
 lifts = sweep(Float64)
 
-table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`AugmentedPade`", "`ProjectedSkew`", "`TaylorSeries`", "`Cayley`"],
+table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`ProjectedSkew`", "`TaylorSeries`", "`Cayley`"],
       [[fixed(norm(Matrix(B))),
         sci(check(geodesic(B, ScaledSquaring()))),
         sci(check(geodesic(B, NativePade()))),
-        sci(check(geodesic(B, AugmentedPade()))),
         sci(check(geodesic(B, ProjectedSkew()))),
         sci(check(geodesic(B, TaylorSeries()))),
         sci(check(cayley(B)))] for B in lifts])
@@ -926,19 +918,19 @@ is a different question from the one above — a retraction that re-orthonormali
 have a perfect `check` and be wrong here — and the test suite asserts both.
 
 ```@example retractions
-table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`AugmentedPade`", "`ProjectedSkew`"],
+table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`ProjectedSkew`"],
       [begin
            reference = exp(Matrix(B))
            err(algorithm) = norm(Matrix(geodesic(B, algorithm)) - reference) / norm(reference)
            [fixed(norm(Matrix(B))), sci(err(ScaledSquaring())), sci(err(NativePade())),
-            sci(err(AugmentedPade())), sci(err(ProjectedSkew()))]
+            sci(err(ProjectedSkew()))]
        end for B in lifts])
 ```
 
-All four usable exponential algorithms remain close to the dense reference. In this sweep, the
-three ``\mathfrak{A}`` algorithms usually have the smaller forward error, while `ProjectedSkew`
-usually has the smaller orthogonality residual. The table reports an experiment, not an error bound;
-the ordering can depend on the matrix and floating-point type.
+All three algorithms remain close to the dense reference. In this sweep, the two direct
+``\mathfrak{A}`` algorithms usually have the smaller forward error, while `ProjectedSkew` usually
+has the smaller orthogonality residual. The table reports an experiment, not an error bound; the
+ordering can depend on the matrix and floating-point type.
 
 ### `Float32`
 
@@ -946,11 +938,10 @@ The same orthogonality residual in `Float32`, the format used by the MNIST examp
 [Optimization on Homogeneous Spaces](@ref):
 
 ```@example retractions
-table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`AugmentedPade`", "`ProjectedSkew`"],
+table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`ProjectedSkew`"],
       [[fixed(norm(Matrix(B))),
         sci(check(geodesic(B, ScaledSquaring()))),
         sci(check(geodesic(B, NativePade()))),
-        sci(check(geodesic(B, AugmentedPade()))),
         sci(check(geodesic(B, ProjectedSkew())))] for B in sweep(Float32)])
 ```
 
@@ -987,16 +978,14 @@ Milliseconds:
 |---|---|---|---|---|---|---|---|---|
 | `Geodesic(ScaledSquaring())` | 0.003 | 0.005 | 0.014 | 0.023 | 0.087 | 0.396 | 3.03 | 2.51 |
 | `Geodesic(NativePade())` | 0.004 | 0.005 | 0.013 | 0.023 | 0.091 | 0.410 | 3.33 | 2.57 |
-| `Geodesic(AugmentedPade())` | 0.003 | 0.006 | 0.016 | 0.027 | 0.120 | 0.464 | 5.98 | 2.72 |
 | `Geodesic(ProjectedSkew())` | 0.004 | 0.008 | 0.023 | 0.028 | 0.130 | 0.464 | 4.04 | 2.89 |
 | `Geodesic(TaylorSeries())` | 0.003 | 0.006 | 0.019 | 0.033 | 0.149 | 0.505 | 14.1 | 3.49 |
 | `Cayley()` | 0.002 | 0.004 | 0.016 | 0.056 | 0.361 | 4.87 | 6.24 | 38.8 |
 
 On this machine, `ScaledSquaring` and `NativePade` have similar whole-retraction timings at most
-measured sizes. `AugmentedPade` pays for the larger block exponential, and `ProjectedSkew` pays for a QR
-factorization and eigendecomposition. `Cayley` is competitive for small `N`, but its final dense
-matrix product becomes dominant as `N` grows. These timings are illustrative and should be
-remeasured on the target hardware.
+measured sizes. `ProjectedSkew` pays for a QR factorization and eigendecomposition. `Cayley` is
+competitive for small `N`, but its final dense matrix product becomes dominant as `N` grows. These
+timings are illustrative and should be remeasured on the target hardware.
 
 ## Choosing one
 
@@ -1014,7 +1003,6 @@ applies.**
 | [`ScaledSquaring`](@ref) | the general default | orthogonality residual can grow with the lift |
 | [`NativePade`](@ref) | an independent direct Padé calculation is useful | a fixed rational kernel and restricted threshold |
 | [`ProjectedSkew`](@ref) | a small orthogonality residual is the priority | QR and eigendecomposition, CPU only |
-| [`AugmentedPade`](@ref) | an independent Padé-based reference is useful | larger augmented exponential, CPU only |
 | [`TaylorSeries`](@ref) | reproducing the historical implementation | unreliable for large lifts |
 
 [`ScaledSquaring`](@ref) and [`NativePade`](@ref) avoid dense LAPACK and scalar indexing in package
