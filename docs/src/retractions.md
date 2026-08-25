@@ -724,24 +724,23 @@ Put ``d=m+n-k``. The ratio ``(m+n-j)!/(k-j)!`` is a product of ``d`` consecutive
 ``m+n-j<d`` and vanishes. So the right-hand side is ``d!`` times
 
 ```math
-\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}=\binom{m}{d-n},
+\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}=\binom{m}{d-n}.
 ```
 
-The identity follows directly by extracting the coefficient of ``x^d``:
+This is the binomial theorem read at a single degree. In the scalar variable ``z`` of the
+approximant,
 
 ```math
-\begin{aligned}
-\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}
-&=[x^d](1+x)^m\sum_{j=0}^n\binom{n}{j}(-1)^j(1+x)^{n-j}\\
-&=[x^d](1+x)^m((1+x)-1)^n
- =[x^d]x^n(1+x)^m=\binom{m}{d-n}.
-\end{aligned}
+\sum_{j=0}^n(-1)^j\binom{n}{j}(1+z)^{m+n-j}
+=(1+z)^m\bigl((1+z)-1\bigr)^n
+=z^n(1+z)^m,
 ```
 
-Here ``[x^d]f(x)`` denotes the coefficient of ``x^d`` in ``f``. If ``k\geq m+1``, then
-``d-n=m-k<0`` and ``x^n(1+x)^m`` has no ``x^d`` term, so the denominator equations vanish. If
-``k\leq m``, that coefficient is ``\binom{m}{m-k}=\binom{m}{k}``; restoring ``d!/(m+n)!`` gives
-the claimed ``a_k``.
+and the coefficient of ``z^d`` on the left is ``\sum_j(-1)^j\binom{n}{j}\binom{m+n-j}{d}``, on the
+right ``\binom{m}{d-n}``. That single evaluation splits exactly where the matching condition splits.
+If ``k\geq m+1``, then ``d-n=m-k<0`` and ``z^n(1+z)^m`` has no ``z^d`` term, so the sum vanishes and
+all ``n`` denominator equations hold. If ``k\leq m``, the coefficient is
+``\binom{m}{m-k}=\binom{m}{k}``; restoring ``d!/(m+n)!`` gives the claimed ``a_k``.
 
 The two formulas are one expression with ``m`` and ``n`` interchanged and a sign,
 ``a_k(m,n)=(-1)^kb_k(n,m)``: the reflection that ``e^{-z}=1/e^z`` induces on the table. They are
