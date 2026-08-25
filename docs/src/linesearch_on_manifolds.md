@@ -56,7 +56,8 @@ that way would take of the order of a million iterations.
 `LinearAlgebra.dot` on an [`AbstractLieAlgHorMatrix`](@ref) is the *ambient* Frobenius product, and it
 counts each off-diagonal block of the horizontal lift twice — so it comes out at exactly twice the
 product of the lift's free parameters. Those free parameters are the coordinates everything else in
-this package is expressed in: they size ``Q``, they are what [`outer!`](@ref) flattens before forming
+this package is expressed in: they size ``Q``, they are the coordinates [`_flat_scratch`](@ref) holds
+the flat form in before forming
 its outer product, and they are what the line search's ``\alpha`` parameterizes. A central-difference
 check showed the consequence: paired ambiently, the slope came out as ``2\varphi'(\alpha)`` where
 ``\varphi'(\alpha)`` was wanted.
@@ -284,7 +285,7 @@ shape. Its section may be a `NamedTuple`, ``Q`` is sized by the *intrinsic* dime
 The same boundaries let both methods run on a bare [`Manifold`](@ref), not only on a `NamedTuple` of
 them. For ``\operatorname{St}(3,1)`` the intrinsic dimension is 2 even though the gradient and the
 direction are ambient ``3\times3`` lifts — which is exactly the mismatch the separate type parameters
-exist for. The supporting pieces are [`outer!`](@ref) and `_mul!` for
+exist for. The supporting pieces are [`_flat_scratch`](@ref) and `_flat_mul!` for
 [`AbstractLieAlgHorMatrix`](@ref), `alloc_h` for a `Manifold`, and copying a point into a
 [`GlobalSection`](@ref).
 

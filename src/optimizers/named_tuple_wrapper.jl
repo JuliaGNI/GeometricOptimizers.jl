@@ -186,35 +186,12 @@ function _mul!(c::AbstractVecOrMat, a::AbstractMatrix, b::AbstractVecOrMat)
     mul!(c, a, b)
 end
 
-function _mul!(c::ParameterContainer, a::ParameterContainer, b::ParameterContainer)
-    _mapleaves!(_mul!, c, a, b)
-    c
-end
-
-# `c` supplies its layout but not its numbers: it is the destination, so only its shape matters.
-# That is one flatten fewer than this used to do, and `unflatten!` writes the result back through
-# `copyto!` instead of building a fresh parameter set for `_copyto!` to copy out of.
-function _mul!(c::ParameterContainer, a::AbstractMatrix, b::ParameterContainer)
-    layout = parameterlayout(c)
-    v_b, _ = flatten(b)
-    v_c = similar(v_b)
-
-    _mul!(v_c, a, v_b)
-    unflatten!(c, layout, v_c)
-end
-
-# The same ambient/intrinsic boundary as the method above, for a *bare* `Manifold`: the quasi-Newton
-# `Q` is sized by the length of the flattening, while the direction and the gradient are horizontal
-# lifts of the ambient shape (`3 × 3` against an intrinsic 2, for `St(3, 1)`). Multiplying them
-# directly reaches `setindex!`, which the lift types do not define.
-function _mul!(c::AbstractLieAlgHorMatrix, a::AbstractMatrix, b::AbstractLieAlgHorMatrix)
-    layout = parameterlayout(c)
-    v_b, _ = flatten(b)
-    v_c = similar(v_b)
-
-    _mul!(v_c, a, v_b)
-    unflatten!(c, layout, v_c)
-end
+# Two more `_mul!` methods stood here until 0.6.0, one for a container destination and one for a bare
+# lift, each flattening `b`, allocating a result vector and unflattening it back. `_flat_mul!` does that
+# through the cache's buffers now, so neither had a caller left. See [`_flat_scratch`](@ref).
+#
+# `_mul!(c::ParameterContainer, a::ParameterContainer, b::ParameterContainer)` -- the *elementwise*
+# product, three parameter sets -- is gone with them, and had no caller before this release either.
 
 function _mul(α::T, a::GradientArrayOrNamedTuple{T}) where {T}
     b = _copy(a)
@@ -232,8 +209,9 @@ For an `AbstractVecOrMat` this is `LinearAlgebra.dot`. For a horizontal lift —
 them — it is emphatically not: `dot` on an [`AbstractLieAlgHorMatrix`](@ref) is the *ambient*
 Frobenius product, which counts each of the off-diagonal blocks of the lift twice and so comes out
 exactly twice the product of the free parameters. The intrinsic coordinates are the ones every other
-quantity in this package is expressed in — `Q` is sized by the flattening, [`outer!`](@ref) flattens
-before it forms its outer product, and the `α` of a line search parameterizes a curve in them — so
+quantity in this package is expressed in — `Q` is sized by the flattening, its outer products are
+formed there (see [`_flat_scratch`](@ref)), and the `α` of a line search parameterizes a curve in them —
+so
 pairing a gradient with a direction has to happen there too.
 
 Used by [`trial_slope`](@ref) for ``\varphi'(\alpha)``, and by the quasi-Newton caches for
@@ -269,7 +247,15 @@ _dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} = T(_dot_leaves(a
 # has neither the right length nor, for three of the four, any way to be read at all. `freeparameters`
 # is the same protocol `flatten` walks, so the two agree leaf for leaf by construction rather than by
 # two implementations happening to concur.
-_dot_leaves(a::Union{NamedTuple,NetworkParameters}, b) = _dot_leaves(values(a), values(_as_walkable(b)))
+#
+# Positional, over `values`, and so it checks neither that the keys agree nor that the two branches are
+# the same width -- where `_mapleaves` gets both from `map`. That is not a regression: the
+# `dot(flatten(a), flatten(b))` this replaced was positional over the flattening in exactly the same
+# way. It is named here because this is where such a check would go if one is ever wanted, and because
+# the arity case is the worse of the two: a width mismatch falls through to the generic method below
+# with a `Tuple` in hand and raises `freeparameters`' "no protocol" error, which names neither `_dot`
+# nor the shapes.
+_dot_leaves(a::ParameterSet, b) = _dot_leaves(values(a), values(_as_walkable(b)))
 
 # `false` is the strong zero: it takes its type from whatever it is added to, and there is no `T` in
 # scope to write `zero(T)` with. A one-leaf set adds it to that leaf's pairing and stays a `T`.
@@ -277,6 +263,9 @@ _dot_leaves(::Tuple{}, ::Tuple{}) = false
 _dot_leaves(a::Tuple, b::Tuple) =
     _dot_leaves(first(a), first(b)) + _dot_leaves(Base.tail(a), Base.tail(b))
 
+# `s === a` is `NeuralNetworkParameters.isterminal(a)`, which exists for exactly this question. Written
+# out because the storage is wanted either way, so asking the predicate would call `freeparameters`
+# twice -- but named, so that the two cannot drift apart unnoticed.
 function _dot_leaves(a, b)
     s = freeparameters(a)
     s === a ? dot(a, b) : _dot_leaves(s, freeparameters(b))

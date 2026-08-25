@@ -97,34 +97,20 @@ function update!(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     cache
 end
 
-# Type piracy: `outer!` is imported from `SimpleSolvers` and this package owns neither member of
-# [`ParameterContainer`](@ref). See issue #16.
-function outer!(m::AbstractMatrix{T}, arr1::ParameterContainer{T}, arr2::ParameterContainer{T}) where {T}
-    # `flatten` is given `T` explicitly for the reason `_dot` states: `m` is a `Matrix{T}`, so the
-    # flat vectors that fill it have to be `T` and not whatever a set happens to promote to
-    v1, _ = flatten(T, arr1)
-    v2, _ = flatten(T, arr2)
-    outer!(m, v1, v2)
-end
-
-@doc raw"""
-    outer!(m, g₁, g₂)
-
-The outer product of two horizontal lifts, written into `m`.
-
-Like the [`ParameterContainer`](@ref) method above, this exists because the quasi-Newton `Q` is sized
-by the *intrinsic* dimension of the parameters — the length of their flattening — while the direction and the
-gradient are handed around in the *ambient* horizontal-lift representation. For a bare
-`StiefelManifold` of size `(3, 1)` those are 2 and `3 × 3` respectively, so `SimpleSolvers.outer!`,
-which indexes its arguments linearly against `axes(m)`, would assert on the mismatch. Flattening first
-is what the `NamedTuple` case has always done; without the same method here `BFGS` and `DFP` cannot
-run on a *bare* `Manifold` at all.
-"""
-function outer!(m::AbstractMatrix{T}, g₁::AbstractLieAlgHorMatrix{T}, g₂::AbstractLieAlgHorMatrix{T}) where {T}
-    v1, _ = flatten(T, g₁)
-    v2, _ = flatten(T, g₂)
-    outer!(m, v1, v2)
-end
+# Two `outer!` methods stood here until 0.6.0 -- one on [`ParameterContainer`](@ref), one on
+# `AbstractLieAlgHorMatrix` -- each flattening both arguments per call so that `SimpleSolvers.outer!`
+# could index them against `axes(m)`. Both are gone, because the flat buffers of [`_flat_scratch`](@ref)
+# hand `outer!` a `FlatParameters` and it reaches upstream's method directly. Nothing in `src/`, `test/`,
+# `docs/` or `scripts/` called either afterwards, and nothing in `GeometricMachineLearning` or
+# `GMLDatasets` ever did.
+#
+# Deleting the container one **retires one of the five type-piracy sites of issue #16 group 3** --
+# `outer!` is `SimpleSolvers`' generic and this package owns neither arm of the union -- which the
+# 0.6.0 entry above says cannot be done for the group as a whole. It can be done for this one, and only
+# because `outer!` is internal to the quasi-Newton caches: no consumer calls it, so no consumer has to
+# change. The ambient-versus-intrinsic reasoning the second of them documented has moved to
+# [`_flat_scratch`](@ref), which is where the flat form now lives, and
+# `docs/src/linesearch_on_manifolds.md` points there.
 
 @doc raw"""
     update!(cache, x, g)

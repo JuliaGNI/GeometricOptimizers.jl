@@ -137,8 +137,8 @@ before failing. This finishes it.
     to write into: one field and one unbounded type parameter each, a `NamedTuple` of
     `NeuralNetworkParameters.FlatParameters` built from `_zero(x)` and not `x`, for the reason the
     `flatlength(_zero(x))` beside it gives. `FlatParameters` rather than a bare `Vector` because it
-    carries its own layout and keeps it through `similar`, which is what retires the
-    `parameterlayout(c)` call inside `_mul!`. See `_flat_scratch`.
+    carries its own layout and keeps it through `similar`, which is what retired the `parameterlayout(c)`
+    call the deleted `_mul!` methods made. See `_flat_scratch`.
 
     `nothing` for an `AbstractVector` solution, where the parameters *are* the flat coordinates and
     buffering would add a copy per iteration and buy nothing.
@@ -154,17 +154,39 @@ before failing. This finishes it.
   |---|---|---|
   | `BFGS`, `Vector` | 36 312 | 24 456 |
   | `BFGS`, bare `Manifold` | 1 473 096 | 1 067 000 |
-  | `BFGS`, flat `NamedTuple` | 2 430 488 | 1 651 416 |
-  | `BFGS`, container | `MethodError` | 1 897 752 |
+  | `BFGS`, flat `NamedTuple` | 2 430 488 | 1 634 552 |
+  | `BFGS`, container | `MethodError` | 1 703 928 |
   | `DFP`, `Vector` | 35 512 | 23 160 |
   | `DFP`, bare `Manifold` | 1 473 576 | 1 065 704 |
-  | `DFP`, flat `NamedTuple` | 2 424 184 | 1 641 800 |
-  | `DFP`, container | `MethodError` | 1 888 136 |
+  | `DFP`, flat `NamedTuple` | 2 424 184 | 1 624 936 |
+  | `DFP`, container | `MethodError` | 1 694 312 |
 
   About a third, and the `Vector` column is not a rounding error: `flatten(T, ::Vector)` copies, and
   `Δg2' * Q * Δg2` allocated there too.
 
+  The two parameter-set rows are about 17 000 bytes better than the first measurement of this branch,
+  and the two container rows about 194 000, because `_mapleaves!` became `foreachparameters` in the
+  review of the branch below it: the discarded result tree cost one `NamedTuple` per branch per call,
+  and a container has more branches to pay it on. The `Vector` and `Manifold` rows are unmoved, having
+  no branches at all — which is the check that the difference is the walk and not the weather.
+
 ### Removed (breaking)
+
+- **Four `outer!`/`_mul!` methods are gone, and one of them was a type-piracy site of [#16].** With both
+  always reached through the flat buffers, nothing in `src/`, `test/`, `docs/` or `scripts/` called
+  `outer!` on a [`ParameterContainer`](@ref) or on an `AbstractLieAlgHorMatrix`, or `_mul!` on either —
+  and nothing in `GeometricMachineLearning` or `GMLDatasets` ever did. The elementwise
+  `_mul!(c::ParameterContainer, a::ParameterContainer, b::ParameterContainer)` goes with them, having
+  had no caller before this release either.
+
+  Deleting the container `outer!` **retires one of the five sites #16 group 3 tracks** — `outer!` is
+  `SimpleSolvers`' generic and this package owns neither arm of the union. That is possible for this one
+  and not for the group, and the reason is worth stating: `outer!` is internal to the quasi-Newton
+  caches, so no consumer calls it and no consumer has to change. The other four are on generics a
+  consumer does reach.
+
+  The ambient-versus-intrinsic reasoning the lift method documented has moved to `_flat_scratch`, where
+  the flat form now lives; `docs/src/linesearch_on_manifolds.md` points there.
 
 - **`update!(::BFGSState, ::Gradient, x, retraction)` is gone.** It had no caller in `src/`, `test/`,
   `docs/` or `scripts/`, and none in `GeometricMachineLearning` or `GMLDatasets` either: for a
@@ -218,11 +240,12 @@ before failing. This finishes it.
 ### Known issues
 
 - **A solve is not allocation-free, and this release does not make it one.** The flat vectors are gone;
-  the two thirds that remain are the gradient evaluation, the parameter trees `global_rep` and
-  `retraction_differential` build per line-search evaluation in `trial_slope`, and the `map` inside the
-  elementwise walks returning a tree of results that is then discarded. The last of those is the
-  cheapest to fix and the one to look at next: on the flat `NamedTuple` problem above it is the
-  difference between 992 bytes and none per `update!`.
+  what remains is the gradient evaluation and the parameter trees `global_rep` and
+  `retraction_differential` build per line-search evaluation in `trial_slope`.
+
+  The third item that stood here — "the `map` inside the elementwise walks returning a tree of results
+  that is then discarded", 992 bytes per `update!` — is **fixed** in this release: `_mapleaves!` is
+  `NeuralNetworkParameters.foreachparameters`. See the review findings above.
 - **`src/parameter_walks.jl` should be retired in favour of `NeuralNetworkParameters.mapparameters`.**
   `_mapleaves` was written here only because that function could not be compiled on a wide-flat set;
   0.2.2 fixed it from this package's report, and the in-place half is already upstream's
