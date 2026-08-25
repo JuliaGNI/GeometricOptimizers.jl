@@ -35,7 +35,7 @@ end
     error("a trial step on a manifold retracts from `section(params.state)`, so the line search " *
           "parameters have to carry the `state`; `solver_step!` passes it, a bare `(x = x,)` does not.")
 
-function _trial_iterate!(::Union{Manifold,ArrayNamedTuple}, cache::OptimizerCache, params, α, retraction)
+function _trial_iterate!(::Union{Manifold,ParameterContainer}, cache::OptimizerCache, params, α, retraction)
     # `params` is a concrete `NamedTuple` here, so this is constant-folded away rather than checked on
     # every merit evaluation. Without it a missing `state` surfaces as `has no field state`.
     hasproperty(params, :state) || _no_state_error()
@@ -112,6 +112,20 @@ _manifold_αmax(ys::Tuple, δs::Tuple, c) =
 _block_αmax(::Manifold, δ, c) = step_αmax(c, δ)
 _block_αmax(::Any, ::Any, c::T) where {T} = T(Inf)
 
+# A block that is itself a branch is descended into rather than being written off as "not a manifold".
+# Without this a container -- which is a tree of layers, so *every* block at the top level is a branch
+# -- would take the `::Any` method above for all of them and get `Inf`, i.e. no ceiling at all, and
+# issue A1b would be back for exactly the parameter shape a network has. A flat `ArrayNamedTuple`
+# never reaches it, its values being arrays by construction.
+_block_αmax(y::Union{NamedTuple,NetworkParameters}, δ, c) =
+    _manifold_αmax(values(y), values(_as_blocks(δ)), c)
+
+# `values` of whichever shape the direction arrived in. It tracks the solution block by block, so it is
+# a branch wherever the solution is one, but not necessarily the *same* kind of branch: a container
+# solution can be paired with the plain `NamedTuple` its `GlobalSection` tree is built as.
+_as_blocks(δ::NetworkParameters) = params(δ)
+_as_blocks(δ) = δ
+
 @doc raw"""
     linesearch_parameters(cache, x, state, c)
 
@@ -154,8 +168,9 @@ _linesearch_parameters(::AbstractVector, ::OptimizerCache, x, state, _) = (x=x, 
 _linesearch_parameters(::Manifold, cache::OptimizerCache, x, state, c) =
     (x=x, state=state, αmax=step_αmax(c, direction(cache)))
 
-_linesearch_parameters(sol::ArrayNamedTuple, cache::OptimizerCache, x, state, c) =
-    (x=x, state=state, αmax=_manifold_αmax(values(sol), values(direction(cache)), c))
+_linesearch_parameters(sol::ParameterContainer, cache::OptimizerCache, x, state, c) =
+    (x=x, state=state,
+     αmax=_manifold_αmax(values(sol), values(_as_blocks(direction(cache))), c))
 
 # The ceiling a `linesearch_parameters` actually carries, read back by `solver_step!` so that it can
 # recognise a step of its own making; see `linesearch_rejected` and issue B3. This mirrors
@@ -228,7 +243,7 @@ function _trial_slope(::AbstractVector, gradient_instance::Gradient, cache::Opti
     _dot(latest_gradient(cache), direction(cache))
 end
 
-function _trial_slope(::Union{Manifold,ArrayNamedTuple}, gradient_instance::Gradient, cache::OptimizerCache, retraction::AbstractRetraction, α)
+function _trial_slope(::Union{Manifold,ParameterContainer}, gradient_instance::Gradient, cache::OptimizerCache, retraction::AbstractRetraction, α)
     _dot(global_rep(section(cache), gradient_instance(solution(cache))),
         retraction_differential(retraction, direction(cache), α))
 end

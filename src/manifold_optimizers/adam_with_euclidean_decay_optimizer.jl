@@ -30,7 +30,12 @@ rather than inheriting a silent no-op that may be wrong for it.
 _is_decayable(::StiefelManifold) = false
 _is_decayable(::GrassmannManifold) = false
 _is_decayable(::AbstractArray) = true
-_is_decayable(ps::ArrayNamedTuple) = any(_is_decayable, values(ps))
+# `any` over the values and not over the leaves: a block that is itself a branch is asked recursively,
+# which is what a container needs -- its top-level values are layers, never parameters. Written on
+# `Union{NamedTuple,NetworkParameters}` rather than on [`ParameterContainer`](@ref) because a layer
+# whose weights do not share one element type is not an `ArrayNamedTuple`, and the recursion has to
+# reach it all the same.
+_is_decayable(ps::Union{NamedTuple,NetworkParameters}) = any(_is_decayable, values(ps))
 
 # no `Manifold` fallback: see the docstring above. Without this method the `AbstractArray` one
 # would catch a new manifold (`Manifold <: AbstractMatrix`) and claim it *is* decayable, which is
@@ -93,9 +98,9 @@ function _weight_decay!(δ::AbstractLieAlgHorMatrix{T}, x::Manifold{T}, ::T) whe
     δ
 end
 
-function _weight_decay!(δ::ArrayNamedTuple{T}, x::ArrayNamedTuple{T}, λ::T) where {T}
+function _weight_decay!(δ::ParameterContainer{T}, x::ParameterContainer{T}, λ::T) where {T}
     weight_decay_closure!(δᵢ, xᵢ) = _weight_decay!(δᵢ, xᵢ, λ)
-    map(weight_decay_closure!, δ, x)
+    _mapleaves!(weight_decay_closure!, δ, x)
     δ
 end
 

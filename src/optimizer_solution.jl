@@ -52,6 +52,31 @@ const ArrayNamedTuple{T,S} = begin
 end
 
 """
+    ParameterContainer
+
+The two shapes a set of parameters arrives in: a bare `NamedTuple` of arrays, or a
+`NeuralNetworkParameters.NetworkParameters` holding one.
+
+This is what the elementwise primitives of `src/optimizers/named_tuple_wrapper.jl` dispatch on. They
+took `ArrayNamedTuple` alone until 0.6.0, so a container reached them and raised a `MethodError`
+several frames into a solve rather than being turned away at the door.
+
+The two are *not* interchangeable in shape. An `ArrayNamedTuple` is flat by construction — its values
+are bounded by `AbstractArray{T}`, so a nested `NamedTuple` is not one — while a container is a tree
+of layers. That is why the bodies walk with [`_mapleaves`](@ref) rather than with `Base.map`: `map`
+visits the entries of one level, which is the whole of a flat set and the *layers* of a nested one.
+
+!!! info "Widening this union did not close issue #16"
+    A method on this alias is still type piracy, and for both members. `ArrayNamedTuple` is an alias
+    for `Base.NamedTuple`, which is the original complaint; `NetworkParameters` belongs to
+    `NeuralNetworkParameters`, so a method pairing it with a generic from a third package — `l2norm`,
+    `outer!`, `copyto!` — owns neither side either. Closing #16 needs the `NamedTuple` methods
+    *removed*, and `GeometricMachineLearning` hands this package one bare layer `NamedTuple` per
+    layer, so they stay.
+"""
+const ParameterContainer{T} = Union{ArrayNamedTuple{T},NetworkParameters{T}}
+
+"""
     OptimizerSolution
 
 A type alias for the solution of an optimizer: an `AbstractVector`, a [`Manifold`](@ref), a
@@ -61,10 +86,9 @@ A type alias for the solution of an optimizer: an `AbstractVector`, a [`Manifold
 value types, so it is the cheapest member of this union to intersect. Note that it is the only member
 whose `T` is a *promotion* over the leaves rather than a guarantee that every leaf is a `T`.
 """
-const OptimizerSolution{T} = Union{AbstractVector{T},Manifold{T},ArrayNamedTuple{T},
-                                   NetworkParameters{T}}
+const OptimizerSolution{T} = Union{AbstractVector{T},Manifold{T},ParameterContainer{T}}
 
-const GradientArrayOrNamedTuple{T} = Union{AbstractArray{T},ArrayNamedTuple{T}}
+const GradientArrayOrNamedTuple{T} = Union{AbstractArray{T},ParameterContainer{T}}
 
 # see the remark on the diagonal rule above
 const GlobalSectionTuple{T} = Tuple{Vararg{GlobalSection{T}}}

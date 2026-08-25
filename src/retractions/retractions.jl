@@ -6,9 +6,15 @@ cayley(A::AbstractVecOrMat) = A
 # passes one along on every parameter type.
 geodesic(A::AbstractVecOrMat, ::AbstractExponentialAlgorithm) = A
 
-geodesic(B::NamedTuple) = map(geodesic, B)
-geodesic(B::NamedTuple, algorithm::AbstractExponentialAlgorithm) =
-    map(Bᵢ -> geodesic(Bᵢ, algorithm), B)
+# [`_mapleaves`](@ref) throughout: a direction is of the parameters' shape, so a container solution hands
+# these a container, whose leaves are a level below what `map` would reach.
+#
+# Spelled `Union{NamedTuple,NetworkParameters}` rather than `ParameterContainer` for two reasons. These
+# were written on the bare `NamedTuple`, and narrowing them to "arrays of one `T`" would be a
+# narrowing; and this file is included well before `optimizer_solution.jl`, where the alias lives.
+geodesic(B::Union{NamedTuple,NetworkParameters}) = _mapleaves(geodesic, B)
+geodesic(B::Union{NamedTuple,NetworkParameters}, algorithm::AbstractExponentialAlgorithm) =
+    _mapleaves(Bᵢ -> geodesic(Bᵢ, algorithm), B)
 
 @doc raw"""
     lift_factors(B::AbstractLieAlgHorMatrix)
@@ -147,7 +153,7 @@ function geodesic(B::AbstractLieAlgHorMatrix, ::ProjectedSkew)
     manifold_type(B)(one(B) + Q * (expM - I) * Q')
 end
 
-cayley(B::NamedTuple) = map(cayley, B)
+cayley(B::Union{NamedTuple,NetworkParameters}) = _mapleaves(cayley, B)
 
 @doc raw"""
     cayley(Y::Manifold, Δ)
@@ -299,8 +305,8 @@ retraction_differential(::Geodesic, B, α) = B
 
 retraction_differential(::Cayley, B::AbstractVecOrMat, α) = B
 
-retraction_differential(R::Cayley, B::NamedTuple, α) =
-    map(Bᵢ -> retraction_differential(R, Bᵢ, α), B)
+retraction_differential(R::Cayley, B::Union{NamedTuple,NetworkParameters}, α) =
+    _mapleaves(Bᵢ -> retraction_differential(R, Bᵢ, α), B)
 
 function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) where {T}
     iszero(α) && return B

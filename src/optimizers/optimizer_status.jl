@@ -160,7 +160,18 @@ the other.
 """
 solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
-solution_scale(ps::ArrayNamedTuple) = √sum(abs2, values(map(solution_scale, ps)))
+# Recursive, and not `map` + `sum` over one level: a container is a tree of layers, so the scales to
+# combine are at its *leaves*. `map` would hand `solution_scale` a whole layer, for which there is no
+# method. See [`ParameterContainer`](@ref). The recursion is `Base.tail` for the reason
+# [`_manifold_αmax`](@ref) gives -- a heterogeneous set stays inferable -- and it allocates nothing.
+solution_scale(ps::ParameterContainer) = √_solution_scale²(ps)
+
+_solution_scale²(ps::Union{NamedTuple,NetworkParameters}) = _solution_scale²(values(ps))
+# `false` and not `zero(T)`: there is no `T` in scope here, and `false` is the strong zero that takes
+# its type from whatever it is added to. A one-block set adds it to that block's scale and stays a `T`.
+_solution_scale²(::Tuple{}) = false
+_solution_scale²(t::Tuple) = _solution_scale²(first(t)) + _solution_scale²(Base.tail(t))
+_solution_scale²(x) = abs2(solution_scale(x))
 
 # The norm of a horizontal lift is taken over its *free parameters*, i.e. over `Base.parent`, and in
 # quadrature -- the same intrinsic-versus-ambient distinction `_dot` documents. Leaving it to the
@@ -180,15 +191,21 @@ l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 # inherits these. They should be upstreamed to GeometricBase. See issue #16.
 l2norm(a::AbstractMatrix) = l2norm(vec(a))
 l2norm(a::AbstractFloat) = norm(a)
-# Type piracy as well, but only because `ArrayNamedTuple` is an alias for `NamedTuple`; a
-# wrapper `struct` would fix this one locally. See issue #16.
-function l2norm(a::ArrayNamedTuple)
-    # the block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them
-    # (which this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby
-    # every stopping criterion computed from it.
-    norms = map(l2norm, a)
-    √sum(abs2, values(norms))
-end
+# Type piracy as well. It was written as "only because `ArrayNamedTuple` is an alias for `NamedTuple`;
+# a wrapper `struct` would fix this one locally" -- and 0.6.0 took the wrapper, which did *not* fix it:
+# `l2norm` is `GeometricBase`'s and `NetworkParameters` is `NeuralNetworkParameters`', so the container
+# method owns neither side either. See issue #16 and the note on [`ParameterContainer`](@ref).
+#
+# The block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them (which
+# this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby every stopping
+# criterion computed from it. Recursive rather than `map` + `sum` for the reason `solution_scale` gives
+# above, and allocation-free with it.
+l2norm(a::ParameterContainer) = √_l2norm²(a)
+
+_l2norm²(a::Union{NamedTuple,NetworkParameters}) = _l2norm²(values(a))
+_l2norm²(::Tuple{}) = false
+_l2norm²(t::Tuple) = _l2norm²(first(t)) + _l2norm²(Base.tail(t))
+_l2norm²(a) = abs2(l2norm(a))
 
 @doc raw"""
     contains_nonfinite(a)

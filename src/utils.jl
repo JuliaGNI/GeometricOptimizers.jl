@@ -46,8 +46,8 @@ function add!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat)
     C .= A + B
 end
 
-function add!(dx₁::NamedTuple, dx₂::NamedTuple, dx₃::NamedTuple)
-    map(add!, dx₁, dx₂, dx₃)
+function add!(dx₁::ParameterContainer, dx₂::ParameterContainer, dx₃::ParameterContainer)
+    _mapleaves!(add!, dx₁, dx₂, dx₃)
 end
 
 (grad::Gradient{T})(x::Manifold{T}) where {T} = rgrad(x, reshape(grad(vec(x)), size(x)...))

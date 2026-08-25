@@ -6,6 +6,104 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased] — targeting 0.6.0
+
+**A `NetworkParameters` runs through the optimizer.** 0.5.0 made it a member of `OptimizerSolution{T}`,
+which bound `T` at the eleven sites that take the element type from the *type* of the solution and left
+everything else dispatching on `ArrayNamedTuple` — so a container got several frames into a solve
+before failing. This finishes it.
+
+### Added
+
+- **The elementwise primitives, and the ~40 sites around them, take a container.** A new alias,
+  `ParameterContainer{T} = Union{ArrayNamedTuple{T}, NetworkParameters{T}}`, is what they dispatch on;
+  `GradientArrayOrNamedTuple` and `OptimizerSolution` are written in terms of it.
+
+  `test/network_parameters_optimizer.jl` drives a **nested** container — a real network's shape, which
+  the flat `NamedTuple` of `test/named_tuple_parameters.jl` does not cover — through every algorithm,
+  both retractions and both element types, plus `solve!`, `BFGS` and `DFP`. One of its testsets is the
+  statement that the change is behaviour-preserving: a nested container and the flat `NamedTuple`
+  describing the same problem reach the same iterates.
+
+  `test/named_tuple_parameters.jl` passes **unchanged**, which is the additive claim: a bare
+  `NamedTuple` is still a solution and still takes the same steps.
+
+- **`_mapleaves`/`_mapleaves!` (`src/parameter_walks.jl`), the walk those bodies are written in.** `map`
+  at each level, recursion on the branches. It reaches leaves at any depth and keeps the shape it was
+  given, so a container comes back a container.
+
+  Written here rather than taken from `NeuralNetworkParameters.mapparameters`, which does the same job,
+  **because of what that costs to compile on a wide-flat set**. `mapparameters` is an `@inline`d
+  `Base.tail` recursion — which is what makes it type stable and allocation free, and also what makes
+  it superlinear in the number of children at one level. On a flat 369-entry set, the shape GMLDatasets'
+  MNIST transformer uses, `map(zero, ps)` compiles in 0.01 s and `mapparameters(zero, ps)` had not
+  finished after twenty minutes of CPU. That is upstream's to fix and is catalogued as **D9**; the walk
+  here sidesteps it, since `map` drops to a loop past 32 fields.
+
+  Measured with `scripts/walk_compile_cost.jl`, which is committed for the reason the *Open Issues*
+  preamble gives — a number is reproducible only where the harness that produced it is named. The gate
+  it exists for, `OptimizerCache`/`OptimizerState` construction, is the entry point that reaches these
+  primitives without going through `flatten`, i.e. how `GeometricMachineLearning` uses this package:
+
+  | | 0.5.0 | this release |
+  |---|---|---|
+  | flat `NamedTuple`, 369 entries | 1.15 s / 1.31 s | 1.15 s / 1.35 s |
+  | nested container, 16 × 24 leaves | `MethodError` | 2.16 s / 2.38 s |
+
+### Changed
+
+- **`global_rep` and `apply_section` rebuild in the shape of the *parameters*, not of the section.**
+  These walks are written with their arguments the other way round from the rest, and it is not
+  cosmetic. `GlobalSection(::NetworkParameters)` deliberately returns a plain tree — a section is not a
+  parameter — so a walk driven by the section hands back a plain *nested* `NamedTuple` for a container.
+  That shape is neither an `ArrayNamedTuple` (its values are branches, not arrays) nor a container, so
+  no alias here covers it and `_copyto!(gradient_array(cache), ·)` has no method for it. What these two
+  produce is a point and a gradient, and a parameter set has the parameters' shape.
+
+- **The section-side `copyto!` methods come in pairs.** `GlobalSectionNamedTuple` is flat by
+  construction, and a container's section tree is nested; "a `NamedTuple` of `GlobalSection`s to any
+  depth" is a recursive type Julia cannot express, so there is no widening of that alias that covers
+  both. The *other* side carries the dispatch instead, which it can because a container is a type with
+  a name rather than an alias for `NamedTuple`. That is the one place where taking the container bought
+  this file something beyond a wider signature.
+
+- **`l2norm` and `solution_scale` on a parameter set are recursive** rather than `map` + `sum` over one
+  level. Over a container the quantities to combine in quadrature are at the *leaves*; combining its
+  layers instead would have handed `l2norm` a whole layer, and every stopping criterion of `solve!` is
+  computed from these.
+
+  The recursion itself allocates nothing, but `l2norm` of a parameter set is *not* allocation-free and
+  this does not make it so: `l2norm(a::AbstractMatrix)` — one of the two pirated methods of **#16**
+  group 1 — is `l2norm(vec(a))`, and `vec` of a `Matrix` allocates the 32-byte reshape wrapper. So a
+  set costs 32 bytes per matrix leaf, before and after. Measured, not assumed; the fix belongs with the
+  upstreaming those two methods are waiting for.
+
+- **`_manifold_αmax` descends a branch** instead of writing it off as "not a `Manifold`". Every
+  top-level value of a container is a *layer*, so without this a container would have got `Inf` — no
+  step ceiling at all — for exactly the parameter shape a network has, and issue A1b would be back for
+  it. A flat `ArrayNamedTuple` never reaches the new method, its values being arrays by construction.
+
+### Known issues
+
+- **Taking the container did not close issue [#16], and the *Known issues* of 0.5.0 said it would.**
+  That entry read "what remains is the swap itself, i.e. the `ArrayNamedTuple` half of **#16**". The
+  swap is here and #16's group 3 is still open, because closing it needs the `NamedTuple` methods
+  *removed* rather than joined by container ones — and they cannot be. `GeometricMachineLearning` hands
+  this package one bare layer `NamedTuple` per layer (`src/optimizers/optimizer.jl:65-87`, through
+  `_use_go_cache`'s `x isa OptimizerSolution` test) and dispatches `_GMLGradient`'s functor on
+  `GeometricOptimizers.ArrayNamedTuple` (`:16`); GMLDatasets' three MNIST scripts pass a flat
+  `NamedTuple` directly. Removing the methods is a coordinated breaking change across three
+  repositories, and it is not this one.
+
+  A method on `ParameterContainer` is therefore piracy for *both* members: `ArrayNamedTuple` is an
+  alias for `Base.NamedTuple`, which is the original complaint, and `NetworkParameters` belongs to
+  `NeuralNetworkParameters`, so a method pairing it with `l2norm`, `outer!` or `copyto!` owns neither
+  side either. The alias' docstring says so.
+
+- **The flat buffers are still allocated per call**, unchanged from 0.5.0 — see that release's entry.
+
+[#16]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16
+
 ## [0.5.0]
 
 **`ParameterHandling` is gone, and the package that owns a network's parameters walks them instead.**
@@ -1844,7 +1942,8 @@ given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review 
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
 the work on A4 and A8, A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and closing A1b, and
 A17, C12 and C13 from the review of [#44], A18, A19, C14 and C15 from the review of [#45] and A20
-from the review of [#46]; the rest from unifying the optimizer hierarchies. A21 is older than any of
+from the review of [#46], and D9 from widening the elementwise primitives to the parameter container
+in 0.6.0; the rest from unifying the optimizer hierarchies. A21 is older than any of
 them — it comes from the MNIST port of [#14] and was catalogued only when that material left the
 repository, which is this section's own case made once more: a finding kept in a file beside the work
 that found it leaves with that work.
@@ -2895,6 +2994,53 @@ downstream package. Failing that, this package can pin the local fallback invent
 exist — so that an upstream docs rebuild cannot break this build again. The second is worth doing
 regardless: relying on a fetched inventory means a docs build that passes today can fail tomorrow with
 no commit here.
+
+#### D9. `NeuralNetworkParameters`' walks are superlinear in the width of one level
+
+**Severity: medium**, and it is a *compile-time* defect rather than a run-time one. Found while
+widening this package's elementwise primitives to the parameter container (0.6.0), when the obvious
+implementation — reuse `NeuralNetworkParameters.mapparameters` — turned out to be unusable on the one
+parameter shape this package has a named consumer for.
+
+Every recursion in that package is an `@inline`d `Base.tail` chain: `_flatten_children!`,
+`_unflatten_children`, `_map_zip`, `_promote_eltypes`. Its own `walk.jl` says why, and the reasons are
+good ones — that is what keeps `flatten!`/`unflatten!` type stable and allocation free, and what keeps
+the walk off Base's `Any32` fallback. The cost is that `k` children at one level inline into one body,
+and inference on that body is superlinear in `k`. `Base.map` has no such cliff, precisely because it
+*does* drop to a loop past 32 fields.
+
+Two shapes with the same number of leaves therefore behave completely differently. Measured with
+`scripts/walk_compile_cost.jl` on this repository's `Project.toml` (NeuralNetworkParameters 0.2.1,
+Julia 1.13), first call including compilation:
+
+| | flat, 369 entries | nested, 16 × 24 = 384 leaves |
+|---|---|---|
+| `parameterlayout` | 0.28 s | 0.19 s |
+| `flatten` | **1666 s** | 2.9 s |
+| `map(zero, ·)` | 0.01 s | — |
+| `mapparameters(zero, ·)` | **> 20 min**, not run to completion | 0.00 s |
+
+369 entries is not a synthetic worst case: it is the parameter set of the MNIST transformer in
+`scripts/geometric_optimizers/mnist.jl` of [GMLDatasets.jl](https://github.com/JuliaGNI/GMLDatasets.jl),
+which is written against this package alone — 3·7·16 attention projections, 2·16 ResNet parameters and
+one classification weight, in one flat `NamedTuple`.
+
+**This is not new in 0.6.0 and no change here caused it.** `GradientAutodiff(F, nt)` calls
+`flatten(nt)`, so any `Optimizer` built on a wide-flat set has been paying the 1666 s since 0.5.0
+adopted `NeuralNetworkParameters` for the flattening. 0.6.0 avoids *adding* to it: `_mapleaves`
+(`src/parameter_walks.jl`) is `map` at each level with recursion on the branches, so the primitives
+cost the flat case what they always did. The two rows that gate that are in the 0.6.0 entry.
+
+**What to do.** Upstream, in `NeuralNetworkParameters`: give the child recursions a width threshold,
+above which they fall back to a loop, the way `Base.map` does — the type stability that matters is at
+the *leaves*, and a wide branch has nothing to inline for. A first cut is to drop the `@inline` on
+`_flatten_children!` and `_unflatten_children` past some `k` and measure the flat-369 row again; the
+allocation-free property of `flatten!` should survive, since the `copyto!` per leaf is unchanged.
+Failing that, the package could document the limit, which is a much weaker answer — a caller cannot
+restructure a network's parameters to suit a walk.
+
+Nothing is needed in this package beyond what 0.6.0 already did, and `scripts/walk_compile_cost.jl`
+is the harness for re-measuring after an upstream fix.
 
 ---
 
