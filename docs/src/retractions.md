@@ -541,8 +541,8 @@ under [What they cost](@ref) shows one representative comparison.
 That ``2n\times{}2n`` matrix function is the whole of what remains, and it is not a formula but a
 numerical problem: which approximation to evaluate, and what to do when the argument is large. The
 [Exponential Algorithms](@ref) page takes it from here — the identity that reduces the exponential to
-``\mathfrak{A}``, the five algorithms that evaluate it, what each of them measures, and how to choose
-between them. Everything from here on is about the retractions as maps rather than as computations.
+``\mathfrak{A}``, the four algorithms that evaluate it and the fifth that sidesteps it, what each of
+them measures, and how to choose between them. Everything from here on is about the retractions as maps rather than as computations.
 
 ## The retractions on the two manifolds
 
