@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased] — targeting 0.6.0
+## [0.6.0]
 
 **A `NetworkParameters` runs through the optimizer.** 0.5.0 made it a member of `OptimizerSolution{T}`,
 which bound `T` at the eleven sites that take the element type from the *type* of the solution and left
@@ -2931,7 +2931,7 @@ That argument is stronger than it was when this entry was written. It used to re
 hand-rolled `@assert keys(ps[1]) == keys(p)`, and `@assert`'s own docstring warns that it "might be
 disabled at various optimization levels"; Base's check is part of how `map` constructs the result and
 cannot be compiled out. `apply_toNT` was
-deleted in [Unreleased](#unreleased--targeting-050), which is where all 30 of its call sites became
+deleted in [0.5.0](#050), which is where all 30 of its call sites became
 `map`.
 
 What is not good about it is that this is the one place in the package that pairs two block
@@ -3092,7 +3092,7 @@ on `CUDABackend()`, and the port of [#14] could not keep that. Found by that por
 above) — this entry is that file's finding restated against current `src/`, not a new measurement.
 
 **This entry loses the sharpest half of its first bullet in
-[Unreleased](#unreleased--targeting-050).** The scalar-indexing fallback it described was
+[0.5.0](#050).** The scalar-indexing fallback it described was
 `ParameterHandling`'s, and that dependency is gone: `NeuralNetworkParameters.flatten!` writes each leaf
 with one `copyto!(v, doffs, x, firstindex(x), n)` over a range the layout already knows, and indexes no
 element, so there is nothing left for a device array to fall through *to*. What is restated below is
@@ -3765,4 +3765,7 @@ and both are corrected: see C8.)
 [0.4.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.0
 [0.4.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.1
 [0.4.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.2
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.4.3...main
+[0.4.3]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.3
+[0.5.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.5.0
+[0.6.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.6.0
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.6.0...main
