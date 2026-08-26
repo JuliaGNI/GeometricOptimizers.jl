@@ -110,7 +110,7 @@ end
 # `Base`'s, `NamedTuple` is `Base`'s and `NetworkParameters` is `NeuralNetworkParameters`', so a method
 # pairing them owned neither side. Those were two of the three surviving sites of issue [#16] group 3,
 # and unlike the third they needed no coordination to remove — every caller in this package and every
-# caller in `GeometricMachineLearning` (`src/optimizers/optimizer.jl:238-250`, six sites) already went
+# caller in `GeometricMachineLearning` (`src/optimizers/optimizer.jl:233-245`, six sites) already went
 # through `_copyto!`, and the two `Base.copyto!` methods existed only to be forwarded to. The
 # signatures are unchanged, so dispatch resolves exactly as it did. The `copyto!` passed to
 # `mapparameters!` is the *leaf* operation and stays `Base`'s: at the bottom of this walk a pair is two

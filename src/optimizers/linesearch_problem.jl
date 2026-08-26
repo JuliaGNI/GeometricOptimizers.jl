@@ -115,8 +115,9 @@ branch-descent method deleted below was written to prevent.
 
 `min` is associative and commutative, so nothing here depends on the fold's direction — where `_dot` and
 [`_sumsq_leaves`](@ref) had to account for upstream's being a *left* fold, this one cannot tell. The
-initial value is `T(Inf)` off `c`, which is where the `Inf` for a set with no manifold in it comes from,
-as it did from the empty-tuple method before.
+initial value is `T(Inf)` off `c`, and what makes a set with no manifold in it come back `Inf` is the
+`_block_αmax(::Any, …)` method below, which every one of its blocks takes; the initial value is what
+answers a set with no blocks at all, as the empty-tuple method did before.
 
 Paired by key rather than positionally, and the widths checked, both in the generator: `δ` tracks the
 solution block by block, but not necessarily as the *same kind* of branch — a container solution can be

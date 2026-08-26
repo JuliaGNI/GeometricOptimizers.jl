@@ -496,9 +496,12 @@ axis whose absence made the first of those possible. Two new *Known issues* came
   dispatch resolves exactly as it did.
 
   These needed no coordination to remove, which is what distinguishes them from the third site. Every
-  caller already went through `_copyto!`: three in this package (`gradient_optimizer.jl:151`,
-  `momentum_optimizer.jl:141`, `scalar_moment_adam_optimizer.jl:234`) and six in
-  `GeometricMachineLearning` (`src/optimizers/optimizer.jl:238-250`) — checked against the working copy
+  caller already went through `_copyto!`. The call sites that reach *these two signatures* — not the
+  package's twenty-odd `_copyto!` calls in total — are three here
+  (`src/manifold_optimizers/gradient_optimizer.jl:151`,
+  `src/manifold_optimizers/momentum_optimizer.jl:141`,
+  `src/manifold_optimizers/scalar_moment_adam_optimizer.jl:234`) and six in
+  `GeometricMachineLearning` (`src/optimizers/optimizer.jl:233-245`) — checked against the working copy
   rather than assumed. The two `Base.copyto!` methods existed only to be forwarded to by the two
   `_copyto!` one-liners that are also gone. `copyto!` is still what is handed to `mapparameters!` as the
   *leaf* operation, and that is not piracy: at the bottom of the walk a pair is two arrays, which is
