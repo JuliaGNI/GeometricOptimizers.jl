@@ -162,6 +162,7 @@ makedocs(;
         "Optimizers" => [
             "Optimization on Homogeneous Spaces" => "manifold_optimizers.md",
             "Retractions" => "retractions.md",
+            "Exponential Algorithms" => "exponential_algorithms.md",
             "Parallel Transport" => "parallel_transport.md",
             "Optimizer Methods" => "optimizer_methods.md",
         ],

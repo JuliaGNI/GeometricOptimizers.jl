@@ -27,8 +27,10 @@ The matrices `Aⁿ` and `𝔄` are initialized as the identity matrix.
 
 !!! warning "Only accurate for a small argument"
     The series converges for every `A`, but cancellation can make direct summation inaccurate for
-    ``\|A\| \gg 1``. This method is therefore intended as a small-argument kernel. It is used by
-    [`ScaledSquaring`](@ref) only after the argument has been divided until its norm is below `θ`.
+    ``\|A\| \gg 1`` — see [`TaylorSeries`](@ref) for what it does at a large argument. This method
+    is therefore intended as a small-argument kernel. It is used by [`ScaledSquaring`](@ref) only
+    after the argument has been divided until its norm is below `θ`. Reach for it directly only if
+    you know the argument is small.
 """)
 function 𝔄(A::AbstractMatrix)
     T = eltype(A)
@@ -54,9 +56,11 @@ end
 The induced 1-norm of `X`, i.e. its largest absolute column sum, as a reduction.
 
 `LinearAlgebra.opnorm(X, 1)` is the natural spelling and is *not* used, because
-`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. The package implementations avoid that
-scalar indexing by expressing the norm as `sum` and `maximum`; accelerator execution still depends
-on the array backend's support for those reductions.
+`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. Scalar indexing is precisely what an array on
+a GPU backend cannot serve, and being free of it is why [`ScaledSquaring`](@ref) and
+[`NativePade`](@ref) have no dense-LAPACK dependency at all — so the one norm they take has to be
+expressible as `sum` and `maximum`. Accelerator execution still depends on the array backend's support
+for those reductions.
 
 The two agree to a few `eps`, not bitwise: `opnorm1` accumulates each column sequentially in at
 least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. The value is only ever
@@ -186,7 +190,8 @@ end
 
 function 𝔄(X::AbstractMatrix, ::AugmentedPade)
     # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so Julia's Padé-based, scaling-and-squaring matrix
-    # exponential returns `𝔄(X)` in the upper-right block.
+    # exponential — the most heavily exercised implementation available — returns `𝔄(X)` in the
+    # upper-right block. Nothing delicate happens here, which is what makes this the reference.
     m = size(X, 1)
     T = eltype(X)
     augmented = [X one(X); zeros(T, m, m) zeros(T, m, m)]
@@ -252,8 +257,9 @@ does.
 
 # Implementation
 
-The default is [`ScaledSquaring`](@ref) rather than the unscaled series because cancellation makes
-the latter unreliable for sufficiently large lifts. Relative error
+The default is [`ScaledSquaring`](@ref) rather than the unscaled series because cancellation makes the
+latter unreliable once ``\|\bar{B}\| \gtrsim 50``, which is not a regime a function that presents
+itself as an exponential may quietly get wrong. Relative error
 against `exp(Matrix(B))` for `B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)`, as
 `test/retractions/exponential_accuracy.jl` draws it:
 

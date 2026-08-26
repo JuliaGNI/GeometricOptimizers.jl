@@ -20,11 +20,35 @@ factorization and reduces the matrix function from ``N\times{}N`` to ``2n\times{
 regular at a singular ``X``.
 
 Four subtypes evaluate that ``2n\times{}2n`` function, while [`ProjectedSkew`](@ref) bypasses it and
-exponentiates the lift in a basis of its range. They compute the same exponential map but differ in
+exponentiates the lift in a basis of its range. They compute the same exponential map — so the
+one-parameter subgroup property [`Geodesic`](@ref) relies on holds for all of them — but differ in
 their approximation kernel, recovery strategy, numerical behaviour, cost, and backend requirements.
-[`ScaledSquaring`](@ref) is the default; [`NativePade`](@ref) provides a direct rational alternative;
-and [`TaylorSeries`](@ref) is retained as a regression baseline rather than for normal use.
-[`AugmentedPade`](@ref) is a dense-CPU reference implementation, not a normal algorithm choice.
+On a random `StiefelLieAlgHorMatrix(20, 3)` scaled to ``\|\bar{B}\| = 361``, against the cost of one
+retraction at ``N = 200``, ``n = 10``:
+
+| | `check` | forward error | cost | backend |
+|---|---|---|---|---|
+| [`ScaledSquaring`](@ref) | `3.6e-14` | `2.0e-14` | `0.087 ms` | matrix products and reductions |
+| [`NativePade`](@ref) | `3.9e-14` | `2.1e-14` | `0.091 ms` | matrix products and reductions |
+| [`AugmentedPade`](@ref) | `3.0e-14` | `1.9e-14` | `0.120 ms` | CPU (dense LAPACK) |
+| [`ProjectedSkew`](@ref) | `5.1e-15` | `3.1e-14` | `0.130 ms` | CPU (dense LAPACK) |
+| [`TaylorSeries`](@ref) | `1.4e168` | — | `0.149 ms` | matrix products and reductions |
+
+"Forward error" is the relative distance to `exp(Matrix(B))`; both it and `check` come from the same
+lift, so the columns are comparable row by row. The `cost` column is one whole retraction, most of
+which is the ``N\times{}N`` assembly they share; the ``\mathfrak{A}`` call on its own, which is what
+actually separates the three algorithms that evaluate it, is `0.021 ms` and `201 KiB` for
+[`ScaledSquaring`](@ref), `0.037 ms` and `330 KiB` for [`NativePade`](@ref), and `0.053 ms` and
+`114 KiB` for [`AugmentedPade`](@ref). The `backend` column says what the algorithm *needs*: whether
+one of the first three runs on a given accelerator depends on that backend's support for matrix
+products and reductions.
+
+[`ScaledSquaring`](@ref) is the default because it is the cheapest algorithm with no dense-LAPACK
+dependency. [`NativePade`](@ref) is the independent direct cross-check, [`ProjectedSkew`](@ref) if
+`check` matters more than the last digit of the exponential, and [`AugmentedPade`](@ref) the
+dense-CPU reference that delegates its numerics to `Base.exp`. [`TaylorSeries`](@ref) is the
+pre-0.2.0 behaviour and is retained only so the regression is reproducible; it is not a usable
+retraction.
 
 A new one has to supply `𝔄(X::AbstractMatrix, ::NewAlgorithm)`; `geodesic` and everything above it
 then follow. An algorithm that does not go through ``\mathfrak{A}`` at all — [`ProjectedSkew`](@ref)
@@ -79,11 +103,27 @@ The factor ``1/α`` follows from the scaled-exponential identity; the recurrence
 of two per iteration without assembling a dense ``N\times{}N`` exponential, square, or solve.
 
 `θ` is the norm threshold for the Taylor kernel. Smaller values use more scaling steps; larger
-values evaluate the series at a larger argument. The default is `0.5`.
+values evaluate the series at a larger argument. The default is `0.5`, and it needs no tuning: at
+``\|\bar{B}\| \approx 155`` every ``θ \in [0.125, 4]`` — a 32-fold range — gives a `check` between
+`9.9e-15` and `5.0e-14` and a forward error between `6.4e-15` and `8.3e-15`, and neither column is
+monotone in `θ`. Nothing in that measurement singles out `0.5`; no value in the range does
+appreciably better. Unlike [`NativePade`](@ref)'s, this threshold is a preference and not a ceiling,
+because the inner series is summed until its terms vanish rather than for a fixed number of steps.
+
+It is also the cheapest algorithm here: the isolated ``\mathfrak{A}`` call at ``N = 200``, ``n = 10``
+is `0.021 ms` and `201 KiB` against [`NativePade`](@ref)'s `0.037 ms` and `330 KiB` and
+[`AugmentedPade`](@ref)'s `0.053 ms` and `114 KiB`, and it is `1.7×` faster than
+[`TaylorSeries`](@ref) at that size and `4.6×` at ``N = 500``, ``n = 50``, because the scaled series
+converges in a handful of terms where the unscaled one grinds through hundreds. Its `check` does
+drift upwards with the size of the lift, from `5e-16` to about `8e-14` over the documented sweep,
+because its orthogonality is an arithmetic outcome rather than a structural property; only
+[`ProjectedSkew`](@ref) avoids that.
 
 The implementation uses matrix products and reductions and avoids scalar indexing in package code.
-The identities come from [`GeometricOptimizers.unit_matrix`](@ref), and the norm from
-[`GeometricOptimizers.opnorm₁`](@ref). Accelerator execution depends on the backend's support for
+The identities come from [`GeometricOptimizers.unit_matrix`](@ref) rather than from `Base.one`, whose
+diagonal write is a scalar-indexing hazard, and the norm from
+[`GeometricOptimizers.opnorm₁`](@ref) rather than from `LinearAlgebra.opnorm(X, 1)`, whose
+`opnorm1` is a double loop over `X[i, j]`. Accelerator execution depends on the backend's support for
 those matrix operations.
 
 !!! note "The argument is worse-conditioned than the lift"
@@ -196,9 +236,22 @@ norm below one. Here scaling makes ``Z_0=I`` sufficient. The implementation comp
 ``W=Z_5p_6(Y)/2^s`` and applies ``W\mapsto2W+WXW`` exactly ``s`` times. This is the same low-rank
 modified-squaring recovery as [`ScaledSquaring`](@ref); no matrix larger than the input is formed.
 
-The degree, threshold, and fixed five Newton--Schulz refinements are paired deliberately. The
-constructor requires ``0 < \theta \leq 1/2`` so the inverse iteration remains in its validated
-convergence regime. Lowering the threshold is safe and adds modified-squaring steps.
+The degree, threshold, and fixed five Newton--Schulz refinements are paired deliberately, and unlike
+[`ScaledSquaring`](@ref)'s, `0.5` here is a **ceiling** and not a preference. The refinement count is
+fixed, so past ``\theta \approx 1`` the inverse it computes stops being one, and it fails *silently*
+— nothing in the result says so. Worst relative error against [`AugmentedPade`](@ref) over 400 random
+``6\times6`` arguments of one-norm exactly ``\theta``:
+
+| ``\theta`` | 1/2 | 1 | 3/2 | 2 | 3 |
+|---|---|---|---|---|---|
+| relative error | `5.8e-16` | `6.4e-16` | `1.5e-10` | `1.1e-5` | `242` |
+
+The two rightmost entries are the worst of a random draw and move by a factor of a few between
+seeds; their magnitudes do not, and the magnitudes are the point.
+
+The constructor therefore requires ``0 < \theta \leq 1/2``, where [`ScaledSquaring`](@ref) accepts any
+positive value: the two thresholds are not interchangeable. Lowering this one is safe and merely adds
+modified-squaring steps, which is why it is a parameter at all.
 
 The Padé coefficients and Newton--Schulz iteration are standard
 [higham2005scaling, higham2008functions, schulz1933iterative](@cite). What is assembled here is the pairing: a
@@ -218,7 +271,17 @@ and low-rank modified squaring.
 
 Like [`ScaledSquaring`](@ref), this uses package-defined identities and norms, reductions, and matrix
 products, and avoids scalar indexing in package code. Accelerator execution depends on the backend's
-support for those operations. [`AugmentedPade`](@ref) remains the dense-CPU reference.
+support for those operations, which is what makes it the independent cross-check available where
+[`AugmentedPade`](@ref) — still the dense-CPU reference — is not.
+
+It is that cross-check rather than the default, and three measurements say why. Its fixed rational
+evaluation is `0.037 ms` against `0.021 ms` for [`ScaledSquaring`](@ref) on the isolated
+``\mathfrak{A}`` call at ``N = 200``, ``n = 10``. It allocates `330 KiB` there against `201 KiB` —
+`1.6×`, and an allocation count is the figure least likely to stay a constant factor on a backend
+where allocating can cost a synchronisation. And in `Float32` its `check` is the worst of the three at
+the top of the norm sweep, `1.0e-4` against `4.0e-5` and `4.1e-5`; the forward error is *not* —
+`1.2e-5` against `1.1e-5` and `9.3e-6` — so what degrades is the orthogonality of the retracted point,
+not the agreement with the exponential.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the comparison.
 """
@@ -227,10 +290,10 @@ struct NativePade{T<:Real} <: AbstractExponentialAlgorithm
 
     # The upper bound is not decoration. `𝔄(X, ::NativePade)` runs a *fixed* five Newton--Schulz
     # steps, and their residual `(𝕀 - q₆)³²` is below round-off only while `θ` is small: measured
-    # worst relative error is `6e-16` at `θ = 1`, `1.2e-10` at `θ = 3/2`, `1.1e-5` at `θ = 2` and
-    # `169` at `θ = 3`, with nothing raised. `ScaledSquaring` takes any positive `θ` because it sums
+    # worst relative error is `6e-16` at `θ = 1`, `1.5e-10` at `θ = 3/2`, `1.1e-5` at `θ = 2` and
+    # `242` at `θ = 3`, with nothing raised. `ScaledSquaring` takes any positive `θ` because it sums
     # its series until the terms vanish; this one does a fixed amount of work, so it has to refuse.
-    # The docstring above has the table and the norm bound behind `1/2`.
+    # The docstring above tabulates those four numbers and derives the norm bound behind `1/2`.
     function NativePade(θ::T = 0.5) where {T<:Real}
         @assert zero(T) < θ ≤ 1 // 2 "the scaling threshold has to be in (0, 1/2], got $(θ)"
         new{T}(θ)
@@ -256,9 +319,17 @@ scaling-and-squaring algorithm [higham2005scaling, almohy2010new](@cite), at the
 exponentiating a matrix four times the size and discarding three quarters of it. This is the package
 algorithm corresponding directly to the conventional Padé description of scaling and squaring.
 
-Its value is that it introduces no package-specific approximation. Its disadvantages are substantial
-for normal use: it exponentiates a matrix four times the size needed by the direct methods, discards
-three quarters of the result, and requires dense LAPACK.
+Its value is that it introduces no package-specific approximation: it is the reference the other
+algorithms are tested against in `test/retractions/exponential_accuracy.jl`, and its accuracy is the
+same order as [`ScaledSquaring`](@ref)'s — `3.0e-14` `check` and `1.9e-14` forward error at
+``\|\bar{B}\| = 361``. It is also, unexpectedly, the lightest allocator of the three algorithms that
+evaluate ``\mathfrak{A}``, at `114 KiB` against `201 KiB` and `330 KiB`, because `Base.exp` reuses
+buffers where the two native algorithms build a fresh ``2n\times{}2n`` temporary per operation.
+
+Its disadvantages are substantial for normal use: it exponentiates a matrix four times the size needed
+by the direct methods and discards three quarters of the result, which costs about `2.5×`
+[`ScaledSquaring`](@ref)'s ``\mathfrak{A}`` call — `0.053 ms` against `0.021 ms`, though much less
+than that once the ``N\times{}N`` assembly is counted — and it requires dense LAPACK.
 
 !!! warning "CPU only"
     `Base.exp` on a dense matrix needs LAPACK. [`ScaledSquaring`](@ref) and [`NativePade`](@ref)
@@ -285,9 +356,19 @@ and ``\exp(M)`` is formed from an eigendecomposition: ``iM`` is Hermitian for re
 ``M = -iV\Lambda{}V^*`` and ``\exp(M) = \Re\left(V e^{-i\Lambda} V^*\right)``, which is orthogonal by
 construction rather than by cancellation.
 
-The construction tends to preserve orthogonality well because it exponentiates a skew-symmetric
-matrix in an orthonormal basis. The trade-offs are the QR factorization and eigendecomposition, a
-somewhat larger forward error in the documented benchmark sweep, and dependence on dense LAPACK.
+This is the only algorithm whose `check` does not degrade with the size of the lift: it stays between
+`2.2e-15` and `5.1e-15` from ``\|\bar{B}\| = 5.8`` to ``\|\bar{B}\| = 767``, where the other four
+drift from `5e-16` to `8e-14`. Orthogonality is structural here — it comes from the eigenvector
+matrix, not from the accuracy of a series — and the gap is widest in `Float32`, where the others climb
+into the ``10^{-5}``s while this stays between `1.2e-6` and `3.1e-6` from one end of the sweep to the
+other.
+
+The trade is the forward error against `exp(Matrix(B))`, which is the largest of the four at all but
+the very largest lifts and up to about `4.3×` [`ScaledSquaring`](@ref)'s, and a QR plus an
+eigendecomposition instead of matrix products, costing `1.1×`–`1.6×` one whole retraction over the
+sizes measured. Choose it when staying on the manifold matters more than agreeing with the exponential
+to the last bit — a long `Float32` run, for instance, where `check` accumulates over thousands of
+steps.
 
 !!! warning "CPU only"
     `qr` and `eigen` on a dense matrix need LAPACK. [`ScaledSquaring`](@ref) and
@@ -301,12 +382,32 @@ struct ProjectedSkew <: AbstractExponentialAlgorithm end
 @doc raw"""
     TaylorSeries <: AbstractExponentialAlgorithm
 
-Sum the series for ``\mathfrak{A}`` directly, without scaling.
+Sum the series for ``\mathfrak{A}`` directly, without scaling. **This is not a usable retraction.**
 
-This is the pre-0.2.0 implementation and is retained as a regression baseline. For the non-normal
-reduced matrices produced by [`lift_factors`](@ref), large intermediate terms can cancel and destroy
-accuracy even though the series converges mathematically. Use [`ScaledSquaring`](@ref) for normal
-operation.
+It is the behaviour of every version of this package up to 0.2.0, retained only so that the regression
+is reproducible from the test suite and so the working algorithms have a baseline to be compared
+against. The series is summed on ``X = (B'')^TB'``, formed from the factors
+[`lift_factors`](@ref) returns, and that reduced matrix is strongly non-normal: its norm is
+``\approx\|\bar{B}\|^2/4`` where its spectral radius is only ``\approx\|\bar{B}\|``. On such an
+argument the terms cancel — the partial sum reaches ``2.5\cdot10^{18}`` where the result is of order
+one — so stopping when a *term* falls below `eps` leaves a relative error of
+``\varepsilon\|\mathfrak{A}(X)\|`` rather than ``\varepsilon``.
+`check(geodesic(B, TaylorSeries()))`, on a random `StiefelLieAlgHorMatrix(20, 3)` scaled up:
+
+| ``\|\bar{B}\|`` | 0.66 | 5.8 | 17.8 | 36.5 | 78.8 | 160 | 361 | 767 |
+|---|---|---|---|---|---|---|---|---|
+| `check` | `4.5e-16` | `2.1e-15` | `2.6e-12` | `4.4e-7` | `8.3e10` | `4.2e55` | `1.4e168` | `NaN` |
+
+At ``\|\bar{B}\| = 79`` the "retracted" point is not on the Stiefel manifold in any sense, and by
+``767`` the series has overflowed. The failure is *silent*: nothing reports that the result is off the
+manifold, which is why the defect survived until [`check`](@ref) was made generic over
+[`Manifold`](@ref). And making the termination test relative to the partial sum instead of absolute
+was measured to change none of the numbers above — the loss is in the cancellation, not in when the
+summation stops.
+
+Use [`ScaledSquaring`](@ref), which fixes this and is also the cheaper of the two — `1.7×` at
+``N = 200``, ``n = 10`` and `4.6×` at ``N = 500``, ``n = 50``, because the scaled series converges in
+a handful of terms where the unscaled one grinds through hundreds.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the alternatives.
 """

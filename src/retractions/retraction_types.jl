@@ -44,8 +44,10 @@ the manifold to round-off. [`cayley`](@ref) never forms the ``N\times{}N`` inver
     | `Cayley` | `0.004 ms` | `0.016 ms` | `0.056 ms` | `0.36 ms` | `4.9 ms` | `39 ms` |
 
     The two are comparable at the smaller sizes in this table, while the dense product in `Cayley`
-    dominates at larger `N`. Timings are machine-dependent; see the Retractions guide for the
-    benchmark setup.
+    dominates at larger `N` — a factor of 15 by ``N = 1000``. Timings are machine-dependent; see
+    [What they cost](@ref) for the setup and the full table. `Cayley` remains useful — it is
+    unconditionally stable and needs no matrix function at all — but cost is no longer a reason to
+    prefer it.
 
 # Examples
 
@@ -90,8 +92,9 @@ one-parameter subgroup: it follows the geodesic through the point in the directi
 is the property [`Cayley`](@ref) lacks, and the reason a derivative-based line search is exact here.
 
 [`geodesic`](@ref) exploits the sparsity of a horizontal lift rather than exponentiating the full
-``N\times{}N`` matrix: the only matrix function it evaluates is on a ``2n\times{}2n`` argument. This
-can make it cheaper than [`Cayley`](@ref) when ``N`` is large relative to ``n``.
+``N\times{}N`` matrix: the only matrix function it evaluates is on a ``2n\times{}2n`` argument. Since
+0.2.0 that also makes it the cheaper of the two for ``N \gtrsim 50`` — see the note on
+[`Cayley`](@ref).
 
 `algorithm` selects how the exponential is evaluated. All of them compute the same map — the choice
 is one of accuracy at a large lift, cost, and backend support — and the default
@@ -130,7 +133,8 @@ check(Geodesic()(B)) < 1e-12, check(Geodesic(TaylorSeries())(B)) < 1e-12
 (true, false)
 ```
 
-See [`geodesic`](@ref) for the implementation and [`Cayley`](@ref) for the rational alternative.
+See [`geodesic`](@ref) for the implementation and [`Cayley`](@ref) for the rational alternative, and
+[Exponential Algorithms](@ref) for the choice of `algorithm`.
 """
 struct Geodesic{AT<:AbstractExponentialAlgorithm} <: AbstractRetraction
     algorithm::AT
