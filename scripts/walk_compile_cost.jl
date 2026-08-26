@@ -69,23 +69,45 @@
 # `NamedTuple` away at the door, because `ArrayNamedTuple{T}` is flat by construction and a nested
 # bare set is not an `OptimizerSolution`. Those cells are the claim, so they are reported.
 #
-# ## The third axis is the Julia version, and one row swings 50× across it
+# ## The third axis is the Julia version, and one row used to swing 50× across it
 #
-# **Run this on all three supported versions.** Nothing here is version-independent and three rows are
-# wildly not: the folds this package writes for itself — `l2norm`, `solution_scale`, `_dot` — cost about
-# 0.65, 0.65 and 1.47 s at flat 369 on 1.11.9, **26, 26 and 57 s** on 1.12.7 and **35, 35 and 71 s** on
-# 1.13.0-rc3, while the *nested* set of the same leaf count costs 0.2–1.4 s on every one of them. It is
-# the width of one branch, 1.11 is the only version that is cheap, and it is a *Known issue* of 0.6.0
-# rather than anything this script can fix. Everything else — including `parameterlayout` and `flatten`,
-# which is the pair the two-column sweep exists for — agrees across versions to within the spread of a
-# single cold measurement.
+# **Run this on all three supported versions**, and this is the row that made that necessary rather than
+# merely thorough. The four folds over a parameter set — `l2norm`, `solution_scale`, `_dot`, `αmax` —
+# were `Base.tail` recursions this package wrote for itself, because upstream's `foldparameters` walked
+# one tree. At flat 369 the first three cost about 0.65, 0.65 and 1.47 s on 1.11.9 and **26, 26 and
+# 57 s** on 1.12.7 and **35, 35 and 71 s** on 1.13.0-rc3, while the *nested* set of the same leaf count
+# cost 0.2–1.4 s on every one of them. That was issue #70: the width of one branch, with 1.11 the only
+# version that was cheap.
+#
+# `NeuralNetworkParameters` 0.2.4 added the zipped fold and all four are upstream's now. Measured, flat
+# 369, seconds, and the columns agree — which is the point:
+#
+#   |                | 1.11.9 | 1.12.7 | 1.13.0-rc3 |
+#   |----------------|--------|--------|------------|
+#   | l2norm         |  0.87  |  1.27  |    0.95    |
+#   | solution_scale |  0.50  |  0.48  |    0.52    |
+#   | _dot           |  1.71  |  2.04  |    1.59    |
+#   | αmax           |  0.03  |  0.03  |    0.03    |
+#
+# Note what did *not* improve: on 1.11 the generated fold is a shade dearer than the recursion it
+# replaced, 0.87 against 0.69 for `l2norm` and 1.71 against 1.47 for `_dot`. That is the trade, and it
+# is worth stating rather than rounding away — a third of a second on the version that was already cheap,
+# against two orders of magnitude on the two that were not.
+#
+# Everything else — including `parameterlayout` and `flatten`, which is the pair the two-column sweep
+# exists for — agrees across versions to within the spread of a single cold measurement.
+#
+# One practical note on running it across versions: `Manifest.toml` is not tracked and there are no
+# per-version manifests, so `Pkg.instantiate()` under a different Julia will *install what is pinned*
+# rather than re-resolve, and a manifest resolved on 1.13 does not load on 1.11 (`PrecompileTools`
+# fails with `UndefVarError: StaticData`). Delete the manifest before switching down.
 #
 # And read the load average before believing a figure. Process-per-cell isolates compilation, not the
 # machine: see the note above `cache_construction` for a run where one cell drove the box into swap and
 # the next three cells' figures were nonsense that did not reproduce.
 
 using GeometricOptimizers
-using GeometricOptimizers: _dot, _zero, _copy, _similar, l2norm, solution_scale
+using GeometricOptimizers: _dot, _zero, _copy, _similar, l2norm, solution_scale, _manifold_αmax
 using NeuralNetworkParameters
 using NeuralNetworkParameters: mapparameters, parameterlayout
 
@@ -161,13 +183,19 @@ function table(name, ps)
     # The walk itself, underneath those four.
     row("mapparameters(zero)", "", x -> mapparameters(zero, x), ps)
     row("mapparameters(copy)", "", x -> mapparameters(copy, x), ps)
-    # The three folds this package writes for itself, because `NeuralNetworkParameters` has no *zipped*
-    # fold and `foldparameters` walks one tree. They are `Base.tail` recursions, which is the shape
-    # open issue D9 was about — so they are measured here rather than assumed cheap. What keeps them
-    # cheap, and made `mapparameters` expensive before 0.2.2, is the `@inline`: these carry none.
+    # The four folds over a parameter set, which are `NeuralNetworkParameters`' zipped `foldparameters`
+    # and `foldstorage` as of 0.2.4. Until then this package wrote them itself, as `Base.tail`
+    # recursions, because upstream's fold walked one tree — and those cost 26 to 71 s to compile at flat
+    # 369 on Julia 1.12 and 1.13 against 0.65 to 1.47 s on 1.11.9, which is issue #70 and the reason
+    # these rows exist. They are still measured rather than assumed cheap, because that is the whole
+    # lesson: the rows that swung 50× across the version axis are these.
+    #
+    # `αmax` is here because it was the *fourth* such fold and #70's own count said three. It is also
+    # the only one on the per-iteration path, through `linesearch_parameters`.
     row("l2norm", "", l2norm, ps)
     row("solution_scale", "", solution_scale, ps)
-    row("_dot(·, ·)", _NOT_A_SOLUTION, (a, b) -> _dot(a, b), ps, ps)
+    row("_dot(·, ·)", "", (a, b) -> _dot(a, b), ps, ps)
+    row("αmax", "", (a, b) -> _manifold_αmax(a, b, one(T)), ps, ps)
     # The layout, and then the flattening that builds one. This pair is D21's, and the two columns of
     # the sweep are expected to agree on it.
     row("parameterlayout", "", parameterlayout, ps)

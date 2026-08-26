@@ -34,14 +34,32 @@ first_moment(cache::AdamCache) = cache.m₁
 second_moment(cache::AdamCache) = cache.m₂
 _second_moment(cache::AdamCache) = cache.m̃₂
 
+# The `new` in a body of its own, reached with every member already computed and passed in, so that
+# this frame infers from its *own signature* rather than through the tree that built them.
+#
+# This is not tidiness. Building an `OptimizerCache(Adam, ps)` for a 16 × 24 nested container cost
+# about 88 s on Julia 1.11.9, and `scripts/adam_cache_attribution.jl` put **81.49 s of it in the
+# four-argument constructor's body** — while every piece that body calls is under a second and a half
+# (`_zero` 1.21, `_fill!` 0.38, `_similar` 0.89, `_copy` 0.54, `GlobalSection(_copy(x))` 0.87) and
+# `parameterlayout` and `flatten` measured after all of them are 2.33 s of the 81, under 3 %. Nothing in
+# it is expensive; composing them in one inferred body was, and a ten-field `new` with four large type
+# parameters at the end of that body is the composition. On 1.13 the same body is 3.54 s — 23× cheaper —
+# with every individual piece *dearer*, which is what says it is inference and not work.
+#
+# Splitting rather than annotating, and that choice is evidence-led: the one adjacent thing already
+# tried is open issue D1's `@noinline`, which did nothing there, whereas D1's other control — flattening
+# the nesting so each frame infers from its signature — took 940 s to 6.53 s. This is that control
+# applied here. See the changelog for what it measured.
+@noinline function _adam_cache(x::OptimizerSolution{T}, g::VT, δ::VT, Δg::VT, g̃::VT,
+    m₁::VT, m₂::VT, m̃₂::VT, sec::ST) where {T,VT,ST}
+    AdamCache{T,typeof(x),VT,ST}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, m̃₂, sec)
+end
+
 function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    m₁ = _similar(g)
-    m₂ = _similar(g)
-    m̃₂ = _similar(g)
-    AdamCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, m̃₂, sec)
+    _adam_cache(x, g, δ, Δg, g̃, _similar(g), _similar(g), _similar(g), sec)
 end
 
 function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}

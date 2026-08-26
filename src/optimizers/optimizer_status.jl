@@ -160,10 +160,10 @@ the other.
 """
 solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
-# Recursive, and not `map` + `sum` over one level: a container is a tree of layers, so the scales to
-# combine are at its *leaves*. `map` would hand `solution_scale` a whole layer, for which there is no
-# method. See [`ParameterContainer`](@ref). The recursion is `Base.tail` for the reason
-# [`_manifold_αmax`](@ref) gives -- a heterogeneous set stays inferable -- and it allocates nothing.
+# A fold over the leaves, and not `map` + `sum` over one level: a container is a tree of layers, so the
+# scales to combine are at its *leaves*. `map` would hand `solution_scale` a whole layer, for which
+# there is no method. See [`ParameterContainer`](@ref). [`_sumsq_leaves`](@ref) is
+# `NeuralNetworkParameters.foldparameters`, which reaches a leaf at any depth and allocates nothing.
 # `ParameterSet` and not [`ParameterContainer`](@ref): [`_sumsq_leaves`](@ref) recurses, so the nested
 # plain `NamedTuple` costs nothing to cover, and leaving it out cost something. `GeometricBase.l2norm`
 # is variadic, so an uncovered `NamedTuple` did not raise a `MethodError` naming `l2norm` — it was
@@ -178,7 +178,13 @@ solution_scale(ps::ParameterSet) = √_sumsq_leaves(solution_scale, ps)
 # `GrassmannLieAlgHorMatrix` used to get, silently, in `step_αmax`, `curvature_is_usable`, `rxₐ` and
 # `rg`. Written out for `StiefelLieAlgHorMatrix` this is `√(l2norm(a.A)^2 + l2norm(a.B)^2)`, which is
 # what it was.
-l2norm(a::AbstractLieAlgHorMatrix) = √sum(abs2 ∘ l2norm, parent(a))
+#
+# `_sumsq_leaves` over the blocks and not `sum(abs2 ∘ l2norm, ·)`, which is what stood here. At one or
+# two blocks the two are the same arithmetic — `sum` over a 2-tuple is one `+` — so this buys nothing
+# and is not meant to: it makes every quadrature sum in the package the same fold, which is worth more
+# than keeping the last `sum` over a heterogeneous tuple. `parent(a)` and not `a`: `foldparameters`
+# treats a lift as a *leaf*, so passing the lift itself would call this method on it again, forever.
+l2norm(a::AbstractLieAlgHorMatrix) = √_sumsq_leaves(l2norm, parent(a))
 
 # The same over the free parameters, for the same reason, for the four types that keep theirs in one
 # vector. The `AbstractMatrix` fallback below happens to agree, `vec` on a [`VectorStorageMatrix`](@ref)
@@ -207,8 +213,8 @@ l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 #
 # The block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them (which
 # this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby every stopping
-# criterion computed from it. Recursive rather than `map` + `sum` for the reason `solution_scale` gives
-# above, and allocation-free with it.
+# criterion computed from it. A fold over the leaves rather than `map` + `sum` for the reason
+# `solution_scale` gives above, and allocation-free with it.
 l2norm(a::ParameterSet) = √_sumsq_leaves(l2norm, a)
 
 @doc raw"""
@@ -225,25 +231,43 @@ point at, and `docs/src/api.md` renders every docstring here.)
 
 # Implementation
 
-Recursive over the values rather than `map` + `sum` over one level, because a container is a tree of
-layers and the quantities to combine are at its *leaves* — `map` would hand `f` a whole layer, for
-which neither of them has a method. `Base.tail` for the reason [`_manifold_αmax`](@ref) gives, that a
-heterogeneous set stays inferable, and it allocates nothing.
+`NeuralNetworkParameters.foldparameters` and not `map` + `sum` over one level, because a container is a
+tree of layers and the quantities to combine are at its *leaves* — `map` would hand `f` a whole layer,
+for which neither of them has a method. `foldparameters` recurses on the branches and so reaches a leaf
+at any depth, and it allocates nothing.
 
-`false` and not `zero(T)` for the empty case: there is no `T` in scope, and `false` is the strong zero
-that takes its type from whatever it is added to, so a one-block set adds it to that block's value and
-stays a `T`.
+`foldparameters` and emphatically not `foldstorage`, which is the pairing `_dot` wants and would be
+wrong here. `foldstorage` descends past a leaf into the numbers it stores, and
+[`solution_scale`](@ref)`(Y::Manifold)` is `√size(Y, 2)` — a *nominal* value that has nothing to do with
+those numbers. It is the one leaf method whose answer would change; `l2norm` of a lift or of a
+[`VectorStorageMatrix`](@ref) is over the free parameters either way, so those two agree by coincidence
+rather than by this choice.
 
-`f` is annotated `::F where {F}` throughout, which is not decoration. Two of the four methods only
-*pass it along*, and Julia does not specialise on a function argument it never sees called -- so
-without the annotation `f` arrives boxed and each leaf costs a dynamic dispatch. Measured: 128 bytes
-against 64 on the mixed set of `test/flat_buffer_allocations.jl`, which is the test that caught it.
+Four methods of a `Base.tail` recursion stood here until this release, and they are the subject of issue
+#70: a branch of `k` children yields `k` specialisations whose argument types are each `O(k)` long,
+which cost 26 s to compile at `k = 369` on Julia 1.12 and 35 s on 1.13. Upstream's fold is one
+`@generated` body at literal indices and has no such shape. See the changelog.
+
+`false` and not `zero(T)` for the initial value: there is no `T` in scope, and `false` is the strong
+zero that takes its type from whatever it is added to, so a one-block set adds it to that block's value
+and stays a `T`. Note that upstream's fold is a **left** fold where the recursion it replaces was a
+right one, so on a *mixed-precision* set the accumulator now takes its type from the first leaf in
+`flatten` order rather than the last. Both are arbitrary, and neither is a promotion over the whole set;
+`_dot` has a `T` to accumulate in and does. The reason not to write `zero(parameter_eltype(x))` here is
+that it would put upstream's `_promote_eltypes` generated body on this path, per branch shape, which is
+a compile cost on the very walk #70 was about.
+
+`f` is annotated `::F where {F}`, which is now belt and braces rather than load-bearing. It used to be
+the latter: two of the four methods only *passed `f` along*, and Julia does not specialise on a function
+argument it never sees called, so without the annotation `f` arrived boxed and each leaf cost a dynamic
+dispatch — 128 bytes against 64 on the mixed set of `test/flat_buffer_allocations.jl`, which is the test
+that caught it. The single method below closes over `f` instead, and a closure is a `new`, which counts
+as a use, so measured the annotation changes nothing on any shape. It is kept because the obligation it
+discharges is real for whoever hands an `op` on: upstream's `foldparameters` docstring says so, and its
+own `op` slot does de-specialise -- costing nothing only because it is `@inline` and folds into this
+body, where the closure's type is a constant.
 """
-_sumsq_leaves(f::F, x::ParameterSet) where {F} = _sumsq_leaves(f, values(x))
-_sumsq_leaves(::Any, ::Tuple{}) = false
-_sumsq_leaves(f::F, t::Tuple) where {F} =
-    _sumsq_leaves(f, first(t)) + _sumsq_leaves(f, Base.tail(t))
-_sumsq_leaves(f::F, x) where {F} = abs2(f(x))
+_sumsq_leaves(f::F, x) where {F} = foldparameters((acc, y) -> acc + abs2(f(y)), false, x)
 
 @doc raw"""
     contains_nonfinite(a)

@@ -145,11 +145,11 @@ end
     flat_ps = flat_parameters(T)
     flat_δ = _fill!(_zero(flat_ps), T(0.1))
 
-    αmax = _manifold_αmax(values(ps), values(params(δ)), one(T))
+    αmax = _manifold_αmax(ps, δ, one(T))
     @test isfinite(αmax)
     @test αmax > zero(T)
     # the same ceiling the flat shape gets, which is the statement that nesting changes nothing
-    @test αmax ≈ _manifold_αmax(values(flat_ps), values(flat_δ), one(T))
+    @test αmax ≈ _manifold_αmax(flat_ps, flat_δ, one(T))
 end
 
 # The property the whole exercise is about, for every algorithm, retraction and element type.

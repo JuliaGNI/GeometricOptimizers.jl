@@ -77,7 +77,7 @@ function step_αmax(c::T, δ) where {T}
 end
 
 @doc raw"""
-    _manifold_αmax(solution_blocks, direction_blocks, c)
+    _manifold_αmax(solution, direction, c)
 
 The ceiling a step ceiling of `c` imposes on a solution made of several blocks: the smallest of the
 per-block [`step_αmax`](@ref) over the blocks that live on a [`Manifold`](@ref), and `Inf` where none
@@ -100,30 +100,35 @@ what this closes.
 
 # Implementation
 
-Recursive over the two tuples rather than a loop over `zip`, so that a *heterogeneous* `NamedTuple`
-— a `StiefelManifold` beside a `Matrix` beside a `Vector` — stays inferable and the returned
-parameters stay concrete.
-"""
-_manifold_αmax(::Tuple{}, ::Tuple{}, c::T) where {T} = T(Inf)
+`NeuralNetworkParameters.foldparameters` over the two trees in lockstep, which is what makes a
+*heterogeneous* `NamedTuple` — a `StiefelManifold` beside a `Matrix` beside a `Vector` — stay inferable
+and the returned parameters stay concrete. A `Base.tail` recursion over the two `values` tuples stood
+here until this release, and it was the fourth of the folds issue #70 is about: a branch of `k` children
+yields `k` specialisations whose argument types are each `O(k)` long, twice over for a zipped fold, and
+at `k = 369` that does not finish inside a minute on Julia 1.12. Unlike the other three this one is on
+the *per-iteration* path, through [`linesearch_parameters`](@ref).
 
-_manifold_αmax(ys::Tuple, δs::Tuple, c) =
-    min(_block_αmax(first(ys), first(δs), c), _manifold_αmax(Base.tail(ys), Base.tail(δs), c))
+`foldparameters` and not `foldstorage`: `_block_αmax` dispatches on the *whole* leaf, a `Manifold` being
+the only kind that imposes a ceiling at all, so descending into the numbers a leaf stores would turn
+every manifold block into an ordinary array and give back `Inf`. That is issue A1b, which is what the
+branch-descent method deleted below was written to prevent.
+
+`min` is associative and commutative, so nothing here depends on the fold's direction — where `_dot` and
+[`_sumsq_leaves`](@ref) had to account for upstream's being a *left* fold, this one cannot tell. The
+initial value is `T(Inf)` off `c`, which is where the `Inf` for a set with no manifold in it comes from,
+as it did from the empty-tuple method before.
+
+Paired by key rather than positionally, and the widths checked, both in the generator: `δ` tracks the
+solution block by block, but not necessarily as the *same kind* of branch — a container solution can be
+paired with the plain `NamedTuple` its `GlobalSection` tree is built as, which upstream's walk
+normalises. Two local normalisers stood here for that, `_as_blocks` and then `_as_walkable`, and then a
+pair of `values` calls; all are gone.
+"""
+_manifold_αmax(y, δ, c::T) where {T} =
+    foldparameters((acc, yᵢ, δᵢ) -> min(acc, _block_αmax(yᵢ, δᵢ, c)), T(Inf), y, δ)
 
 _block_αmax(::Manifold, δ, c) = step_αmax(c, δ)
 _block_αmax(::Any, ::Any, c::T) where {T} = T(Inf)
-
-# A block that is itself a branch is descended into rather than being written off as "not a manifold".
-# Without this a container -- which is a tree of layers, so *every* block at the top level is a branch
-# -- would take the `::Any` method above for all of them and get `Inf`, i.e. no ceiling at all, and
-# issue A1b would be back for exactly the parameter shape a network has. A flat `ArrayNamedTuple`
-# never reaches it, its values being arrays by construction.
-# `values` of the direction, whichever shape it arrived in: `NeuralNetworkParameters` defines
-# `Base.values(::NetworkParameters)`, so one call serves both members. `δ` tracks the solution block
-# by block, so it is a branch wherever the solution is one, but not necessarily the *same* kind of
-# branch — a container solution can be paired with the plain `NamedTuple` its `GlobalSection` tree is
-# built as. Two local normalisers stood here for that, `_as_blocks` and then `_as_walkable`; both are
-# gone.
-_block_αmax(y::ParameterSet, δ, c) = _manifold_αmax(values(y), values(δ), c)
 
 @doc raw"""
     linesearch_parameters(cache, x, state, c)
@@ -169,7 +174,7 @@ _linesearch_parameters(::Manifold, cache::OptimizerCache, x, state, c) =
 
 _linesearch_parameters(sol::ParameterContainer, cache::OptimizerCache, x, state, c) =
     (x=x, state=state,
-     αmax=_manifold_αmax(values(sol), values(direction(cache)), c))
+     αmax=_manifold_αmax(sol, direction(cache), c))
 
 # The ceiling a `linesearch_parameters` actually carries, read back by `solver_step!` so that it can
 # recognise a step of its own making; see `linesearch_rejected` and issue B3. This mirrors
