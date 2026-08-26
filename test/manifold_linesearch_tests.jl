@@ -426,12 +426,12 @@ end
     let sol = (a=rand(StiefelManifold, 6, 3), b=rand(StiefelManifold, 6, 3)),
         δ = (a=lift(1.0), b=lift(3.0))
 
-        @test _manifold_αmax(values(sol), values(δ), 1.0) ==
+        @test _manifold_αmax(sol, δ, 1.0) ==
               min(step_αmax(1.0, δ.a), step_αmax(1.0, δ.b))
-        @test _manifold_αmax(values(sol), values(δ), 1.0) == step_αmax(1.0, δ.b)
+        @test _manifold_αmax(sol, δ, 1.0) == step_αmax(1.0, δ.b)
         # looser than the quadrature version, and necessarily so: `‖δ‖ ≥ maxᵢ‖δᵢ‖`, so bounding by
         # the total tightened every block by the presence of its neighbours
-        @test _manifold_αmax(values(sol), values(δ), 1.0) > step_αmax(1.0, δ)
+        @test _manifold_αmax(sol, δ, 1.0) > step_αmax(1.0, δ)
     end
 
     # mixed: the Euclidean block neither imposes a ceiling nor tightens the manifold block's. This is
@@ -440,19 +440,19 @@ end
     let sol = (Y=rand(StiefelManifold, 6, 3), W=zeros(3, 4)),
         δ = (Y=lift(1.0), W=fill(1.0e3, 3, 4))
 
-        @test _manifold_αmax(values(sol), values(δ), 1.0) == step_αmax(1.0, δ.Y)
-        @test _manifold_αmax(values(sol), values(δ), 1.0) > step_αmax(1.0, δ)
+        @test _manifold_αmax(sol, δ, 1.0) == step_αmax(1.0, δ.Y)
+        @test _manifold_αmax(sol, δ, 1.0) > step_αmax(1.0, δ)
     end
 
     # no manifold block at all: no scale exists, so there is no ceiling. `Inf` and not a number:
     # `SimpleSolvers.linesearch_αmax` reads it as "the caller has no scale of its own".
     let sol = (W=zeros(3, 4), b=zeros(3)), δ = (W=fill(2.0, 3, 4), b=fill(5.0, 3))
-        @test _manifold_αmax(values(sol), values(δ), 1.0) == Inf
+        @test _manifold_αmax(sol, δ, 1.0) == Inf
     end
 
     # in `T`, as `step_αmax` is
     let sol = (W=zeros(Float32, 2, 2),), δ = (W=fill(2.0f0, 2, 2),)
-        @test _manifold_αmax(values(sol), values(δ), 1.0f0) isa Float32
+        @test _manifold_αmax(sol, δ, 1.0f0) isa Float32
     end
 end
 
@@ -495,7 +495,7 @@ end
 
         params = linesearch_parameters(cache(opt), ps, state, DEFAULT_STEP_CEILING)
         @test params.αmax ==
-              _manifold_αmax(values(ps), values(direction(cache(opt))), DEFAULT_STEP_CEILING)
+              _manifold_αmax(ps, direction(cache(opt)), DEFAULT_STEP_CEILING)
         @test 0 < params.αmax < Inf
     end
 

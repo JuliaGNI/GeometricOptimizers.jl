@@ -59,6 +59,8 @@ using NeuralNetworkParameters: NetworkParameters, params,
                                flatten, flatten!, unflatten, unflatten!,
                                FlatParameters, ParameterSet,
                                mapparameters, mapparameters!,
+                               foldparameters, foldstorage,
+                               parameter_eltype,
                                register_parameter_type!
 import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
 
