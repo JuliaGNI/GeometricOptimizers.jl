@@ -100,7 +100,7 @@ end
 
 function _weight_decay!(δ::ParameterContainer{T}, x::ParameterContainer{T}, λ::T) where {T}
     weight_decay_closure!(δᵢ, xᵢ) = _weight_decay!(δᵢ, xᵢ, λ)
-    _mapleaves!(weight_decay_closure!, δ, x)
+    mapparameters!(weight_decay_closure!, δ, x)
     δ
 end
 

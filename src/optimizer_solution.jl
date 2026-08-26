@@ -63,7 +63,7 @@ several frames into a solve rather than being turned away at the door.
 
 The two are *not* interchangeable in shape. An `ArrayNamedTuple` is flat by construction — its values
 are bounded by `AbstractArray{T}`, so a nested `NamedTuple` is not one — while a container is a tree
-of layers. That is why the bodies walk with [`_mapleaves`](@ref) rather than with `Base.map`: `map`
+of layers. That is why the bodies walk with `mapparameters` rather than with `Base.map`: `map`
 visits the entries of one level, which is the whole of a flat set and the *layers* of a nested one.
 
 !!! note "`ParameterSet` is the wider name, and the one to reach for first"

@@ -184,11 +184,22 @@ l2norm(a::AbstractLieAlgHorMatrix) = √sum(abs2 ∘ l2norm, parent(a))
 # vector. The `AbstractMatrix` fallback below happens to agree, `vec` on a [`VectorStorageMatrix`](@ref)
 # *being* that vector, but only by way of a `vec` that is not the ambient one -- so this says it.
 l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
-# Type piracy: `l2norm` is `GeometricBase.Utils.l2norm` (SimpleSolvers only re-exports it)
-# and both argument types are Base's, so every package that loads GeometricOptimizers
-# inherits these. They should be upstreamed to GeometricBase. See issue #16.
-l2norm(a::AbstractMatrix) = l2norm(vec(a))
-l2norm(a::AbstractFloat) = norm(a)
+
+# Two methods stood here until 0.6.0, `l2norm(a::AbstractMatrix) = l2norm(vec(a))` and
+# `l2norm(a::AbstractFloat) = norm(a)`. Both were type piracy of the plainest kind -- `l2norm` is
+# `GeometricBase.Utils.l2norm`, which `SimpleSolvers` only re-exports, and both argument types are
+# `Base`'s -- so every package that loaded this one inherited them. They were **issue #16 group 1**,
+# and their own comment said where they belonged.
+#
+# They are there now. `GeometricBase` 0.14.9 takes `L2norm(x::AbstractArray)` where it had
+# `AbstractVector`, which is the matrix method with the `vec` removed, and its `L2norm(x::Real) = x^2`
+# already gave `abs` for an `AbstractFloat` -- so the second of the two had been redundant as well as
+# pirated.
+#
+# Removing the `vec` is not only a matter of ownership. `vec` of a `Matrix` allocates a 32-byte
+# reshape wrapper, so `l2norm` of a parameter set cost 32 bytes per matrix leaf, per call, on every
+# stopping criterion of every iteration of `solve!`. The 0.5.0 changelog measured that and said the
+# fix belonged with the upstreaming. It did.
 # Type piracy as well. It was written as "only because `ArrayNamedTuple` is an alias for `NamedTuple`;
 # a wrapper `struct` would fix this one locally" -- and 0.6.0 took the wrapper, which did *not* fix it:
 # `l2norm` is `GeometricBase`'s and `NetworkParameters` is `NeuralNetworkParameters`', so the container

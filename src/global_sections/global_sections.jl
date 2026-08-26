@@ -26,10 +26,10 @@ struct GlobalSection{T,AT<:AbstractArray{T},λT<:Union{AbstractArray{T},Nothing}
     end
 end
 
-# [`_mapleaves`](@ref) and not `map`: a container is a tree of layers, so its leaves are more than one
+# `mapparameters` and not `map`: a container is a tree of layers, so its leaves are more than one
 # level down and `map` would hand `GlobalSection` a whole layer. The plain `NamedTuple` method
 # delegates here too, so both shapes take the same walk.
-GlobalSection(ps::NamedTuple) = _mapleaves(GlobalSection, ps)
+GlobalSection(ps::NamedTuple) = mapparameters(GlobalSection, ps)
 
 # The container `NeuralNetworkParameters` holds a network's parameters in. `GlobalSection` is this
 # package's own function, so a method on it is this package's to write -- and it has to be, because a
@@ -42,10 +42,10 @@ GlobalSection(ps::NamedTuple) = _mapleaves(GlobalSection, ps)
 # container.
 GlobalSection(ps::NetworkParameters) = GlobalSection(params(ps))
 
-# The `NamedTuple` method above returns whatever shape `_mapleaves` rebuilt, which for a section
+# The `NamedTuple` method above returns whatever shape `mapparameters` rebuilt, which for a section
 # tree is a plain `NamedTuple` — so `apply_section`, `global_rep` and `update_section!` below take a
 # `NamedTuple` on the section side and a [`ParameterContainer`](@ref) on the parameter side. Each is
-# written with the section first, since `_mapleaves` dispatches on its first argument and
+# written with the section first, since `mapparameters` dispatches on its first argument and
 # normalises the rest.
 
 Base.size(λY::GlobalSection) = (size(λY.Y, 1), size(λY.Y, 2) + size(λY.λ, 2))
@@ -145,21 +145,21 @@ function apply_section!(Y::AT, λY::GlobalSection{T,AT,Nothing}, Y₂::AbstractV
 end
 
 function apply_section(λY::NamedTuple, Y₂::NamedTuple)
-    _mapleaves(apply_section, λY, Y₂)
+    mapparameters(apply_section, λY, Y₂)
 end
 
 function apply_section!(Y::ParameterSet, λY::NamedTuple, Y₂)
-    _mapleaves!(apply_section!, Y, λY, Y₂)
+    mapparameters!(apply_section!, Y, λY, Y₂)
 end
 
 function global_rep(λY::NamedTuple, gx::NamedTuple)
-    _mapleaves(global_rep, λY, gx)
+    mapparameters(global_rep, λY, gx)
 end
 
 # The container versions of the two that *build* a tree, and the reason they are written with their
 # arguments the other way round.
 #
-# `_mapleaves` rebuilds in the shape of its **first** argument, so `_mapleaves(f, λY, gx)` would
+# `mapparameters` rebuilds in the shape of its **first** argument, so `mapparameters(f, λY, gx)` would
 # hand back a plain `NamedTuple` — the section tree's shape — for a container `gx`. What these produce
 # is a point and a gradient, i.e. *parameters*, and a parameter set has the parameters' shape. Getting
 # this backwards is not a cosmetic matter: the gradient would come out a plain nested `NamedTuple`,
@@ -167,12 +167,12 @@ end
 # alias in this package covers it and `_copyto!(gradient_array(cache), ·)` has no method for it.
 #
 # The section stays the plain tree `GlobalSection(::NetworkParameters)` returns; it is passed through
-# as the second argument and `_mapleaves` normalises it.
+# as the second argument and `mapparameters` normalises it.
 apply_section(λY::NamedTuple, Y₂::NetworkParameters) =
-    _mapleaves((y, λ) -> apply_section(λ, y), Y₂, λY)
+    mapparameters((y, λ) -> apply_section(λ, y), Y₂, λY)
 
 global_rep(λY::NamedTuple, gx::NetworkParameters) =
-    _mapleaves((g, λ) -> global_rep(λ, g), gx, λY)
+    mapparameters((g, λ) -> global_rep(λ, g), gx, λY)
 
 ##auxiliary function
 function global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) where {T}
@@ -356,11 +356,11 @@ function update_section!(Λᵗ::GlobalSection{T,AT,Nothing}, Λ⁽ᵗ⁻¹⁾::G
 end
 
 # The direction `B⁽ᵗ⁻¹⁾` is of the parameters' shape and the two sections are plain `NamedTuple`s, so
-# this is the mixed-shape walk: `_mapleaves!` takes the section as its first argument and
+# this is the mixed-shape walk: `mapparameters!` takes the section as its first argument and
 # normalises the direction, whichever of the two shapes it arrived in.
 function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::ParameterSet, retraction)
     update_section_closure!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾) = update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
-    _mapleaves!(update_section_closure!, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾)
+    mapparameters!(update_section_closure!, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾)
 
     Λᵗ
 end

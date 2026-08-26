@@ -41,9 +41,16 @@ function unit_matrix(A::AbstractMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A), T, LinearAlgebra.checksquare(A))
 end
 
+# `A .+ B` and not `A + B`: the latter is a *call*, so it materialises a whole temporary array and
+# then copies it into `C`, which is one allocation of `C`'s size per call for a function whose entire
+# purpose is to write into a destination the caller already owns. Fused into the broadcast on the
+# left, nothing is allocated at all.
+#
+# `axes` and not `size`, for the same reason `GeometricBase.L2norm(x, y)` compares `axes`: two arrays
+# of equal `size` can have different indices, and it is the indices this broadcast pairs.
 function add!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat)
-    @assert size(A) == size(B) == size(C)
-    C .= A + B
+    @assert axes(A) == axes(B) == axes(C)
+    C .= A .+ B
 end
 
 # There used to be a parameter-set arm of `add!` here, recursing over the leaves. Nothing in `src/`,
