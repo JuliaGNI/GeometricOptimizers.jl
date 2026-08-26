@@ -344,25 +344,58 @@ before failing. This finishes it.
   See the walks entry under *Added* above, and open issue **D9**, which is closed with it.
 
 - **Building an `OptimizerCache` for a *nested* container costs about 88 s of compilation**, on a
-  16 × 24 network of 384 leaves, against 2.4 s for a flat `NamedTuple` of 369. Nothing in this release
-  causes it and nothing here can fix it.
+  16 × 24 network of 384 leaves, against 2.42 s for a flat `NamedTuple` of 369. Nothing in this release
+  causes it and nothing here can fix it: it is `NeuralNetworkParameters.parameterlayout`, and it is the
+  price of the property that package exists to provide.
 
-  It is `NeuralNetworkParameters.parameterlayout`, and specifically the cost of inferring a *nested*
-  layout type into a caller that stores it: 13.22 s per distinct parameter-set type on that shape
-  against 1.35 s for the flat one, and a cache builds more than one. The tell is that `flatlength` on
-  the same set is **1.19 s** — the same walk, but it returns an `Int`, so the layout type is discarded
-  rather than materialised. The elementwise primitives are not involved: `_zero` 0.29 s, `_copy`
-  0.30 s, `GlobalSection` 0.40 s.
+  A layout encodes the whole parameter tree in its *type*, deliberately — that is what makes
+  `unflatten` inferable and `flatten!`/`unflatten!` allocation-free at every width. The cost falls on
+  `_layout`'s `@generated` body, which emits one statement per child and threads them serially: for a
+  *nested* set each child is a `NestedLayout` over its own leaves, so inference holds `k` live values
+  of a large type and then merges them into an `NTuple{k, …}`. For a flat set each child is a
+  `LeafLayout`, which is tiny, and 369 of them cost nothing.
 
-  Upstream halved it in the same wave, by deciding leaf terminality with dispatch instead of an
-  unfoldable `===` (25.2 s to 13.22 s), so what is left is the nesting of the type itself. Removing the
-  rest means not carrying a `ParameterLayout` in an inferred field, which is a design change in
-  `NeuralNetworkParameters` and not a patch here.
+  Measured cold, one process each, Julia 1.11.9:
 
-  A flat set is what `GMLDatasets`' MNIST scripts hand this package and what `test/` covers. A nested
-  container is what `GeometricMachineLearning` will hand it once it takes one cache per network rather
-  than one per layer — which the note on `_make_optimizer_cache` there calls the better end state. This
-  is worth settling *before* that change, not after it.
+  | shape | leaves | `parameterlayout` |
+  |---|---|---|
+  | flat, one level | 369 | **1.35 s** |
+  | 16 × 8 | 128 | 2.52 s |
+  | 16 × 16 / 32 × 8 | 256 | 5.02 / 5.35 s |
+  | 16 × 24 / 32 × 12 | 384 | 13.91 / 14.71 s |
+  | 16 × 32 / 64 × 8 | 512 | 24.91 / 27.96 s |
+  | 32 × 24 | 768 | **80.6 s** |
+
+  Depth and width are interchangeable — 384 leaves cost about 14 s however they are split — so it is a
+  function of the total leaf count *under a nested branch*, roughly quadratic, and about 10× the same
+  count laid out flat.
+
+  **How bad this is in practice depends on a shape a real network mostly does not have.** A `Dense`
+  chain of 64 layers, 128 leaves, is **1.32 s**. The cliff needs 256 or more leaves *nested*, which is
+  reachable — a 64-block transformer at 8 parameters a block is 28 s — but is not what the networks in
+  this ecosystem currently look like, and is not the flat set `GMLDatasets`' MNIST scripts hand this
+  package.
+
+  Three explanations were tested and are **wrong**, and are recorded so they are not tried again:
+
+  - *Type size.* The nested 16 × 24 layout type prints as 422 characters and costs 13.9 s; the flat 369
+    one prints as 2582 and costs 1.35 s. Backwards.
+  - *Number of specialisations.* `--trace-compile` reports 33 methods for the nested shape and 29 for
+    the flat one. It is one or two expensive inference jobs, not breadth.
+  - *Per-leaf type diversity*, i.e. `LeafLayout{N,P}`'s prototype parameter. Alternating `Matrix` and
+    `Vector` leaves in the same shape costs **11.32 s against 13.9 s homogeneous**. Erasing `P` would
+    not help here. (It should still go: `LeafLayout.prototype` is never read — only `WrappedLayout`'s
+    is — but that is hygiene, not this.)
+
+  **What would remove it is not worth taking.** Not encoding the tree in the type means an abstractly
+  typed `children` field or a runtime vector of leaf descriptors, and therefore a dynamic dispatch and
+  a boxed allocation *per leaf, per call* in `unflatten` — which sits inside `GradientAutodiff`'s
+  closure and so runs once per objective evaluation, i.e. once per line-search trial. That trades a
+  one-off compile cost for a permanent run-time one, which is the wrong direction here.
+
+  What is worth doing is using `flatlength` wherever only the *size* is wanted: it returns an `Int`, so
+  inference discards the layout type and the same walk costs **1.19 s** against 13.22 s. `alloc_h`
+  already does. `_flat_scratch` genuinely needs the layout and cannot.
 
 - **Taking the container did not close issue [#16], and the *Known issues* of 0.5.0 said it would.**
   That entry read "what remains is the swap itself, i.e. the `ArrayNamedTuple` half of **#16**". The
