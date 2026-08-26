@@ -29,7 +29,7 @@ function (grad::Gradient{T})(nt::ParameterContainer{T}) where {T}
     v, layout = flatten(nt)
     # `rgrad` takes the *whole* leaf, not its storage: it is the Riemannian projection and needs the
     # point it projects at, so this walks whole leaves rather than their storage.
-    _mapleaves(rgrad, nt, unflatten(layout, grad(v)))
+    mapparameters(rgrad, nt, unflatten(layout, grad(v)))
 end
 
 # This is *not* type piracy, unlike the method above: it dispatches on `OptimizerState`,
@@ -39,17 +39,35 @@ function (grad::Gradient{T})(g::ParameterContainer{T}, x::ParameterContainer{T},
     _copyto!(g, global_rep(section(state), grad(x)))
 end
 
-# [`_mapleaves`](@ref) and not `map`, here and in every primitive below. `map` visits the entries of
-# one level, which is the whole of a flat `ArrayNamedTuple` but only the *layers* of a container, whose
-# leaves are one level further down. `_mapleaves` is `map` plus recursion on the branches, so it
-# reaches leaves at any depth and rebuilds the shape it was given -- a container comes back a
-# container, a `NamedTuple` a `NamedTuple` -- and costs the flat case exactly what `map` costs.
-# See `src/parameter_walks.jl` and [`ParameterContainer`](@ref).
+# `NeuralNetworkParameters.mapparameters` and not `map`, here and in every primitive below. `map`
+# visits the entries of one level, which is the whole of a flat `ArrayNamedTuple` but only the
+# *layers* of a container, whose leaves are one level further down. `mapparameters` recurses on the
+# branches, so it reaches leaves at any depth and rebuilds the shape it was given -- a container comes
+# back a container, a `NamedTuple` a `NamedTuple`. See [`ParameterContainer`](@ref).
+#
+# The in-place primitives take `mapparameters!`, which is `foreachparameters` returning its
+# destination: the tree of results a `map`-shaped walk builds is allocated and immediately discarded
+# on every call, which was 992 bytes per `update!` on the flat problem of
+# `scripts/optimizer_allocations.jl`.
+#
+# Both check that the keys agree at every level, which is the property this file depends on and which
+# `Base.foreach` over `NamedTuple`s does *not* have -- it goes through `zip`, iterates values, and so
+# neither compares the keys nor notices that one tree is shorter. `mapparameters` normalises its
+# trailing arguments through an exhaustive three-method `_as_namedtuple`, so a container may be walked
+# in lockstep with the plain `NamedTuple` tree `GlobalSection(::NetworkParameters)` deliberately
+# returns, and pairing a *leaf* with a branch raises a `MethodError` naming the type.
+#
+# `_mapleaves`/`_mapleaves!` in `src/parameter_walks.jl` were a local copy of all of this until
+# 0.6.0. They existed only because `mapparameters` could not be compiled on a wide-flat set -- see
+# the 0.6.0 entry in the changelog, and `NeuralNetworkParameters` 0.2.2, which fixed that from this
+# package's report. The local copy also normalised its trailing arguments with a *catch-all*, so a
+# leaf paired with a branch fell through to the generic iterator `map`, which zipped the branch's
+# entries against the leaf's elements and returned a truncated `Array` instead of raising.
 _zero(a::AbstractArray) = zero(a)
-_zero(a::ParameterContainer) = _mapleaves(_zero, a)
+_zero(a::ParameterContainer) = mapparameters(_zero, a)
 
 _copy(a::AbstractArray) = copy(a)
-_copy(a::ParameterContainer) = _mapleaves(_copy, a)
+_copy(a::ParameterContainer) = mapparameters(_copy, a)
 
 # `Base.similar` is deliberately an error on a `Manifold` — an arbitrary array of that shape is not a
 # point of it — so a fresh *random* point stands in for it. `Manifold` and not `StiefelManifold`, and
@@ -58,7 +76,7 @@ _copy(a::ParameterContainer) = _mapleaves(_copy, a)
 # building an `AdamState` or a `MomentumState`. See issue A11.
 _similar(a::Manifold{T}) where {T} = rand(manifold_constructor(a){T}, size(a)...)
 _similar(a::AbstractArray) = similar(a)
-_similar(a::ParameterContainer) = _mapleaves(_similar, a)
+_similar(a::ParameterContainer) = mapparameters(_similar, a)
 
 _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
 
@@ -66,7 +84,7 @@ _fill!(a::Manifold{T}, ::T) where {T} = a
 
 _copyto!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = copyto!(a, b)
 function _copyto!(a::ParameterContainer{T}, b::ParameterContainer{T}) where {T}
-    _mapleaves!(_copyto!, a, b)
+    mapparameters!(_copyto!, a, b)
 end
 
 # Type piracy again by way of the aliases: both `GlobalSectionNamedTuple` and
@@ -80,15 +98,15 @@ end
 # container is a type with a name rather than an alias for `NamedTuple`. That is the one place where
 # taking the container bought this file something beyond a wider signature.
 #
-# `_mapleaves!` walks whichever shape it is given first and normalises the rest, so the bodies are
+# `mapparameters!` walks whichever shape it is given first and normalises the rest, so the bodies are
 # identical either way.
 function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ParameterContainer{T}) where {T}
-    _mapleaves!(copyto!, Λ, x)
+    mapparameters!(copyto!, Λ, x)
     Λ
 end
 
 function Base.copyto!(Λ::NamedTuple, x::NetworkParameters)
-    _mapleaves!(copyto!, Λ, x)
+    mapparameters!(copyto!, Λ, x)
     Λ
 end
 
@@ -106,17 +124,17 @@ _copyto!(Λ::NamedTuple, x::NetworkParameters) = copyto!(Λ, x)
 _copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
 
 function _copyto!(x::ParameterContainer, Λ::GlobalSectionNamedTuple)
-    _mapleaves!(copyto!, x, Λ)
+    mapparameters!(copyto!, x, Λ)
     x
 end
 
 function _copyto!(x::NetworkParameters, Λ::NamedTuple)
-    _mapleaves!(copyto!, x, Λ)
+    mapparameters!(copyto!, x, Λ)
     x
 end
 
 function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple)
-    _mapleaves!(_copyto!, Λ₁, Λ₂)
+    mapparameters!(_copyto!, Λ₁, Λ₂)
     Λ₁
 end
 
@@ -126,7 +144,7 @@ end
 # where it applies, and the leaves settle the rest -- a pair that is not two sections has no
 # `_copyto!` at the bottom of this walk either way.
 function _copyto!(Λ₁::NamedTuple, Λ₂::NamedTuple)
-    _mapleaves!(_copyto!, Λ₁, Λ₂)
+    mapparameters!(_copyto!, Λ₁, Λ₂)
     Λ₁
 end
 
@@ -138,7 +156,7 @@ end
 
 function _fill!(a::ParameterContainer{T}, b::T) where {T}
     fill_closure!(_a) = _fill!(_a, b)
-    _mapleaves!(fill_closure!, a)
+    mapparameters!(fill_closure!, a)
     a
 end
 
@@ -165,7 +183,7 @@ function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b:
 end
 
 _difference!(c::ParameterContainer{T}, a::ParameterContainer{T}, b::ParameterContainer{T}) where {T} =
-    _mapleaves!(_difference!, c, a, b)
+    mapparameters!(_difference!, c, a, b)
 
 _rmul!(a::AbstractArray, b) = rmul!(a, b)
 
@@ -178,7 +196,7 @@ end
 
 function _rmul!(a::ParameterContainer, b)
     rmul_closure!(a) = _rmul!(a, b)
-    _mapleaves!(rmul_closure!, a)
+    mapparameters!(rmul_closure!, a)
     a
 end
 
@@ -186,35 +204,12 @@ function _mul!(c::AbstractVecOrMat, a::AbstractMatrix, b::AbstractVecOrMat)
     mul!(c, a, b)
 end
 
-function _mul!(c::ParameterContainer, a::ParameterContainer, b::ParameterContainer)
-    _mapleaves!(_mul!, c, a, b)
-    c
-end
-
-# `c` supplies its layout but not its numbers: it is the destination, so only its shape matters.
-# That is one flatten fewer than this used to do, and `unflatten!` writes the result back through
-# `copyto!` instead of building a fresh parameter set for `_copyto!` to copy out of.
-function _mul!(c::ParameterContainer, a::AbstractMatrix, b::ParameterContainer)
-    layout = parameterlayout(c)
-    v_b, _ = flatten(b)
-    v_c = similar(v_b)
-
-    _mul!(v_c, a, v_b)
-    unflatten!(c, layout, v_c)
-end
-
-# The same ambient/intrinsic boundary as the method above, for a *bare* `Manifold`: the quasi-Newton
-# `Q` is sized by the length of the flattening, while the direction and the gradient are horizontal
-# lifts of the ambient shape (`3 × 3` against an intrinsic 2, for `St(3, 1)`). Multiplying them
-# directly reaches `setindex!`, which the lift types do not define.
-function _mul!(c::AbstractLieAlgHorMatrix, a::AbstractMatrix, b::AbstractLieAlgHorMatrix)
-    layout = parameterlayout(c)
-    v_b, _ = flatten(b)
-    v_c = similar(v_b)
-
-    _mul!(v_c, a, v_b)
-    unflatten!(c, layout, v_c)
-end
+# Two more `_mul!` methods stood here until 0.6.0, one for a container destination and one for a bare
+# lift, each flattening `b`, allocating a result vector and unflattening it back. `_flat_mul!` does that
+# through the cache's buffers now, so neither had a caller left. See [`_flat_scratch`](@ref).
+#
+# `_mul!(c::ParameterContainer, a::ParameterContainer, b::ParameterContainer)` -- the *elementwise*
+# product, three parameter sets -- is gone with them, and had no caller before this release either.
 
 function _mul(α::T, a::GradientArrayOrNamedTuple{T}) where {T}
     b = _copy(a)
@@ -232,22 +227,68 @@ For an `AbstractVecOrMat` this is `LinearAlgebra.dot`. For a horizontal lift —
 them — it is emphatically not: `dot` on an [`AbstractLieAlgHorMatrix`](@ref) is the *ambient*
 Frobenius product, which counts each of the off-diagonal blocks of the lift twice and so comes out
 exactly twice the product of the free parameters. The intrinsic coordinates are the ones every other
-quantity in this package is expressed in — `Q` is sized by the flattening, [`outer!`](@ref) flattens
-before it forms its outer product, and the `α` of a line search parameterizes a curve in them — so
+quantity in this package is expressed in — `Q` is sized by the flattening, its outer products are
+formed there (see [`_flat_scratch`](@ref)), and the `α` of a line search parameterizes a curve in them —
+so
 pairing a gradient with a direction has to happen there too.
 
 Used by [`trial_slope`](@ref) for ``\varphi'(\alpha)``, and by the quasi-Newton caches for
 ``\delta^T\gamma``, whose value has to be consistent with the flattened `T₁`, `T₂` and `γ^TQγ` it
 divides.
+
+!!! info "No flat vector is built"
+    This is the *value* the flattened inner product has, not the flattening. `flatten` writes the
+    leaves one after another into one vector, so ``\langle\mathrm{flatten}(a),
+    \mathrm{flatten}(b)\rangle`` is the sum of the per-leaf inner products, and the sum can be taken
+    without the vectors. Until 0.6.0 this allocated two of them per call — once per line-search trial
+    slope, which is the hottest site there is, once per `OptimizerStatus`, and twice per quasi-Newton
+    `update!`.
+
+    The summation order changes with it: per leaf and then across, rather than one `dot` over the
+    concatenation. Both are ``\sum_i a_ib_i``; they differ at round-off, and
+    `test/flat_buffer_allocations.jl` pins the two against each other.
 """
 _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 
 const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ParameterContainer{T}}
 
-# `flatten` is given `T` explicitly so that the result is a `T` even when a set happens to promote
-# to something wider; every quantity this is combined with downstream is a `T`.
-_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} =
-    dot(flatten(T, a)[1], flatten(T, b)[1])
+# `T` is named on the result rather than on a `flatten`, and for the same reason the `flatten(T, ·)`
+# this replaced named it there: every quantity this is combined with downstream is a `T`, and a
+# container's `T` is a *promotion* over its leaves rather than a guarantee about each of them, so a
+# mixed-precision set must not decide the type of the pairing. It is the one place where the two forms
+# differ by more than round-off — the old one converted the leaves and then paired them, this one
+# pairs them and then converts.
+_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} = T(_dot_leaves(a, b))
+
+# Down to the free parameters and no further, exactly as `flatten` goes: `dot` of a lift is the
+# *ambient* Frobenius product and `dot` of a [`VectorStorageMatrix`](@ref) reads a dense interface that
+# has neither the right length nor, for three of the four, any way to be read at all. `freeparameters`
+# is the same protocol `flatten` walks, so the two agree leaf for leaf by construction rather than by
+# two implementations happening to concur.
+#
+# Positional, over `values`, and so it checks neither that the keys agree nor that the two branches are
+# the same width -- where `mapparameters` gets the first from `_check_keys` and the second from
+# `_children_arity`. That is not a regression: the
+# `dot(flatten(a), flatten(b))` this replaced was positional over the flattening in exactly the same
+# way. It is named here because this is where such a check would go if one is ever wanted, and because
+# the arity case is the worse of the two: a width mismatch falls through to the generic method below
+# with a `Tuple` in hand and raises `freeparameters`' "no protocol" error, which names neither `_dot`
+# nor the shapes.
+_dot_leaves(a::ParameterSet, b) = _dot_leaves(values(a), values(b))
+
+# `false` is the strong zero: it takes its type from whatever it is added to, and there is no `T` in
+# scope to write `zero(T)` with. A one-leaf set adds it to that leaf's pairing and stays a `T`.
+_dot_leaves(::Tuple{}, ::Tuple{}) = false
+_dot_leaves(a::Tuple, b::Tuple) =
+    _dot_leaves(first(a), first(b)) + _dot_leaves(Base.tail(a), Base.tail(b))
+
+# `s === a` is `NeuralNetworkParameters.isterminal(a)`, which exists for exactly this question. Written
+# out because the storage is wanted either way, so asking the predicate would call `freeparameters`
+# twice -- but named, so that the two cannot drift apart unnoticed.
+function _dot_leaves(a, b)
+    s = freeparameters(a)
+    s === a ? dot(a, b) : _dot_leaves(s, freeparameters(b))
+end
 
 _add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
 
@@ -257,7 +298,7 @@ function _add!(a::MT, b::MT) where {MT<:VectorStorageMatrix}
 end
 
 function _add!(a::ParameterContainer{T}, b::ParameterContainer{T}) where {T}
-    _mapleaves!(_add!, a, b)
+    mapparameters!(_add!, a, b)
     a
 end
 
@@ -275,7 +316,7 @@ end
 
 function _add!(a::ParameterContainer{T}, b::T) where {T}
     closure(a) = _add!(a, b)
-    _mapleaves!(closure, a)
+    mapparameters!(closure, a)
     a
 end
 
@@ -296,7 +337,7 @@ function _rac!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_rac!(b::ParameterContainer, a::ParameterContainer) = _mapleaves!(_rac!, b, a)
+_rac!(b::ParameterContainer, a::ParameterContainer) = mapparameters!(_rac!, b, a)
 
 _rac!(a) = _rac!(a, a)
 
@@ -321,7 +362,7 @@ function _div!(C::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix, B::Abstra
 end
 
 function _div!(C::ParameterContainer, A::ParameterContainer, B::ParameterContainer)
-    _mapleaves!(_div!, C, A, B)
+    mapparameters!(_div!, C, A, B)
     C
 end
 
@@ -343,7 +384,7 @@ function _square!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_square!(b::ParameterContainer, a::ParameterContainer) = _mapleaves!(_square!, b, a)
+_square!(b::ParameterContainer, a::ParameterContainer) = mapparameters!(_square!, b, a)
 
 function _square(a)
     b = _copy(a)
@@ -354,7 +395,7 @@ end
 
 Base.copyto!(dest::AT, src::GlobalSection{T,AT}) where {T,AT<:AbstractArray{T}} = copyto!(dest, src.Y)
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)
-rgrad(ps::ParameterContainer, dx::ParameterContainer) = _mapleaves(rgrad, ps, dx)
+rgrad(ps::ParameterContainer, dx::ParameterContainer) = mapparameters(rgrad, ps, dx)
 
 function rgrad(Y::AbstractVecOrMat, dx::AbstractVecOrMat)
     @assert size(Y) == size(dx)

@@ -41,44 +41,86 @@ before failing. This finishes it.
   `test/named_tuple_parameters.jl` passes **unchanged**, which is the additive claim: a bare
   `NamedTuple` is still a solution and still takes the same steps.
 
-- **`_mapleaves`/`_mapleaves!` (`src/parameter_walks.jl`), the walk those bodies are written in.** `map`
-  at each level, recursion on the branches. It reaches leaves at any depth and keeps the shape it was
-  given, so a container comes back a container.
+- **The walks those bodies are written in are `NeuralNetworkParameters`'.** `mapparameters` out of
+  place, `mapparameters!` in place. Both recurse on the branches and reach leaves at any depth, so a
+  container comes back a container and a flat `NamedTuple` a flat `NamedTuple`, and both check that the
+  keys agree at every level — which is what `Base.foreach` would not do, going through `zip` and
+  iterating values.
 
-  Written here rather than taken from `NeuralNetworkParameters.mapparameters`, which does the same job,
-  **because of what that used to cost to compile on a wide-flat set**. Its across-children walk was an
-  `@inline`d `Base.tail` chain, which cost one specialisation per child over argument types each as
-  long as the branch, so inference on it grew as the cube of the width: on a flat 369-entry set — the
-  shape GMLDatasets' MNIST transformer uses — `map(zero, ps)` compiled in 0.01 s and
-  `mapparameters(zero, ps)` did not finish.
+  This branch carried a local copy for most of its life, `_mapleaves`/`_mapleaves!` in
+  `src/parameter_walks.jl`, written here because `mapparameters` could not be compiled on the shape
+  this package has a named consumer for: its across-children walk was an `@inline`d `Base.tail` chain,
+  one specialisation per child over argument types each as long as the branch, and inference on that
+  grew as the cube of the width.
 
-  **That was reported and fixed upstream while this branch was in review**, in
-  `NeuralNetworkParameters` 0.2.2: the walks are written out now and `mapparameters(zero, ps)` on the
-  same set compiles in 0.00 s. So the reason this file exists has largely gone, and what remains of it
-  is recorded under *Known issues* rather than left standing here. This release still carries
-  `_mapleaves`, because retiring it is a separate change with one semantic question to settle first, and
-  it pins the fix instead: `scripts/walk_compile_cost.jl` reports `mapparameters` beside `_mapleaves` on
-  both shapes.
+  **Retiring it took two upstream releases, not one, and the second only happened because the first
+  was measured wrong.** `NeuralNetworkParameters` 0.2.2 wrote those walks out as `@generated` bodies,
+  and the figure that said the job was done — `mapparameters(zero, ps)` at "0.00 s" on the 369-entry
+  flat set — came from a harness that swept its shapes in one process, so the flat table was reading
+  what the nested one had already compiled. Cold, the same call cost **1.51 s** against `Base.map`'s
+  0.01 s, and deleting this file on the strength of that figure took a cold `OptimizerCache` on that
+  set from **1.57 s to 71.16 s**. A 45× regression read as an improvement for exactly as long as
+  nobody ran the tables in the other order.
 
-  The in-place half, `_mapleaves!`, *is* upstream's — `foreachparameters`. It used to be `_mapleaves`
-  with the result thrown away, which allocated one `NamedTuple` per branch on every call of every
-  in-place primitive in `named_tuple_wrapper.jl`, 992 bytes per `update!` on the flat problem of
-  `scripts/optimizer_allocations.jl`. `Base.foreach` would not do: over `NamedTuple`s it goes through
-  `zip`, which iterates values and so drops the key-agreement check that `map`'s
-  `ArgumentError: Named tuple names do not match.` was providing. `foreachparameters` carries that check
-  as `_check_keys`, takes whole leaves, allocates nothing, and since 0.2.2 compiles at any width.
+  What fixed it upstream is a *split* rather than more of the same: `_map_zip`, which is all
+  `mapparameters` and `mapstorage` are, is written out to 32 children and hands wider branches back to
+  `Base.map`, while the walks that run in an inner loop — `flatten!`, `unflatten!`,
+  `foreachparameters`, the out-of-place `unflatten` — stay written out at every width. The rule is
+  "in an inner loop or not" and not "wide or narrow": `map` past 32 fields drops to `Base`'s `Any32`
+  loop and gives up inference, which for a once-per-cache walk is one dynamic dispatch at the call
+  site and for a per-iteration walk would be one per call.
 
-  Measured with `scripts/walk_compile_cost.jl`, which is committed for the reason the *Open Issues*
-  preamble gives — a number is reproducible only where the harness that produced it is named. The gate
-  it exists for, `OptimizerCache`/`OptimizerState` construction, is the entry point that reaches these
-  primitives without going through `flatten`, i.e. how `GeometricMachineLearning` uses this package:
+  Measured cold, one shape per process, Julia 1.11.9, on the 369-entry flat set:
 
-  | | 0.5.0 | this release |
-  |---|---|---|
-  | flat `NamedTuple`, 369 entries | 1.15 s / 1.31 s | 1.15 s / 1.35 s |
-  | nested container, 16 × 24 leaves | `MethodError` | 2.16 s / 2.38 s |
+  | | 0.5.0 (`map`) | `_mapleaves` retired, before the split | after |
+  |---|---|---|---|
+  | `_zero` | 0.01 s | 1.42 s | **0.09 s** |
+  | `_copy` | 0.01 s | 0.79 s | **0.09 s** |
+  | `_similar` | 0.01 s | 1.18 s | **0.10 s** |
+  | `GlobalSection` | 0.01 s | 0.90 s | **0.20 s** |
+  | `OptimizerCache(Adam)` | 1.57 s | 71.16 s | **2.42 s** |
+
+  The last row is the one to read: it is the entry point `GeometricMachineLearning` reaches without
+  going through `flatten`, and `scripts/walk_compile_cost.jl --caches` is where it comes from. The
+  0.85 s this release is dearer than 0.5.0 is the honest price of the container — a `ParameterLayout`
+  is built and stored where `map` over a `NamedTuple` needed none.
+
+  The **nested** container is a different matter: `OptimizerCache` on a 16 × 24 network of 384 leaves
+  costs 87.56 s, which 0.5.0 cannot be compared against because it raises a `MethodError` on `_copy`
+  there — the whole of what this release is about. That figure is not paid for by anything here; see
+  *Known issues*.
+
+  Deleting the file fixes a latent bug of its own, and that is the part worth keeping. `_as_walkable`,
+  the normaliser it put its trailing arguments through, had a **catch-all** where
+  `NeuralNetworkParameters`' `_as_namedtuple` has three exhaustive methods — so a tree zipped against a
+  *leaf* raised upstream and did not raise here. What happened here instead was worse than raising:
+  `map` over a `NamedTuple` and a bare `Vector` matches neither of `Base`'s specific methods, falls
+  through to the generic iterator `map`, and `zip`s the branch's *entries* against the leaf's
+  *elements*, handing back an `Array`. Measured: `map(f, (a = [1.0], b = [2.0]), [9.0, 9.0])` gives
+  `[([1.0], 9.0), ([2.0], 9.0)]`, and a leaf shorter than the branch is silently truncated. Nothing
+  here paired a leaf with a branch, so nothing depended on either behaviour.
+
+  Its three uses that were not the walk — `_dot_leaves`, `_block_αmax` and `_linesearch_parameters`,
+  each `values(_as_walkable(x))` — need no normaliser at all: `Base.values(::NetworkParameters)` is
+  defined upstream, so one `values(x)` serves both members of the union.
+
+  `scripts/walk_compile_cost.jl` stays, and **runs each shape in a process of its own now**, which is
+  the change that matters more than any row in it. There is no `--cold-mapparameters` flag any more,
+  because a number you have to ask for in a special way is a number the default run is getting wrong.
+  It is also this package's half of the answer to open issue C9, and what would catch the cliff
+  returning.
 
 ### Changed
+
+- **Julia 1.11 is the minimum**, up from the 1.10 LTS, in step with the rest of this family of
+  packages. Nothing here was accommodating 1.10 directly; what the floor buys is that
+  `NeuralNetworkParameters` 0.2.2 can be depended on, since its `@generated` walks need 1.11 to be
+  inlined and 1.10 will not inline one. The CI matrix is `1.11 / 1.12 / 1.13 / nightly`, so open issue
+  **D1** — a 140× compile-time cliff on 1.12 that 1.13 does not have — stays observed rather than
+  becoming the floor.
+
+- **`GeometricBase = "0.14.9"`**, which is the release that takes `L2norm` over any array. See the
+  `l2norm` entry under *Removed* below.
 
 - **`global_rep` and `apply_section` rebuild in the shape of the *parameters*, not of the section.**
   These walks are written with their arguments the other way round from the rest, and it is not
@@ -100,11 +142,12 @@ before failing. This finishes it.
   layers instead would have handed `l2norm` a whole layer, and every stopping criterion of `solve!` is
   computed from these.
 
-  The recursion itself allocates nothing, but `l2norm` of a parameter set is *not* allocation-free and
-  this does not make it so: `l2norm(a::AbstractMatrix)` — one of the two pirated methods of **#16**
-  group 1 — is `l2norm(vec(a))`, and `vec` of a `Matrix` allocates the 32-byte reshape wrapper. So a
-  set costs 32 bytes per matrix leaf, before and after. Measured, not assumed; the fix belongs with the
-  upstreaming those two methods are waiting for.
+  The recursion itself allocates nothing, and as of this release neither does `l2norm` of a parameter
+  set. The 32 bytes per matrix leaf it used to cost were the `vec` in `l2norm(a::AbstractMatrix)`, one
+  of the two pirated methods of **#16** group 1; the entry under *Removed* below is what took them
+  upstream, and `test/flat_buffer_allocations.jl` asserts the exact zero rather than "one wrapper per
+  matrix leaf". An earlier draft of this entry said the fix "belongs with the upstreaming those two
+  methods are waiting for" — it did, and the upstreaming is in this wave.
 
 - **`_manifold_αmax` descends a branch** instead of writing it off as "not a `Manifold`". Every
   top-level value of a container is a *layer*, so without this a container would have got `Inf` — no
@@ -112,6 +155,118 @@ before failing. This finishes it.
   it. A flat `ArrayNamedTuple` never reaches the new method, its values being arrays by construction.
 
 ### Fixed
+
+- **The flat buffers are no longer allocated per call.** Every quantity a quasi-Newton method forms
+  lives in the *flattened* coordinates — `Q` is sized by the length of the flattening, `outer!` forms
+  its outer products there, `_dot` pairs there — while the parameters are a `NamedTuple`, a container,
+  or a horizontal lift of the ambient shape. Each crossing built a fresh flat vector: two per `_dot`,
+  two per `outer!`, one plus a `ParameterLayout` per `_mul!`, one more for the `γ` of each `update!`.
+
+  Two different fixes, because two different things were wrong.
+
+  - **`_dot` needed no buffer at all**, which is the better half: `dot` of two flattenings is the sum
+    of the per-leaf `dot`s, so the sum can be taken without the vectors. It is also the half that
+    matters most — `_dot` is the hottest of the sites, once per line-search trial slope and once per
+    `OptimizerStatus` — and it reaches *every* cache, including the first-order ones, where a buffer on
+    the quasi-Newton caches would not have.
+
+    The summation order changes with it, per leaf and then across rather than once over the
+    concatenation. Both are ``\sum_i a_ib_i`` and they differ at round-off;
+    `test/flat_buffer_allocations.jl` pins the two against each other, and
+    `test/optimizer_convergence/svd_optim.jl` — where `_dot` feeds `curvature_is_usable`'s relative
+    test and the line search's ``\varphi'`` — is unmoved.
+
+  - **`outer!` and `_mul!` genuinely need the flat form**, so `BFGSCache` and `DFPCache` carry buffers
+    to write into: one field and one unbounded type parameter each, a `NamedTuple` of
+    `NeuralNetworkParameters.FlatParameters` built from `_zero(x)` and not `x`, for the reason the
+    `flatlength(_zero(x))` beside it gives. `FlatParameters` rather than a bare `Vector` because it
+    carries its own layout and keeps it through `similar`, which is what retired the `parameterlayout(c)`
+    call the deleted `_mul!` methods made. See `_flat_scratch`.
+
+    `nothing` for an `AbstractVector` solution, where the parameters *are* the flat coordinates and
+    buffering would add a copy per iteration and buy nothing.
+
+  `γᵀQγ` goes with them: `dot(γ, Q, γ)`, the three-argument `dot`, where `Δg2' * Q * Δg2` materialised
+  `Q * γ`.
+
+  `test/flat_buffer_allocations.jl` pins each site at exactly zero, for all four shapes of solution and
+  both methods. What that is worth end to end, from `scripts/optimizer_allocations.jl` — a 20-iteration
+  `solve!`, bytes allocated. **Both columns re-measured on Julia 1.11.9, Apple M4 Max**, the 0.5.0 one
+  by running this release's script against a worktree of `main`, so the two are comparable rather than
+  merely recorded:
+
+  | | 0.5.0 | this release |
+  |---|---|---|
+  | `BFGS`, `Vector` | 36 232 | 24 376 |
+  | `BFGS`, bare `Manifold` | 1 474 408 | 1 064 440 |
+  | `BFGS`, flat `NamedTuple` | 2 431 912 | 1 617 912 |
+  | `BFGS`, container | `MethodError` | 1 671 672 |
+  | `DFP`, `Vector` | 35 432 | 23 080 |
+  | `DFP`, bare `Manifold` | 1 474 888 | 1 063 144 |
+  | `DFP`, flat `NamedTuple` | 2 425 608 | 1 608 296 |
+  | `DFP`, container | `MethodError` | 1 662 056 |
+
+  About a third, and the `Vector` column is not a rounding error: `flatten(T, ::Vector)` copies, and
+  `Δg2' * Q * Δg2` allocated there too.
+
+  The figures moved twice while this branch was in review, and both moves are the walk rather than the
+  weather. First, `_mapleaves!` became `foreachparameters`: the discarded result tree cost one
+  `NamedTuple` per branch per call, worth about 17 000 bytes on the parameter-set rows and 194 000 on
+  the container ones. Then `_mapleaves` itself went, and `l2norm` stopped taking a `vec` per matrix
+  leaf, worth another 16 000 and 32 000. The `Vector` and `Manifold` rows have no branches at all and
+  moved by neither — which is what says the difference is where it is claimed to be.
+
+  The 0.5.0 column is within 0.06 % of the figures recorded before it was re-measured (36 312 against
+  36 232, 2 430 488 against 2 431 912, and so on), the residue being the Julia version the first
+  measurement was taken on. That is a *reproduction*, and it is recorded because six measurements in
+  this file's own catalogue have failed to be.
+
+- **`test/flat_buffer_allocations.jl` was measuring its own harness.** Every `@allocated` in it sat in
+  the body of a `@testset`, with only the *call* inside a function. A `@testset` body is a closure and a
+  `for` inside one captures its loop variables, so what those twelve assertions measured was the boxing
+  of the arguments on the way in. On Julia 1.13 the boxes are elided and all twelve passed; on 1.11 they
+  are not, and all twelve failed — 16 bytes for `_dot`, 32 for the secant pair. Nothing in `src/` was
+  wrong.
+
+  It matters because 1.11 is the floor now, so the file would have failed outright, and because the
+  file's own header states the rule it was breaking. The `@allocated` is *inside* each `_measured_*`
+  function now, each of which warms the call before measuring it, and the assertions read
+  `@test _measured_dot(a, b) == 0`.
+
+  This is the second time this exact mistake has been caught in this ecosystem by writing the rule down
+  and then not following it — `NonlinearIntegrators`' `test/quality/inference_and_allocations.jl`
+  records the same one, where it inflated a figure from 11 424 bytes to 31 411.
+
+### Removed (breaking)
+
+- **Four `outer!`/`_mul!` methods are gone, and one of them was a type-piracy site of [#16].** With both
+  always reached through the flat buffers, nothing in `src/`, `test/`, `docs/` or `scripts/` called
+  `outer!` on a [`ParameterContainer`](@ref) or on an `AbstractLieAlgHorMatrix`, or `_mul!` on either —
+  and nothing in `GeometricMachineLearning` or `GMLDatasets` ever did. The elementwise
+  `_mul!(c::ParameterContainer, a::ParameterContainer, b::ParameterContainer)` goes with them, having
+  had no caller before this release either.
+
+  Deleting the container `outer!` **retires one of the five sites #16 group 3 tracks** — `outer!` is
+  `SimpleSolvers`' generic and this package owns neither arm of the union. That is possible for this one
+  and not for the group, and the reason is worth stating: `outer!` is internal to the quasi-Newton
+  caches, so no consumer calls it and no consumer has to change. The other four are on generics a
+  consumer does reach.
+
+  The ambient-versus-intrinsic reasoning the lift method documented has moved to `_flat_scratch`, where
+  the flat form now lives; `docs/src/linesearch_on_manifolds.md` points there.
+
+- **`update!(::BFGSState, ::Gradient, x, retraction)` is gone.** It had no caller in `src/`, `test/`,
+  `docs/` or `scripts/`, and none in `GeometricMachineLearning` or `GMLDatasets` either: for a
+  `BFGSState` the live path is `update!(state, opt, x)`, which reaches the six-argument method and
+  hands it `problem(opt).F(x)` directly.
+
+  It is worth naming for what it did rather than because it is missed. It set `f̄` with
+  `gradient.F(flatten(T, x)[1])`, and `gradient.F` is the closure `_x -> F(unflatten(layout, _x))` — so
+  that line flattened `x` and unflattened it again to compute `F(x)`, allocating twice for a value the
+  caller already had. 0.5.0's *Known issues* counted it among the sites that wanted a scratch buffer on
+  the state; taking `f` as an argument is the fix, and a buffer would only have made the round trip
+  cheaper. **`BFGSState` gains no field and no type parameter**, which is a departure from what that
+  entry said the work would be.
 
 - **`l2norm` and `solution_scale` take any parameter shape, not just a solution's.** They dispatched on
   `ParameterContainer`, which leaves out the nested plain `NamedTuple`; `_sumsq_leaves` recurses, so
@@ -139,32 +294,113 @@ before failing. This finishes it.
   called, so without it `f` arrives boxed and each leaf costs a dynamic dispatch — 128 bytes against 64
   on the mixed set. #69's `test/flat_buffer_allocations.jl` is what caught that, which is the argument
   for having written it.
-  Its compile cost at the 369-entry width the walks are measured at is 0.01 s and 0.00 s respectively —
-  `scripts/walk_compile_cost.jl` reports both, since a new `Base.tail` fold in a release whose case
-  against upstream's was about `Base.tail` folds should not be taken on trust.
+  Its compile cost is measured rather than assumed, since a new `Base.tail` fold in a release whose
+  case against upstream's was about `Base.tail` folds should not be taken on trust:
+  `scripts/walk_compile_cost.jl` reports `l2norm` and `solution_scale` on both shapes, and cold on the
+  369-entry flat set each costs **0.57 s** against 0.00 s on the 16 × 24 nested container. That is the
+  fold's own `k³`, at a width where a *fold* still gets away with it — it returns one number rather
+  than a tuple per level, so there is no new tuple type per child, only a new argument type. An earlier
+  draft of this line said 0.01 s and 0.00 s, which was the warm figure the old harness produced.
 
-- **One shape normaliser, not two.** `_as_blocks` (`linesearch_problem.jl`) and `_as_walkable`
-  (`parameter_walks.jl`) were the same function under two names in two files.
+- **`l2norm(::AbstractMatrix)` and `l2norm(::AbstractFloat)` are gone, upstream.** They were
+  **issue [#16] group 1**, and the plainest piracy in the package: `l2norm` is `GeometricBase.Utils`'
+  (`SimpleSolvers` only re-exports it) and both argument types are `Base`'s, so every package that
+  loaded this one inherited them. Their own comment said where they belonged.
+
+  `GeometricBase` 0.14.9 takes `L2norm(x::AbstractArray)` where it had `AbstractVector`, which is the
+  matrix method with the `vec` removed. The `AbstractFloat` one turned out to be **redundant as well as
+  pirated**: `L2norm(x::Real) = x^2` and `l2norm(x) = √L2norm(x)` were already `abs` for any `Real`, so
+  nothing ever needed it.
+
+  Removing the `vec` is not only ownership. `vec` of a `Matrix` allocates a 32-byte reshape wrapper, so
+  `l2norm` of a parameter set cost 32 bytes per matrix leaf on every stopping criterion of every
+  iteration of `solve!`; it is zero now, for a lift, a flat `NamedTuple`, a container and a plain set of
+  vectors alike, and `test/flat_buffer_allocations.jl` says so as an exact equality.
+
+  This is the whole of group 1. Groups 2 and 3 are unmoved — see *Known issues*.
+
+- **One shape normaliser, not one and a half.** `_as_blocks` (`linesearch_problem.jl`) and
+  `_as_walkable` (`parameter_walks.jl`) were the same function under two names in two files; the first
+  went earlier in this release and the second went with the file. Neither is replaced, because
+  `Base.values(::NetworkParameters)` is defined upstream and one `values(x)` serves both members of the
+  union.
 
 - `apply_section!(Y, λY::NamedTuple, Y₂)` widened two of three slots to `Any`, where it accepts a
   `ParameterSet` and fails inside the walk for anything else. Named now.
 
 ### Known issues
 
-- **`src/parameter_walks.jl` should be retired in favour of `NeuralNetworkParameters.mapparameters`.**
-  `_mapleaves` was written here only because that function could not be compiled on a wide-flat set;
-  0.2.2 fixed it from this package's report, and the in-place half is already upstream's
-  (`foreachparameters`). See **D9**.
+- **A solve is not allocation-free, and this release does not make it one.** The flat vectors are gone;
+  what remains is the gradient evaluation and the parameter trees `global_rep` and
+  `retraction_differential` build per line-search evaluation in `trial_slope`.
 
-  The apparent obstacle turns out to be an argument for the change. `_as_walkable` has a catch-all where
-  `_as_namedtuple` has three exhaustive methods, so a tree zipped against a *leaf* raises upstream and
-  not here — but what happens here instead is worse than raising: `map` over a `NamedTuple` and a bare
-  `Vector` matches neither of Base's specific methods, falls through to the generic iterator `map`, and
-  `zip`s the branch's entries against the leaf's elements, returning an `Array`. A shorter leaf is
-  silently truncated. Nothing in this package pairs a leaf with a branch, so nothing depends on either
-  behaviour; if something ever needs to, it wants explicit broadcast semantics — the shape
-  `GeometricMachineLearning`'s `_tree_optim_step!` hand-writes, where one `GlobalSection` stands in for a
-  whole subtree — and not a fallthrough in a zip normaliser.
+  The third item that stood here — "the `map` inside the elementwise walks returning a tree of results
+  that is then discarded", 992 bytes per `update!` — is **fixed** in this release: `_mapleaves!` is
+  `NeuralNetworkParameters.foreachparameters`. See the review findings above.
+
+- **The walk is upstream's now, and the file that held the local copy is gone.** The entry that stood
+  here in an earlier draft of this release — "`src/parameter_walks.jl` should be
+  retired in favour of `NeuralNetworkParameters.mapparameters`" — is **done**, and the file is deleted.
+  See the walks entry under *Added* above, and open issue **D9**, which is closed with it.
+
+- **Building an `OptimizerCache` for a *nested* container costs about 88 s of compilation**, on a
+  16 × 24 network of 384 leaves, against 2.42 s for a flat `NamedTuple` of 369. Nothing in this release
+  causes it and nothing here can fix it: it is `NeuralNetworkParameters.parameterlayout`, and it is the
+  price of the property that package exists to provide.
+
+  A layout encodes the whole parameter tree in its *type*, deliberately — that is what makes
+  `unflatten` inferable and `flatten!`/`unflatten!` allocation-free at every width. The cost falls on
+  `_layout`'s `@generated` body, which emits one statement per child and threads them serially: for a
+  *nested* set each child is a `NestedLayout` over its own leaves, so inference holds `k` live values
+  of a large type and then merges them into an `NTuple{k, …}`. For a flat set each child is a
+  `LeafLayout`, which is tiny, and 369 of them cost nothing.
+
+  Measured cold, one process each, Julia 1.11.9:
+
+  | shape | leaves | `parameterlayout` |
+  |---|---|---|
+  | flat, one level | 369 | **1.35 s** |
+  | 16 × 8 | 128 | 2.52 s |
+  | 16 × 16 / 32 × 8 | 256 | 5.02 / 5.35 s |
+  | 16 × 24 / 32 × 12 | 384 | 13.91 / 14.71 s |
+  | 16 × 32 / 64 × 8 | 512 | 24.91 / 27.96 s |
+  | 32 × 24 | 768 | **80.6 s** |
+
+  Depth and width are interchangeable — 384 leaves cost about 14 s however they are split — so it is a
+  function of the total leaf count *under a nested branch*, roughly quadratic, and about 10× the same
+  count laid out flat.
+
+  **How bad this is in practice depends on a shape a real network mostly does not have.** A `Dense`
+  chain of 64 layers, 128 leaves, is **1.32 s**. The cliff needs 256 or more leaves *nested*, which is
+  reachable — a 64-block transformer at 8 parameters a block is 28 s — but is not what the networks in
+  this ecosystem currently look like, and is not the flat set `GMLDatasets`' MNIST scripts hand this
+  package.
+
+  Three explanations were tested and are **wrong**, and are recorded so they are not tried again:
+
+  - *Type size.* The nested 16 × 24 layout type prints as 422 characters and costs 13.9 s; the flat 369
+    one prints as 2582 and costs 1.35 s. Backwards.
+  - *Number of specialisations.* `--trace-compile` reports 33 methods for the nested shape and 29 for
+    the flat one. It is one or two expensive inference jobs, not breadth.
+  - *Per-leaf type diversity*, i.e. `LeafLayout{N,P}`'s prototype parameter. Alternating `Matrix` and
+    `Vector` leaves in the same shape costs **11.32 s against 13.9 s homogeneous**. Erasing `P` would
+    not help here. (It should still go: `LeafLayout.prototype` is never read — only `WrappedLayout`'s
+    is — but that is hygiene, not this.)
+
+  **What would remove it is not worth taking.** Not encoding the tree in the type means an abstractly
+  typed `children` field or a runtime vector of leaf descriptors, and therefore a dynamic dispatch and
+  a boxed allocation *per leaf, per call* in `unflatten` — which sits inside `GradientAutodiff`'s
+  closure and so runs once per objective evaluation, i.e. once per line-search trial. That trades a
+  one-off compile cost for a permanent run-time one, which is the wrong direction here.
+
+  What is worth doing is using `flatlength` wherever only the *size* is wanted: it returns an `Int`, so
+  inference discards the layout type and the same walk costs **1.19 s** against 13.22 s. `alloc_h`
+  already does. `_flat_scratch` genuinely needs the layout and cannot.
+
+  Tracked upstream as [NeuralNetworkParameters#16][nnp16], with the measurements and the three
+  explanations that turned out to be wrong.
+
+[nnp16]: https://github.com/JuliaGNI/NeuralNetworkParameters.jl/issues/16
 
 - **Taking the container did not close issue [#16], and the *Known issues* of 0.5.0 said it would.**
   That entry read "what remains is the swap itself, i.e. the `ArrayNamedTuple` half of **#16**". The
@@ -180,8 +416,6 @@ before failing. This finishes it.
   alias for `Base.NamedTuple`, which is the original complaint, and `NetworkParameters` belongs to
   `NeuralNetworkParameters`, so a method pairing it with `l2norm`, `outer!` or `copyto!` owns neither
   side either. The alias' docstring says so.
-
-- **The flat buffers are still allocated per call**, unchanged from 0.5.0 — see that release's entry.
 
 [#16]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16
 
@@ -2023,8 +2257,7 @@ given. Entries A5, A6 and D5 come from the review of [#36]; A10 from the review 
 from the line-search work of this release, A12 and C8 from the review of [#40], A13, A14 and C9 from
 the work on A4 and A8, A16, C10, C11, D7 and D8 from moving to SimpleSolvers 0.12 and closing A1b, and
 A17, C12 and C13 from the review of [#44], A18, A19, C14 and C15 from the review of [#45] and A20
-from the review of [#46], and D9 from widening the elementwise primitives to the parameter container
-in 0.6.0; the rest from unifying the optimizer hierarchies. A21 is older than any of
+from the review of [#46]; the rest from unifying the optimizer hierarchies. A21 is older than any of
 them — it comes from the MNIST port of [#14] and was catalogued only when that material left the
 repository, which is this section's own case made once more: a finding kept in a file beside the work
 that found it leaves with that work.
@@ -2054,10 +2287,11 @@ executing before it is written down.
 **Only open entries are listed here.** A1, A1b, A2, A3, A4, A7, A8, A9, A15, B3, C6, D3, D4 and D6 were
 in this catalogue and have been fixed; each is now described in [0.2.0](#020)
 above, under the change that fixed it, and the entry here is gone. C3 and C4 went the same way in
-[0.2.1](#021), and A11 in [0.2.2](#022). The labels are *not* reused and the
-surviving ones are not renumbered, so the gaps are deliberate: A5, A6 and A10 mean what they have
-always meant, and a reference to A1b, A4, A11, A15, B3, D6 or C6 in a commit message still resolves
-to the right subject.
+[0.2.1](#021), A11 in [0.2.2](#022), and **D9** in 0.6.0 — it is the shortest-lived entry this file
+has had, opened and closed within one release, and its account now sits under the change that closed
+it. The labels are *not* reused and the surviving ones are not renumbered, so the gaps are
+deliberate: A5, A6 and A10 mean what they have always meant, and a reference to A1b, A4, A11, A15,
+B3, D6, D9 or C6 in a commit message still resolves to the right subject.
 
 Each entry says what it would take to fix it — look for **What to do**. That used to live in a
 `plan.md` that sequenced the catalogue into PRs and was never tracked here (it was excluded
@@ -3075,60 +3309,6 @@ downstream package. Failing that, this package can pin the local fallback invent
 exist — so that an upstream docs rebuild cannot break this build again. The second is worth doing
 regardless: relying on a fetched inventory means a docs build that passes today can fail tomorrow with
 no commit here.
-
-#### D9. `NeuralNetworkParameters`' walks were superlinear in the width of one level — **fixed upstream**
-
-**Severity: medium**, a *compile-time* defect rather than a run-time one, and **closed** by
-`NeuralNetworkParameters` 0.2.2. Kept here because it was found from this package and because the
-numbers are the gate on whether `src/parameter_walks.jl` can be retired.
-
-Found while widening this package's elementwise primitives to the parameter container (0.6.0), when the
-obvious implementation — reuse `NeuralNetworkParameters.mapparameters` — turned out to be unusable on
-the one parameter shape this package has a named consumer for.
-
-Every walk across the children of one branch there was an `@inline`d `Base.tail` chain, and `Base.tail`
-yields a new tuple type at every level — so a branch of `k` children cost `k` specialisations whose
-argument types were each `O(k)` long, and inference on that grew as `k³`. `Base.map` has no such cliff,
-precisely because it *does* drop to a loop past 32 fields.
-
-Two shapes with the same number of leaves therefore behaved completely differently. Measured with
-`scripts/wide_branch_cost.jl` in that package, first call including compilation, on a flat
-`NamedTuple` of `k` leaves:
-
-| children | `flatten`, 0.2.1 | `flatten`, 0.2.2 | `mapparameters(zero, ·)` cold, 0.2.1 | 0.2.2 |
-|---|---|---|---|---|
-| 32 | 0.17 s | 0.09 s | 0.07 s | 0.00 s |
-| 64 | 2.16 s | 0.23 s | 1.32 s | 0.00 s |
-| 128 | 17.57 s | 0.56 s | 7.39 s | 0.00 s |
-| 369 | not run to completion | 2.05 s | not run to completion | 0.00 s |
-
-369 entries is not a synthetic worst case: it is the parameter set of the MNIST transformer in
-`scripts/geometric_optimizers/mnist.jl` of [GMLDatasets.jl](https://github.com/JuliaGNI/GMLDatasets.jl),
-which is written against that package alone — 3·7·16 attention projections, 2·16 ResNet parameters and
-one classification weight, in one flat `NamedTuple`.
-
-**It was never new in 0.6.0 and no change here caused it.** `GradientAutodiff(F, nt)` calls
-`flatten(nt)`, so any `Optimizer` built on a wide-flat set had been paying it since 0.5.0 adopted
-`NeuralNetworkParameters` for the flattening. 0.6.0 avoided *adding* to it, by writing `_mapleaves`
-over `map`; 0.2.2 removes the reason to.
-
-**Two things came out of the report that are worth keeping.** The obvious fix — drop the `@inline` —
-leaves the `k` specialisations exactly where they are and makes the same 64-child set *slower* (3.22 s)
-while starting to allocate, because the inlining was what kept the per-leaf `copyto!` statically
-dispatched. And a plain loop over the children, which is what `Base.map` falls back to, indexes a
-heterogeneous tuple at a runtime `i`, so it is type-unstable and costs a dynamic dispatch and a boxed
-allocation per child. What 0.2.2 does instead is emit the flat body at literal indices, which is
-neither.
-
-Two further defects of the same shape were found and fixed with it, both of which this package was
-paying: `flatten!`/`unflatten!` allocated past about forty children (187 808 bytes at 64, against the
-guarantee in their own docstrings), and the reverse pass allocated 161 504 bytes per pullback call at
-the same width. Both measure zero in 0.2.2.
-
-**What is left here.** `src/parameter_walks.jl` can go, and `_mapleaves` with it, with no question
-outstanding — see *Known issues*, where the one apparent obstacle turns out to be a latent bug of this
-file's own. `scripts/walk_compile_cost.jl` is the harness to re-run afterwards, and the in-place half is
-already upstream's.
 
 ---
 

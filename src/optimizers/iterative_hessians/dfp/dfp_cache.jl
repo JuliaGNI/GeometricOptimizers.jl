@@ -10,7 +10,7 @@ The [`OptimizerCache`](@ref) corresponding to the [`DFP`](@ref) method.
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
 [`store_gradient!`](@ref).
 """
-struct DFPCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
+struct DFPCache{T,VT,GT,MT,GS,FT} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::GT    # current gradient
@@ -28,6 +28,9 @@ struct DFPCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
 
     section::GS
 
+    # the flat buffers `outer!` and `_mul!` write through; see `_flat_scratch`
+    flat::FT
+
     # The solution and the gradient are separate type parameters because on a manifold they are not
     # the same thing: `x` is a point of `St(N, n)` while the gradient, the direction and the secant
     # differences are horizontal lifts of shape `N × N`. `Q` is sized by neither -- it is sized by the
@@ -39,7 +42,9 @@ struct DFPCache{T,VT,GT,MT,GS} <: OptimizerCache{T}
         q = zeros(T, n, n)
         section = GlobalSection(x)
         g = _zero(x)
-        cache = new{T,AT,typeof(g),typeof(q),typeof(section)}(_copy(x), _similar(g), _similar(g), Ref(false), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section)
+        # from the same `_zero(x)` as `n` above, and for the same reason
+        flat = _flat_scratch(T, g)
+        cache = new{T,AT,typeof(g),typeof(q),typeof(section),typeof(flat)}(_copy(x), _similar(g), _similar(g), Ref(false), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section, flat)
         initialize!(cache, x)
         cache
     end
@@ -85,7 +90,9 @@ inverse_hessian(::DFPCache) = error("The inverse Hessian is stored in the state,
 function update!(cache::DFPCache, state::OptimizerState, x::OptimizerSolution)
     _copyto!(cache.x, x)
     _copyto!(direction(cache), state.s)
-    outer!(cache.ΔxΔx, direction(cache), direction(cache))
+    # see the same line in `bfgs_cache.jl`
+    δ = _flat_δ!(cache)
+    outer!(cache.ΔxΔx, δ, δ)
     cache
 end
 
@@ -110,15 +117,16 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
     # see the remark in `bfgs_cache.jl`: `δᵀγ` is the denominator of an update whose every other term is
     # flattened, so it is `_dot` and not the ambient `⋅`
     ΔxΔg = _dot(cache.Δx, cache.Δg)
-    # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too
-    Δg2 = flatten(T, cache.Δg)[1]
-    γQγ = Δg2' * state.Q * Δg2
+    # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too -- in the
+    # cache's buffers, and through the three-argument `dot`, which materialises no `Q * γ`
+    δ, γ = _flat_δ!(cache), _flat_γ!(cache)
+    γQγ = dot(γ, state.Q, γ)
 
     # see the remark in `bfgs_cache.jl`: `curvature_is_usable` is the curvature condition that keeps
     # `Q` positive definite, and it is what the bare `!iszero`/`!isnan` pair could not express
     if curvature_is_usable(ΔxΔg, cache.Δx, cache.Δg) && !iszero(γQγ) && !isnan(γQγ)
-        outer!(cache.ΔxΔx, cache.Δx, cache.Δx)
-        outer!(cache.ΔgΔg, cache.Δg, cache.Δg)
+        outer!(cache.ΔxΔx, δ, δ)
+        outer!(cache.ΔgΔg, γ, γ)
         # the DFP correction is `Q - Qγγᵀ Q/(γᵀQγ) + δδᵀ/(δᵀγ)` (nocedal2006numerical, eq. 6.15), so
         # the rank-one term that is subtracted is built from `γγᵀ`. This used to read `cache.ΔxΔx`,
         # i.e. `δδᵀ`, which left `cache.ΔgΔg` computed on the line above and never read.
@@ -137,7 +145,7 @@ function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}
     # it, and not at the end of the iteration, where it would be the gradient at the same iterate.
     _copyto!(state.ḡ, gradient(cache))
 
-    _mul!(direction(cache), inverse_hessian(state), rhs(cache))
+    _flat_mul!(direction(cache), inverse_hessian(state), rhs(cache), cache.flat)
     _copyto!(state.s, direction(cache))
 
     cache

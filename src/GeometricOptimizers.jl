@@ -56,8 +56,10 @@ import LazyArrays
 # written in terms of. `ext/AbstractNeuralNetworksExt.jl` imports `mapstorage` for itself.
 using NeuralNetworkParameters: NetworkParameters, params,
                                parameterlayout, flatlength,
-                               flatten, unflatten, unflatten!,
-                               foreachparameters, ParameterSet, register_parameter_type!
+                               flatten, flatten!, unflatten, unflatten!,
+                               FlatParameters, ParameterSet,
+                               mapparameters, mapparameters!,
+                               register_parameter_type!
 import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
 
 # `metric`, `check` and `Ω` join `rgrad` in being public: they are the geometry a caller works in,
@@ -89,7 +91,6 @@ include("lie_algebras/stiefel_projection.jl")
 
 # The leaf protocol, once `Manifold`, `VectorStorageMatrix` and `AbstractLieAlgHorMatrix` all exist.
 include("parameter_protocol.jl")
-include("parameter_walks.jl")
 
 # The whole global-section interface is public. Everything a caller needs in order to take one
 # optimizer step by hand — build the section, lift a gradient into `𝔤ʰᵒʳ`, transport the section

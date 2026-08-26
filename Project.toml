@@ -1,6 +1,6 @@
 name = "GeometricOptimizers"
 uuid = "fc236c15-5557-4942-aa65-b650f329279e"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Michael Kraus", "Benedikt Brantner"]
 
 [deps]
@@ -24,7 +24,7 @@ AbstractNeuralNetworksExt = "AbstractNeuralNetworks"
 AbstractNeuralNetworks = "0.7"
 ChainRulesCore = "1"
 GPUArraysCore = "0.2"
-GeometricBase = "0.14"
+GeometricBase = "0.14.9"
 HDF5 = "0.17"
 JLArrays = "0.3"
 KernelAbstractions = "0.9"

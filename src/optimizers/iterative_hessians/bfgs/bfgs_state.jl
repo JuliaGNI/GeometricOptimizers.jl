@@ -85,15 +85,17 @@ function initialize!(state::BFGSState{T}, ::OptimizerSolution{T}) where {T}
     state
 end
 
-function update!(state::BFGSState, gradient::Gradient, x::XT, retraction) where {T,XT<:OptimizerSolution{T}}
-    _copyto!(state.x̄, x)
-    XT <: ParameterContainer ? gradient(state.ḡ, x, state) : gradient(state.ḡ, x)
-    state.f̄ = gradient.F(flatten(T, x)[1])
-
-    update_section!(section(state), state.s, retraction)
-
-    state
-end
+# `update!(state::BFGSState, ::Gradient, x, retraction)` was deleted in 0.6.0. It had no caller: for a
+# `BFGSState` the live path is `update!(state, opt, x)` in `gradient_optimizer.jl`, which reaches the
+# six-argument method below and hands it `problem(opt).F(x)` directly. Nothing in `src/`, `test/`,
+# `docs/` or `scripts/` called the four-argument form, and neither does `GeometricMachineLearning` or
+# `GMLDatasets`.
+#
+# It is named here because of what it did rather than because it is missed: it set `f̄` with
+# `gradient.F(flatten(T, x)[1])`, and `gradient.F` is the closure `_x -> F(unflatten(layout, _x))` —
+# so that line flattened `x` and unflattened it again to compute `F(x)`, allocating twice for a value
+# the caller already had. The six-argument method takes `f` as an argument, which is the fix; a
+# scratch buffer would only have made the round trip cheaper.
 
 function _copyto!(sec::GlobalSection{T,AT,Nothing}, Y::AT) where {T,AT<:AbstractVector{T}}
     sec.Y .= Y

@@ -117,13 +117,13 @@ _block_αmax(::Any, ::Any, c::T) where {T} = T(Inf)
 # -- would take the `::Any` method above for all of them and get `Inf`, i.e. no ceiling at all, and
 # issue A1b would be back for exactly the parameter shape a network has. A flat `ArrayNamedTuple`
 # never reaches it, its values being arrays by construction.
-# `_as_walkable` — `src/parameter_walks.jl` — is `values` of whichever shape the direction arrived in.
-# It tracks the solution block by block, so it is a branch wherever the solution is one, but not
-# necessarily the *same* kind of branch: a container solution can be paired with the plain `NamedTuple`
-# its `GlobalSection` tree is built as. This used to be a second copy of that function under the name
-# `_as_blocks`.
-_block_αmax(y::ParameterSet, δ, c) =
-    _manifold_αmax(values(y), values(_as_walkable(δ)), c)
+# `values` of the direction, whichever shape it arrived in: `NeuralNetworkParameters` defines
+# `Base.values(::NetworkParameters)`, so one call serves both members. `δ` tracks the solution block
+# by block, so it is a branch wherever the solution is one, but not necessarily the *same* kind of
+# branch — a container solution can be paired with the plain `NamedTuple` its `GlobalSection` tree is
+# built as. Two local normalisers stood here for that, `_as_blocks` and then `_as_walkable`; both are
+# gone.
+_block_αmax(y::ParameterSet, δ, c) = _manifold_αmax(values(y), values(δ), c)
 
 @doc raw"""
     linesearch_parameters(cache, x, state, c)
@@ -169,7 +169,7 @@ _linesearch_parameters(::Manifold, cache::OptimizerCache, x, state, c) =
 
 _linesearch_parameters(sol::ParameterContainer, cache::OptimizerCache, x, state, c) =
     (x=x, state=state,
-     αmax=_manifold_αmax(values(sol), values(_as_walkable(direction(cache))), c))
+     αmax=_manifold_αmax(values(sol), values(direction(cache)), c))
 
 # The ceiling a `linesearch_parameters` actually carries, read back by `solver_step!` so that it can
 # recognise a step of its own making; see `linesearch_rejected` and issue B3. This mirrors
