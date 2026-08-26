@@ -397,6 +397,11 @@ before failing. This finishes it.
   inference discards the layout type and the same walk costs **1.19 s** against 13.22 s. `alloc_h`
   already does. `_flat_scratch` genuinely needs the layout and cannot.
 
+  Tracked upstream as [NeuralNetworkParameters#16][nnp16], with the measurements and the three
+  explanations that turned out to be wrong.
+
+[nnp16]: https://github.com/JuliaGNI/NeuralNetworkParameters.jl/issues/16
+
 - **Taking the container did not close issue [#16], and the *Known issues* of 0.5.0 said it would.**
   That entry read "what remains is the swap itself, i.e. the `ArrayNamedTuple` half of **#16**". The
   swap is here and #16's group 3 is still open, because closing it needs the `NamedTuple` methods
