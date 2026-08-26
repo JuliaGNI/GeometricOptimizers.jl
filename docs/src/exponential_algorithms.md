@@ -85,10 +85,14 @@ The reduced argument here is particularly difficult. ``X``'s lower-left block is
 ```
 
 because the eigenvalues of ``X`` are the nonzero, purely imaginary eigenvalues of the skew matrix
-``\bar{B}``. The resulting non-normality can make intermediate Taylor terms much larger than the
-final answer. Their cancellation then loses accuracy. This is the familiar reason not to evaluate a
-matrix exponential by an unscaled Taylor series [moler2003nineteen](@cite), made more pronounced here
-because the norm of the reduced matrix can grow quadratically with the norm of the lift.
+``\bar{B}``. A norm quadratically larger than the spectral radius is a strongly non-normal matrix, and
+on such an argument the intermediate terms become enormous before cancelling to a result of moderate
+size: at ``\|\bar{B}\| \approx 79`` the partial sums exceed the answer by some twenty orders of
+magnitude, reaching ``4\cdot10^{21}`` where the result is of order one, and 174 terms are needed before
+one falls below `eps`. Stopping there therefore leaves a relative error of
+``\varepsilon\|\mathfrak{A}(X)\|`` rather than ``\varepsilon``. That the direct series is not a
+method for the matrix exponential is a very old observation [moler2003nineteen](@cite); what is
+specific here is that the factorisation makes the argument *worse* than the matrix one started with.
 
 How badly this goes is worth measuring rather than asserting. `check(geodesic(B, TaylorSeries()))`
 on a random `StiefelLieAlgHorMatrix(20, 3)` scaled up:

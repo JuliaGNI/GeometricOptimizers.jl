@@ -389,8 +389,10 @@ is reproducible from the test suite and so the working algorithms have a baselin
 against. The series is summed on ``X = (B'')^TB'``, formed from the factors
 [`lift_factors`](@ref) returns, and that reduced matrix is strongly non-normal: its norm is
 ``\approx\|\bar{B}\|^2/4`` where its spectral radius is only ``\approx\|\bar{B}\|``. On such an
-argument the terms cancel — the partial sum reaches ``2.5\cdot10^{18}`` where the result is of order
-one — so stopping when a *term* falls below `eps` leaves a relative error of
+argument the terms cancel — at ``\|\bar{B}\| \approx 79`` the intermediate partial sums exceed the
+result by some twenty orders of magnitude, reaching ``4\cdot10^{21}`` where the answer is of order one,
+and the summation takes 174 terms to reach `eps` where the scaled series takes a handful — so stopping
+when a *term* falls below `eps` leaves a relative error of
 ``\varepsilon\|\mathfrak{A}(X)\|`` rather than ``\varepsilon``.
 `check(geodesic(B, TaylorSeries()))`, on a random `StiefelLieAlgHorMatrix(20, 3)` scaled up:
 
