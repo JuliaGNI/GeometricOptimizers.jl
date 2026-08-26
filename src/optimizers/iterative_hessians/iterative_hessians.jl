@@ -19,8 +19,16 @@ allocate a fresh vector every time, four times per `update!`. These are the buff
 instead, through `NeuralNetworkParameters`' allocation-free `flatten!` and `unflatten!`.
 
 A `NeuralNetworkParameters.FlatParameters` rather than a bare `Vector`, because it carries its own
-`ParameterLayout` and keeps it through `similar` — so the three scratch buffers are one `similar` each
-and no `parameterlayout` call survives.
+`ParameterLayout` and keeps it through `similar` — so δ is built once and the other three buffers are
+one `similar` each, with no `parameterlayout` call written anywhere below this line. One is still
+*made*: `FlatParameters(T, g)` is `flatten(T, g)`, whose first act is to build the layout. What the
+`similar`s buy is that it happens once per cache rather than once per `_mul!`.
+
+That layout then goes into the cache's own type, as `FlatParameters`' third type parameter and so as
+`BFGSCache`/`DFPCache`'s `FT`. Until `NeuralNetworkParameters` 0.2.3 that meant every leaf's *concrete
+array type* came with it, `LeafLayout` having carried a `prototype` field nothing read — and a live
+reference to every leaf array besides, so a cache retained the set its buffers were sized from.
+`LeafLayout{N}` is the shape alone now, and neither is true. See the 0.6.0 changelog.
 
 (Those four in plain code and not `@extref`s, for the reason `descent_direction.jl` gives about
 `solve_with_status`: `docs/make.jl` carries `DocumenterInterLinks` inventories for `SimpleSolvers` and

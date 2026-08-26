@@ -13,6 +13,14 @@ which bound `T` at the eleven sites that take the element type from the *type* o
 everything else dispatching on `ArrayNamedTuple` — so a container got several frames into a solve
 before failing. This finishes it.
 
+**Three of this entry's own claims were re-measured against `NeuralNetworkParameters` 0.2.3 and did not
+survive**, and they failed the same way rather than three different ways: each was a sound measurement
+attributed to the wrong cause. The layout cliff was one unused type parameter upstream, not nesting and
+not `parameterlayout`; most of the allocation saving was upstream's D13 and D17, not the flat buffers;
+and the nested cache figure is `AdamCache`'s constructor on the compat floor, not the layout. No code
+from #68 or #69 is reverted — the designs hold and 0.2.3 improves both — and the harness now sweeps the
+axis whose absence made the first of those possible. Two new *Known issues* came out of it.
+
 ### Added
 
 - **The elementwise primitives, and the ~40 sites around them, take a container.** A new alias,
@@ -81,14 +89,27 @@ before failing. This finishes it.
   | `OptimizerCache(Adam)` | 1.57 s | 71.16 s | **2.42 s** |
 
   The last row is the one to read: it is the entry point `GeometricMachineLearning` reaches without
-  going through `flatten`, and `scripts/walk_compile_cost.jl --caches` is where it comes from. The
-  0.85 s this release is dearer than 0.5.0 is the honest price of the container — a `ParameterLayout`
-  is built and stored where `map` over a `NamedTuple` needed none.
+  going through `flatten`, and `scripts/walk_compile_cost.jl --caches` is where it comes from. It
+  **reproduces** — re-measured against `NeuralNetworkParameters` 0.2.3 it is 2.45 s bare and 2.38 s
+  wrapped at flat 369 on 1.11.9, and 2.34 s on 1.13 — so the case for retiring the local walk stands
+  where it was made. The 0.85 s this release is dearer than 0.5.0 is `mapparameters` against `map` and
+  nothing else: an earlier draft of this line called it "the honest price of the container — a
+  `ParameterLayout` is built and stored where `map` over a `NamedTuple` needed none", and `AdamCache`
+  builds no layout. It reaches `_zero`, `_similar`, `_fill!` and `GlobalSection` and stops. The same
+  mistake, attributing a walk's cost to the layout, is what the *Known issues* entry below is about.
+
+  **The four rows above it are not reproducible from the committed harness as it stood**, which is worth
+  saying rather than quietly fixing: `scripts/walk_compile_cost.jl` did not print `_zero`, `_copy`,
+  `_similar` or `GlobalSection` at all, so where those figures came from cannot be recovered. It prints
+  them now, and on 0.2.3 at flat 369 they read 0.04 / 0.01 / 0.01 / 0.01 s — below the column above,
+  which is a row order the old script did not have rather than a change in the walk. Treat the first
+  three columns as the record of a decision and the harness as the thing that can be re-run.
 
   The **nested** container is a different matter: `OptimizerCache` on a 16 × 24 network of 384 leaves
   costs 87.56 s, which 0.5.0 cannot be compared against because it raises a `MethodError` on `_copy`
-  there — the whole of what this release is about. That figure is not paid for by anything here; see
-  *Known issues*.
+  there — the whole of what this release is about. **It reproduces at 88.59 s against
+  `NeuralNetworkParameters` 0.2.3**, whose `parameterlayout` on that shape is 0.87 s, so it was never
+  what this file used to say it was. See *Known issues*.
 
   Deleting the file fixes a latent bug of its own, and that is the part worth keeping. `_as_walkable`,
   the normaliser it put its trailing arguments through, had a **catch-all** where
@@ -121,6 +142,46 @@ before failing. This finishes it.
 
 - **`GeometricBase = "0.14.9"`**, which is the release that takes `L2norm` over any array. See the
   `l2norm` entry under *Removed* below.
+
+- **`NeuralNetworkParameters = "0.2.3"`**, up from `"0.2.2"`. 0.2.2 is what the code needs — it is the
+  release whose `@generated` walk split let `src/parameter_walks.jl` be retired, and 0.2.3 changes
+  `src/layout.jl` and nothing else, so nothing here would fail against 0.2.2. The bound moves because
+  the figures this release quotes are 0.2.3's, and admitting 0.2.2 would admit the elevenfold
+  `parameterlayout` cliff the *Known issues* entry below says is gone. Source-compatible either way:
+  `LeafLayout` lost a field and a type parameter in 0.2.3, and nothing in this package constructs a
+  layout by hand or names its parameters.
+
+  Two things it buys that are this package's rather than upstream's, both on the quasi-Newton caches,
+  and both measured by the new `scripts/cache_type_cost.jl` — which is a separate file because neither
+  is a time, and `walk_compile_cost.jl` forks a process per row in order to measure times honestly.
+
+  `_flat_scratch` gives `BFGSCache`/`DFPCache` four `FlatParameters` buffers, and
+  `FlatParameters{T,DT,LT}` carries its `ParameterLayout` as `LT`, so the layout type is a type
+  parameter of the cache through `flat::FT` and whatever the layout holds the cache holds:
+
+  | `_flat_scratch` on | type nodes | bytes over the buffers' floor |
+  |---|---|---|
+  | 369 leaves, bare | 7415 → **2987** | 79 960 → **47 488** |
+  | 369 leaves, in a `NetworkParameters` | 7419 → **2991** | 79 960 → **47 488** |
+  | 128 leaves, alternating `Matrix`/`Vector` | 2595 → **1059** | 25 856 → **14 592** |
+  | one 400 × 400 leaf and one 400 vector | 75 → **51** | 1 283 832 → **480** |
+
+  - **The cache's own type shrinks by 2.5×.** Under 0.2.2's `LeafLayout{N,P}` every leaf's *concrete
+    array type* was in the cache's signature.
+  - **The cache stops retaining the parameter arrays**, which is the last row. 1 283 832 bytes over the
+    floor is the 400 × 400 leaf (1 280 000) plus the 400 vector (3 200) plus 632 of layout: a 0.2.2
+    layout held a live reference to each leaf, so the four buffers pinned a second copy of the whole
+    parameter set for the lifetime of the cache. On 0.2.3 they retain **480 bytes**, whatever the leaves
+    weigh.
+
+  Neither is a run-time cost and `scripts/optimizer_allocations.jl` confirms it: a 20-iteration `solve!`
+  allocates within 0.04 % of the same bytes on 0.2.2 and 0.2.3, on all four shapes and both methods.
+
+  What *is* a cost, and the one figure in this release that a quasi-Newton user feels directly:
+  `OptimizerCache(BFGS)` on the flat 369-entry set goes **27.88 s → 12.24 s** bare and 17.01 s → 11.70 s
+  wrapped, on Julia 1.11.9. That is the cache's `flatten`, which the `Adam` cache does not do — and
+  `OptimizerCache(Adam)` on the same set is 2.42 s on 0.2.2 and 2.45 s on 0.2.3, unmoved, as a walk
+  should be.
 
 - **`global_rep` and `apply_section` rebuild in the shape of the *parameters*, not of the section.**
   These walks are written with their arguments the other way round from the rest, and it is not
@@ -191,23 +252,38 @@ before failing. This finishes it.
 
   `test/flat_buffer_allocations.jl` pins each site at exactly zero, for all four shapes of solution and
   both methods. What that is worth end to end, from `scripts/optimizer_allocations.jl` — a 20-iteration
-  `solve!`, bytes allocated. **Both columns re-measured on Julia 1.11.9, Apple M4 Max**, the 0.5.0 one
-  by running this release's script against a worktree of `main`, so the two are comparable rather than
-  merely recorded:
+  `solve!`, bytes allocated, Julia 1.11.9, Apple M4 Max.
 
-  | | 0.5.0 | this release |
-  |---|---|---|
-  | `BFGS`, `Vector` | 36 232 | 24 376 |
-  | `BFGS`, bare `Manifold` | 1 474 408 | 1 064 440 |
-  | `BFGS`, flat `NamedTuple` | 2 431 912 | 1 617 912 |
-  | `BFGS`, container | `MethodError` | 1 671 672 |
-  | `DFP`, `Vector` | 35 432 | 23 080 |
-  | `DFP`, bare `Manifold` | 1 474 888 | 1 063 144 |
-  | `DFP`, flat `NamedTuple` | 2 425 608 | 1 608 296 |
-  | `DFP`, container | `MethodError` | 1 662 056 |
+  **Three columns, and the middle one is why.** An earlier version of this table had two, and said "both
+  columns re-measured […] so the two are comparable rather than merely recorded". They were not
+  comparable: the 0.5.0 column resolved `NeuralNetworkParameters` **0.2.1** and this release's resolved
+  0.2.2, and 0.2.2 is the release that fixed *upstream's* D13 and D17 — `flatten!`/`unflatten!` and
+  `mapparameters!` allocating past about forty children. So the table charged this release for an
+  improvement that was mostly upstream's. Holding the dependency fixed at 0.2.3 separates them:
 
-  About a third, and the `Vector` column is not a rounding error: `flatten(T, ::Vector)` copies, and
-  `Δg2' * Q * Δg2` allocated there too.
+  | | 0.5.0, NNP 0.2.1 | 0.5.0, NNP 0.2.3 | this release, NNP 0.2.3 |
+  |---|---|---|---|
+  | `BFGS`, `Vector` | 36 232 | 28 616 | **22 536** |
+  | `BFGS`, bare `Manifold` | 1 474 408 | 1 103 000 | **1 056 760** |
+  | `BFGS`, flat `NamedTuple` | 2 431 912 | 1 694 072 | **1 559 832** |
+  | `BFGS`, container | `MethodError` | `MethodError` | **1 566 072** |
+  | `DFP`, `Vector` | 35 432 | 27 640 | **21 240** |
+  | `DFP`, bare `Manifold` | 1 474 888 | 1 102 024 | **1 055 464** |
+  | `DFP`, flat `NamedTuple` | 2 425 608 | 1 684 936 | **1 550 216** |
+  | `DFP`, container | `MethodError` | `MethodError` | **1 556 456** |
+
+  The first column is the old one reproduced **byte for byte** by pinning 0.2.1 against the same 0.5.0
+  worktree, which is what identifies the confound rather than merely suspecting it. Read across the flat
+  `NamedTuple` row: 2 431 912 → 1 559 832 is 872 080 bytes, still about a third — but **737 840 of them
+  are upstream's** and 134 240 are this release's, so roughly a sixth of the saving is ours. The `Vector`
+  row is where the split is closest to even, 7 616 against 6 080, and it is also the row with no
+  parameter tree at all: `flatten(T, ::Vector)` copies, and `Δg2' * Q * Δg2` allocated there too.
+
+  **This does not change what the code does or whether it should stay.** The flat sites are at exactly
+  zero and `test/flat_buffer_allocations.jl` asserts it site by site; what changes is the size of the
+  claim, and 6 712 bytes an iteration on the shape `GMLDatasets` uses is what removing four flat vectors
+  per `update!` is actually worth. The remaining 1.56 MB is the gradient evaluation and the parameter
+  trees, which is what *Known issues* has always said.
 
   The figures moved twice while this branch was in review, and both moves are the walk rather than the
   weather. First, `_mapleaves!` became `foreachparameters`: the discarded result tree cost one
@@ -220,6 +296,14 @@ before failing. This finishes it.
   36 232, 2 430 488 against 2 431 912, and so on), the residue being the Julia version the first
   measurement was taken on. That is a *reproduction*, and it is recorded because six measurements in
   this file's own catalogue have failed to be.
+
+  And it reproduced a third time, which is how the middle column above got its meaning: pinning
+  `NeuralNetworkParameters` 0.2.1 against that same 0.5.0 worktree returns **36 232 / 1 474 408 /
+  2 431 912 / 35 432 / 1 474 888 / 2 425 608**, byte for byte. A figure that reproduces exactly under a
+  dependency you did not think you were varying is the strongest evidence available that the dependency
+  is what the comparison was measuring. Neither reproduction was wrong; between them they say the
+  measurement was sound and the *attribution* was not, which is the same distinction the layout entry
+  under *Known issues* turns on.
 
 - **`test/flat_buffer_allocations.jl` was measuring its own harness.** Every `@allocated` in it sat in
   the body of a `@testset`, with only the *call* inside a function. A `@testset` body is a closure and a
@@ -274,12 +358,30 @@ before failing. This finishes it.
   uncovered `NamedTuple` did not raise a `MethodError` naming `l2norm` — it was splatted into
   `L2norm(::NamedTuple, ::Matrix, ::Matrix, …)` and reported against a function the caller never named.
 
-- **`scripts/walk_compile_cost.jl` ran.** As first committed it died on its first table, before printing
-  anything: `map(zero, ·)` on a *nested* set hands `zero` a whole layer, which is the very claim the
-  script exists to demonstrate, so it is caught and reported as a row now rather than raising. The
-  nested table is also built from a `NetworkParameters` rather than a bare nested `NamedTuple`, since the
-  rows that take a *solution* have no method for the latter — which is how the `l2norm` gap above
-  surfaced.
+  **`_dot` is deliberately not widened with them**, which the sweep now shows as a `MethodError` row on
+  the nested-bare cell. It shares `l2norm`'s recursion but not its signature: it returns `T(...)`, so `T`
+  has to bind, and `ParameterContainer{T}` is the alias that binds it. There is no shape a *solution* can
+  take that it turns away — a nested bare `NamedTuple` is not one — so this is the alias being used where
+  its docstring says to use it, not an omission.
+
+- **`scripts/walk_compile_cost.jl` ran, and then swept the axis it was comparing across.** As first
+  committed it died on its first table, before printing anything: `map(zero, ·)` on a *nested* set hands
+  `zero` a whole layer, which is the very claim the script exists to demonstrate, so every row that
+  raises is caught and reported as a row now rather than raising. That is how the `l2norm` gap above
+  surfaced, and it is why the exception rows are kept: the elementwise primitives turning a nested bare
+  `NamedTuple` away is a statement about `ArrayNamedTuple` being flat by construction, not a hole in the
+  harness.
+
+  It now sweeps **shape × wrapping**, four cells and a process each, where it swept flat-bare against
+  nested-wrapped and called the difference nesting. `--gradient` is a third mode for the one row that
+  cannot share a process with anything, and `--caches` gained the `BFGS` rows, which are the ones that
+  flatten. See *Known issues* for what the one-axis sweep cost, which is the reason for all of it.
+
+  The nested set is also built with **distinct keys per block** now — sixteen branches of sixteen types,
+  which is what a network has, against sixteen of one type compiled once. That is a change to what the
+  figures are *of*, so: it moves the two rows that can be compared by less than a cold measurement's
+  spread, `parameterlayout` at 16 × 24 wrapped on 0.2.2 reading 14.28 s against the 13.91 s recorded
+  before and `OptimizerCache(Adam)` 85.70 s against 87.56 s.
 
 - **`add!` on a parameter set is deleted rather than narrowed.** It was `::NamedTuple` ×3 and had become
   `::ParameterContainer` ×3, which drops a nested plain `NamedTuple` and any layer whose weights do not
@@ -296,11 +398,16 @@ before failing. This finishes it.
   for having written it.
   Its compile cost is measured rather than assumed, since a new `Base.tail` fold in a release whose
   case against upstream's was about `Base.tail` folds should not be taken on trust:
-  `scripts/walk_compile_cost.jl` reports `l2norm` and `solution_scale` on both shapes, and cold on the
-  369-entry flat set each costs **0.57 s** against 0.00 s on the 16 × 24 nested container. That is the
-  fold's own `k³`, at a width where a *fold* still gets away with it — it returns one number rather
-  than a tuple per level, so there is no new tuple type per child, only a new argument type. An earlier
-  draft of this line said 0.01 s and 0.00 s, which was the warm figure the old harness produced.
+  `scripts/walk_compile_cost.jl` reports `l2norm`, `solution_scale` and `_dot` on every shape, and on
+  Julia 1.11.9 each of the first two costs about **0.65 s** cold on the 369-entry flat set and the same
+  on the 16 × 24 nested container. That is the fold's own `k³`, at a width where a *fold* still gets
+  away with it — it returns one number rather than a tuple per level, so there is no new tuple type per
+  child, only a new argument type. (An earlier draft of this line said 0.01 s and 0.00 s, which was the
+  warm figure the old harness produced, and then 0.57 s against 0.00 s, which had the nested figure from
+  a run that had already compiled the flat one.)
+  **On Julia 1.12 and 1.13 it does not get away with it, and that is a new *Known issue* below** — the
+  same two folds cost 26 s and 35 s each there, and `_dot` 57 s and 71 s, at 369 children in one branch.
+  1.11 is the only supported version on which the sentence above is true.
 
 - **`l2norm(::AbstractMatrix)` and `l2norm(::AbstractFloat)` are gone, upstream.** They were
   **issue [#16] group 1**, and the plainest piracy in the package: `l2norm` is `GeometricBase.Utils`'
@@ -332,7 +439,10 @@ before failing. This finishes it.
 
 - **A solve is not allocation-free, and this release does not make it one.** The flat vectors are gone;
   what remains is the gradient evaluation and the parameter trees `global_rep` and
-  `retraction_differential` build per line-search evaluation in `trial_slope`.
+  `retraction_differential` build per line-search evaluation in `trial_slope`. A 20-iteration `solve!` on
+  the flat `NamedTuple` problem still allocates 1.56 MB, which is essentially all of it: this release
+  removed 6 712 bytes an iteration. See the three-column table under *Fixed*, and note that most of what
+  its two-column predecessor claimed was upstream's rather than ours.
 
   The third item that stood here — "the `map` inside the elementwise walks returning a tree of results
   that is then discarded", 992 bytes per `update!` — is **fixed** in this release: `_mapleaves!` is
@@ -343,64 +453,179 @@ before failing. This finishes it.
   retired in favour of `NeuralNetworkParameters.mapparameters`" — is **done**, and the file is deleted.
   See the walks entry under *Added* above, and open issue **D9**, which is closed with it.
 
-- **Building an `OptimizerCache` for a *nested* container costs about 88 s of compilation**, on a
-  16 × 24 network of 384 leaves, against 2.42 s for a flat `NamedTuple` of 369. Nothing in this release
-  causes it and nothing here can fix it: it is `NeuralNetworkParameters.parameterlayout`, and it is the
-  price of the property that package exists to provide.
+- **The cost this entry used to describe was one unused type parameter upstream, and the diagnosis
+  here was wrong in every part.** What stood here said that building a layout for a *nested* container
+  cost about 88 s, that the cause was `NeuralNetworkParameters.parameterlayout`, that it was "the price
+  of the property that package exists to provide", and — in a list headed *recorded so they are not
+  tried again* — that erasing `LeafLayout`'s prototype type parameter "would not help here". Erasing it
+  is what fixed it, in `NeuralNetworkParameters` 0.2.3, and the compat bound moves to `"0.2.3"` for it.
 
-  A layout encodes the whole parameter tree in its *type*, deliberately — that is what makes
-  `unflatten` inferable and `flatten!`/`unflatten!` allocation-free at every width. The cost falls on
-  `_layout`'s `@generated` body, which emits one statement per child and threads them serially: for a
-  *nested* set each child is a `NestedLayout` over its own leaves, so inference holds `k` live values
-  of a large type and then merges them into an `NTuple{k, …}`. For a flat set each child is a
-  `LeafLayout`, which is tiny, and 369 of them cost nothing.
+  `LeafLayout` carried a `prototype` field that nothing read — a `LeafLayout` is by construction the
+  case where `freeparameters(x) === x`, so `rebuild` on it is the identity — and its type parameter put
+  each leaf's *concrete array type* into the layout type of every branch above it. Upstream counts 1849
+  nodes in the type tree of a 369-leaf wrapped layout against 742 without it.
+  `_layout(::NetworkParameters, ::Int)` is where a caller paid, inferring through the child walk's whole
+  return type to wrap its result, and inference on such a type grows faster than the type does.
 
-  Measured cold, one process each, Julia 1.11.9:
+  **Only the wrapped shape has such a caller, which is why this entry's table could not see it.** That
+  table compared a bare flat `NamedTuple` against a nested `NetworkParameters` and read the difference
+  as a cost of *nesting*. Both axes moved at once. Swept properly — `scripts/walk_compile_cost.jl` runs
+  shape × wrapping now, four cells, one process each — the wrapper is the whole of it and nesting is not
+  a cost at all. Julia 1.11.9, seconds, `0.2.2 → 0.2.3`:
 
-  | shape | leaves | `parameterlayout` |
-  |---|---|---|
-  | flat, one level | 369 | **1.35 s** |
-  | 16 × 8 | 128 | 2.52 s |
-  | 16 × 16 / 32 × 8 | 256 | 5.02 / 5.35 s |
-  | 16 × 24 / 32 × 12 | 384 | 13.91 / 14.71 s |
-  | 16 × 32 / 64 × 8 | 512 | 24.91 / 27.96 s |
-  | 32 × 24 | 768 | **80.6 s** |
+  | | `parameterlayout` bare | `parameterlayout` wrapped | `flatten` bare | `flatten` wrapped | **total, wrapped** |
+  |---|---|---|---|---|---|
+  | flat, 369 entries | 1.34 → 1.03 | **14.08 → 1.04** | 15.39 → 3.98 | 4.83 → 3.78 | 18.91 → **4.82** |
+  | 16 × 24, 384 leaves | 1.24 → 0.88 | **14.28 → 0.87** | 14.05 → 1.86 | 1.94 → 1.59 | 16.22 → **2.46** |
 
-  Depth and width are interchangeable — 384 leaves cost about 14 s however they are split — so it is a
-  function of the total leaf count *under a nested branch*, roughly quadratic, and about 10× the same
-  count laid out flat.
+  Read the bare `parameterlayout` column on 0.2.2: **1.24 s nested against 1.34 s flat**, at the same
+  leaf count, where wrapping either of them costs a factor of eleven. Nesting was never the variable.
+  On 0.2.3 all four cells agree, and the nested set comes out slightly *cheaper* than the flat one.
 
-  **How bad this is in practice depends on a shape a real network mostly does not have.** A `Dense`
-  chain of 64 layers, 128 leaves, is **1.32 s**. The cliff needs 256 or more leaves *nested*, which is
-  reachable — a 64-block transformer at 8 parameters a block is 28 s — but is not what the networks in
-  this ecosystem currently look like, and is not the flat set `GMLDatasets`' MNIST scripts hand this
-  package.
+  The `flatten` columns are the other half, and they are why the old entry could be written at all: on
+  0.2.2 the two wrappings split nearly the same total between different entry points — 1.34 + 15.39 =
+  16.73 s bare against 18.91 s wrapped at flat 369 — so whichever one you measured, the other had
+  absorbed the difference, and a one-axis sweep could produce a coherent wrong answer. Taking the type
+  parameter out reduces the *total*, by 3.9× at flat 369 and 6.6× at 16 × 24.
 
-  Three explanations were tested and are **wrong**, and are recorded so they are not tried again:
+  Of the three explanations that entry listed as tested-and-wrong, the first two stand and were
+  answering the wrong question anyway, having compared a nested-wrapped type against a flat-bare one.
+  The third was the answer. Its evidence is still sound — alternating `Matrix` and `Vector` leaves cost
+  11.32 s against 13.9 s homogeneous, so leaf **diversity** is not the driver — but it never compared
+  the layout type with and without the parameter, which is where the elevenfold difference was. A
+  negative result about one thing was written down as a negative result about a neighbouring one, in the
+  one kind of note whose whole purpose is to stop the work being redone.
 
-  - *Type size.* The nested 16 × 24 layout type prints as 422 characters and costs 13.9 s; the flat 369
-    one prints as 2582 and costs 1.35 s. Backwards.
-  - *Number of specialisations.* `--trace-compile` reports 33 methods for the nested shape and 29 for
-    the flat one. It is one or two expensive inference jobs, not breadth.
-  - *Per-leaf type diversity*, i.e. `LeafLayout{N,P}`'s prototype parameter. Alternating `Matrix` and
-    `Vector` leaves in the same shape costs **11.32 s against 13.9 s homogeneous**. Erasing `P` would
-    not help here. (It should still go: `LeafLayout.prototype` is never read — only `WrappedLayout`'s
-    is — but that is hygiene, not this.)
+  **The lesson is not about the clock, and that is what makes it new.** D16 and D19 upstream, and this
+  file's own harness fix in 0.6.0, were all about measuring cold and measuring the right process. This
+  one was measured cold and in the right process and was still wrong, because the confound was in *which
+  two things the table's two columns were*. `scripts/walk_compile_cost.jl` sweeps both axes now, and its
+  header records the inversion: agreeing columns are the pass condition, and a gap reappearing between
+  bare and wrapped is what the sweep exists to catch.
 
-  **What would remove it is not worth taking.** Not encoding the tree in the type means an abstractly
-  typed `children` field or a runtime vector of leaf descriptors, and therefore a dynamic dispatch and
-  a boxed allocation *per leaf, per call* in `unflatten` — which sits inside `GradientAutodiff`'s
-  closure and so runs once per objective evaluation, i.e. once per line-search trial. That trades a
-  one-off compile cost for a permanent run-time one, which is the wrong direction here.
+  **The one piece of advice that entry gave survives with its reason replaced.** "Use `flatlength`
+  wherever only the size is wanted" was justified there by the clock, 1.19 s against 13.22 s. Upstream's
+  own `flatlength` docstring now measures 1.03 s against 1.05 s. The reason to prefer it is the `Int` it
+  returns, so that nothing downstream of the call has to infer through a layout type — which is a claim
+  about the caller's code, not about any release of upstream. `alloc_h` (`bfgs_state.jl:45`) does;
+  `_flat_scratch` needs the layout itself and cannot, and now says so.
 
-  What is worth doing is using `flatlength` wherever only the *size* is wanted: it returns an `Int`, so
-  inference discards the layout type and the same walk costs **1.19 s** against 13.22 s. `alloc_h`
-  already does. `_flat_scratch` genuinely needs the layout and cannot.
+  Tracked upstream as [NeuralNetworkParameters#15][nnp15], fixed in [#18][nnp18].
+  [NeuralNetworkParameters#16][nnp16], which this entry used to point at, is closed as **not a defect**:
+  `parameterlayout` never was superlinear in the leaf count of a nested set.
 
-  Tracked upstream as [NeuralNetworkParameters#16][nnp16], with the measurements and the three
-  explanations that turned out to be wrong.
-
+[nnp15]: https://github.com/JuliaGNI/NeuralNetworkParameters.jl/issues/15
+[nnp18]: https://github.com/JuliaGNI/NeuralNetworkParameters.jl/pull/18
 [nnp16]: https://github.com/JuliaGNI/NeuralNetworkParameters.jl/issues/16
+
+- **Building an `OptimizerCache` for a *nested* container still costs about 88 s on the compat floor,
+  and 81 of them are `AdamCache`'s four-argument constructor.** This is what survives of the entry
+  above once the layout is ruled out, and it is a different defect with a different owner: it is this
+  package's, it is seven times worse on 1.11 than on 1.12 or 1.13, and nothing upstream will fix it.
+
+  Measured cold, one process each, `scripts/walk_compile_cost.jl --caches`, 16 × 24 container of 384
+  leaves in a `NetworkParameters`:
+
+  | | 1.11.9, NNP 0.2.2 | 1.11.9, NNP 0.2.3 | 1.12.7 | 1.13.0-rc3 |
+  |---|---|---|---|---|
+  | `OptimizerCache(Adam)` | **85.70 s** | **88.59 s** | 12.34 s | 15.72 s |
+  | `OptimizerState(Adam)` | 3.66 s | 3.71 s | 3.52 s | 5.96 s |
+  | `OptimizerCache(BFGS)` | 21.33 s | 15.40 s | 5.84 s | 9.11 s |
+
+  **The first two columns are what rules the layout out.** Upstream 0.2.3 took `parameterlayout` on this
+  shape from 14.28 s to 0.87 s and moved the `Adam` row by less than the spread of a single cold
+  measurement. The `BFGS` row *did* move, by 6 s, because that cache flattens — which is the control: a
+  layout cost shows up where a layout is built, and this figure is not one.
+
+  The last two columns say the rest of it is the compat floor's, and it is the *only* figure in this
+  release for which that is true — `parameterlayout`, `flatten` and the elementwise walks all agree
+  across 1.11, 1.12 and 1.13 to within a cold measurement's spread, and the folds in the entry below go
+  the other way.
+
+  And attributed by `scripts/adam_cache_attribution.jl`, cumulative in one process, cheapest-first —
+  cumulative being the method, so each row is what it adds to the ones above it:
+
+  | | 1.11.9 | 1.13.0-rc3 |
+  |---|---|---|
+  | `_zero(ps)` | 1.21 s | 2.41 s |
+  | `_fill!(g, NaN)` | 0.38 s | 0.51 s |
+  | `_similar(g)` | 0.89 s | 1.28 s |
+  | `_copy(ps)` | 0.54 s | 1.51 s |
+  | `GlobalSection(_copy(ps))` | 0.87 s | 1.79 s |
+  | **`AdamCache(x, g, δ, Δg)`** | **81.49 s** | **3.54 s** |
+  | `OptimizerCache(Adam, ps)` after all of the above | 0.72 s | 5.78 s |
+  | `parameterlayout(ps)`, measured last of all | 0.83 s | — |
+  | `flatten(ps)`, measured last of all | 1.50 s | — |
+
+  **Every piece the constructor calls is under a second and a half, and the body that calls them is
+  81.** `AdamCache`'s four-argument method takes `GlobalSection(_copy(x))`, four `_similar(g)`s, an
+  `_fill!` and a ten-field `new` with four large type parameters, all in one inferred body. Nothing in it
+  is expensive; composing them is. The last two rows are `parameterlayout` and `flatten` measured *after*
+  everything above them, which is the most favourable reading the old diagnosis could ask for, and they
+  are 2.33 s of 81.49 — under 3 %.
+
+  **The 1.13 column is the proof rather than a curiosity.** Every individual piece is *dearer* there —
+  `_zero` twice, `_copy` nearly three times — and the constructor body is **23× cheaper**, 3.54 s against
+  81.49 s. So it is not the arguments, not their types, and not the work; it is what 1.11's inference does
+  with that particular composition. Which is why splitting the constructor is the thing to try and
+  `@noinline` is not: this is D1's shape, and `@noinline` did nothing for D1.
+
+  **That is open issue D1's signature, on a different Julia version.** D1 is a constructor reached
+  through nested `kwargs...` whose result feeds a second large call tree in one inferred body: 940.86 s
+  on 1.12.6 against 4.35 s on 1.13, with each half under 2.4 s alone, and unmoved by `@noinline` or
+  `@nospecialize`. This is the same shape — cheap parts, expensive composition, one version far worse
+  than the next — and D1's workaround was to flatten the nesting to one level, which took it to 6.53 s.
+  Splitting this constructor is the obvious thing to try and it is not attempted here, because the one
+  adjacent thing that has been tried is D1's `@noinline`, which did nothing.
+
+  **What it costs in practice is one cold compilation per session per container shape**, and only for
+  the nested shape: the flat 369-entry set is 2.45 s and is what `GMLDatasets` hands this package. It is
+  paid by `GeometricMachineLearning`, which reaches `OptimizerCache` without going through `flatten`.
+
+- **The three quadrature folds cost 26–71 s to compile on Julia 1.12 and 1.13 at 369 children in one
+  branch**, against 0.65–1.47 s on 1.11.9. `l2norm`, `solution_scale` and `_dot` are the folds this
+  package writes for itself, because `NeuralNetworkParameters` has no *zipped* fold; they are
+  `Base.tail` recursions, and the *Fixed* entry above says they get away with it at this width. On 1.12
+  and 1.13 they do not.
+
+  `scripts/walk_compile_cost.jl`, cold, one process per cell, `NeuralNetworkParameters` 0.2.3:
+
+  | | 1.11.9 | 1.12.7 | 1.13.0-rc3 |
+  |---|---|---|---|
+  | `l2norm`, flat 369 | 0.69 s | **26.44 s** | **35.50 s** |
+  | `solution_scale`, flat 369 | 0.63 s | **26.07 s** | **35.14 s** |
+  | `_dot`, flat 369 | 1.47 s | **57.34 s** | **70.98 s** |
+  | `l2norm`, 16 × 24 (384 leaves) | 0.68 s | 0.22 s | 0.31 s |
+  | `solution_scale`, 16 × 24 | 0.66 s | 0.19 s | 0.29 s |
+  | `_dot`, 16 × 24 | 1.48 s | 0.98 s | 1.40 s |
+
+  **It is the width of one branch and not the leaf count.** 384 leaves in sixteen branches of 24 cost
+  0.2–1.4 s on every version; 369 in one branch cost 110 s on 1.12 and 142 s on 1.13 between the three
+  of them. On the nested shape 1.12 and 1.13 are *faster* than 1.11, so this is not a general regression —
+  it is the same `k³`-in-one-branch shape as upstream's D12, in the one place this package still writes
+  that recursion itself. The bare and wrapped columns agree throughout, so the container has nothing to
+  do with it.
+
+  **1.11 is the only version that is cheap here**, which is the opposite way round from the two
+  neighbouring entries: D1 is a 1.12 cliff that 1.13 does not have, and D21 upstream was worst on the
+  compat floor until 0.2.3 removed it. There is no rule to carry across; each has to be measured on all
+  three.
+
+  The width that triggers it is not hypothetical: 369 entries in one flat `NamedTuple` is the MNIST
+  transformer of `GMLDatasets`, which is the consumer this file has been quoting all release. The cost is
+  paid once per process that touches a set that wide, and **two of the four entries in the CI matrix are
+  measured as affected** (`1.11 / 1.12 / 1.13 / nightly`); `nightly` is not measured here and is later
+  than 1.13, so assume three until someone checks.
+
+  **Not fixed here, and the shape of the fix is not obvious**, which is why this is a *Known issue*
+  rather than a change. Upstream's answer for the same problem was to write the walk out as a
+  `@generated` flat body at literal indices, and its measurements also record that the obvious
+  alternatives went the wrong way: dropping the `@inline` left the specialisations where they were and
+  started allocating, and a plain loop over a heterogeneous tuple costs a dynamic dispatch per child.
+  A fold returning one number is a different case from a walk returning a tree, so neither result
+  transfers. Whoever takes it should note that `_dot` is about twice `l2norm` on every version, which is
+  what a *zipped* fold costs over a single one, and that `_sumsq_leaves` is already shared between the
+  other two — so there is one recursion to change and one to add, not four.
 
 - **Taking the container did not close issue [#16], and the *Known issues* of 0.5.0 said it would.**
   That entry read "what remains is the swap itself, i.e. the `ArrayNamedTuple` half of **#16**". The
