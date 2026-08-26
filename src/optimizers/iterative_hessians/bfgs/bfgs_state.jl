@@ -42,7 +42,7 @@ BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 # plain vector is the wrong shape: for a bare `StiefelManifold` of size `(3, 1)` it gives `3 × 3`
 # where the horizontal lift has only 2 free parameters, and the cache and the state then disagree
 # about how big `Q` is.
-function alloc_h(x::Union{ArrayNamedTuple{T},Manifold{T}}) where {T}
+function alloc_h(x::Union{ParameterContainer{T},Manifold{T}}) where {T}
     # `_zero(x)` for the reason `BFGSCache` gives: the lift's dimension, not the dense one
     n = flatlength(_zero(x))
     fill(T(NaN), n, n)
@@ -87,7 +87,7 @@ end
 
 function update!(state::BFGSState, gradient::Gradient, x::XT, retraction) where {T,XT<:OptimizerSolution{T}}
     _copyto!(state.x̄, x)
-    XT <: ArrayNamedTuple ? gradient(state.ḡ, x, state) : gradient(state.ḡ, x)
+    XT <: ParameterContainer ? gradient(state.ḡ, x, state) : gradient(state.ḡ, x)
     state.f̄ = gradient.F(flatten(T, x)[1])
 
     update_section!(section(state), state.s, retraction)

@@ -46,9 +46,14 @@ function add!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat)
     C .= A + B
 end
 
-function add!(dx₁::NamedTuple, dx₂::NamedTuple, dx₃::NamedTuple)
-    map(add!, dx₁, dx₂, dx₃)
-end
+# There used to be a parameter-set arm of `add!` here, recursing over the leaves. Nothing in `src/`,
+# `test/`, `docs/` or `scripts/` ever called it, and `GeometricMachineLearning` deleted its own
+# `NamedTuple` arm of `AbstractNeuralNetworks.add!` for the same reason in 0.7 -- so this had the
+# distinction of being the only signature in 0.6.0 that got *narrower* rather than wider. It was
+# `::NamedTuple` and became `::ParameterContainer`, which drops a nested plain `NamedTuple` and any
+# layer whose weights do not share one element type: exactly the two cases every other primitive in
+# this release went out of its way to keep. Deleted rather than widened, since widening dead code only
+# makes it harder to notice.
 
 (grad::Gradient{T})(x::Manifold{T}) where {T} = rgrad(x, reshape(grad(vec(x)), size(x)...))
 

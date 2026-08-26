@@ -303,7 +303,12 @@ end
     ps = NetworkParameters((L1 = (W = [1.0 2.0; 3.0 4.0], b = [5.0, 6.0]),))
     @test bound(ps) === Float64
     @test annotated(ps) === Float64
-    @test only(Base.return_types(bound, Tuple{typeof(ps)})) === Type{Float64}
+    # `<:` and not `===`, and the difference is a Julia version rather than a weaker claim. Inference
+    # spells "exactly `Float64`" as `Type{Float64}` up to 1.13 and as `Core.TypeEgal{Float64}` on
+    # 1.14-DEV; both are `<: Type{Float64}`, and a failure to infer is not — giving up returns `Type`
+    # or `DataType`, neither of which is a subtype of it. So this still catches what it exists to
+    # catch, and stops asserting how the compiler happens to write the answer down.
+    @test only(Base.return_types(bound, Tuple{typeof(ps)})) <: Type{Float64}
 
     ps32 = NetworkParameters((L1 = (W = Float32[1 2], b = Float32[3]),))
     @test bound(ps32) === Float32

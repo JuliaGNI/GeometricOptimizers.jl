@@ -90,9 +90,9 @@ function update!(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     cache
 end
 
-# Type piracy: `outer!` is imported from `SimpleSolvers` and `ArrayNamedTuple` is an alias
-# for Base's `NamedTuple`. See issue #16.
-function outer!(m::AbstractMatrix{T}, arr1::ArrayNamedTuple{T}, arr2::ArrayNamedTuple{T}) where {T}
+# Type piracy: `outer!` is imported from `SimpleSolvers` and this package owns neither member of
+# [`ParameterContainer`](@ref). See issue #16.
+function outer!(m::AbstractMatrix{T}, arr1::ParameterContainer{T}, arr2::ParameterContainer{T}) where {T}
     # `flatten` is given `T` explicitly for the reason `_dot` states: `m` is a `Matrix{T}`, so the
     # flat vectors that fill it have to be `T` and not whatever a set happens to promote to
     v1, _ = flatten(T, arr1)
@@ -105,8 +105,8 @@ end
 
 The outer product of two horizontal lifts, written into `m`.
 
-Like the `ArrayNamedTuple` method above, this exists because the quasi-Newton `Q` is sized by the
-*intrinsic* dimension of the parameters — the length of their flattening — while the direction and the
+Like the [`ParameterContainer`](@ref) method above, this exists because the quasi-Newton `Q` is sized
+by the *intrinsic* dimension of the parameters — the length of their flattening — while the direction and the
 gradient are handed around in the *ambient* horizontal-lift representation. For a bare
 `StiefelManifold` of size `(3, 1)` those are 2 and `3 × 3` respectively, so `SimpleSolvers.outer!`,
 which indexes its arguments linearly against `axes(m)`, would assert on the mismatch. Flattening first

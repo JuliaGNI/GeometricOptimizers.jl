@@ -173,7 +173,7 @@ itself (see `GradientAutodiff(F, ::NamedTuple)`), which composes `problem.F` wit
 a `DimensionMismatch`.
 """
 default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
-default_gradient(problem::OptimizerProblem, x::ArrayNamedTuple) = GradientAutodiff(problem.F, x)
+default_gradient(problem::OptimizerProblem, x::ParameterContainer) = GradientAutodiff(problem.F, x)
 
 """
     _optimizer(x, problem, algorithm, linesearch, gradient, retraction, config)

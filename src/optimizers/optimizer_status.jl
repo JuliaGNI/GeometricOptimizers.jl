@@ -160,7 +160,16 @@ the other.
 """
 solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
-solution_scale(ps::ArrayNamedTuple) = √sum(abs2, values(map(solution_scale, ps)))
+# Recursive, and not `map` + `sum` over one level: a container is a tree of layers, so the scales to
+# combine are at its *leaves*. `map` would hand `solution_scale` a whole layer, for which there is no
+# method. See [`ParameterContainer`](@ref). The recursion is `Base.tail` for the reason
+# [`_manifold_αmax`](@ref) gives -- a heterogeneous set stays inferable -- and it allocates nothing.
+# `ParameterSet` and not [`ParameterContainer`](@ref): [`_sumsq_leaves`](@ref) recurses, so the nested
+# plain `NamedTuple` costs nothing to cover, and leaving it out cost something. `GeometricBase.l2norm`
+# is variadic, so an uncovered `NamedTuple` did not raise a `MethodError` naming `l2norm` — it was
+# splatted into `L2norm(::NamedTuple, ::Matrix, ::Matrix, …)` and reported against a function the caller
+# never named. `scripts/walk_compile_cost.jl` is where that surfaced.
+solution_scale(ps::ParameterSet) = √_sumsq_leaves(solution_scale, ps)
 
 # The norm of a horizontal lift is taken over its *free parameters*, i.e. over `Base.parent`, and in
 # quadrature -- the same intrinsic-versus-ambient distinction `_dot` documents. Leaving it to the
@@ -180,15 +189,50 @@ l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 # inherits these. They should be upstreamed to GeometricBase. See issue #16.
 l2norm(a::AbstractMatrix) = l2norm(vec(a))
 l2norm(a::AbstractFloat) = norm(a)
-# Type piracy as well, but only because `ArrayNamedTuple` is an alias for `NamedTuple`; a
-# wrapper `struct` would fix this one locally. See issue #16.
-function l2norm(a::ArrayNamedTuple)
-    # the block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them
-    # (which this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby
-    # every stopping criterion computed from it.
-    norms = map(l2norm, a)
-    √sum(abs2, values(norms))
-end
+# Type piracy as well. It was written as "only because `ArrayNamedTuple` is an alias for `NamedTuple`;
+# a wrapper `struct` would fix this one locally" -- and 0.6.0 took the wrapper, which did *not* fix it:
+# `l2norm` is `GeometricBase`'s and `NetworkParameters` is `NeuralNetworkParameters`', so the container
+# method owns neither side either. See issue #16 and the note on [`ParameterContainer`](@ref).
+#
+# The block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them (which
+# this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby every stopping
+# criterion computed from it. Recursive rather than `map` + `sum` for the reason `solution_scale` gives
+# above, and allocation-free with it.
+l2norm(a::ParameterSet) = √_sumsq_leaves(l2norm, a)
+
+@doc raw"""
+    _sumsq_leaves(f, x)
+
+``\sum_i f(x_i)^2`` over the leaves of `x`, at whatever depth they are.
+
+The quadrature sum `l2norm` and [`solution_scale`](@ref) both combine their blocks in, written once:
+the two differ only in `f`, and each used to carry its own four-method copy of this recursion.
+
+(`l2norm` in plain code and not an `@ref`, for the reason `descent_direction.jl` gives about
+`solve_with_status`: it is `GeometricBase`'s function, so it has no docstring in this package's docs to
+point at, and `docs/src/api.md` renders every docstring here.)
+
+# Implementation
+
+Recursive over the values rather than `map` + `sum` over one level, because a container is a tree of
+layers and the quantities to combine are at its *leaves* — `map` would hand `f` a whole layer, for
+which neither of them has a method. `Base.tail` for the reason [`_manifold_αmax`](@ref) gives, that a
+heterogeneous set stays inferable, and it allocates nothing.
+
+`false` and not `zero(T)` for the empty case: there is no `T` in scope, and `false` is the strong zero
+that takes its type from whatever it is added to, so a one-block set adds it to that block's value and
+stays a `T`.
+
+`f` is annotated `::F where {F}` throughout, which is not decoration. Two of the four methods only
+*pass it along*, and Julia does not specialise on a function argument it never sees called -- so
+without the annotation `f` arrives boxed and each leaf costs a dynamic dispatch. Measured: 128 bytes
+against 64 on the mixed set of `test/flat_buffer_allocations.jl`, which is the test that caught it.
+"""
+_sumsq_leaves(f::F, x::ParameterSet) where {F} = _sumsq_leaves(f, values(x))
+_sumsq_leaves(::Any, ::Tuple{}) = false
+_sumsq_leaves(f::F, t::Tuple) where {F} =
+    _sumsq_leaves(f, first(t)) + _sumsq_leaves(f, Base.tail(t))
+_sumsq_leaves(f::F, x) where {F} = abs2(f(x))
 
 @doc raw"""
     contains_nonfinite(a)

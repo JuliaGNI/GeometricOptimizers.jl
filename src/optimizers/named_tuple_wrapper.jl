@@ -5,38 +5,51 @@
 # `ParameterHandling` version this replaces returned a chain of nested closures, one per level of the
 # tree, and that chain was not type stable. The element type comes from the parameters themselves
 # rather than defaulting to `Float64`, which used to promote a `Float32` network silently.
-function GradientAutodiff(F, nt::NamedTuple)
+#
+# `ParameterSet` and not `ParameterContainer`: `F` is the caller's objective and
+# these have to accept whatever it was written against, including a nested `NamedTuple` that no
+# `ArrayNamedTuple` bound admits. `unflatten` returns the shape the layout was built from, so a
+# container in gives a container back and `F` sees the type it was written for.
+function GradientAutodiff(F, nt::ParameterSet)
     v, layout = flatten(nt)
     GradientAutodiff(_x -> F(unflatten(layout, _x)), v)
 end
 
 # `∇F!` is called on the flattened parameters, i.e. on `flatten(nt)[1]`.
-function GradientFunction(F, ∇F!, nt::NamedTuple)
+function GradientFunction(F, ∇F!, nt::ParameterSet)
     v, layout = flatten(nt)
     GradientFunction(_x -> F(unflatten(layout, _x)), ∇F!, v)
 end
 
-# Type piracy: `Gradient` is SimpleSolvers' and `ArrayNamedTuple` is an alias for Base's
-# `NamedTuple`. A wrapper `struct` would fix this locally. See issue #16.
-function (grad::Gradient{T})(nt::ArrayNamedTuple{T}) where {T}
+# Type piracy: `Gradient` is SimpleSolvers' and this package owns neither member of
+# `ParameterContainer` -- `ArrayNamedTuple` is an alias for Base's `NamedTuple`, and the container
+# belongs to `NeuralNetworkParameters`. Taking the container did *not* fix that, and the note on
+# `ParameterContainer` says why the `NamedTuple` half cannot simply be dropped. See issue #16.
+function (grad::Gradient{T})(nt::ParameterContainer{T}) where {T}
     v, layout = flatten(nt)
     # `rgrad` takes the *whole* leaf, not its storage: it is the Riemannian projection and needs the
-    # point it projects at, so this is `mapparameters` and not `mapstorage`.
-    mapparameters(rgrad, nt, unflatten(layout, grad(v)))
+    # point it projects at, so this walks whole leaves rather than their storage.
+    _mapleaves(rgrad, nt, unflatten(layout, grad(v)))
 end
 
 # This is *not* type piracy, unlike the method above: it dispatches on `OptimizerState`,
 # which is defined in this package (see `optimizers/optimizer_state.jl`), and one owned
 # argument type is enough.
-function (grad::Gradient{T})(g::ArrayNamedTuple{T}, x::ArrayNamedTuple{T}, state::OptimizerState{T}) where {T}
+function (grad::Gradient{T})(g::ParameterContainer{T}, x::ParameterContainer{T}, state::OptimizerState{T}) where {T}
     _copyto!(g, global_rep(section(state), grad(x)))
 end
 
+# [`_mapleaves`](@ref) and not `map`, here and in every primitive below. `map` visits the entries of
+# one level, which is the whole of a flat `ArrayNamedTuple` but only the *layers* of a container, whose
+# leaves are one level further down. `_mapleaves` is `map` plus recursion on the branches, so it
+# reaches leaves at any depth and rebuilds the shape it was given -- a container comes back a
+# container, a `NamedTuple` a `NamedTuple` -- and costs the flat case exactly what `map` costs.
+# See `src/parameter_walks.jl` and [`ParameterContainer`](@ref).
 _zero(a::AbstractArray) = zero(a)
-_zero(a::ArrayNamedTuple) = map(_zero, a)
+_zero(a::ParameterContainer) = _mapleaves(_zero, a)
 
 _copy(a::AbstractArray) = copy(a)
-_copy(a::ArrayNamedTuple) = map(_copy, a)
+_copy(a::ParameterContainer) = _mapleaves(_copy, a)
 
 # `Base.similar` is deliberately an error on a `Manifold` — an arbitrary array of that shape is not a
 # point of it — so a fresh *random* point stands in for it. `Manifold` and not `StiefelManifold`, and
@@ -45,21 +58,37 @@ _copy(a::ArrayNamedTuple) = map(_copy, a)
 # building an `AdamState` or a `MomentumState`. See issue A11.
 _similar(a::Manifold{T}) where {T} = rand(manifold_constructor(a){T}, size(a)...)
 _similar(a::AbstractArray) = similar(a)
-_similar(a::ArrayNamedTuple) = map(_similar, a)
+_similar(a::ParameterContainer) = _mapleaves(_similar, a)
 
 _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
 
 _fill!(a::Manifold{T}, ::T) where {T} = a
 
 _copyto!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = copyto!(a, b)
-function _copyto!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
-    map(_copyto!, a, b)
+function _copyto!(a::ParameterContainer{T}, b::ParameterContainer{T}) where {T}
+    _mapleaves!(_copyto!, a, b)
 end
 
 # Type piracy again by way of the aliases: both `GlobalSectionNamedTuple` and
 # `ArrayNamedTuple` are `NamedTuple`. See issue #16.
-function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ArrayNamedTuple{T}) where {T}
-    map(copyto!, Λ, x)
+#
+# These come in pairs, and the second of each pair is what a *container* solution needs.
+# `GlobalSectionNamedTuple` is flat by construction — a `NamedTuple` whose values are `GlobalSection`s
+# — and the section tree of a container is nested, its values being layers. There is no widening of
+# the alias that would cover both: a "`NamedTuple` of `GlobalSection`s to any depth" is a recursive
+# type, which Julia cannot express. So the *other* side carries the dispatch, and it can, because a
+# container is a type with a name rather than an alias for `NamedTuple`. That is the one place where
+# taking the container bought this file something beyond a wider signature.
+#
+# `_mapleaves!` walks whichever shape it is given first and normalises the rest, so the bodies are
+# identical either way.
+function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ParameterContainer{T}) where {T}
+    _mapleaves!(copyto!, Λ, x)
+    Λ
+end
+
+function Base.copyto!(Λ::NamedTuple, x::NetworkParameters)
+    _mapleaves!(copyto!, Λ, x)
     Λ
 end
 
@@ -70,18 +99,34 @@ function Base.copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold}
     Λ
 end
 
-_copyto!(Λ::GlobalSectionNamedTuple, x::ArrayNamedTuple) = copyto!(Λ, x)
+_copyto!(Λ::GlobalSectionNamedTuple, x::ParameterContainer) = copyto!(Λ, x)
+_copyto!(Λ::NamedTuple, x::NetworkParameters) = copyto!(Λ, x)
 
 # the bare-`Manifold` counterpart of the line above
 _copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
 
-function _copyto!(x::ArrayNamedTuple, Λ::GlobalSectionNamedTuple)
-    map(copyto!, x, Λ)
+function _copyto!(x::ParameterContainer, Λ::GlobalSectionNamedTuple)
+    _mapleaves!(copyto!, x, Λ)
+    x
+end
+
+function _copyto!(x::NetworkParameters, Λ::NamedTuple)
+    _mapleaves!(copyto!, x, Λ)
     x
 end
 
 function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple)
-    map(_copyto!, Λ₁, Λ₂)
+    _mapleaves!(_copyto!, Λ₁, Λ₂)
+    Λ₁
+end
+
+# Two *nested* section trees, which is the shape a container's section takes and which
+# `GlobalSectionNamedTuple` cannot describe. Written on the bare `NamedTuple` because neither argument
+# is a container to dispatch on; the flat method above is strictly more specific, so it still wins
+# where it applies, and the leaves settle the rest -- a pair that is not two sections has no
+# `_copyto!` at the bottom of this walk either way.
+function _copyto!(Λ₁::NamedTuple, Λ₂::NamedTuple)
+    _mapleaves!(_copyto!, Λ₁, Λ₂)
     Λ₁
 end
 
@@ -91,9 +136,9 @@ function _copyto!(Λ₁::GlobalSection{T,MT}, Λ₂::GlobalSection{T,MT}) where 
     Λ₁
 end
 
-function _fill!(a::ArrayNamedTuple{T}, b::T) where {T}
+function _fill!(a::ParameterContainer{T}, b::T) where {T}
     fill_closure!(_a) = _fill!(_a, b)
-    map(fill_closure!, a)
+    _mapleaves!(fill_closure!, a)
     a
 end
 
@@ -119,7 +164,8 @@ function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b:
     c
 end
 
-_difference!(c::ArrayNamedTuple{T}, a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T} = map(_difference!, c, a, b)
+_difference!(c::ParameterContainer{T}, a::ParameterContainer{T}, b::ParameterContainer{T}) where {T} =
+    _mapleaves!(_difference!, c, a, b)
 
 _rmul!(a::AbstractArray, b) = rmul!(a, b)
 
@@ -130,9 +176,9 @@ function _rmul!(a::VectorStorageMatrix, b)
     a
 end
 
-function _rmul!(a::ArrayNamedTuple, b)
+function _rmul!(a::ParameterContainer, b)
     rmul_closure!(a) = _rmul!(a, b)
-    map(rmul_closure!, a)
+    _mapleaves!(rmul_closure!, a)
     a
 end
 
@@ -140,15 +186,15 @@ function _mul!(c::AbstractVecOrMat, a::AbstractMatrix, b::AbstractVecOrMat)
     mul!(c, a, b)
 end
 
-function _mul!(c::ArrayNamedTuple, a::ArrayNamedTuple, b::ArrayNamedTuple)
-    map(_mul!, c, a, b)
+function _mul!(c::ParameterContainer, a::ParameterContainer, b::ParameterContainer)
+    _mapleaves!(_mul!, c, a, b)
     c
 end
 
 # `c` supplies its layout but not its numbers: it is the destination, so only its shape matters.
 # That is one flatten fewer than this used to do, and `unflatten!` writes the result back through
 # `copyto!` instead of building a fresh parameter set for `_copyto!` to copy out of.
-function _mul!(c::ArrayNamedTuple, a::AbstractMatrix, b::ArrayNamedTuple)
+function _mul!(c::ParameterContainer, a::AbstractMatrix, b::ParameterContainer)
     layout = parameterlayout(c)
     v_b, _ = flatten(b)
     v_c = similar(v_b)
@@ -196,7 +242,7 @@ divides.
 """
 _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 
-const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ArrayNamedTuple{T}}
+const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ParameterContainer{T}}
 
 # `flatten` is given `T` explicitly so that the result is a `T` even when a set happens to promote
 # to something wider; every quantity this is combined with downstream is a `T`.
@@ -210,8 +256,8 @@ function _add!(a::MT, b::MT) where {MT<:VectorStorageMatrix}
     a
 end
 
-function _add!(a::ArrayNamedTuple{T}, b::ArrayNamedTuple{T}) where {T}
-    map(_add!, a, b)
+function _add!(a::ParameterContainer{T}, b::ParameterContainer{T}) where {T}
+    _mapleaves!(_add!, a, b)
     a
 end
 
@@ -227,9 +273,9 @@ function _add!(a::AbstractLieAlgHorMatrix{T}, b::T) where {T}
     a
 end
 
-function _add!(a::ArrayNamedTuple{T}, b::T) where {T}
+function _add!(a::ParameterContainer{T}, b::T) where {T}
     closure(a) = _add!(a, b)
-    map(closure, a)
+    _mapleaves!(closure, a)
     a
 end
 
@@ -250,7 +296,7 @@ function _rac!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_rac!(b::ArrayNamedTuple, a::ArrayNamedTuple) = map(_rac!, b, a)
+_rac!(b::ParameterContainer, a::ParameterContainer) = _mapleaves!(_rac!, b, a)
 
 _rac!(a) = _rac!(a, a)
 
@@ -274,8 +320,8 @@ function _div!(C::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix, B::Abstra
     C
 end
 
-function _div!(C::ArrayNamedTuple, A::ArrayNamedTuple, B::ArrayNamedTuple)
-    map(_div!, C, A, B)
+function _div!(C::ParameterContainer, A::ParameterContainer, B::ParameterContainer)
+    _mapleaves!(_div!, C, A, B)
     C
 end
 
@@ -297,7 +343,7 @@ function _square!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_square!(b::ArrayNamedTuple, a::ArrayNamedTuple) = map(_square!, b, a)
+_square!(b::ParameterContainer, a::ParameterContainer) = _mapleaves!(_square!, b, a)
 
 function _square(a)
     b = _copy(a)
@@ -308,7 +354,7 @@ end
 
 Base.copyto!(dest::AT, src::GlobalSection{T,AT}) where {T,AT<:AbstractArray{T}} = copyto!(dest, src.Y)
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)
-rgrad(ps::ArrayNamedTuple, dx::ArrayNamedTuple) = map(rgrad, ps, dx)
+rgrad(ps::ParameterContainer, dx::ParameterContainer) = _mapleaves(rgrad, ps, dx)
 
 function rgrad(Y::AbstractVecOrMat, dx::AbstractVecOrMat)
     @assert size(Y) == size(dx)

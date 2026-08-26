@@ -71,7 +71,7 @@ end
 _refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::Gradient) =
     g(latest_gradient(cache), solution(cache))
 
-_refresh_latest_gradient!(::Union{Manifold,ArrayNamedTuple}, cache::OptimizerCache, g::Gradient) =
+_refresh_latest_gradient!(::Union{Manifold,ParameterContainer}, cache::OptimizerCache, g::Gradient) =
     _copyto!(latest_gradient(cache), global_rep(section(cache), g(solution(cache))))
 
 @doc raw"""
