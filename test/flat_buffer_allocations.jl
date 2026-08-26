@@ -53,10 +53,18 @@ _reference_dot(a, b) = dot(flatten(Float64, a)[1], flatten(Float64, b)[1])
 _reference_norm(a) = l2norm(flatten(Float64, a)[1])
 
 # `_dot` sums per leaf and then across, where the reference sums once over the concatenation. Both are
-# `Σ aᵢbᵢ`; they differ in summation order and so at round-off, which is why this is `≈` and not `==`
-# for a set of more than one leaf. For a single lift the two orders coincide and it *is* `==`.
+# `Σ aᵢbᵢ`; they differ in summation order and so at round-off, which is why these are `≈`.
+#
+# **Including the single lift**, which an earlier version of this file asserted was `==` on the grounds
+# that "for a single lift the two orders coincide". They do not. A `StiefelLieAlgHorMatrix` is a
+# *two*-block leaf -- `freeparameters` returns `(A, B)` -- so `_dot` takes `dot(A₁, A₂) + dot(B₁, B₂)`
+# where the reference takes one `dot` over `[A; B]` concatenated, and two BLAS calls summed need not
+# blocking-for-blocking match one call over twice the length. It happened to hold on the machine the
+# claim was written on and does not in general: on Julia 1.11/windows, 1.12/ubuntu and 1.13 on both,
+# the two come out `3.070431380702119` against `3.0704313807021184` -- one ULP, which is round-off and
+# is the thing this testset is about.
 @testset "_dot is the flattened inner product" begin
-    @test _dot(lift(1), lift(11)) == _reference_dot(lift(1), lift(11))
+    @test _dot(lift(1), lift(11)) ≈ _reference_dot(lift(1), lift(11))
     @test _dot(flat_set(1), flat_set(11)) ≈ _reference_dot(flat_set(1), flat_set(11))
     @test _dot(container(1), container(11)) ≈ _reference_dot(container(1), container(11))
     # and the two shapes describing the same numbers agree with each other exactly
