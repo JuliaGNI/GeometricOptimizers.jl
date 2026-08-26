@@ -123,8 +123,17 @@ solution block by block, but not necessarily as the *same kind* of branch — a 
 paired with the plain `NamedTuple` its `GlobalSection` tree is built as, which upstream's walk
 normalises. Two local normalisers stood here for that, `_as_blocks` and then `_as_walkable`, and then a
 pair of `values` calls; all are gone.
+
+`y::ParameterSet` and not an unconstrained `y`, and that bound is the *point* of the paragraph above
+rather than housekeeping. Upstream pairs the children of a keyed branch by key and the children of a
+`Tuple` branch **positionally** — a `Tuple`'s blocks have no keys to agree on — so an unconstrained
+signature would still accept `_manifold_αmax(values(sol), values(δ), c)`, which is how every call site
+here was spelled until this release, and fold it positionally: crossed keys would come back a number
+again. Measured on a two-block set with the direction's keys swapped, `3.12` by key against `6.40`
+positionally. The four-method recursion this replaced made that call unspellable by running out of
+methods; the bound is what puts it back. Every caller passes a `ParameterSet`.
 """
-_manifold_αmax(y, δ, c::T) where {T} =
+_manifold_αmax(y::ParameterSet, δ, c::T) where {T} =
     foldparameters((acc, yᵢ, δᵢ) -> min(acc, _block_αmax(yᵢ, δᵢ, c)), T(Inf), y, δ)
 
 _block_αmax(::Manifold, δ, c) = step_αmax(c, δ)

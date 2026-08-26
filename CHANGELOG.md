@@ -418,6 +418,16 @@ axis whose absence made the first of those possible. Two new *Known issues* came
     was where such a check would go if one were ever wanted. Key *order* is the case that matters, since
     that one produced a number rather than an error. Pinned in
     `test/neural_network_parameters_protocol.jl`.
+
+    **`_manifold_αmax` bounds its first argument to a `ParameterSet` so that the guarantee cannot be
+    spelled around**, and that bound was added on review rather than with the fold. Upstream pairs a
+    keyed branch by key and a `Tuple` branch *positionally* — a `Tuple`'s blocks have no keys to agree
+    on — so an unconstrained signature still accepted `_manifold_αmax(values(sol), values(δ), c)`, which
+    is how every call site was spelled until this release, and folded it positionally. On a two-block
+    set with the direction's keys crossed: `3.12` by key, `ArgumentError` by key with the sets given
+    whole, and `6.40` through `values`. The four-method recursion this replaced made that call
+    unspellable by running out of methods, so the bound is not new strictness — it is the strictness the
+    deletion dropped. `_dot` needs no such bound; its narrowest signature is already `DottableSet`.
   - **The grouping of the leaves no longer shows in the sum.** Upstream threads its accumulator through
     the nested branches, so a left fold over a tree is the left fold over the flat leaf list whatever the
     tree's shape — where the recursion this replaced was a right fold that happened to align. The same

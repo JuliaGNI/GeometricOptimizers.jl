@@ -363,4 +363,12 @@ end
     @test_throws "different keys" _manifold_αmax((Y = rand(2),), (Z = rand(2),), 1.0)
     @test_throws "same number of children" _manifold_αmax((a = rand(2), b = rand(2)),
                                                           (a = rand(2),), 1.0)
+
+    # and the check cannot be spelled around, which is the other half of it. Upstream pairs a `Tuple`
+    # branch *positionally* -- a `Tuple`'s blocks have no keys to agree on -- so `_manifold_αmax` bounds
+    # its first argument to a `ParameterSet` rather than taking anything. Without that bound
+    # `_manifold_αmax(values(sol), values(δ), c)`, which is how every call site here was spelled until
+    # this release, would still compile and would still cross the keys silently.
+    @test_throws MethodError _manifold_αmax(values((Y = rand(2), Z = rand(2))),
+                                            values((Z = rand(2), Y = rand(2))), 1.0)
 end
