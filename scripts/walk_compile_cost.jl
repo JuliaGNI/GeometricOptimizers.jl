@@ -52,9 +52,19 @@ nested_set(nblocks::Integer, nleaves::Integer) =
 
 # `time()` and not `@elapsed`: the point is the very first call, and `@elapsed` in a loop would
 # report the second.
+#
+# **`invokelatest` and not a direct `f(args...)`, and that is the measurement rather than a detail.**
+# Compiling `first_call` itself infers through the call in its body, so with a direct call the
+# inference the figure is meant to report is spent while `first_call` is being compiled — *before*
+# `t = time()` runs — and what gets printed is the leftover. `NeuralNetworkParameters`' copy of this
+# harness read 0.00 s for every width and every column on Julia 1.13 until it was written this way.
+# `invokelatest` makes the call opaque, so the caller's own compilation has nothing to do first.
+#
+# Same lesson as the process-per-shape fix below, from the other end: arrange the harness so the cost
+# cannot have been paid where the clock is not looking.
 function first_call(f, args...)
     t = time()
-    f(args...)
+    Base.invokelatest(f, args...)
     round(time() - t; digits = 2)
 end
 
