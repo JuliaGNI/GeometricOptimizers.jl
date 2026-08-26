@@ -228,6 +228,38 @@ axis whose absence made the first of those possible. Two new *Known issues* came
 
 ### Fixed
 
+- **`_dot` of two horizontal lifts whose element types differ returned the *ambient* product, at twice
+  the right value.** Silently: it did not raise, and no test could see it, because every assertion on
+  that path checked a type or compared two spellings of the same element type.
+
+  `AbstractLieAlgHorMatrix{T} <: AbstractMatrix{T}`, so a `Float32` lift beside a `Float64` one missed
+  the alias that binds a `T` — `LiftOrNamedTuple{T}` needs one `T` for both — and fell through to
+  `_dot(::AbstractVecOrMat, ::AbstractVecOrMat)`, which is `LinearAlgebra.dot`. That is the ambient
+  Frobenius product, and it counts each off-diagonal block of a lift twice. `St(6, 3)`:
+
+  | | before | after | `dot(flatten(a), flatten(b))` |
+  |---|---|---|---|
+  | `_dot(lift{Float32}, lift{Float64})` | 5.504356027190567 | **2.7521780135952834** | 2.7521780135952834 |
+
+  Exactly the factor of two `docs/src/linesearch_on_manifolds.md` gives a section to — "paired
+  ambiently, the slope came out as ``2\varphi'(\alpha)`` where ``\varphi'(\alpha)`` was wanted" — and it
+  reaches the three quantities that chapter names: `trial_slope`, the quasi-Newton denominator
+  ``\delta^\mathsf{T}\gamma``, and the predicted decrease. A mixed-precision solve would have searched
+  along a curve whose derivative was doubled.
+
+  The `_dot` widening recorded under *Removed (breaking)* is what fixes it: `DottableSet` binds no
+  element type, so the pair reaches `foldstorage` over the free parameters like every other one does.
+  It works because `parameter_eltype` recurses — its `AbstractArray` method asks `freeparameters`
+  before falling back to `eltype`, so a lift answers with the promotion over its blocks rather than
+  with the `Union{}` catch-all.
+
+  **Found by review of that widening rather than by the widening itself**, which is why it is recorded
+  separately: that entry claimed the differing-eltype pair "used to be a `MethodError`", and that was
+  true of two `NamedTuple`s and two containers and not of two lifts.
+  `test/flat_buffer_allocations.jl` now asserts the *value* against the flattening for that pair, and
+  asserts that the ambient product is the other number, so the assertion cannot be satisfied by both.
+  A same-eltype pair is the control; it was never affected, which is the whole reason this survived.
+
 - **The flat buffers are no longer allocated per call.** Every quantity a quasi-Newton method forms
   lives in the *flattened* coordinates — `Q` is sized by the length of the flattening, `outer!` forms
   its outer products there, `_dot` pairs there — while the parameters are a `NamedTuple`, a container,
@@ -508,7 +540,9 @@ axis whose absence made the first of those possible. Two new *Known issues* came
   and `NeuralNetworkParameters.parameter_eltype` supplies the element type where no `T` binds — so the
   nested bare `NamedTuple` is covered, and the sweep's `MethodError` row is a figure now. See the fold
   entry below. The pair whose element types *differ* is covered with it, by promotion over both sets,
-  where it used to be a `MethodError`.
+  where for two `NamedTuple`s or two containers it used to be a `MethodError` — and, for two *lifts*,
+  something worse than a `MethodError`. That last case has its own *Fixed* entry above, and it is the
+  reason this widening is not only a widening.
 
   Two methods and not one widened signature, which is measured rather than stylistic:
   `parameter_eltype` is upstream's `@generated` `promote_type` chain, and on a **bare** `NamedTuple` of

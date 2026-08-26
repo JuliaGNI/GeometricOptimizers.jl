@@ -122,6 +122,29 @@ end
     @test _dot(f32, f64) isa Float64
 end
 
+# The same pair of *lifts*, which is a different assertion and the one that catches a wrong answer
+# rather than a missing method.
+#
+# A differing-eltype pair of `NetworkParameters` raised before this release, so `isa Float64` is enough
+# to pin it. A differing-eltype pair of lifts did **not** raise: an `AbstractLieAlgHorMatrix` is an
+# `AbstractMatrix`, so it missed the alias that binds a `T` and took `_dot(::AbstractVecOrMat,
+# ::AbstractVecOrMat)` instead -- the *ambient* Frobenius product, which counts each off-diagonal block
+# of the lift twice and so comes out at exactly twice the pairing of the free parameters. `isa Float64`
+# would have passed on that too. So this asserts the *value*, against the flattening, which is the only
+# thing that separates the two.
+@testset "_dot of two lifts is intrinsic at every element-type pairing" begin
+    a32 = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Random.Xoshiro(8), Float32, n, n)),
+                                 rand(Random.Xoshiro(9), Float32, N - n, n), N, n)
+    b64 = lift(11)
+    @test _dot(a32, b64) ≈ _reference_dot(a32, b64)
+    # and not the ambient product, which is where it went before -- named as a number rather than as a
+    # relation, so that the assertion above cannot be satisfied by both
+    @test _dot(a32, b64) ≉ dot(a32, b64)
+    @test dot(a32, b64) ≈ 2 * _reference_dot(a32, b64)
+    # the same-eltype pair, which always took the method that binds `T` and is here as the control
+    @test _dot(lift(1), b64) ≈ _reference_dot(lift(1), b64)
+end
+
 @testset "l2norm and solution_scale are the norm of the flattening" begin
     for a in (lift(1), flat_set(1), container(1))
         @test l2norm(a) ≈ _reference_norm(a)

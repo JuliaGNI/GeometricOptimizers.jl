@@ -292,6 +292,20 @@ const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ParameterContainer{
 # `ArrayNamedTuple` and the alias above does not reach it. `l2norm` and `solution_scale` took it in
 # 0.6.0 and this was deliberately left out, for the reason the accumulator comment below gives; the
 # compile sweep reported the gap as a `MethodError` on one of its four cells.
+#
+# **The lift is in this union to fix a wrong number, not to widen anything**, and it is the one member
+# whose old behaviour was silent. An [`AbstractLieAlgHorMatrix`](@ref) is an `AbstractMatrix`, so a pair
+# of lifts whose element types *differ* did not miss the alias above and raise — it fell through to
+# `_dot(::AbstractVecOrMat, ::AbstractVecOrMat)` and came back with the *ambient* Frobenius product,
+# which is twice the pairing of the free parameters. Measured on `St(6,3)`, `Float32` against `Float64`:
+# 5.504356027190567 before, 2.7521780135952834 here, and the second is `dot(flatten(a), flatten(b))`.
+# That is the factor of two `docs/src/linesearch_on_manifolds.md` gives a section to — it reaches
+# [`trial_slope`](@ref), the quasi-Newton denominator and the predicted decrease. Same-eltype pairs
+# always took the method above, which is why nothing caught it.
+#
+# It works because `parameter_eltype` recurses: its `AbstractArray` method asks `freeparameters` first
+# and only falls back to `eltype` for a terminal leaf, so a lift answers with the promotion over its
+# blocks rather than with the union's `Union{}` catch-all. Nothing had to be added upstream for that.
 const DottableSet = Union{AbstractLieAlgHorMatrix,ParameterSet}
 
 # `zero(T)` and not the strong zero `false`. Upstream's fold is a **left** fold where the recursion this
