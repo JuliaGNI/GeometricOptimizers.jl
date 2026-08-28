@@ -11,6 +11,11 @@ using SimpleSolvers: HessianAutodiff, HessianFunction
 
 import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff, alloc_h
 export GradientAutodiff, GradientFunction, GradientFiniteDifferences
+# `RiemannianGradient` is this package's own `Gradient`, and exported because it is what `Optimizer`
+# stores for a parameter set and therefore what `gradient(opt)` returns. A caller supplying its own
+# gradient does not need to wrap it -- `Optimizer` does that -- but does need the name to dispatch on.
+# See `utils.jl`.
+export RiemannianGradient
 
 # `Static` is exported because it is how a fixed learning rate is specified: the optimizer
 # methods only produce a direction, see `default_linesearch`.

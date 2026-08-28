@@ -154,7 +154,10 @@ struct Optimizer{T,
 end
 
 function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=default_gradient(problem, cache.x), retraction=Cayley(), step_ceiling=DEFAULT_STEP_CEILING, options_kwargs...) where {T}
-    Optimizer(algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...), gradient, retraction, step_ceiling)
+    # `_riemannian_gradient` here as in the two methods below, so that every route into the inner
+    # constructor projects; see the note there.
+    Optimizer(algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...),
+        _riemannian_gradient(gradient, cache.x), retraction, step_ceiling)
 end
 
 """
@@ -173,7 +176,8 @@ itself (see `GradientAutodiff(F, ::NamedTuple)`), which composes `problem.F` wit
 a `DimensionMismatch`.
 """
 default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
-default_gradient(problem::OptimizerProblem, x::ParameterContainer) = GradientAutodiff(problem.F, x)
+default_gradient(problem::OptimizerProblem, x::ParameterContainer) =
+    RiemannianGradient(GradientAutodiff(problem.F, x))
 
 """
     _optimizer(x, problem, algorithm, linesearch, gradient, retraction, config)
@@ -198,7 +202,10 @@ function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=
     linesearch::LinesearchMethod=default_linesearch(T, algorithm),
     gradient::Union{Gradient,Nothing}=nothing, retraction::AbstractRetraction=Cayley(),
     step_ceiling=DEFAULT_STEP_CEILING, options_kwargs...) where {T,VT<:OptimizerSolution{T}}
-    G = isnothing(gradient) ? default_gradient(problem, x) : gradient
+    # `_riemannian_gradient` on the caller's gradient too, and not only on the default: a parameter
+    # set's leaves are projected one at a time, and a `SimpleSolvers` gradient built for the flat
+    # vector has no method that reaches them. It is the identity on everything else.
+    G = _riemannian_gradient(isnothing(gradient) ? default_gradient(problem, x) : gradient, x)
     _optimizer(x, problem, algorithm, linesearch, G, retraction, Options(T; options_kwargs...), step_ceiling)
 end
 
@@ -239,7 +246,7 @@ function Optimizer(x::VT, F::Function; (∇F!)=nothing, mode=:autodiff,
     options_kwargs...) where {T,VT<:OptimizerSolution{T}}
     # `T` comes from the `OptimizerSolution{T}` bound and not from `eltype(x)`: for a `NamedTuple` of
     # manifolds the latter is `StiefelManifold{Float64, Matrix{Float64}}` rather than `Float64`.
-    G = if (ismissing(∇F!) | isnothing(∇F!))
+    _G = if (ismissing(∇F!) | isnothing(∇F!))
         if mode == :autodiff
             GradientAutodiff(F, x)
         else
@@ -248,6 +255,9 @@ function Optimizer(x::VT, F::Function; (∇F!)=nothing, mode=:autodiff,
     else
         GradientFunction(F, ∇F!, x)
     end
+    # See the note on the other `Optimizer` method: the wrapper is what projects a parameter set's
+    # leaves, and it is the identity on a vector or a `Manifold`.
+    G = _riemannian_gradient(_G, x)
     problem = (ismissing(∇F!) | isnothing(∇F!)) ? OptimizerProblem(F, x) : OptimizerProblem(F, ∇F!, x)
     ls = isnothing(linesearch) ? default_linesearch(T, algorithm) : linesearch
     _optimizer(x, problem, algorithm, ls, G, retraction, Options(T; options_kwargs...), step_ceiling)

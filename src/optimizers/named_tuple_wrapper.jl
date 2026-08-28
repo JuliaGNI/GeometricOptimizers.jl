@@ -1,40 +1,32 @@
-# The two `Gradient` constructors that take a parameter set rather than a vector.
+# `GradientAutodiff(F, ::ParameterSet)` and `GradientFunction(F, ∇F!, ::ParameterSet)` used to stand
+# here. Both are `SimpleSolvers` functions taking a `NeuralNetworkParameters` type, so this package
+# owned neither side of either signature and every package that loaded this one -- directly or through
+# a dependency -- got the new meaning for the rest of its session. They are `SimpleSolvers`' own
+# methods as of 0.13.2, in `ext/SimpleSolversNeuralNetworkParametersExt.jl`, and reach this package
+# unchanged because both packages are hard dependencies here. `GradientFiniteDifferences` never had a
+# parameter-set method and still does not. See issue #16.
 #
-# `SimpleSolvers` wants a flat vector, so the set is flattened once here and the layout is captured in
-# the closure. A `ParameterLayout` is a *value*, which is the difference that matters: the
-# `ParameterHandling` version this replaces returned a chain of nested closures, one per level of the
-# tree, and that chain was not type stable. The element type comes from the parameters themselves
-# rather than defaulting to `Float64`, which used to promote a `Float32` network silently.
-#
-# `ParameterSet` and not `ParameterContainer`: `F` is the caller's objective and
-# these have to accept whatever it was written against, including a nested `NamedTuple` that no
-# `ArrayNamedTuple` bound admits. `unflatten` returns the shape the layout was built from, so a
-# container in gives a container back and `F` sees the type it was written for.
-function GradientAutodiff(F, nt::ParameterSet)
-    v, layout = flatten(nt)
-    GradientAutodiff(_x -> F(unflatten(layout, _x)), v)
-end
+# What the extension could not take with it is the *functor*, whose body is `rgrad`, this package's
+# Riemannian projection. That one is de-pirated by wrapping instead: see
+# [`RiemannianGradient`](@ref) in `utils.jl`.
 
-# `∇F!` is called on the flattened parameters, i.e. on `flatten(nt)[1]`.
-function GradientFunction(F, ∇F!, nt::ParameterSet)
-    v, layout = flatten(nt)
-    GradientFunction(_x -> F(unflatten(layout, _x)), ∇F!, v)
-end
-
-# Type piracy: `Gradient` is SimpleSolvers' and this package owns neither member of
-# `ParameterContainer` -- `ArrayNamedTuple` is an alias for Base's `NamedTuple`, and the container
-# belongs to `NeuralNetworkParameters`. Taking the container did *not* fix that, and the note on
-# `ParameterContainer` says why the `NamedTuple` half cannot simply be dropped. See issue #16.
-function (grad::Gradient{T})(nt::ParameterContainer{T}) where {T}
-    v, layout = flatten(nt)
+# `ParameterContainer` and not `ParameterSet`: this pairs `ps` with the unflattened gradient leaf by
+# leaf, so both trees have to hold arrays of one element type for `rgrad` to have a method at every
+# position. The two constructors upstream take the wider `ParameterSet`, because there `F` is the
+# caller's objective and has to accept whatever it was written against.
+function (grad::RiemannianGradient{T})(ps::ParameterContainer{T}) where {T}
+    v, layout = flatten(ps)
     # `rgrad` takes the *whole* leaf, not its storage: it is the Riemannian projection and needs the
     # point it projects at, so this walks whole leaves rather than their storage.
-    mapparameters(rgrad, nt, unflatten(layout, grad(v)))
+    mapparameters(rgrad, ps, unflatten(layout, grad.gradient(v)))
 end
 
-# This is *not* type piracy, unlike the method above: it dispatches on `OptimizerState`,
-# which is defined in this package (see `optimizers/optimizer_state.jl`), and one owned
-# argument type is enough.
+# `Gradient` and not `RiemannianGradient`: this one needs no wrapper to be owned, because it
+# dispatches on `OptimizerState`, which is defined in this package (see
+# `optimizers/optimizer_state.jl`), and one owned argument type is enough. It stays on the abstract
+# type so that a caller with a gradient of its own that knows how to project onto a parameter set
+# reaches it too; `grad(x)` below is what has to have such a method, and for anything
+# [`Optimizer`](@ref) builds that is [`RiemannianGradient`](@ref).
 function (grad::Gradient{T})(g::ParameterContainer{T}, x::ParameterContainer{T}, state::OptimizerState{T}) where {T}
     _copyto!(g, global_rep(section(state), grad(x)))
 end
@@ -150,6 +142,7 @@ function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple
     mapparameters!(_copyto!, Λ₁, Λ₂)
     Λ₁
 end
+
 
 # Two *nested* section trees, which is the shape a container's section takes and which
 # `GlobalSectionNamedTuple` cannot describe. Written on the bare `NamedTuple` because neither argument
