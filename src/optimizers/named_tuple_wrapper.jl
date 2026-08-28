@@ -143,6 +143,76 @@ function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple
     Λ₁
 end
 
+# The four disambiguations the pairs above need, and the reason they are needed rather than a matter
+# of taste.
+#
+# `ArrayNamedTuple` and `GlobalSectionNamedTuple` are *aliases for `NamedTuple`*, which is the same
+# property that made half of issue #16 piracy, showing up here as ambiguity instead. Each pair above
+# is written flat-then-nested — `GlobalSectionNamedTuple` for the flat section tree, a bare
+# `NamedTuple` for the nested one, because "a `NamedTuple` of `GlobalSection`s to any depth" is a
+# recursive type Julia cannot express — and a bare `NamedTuple` also matches a flat
+# `GlobalSectionNamedTuple`, while `NetworkParameters` is also a `ParameterContainer`. So on the
+# overlap neither method of a pair is more specific and dispatch has nowhere to go:
+#
+# | call | ambiguous between |
+# |---|---|
+# | `NetworkParameters ← GlobalSectionNamedTuple` | `(::ParameterContainer, ::GlobalSectionNamedTuple)` and `(::NetworkParameters, ::NamedTuple)` |
+# | `GlobalSectionNamedTuple ← NetworkParameters` | `(::GlobalSectionNamedTuple, ::ParameterContainer)` and `(::NamedTuple, ::NetworkParameters)` |
+# | `ArrayNamedTuple ← NetworkParameters` | `(::ParameterContainer{T}, ::ParameterContainer{T})` and `(::NamedTuple, ::NetworkParameters)` |
+# | `NetworkParameters ← ArrayNamedTuple` | `(::ParameterContainer{T}, ::ParameterContainer{T})` and `(::NetworkParameters, ::NamedTuple)` |
+#
+# All four raise `MethodError: … is ambiguous` at run time, and the first is what a *flat*
+# `NetworkParameters` with a manifold leaf hits on the first `solver_step!`. The suite misses every
+# one of them: `test/network_parameters_optimizer.jl` drives a **nested** container, whose section tree
+# is a `NamedTuple` of `NamedTuple`s and therefore not a `GlobalSectionNamedTuple`, and
+# `test/named_tuple_parameters.jl` drives a **bare flat** `NamedTuple`, which is not a
+# `NetworkParameters`. Flat-and-wrapped is the corner between them, and it is the shape a caller gets
+# by wrapping a flat parameter `NamedTuple` — which is what `GMLDatasets`' MNIST scripts would produce
+# if they moved to the container. `test/container_section_copy.jl` covers it now.
+#
+# Each body is the one the *semantics* pick, not an arbitrary tie-break, and on the overlap the two
+# candidates agree anyway. The first two are section copies, so they take the section pairing. The
+# last two are parameter copies — a nested section tree is a `NamedTuple` of `NamedTuple`s and so is
+# never an `ArrayNamedTuple`, which makes an `ArrayNamedTuple` argument unambiguously parameters — so
+# they take `_copyto!` at the leaves. That is the same function as the `copyto!` the section pairing
+# uses once a leaf is two arrays (`_copyto!(a::AbstractArray{T}, b::AbstractArray{T})` forwards to it),
+# so no shape that reached one of these by accident changes its answer.
+# `{T}` coupled across the arguments, as everywhere else in this file. Dropping it to cover the
+# mixed-element-type overlap as well does not work and is worth recording, because it looks like the
+# more thorough choice: an uncoupled `(::GlobalSectionNamedTuple, ::NetworkParameters)` is *itself*
+# ambiguous against the coupled `(::GlobalSectionNamedTuple{T}, ::ParameterContainer{T})` above --
+# more specific in the second argument, less in the first -- so it trades one ambiguity for another.
+# Closing the mixed case as well takes both a coupled and an uncoupled method per direction, and it is
+# not worth four methods: a section is built from the iterate it is a frame for
+# (`GlobalSection(_copy(x))`), so its element type is the iterate's by construction and a mismatched
+# pair cannot arise from this package's own API. See the residue note below.
+_copyto!(x::NetworkParameters{T}, Λ::GlobalSectionNamedTuple{T}) where {T} =
+    (mapparameters!(copyto!, x, Λ); x)
+
+_copyto!(Λ::GlobalSectionNamedTuple{T}, x::NetworkParameters{T}) where {T} =
+    (mapparameters!(copyto!, Λ, x); Λ)
+
+_copyto!(a::ArrayNamedTuple{T}, b::NetworkParameters{T}) where {T} = mapparameters!(_copyto!, a, b)
+
+_copyto!(a::NetworkParameters{T}, b::ArrayNamedTuple{T}) where {T} = mapparameters!(_copyto!, a, b)
+
+# What is left, and why it is left. `Test.detect_ambiguities` still reports pairs in this family, and
+# every one of them is a type intersection with no inhabitant this package's API can build:
+#
+#  - **the empty `NamedTuple`.** `(;)` is vacuously a `NamedTuple` of arrays, of `GlobalSection`s and
+#    of anything else, so it sits on every overlap here at once. It is unreachable: `parameter_eltype`
+#    of an empty set is `Union{}`, and `Optimizer` on one raises `ArgumentError: cannot construct a
+#    value of type Union{}` long before a copy happens.
+#  - **the mixed-element-type overlap**, per the note above.
+#  - **`copyto!(::GlobalSection{T,MT,Nothing}, ::GlobalSection{T,MT,Nothing}) where {MT<:Manifold}`**
+#    (`global_sections/global_sections.jl:376` against `:382`) — a section anchored on a `Manifold`
+#    whose lift is `nothing`. `GlobalSection(::Manifold)` always builds the lift; `λ === nothing` is
+#    the *plain array* case, where `MT<:Manifold` does not hold.
+#
+# They are listed rather than closed because a method that exists only to satisfy a static checker is
+# a method somebody later has to reason about. The four above were closed because each has a witness
+# and one of them is reached by an ordinary `solver_step!`.
+
 
 # Two *nested* section trees, which is the shape a container's section takes and which
 # `GlobalSectionNamedTuple` cannot describe. Written on the bare `NamedTuple` because neither argument
