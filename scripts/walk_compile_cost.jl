@@ -135,22 +135,27 @@ nested_set(nblocks::Integer, nleaves::Integer) =
     NamedTuple{Tuple(Symbol("L", b) for b in 1:nblocks)}(
         Tuple(_block(b, nleaves) for b in 1:nblocks))
 
-# `time()` and not `@elapsed`: the point is the very first call, and `@elapsed` in a loop would
+# `time_ns()` and not `@elapsed`: the point is the very first call, and `@elapsed` in a loop would
 # report the second.
 #
 # **`invokelatest` and not a direct `f(args...)`, and that is the measurement rather than a detail.**
 # Compiling `first_call` itself infers through the call in its body, so with a direct call the
 # inference the figure is meant to report is spent while `first_call` is being compiled — *before*
-# `t = time()` runs — and what gets printed is the leftover. `NeuralNetworkParameters`' copy of this
+# `t = time_ns()` runs — and what gets printed is the leftover. `NeuralNetworkParameters`' copy of this
 # harness read 0.00 s for every width and every column on Julia 1.13 until it was written this way.
 # `invokelatest` makes the call opaque, so the caller's own compilation has nothing to do first.
 #
 # Same lesson as the process-per-shape fix below, from the other end: arrange the harness so the cost
 # cannot have been paid where the clock is not looking.
+#
+# `time_ns()` and not `time()`, which is the wall clock and steps when the system adjusts it. A row of
+# `NeuralNetworkParameters`' `leaf_layout_cost.jl` reported **-1.4 s** that way where two re-runs read
+# 0.53; a negative first-call time is at least obvious, and a small positive step in the other
+# direction is not. `time_ns()` is monotonic, so a row is the elapsed time or it is nothing.
 function first_call(f, args...)
-    t = time()
+    t = time_ns()
     Base.invokelatest(f, args...)
-    round(time() - t; digits = 2)
+    round((time_ns() - t) / 1e9; digits = 2)
 end
 
 # A row that raises is a result, not a gap — see the header. The exception's *name* and a word on what
