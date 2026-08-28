@@ -6,6 +6,9 @@ begin
     @safetestset "Exports                      " include("exports.jl")
 end
 begin
+    @safetestset "Aqua: no type piracy         " include("aqua_tests.jl")
+end
+begin
     @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")
 end
 begin
