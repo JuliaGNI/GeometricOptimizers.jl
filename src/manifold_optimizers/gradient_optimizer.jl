@@ -3,6 +3,12 @@ Hessian(::GradientMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} 
 
 struct NoHessian{T} <: Hessian{T} end
 
+# The other half of the owned `Hessian` functor error; see the note on
+# `(::IterativeHessian)(::AbstractMatrix, ::OptimizerSolution)` in
+# `optimizers/iterative_hessians/bfgs/hessian_bfgs.jl` for why the two are split.
+(hes::NoHessian)(::AbstractMatrix, ::OptimizerSolution) =
+    error("This has to be called together with a cache.")
+
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
 # The invariant is enforced by the outer constructors below.
 """
