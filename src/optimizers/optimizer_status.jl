@@ -206,16 +206,23 @@ l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 # reshape wrapper, so `l2norm` of a parameter set cost 32 bytes per matrix leaf, per call, on every
 # stopping criterion of every iteration of `solve!`. The 0.5.0 changelog measured that and said the
 # fix belonged with the upstreaming. It did.
-# Type piracy as well. It was written as "only because `ArrayNamedTuple` is an alias for `NamedTuple`;
-# a wrapper `struct` would fix this one locally" -- and 0.6.0 took the wrapper, which did *not* fix it:
-# `l2norm` is `GeometricBase`'s and `NetworkParameters` is `NeuralNetworkParameters`', so the container
-# method owns neither side either. See issue #16 and the note on [`ParameterContainer`](@ref).
+# `l2norm(a::ParameterSet)` stood here until 0.6.1, and was type piracy for the same reason. It was
+# once written as "only because `ArrayNamedTuple` is an alias for `NamedTuple`; a wrapper `struct`
+# would fix this one locally" -- and 0.6.0 took the wrapper, which did *not* fix it: `l2norm` is
+# `GeometricBase`'s and `NetworkParameters` is `NeuralNetworkParameters`', so the container method
+# owned neither side either.
+#
+# It was the dangerous one of the group. `ParameterSet` admits any keyed `NamedTuple`, so `l2norm` of
+# *any* `NamedTuple` changed meaning for the whole session of anything that loaded this package,
+# directly or through a dependency. It is `GeometricBase` 0.14.10's own
+# `L2norm(::ParameterSet)`, in `ext/NeuralNetworkParametersExt.jl`, from which the generic
+# `l2norm(x) = sqrt(L2norm(x))` follows; the body there is this fold with `foldparameters` written out
+# in place of [`_sumsq_leaves`](@ref), and it still calls `l2norm` on the leaves, so the two methods
+# below keep deciding what a lift and a [`VectorStorageMatrix`](@ref) contribute. See issue #16.
 #
 # The block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them (which
 # this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby every stopping
-# criterion computed from it. A fold over the leaves rather than `map` + `sum` for the reason
-# `solution_scale` gives above, and allocation-free with it.
-l2norm(a::ParameterSet) = √_sumsq_leaves(l2norm, a)
+# criterion computed from it.
 
 @doc raw"""
     _sumsq_leaves(f, x)

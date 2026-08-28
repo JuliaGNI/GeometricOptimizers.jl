@@ -42,7 +42,13 @@ BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 # plain vector is the wrong shape: for a bare `StiefelManifold` of size `(3, 1)` it gives `3 × 3`
 # where the horizontal lift has only 2 free parameters, and the cache and the state then disagree
 # about how big `Q` is.
-function alloc_h(x::Union{ParameterContainer{T},Manifold{T}}) where {T}
+#
+# `Manifold` alone, where this took a parameter set as well until 0.6.1. `alloc_h` is `SimpleSolvers`'
+# function and a parameter set is `NeuralNetworkParameters`', so that arm owned neither side of its
+# own signature; it is `SimpleSolvers`' own `alloc_h(::ParameterSet)` as of 0.13.2, with `_zero`
+# written out as the `mapparameters(zero, ·)` it is. This arm needs no such move: `Manifold` is this
+# package's type. See issue #16.
+function alloc_h(x::Manifold{T}) where {T}
     # `_zero(x)` for the reason `BFGSCache` gives: the lift's dimension, not the dense one
     n = flatlength(_zero(x))
     fill(T(NaN), n, n)
