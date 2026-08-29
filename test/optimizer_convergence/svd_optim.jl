@@ -12,7 +12,7 @@ A = include("svd_matrix.jl")
 
 # named `objective` and not `error`, which is what it used to be called: that shadows `Base.error`
 # for the whole file, so a genuine `error("...")` anywhere in it would have been a `MethodError`
-objective(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
+objective(ps::NetworkParameters) = norm(A - ps.w₁ * ps.w₂' * A)
 
 # Both iterates stay on the Stiefel manifold, so this is a round-off tolerance and nothing
 # else; the values actually observed are of the order of `1e-14`.
@@ -148,7 +148,7 @@ pinned.
 """
 function starting_point(n)
     Random.seed!(1234)
-    (w₁=rand(StiefelManifold, size(A, 1), n), w₂=rand(StiefelManifold, size(A, 1), n))
+    NetworkParameters((w₁=rand(StiefelManifold, size(A, 1), n), w₂=rand(StiefelManifold, size(A, 1), n)))
 end
 
 """
@@ -534,7 +534,7 @@ const A1B_SEEDS = (2, 8)
 
 function a1b_starting_point(seed)
     Random.seed!(seed)
-    (w₁=rand(StiefelManifold, size(A, 1), 3), w₂=rand(StiefelManifold, size(A, 1), 3))
+    NetworkParameters((w₁=rand(StiefelManifold, size(A, 1), 3), w₂=rand(StiefelManifold, size(A, 1), 3)))
 end
 
 @testset "a bounded merit does not produce an unbounded step (issue A1b)" begin

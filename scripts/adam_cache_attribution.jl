@@ -65,11 +65,13 @@ _block(b, k) = NamedTuple{Tuple(Symbol("L", b, "p", i) for i in 1:k)}(Tuple(_lea
 nested(o, k) = NamedTuple{Tuple(Symbol("L", b) for b in 1:o)}(Tuple(_block(b, k) for b in 1:o))
 
 # `invokelatest` for the reason `walk_compile_cost.jl` gives at length: a direct call lets the caller's
-# own compilation infer through it before the clock starts.
+# own compilation infer through it before the clock starts. `time_ns()` and not `time()` for the reason
+# that file now gives beside its own `first_call`: the wall clock steps when the system adjusts it, and
+# a stepped row is indistinguishable from a fast one unless the step happens to be large and negative.
 function fc(label, f, args...)
-    t = time()
+    t = time_ns()
     r = Base.invokelatest(f, args...)
-    println("  ", rpad(label, 34), ": ", round(time() - t; digits = 2), " s")
+    println("  ", rpad(label, 34), ": ", round((time_ns() - t) / 1e9; digits = 2), " s")
     r
 end
 

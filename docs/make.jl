@@ -8,6 +8,15 @@ using SimpleSolvers
 import Bibliography
 
 links = InterLinks(
+    # `NeuralNetworkParameters` owns the parameter container, and this package's docstrings name it:
+    # [`OptimizerSolution`](@ref) is a union with `NetworkParameters{T}` in it, and
+    # [`RiemannianGradient`](@ref) explains its own existence in terms of who owns which type. Both
+    # `@extref` it, and without this entry both are a `:external_cross_references` build failure.
+    "NeuralNetworkParameters" => (
+        "https://juliagni.github.io/NeuralNetworkParameters.jl/stable",
+        "https://juliagni.github.io/NeuralNetworkParameters.jl/stable/objects.inv",
+        joinpath(@__DIR__, "inventories", "NeuralNetworkParameters.toml")
+    ),
     "SimpleSolvers" => (
         "https://juliagni.github.io/SimpleSolvers.jl/stable",
         "https://juliagni.github.io/SimpleSolvers.jl/stable/objects.inv",

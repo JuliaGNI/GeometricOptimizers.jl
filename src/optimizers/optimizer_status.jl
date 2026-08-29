@@ -162,14 +162,14 @@ solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
 # A fold over the leaves, and not `map` + `sum` over one level: a container is a tree of layers, so the
 # scales to combine are at its *leaves*. `map` would hand `solution_scale` a whole layer, for which
-# there is no method. See [`ParameterContainer`](@ref). [`_sumsq_leaves`](@ref) is
+# there is no method. See [`NeuralNetworkParameters.NetworkParameters`](@extref). [`_sumsq_leaves`](@ref) is
 # `NeuralNetworkParameters.foldparameters`, which reaches a leaf at any depth and allocates nothing.
-# `ParameterSet` and not [`ParameterContainer`](@ref): [`_sumsq_leaves`](@ref) recurses, so the nested
+# A whole set of parameters, at any depth: [`_sumsq_leaves`](@ref) recurses, so the nested
 # plain `NamedTuple` costs nothing to cover, and leaving it out cost something. `GeometricBase.l2norm`
 # is variadic, so an uncovered `NamedTuple` did not raise a `MethodError` naming `l2norm` — it was
 # splatted into `L2norm(::NamedTuple, ::Matrix, ::Matrix, …)` and reported against a function the caller
 # never named. `scripts/walk_compile_cost.jl` is where that surfaced.
-solution_scale(ps::ParameterSet) = √_sumsq_leaves(solution_scale, ps)
+solution_scale(ps::NetworkParameters) = √_sumsq_leaves(solution_scale, ps)
 
 # The norm of a horizontal lift is taken over its *free parameters*, i.e. over `Base.parent`, and in
 # quadrature -- the same intrinsic-versus-ambient distinction `_dot` documents. Leaving it to the
@@ -202,20 +202,21 @@ l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 # already gave `abs` for an `AbstractFloat` -- so the second of the two had been redundant as well as
 # pirated.
 #
-# Removing the `vec` is not only a matter of ownership. `vec` of a `Matrix` allocates a 32-byte
-# reshape wrapper, so `l2norm` of a parameter set cost 32 bytes per matrix leaf, per call, on every
-# stopping criterion of every iteration of `solve!`. The 0.5.0 changelog measured that and said the
-# fix belonged with the upstreaming. It did.
-# Type piracy as well. It was written as "only because `ArrayNamedTuple` is an alias for `NamedTuple`;
-# a wrapper `struct` would fix this one locally" -- and 0.6.0 took the wrapper, which did *not* fix it:
-# `l2norm` is `GeometricBase`'s and `NetworkParameters` is `NeuralNetworkParameters`', so the container
-# method owns neither side either. See issue #16 and the note on [`ParameterContainer`](@ref).
+# Taking no `vec` is not only a matter of ownership. `vec` of a `Matrix` allocates a 32-byte reshape
+# wrapper, so `l2norm` of a parameter set would cost 32 bytes per matrix leaf, per call, on every
+# stopping criterion of every iteration of `solve!`.
+#
+# `l2norm` of a whole set is **not** defined here, and cannot be: `l2norm` is `GeometricBase`'s and
+# `NetworkParameters` is `NeuralNetworkParameters`', so a method here would own neither side of its own
+# signature. It is `NeuralNetworkParameters`' own `L2norm(::NetworkParameters)`, in
+# `src/norms.jl`, from which the generic `l2norm(x) = sqrt(L2norm(x))` follows. The body
+# there is this fold with `foldparameters` written out in place of [`_sumsq_leaves`](@ref), and it
+# calls `l2norm` on the *leaves* — so the two methods below are what keep deciding the contribution of
+# a lift and of a [`VectorStorageMatrix`](@ref). See issue #16.
 #
 # The block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them (which
 # this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby every stopping
-# criterion computed from it. A fold over the leaves rather than `map` + `sum` for the reason
-# `solution_scale` gives above, and allocation-free with it.
-l2norm(a::ParameterSet) = √_sumsq_leaves(l2norm, a)
+# criterion computed from it.
 
 @doc raw"""
     _sumsq_leaves(f, x)

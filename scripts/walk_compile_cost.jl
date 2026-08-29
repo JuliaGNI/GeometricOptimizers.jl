@@ -65,9 +65,9 @@
 # primitives written over `mapparameters` and why `parameterlayout` comes before `flatten`.
 #
 # A row that raises is printed as the exception rather than skipped. Several of them are *supposed* to:
-# `map` hands `zero` a whole layer on a nested set, and the elementwise primitives turn a nested plain
-# `NamedTuple` away at the door, because `ArrayNamedTuple{T}` is flat by construction and a nested
-# bare set is not an `OptimizerSolution`. Those cells are the claim, so they are reported.
+# `map` hands `zero` a whole layer on a nested set, and the elementwise primitives turn a bare
+# `NamedTuple` away at the door at any depth, because a whole set of parameters reaches this package
+# only as a `NetworkParameters`. Those cells are the claim, so they are reported.
 #
 # ## The third axis is the Julia version, and one row used to swing 50× across it
 #
@@ -135,22 +135,27 @@ nested_set(nblocks::Integer, nleaves::Integer) =
     NamedTuple{Tuple(Symbol("L", b) for b in 1:nblocks)}(
         Tuple(_block(b, nleaves) for b in 1:nblocks))
 
-# `time()` and not `@elapsed`: the point is the very first call, and `@elapsed` in a loop would
+# `time_ns()` and not `@elapsed`: the point is the very first call, and `@elapsed` in a loop would
 # report the second.
 #
 # **`invokelatest` and not a direct `f(args...)`, and that is the measurement rather than a detail.**
 # Compiling `first_call` itself infers through the call in its body, so with a direct call the
 # inference the figure is meant to report is spent while `first_call` is being compiled — *before*
-# `t = time()` runs — and what gets printed is the leftover. `NeuralNetworkParameters`' copy of this
+# `t = time_ns()` runs — and what gets printed is the leftover. `NeuralNetworkParameters`' copy of this
 # harness read 0.00 s for every width and every column on Julia 1.13 until it was written this way.
 # `invokelatest` makes the call opaque, so the caller's own compilation has nothing to do first.
 #
 # Same lesson as the process-per-shape fix below, from the other end: arrange the harness so the cost
 # cannot have been paid where the clock is not looking.
+#
+# `time_ns()` and not `time()`, which is the wall clock and steps when the system adjusts it. A row of
+# `NeuralNetworkParameters`' `leaf_layout_cost.jl` reported **-1.4 s** that way where two re-runs read
+# 0.53; a negative first-call time is at least obvious, and a small positive step in the other
+# direction is not. `time_ns()` is monotonic, so a row is the elapsed time or it is nothing.
 function first_call(f, args...)
-    t = time()
+    t = time_ns()
     Base.invokelatest(f, args...)
-    round(time() - t; digits = 2)
+    round((time_ns() - t) / 1e9; digits = 2)
 end
 
 # A row that raises is a result, not a gap — see the header. The exception's *name* and a word on what
@@ -165,7 +170,12 @@ function row(label, note, f, args...)
     println("  ", rpad(label, 21), ": ", s)
 end
 
-const _NOT_A_SOLUTION = "a nested bare `NamedTuple` is not an `OptimizerSolution`"
+# A bare `NamedTuple` is not an `OptimizerSolution` at any depth -- see `src/optimizer_solution.jl`.
+# The bare column of this sweep is therefore about the *upstream* walks: `parameterlayout`, `flatten`,
+# `mapparameters` and the folds take one, because they are `NeuralNetworkParameters`' and dispatch on
+# its wider `ParameterSet`. Every row that enters this package reports the `MethodError` instead,
+# which is the honest reading and the reason `row` catches rather than skips.
+const _NOT_A_SOLUTION = "a bare `NamedTuple` is not an `OptimizerSolution`"
 
 function table(name, ps)
     println(name)
@@ -194,7 +204,7 @@ function table(name, ps)
     # the only one on the per-iteration path, through `linesearch_parameters`.
     row("l2norm", "", l2norm, ps)
     row("solution_scale", "", solution_scale, ps)
-    row("_dot(·, ·)", "", (a, b) -> _dot(a, b), ps, ps)
+    row("_dot(·, ·)", _NOT_A_SOLUTION, (a, b) -> _dot(a, b), ps, ps)
     row("αmax", "", (a, b) -> _manifold_αmax(a, b, one(T)), ps, ps)
     # The layout, and then the flattening that builds one. This pair is D21's, and the two columns of
     # the sweep are expected to agree on it.

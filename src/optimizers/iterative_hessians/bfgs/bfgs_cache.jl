@@ -97,20 +97,14 @@ function update!(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     cache
 end
 
-# Two `outer!` methods stood here until 0.6.0 -- one on [`ParameterContainer`](@ref), one on
-# `AbstractLieAlgHorMatrix` -- each flattening both arguments per call so that `SimpleSolvers.outer!`
-# could index them against `axes(m)`. Both are gone, because the flat buffers of [`_flat_scratch`](@ref)
-# hand `outer!` a `FlatParameters` and it reaches upstream's method directly. Nothing in `src/`, `test/`,
-# `docs/` or `scripts/` called either afterwards, and nothing in `GeometricMachineLearning` or
-# `GMLDatasets` ever did.
+# No `outer!` method of this package's own is needed here, and that is a property of
+# [`_flat_scratch`](@ref) rather than an omission. It hands `outer!` a `FlatParameters`, which
+# `SimpleSolvers.outer!` can index against `axes(m)` directly, so a parameter set or an
+# `AbstractLieAlgHorMatrix` never reaches that generic unflattened. Writing one here would also be type
+# piracy: `outer!` is `SimpleSolvers`' and neither argument type would be this package's.
 #
-# Deleting the container one **retires one of the five type-piracy sites of issue #16 group 3** --
-# `outer!` is `SimpleSolvers`' generic and this package owns neither arm of the union -- which the
-# 0.6.0 entry above says cannot be done for the group as a whole. It can be done for this one, and only
-# because `outer!` is internal to the quasi-Newton caches: no consumer calls it, so no consumer has to
-# change. The ambient-versus-intrinsic reasoning the second of them documented has moved to
-# [`_flat_scratch`](@ref), which is where the flat form now lives, and
-# `docs/src/linesearch_on_manifolds.md` points there.
+# The ambient-versus-intrinsic reasoning belongs with the flat form, so it lives on
+# [`_flat_scratch`](@ref), and `docs/src/linesearch_on_manifolds.md` points there.
 
 @doc raw"""
     update!(cache, x, g)
@@ -134,7 +128,7 @@ Q & \gets Q - (T_1 + T_2 - T_3)/{\delta^T\gamma}
 \end{aligned}
 ```
 """
-function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     update!(cache, state, x)
     _copyto!(gradient(cache), g)
     _copyto!(rhs(cache), g)

@@ -74,8 +74,9 @@ end
 
 println("`_flat_scratch`, i.e. `FT` on BFGSCache/DFPCache. Floor is 4 × flatlength × ", sizeof(T), " B.")
 println()
-report("wide 369 × (1 × 1), bare", wide_set(369))
-report("wide 369 × (1 × 1), in a NetworkParameters", NetworkParameters(wide_set(369)))
-report("wide 128, alternating Matrix/Vector, bare", mixed_set(128))
-report("big: one 400 × 400 leaf and one 400, bare", big_set())
-report("big: the same, in a NetworkParameters", NetworkParameters(big_set()))
+# Every row is wrapped, because `_zero` takes a `NetworkParameters` and a whole set of parameters
+# reaches this package no other way. There is no bare/wrapped axis to sweep here: the wrap shares the
+# leaf arrays, so `_zero` walks the same leaves and `_flat_scratch` sizes the same `FT` either way.
+report("wide 369 × (1 × 1)", NetworkParameters(wide_set(369)))
+report("wide 128, alternating Matrix/Vector", NetworkParameters(mixed_set(128)))
+report("big: one 400 × 400 leaf and one 400", NetworkParameters(big_set()))

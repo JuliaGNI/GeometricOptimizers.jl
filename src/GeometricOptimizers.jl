@@ -11,6 +11,11 @@ using SimpleSolvers: HessianAutodiff, HessianFunction
 
 import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff, alloc_h
 export GradientAutodiff, GradientFunction, GradientFiniteDifferences
+# `RiemannianGradient` is this package's own `Gradient`, and exported because it is what `Optimizer`
+# stores for a parameter set and therefore what `gradient(opt)` returns. A caller supplying its own
+# gradient does not need to wrap it -- `Optimizer` does that -- but does need the name to dispatch on.
+# See `utils.jl`.
+export RiemannianGradient
 
 # `Static` is exported because it is how a fixed learning rate is specified: the optimizer
 # methods only produce a direction, see `default_linesearch`.
@@ -57,12 +62,21 @@ import LazyArrays
 using NeuralNetworkParameters: NetworkParameters, params,
                                parameterlayout, flatlength,
                                flatten, flatten!, unflatten, unflatten!,
-                               FlatParameters, ParameterSet,
+                               FlatParameters,
                                mapparameters, mapparameters!,
                                foldparameters, foldstorage,
                                parameter_eltype,
                                register_parameter_type!
 import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
+
+# `NetworkParameters` *is* re-exported, and it is the one exception to the paragraph above. It is the
+# only shape in which a whole set of parameters enters this package -- see [`OptimizerSolution`](@ref)
+# -- so a caller holding a bare `NamedTuple` writes `Optimizer(NetworkParameters(ps), F)`, and having
+# to reach for a second `using` to say that would make the wrap look like a foreign concern rather
+# than this package's own entry condition. The name collides with nothing:
+# `AbstractNeuralNetworks`, `SymbolicNeuralNetworks` and `GeometricMachineLearning` all take it from
+# `NeuralNetworkParameters` too, so a downstream package meeting it twice meets the same binding.
+export NetworkParameters
 
 # `metric`, `check` and `Ω` join `rgrad` in being public: they are the geometry a caller works in,
 # not implementation detail, and a downstream package that defines its own manifold layers on top of

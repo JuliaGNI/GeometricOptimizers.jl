@@ -33,11 +33,47 @@ Random.seed!(1234)
     @test solution_scale([3.0, 4.0]) == 5.0
     @test solution_scale(ones(2, 2)) == 2.0
 
-    # a `NamedTuple` combines in quadrature, using the nominal scale for its manifold blocks and the
+    # a whole set combines in quadrature, using the nominal scale for its manifold blocks and the
     # measured one for the rest
-    ps = (w=rand(StiefelManifold, 6, 3), b=ones(4))
+    ps = NetworkParameters((w=rand(StiefelManifold, 6, 3), b=ones(4)))
     @test solution_scale(ps) ≈ √(3 + 4)
-    @test solution_scale((w=off, b=ones(4))) ≈ √(3 + 4)
+    @test solution_scale(NetworkParameters((w=off, b=ones(4)))) ≈ √(3 + 4)
+end
+
+# `l2norm` of a parameter set is `GeometricBase`'s method as of 0.6.1 — the quadrature fold moved
+# there with the rest of issue #16's group. What moved with it is the *shape* of the fold, and this is
+# the part of it that a move upstream could silently lose: the fold calls `l2norm` on each leaf, not
+# `L2norm`, so a leaf that keeps its numbers behind another interface still decides what it
+# contributes.
+#
+# A lift is the case where the two answers differ. `StiefelLieAlgHorMatrix` presents a dense `N × N`
+# skew-symmetric matrix over `N(N-1)/2 - (N-n)(N-n-1)/2` free parameters, so reading the dense
+# interface — which the generic `L2norm(::AbstractArray)` does — counts the off-diagonal blocks twice
+# and the `A` block's own skew entries twice again. `l2norm(::AbstractLieAlgHorMatrix)` folds over the
+# free parameters instead, and that is the number the stopping criteria are entitled to.
+@testset "`l2norm` of a set recurses through the leaf's `l2norm`, not through `L2norm`" begin
+    B = rand(StiefelLieAlgHorMatrix, 6, 3)
+    ps = NetworkParameters((w=B, b=[3.0, 4.0]))
+
+    # the set is the quadrature sum of the leaves' own norms ...
+    @test l2norm(ps) ≈ √(l2norm(B)^2 + 25)
+    # ... and `b` alone accounts for 25 of it, so the `w` term is the lift's own norm and nothing else
+    @test l2norm(NetworkParameters((b=[3.0, 4.0],))) ≈ 5.0
+
+    # ... which is *not* what reading the dense interface gives. If this ever stops holding, the leaf
+    # has become symmetric enough not to distinguish the two and the test needs a different leaf --
+    # it is not a licence to fold through `L2norm`.
+    @test l2norm(B) ≉ norm(B)
+
+    # A `VectorStorageMatrix` leaf is the same rule with the same answer by coincidence: `l2norm` of
+    # one is over the stored vector either way.
+    S = SymmetricMatrix(rand(4, 4))
+    @test l2norm(NetworkParameters((w=S,))) ≈ l2norm(S)
+
+    # And the block sum is a quadrature and not a sum of norms, which is what overestimated every
+    # stopping criterion by up to `√k` before 0.6.0.
+    @test l2norm(NetworkParameters((a=[3.0], b=[4.0]))) ≈ 5.0
+    @test l2norm(NetworkParameters((a=[3.0], b=[4.0]))) < l2norm([3.0]) + l2norm([4.0])
 end
 
 """

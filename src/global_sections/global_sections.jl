@@ -44,7 +44,7 @@ GlobalSection(ps::NetworkParameters) = GlobalSection(params(ps))
 
 # The `NamedTuple` method above returns whatever shape `mapparameters` rebuilt, which for a section
 # tree is a plain `NamedTuple` — so `apply_section`, `global_rep` and `update_section!` below take a
-# `NamedTuple` on the section side and a [`ParameterContainer`](@ref) on the parameter side. Each is
+# `NamedTuple` on the section side and a [`NeuralNetworkParameters.NetworkParameters`](@extref) on the parameter side. Each is
 # written with the section first, since `mapparameters` dispatches on its first argument and
 # normalises the rest.
 
@@ -148,7 +148,7 @@ function apply_section(λY::NamedTuple, Y₂::NamedTuple)
     mapparameters(apply_section, λY, Y₂)
 end
 
-function apply_section!(Y::ParameterSet, λY::NamedTuple, Y₂)
+function apply_section!(Y::NetworkParameters, λY::NamedTuple, Y₂)
     mapparameters!(apply_section!, Y, λY, Y₂)
 end
 
@@ -163,8 +163,8 @@ end
 # hand back a plain `NamedTuple` — the section tree's shape — for a container `gx`. What these produce
 # is a point and a gradient, i.e. *parameters*, and a parameter set has the parameters' shape. Getting
 # this backwards is not a cosmetic matter: the gradient would come out a plain nested `NamedTuple`,
-# which is neither an `ArrayNamedTuple` (its values are branches, not arrays) nor a container, so no
-# alias in this package covers it and `_copyto!(gradient_array(cache), ·)` has no method for it.
+# which is not a container, so no alias in this package covers it and
+# `_copyto!(gradient_array(cache), ·)` has no method for it.
 #
 # The section stays the plain tree `GlobalSection(::NetworkParameters)` returns; it is passed through
 # as the second argument and `mapparameters` normalises it.
@@ -358,7 +358,7 @@ end
 # The direction `B⁽ᵗ⁻¹⁾` is of the parameters' shape and the two sections are plain `NamedTuple`s, so
 # this is the mixed-shape walk: `mapparameters!` takes the section as its first argument and
 # normalises the direction, whichever of the two shapes it arrived in.
-function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::ParameterSet, retraction)
+function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::NetworkParameters, retraction)
     update_section_closure!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾) = update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
     mapparameters!(update_section_closure!, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾)
 

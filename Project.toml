@@ -1,6 +1,6 @@
 name = "GeometricOptimizers"
 uuid = "fc236c15-5557-4942-aa65-b650f329279e"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Michael Kraus", "Benedikt Brantner"]
 
 [deps]
@@ -21,7 +21,8 @@ AbstractNeuralNetworks = "60874f82-5ada-4c70-bd1c-fa6be7711c8a"
 AbstractNeuralNetworksExt = "AbstractNeuralNetworks"
 
 [compat]
-AbstractNeuralNetworks = "0.7"
+AbstractNeuralNetworks = "0.8"
+Aqua = "0.8"
 ChainRulesCore = "1"
 GPUArraysCore = "0.2"
 GeometricBase = "0.14.9"
@@ -31,15 +32,16 @@ KernelAbstractions = "0.9"
 LazyArrays = "2"
 LinearAlgebra = "1"
 NaNMath = "1"
-NeuralNetworkParameters = "0.2.4"
+NeuralNetworkParameters = "0.3"
 Printf = "1"
 Random = "1"
 SafeTestsets = "0.1"
-SimpleSolvers = "0.12, 0.13"
+SimpleSolvers = "0.13.2"
 julia = "1.11"
 
 [extras]
 AbstractNeuralNetworks = "60874f82-5ada-4c70-bd1c-fa6be7711c8a"
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
@@ -48,4 +50,4 @@ SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "SafeTestsets", "NaNMath", "HDF5", "JLArrays", "GPUArraysCore", "AbstractNeuralNetworks"]
+test = ["Test", "SafeTestsets", "NaNMath", "HDF5", "JLArrays", "GPUArraysCore", "AbstractNeuralNetworks", "Aqua"]

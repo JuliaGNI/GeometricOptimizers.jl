@@ -103,7 +103,7 @@
 #
 # ## How it measures
 #
-# One process per cell (`fan_out`), `Base.invokelatest` at the timed call, and `time()` rather than
+# One process per cell (`fan_out`), `Base.invokelatest` at the timed call, and `time_ns()` rather than
 # `@elapsed` — all three for the reasons `scripts/walk_compile_cost.jl` gives at length above its own
 # `first_call`. The short version: compiling the harness infers through the call in its body, so a
 # direct call spends the inference *before* the clock starts and prints the leftover.
@@ -242,11 +242,16 @@ if WITH_PACKAGE
     end
 end
 
-# `time()` and not `@elapsed`, `invokelatest` and not a direct call: see the header.
+# `time_ns()` and not `@elapsed`, `invokelatest` and not a direct call: see the header.
+#
+# `time_ns()` and not `time()`, which is the wall clock and steps when the system adjusts it. A row of
+# `NeuralNetworkParameters`' `leaf_layout_cost.jl` reported **-1.4 s** that way where two re-runs read
+# 0.53; a negative first-call time is at least obvious, and a small positive step in the other
+# direction is not. `time_ns()` is monotonic, so a row is the elapsed time or it is nothing.
 function first_call(f, args...)
-    t = time()
+    t = time_ns()
     Base.invokelatest(f, args...)
-    round(time() - t; digits = 2)
+    round((time_ns() - t) / 1e9; digits = 2)
 end
 
 function row(label, f, args...)

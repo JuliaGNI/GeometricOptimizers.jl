@@ -28,20 +28,20 @@ struct MomentumCache{T,MT,VT,ST} <: OptimizerCache{T}
     section::ST
 end
 
-function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientStorage{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
     MomentumCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
 end
 
-function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientStorage{T}}
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
     MomentumCache(x, g, δ, Δg)
 end
 
-function MomentumCache(x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function MomentumCache(x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     δ = _zero(g)
     MomentumCache(x, g, δ)
 end
@@ -98,7 +98,7 @@ momentum(state::MomentumState) = state.p
 
 section(state::MomentumState) = state.section
 
-function MomentumState(x::OST, g::GradientArrayOrNamedTuple{T}) where {T,OST<:OptimizerSolution{T}}
+function MomentumState(x::OST, g::GradientStorage{T}) where {T,OST<:OptimizerSolution{T}}
     _x = _copy(x)
     _g = _copy(g)
     gs = GlobalSection(_x)
@@ -111,7 +111,7 @@ MomentumState(x::OptimizerSolution) = MomentumState(x, _zero(x))
 
 OptimizerState(::MomentumMethod, x...) = MomentumState(x...)
 
-function update!(state::MomentumState{T}, gradient_array::GradientArrayOrNamedTuple{T}, direction::GradientArrayOrNamedTuple{T}, α::T, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
+function update!(state::MomentumState{T}, gradient_array::GradientStorage{T}, direction::GradientStorage{T}, α::T, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)

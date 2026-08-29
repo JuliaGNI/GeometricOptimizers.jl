@@ -6,6 +6,12 @@ begin
     @safetestset "Exports                      " include("exports.jl")
 end
 begin
+    @safetestset "Aqua: no type piracy         " include("aqua_tests.jl")
+end
+begin
+    @safetestset "Container/section copies     " include("container_section_copy.jl")
+end
+begin
     @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")
 end
 begin
@@ -90,7 +96,7 @@ begin
     @safetestset "Scalar-moment Adam           " include("scalar_moment_adam.jl")
 end
 begin
-    @safetestset "NamedTuple Parameters        " include("named_tuple_parameters.jl")
+    @safetestset "Flat Parameters              " include("flat_parameters.jl")
 end
 begin
     @safetestset "NeuralNetworkParameters      " include("neural_network_parameters_protocol.jl")

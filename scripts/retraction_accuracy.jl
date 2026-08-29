@@ -237,10 +237,11 @@ the entry rests on, and both halves of it have to come from this harness rather 
 function solve_once(algorithm, linesearch, retraction, seed::Integer; max_iterations::Integer=SVD_MAX_ITERATIONS,
     step_ceiling=GeometricOptimizers.DEFAULT_STEP_CEILING)
     evaluations = Ref(0)
-    objective(ps::NamedTuple) = (evaluations[] += 1; norm(A - ps.w₁ * ps.w₂' * A))
+    objective(ps::NetworkParameters) = (evaluations[] += 1; norm(A - ps.w₁ * ps.w₂' * A))
 
     Random.seed!(seed)
-    ps = (w₁=rand(StiefelManifold, size(A, 1), 3), w₂=rand(StiefelManifold, size(A, 1), 3))
+    ps = NetworkParameters((w₁=rand(StiefelManifold, size(A, 1), 3),
+                            w₂=rand(StiefelManifold, size(A, 1), 3)))
     state = OptimizerState(algorithm, ps)
     optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
         linesearch=linesearch, max_iterations=max_iterations, warn_iterations=0,

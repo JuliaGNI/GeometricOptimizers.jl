@@ -71,7 +71,7 @@ end
 @testset "ScalarMomentAdam rejects unsupported parameters through Optimizer" begin
     f(x) = sum(abs2, x)
     for x in (rand(3),
-        (Y=rand(StiefelManifold, 4, 2), z=rand(3)),
+        NetworkParameters((Y=rand(StiefelManifold, 4, 2), z=rand(3))),
         rand(GrassmannManifold, 4, 2),
         rand(StiefelManifold{Float32}, 4, 2))
         @test_throws ArgumentError Optimizer(x, f; algorithm=ScalarMomentAdam())

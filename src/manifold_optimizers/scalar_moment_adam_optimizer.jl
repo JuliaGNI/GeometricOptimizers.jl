@@ -133,7 +133,7 @@ mutable struct ScalarMomentAdamState{T,OT,GS,VT} <: OptimizerState{T}
     f̄::T
 end
 
-function ScalarMomentAdamState(x::StiefelManifold{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function ScalarMomentAdamState(x::StiefelManifold{T}, g::GradientStorage{T}) where {T}
     g isa StiefelLieAlgHorMatrix || throw(ArgumentError("ScalarMomentAdam requires a single Stiefel gradient"))
     _g = _copy(g)
     _x = _copy(x)

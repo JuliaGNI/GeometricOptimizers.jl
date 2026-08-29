@@ -1,0 +1,23 @@
+# Without this file Codecov's defaults apply: `target: auto` with `threshold: 0%`, which fails a pull
+# request for *any* decrease at all. That is sharper than it reads. Coverage here moves by a line or
+# two for reasons that are not regressions:
+#
+#   - Codecov counts a *modified* line as part of the diff, so changing a signature's annotation --
+#     `ParameterSet` to `NetworkParameters`, `GradientArrayOrNamedTuple` to `GradientStorage` --
+#     re-attributes a line that was already uncovered on `main` to whoever renamed it. #74 was
+#     reported as 13 missing lines on a net movement of 2.
+#   - The manifold and retraction branches are exercised on some element types and not others, so
+#     which lines are hit shifts with the order the suite happens to run in.
+#
+# 1% on both, so a real regression still fails and drift does not. `informational` is deliberately
+# *not* set: the check should be able to fail.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 1%

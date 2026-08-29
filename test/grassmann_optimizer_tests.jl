@@ -134,7 +134,7 @@ end
 @testset "a NamedTuple holding a GrassmannManifold" begin
     for algorithm in METHODS
         Random.seed!(7)
-        ps = (Y=rand(GrassmannManifold{Float64}, 5, 2), W=randn(2, 2))
+        ps = NetworkParameters((Y=rand(GrassmannManifold{Float64}, 5, 2), W=randn(2, 2)))
         f = p -> -tr(p.Y' * M₅ * p.Y) + sum(abs2, p.W .- 1.0)
         f₀ = f(ps)
         ls = linesearch_for(algorithm)
@@ -158,7 +158,7 @@ end
 @testset "a NamedTuple holding both kinds of manifold" begin
     for retraction in (Geodesic(), Cayley())
         Random.seed!(3)
-        ps = (Y=rand(GrassmannManifold{Float64}, 5, 2), S=rand(StiefelManifold{Float64}, 5, 1))
+        ps = NetworkParameters((Y=rand(GrassmannManifold{Float64}, 5, 2), S=rand(StiefelManifold{Float64}, 5, 1)))
         f = p -> -tr(p.Y' * M₅ * p.Y) - tr(p.S' * M₅ * p.S)
         f₀ = f(ps)
         optimizer = Optimizer(ps, f; algorithm=BFGS(), retraction=retraction)

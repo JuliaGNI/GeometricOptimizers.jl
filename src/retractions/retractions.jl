@@ -9,12 +9,11 @@ geodesic(A::AbstractVecOrMat, ::AbstractExponentialAlgorithm) = A
 # `mapparameters` throughout: a direction is of the parameters' shape, so a container solution hands
 # these a container, whose leaves are a level below what `map` would reach.
 #
-# `ParameterSet` — `NeuralNetworkParameters`' name for "either form of a whole parameter set" — rather
-# than [`ParameterContainer`](@ref): these were written on the bare `NamedTuple`, and narrowing them to
-# "flat, and every leaf an array of one `T`" would be a narrowing. Being upstream's, it is also in scope
-# here, where `ParameterContainer` is not: this file is included well before `optimizer_solution.jl`.
-geodesic(B::ParameterSet) = mapparameters(geodesic, B)
-geodesic(B::ParameterSet, algorithm::AbstractExponentialAlgorithm) =
+# A retraction is applied to a *direction*, which `mapparameters` rebuilds in the shape of the
+# parameters it was derived from — so these take the container, as every direction in this package is
+# one.
+geodesic(B::NetworkParameters) = mapparameters(geodesic, B)
+geodesic(B::NetworkParameters, algorithm::AbstractExponentialAlgorithm) =
     mapparameters(Bᵢ -> geodesic(Bᵢ, algorithm), B)
 
 @doc raw"""
@@ -154,7 +153,7 @@ function geodesic(B::AbstractLieAlgHorMatrix, ::ProjectedSkew)
     manifold_type(B)(one(B) + Q * (expM - I) * Q')
 end
 
-cayley(B::ParameterSet) = mapparameters(cayley, B)
+cayley(B::NetworkParameters) = mapparameters(cayley, B)
 
 @doc raw"""
     cayley(Y::Manifold, Δ)
@@ -306,7 +305,7 @@ retraction_differential(::Geodesic, B, α) = B
 
 retraction_differential(::Cayley, B::AbstractVecOrMat, α) = B
 
-retraction_differential(R::Cayley, B::ParameterSet, α) =
+retraction_differential(R::Cayley, B::NetworkParameters, α) =
     mapparameters(Bᵢ -> retraction_differential(R, Bᵢ, α), B)
 
 function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) where {T}
