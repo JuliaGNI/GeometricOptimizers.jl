@@ -48,7 +48,7 @@ makes a ceiling that forbids the ``10^8`` step cost the ordinary ones nothing.
 
 !!! info "Euclidean parameters do not get one"
     [`linesearch_parameters`](@ref) omits `αmax` for an `AbstractVector`, and passes `Inf` — which
-    says the same thing — for a `NamedTuple` carrying no manifold block. There is no geometric scale
+    says the same thing — for a parameter set carrying no manifold block. There is no geometric scale
     in either case, and none is needed: ``f(x + \alpha{}p)`` grows with ``\alpha``, so the search's
     own decrease test rejects an over-long step unaided.
 
@@ -57,7 +57,7 @@ makes a ceiling that forbids the ``10^8`` step cost the ordinary ones nothing.
     ceiling per block, over the manifold blocks only, which is what makes the distinction.
 
 !!! info "One `α`, one ceiling per block"
-    On a `NamedTuple` the same ``\alpha`` scales every block, so the ceiling is the *smallest* of the
+    On a parameter set the same ``\alpha`` scales every block, so the ceiling is the *smallest* of the
     per-block ones over the blocks that live on a manifold — [`_manifold_αmax`](@ref) — and not
     ``2\pi{}c`` over the norm of the whole direction. The latter is what this was written as, and it
     made every block pay for its neighbours: on the SVD problem, where both blocks are manifolds,
@@ -168,12 +168,16 @@ supplied.
 
 # Implementation
 
-The `NamedTuple` method is not just a matter of the *length*: a `Gradient` built for a
-`NamedTuple` is called on the flattened parameters, so it has to be constructed from `x`
-itself (see `GradientAutodiff(F, ::NamedTuple)`), which composes `problem.F` with the
-`unflatten` that belongs to `x`. Sizing it with `length(x)` — the number of entries of the
-`NamedTuple` rather than the length of its flattening — used to make the first step fail with
-a `DimensionMismatch`.
+The [`NeuralNetworkParameters.NetworkParameters`](@extref) method is not just a matter of the
+*length*: a `Gradient` built for a parameter set is called on the flattened parameters, so it has to
+be constructed from `x` itself — `SimpleSolvers`' `GradientAutodiff(F, ::NetworkParameters)`, which
+composes `problem.F` with the `unflatten` that belongs to `x`. Sizing it with `length(x)` — the
+number of *layers* rather than the length of the flattening — used to make the first step fail with a
+`DimensionMismatch`.
+
+It wraps in a [`RiemannianGradient`](@ref), which is what projects the result leaf by leaf. `Optimizer`
+would wrap it anyway, and the wrap is idempotent; doing it here as well keeps this function's own
+return value the thing `Optimizer` will actually store.
 """
 default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
 default_gradient(problem::OptimizerProblem, x::NetworkParameters) =
