@@ -150,6 +150,11 @@ kind and it is not this one.
 
 ## [0.6.1]
 
+!!! note "Never registered; these changes ship in 0.7.0"
+    0.6.1 was prepared and then superseded before it reached the registry, which holds 0.6.0 and then
+    0.7.0. The entry is kept rather than folded because what it records — where each of the eight
+    pirated methods went — is the part a reader comes here for, and it happened as its own step.
+
 **The last type piracy in this package is gone, and a test keeps it that way.** Goal 2 of the
 ecosystem plan — "no type piracy in the GML ecosystem" — had this package as its only remaining
 holder. `Aqua.Piracy.hunt` found **eight** methods, where the 0.6.0 changelog's table counted one and
@@ -4079,5 +4084,6 @@ and both are corrected: see C8.)
 [0.4.2]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.2
 [0.4.3]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.4.3
 [0.5.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.5.0
+[0.7.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.7.0
 [0.6.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.6.0
 [Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.6.0...main
