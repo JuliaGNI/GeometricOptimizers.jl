@@ -32,7 +32,7 @@ type, and it caused three separate things:
 ### Measured
 
 `Test.detect_ambiguities(GeometricOptimizers; recursive = true)`, on Julia 1.13 against
-`GeometricBase` 0.14.10, `SimpleSolvers` 0.13.2 and `NeuralNetworkParameters` 0.2.5:
+`GeometricBase` 0.14.9, `SimpleSolvers` 0.13.2 and `NeuralNetworkParameters` 0.3.0:
 
 | | 0.6.1 | 0.7.0 |
 |---|---|---|
@@ -77,7 +77,8 @@ and takes the flatness test that `ArrayNamedTuple` used to make by dispatch — 
 
 ### Changed
 
-- **`GeometricBase = "0.14.9"`**, relaxed from `"0.14.10"`. That bump existed only so that
+- **`GeometricBase = "0.14.9"`**, i.e. unchanged from 0.6.0 — an earlier revision of this release
+  raised it to `"0.14.10"` and that bump is withdrawn, so no bound moves. It existed only so that
   `L2norm` over a parameter set would be available, and the method now lives in
   `NeuralNetworkParameters`' `ext/GeometricBaseExt.jl` — the package that owns the type and the walk,
   and the only one of the two that can test it, since `GeometricBase` supports Julia 1.10 and cannot
@@ -169,7 +170,7 @@ silently gets the new behaviour for the rest of its session.
 
   | was here | is now |
   |---|---|
-  | `l2norm(::ParameterSet)` (`optimizers/optimizer_status.jl`) | `GeometricBase` 0.14.10, `ext/NeuralNetworkParametersExt.jl`, as `L2norm(::ParameterSet)` |
+  | `l2norm(::ParameterSet)` (`optimizers/optimizer_status.jl`) | `NeuralNetworkParameters` 0.3.0, `ext/GeometricBaseExt.jl`, as `L2norm(::NetworkParameters)` |
   | `GradientAutodiff(F, ::ParameterSet)` (`optimizers/named_tuple_wrapper.jl`) | `SimpleSolvers` 0.13.2, `ext/SimpleSolversNeuralNetworkParametersExt.jl` |
   | `GradientFunction(F, ∇F!, ::ParameterSet)` (same file) | the same extension |
   | `alloc_h`, the `ParameterContainer` arm (`iterative_hessians/bfgs/bfgs_state.jl`) | the same extension |
@@ -188,9 +189,10 @@ silently gets the new behaviour for the rest of its session.
   precedence over the new `AbstractMatrix` method upstream, which is what it has to do: it rebuilds
   the manifold with `manifold_constructor` where a `reshape` would only give back a matrix.
 
-  **This raises the compat bounds to `GeometricBase = "0.14.10"` and `SimpleSolvers = "0.13.2"`**,
-  because the five methods are only there from those releases. See *Known issues* below for what that
-  costs downstream.
+  **This raises the compat bound to `SimpleSolvers = "0.13.2"`**, because four of the five are only
+  there from that release. The fifth went to `NeuralNetworkParameters` rather than to `GeometricBase`,
+  so `GeometricBase = "0.14.9"` stands and that package leaves the registration chain entirely. See
+  *Known issues* below for what the `SimpleSolvers` bound costs downstream.
 
 - **`(::Gradient)(::Matrix)` and `(::Gradient)(::ParameterContainer)` are de-pirated in place, by a
   new `RiemannianGradient <: SimpleSolvers.Gradient`.** These two could not follow the five above:

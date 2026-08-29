@@ -3,8 +3,9 @@
 # Goal 2 of the ecosystem plan is "no type piracy in the GML ecosystem", and this package was the
 # last holder: eight methods as of 0.6.0, on `SimpleSolvers`' `Gradient`, `GradientAutodiff`,
 # `GradientFunction`, `Hessian` and `alloc_h` and on `GeometricBase`' `l2norm`, none of them
-# dispatching on a type this package owns. Five went upstream as extension methods on
-# `NeuralNetworkParameters` (`GeometricBase` 0.14.10 and `SimpleSolvers` 0.13.2), one moved to
+# dispatching on a type this package owns. Five went upstream as extension methods -- `L2norm` over a
+# parameter set to `NeuralNetworkParameters` 0.3.0's `ext/GeometricBaseExt.jl`, the rest to
+# `SimpleSolvers` 0.13.2's `ext/SimpleSolversNeuralNetworkParametersExt.jl` -- one moved to
 # `SimpleSolvers` proper, and two were de-pirated in place -- `RiemannianGradient` for the projecting
 # functor, and this package's own `Hessian` types for the call-with-a-cache error.
 #
@@ -92,4 +93,20 @@ end
 
     # And the Hessian functor's error, now on this package's own Hessian types.
     @test_throws ErrorException HessianBFGS(F, ones(3))(zeros(3, 3), ones(3))
+end
+
+# `Optimizer` never builds this one, because a plain `Matrix` is not an `OptimizerSolution` -- the
+# union is `AbstractVector`, `Manifold`, `NetworkParameters` -- and `_riemannian_gradient` has no
+# `Matrix` method either. It is here for a caller who wraps by hand, which is why the type is
+# exported, and it is the owned replacement for the `(::Gradient{T})(::Matrix{T})` this release
+# deletes. Asserted so that it is covered rather than merely present: a method nothing reaches is
+# indistinguishable from one that no longer works.
+@testset "the matrix functor, which `Optimizer` does not build" begin
+    x = [1.0 2.0; 3.0 4.0]
+    G(A) = sum(abs2, A)
+    grad = RiemannianGradient(GradientAutodiff(G, x))
+
+    @test grad(x) ≈ rgrad(x, 2x)
+    # a `Matrix` is not an `OptimizerSolution`, which is why nothing here builds the wrapper for one
+    @test !(x isa GeometricOptimizers.OptimizerSolution)
 end
