@@ -80,7 +80,7 @@ and takes the flatness test that `ArrayNamedTuple` used to make by dispatch — 
 - **`GeometricBase = "0.14.9"`**, i.e. unchanged from 0.6.0 — an earlier revision of this release
   raised it to `"0.14.10"` and that bump is withdrawn, so no bound moves. It existed only so that
   `L2norm` over a parameter set would be available, and the method now lives in
-  `NeuralNetworkParameters`' `ext/GeometricBaseExt.jl` — the package that owns the type and the walk,
+  `NeuralNetworkParameters`' `src/norms.jl` — the package that owns the type and the walk,
   and the only one of the two that can test it, since `GeometricBase` supports Julia 1.10 and cannot
   resolve `NeuralNetworkParameters` at all. `test/aqua_tests.jl` asserts the new location.
   `GeometricBase` consequently drops out of the registration chain: 0.14.9 is registered and
@@ -126,7 +126,7 @@ and takes the flatness test that `ArrayNamedTuple` used to make by dispatch — 
   take the container; `_is_decayable` has two methods, because it recurses through `values` itself and
   so meets a container's layers on the way down.
 
-  `l2norm` of a whole set comes from `NeuralNetworkParameters`' `ext/GeometricBaseExt.jl` and is
+  `l2norm` of a whole set comes from `NeuralNetworkParameters`' `src/norms.jl` and is
   likewise container-only. Every fixture in `test/` that handed one of these a bare `NamedTuple` now
   wraps.
 
@@ -170,7 +170,7 @@ silently gets the new behaviour for the rest of its session.
 
   | was here | is now |
   |---|---|
-  | `l2norm(::ParameterSet)` (`optimizers/optimizer_status.jl`) | `NeuralNetworkParameters` 0.3.0, `ext/GeometricBaseExt.jl`, as `L2norm(::NetworkParameters)` |
+  | `l2norm(::ParameterSet)` (`optimizers/optimizer_status.jl`) | `NeuralNetworkParameters` 0.3.0, `src/norms.jl`, as `L2norm(::NetworkParameters)` |
   | `GradientAutodiff(F, ::ParameterSet)` (`optimizers/named_tuple_wrapper.jl`) | `SimpleSolvers` 0.13.2, `ext/SimpleSolversNeuralNetworkParametersExt.jl` |
   | `GradientFunction(F, ∇F!, ::ParameterSet)` (same file) | the same extension |
   | `alloc_h`, the `ParameterContainer` arm (`iterative_hessians/bfgs/bfgs_state.jl`) | the same extension |

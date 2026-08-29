@@ -209,7 +209,7 @@ l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 # `l2norm` of a whole set is **not** defined here, and cannot be: `l2norm` is `GeometricBase`'s and
 # `NetworkParameters` is `NeuralNetworkParameters`', so a method here would own neither side of its own
 # signature. It is `NeuralNetworkParameters`' own `L2norm(::NetworkParameters)`, in
-# `ext/GeometricBaseExt.jl`, from which the generic `l2norm(x) = sqrt(L2norm(x))` follows. The body
+# `src/norms.jl`, from which the generic `l2norm(x) = sqrt(L2norm(x))` follows. The body
 # there is this fold with `foldparameters` written out in place of [`_sumsq_leaves`](@ref), and it
 # calls `l2norm` on the *leaves* — so the two methods below are what keep deciding the contribution of
 # a lift and of a [`VectorStorageMatrix`](@ref). See issue #16.

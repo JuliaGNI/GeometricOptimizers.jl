@@ -3,8 +3,8 @@
 # Goal 2 of the ecosystem plan is "no type piracy in the GML ecosystem", and this package was the
 # last holder: eight methods as of 0.6.0, on `SimpleSolvers`' `Gradient`, `GradientAutodiff`,
 # `GradientFunction`, `Hessian` and `alloc_h` and on `GeometricBase`' `l2norm`, none of them
-# dispatching on a type this package owns. Five went upstream as extension methods -- `L2norm` over a
-# parameter set to `NeuralNetworkParameters` 0.3.0's `ext/GeometricBaseExt.jl`, the rest to
+# dispatching on a type this package owns. Five went upstream -- `L2norm` over a parameter set into
+# `NeuralNetworkParameters` 0.3.0 proper, the rest to
 # `SimpleSolvers` 0.13.2's `ext/SimpleSolversNeuralNetworkParametersExt.jl` -- one moved to
 # `SimpleSolvers` proper, and two were de-pirated in place -- `RiemannianGradient` for the projecting
 # functor, and this package's own `Hessian` types for the call-with-a-cache error.
@@ -34,7 +34,7 @@ Aqua.test_piracies(GeometricOptimizers)
 # The two seams land in different packages, and for the same reason in both cases — whichever package
 # can *test* the method. `GradientAutodiff`, `GradientFunction` and `alloc_h` are `SimpleSolvers`',
 # which owns the generics. `L2norm` over a parameter set is `NeuralNetworkParameters`'
-# (`ext/GeometricBaseExt.jl`), which owns the type and the walk the method is written in;
+# (`src/norms.jl`), which owns the type and the walk the method is written in;
 # `NNP/test/geometric_base_tests.jl` pins its behaviour. What is asserted here is only that this
 # package reaches both, since a solve that quietly fell back to a different `l2norm` would still run.
 
@@ -48,12 +48,12 @@ using SimpleSolvers: Gradient, GradientAutodiff, GradientFunction, alloc_h
 @testset "the five methods that went upstream are upstream" begin
     ps = NetworkParameters((L1 = (W = [3.0 0.0; 0.0 4.0], b = [0.0, 0.0]), L2 = (W = [0.0 0.0], b = [12.0])))
 
-    nnp_ext = Base.get_extension(NeuralNetworkParameters, :GeometricBaseExt)
     ss_ext = Base.get_extension(SimpleSolvers, :SimpleSolversNeuralNetworkParametersExt)
-    @test nnp_ext isa Module
     @test ss_ext isa Module
 
-    @test which(L2norm, Tuple{typeof(ps)}).module === nnp_ext
+    # `NeuralNetworkParameters` itself and not an extension of it: `GeometricBase` is a hard
+    # dependency there, which this ecosystem takes anyway.
+    @test which(L2norm, Tuple{typeof(ps)}).module === NeuralNetworkParameters
     for m in (which(GradientAutodiff, Tuple{typeof(l2norm),typeof(ps)}),
               which(GradientFunction, Tuple{typeof(l2norm),Function,typeof(ps)}),
               which(alloc_h, Tuple{typeof(ps)}))
