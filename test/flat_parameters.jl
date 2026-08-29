@@ -1,17 +1,25 @@
 using GeometricOptimizers
-using GeometricOptimizers: ArrayNamedTuple, OptimizerCache, OptimizerSolution,
+using GeometricOptimizers: OptimizerCache, OptimizerSolution,
     Cayley, Geodesic, check, increase_iteration_number!, solver_step!
 using NeuralNetworkParameters: flatten, unflatten
 using SimpleSolvers: Static, l2norm
 using Test
 import Random
 
-# The MNIST scripts of GMLDatasets.jl (https://github.com/JuliaGNI/GMLDatasets.jl) store the
-# parameters of a transformer in a flat `NamedTuple` that mixes `StiefelManifold`s with ordinary
-# matrices and vectors, that is made up of `Float32`s and whose gradient is computed by hand. These
-# three cases are covered below, together with the property that matters for all of them: the
-# `StiefelManifold` entries have to *stay* on the manifold over the course of the optimization
-# (this is what `check` measures).
+# A **flat** set of parameters -- one `NetworkParameters` whose values are leaves rather than
+# layers. It is the shape the MNIST scripts of GMLDatasets.jl
+# (https://github.com/JuliaGNI/GMLDatasets.jl) keep a transformer's parameters in: a set that mixes
+# `StiefelManifold`s with ordinary matrices and vectors, that is made up of `Float32`s and whose
+# gradient is computed by hand. Those three cases are covered below, together with the property that
+# matters for all of them: the `StiefelManifold` entries have to *stay* on the manifold over the
+# course of the optimization (this is what `check` measures).
+#
+# `test/network_parameters_optimizer.jl` is the nested counterpart, and the difference between the
+# two is not cosmetic: a nested container's leaves sit one level below what `Base.map` reaches, and a
+# flat one's do not. Both shapes have to work and each catches what the other cannot.
+#
+# The last testset states the other half of the commitment: a *bare* `NamedTuple` is not a set of
+# parameters, and the wrap is the whole of what a caller holding one has to do.
 
 const N, n, m = 6, 3, 4
 
@@ -35,7 +43,7 @@ The gradients are ``\\partial_YF = RW^T``, ``\\partial_WF = Y^TR`` and
 function test_problem(::Type{T}) where {T}
     B = T.(B₀)
 
-    F(ps::NamedTuple) = sum(abs2, ps.Y * ps.W .+ ps.b .- B) / 2
+    F(ps::NetworkParameters) = sum(abs2, ps.Y * ps.W .+ ps.b .- B) / 2
 
     function ∇F!(g::AbstractVector, v::AbstractVector)
         Y = reshape(view(v, ranges[1]), N, n)
@@ -51,8 +59,9 @@ function test_problem(::Type{T}) where {T}
     F, ∇F!
 end
 
-initial_parameters(::Type{T}) where {T} =
-    (Y=rand(Random.Xoshiro(1234), StiefelManifold{T}, N, n), W=randn(Random.Xoshiro(5678), T, n, m), b=zeros(T, N))
+initial_parameters(::Type{T}) where {T} = NetworkParameters((
+    Y=rand(Random.Xoshiro(1234), StiefelManifold{T}, N, n),
+    W=randn(Random.Xoshiro(5678), T, n, m), b=zeros(T, N)))
 
 """
     optimize(T, algorithm; kwargs...)
@@ -94,15 +103,16 @@ end
 algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(T(0.1)), Adam(T))
 retractions() = (Geodesic(), Cayley())
 
-# `ArrayTuple` used to be written as `Tuple{Vararg{AT}} where {AT<:AbstractArray{T}}`, which
-# Julia's diagonal rule makes *homogeneous*: a `NamedTuple` that stores a `StiefelManifold`
-# and an ordinary `Matrix` at the same time was then not an `ArrayNamedTuple` and could not
-# be passed to the `Optimizer`.
-@testset "a heterogeneous NamedTuple is a valid set of parameters" begin
+# `NetworkParameters{T}` derives its `T` by *promotion* over the leaves, so a set mixing a
+# `StiefelManifold` with an ordinary `Matrix` and a `Vector` is one solution of one element type. A
+# `Vararg` bound on the values cannot say that: written `Tuple{Vararg{AT}} where {AT<:AbstractArray{T}}`
+# Julia's diagonal rule makes it *homogeneous*, so a set holding three different leaf types binds no
+# `T` at all and reaches no `Optimizer` method. This is the assertion that separates the two.
+@testset "a heterogeneous set of parameters is one solution" begin
     for T in (Float64, Float32)
         ps = initial_parameters(T)
         @test length(unique(typeof.(values(ps)))) == 3      # a manifold, a matrix and a vector
-        @test ps isa ArrayNamedTuple{T}
+        @test ps isa NetworkParameters{T}
         @test ps isa OptimizerSolution{T}
     end
 end
@@ -182,7 +192,7 @@ end
     end
 end
 
-# `GradientFunction(F, ∇F!, nt::NamedTuple)` is what lets the GMLDatasets.jl scripts use `Zygote`
+# `GradientFunction(F, ∇F!, ps)` is what lets the GMLDatasets.jl scripts use `Zygote`
 # instead of the default `ForwardDiff`; `∇F!` is called on the flattened parameters.
 @testset "a hand written gradient gives the same result as the default one" begin
     for T in (Float64, Float32), algorithm in algorithms(T)
@@ -200,9 +210,9 @@ end
 # of the parameters seen as one long vector, which is what the flattening makes them. Summing
 # the blocks instead overestimates it by up to `√k` for `k` blocks — and every stopping
 # criterion of `solve!` is computed from it.
-@testset "l2norm on a NamedTuple is the norm of the flattened parameters" begin
+@testset "l2norm on a parameter set is the norm of the flattened parameters" begin
     # the 3-4-5 triangle, so that summing (7.0) and the quadrature (5.0) are far apart
-    @test l2norm((a=[3.0, 0.0], b=[0.0, 4.0])) ≈ 5.0
+    @test l2norm(NetworkParameters((a=[3.0, 0.0], b=[0.0, 4.0]))) ≈ 5.0
 
     for T in (Float64, Float32)
         ps = initial_parameters(T)
@@ -213,11 +223,10 @@ end
     end
 end
 
-# `solve!` on `NamedTuple` parameters is the only path that builds an `OptimizerStatus` on
-# them, i.e. the only one that calls `l2norm(::ArrayNamedTuple)` above and `_difference!` on
-# the gradient blocks. The testsets further up drive `solver_step!` by hand and never get
-# there.
-@testset "solve! runs on NamedTuple parameters" begin
+# `solve!` is the only path that builds an `OptimizerStatus` on a set of parameters, i.e. the only
+# one that calls the `l2norm` above and `_difference!` on the gradient blocks. The testsets further
+# up drive `solver_step!` by hand and never get there.
+@testset "solve! runs on a flat parameter set" begin
     for T in (Float64, Float32), algorithm in algorithms(T)
         Random.seed!(1234)
         F, _ = test_problem(T)
@@ -232,7 +241,7 @@ end
         @test result.f < f₀                                          # it made progress ...
         @test F(ps) == result.f                                      # ... and reported it
         @test check(ps.Y) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)       # still on the manifold
-        # the convergence measures are the ones computed from `l2norm(::ArrayNamedTuple)`
+        # the convergence measures are the ones computed from the `l2norm` above
         @test !isnan(result.status.rg)
         @test result.status.rg ≥ 0
     end
@@ -240,7 +249,7 @@ end
 
 # The `Optimizer(x, problem)` entry point is the one that `Optimizer(x, F)` delegates to, but
 # it is also public on its own — and it is the one that has to build the gradient itself. For
-# `NamedTuple` parameters that gradient is called on the *flattened* parameters, so sizing it
+# a set of parameters that gradient is called on the *flattened* parameters, so sizing it
 # with `length(x)` (the number of entries, `3` here) instead of constructing it from `x` used
 # to make the very first step throw a `DimensionMismatch`.
 @testset "Optimizer(ps, OptimizerProblem(F, ps)) supplies its own gradient" begin
@@ -269,8 +278,8 @@ end
 # The one thing about `Adam` that a user has to get right is that it carries its own
 # parameters, so it has to be constructed with the element type of the parameters (see the
 # comment above `algorithms`). `MomentumMethod` is converted by the `Optimizer`, `Adam` is not,
-# and the mismatch used to surface as `MethodError: no method matching
-# OptimizerCache(::Adam{Float64}, ::NamedTuple{...Float32...})` — which says what did not match
+# and without the check below the mismatch surfaces as `MethodError: no method matching
+# OptimizerCache(::Adam{Float64}, ::NetworkParameters{Float32,...})` — which says what did not match
 # but not what to do about it.
 @testset "an Adam of the wrong element type says what is wrong" begin
     ps = initial_parameters(Float32)
@@ -283,7 +292,7 @@ end
 
 # This guards a property that no other test can see, because the bug it protects against did not
 # fail anything — it made the caller hang. The cache and state structs used to bound their type
-# parameters by `OptimizerSolution`, `GradientArrayOrNamedTuple` and
+# parameters by `OptimizerSolution`, `GradientStorage` and
 # `GlobalSectionSingleOrNamedTuple`. Inference cannot solve those bounds down to a concrete
 # `NamedTuple` (it cannot with or without them — the constructors' own signatures are already
 # written in the same aliases), so the inferred cache type is a `UnionAll` either way.
@@ -343,4 +352,38 @@ end
     @test OptimizerCache(DFP(), ps) isa GeometricOptimizers.DFPCache{Float64}
     @test OptimizerCache(Newton(), zeros(3)) isa GeometricOptimizers.NewtonOptimizerCache{Float64}
     @test OptimizerState(Newton(), zeros(3)) isa NewtonOptimizerState{Float64}
+end
+
+
+# The other half of the commitment: a bare `NamedTuple` is *not* a set of parameters, and the
+# conversion is a wrap that shares the leaf arrays rather than copying them.
+#
+# It is asserted at the door -- on `OptimizerSolution` and on the constructors -- rather than several
+# frames into a solve, which is where a set that slips past would otherwise fail. `src/
+# optimizer_solution.jl` says why a `NamedTuple` alias cannot serve as the parameter type.
+@testset "a bare NamedTuple is turned away, and wrapping is the whole conversion" begin
+    bare = (Y=rand(Random.Xoshiro(1234), StiefelManifold{Float64}, N, n),
+            W=randn(Random.Xoshiro(5678), n, m), b=zeros(N))
+
+    @test !(bare isa OptimizerSolution)
+    @test_throws MethodError OptimizerCache(Adam(Float64), bare)
+    @test_throws MethodError OptimizerState(Adam(Float64), bare)
+    @test_throws MethodError Optimizer(bare, test_problem(Float64)[1]; algorithm=GradientMethod())
+
+    # ... and the wrap is enough, without touching the objective, the gradient or the leaves
+    wrapped = NetworkParameters(bare)
+    @test wrapped isa OptimizerSolution{Float64}
+    @test keys(wrapped) == keys(bare)
+    for k in keys(bare)
+        @test wrapped[k] === bare[k]        # shared, not copied
+    end
+
+    # so an in-place solve writes through to the arrays the caller still holds
+    F, _ = test_problem(Float64)
+    f₀ = F(wrapped)
+    solve!(wrapped, OptimizerState(GradientMethod(), wrapped),
+           Optimizer(wrapped, F; algorithm=GradientMethod(), linesearch=Static(0.1),
+                     max_iterations=10))
+    @test F(wrapped) < f₀
+    @test wrapped.b === bare.b              # the same `Vector`, updated in place
 end

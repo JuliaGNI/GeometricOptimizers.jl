@@ -1,5 +1,4 @@
-# `GradientAutodiff(F, ::ParameterSet)` and `GradientFunction(F, ∇F!, ::ParameterSet)` used to stand
-# here. Both are `SimpleSolvers` functions taking a `NeuralNetworkParameters` type, so this package
+# `GradientAutodiff(F, ps)` and `GradientFunction(F, ∇F!, ps)` for a parameter set are not here. Both are `SimpleSolvers` functions taking a `NeuralNetworkParameters` type, so this package
 # owned neither side of either signature and every package that loaded this one -- directly or through
 # a dependency -- got the new meaning for the rest of its session. They are `SimpleSolvers`' own
 # methods as of 0.13.2, in `ext/SimpleSolversNeuralNetworkParametersExt.jl`, and reach this package
@@ -10,11 +9,10 @@
 # Riemannian projection. That one is de-pirated by wrapping instead: see
 # [`RiemannianGradient`](@ref) in `utils.jl`.
 
-# `ParameterContainer` and not `ParameterSet`: this pairs `ps` with the unflattened gradient leaf by
-# leaf, so both trees have to hold arrays of one element type for `rgrad` to have a method at every
-# position. The two constructors upstream take the wider `ParameterSet`, because there `F` is the
-# caller's objective and has to accept whatever it was written against.
-function (grad::RiemannianGradient{T})(ps::ParameterContainer{T}) where {T}
+# This pairs `ps` with the unflattened gradient leaf by leaf, so both trees have to hold arrays of one
+# element type for `rgrad` to have a method at every position -- which a container guarantees and a
+# loose pairing would not.
+function (grad::RiemannianGradient{T})(ps::NetworkParameters{T}) where {T}
     v, layout = flatten(ps)
     # `rgrad` takes the *whole* leaf, not its storage: it is the Riemannian projection and needs the
     # point it projects at, so this walks whole leaves rather than their storage.
@@ -27,15 +25,15 @@ end
 # type so that a caller with a gradient of its own that knows how to project onto a parameter set
 # reaches it too; `grad(x)` below is what has to have such a method, and for anything
 # [`Optimizer`](@ref) builds that is [`RiemannianGradient`](@ref).
-function (grad::Gradient{T})(g::ParameterContainer{T}, x::ParameterContainer{T}, state::OptimizerState{T}) where {T}
+function (grad::Gradient{T})(g::NetworkParameters{T}, x::NetworkParameters{T}, state::OptimizerState{T}) where {T}
     _copyto!(g, global_rep(section(state), grad(x)))
 end
 
 # `NeuralNetworkParameters.mapparameters` and not `map`, here and in every primitive below. `map`
-# visits the entries of one level, which is the whole of a flat `ArrayNamedTuple` but only the
-# *layers* of a container, whose leaves are one level further down. `mapparameters` recurses on the
-# branches, so it reaches leaves at any depth and rebuilds the shape it was given -- a container comes
-# back a container, a `NamedTuple` a `NamedTuple`. See [`ParameterContainer`](@ref).
+# visits the entries of one level, which for a container is its *layers* -- its leaves are one level
+# further down, and further still for a deeper network. `mapparameters` recurses on the branches, so it
+# reaches leaves at any depth and rebuilds the shape it was given: a container comes back a container
+# and the plain `NamedTuple` of a section tree comes back a plain `NamedTuple`.
 #
 # The in-place primitives take `mapparameters!`, which is `foreachparameters` returning its
 # destination: the tree of results a `map`-shaped walk builds is allocated and immediately discarded
@@ -61,10 +59,10 @@ end
 # leaf paired with a branch fell through to the generic iterator `map`, which zipped the branch's
 # entries against the leaf's elements and returned a truncated `Array` instead of raising.
 _zero(a::AbstractArray) = zero(a)
-_zero(a::ParameterContainer) = mapparameters(_zero, a)
+_zero(a::NetworkParameters) = mapparameters(_zero, a)
 
 _copy(a::AbstractArray) = copy(a)
-_copy(a::ParameterContainer) = mapparameters(_copy, a)
+_copy(a::NetworkParameters) = mapparameters(_copy, a)
 
 # `Base.similar` is deliberately an error on a `Manifold` — an arbitrary array of that shape is not a
 # point of it — so a fresh *random* point stands in for it. `Manifold` and not `StiefelManifold`, and
@@ -73,42 +71,41 @@ _copy(a::ParameterContainer) = mapparameters(_copy, a)
 # building an `AdamState` or a `MomentumState`. See issue A11.
 _similar(a::Manifold{T}) where {T} = rand(manifold_constructor(a){T}, size(a)...)
 _similar(a::AbstractArray) = similar(a)
-_similar(a::ParameterContainer) = mapparameters(_similar, a)
+_similar(a::NetworkParameters) = mapparameters(_similar, a)
 
 _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
 
 _fill!(a::Manifold{T}, ::T) where {T} = a
 
 _copyto!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = copyto!(a, b)
-function _copyto!(a::ParameterContainer{T}, b::ParameterContainer{T}) where {T}
+function _copyto!(a::NetworkParameters{T}, b::NetworkParameters{T}) where {T}
     mapparameters!(_copyto!, a, b)
 end
 
-# Type piracy again by way of the aliases: both `GlobalSectionNamedTuple` and
-# `ArrayNamedTuple` are `NamedTuple`. See issue #16.
-#
-# These come in pairs, and the second of each pair is what a *container* solution needs.
+# These come in pairs, and the second of each pair is what a *nested* container needs.
 # `GlobalSectionNamedTuple` is flat by construction — a `NamedTuple` whose values are `GlobalSection`s
 # — and the section tree of a container is nested, its values being layers. There is no widening of
 # the alias that would cover both: a "`NamedTuple` of `GlobalSection`s to any depth" is a recursive
 # type, which Julia cannot express. So the *other* side carries the dispatch, and it can, because a
-# container is a type with a name rather than an alias for `NamedTuple`. That is the one place where
-# taking the container bought this file something beyond a wider signature.
+# container is a type with a name rather than an alias for `NamedTuple`. That asymmetry is what makes
+# each pair *order* itself: `(::GlobalSectionNamedTuple{T}, ::NetworkParameters{T})` is strictly more
+# specific than `(::NamedTuple, ::NetworkParameters)`, and likewise the other way round, so dispatch
+# picks the section pairing on the overlap without being told to. Were a parameter set allowed to be a
+# bare `NamedTuple` as well, neither method of a pair would be more specific and every one of these
+# calls would be a run-time `MethodError: … is ambiguous`; see [`OptimizerSolution`](@ref).
 #
 # `mapparameters!` walks whichever shape it is given first and normalises the rest, so the bodies are
 # identical either way.
 #
-# `_copyto!` and not `Base.copyto!`, which is what these two were until this release: `copyto!` is
-# `Base`'s, `NamedTuple` is `Base`'s and `NetworkParameters` is `NeuralNetworkParameters`', so a method
-# pairing them owned neither side. Those were two of the three surviving sites of issue [#16] group 3,
-# and unlike the third they needed no coordination to remove — every caller in this package and every
-# caller in `GeometricMachineLearning` (`src/optimizers/optimizer.jl:233-245`, six sites) already went
-# through `_copyto!`, and the two `Base.copyto!` methods existed only to be forwarded to. The
-# signatures are unchanged, so dispatch resolves exactly as it did. The `copyto!` passed to
-# `mapparameters!` is the *leaf* operation and stays `Base`'s: at the bottom of this walk a pair is two
-# arrays or a `GlobalSection` and its anchor, and the method for the latter dispatches on a type of
-# this package's own.
-function _copyto!(Λ::GlobalSectionNamedTuple{T}, x::ParameterContainer{T}) where {T}
+# `_copyto!` and not `Base.copyto!`, and that is about ownership rather than taste: `copyto!` is
+# `Base`'s, `NamedTuple` is `Base`'s and `NetworkParameters` is `NeuralNetworkParameters`', so a
+# `Base.copyto!` method pairing them would own neither side. `_copyto!` is this package's own function,
+# which is enough. Every caller here and in `GeometricMachineLearning` goes through it.
+#
+# The `copyto!` passed to `mapparameters!` is the *leaf* operation and stays `Base`'s: at the bottom of
+# this walk a pair is two arrays or a `GlobalSection` and its anchor, and the method for the latter
+# dispatches on a type of this package's own.
+function _copyto!(Λ::GlobalSectionNamedTuple{T}, x::NetworkParameters{T}) where {T}
     mapparameters!(copyto!, Λ, x)
     Λ
 end
@@ -128,7 +125,7 @@ end
 # the bare-`Manifold` counterpart of the line above
 _copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
 
-function _copyto!(x::ParameterContainer, Λ::GlobalSectionNamedTuple)
+function _copyto!(x::NetworkParameters, Λ::GlobalSectionNamedTuple)
     mapparameters!(copyto!, x, Λ)
     x
 end
@@ -143,75 +140,17 @@ function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple
     Λ₁
 end
 
-# The four disambiguations the pairs above need, and the reason they are needed rather than a matter
-# of taste.
+# The one ambiguity `Test.detect_ambiguities` reports in this family, and why it is left alone. It is a
+# type intersection with no inhabitant this package's API can build:
 #
-# `ArrayNamedTuple` and `GlobalSectionNamedTuple` are *aliases for `NamedTuple`*, which is the same
-# property that made half of issue #16 piracy, showing up here as ambiguity instead. Each pair above
-# is written flat-then-nested — `GlobalSectionNamedTuple` for the flat section tree, a bare
-# `NamedTuple` for the nested one, because "a `NamedTuple` of `GlobalSection`s to any depth" is a
-# recursive type Julia cannot express — and a bare `NamedTuple` also matches a flat
-# `GlobalSectionNamedTuple`, while `NetworkParameters` is also a `ParameterContainer`. So on the
-# overlap neither method of a pair is more specific and dispatch has nowhere to go:
-#
-# | call | ambiguous between |
-# |---|---|
-# | `NetworkParameters ← GlobalSectionNamedTuple` | `(::ParameterContainer, ::GlobalSectionNamedTuple)` and `(::NetworkParameters, ::NamedTuple)` |
-# | `GlobalSectionNamedTuple ← NetworkParameters` | `(::GlobalSectionNamedTuple, ::ParameterContainer)` and `(::NamedTuple, ::NetworkParameters)` |
-# | `ArrayNamedTuple ← NetworkParameters` | `(::ParameterContainer{T}, ::ParameterContainer{T})` and `(::NamedTuple, ::NetworkParameters)` |
-# | `NetworkParameters ← ArrayNamedTuple` | `(::ParameterContainer{T}, ::ParameterContainer{T})` and `(::NetworkParameters, ::NamedTuple)` |
-#
-# All four raise `MethodError: … is ambiguous` at run time, and the first is what a *flat*
-# `NetworkParameters` with a manifold leaf hits on the first `solver_step!`. The suite misses every
-# one of them: `test/network_parameters_optimizer.jl` drives a **nested** container, whose section tree
-# is a `NamedTuple` of `NamedTuple`s and therefore not a `GlobalSectionNamedTuple`, and
-# `test/named_tuple_parameters.jl` drives a **bare flat** `NamedTuple`, which is not a
-# `NetworkParameters`. Flat-and-wrapped is the corner between them, and it is the shape a caller gets
-# by wrapping a flat parameter `NamedTuple` — which is what `GMLDatasets`' MNIST scripts would produce
-# if they moved to the container. `test/container_section_copy.jl` covers it now.
-#
-# Each body is the one the *semantics* pick, not an arbitrary tie-break, and on the overlap the two
-# candidates agree anyway. The first two are section copies, so they take the section pairing. The
-# last two are parameter copies — a nested section tree is a `NamedTuple` of `NamedTuple`s and so is
-# never an `ArrayNamedTuple`, which makes an `ArrayNamedTuple` argument unambiguously parameters — so
-# they take `_copyto!` at the leaves. That is the same function as the `copyto!` the section pairing
-# uses once a leaf is two arrays (`_copyto!(a::AbstractArray{T}, b::AbstractArray{T})` forwards to it),
-# so no shape that reached one of these by accident changes its answer.
-# `{T}` coupled across the arguments, as everywhere else in this file. Dropping it to cover the
-# mixed-element-type overlap as well does not work and is worth recording, because it looks like the
-# more thorough choice: an uncoupled `(::GlobalSectionNamedTuple, ::NetworkParameters)` is *itself*
-# ambiguous against the coupled `(::GlobalSectionNamedTuple{T}, ::ParameterContainer{T})` above --
-# more specific in the second argument, less in the first -- so it trades one ambiguity for another.
-# Closing the mixed case as well takes both a coupled and an uncoupled method per direction, and it is
-# not worth four methods: a section is built from the iterate it is a frame for
-# (`GlobalSection(_copy(x))`), so its element type is the iterate's by construction and a mismatched
-# pair cannot arise from this package's own API. See the residue note below.
-_copyto!(x::NetworkParameters{T}, Λ::GlobalSectionNamedTuple{T}) where {T} =
-    (mapparameters!(copyto!, x, Λ); x)
-
-_copyto!(Λ::GlobalSectionNamedTuple{T}, x::NetworkParameters{T}) where {T} =
-    (mapparameters!(copyto!, Λ, x); Λ)
-
-_copyto!(a::ArrayNamedTuple{T}, b::NetworkParameters{T}) where {T} = mapparameters!(_copyto!, a, b)
-
-_copyto!(a::NetworkParameters{T}, b::ArrayNamedTuple{T}) where {T} = mapparameters!(_copyto!, a, b)
-
-# What is left, and why it is left. `Test.detect_ambiguities` still reports pairs in this family, and
-# every one of them is a type intersection with no inhabitant this package's API can build:
-#
-#  - **the empty `NamedTuple`.** `(;)` is vacuously a `NamedTuple` of arrays, of `GlobalSection`s and
-#    of anything else, so it sits on every overlap here at once. It is unreachable: `parameter_eltype`
-#    of an empty set is `Union{}`, and `Optimizer` on one raises `ArgumentError: cannot construct a
-#    value of type Union{}` long before a copy happens.
-#  - **the mixed-element-type overlap**, per the note above.
 #  - **`copyto!(::GlobalSection{T,MT,Nothing}, ::GlobalSection{T,MT,Nothing}) where {MT<:Manifold}`**
 #    (`global_sections/global_sections.jl:376` against `:382`) — a section anchored on a `Manifold`
 #    whose lift is `nothing`. `GlobalSection(::Manifold)` always builds the lift; `λ === nothing` is
 #    the *plain array* case, where `MT<:Manifold` does not hold.
 #
-# They are listed rather than closed because a method that exists only to satisfy a static checker is
-# a method somebody later has to reason about. The four above were closed because each has a witness
-# and one of them is reached by an ordinary `solver_step!`.
+# It is documented rather than closed because a method that exists only to satisfy a static checker is
+# a method somebody later has to reason about. The way to triage a reported pair is `typeintersect` on
+# the two signatures and then an attempt to construct a witness; this one has none.
 
 
 # Two *nested* section trees, which is the shape a container's section takes and which
@@ -230,7 +169,7 @@ function _copyto!(Λ₁::GlobalSection{T,MT}, Λ₂::GlobalSection{T,MT}) where 
     Λ₁
 end
 
-function _fill!(a::ParameterContainer{T}, b::T) where {T}
+function _fill!(a::NetworkParameters{T}, b::T) where {T}
     fill_closure!(_a) = _fill!(_a, b)
     mapparameters!(fill_closure!, a)
     a
@@ -258,7 +197,7 @@ function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b:
     c
 end
 
-_difference!(c::ParameterContainer{T}, a::ParameterContainer{T}, b::ParameterContainer{T}) where {T} =
+_difference!(c::NetworkParameters{T}, a::NetworkParameters{T}, b::NetworkParameters{T}) where {T} =
     mapparameters!(_difference!, c, a, b)
 
 _rmul!(a::AbstractArray, b) = rmul!(a, b)
@@ -270,7 +209,7 @@ function _rmul!(a::VectorStorageMatrix, b)
     a
 end
 
-function _rmul!(a::ParameterContainer, b)
+function _rmul!(a::NetworkParameters, b)
     rmul_closure!(a) = _rmul!(a, b)
     mapparameters!(rmul_closure!, a)
     a
@@ -284,10 +223,10 @@ end
 # lift, each flattening `b`, allocating a result vector and unflattening it back. `_flat_mul!` does that
 # through the cache's buffers now, so neither had a caller left. See [`_flat_scratch`](@ref).
 #
-# `_mul!(c::ParameterContainer, a::ParameterContainer, b::ParameterContainer)` -- the *elementwise*
+# `_mul!(c::NetworkParameters, a::NetworkParameters, b::NetworkParameters)` -- the *elementwise*
 # product, three parameter sets -- is gone with them, and had no caller before this release either.
 
-function _mul(α::T, a::GradientArrayOrNamedTuple{T}) where {T}
+function _mul(α::T, a::GradientStorage{T}) where {T}
     b = _copy(a)
     _rmul!(b, α)
 end
@@ -348,13 +287,10 @@ _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 # arity two on a 369-leaf set.
 _dot_leaf(acc, x, y) = acc + dot(x, y)
 
-const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ParameterContainer{T}}
+const LiftOrParameters{T} = Union{AbstractLieAlgHorMatrix{T},NetworkParameters{T}}
 
-# Everything `_dot` accepts, with the element type left off. The widening is that a nested plain
-# `NamedTuple` is covered now — its values are branches rather than arrays, so it is not an
-# `ArrayNamedTuple` and the alias above does not reach it. `l2norm` and `solution_scale` took it in
-# 0.6.0 and this was deliberately left out, for the reason the accumulator comment below gives; the
-# compile sweep reported the gap as a `MethodError` on one of its four cells.
+# Everything `_dot` accepts, with the element type left off, so this reaches the pair whose element
+# types *differ* — that binds no `T` and so misses the alias above.
 #
 # **The lift is in this union to fix a wrong number, not to widen anything**, and it is the one member
 # whose old behaviour was silent. An [`AbstractLieAlgHorMatrix`](@ref) is an `AbstractMatrix`, so a pair
@@ -369,7 +305,7 @@ const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ParameterContainer{
 # It works because `parameter_eltype` recurses: its `AbstractArray` method asks `freeparameters` first
 # and only falls back to `eltype` for a terminal leaf, so a lift answers with the promotion over its
 # blocks rather than with the union's `Union{}` catch-all. Nothing had to be added upstream for that.
-const DottableSet = Union{AbstractLieAlgHorMatrix,ParameterSet}
+const DottableSet = Union{AbstractLieAlgHorMatrix,NetworkParameters}
 
 # `zero(T)` and not the strong zero `false`. Upstream's fold is a **left** fold where the recursion this
 # replaced was a right one, so `false` would take its type from the *first* leaf in `flatten` order:
@@ -378,7 +314,7 @@ const DottableSet = Union{AbstractLieAlgHorMatrix,ParameterSet}
 # is a *promotion* over the leaves rather than a guarantee about each of them, which is exactly what an
 # accumulator wants -- and it is why the old form named `T` on the result, `T(_dot_leaves(a, b))`,
 # converting after pairing. Accumulating in it subsumes that conversion.
-_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} =
+_dot(a::LiftOrParameters{T}, b::LiftOrParameters{T}) where {T} =
     foldstorage(_dot_leaf, zero(T), a, b)
 
 # The widened shape, and the pair whose element types differ, neither of which binds a `T` on the
@@ -403,7 +339,7 @@ function _add!(a::MT, b::MT) where {MT<:VectorStorageMatrix}
     a
 end
 
-function _add!(a::ParameterContainer{T}, b::ParameterContainer{T}) where {T}
+function _add!(a::NetworkParameters{T}, b::NetworkParameters{T}) where {T}
     mapparameters!(_add!, a, b)
     a
 end
@@ -420,7 +356,7 @@ function _add!(a::AbstractLieAlgHorMatrix{T}, b::T) where {T}
     a
 end
 
-function _add!(a::ParameterContainer{T}, b::T) where {T}
+function _add!(a::NetworkParameters{T}, b::T) where {T}
     closure(a) = _add!(a, b)
     mapparameters!(closure, a)
     a
@@ -443,7 +379,7 @@ function _rac!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_rac!(b::ParameterContainer, a::ParameterContainer) = mapparameters!(_rac!, b, a)
+_rac!(b::NetworkParameters, a::NetworkParameters) = mapparameters!(_rac!, b, a)
 
 _rac!(a) = _rac!(a, a)
 
@@ -467,7 +403,7 @@ function _div!(C::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix, B::Abstra
     C
 end
 
-function _div!(C::ParameterContainer, A::ParameterContainer, B::ParameterContainer)
+function _div!(C::NetworkParameters, A::NetworkParameters, B::NetworkParameters)
     mapparameters!(_div!, C, A, B)
     C
 end
@@ -490,7 +426,7 @@ function _square!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
     B
 end
 
-_square!(b::ParameterContainer, a::ParameterContainer) = mapparameters!(_square!, b, a)
+_square!(b::NetworkParameters, a::NetworkParameters) = mapparameters!(_square!, b, a)
 
 function _square(a)
     b = _copy(a)
@@ -501,7 +437,7 @@ end
 
 Base.copyto!(dest::AT, src::GlobalSection{T,AT}) where {T,AT<:AbstractArray{T}} = copyto!(dest, src.Y)
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)
-rgrad(ps::ParameterContainer, dx::ParameterContainer) = mapparameters(rgrad, ps, dx)
+rgrad(ps::NetworkParameters, dx::NetworkParameters) = mapparameters(rgrad, ps, dx)
 
 function rgrad(Y::AbstractVecOrMat, dx::AbstractVecOrMat)
     @assert size(Y) == size(dx)

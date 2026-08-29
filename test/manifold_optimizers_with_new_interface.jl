@@ -7,7 +7,7 @@ import Random
 
 # The headline feature of the unified interface: a *bare* `Manifold` can be handed to
 # `Optimizer` as the set of parameters, exactly like a `Vector` or a `NamedTuple`.
-# `test/named_tuple_parameters.jl` covers the `NamedTuple` case; this file covers the bare
+# `test/flat_parameters.jl` covers the `NamedTuple` case; this file covers the bare
 # manifold, which is the one the old `optimization_step!` interface used to handle
 # separately.
 #

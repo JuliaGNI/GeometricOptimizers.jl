@@ -34,16 +34,16 @@ const λ = 0.5
 # `b` has a gradient of its own to be decayed against.
 Random.seed!(1234)
 const A = randn(5, 3)
-named_tuple_error(ps::NamedTuple) = norm(A - ps.w * ps.w' * A) + norm(ps.b)
+named_tuple_error(ps::NetworkParameters) = norm(A - ps.w * ps.w' * A) + norm(ps.b)
 
-# a bare `Manifold`, a `NamedTuple` and an ordinary `Vector` — the three kinds of parameters
-# the unified interface accepts
+# a bare `Manifold`, a whole set of parameters and an ordinary `Vector` — the three kinds of
+# parameters the unified interface accepts
 problems() = ((rand(StiefelManifold, 5, 3), Y -> norm(A - Y * Y' * A)),
-    ((w=rand(StiefelManifold, 5, 3), b=randn(3)), named_tuple_error),
+    (NetworkParameters((w=rand(StiefelManifold, 5, 3), b=randn(3))), named_tuple_error),
     ([1.0, -2.0, 0.5], objective))
 
 _isequal(a::AbstractArray, b::AbstractArray) = a == b
-_isequal(a::NamedTuple, b::NamedTuple) = all(_isequal(a[k], b[k]) for k in keys(a))
+_isequal(a::NetworkParameters, b::NetworkParameters) = all(_isequal(a[k], b[k]) for k in keys(a))
 
 """
     run!(ps, algorithm, f, steps)
@@ -240,7 +240,7 @@ end
 # either. `warn_iterations = 0` because `Adam` on a fixed step is expected to use its budget.
 @testset "solve! runs the decayed method end to end" begin
     Random.seed!(1234)
-    ps = (w=rand(StiefelManifold, 5, 3), b=10 * randn(3))
+    ps = NetworkParameters((w=rand(StiefelManifold, 5, 3), b=10 * randn(3)))
     algorithm = AdamWithEuclideanDecay(; λ=λ)
 
     optimizer = Optimizer(ps, named_tuple_error; algorithm=algorithm, linesearch=Static(η),
@@ -261,7 +261,7 @@ end
 # runs sit at different `b`, and the gradient with respect to `w` sees that.
 @testset "a NamedTuple is decayed entry by entry" begin
     Random.seed!(1234)
-    ps₀ = (w=rand(StiefelManifold, 5, 3), b=randn(3))
+    ps₀ = NetworkParameters((w=rand(StiefelManifold, 5, 3), b=randn(3)))
 
     adam = run!(deepcopy(ps₀), Adam(), named_tuple_error, 1)
     adamw = run!(deepcopy(ps₀), AdamWithEuclideanDecay(; λ=λ), named_tuple_error, 1)
@@ -277,7 +277,7 @@ end
 # of settling.
 @testset "the decay shrinks the ordinary entries of a NamedTuple" begin
     Random.seed!(1234)
-    ps₀ = (w=rand(StiefelManifold, 5, 3), b=10 * randn(3))
+    ps₀ = NetworkParameters((w=rand(StiefelManifold, 5, 3), b=10 * randn(3)))
 
     adam = run!(deepcopy(ps₀), Adam(), named_tuple_error, 200)
     adamw = run!(deepcopy(ps₀), AdamWithEuclideanDecay(; λ=λ), named_tuple_error, 200)
@@ -307,14 +307,14 @@ end
 
     @test !_is_decayable(Y)
     @test _is_decayable(randn(3))
-    @test _is_decayable((w=Y, b=randn(3)))
+    @test _is_decayable(NetworkParameters((w=Y, b=randn(3))))
 
     @test_logs (:warn, r"none of the parameters") match_mode = :any Optimizer(
         deepcopy(Y), f; algorithm=AdamWithEuclideanDecay(; λ=λ), linesearch=Static(η))
     # `λ = 0` asks for no decay in the first place, and a `NamedTuple` with an ordinary entry
     # gets one, so neither has anything to warn about
     @test_logs Optimizer(deepcopy(Y), f; algorithm=AdamWithEuclideanDecay(; λ=0.0), linesearch=Static(η))
-    @test_logs Optimizer((w=deepcopy(Y), b=randn(3)), named_tuple_error;
+    @test_logs Optimizer(NetworkParameters((w=deepcopy(Y), b=randn(3))), named_tuple_error;
         algorithm=AdamWithEuclideanDecay(; λ=λ), linesearch=Static(η))
 end
 

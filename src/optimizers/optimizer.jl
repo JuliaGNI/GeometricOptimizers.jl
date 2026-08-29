@@ -52,9 +52,9 @@ makes a ceiling that forbids the ``10^8`` step cost the ordinary ones nothing.
     in either case, and none is needed: ``f(x + \alpha{}p)`` grows with ``\alpha``, so the search's
     own decrease test rejects an over-long step unaided.
 
-    The `NamedTuple` half of that is not free: `ArrayNamedTuple` is *any* `NamedTuple` of arrays, so
-    a manifold-free one used to take the manifold branch and be bounded by a rotation its problem
-    does not have. See [`_manifold_αmax`](@ref), which derives the ceiling per block instead.
+    Telling the two apart is not free, and getting it wrong bounds a set of parameters carrying no
+    manifold block by a rotation its problem does not have. [`_manifold_αmax`](@ref) derives the
+    ceiling per block, over the manifold blocks only, which is what makes the distinction.
 
 !!! info "One `α`, one ceiling per block"
     On a `NamedTuple` the same ``\alpha`` scales every block, so the ceiling is the *smallest* of the
@@ -176,7 +176,7 @@ itself (see `GradientAutodiff(F, ::NamedTuple)`), which composes `problem.F` wit
 a `DimensionMismatch`.
 """
 default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
-default_gradient(problem::OptimizerProblem, x::ParameterContainer) =
+default_gradient(problem::OptimizerProblem, x::NetworkParameters) =
     RiemannianGradient(GradientAutodiff(problem.F, x))
 
 """

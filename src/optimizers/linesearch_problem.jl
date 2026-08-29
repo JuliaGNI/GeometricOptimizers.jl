@@ -35,7 +35,7 @@ end
     error("a trial step on a manifold retracts from `section(params.state)`, so the line search " *
           "parameters have to carry the `state`; `solver_step!` passes it, a bare `(x = x,)` does not.")
 
-function _trial_iterate!(::Union{Manifold,ParameterContainer}, cache::OptimizerCache, params, α, retraction)
+function _trial_iterate!(::Union{Manifold,NetworkParameters}, cache::OptimizerCache, params, α, retraction)
     # `params` is a concrete `NamedTuple` here, so this is constant-folded away rather than checked on
     # every merit evaluation. Without it a missing `state` surfaces as `has no field state`.
     hasproperty(params, :state) || _no_state_error()
@@ -93,7 +93,7 @@ That last part is what this function exists for. The ceiling used to be
 quadrature — so a `NamedTuple` of *ordinary arrays* was bounded by a rotation that does not exist in
 its problem (measured: a Euclidean `NamedTuple` solve took 3 184 iterations against 1 for the same
 problem written as a vector), and in a mixed `NamedTuple` the Euclidean blocks tightened the manifold
-blocks' bound for no reason (measured on the mixed problem of `test/named_tuple_parameters.jl`:
+blocks' bound for no reason (measured on the mixed problem of `test/flat_parameters.jl`:
 ``\|\delta_Y\| = 2.5\times10^{-16}`` against a total of `3.9`, bounding ``\alpha`` at `1.6` where the
 geometry of the manifold block permits ``2.6\times10^{16}``). That was catalogued as issue A15 and is
 what this closes.
@@ -125,16 +125,16 @@ paired with the plain `NamedTuple` its `GlobalSection` tree is built as, which u
 normalises. Two local normalisers stood here for that, `_as_blocks` and then `_as_walkable`, and then a
 pair of `values` calls; all are gone.
 
-`y::ParameterSet` and not an unconstrained `y`, and that bound is the *point* of the paragraph above
+`y::NetworkParameters` and not an unconstrained `y`, and that bound is the *point* of the paragraph above
 rather than housekeeping. Upstream pairs the children of a keyed branch by key and the children of a
 `Tuple` branch **positionally** — a `Tuple`'s blocks have no keys to agree on — so an unconstrained
 signature would still accept `_manifold_αmax(values(sol), values(δ), c)`, which is how every call site
 here was spelled until this release, and fold it positionally: crossed keys would come back a number
 again. Measured on a two-block set with the direction's keys swapped, `3.12` by key against `6.40`
 positionally. The four-method recursion this replaced made that call unspellable by running out of
-methods; the bound is what puts it back. Every caller passes a `ParameterSet`.
+methods; the bound is what puts it back. Every caller passes a whole set of parameters.
 """
-_manifold_αmax(y::ParameterSet, δ, c::T) where {T} =
+_manifold_αmax(y::NetworkParameters, δ, c::T) where {T} =
     foldparameters((acc, yᵢ, δᵢ) -> min(acc, _block_αmax(yᵢ, δᵢ, c)), T(Inf), y, δ)
 
 _block_αmax(::Manifold, δ, c) = step_αmax(c, δ)
@@ -182,7 +182,7 @@ _linesearch_parameters(::AbstractVector, ::OptimizerCache, x, state, _) = (x=x, 
 _linesearch_parameters(::Manifold, cache::OptimizerCache, x, state, c) =
     (x=x, state=state, αmax=step_αmax(c, direction(cache)))
 
-_linesearch_parameters(sol::ParameterContainer, cache::OptimizerCache, x, state, c) =
+_linesearch_parameters(sol::NetworkParameters, cache::OptimizerCache, x, state, c) =
     (x=x, state=state,
      αmax=_manifold_αmax(sol, direction(cache), c))
 
@@ -257,7 +257,7 @@ function _trial_slope(::AbstractVector, gradient_instance::Gradient, cache::Opti
     _dot(latest_gradient(cache), direction(cache))
 end
 
-function _trial_slope(::Union{Manifold,ParameterContainer}, gradient_instance::Gradient, cache::OptimizerCache, retraction::AbstractRetraction, α)
+function _trial_slope(::Union{Manifold,NetworkParameters}, gradient_instance::Gradient, cache::OptimizerCache, retraction::AbstractRetraction, α)
     _dot(global_rep(section(cache), gradient_instance(solution(cache))),
         retraction_differential(retraction, direction(cache), α))
 end

@@ -55,20 +55,20 @@ _second_moment(cache::AdamCache) = cache.m̃₂
     AdamCache{T,typeof(x),VT,ST}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, m̃₂, sec)
 end
 
-function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientStorage{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
     _adam_cache(x, g, δ, Δg, g̃, _similar(g), _similar(g), _similar(g), sec)
 end
 
-function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientStorage{T}}
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
     AdamCache(x, g, δ, Δg)
 end
 
-function AdamCache(x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function AdamCache(x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     δ = _zero(g)
     AdamCache(x, g, δ)
 end
@@ -128,7 +128,7 @@ _second_moment(state::AdamState) = state.m̃₂
 
 section(state::AdamState) = state.section
 
-function AdamState(x::OST, g::GradientArrayOrNamedTuple{T}) where {T,OST<:OptimizerSolution{T}}
+function AdamState(x::OST, g::GradientStorage{T}) where {T,OST<:OptimizerSolution{T}}
     _x = _copy(x)
     _g = _copy(g)
     gs = GlobalSection(_x)
@@ -142,7 +142,7 @@ AdamState(x::OptimizerSolution) = AdamState(x, _zero(x))
 
 OptimizerState(::Adam, x...) = AdamState(x...)
 
-function update!(state::AdamState{T}, gradient_array::GradientArrayOrNamedTuple{T}, direction::GradientArrayOrNamedTuple{T}, _first_moment::GradientArrayOrNamedTuple{T}, _second_moment::GradientArrayOrNamedTuple{T}, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
+function update!(state::AdamState{T}, gradient_array::GradientStorage{T}, direction::GradientStorage{T}, _first_moment::GradientStorage{T}, _second_moment::GradientStorage{T}, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)

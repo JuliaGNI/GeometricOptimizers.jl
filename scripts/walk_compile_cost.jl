@@ -65,9 +65,9 @@
 # primitives written over `mapparameters` and why `parameterlayout` comes before `flatten`.
 #
 # A row that raises is printed as the exception rather than skipped. Several of them are *supposed* to:
-# `map` hands `zero` a whole layer on a nested set, and the elementwise primitives turn a nested plain
-# `NamedTuple` away at the door, because `ArrayNamedTuple{T}` is flat by construction and a nested
-# bare set is not an `OptimizerSolution`. Those cells are the claim, so they are reported.
+# `map` hands `zero` a whole layer on a nested set, and the elementwise primitives turn a bare
+# `NamedTuple` away at the door at any depth, because a whole set of parameters reaches this package
+# only as a `NetworkParameters`. Those cells are the claim, so they are reported.
 #
 # ## The third axis is the Julia version, and one row used to swing 50× across it
 #
@@ -170,7 +170,12 @@ function row(label, note, f, args...)
     println("  ", rpad(label, 21), ": ", s)
 end
 
-const _NOT_A_SOLUTION = "a nested bare `NamedTuple` is not an `OptimizerSolution`"
+# A bare `NamedTuple` is not an `OptimizerSolution` at any depth -- see `src/optimizer_solution.jl`.
+# The bare column of this sweep is therefore about the *upstream* walks: `parameterlayout`, `flatten`,
+# `mapparameters` and the folds take one, because they are `NeuralNetworkParameters`' and dispatch on
+# its wider `ParameterSet`. Every row that enters this package reports the `MethodError` instead,
+# which is the honest reading and the reason `row` catches rather than skips.
+const _NOT_A_SOLUTION = "a bare `NamedTuple` is not an `OptimizerSolution`"
 
 function table(name, ps)
     println(name)
@@ -199,7 +204,7 @@ function table(name, ps)
     # the only one on the per-iteration path, through `linesearch_parameters`.
     row("l2norm", "", l2norm, ps)
     row("solution_scale", "", solution_scale, ps)
-    row("_dot(·, ·)", "", (a, b) -> _dot(a, b), ps, ps)
+    row("_dot(·, ·)", _NOT_A_SOLUTION, (a, b) -> _dot(a, b), ps, ps)
     row("αmax", "", (a, b) -> _manifold_αmax(a, b, one(T)), ps, ps)
     # The layout, and then the flattening that builds one. This pair is D21's, and the two columns of
     # the sweep are expected to agree on it.

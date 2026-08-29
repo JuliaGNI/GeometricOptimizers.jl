@@ -34,11 +34,12 @@ method = GradientMethod()
 ```
 
 What a method *does* hold between steps is its [`OptimizerState`](@ref), built from the method and
-the parameters it will be applied to. The parameters may be a vector, a `NamedTuple` of arrays, or
-one of the manifolds:
+the parameters it will be applied to. The parameters may be a vector, one of the manifolds, or a
+whole set of network parameters — a `NetworkParameters`, which is what the rest of this ecosystem
+keeps them in and the only shape a *set* arrives in:
 
 ```@example optimizer_methods
-weight = (A = zeros(4, 4), )
+weight = NetworkParameters((A = zeros(4, 4), ))
 state = OptimizerState(method, weight)
 
 typeof(state)
@@ -62,10 +63,10 @@ In the case of the momentum optimizer the cache is non-trivial:
 ```@example optimizer_methods
 const α = 0.5
 method = MomentumMethod(α)
-weight = (A = zeros(4, 4), )
+weight = NetworkParameters((A = zeros(4, 4), ))
 state = OptimizerState(method, weight)
 
-# the moment is stored for each array in `weight` (which is a `NamedTuple`)
+# the moment is stored for each array in `weight`
 GeometricOptimizers.momentum(state).A
 ```
 
@@ -76,7 +77,7 @@ If the weight is on a manifold the moment is allocated on ``\mathfrak{g}^\mathrm
 [`OptimizerState`](@ref) does that without being told:
 
 ```@example optimizer_methods
-manifold_weight = (Y = rand(StiefelManifold, 5, 3), )
+manifold_weight = NetworkParameters((Y = rand(StiefelManifold, 5, 3), ))
 
 typeof(GeometricOptimizers.momentum(OptimizerState(method, manifold_weight)).Y)
 ```
@@ -172,7 +173,7 @@ Stiefel manifold — as a homogeneous quotient and as an embedded matrix manifol
     [`GeometricOptimizers.step_αmax`](@ref); consequently any [`AbstractRetraction`](@ref) may be used.
 
 The source's algorithm is Stiefel-only and so is this: the method accepts exactly one
-`StiefelManifold`, and ordinary arrays, `NamedTuple`s, Grassmann solutions and mixed trees throw an
+`StiefelManifold`, and ordinary arrays, parameter sets, Grassmann solutions and mixed trees throw an
 `ArgumentError`.
 
 #### The source's Algorithm 2, symbol by symbol

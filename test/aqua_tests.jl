@@ -25,31 +25,34 @@ using Test
 # `test_piracies`, plural: `Aqua.test_piracy` was renamed in 0.8 and no longer exists.
 Aqua.test_piracies(GeometricOptimizers)
 
-# Where each of the eight went, asserted at the seam. `Aqua.test_piracy` above says that this package
-# defines no pirated method; these say that the methods still *exist*, and in the package that owns
-# the generic. Without them a move upstream is indistinguishable from a deletion, which is how a
-# capability gets lost in a de-piracy pass.
+# Where each of the eight went, asserted at the seam. `Aqua.test_piracies` above says that this package
+# defines no pirated method; these say that the methods still *exist*, and in a package that owns one
+# side of the signature. Without them a move upstream is indistinguishable from a deletion, which is
+# how a capability gets lost in a de-piracy pass.
 #
-# The `GeometricBase` half cannot be asserted in `GeometricBase`: its test environment would have to
-# resolve `NeuralNetworkParameters`, whose floor is Julia 1.11, and that package still supports 1.10.
-# So it is asserted here, where both are hard dependencies.
+# The two seams land in different packages, and for the same reason in both cases — whichever package
+# can *test* the method. `GradientAutodiff`, `GradientFunction` and `alloc_h` are `SimpleSolvers`',
+# which owns the generics. `L2norm` over a parameter set is `NeuralNetworkParameters`'
+# (`ext/GeometricBaseExt.jl`), which owns the type and the walk the method is written in;
+# `NNP/test/geometric_base_tests.jl` pins its behaviour. What is asserted here is only that this
+# package reaches both, since a solve that quietly fell back to a different `l2norm` would still run.
 
 using GeometricBase
 using GeometricBase.Utils: L2norm, l2norm
 using NeuralNetworkParameters
-using NeuralNetworkParameters: NetworkParameters, ParameterSet, flatlength
+using NeuralNetworkParameters: NetworkParameters, flatlength
 using SimpleSolvers
 using SimpleSolvers: Gradient, GradientAutodiff, GradientFunction, alloc_h
 
 @testset "the five methods that went upstream are upstream" begin
     ps = NetworkParameters((L1 = (W = [3.0 0.0; 0.0 4.0], b = [0.0, 0.0]), L2 = (W = [0.0 0.0], b = [12.0])))
 
-    gb_ext = Base.get_extension(GeometricBase, :NeuralNetworkParametersExt)
+    nnp_ext = Base.get_extension(NeuralNetworkParameters, :GeometricBaseExt)
     ss_ext = Base.get_extension(SimpleSolvers, :SimpleSolversNeuralNetworkParametersExt)
-    @test gb_ext isa Module
+    @test nnp_ext isa Module
     @test ss_ext isa Module
 
-    @test which(L2norm, Tuple{typeof(ps)}).module === gb_ext
+    @test which(L2norm, Tuple{typeof(ps)}).module === nnp_ext
     for m in (which(GradientAutodiff, Tuple{typeof(l2norm),typeof(ps)}),
               which(GradientFunction, Tuple{typeof(l2norm),Function,typeof(ps)}),
               which(alloc_h, Tuple{typeof(ps)}))

@@ -141,7 +141,7 @@ end
 
 # The flat ordering, pinned absolutely.
 #
-# Downstream code indexes this vector by hand -- `test/named_tuple_parameters.jl` asserts literal
+# Downstream code indexes this vector by hand -- `test/flat_parameters.jl` asserts literal
 # ranges and its `∇F!` slices with them -- so the order is part of the contract, not an implementation
 # detail. When this landed it was written as an elementwise comparison against
 # `ParameterHandling.flatten`, which was still present, and the two agreed on every leaf family; see
@@ -317,12 +317,16 @@ end
     # a structured leaf reaches its element type through the protocol above
     @test bound(NetworkParameters((L1 = (W = SymmetricMatrix(rand(3, 3)),),))) === Float64
 
-    # and the members that were already there still bind, which is what the wider union must not cost
+    # and the other members of the union still bind
     @test bound([1.0, 2.0]) === Float64
-    @test bound((a = [1.0], b = Float64[2 3])) === Float64
-    @test bound((a = Float32[1],)) === Float32
     @test bound(rand(StiefelManifold{Float64}, 4, 2)) === Float64
-    @test bound((a = rand(StiefelManifold{Float64}, 4, 2), b = [1.0])) === Float64
+
+    # a *flat* set binds through the same type parameter as a nested one, because `T` comes off
+    # `NetworkParameters{T}` directly rather than off a bound on the values -- see
+    # `src/optimizer_solution.jl` for why that distinction is the whole design
+    @test bound(NetworkParameters((a = [1.0], b = Float64[2 3]))) === Float64
+    @test bound(NetworkParameters((a = Float32[1],))) === Float32
+    @test bound(NetworkParameters((a = rand(StiefelManifold{Float64}, 4, 2), b = [1.0]))) === Float64
 end
 
 # The checks `_dot` and `_manifold_αmax` gained when they stopped writing their own recursion, which is
@@ -360,13 +364,14 @@ end
     @test_throws "partial sum" _dot(whole, holed)
 
     # `_manifold_αmax` is the same walk at the same arity, and gained the same checks
-    @test_throws "different keys" _manifold_αmax((Y = rand(2),), (Z = rand(2),), 1.0)
-    @test_throws "same number of children" _manifold_αmax((a = rand(2), b = rand(2)),
-                                                          (a = rand(2),), 1.0)
+    @test_throws "different keys" _manifold_αmax(NetworkParameters((Y = rand(2),)),
+                                                 NetworkParameters((Z = rand(2),)), 1.0)
+    @test_throws "same number of children" _manifold_αmax(NetworkParameters((a = rand(2), b = rand(2))),
+                                                          NetworkParameters((a = rand(2),)), 1.0)
 
     # and the check cannot be spelled around, which is the other half of it. Upstream pairs a `Tuple`
     # branch *positionally* -- a `Tuple`'s blocks have no keys to agree on -- so `_manifold_αmax` bounds
-    # its first argument to a `ParameterSet` rather than taking anything. Without that bound
+    # its first argument to a `NetworkParameters` rather than taking anything. Without that bound
     # `_manifold_αmax(values(sol), values(δ), c)`, which is how every call site here was spelled until
     # this release, would still compile and would still cross the keys silently.
     @test_throws MethodError _manifold_αmax(values((Y = rand(2), Z = rand(2))),

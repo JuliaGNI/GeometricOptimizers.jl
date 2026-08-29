@@ -6,6 +6,147 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [0.7.0]
+
+**A whole set of parameters is a `NetworkParameters` and never a bare `NamedTuple`.** This is a
+breaking change to what the package *accepts*, and everything else here follows from it.
+
+`ParameterContainer{T}` was `Union{ArrayNamedTuple{T}, NetworkParameters{T}}`, and its first member
+was `ArrayNamedTuple{T,S} = NamedTuple{S,<:Tuple{Vararg{AbstractArray{T}}}}` — **an alias for
+`Base.NamedTuple`**, not a type of its own. That is what made it a problem rather than merely a wide
+type, and it caused three separate things:
+
+- **A method on it was a method on `Base.NamedTuple`.** Five of the eight sites of issue
+  [#16](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16) had to move upstream to the
+  packages that own their generics for exactly this reason, rather than be narrowed in place. 0.6.1
+  closed that as a property; this release removes the shape that caused it.
+- **It collided with `GlobalSectionNamedTuple`**, which is an alias for `NamedTuple` too, and with the
+  bare `NamedTuple` a *nested* section tree has to be written on. Every section-copy and
+  parameter-copy pair in `optimizers/named_tuple_wrapper.jl` overlapped on a shape neither method
+  could claim. 0.6.1 patched that with four disambiguations; they are **deleted** here, because the
+  overlap no longer exists.
+- **Its `T` meant two different things.** For the `NamedTuple` half it guaranteed the set was flat
+  *and* that every leaf was an `AbstractArray{T}`; for the container it is a promotion over leaves at
+  any depth. One signature said one thing about one argument shape and something else about the other.
+
+### Measured
+
+`Test.detect_ambiguities(GeometricOptimizers; recursive = true)`, on Julia 1.13 against
+`GeometricBase` 0.14.10, `SimpleSolvers` 0.13.2 and `NeuralNetworkParameters` 0.2.5:
+
+| | 0.6.1 | 0.7.0 |
+|---|---|---|
+| total reported | 138 | 129 |
+| **both methods owned by this package** | **35** | **26** |
+| the `copyto!`/`_copyto!` family | 10 | **1** |
+
+The one that is left is documented in place and has no witness: a `GlobalSection` anchored on a
+`Manifold` whose lift is `nothing`, which `GlobalSection(::Manifold)` never builds. The two that used
+to be listed beside it — the empty `NamedTuple`, vacuously a `NamedTuple` of arrays *and* of
+`GlobalSection`s at once, and the mixed-element-type parameter pair — are gone rather than documented,
+because both needed a parameter set to be a `NamedTuple`.
+
+The remaining 26 are between this package's structured matrices (`SymmetricMatrix`, `SkewSymMatrix`,
+the triangulars, `StiefelProjection`) and `LinearAlgebra`/`ArrayLayouts` methods on `AbstractMatrix`
+— `*`, `+`, `mul!`, `vcat`, `hcat`. None was introduced by this work or by the de-piracy wave.
+
+### Migrating
+
+Wrap. `NetworkParameters(ps)` **shares the leaf arrays** rather than copying them, so an in-place
+solve still writes through to the arrays the caller holds and nothing has to be copied back:
+
+```julia
+ps = (Y = rand(StiefelManifold, 6, 3), W = randn(3, 4), b = zeros(6))
+opt = Optimizer(NetworkParameters(ps), F; algorithm = Adam(Float64))
+```
+
+`NetworkParameters` is **re-exported** for this, so `using GeometricOptimizers` is enough. That is the
+one exception to the rule that this package does not re-export `NeuralNetworkParameters`' names, and
+it is there because the wrap is now this package's own entry condition rather than a foreign concern.
+The name collides with nothing: `AbstractNeuralNetworks`, `SymbolicNeuralNetworks` and
+`GeometricMachineLearning` all take it from `NeuralNetworkParameters` too.
+
+The container forwards `keys`, `values`, `ps[k]`, `ps.field` and `length`, so an objective, a
+hand-written `∇F!` and any regrouping written against the bare `NamedTuple` need no change. That is
+how `GMLDatasets`' five MNIST scripts converted — the wrap and the type annotations, nothing else.
+
+`GeometricMachineLearning` hands this package one **layer** at a time and cannot convert by wrapping
+at the root. It wraps at the boundary instead (`GML/src/optimizers/optimizer.jl`, `_as_go_solution`),
+and takes the flatness test that `ArrayNamedTuple` used to make by dispatch — a layer is a flat
+`NamedTuple` of arrays, a subtree is not — as a rule written out in its own source.
+
+### Changed
+
+- **`GeometricBase = "0.14.9"`**, relaxed from `"0.14.10"`. That bump existed only so that
+  `L2norm` over a parameter set would be available, and the method now lives in
+  `NeuralNetworkParameters`' `ext/GeometricBaseExt.jl` — the package that owns the type and the walk,
+  and the only one of the two that can test it, since `GeometricBase` supports Julia 1.10 and cannot
+  resolve `NeuralNetworkParameters` at all. `test/aqua_tests.jl` asserts the new location.
+  `GeometricBase` consequently drops out of the registration chain: 0.14.9 is registered and
+  unchanged, so only `SimpleSolvers` 0.13.2 has to precede this release.
+- `ArrayTuple`, `ArrayNamedTuple` and `ParameterContainer` are **removed**. Signatures written in
+  `ParameterContainer{T}` now take `NetworkParameters{T}` directly, which is the same type with one
+  fewer name in front of it.
+- `OptimizerSolution{T}` is `Union{AbstractVector{T}, Manifold{T}, NetworkParameters{T}}`.
+- `GradientArrayOrNamedTuple{T}` is renamed **`GradientStorage{T}`** and `LiftOrNamedTuple{T}` to
+  **`LiftOrParameters{T}`**: neither has a `NamedTuple` in it any more, and a name that says
+  otherwise is worse than no name.
+- `DottableSet` narrows from `Union{AbstractLieAlgHorMatrix, ParameterSet}` to
+  `Union{AbstractLieAlgHorMatrix, NetworkParameters}`.
+- The four `_copyto!` disambiguations added in 0.6.1 are deleted, and the comment block above them now
+  records why they are not needed rather than why they were.
+- `test/named_tuple_parameters.jl` is renamed **`test/flat_parameters.jl`**. It used to pin the
+  opposite commitment — that a bare `NamedTuple` is a parameter set — and now drives the *flat*
+  container, which is the shape `GMLDatasets` keeps a transformer's parameters in.
+  `test/network_parameters_optimizer.jl` is its nested counterpart, and the difference is not
+  cosmetic: a nested container's leaves sit one level below what `Base.map` reaches.
+- A new testset in `test/flat_parameters.jl` pins the new commitment directly: a bare `NamedTuple` is
+  turned away at `OptimizerCache`, `OptimizerState` and `Optimizer`, and the wrap shares its leaves.
+
+### Fixed
+
+- **The documentation build was failing before this release, and the failure was invisible.**
+  `docs/make.jl` listed `SimpleSolvers` and `GeometricMachineLearning` as `InterLinks` inventories but
+  not `NeuralNetworkParameters`, while `RiemannianGradient`'s docstring
+  (`src/utils.jl`) has `[`NeuralNetworkParameters.NetworkParameters`](@extref)` in it. Documenter
+  stopped at `ExtCrossReferences` with `:external_cross_references` and never reached
+  `RenderDocument`. `NeuralNetworkParameters` is now an inventory entry, so the reference resolves and
+  the build renders.
+
+  Worth recording how it hid: `make.jl` runs doctests *before* cross-references, so a log filtered for
+  "error" and "doctest" shows `[ Info: Doctest: running doctests.` and nothing alarming, and a build
+  piped into `grep` reports the exit status of `grep`. The check that the build succeeded is that
+  `[ Info: RenderDocument: rendering document.` appears.
+
+- **The signatures that took `NeuralNetworkParameters.ParameterSet` now take `NetworkParameters`.**
+  That alias is removed upstream in 0.3.0, because a method on it was a method on `Base.NamedTuple` and
+  because it named two questions at once — a whole set, and a *branch* of one. `geodesic`, `cayley`,
+  `retraction_differential`, `solution_scale`, `_manifold_αmax`, `apply_section!` and `update_section!`
+  take the container; `_is_decayable` has two methods, because it recurses through `values` itself and
+  so meets a container's layers on the way down.
+
+  `l2norm` of a whole set comes from `NeuralNetworkParameters`' `ext/GeometricBaseExt.jl` and is
+  likewise container-only. Every fixture in `test/` that handed one of these a bare `NamedTuple` now
+  wraps.
+
+### Not changed, and deliberately
+
+The signatures still written on `NeuralNetworkParameters.ParameterSet` — `geodesic`, `cayley`,
+`retraction_differential`, `solution_scale`, `_manifold_αmax`, `_is_decayable`, `apply_section!`,
+`update_section!` — stay wide. Each is this package's *own* function, so none is piracy, and each
+either recurses through `values` itself or is applied to a **direction**, which `mapparameters`
+rebuilds in the shape of whatever it walked — including the plain `NamedTuple` of a nested section
+tree. Narrowing them is a separate question from this one and depends on
+`NeuralNetworkParameters.ParameterSet`, which cannot narrow while `SymbolicNeuralNetworks` uses it for
+*equation* sets that are bare `NamedTuple`s by construction.
+
+The section aliases (`GlobalSectionTuple`, `GlobalSectionNamedTuple`,
+`GlobalSectionSingleOrNamedTuple`) also stay. Collapsing them means making
+`GlobalSection(::NetworkParameters)` return a *container* of sections rather than a plain
+`NamedTuple`, which needs a `parameter_eltype` for a `GlobalSection` upstream and changes what
+`GeometricMachineLearning`'s `_tree_optim_step!` descends into. It is the next simplification of this
+kind and it is not this one.
+
 ## [0.6.1]
 
 **The last type piracy in this package is gone, and a test keeps it that way.** Goal 2 of the

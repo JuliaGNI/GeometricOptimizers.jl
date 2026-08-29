@@ -168,7 +168,7 @@ objective before and after `steps` steps.
 function optimize(MT, algorithm; steps=5, η=0.1)
     Random.seed!(1234)
     A_target = rand(MT{Float64}, N)
-    ps = (A=rand(MT{Float64}, N),)
+    ps = NetworkParameters((A=rand(MT{Float64}, N),))
     # on `parent`, i.e. on the free parameters: the ambient Frobenius norm would count the strict
     # triangle of a `SkewSymMatrix` twice and the objective is not the point here
     F(p) = sum(abs2, parent(p.A) .- parent(A_target)) / 2

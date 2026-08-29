@@ -11,7 +11,7 @@
 #
 # What the bounds add is the shared `T`. With
 #
-#     struct AdamCache{T,MT<:OptimizerSolution{T},VT<:GradientArrayOrNamedTuple{T},
+#     struct AdamCache{T,MT<:OptimizerSolution{T},VT<:GradientStorage{T},
 #                        ST<:GlobalSectionSingleOrNamedTuple{T}} <: OptimizerCache{T}
 #
 # the inferred type is
@@ -32,7 +32,7 @@
 #
 # Nothing is given up by dropping them. The invariant is enforced where it always really was, in the
 # constructors, whose signatures take `x::OptimizerSolution{T}` and
-# `g::AT where AT<:GradientArrayOrNamedTuple{T}` and build the `GlobalSection` themselves — the same
+# `g::AT where AT<:GradientStorage{T}` and build the `GlobalSection` themselves — the same
 # guarantee, checked by dispatch, at no cost to inference. That holds for an *inner* constructor as
 # readily as an outer one: what must not carry the aliases is the `struct` parameter list, not the
 # methods.
@@ -40,69 +40,56 @@
 # Every optimizer cache and state leaves its parameters unbounded, including the ones whose bounds
 # were never the expensive kind (`NewtonOptimizerCache`, `NewtonOptimizerState`). The family stays
 # uniform, and nobody has to work out per struct whether a given bound happens to be one that costs.
-# `test/named_tuple_parameters.jl` pins this.
-
-# note that this is *not* `Tuple{Vararg{AT}} where {AT<:AbstractArray{T}}`, as Julia's
-# diagonal rule would make that homogeneous, i.e. it would not allow a `NamedTuple` that
-# stores e.g. a `StiefelManifold` and an ordinary `Matrix` at the same time.
-const ArrayTuple{T} = Tuple{Vararg{AbstractArray{T}}}
-
-const ArrayNamedTuple{T,S} = begin
-    NamedTuple{S,<:ArrayTuple{T}}
-end
-
-"""
-    ParameterContainer
-
-The two shapes a set of parameters arrives in: a bare `NamedTuple` of arrays, or a
-`NeuralNetworkParameters.NetworkParameters` holding one.
-
-This is what the elementwise primitives of `src/optimizers/named_tuple_wrapper.jl` dispatch on. They
-took `ArrayNamedTuple` alone until 0.6.0, so a container reached them and raised a `MethodError`
-several frames into a solve rather than being turned away at the door.
-
-The two are *not* interchangeable in shape. An `ArrayNamedTuple` is flat by construction — its values
-are bounded by `AbstractArray{T}`, so a nested `NamedTuple` is not one — while a container is a tree
-of layers. That is why the bodies walk with `mapparameters` rather than with `Base.map`: `map`
-visits the entries of one level, which is the whole of a flat set and the *layers* of a nested one.
-
-!!! note "`ParameterSet` is the wider name, and the one to reach for first"
-    `T` means two different things across this union: for `ArrayNamedTuple{T}` it is a guarantee that
-    every leaf is an `AbstractArray{T}` *and* that the set is flat, while for `NetworkParameters{T}` it
-    is a promotion over leaves that may nest to any depth. So this alias means "flat and homogeneous,
-    or nested and promoted", and a method written on it accepts a nested container while rejecting the
-    nested plain `NamedTuple` describing the same network.
-
-    That is why it is only used where `T` genuinely has to bind — beside a `Matrix{T}`, an `f̄::T`, a
-    `b::T`. Everything else in this package takes `NeuralNetworkParameters.ParameterSet`, which is the
-    same union without either bound and is what the rest of the ecosystem dispatches on:
-    `AbstractNeuralNetworks`, `SymbolicNeuralNetworks` and `GeometricMachineLearning` all name it.
-
-!!! info "Widening this union did not close issue #16"
-    A method on this alias is still type piracy, and for both members. `ArrayNamedTuple` is an alias
-    for `Base.NamedTuple`, which is the original complaint; `NetworkParameters` belongs to
-    `NeuralNetworkParameters`, so a method pairing it with a generic from a third package — `l2norm`,
-    `outer!`, `copyto!` — owns neither side either. Closing #16 needs the `NamedTuple` methods
-    *removed*, and `GeometricMachineLearning` hands this package one bare layer `NamedTuple` per
-    layer, so they stay.
-"""
-const ParameterContainer{T} = Union{ArrayNamedTuple{T},NetworkParameters{T}}
+# `test/flat_parameters.jl` pins this.
 
 """
     OptimizerSolution
 
-A type alias for the solution of an optimizer: an `AbstractVector`, a [`Manifold`](@ref), a
-`NamedTuple` of arrays, or a `NetworkParameters` holding one.
+A type alias for the solution of an optimizer: an `AbstractVector`, a [`Manifold`](@ref), or a
+[`NeuralNetworkParameters.NetworkParameters`](@extref) holding a whole set of network parameters.
 
-`NetworkParameters{T}` binds `T` from a direct type parameter rather than through a `Vararg` bound on
-value types, so it is the cheapest member of this union to intersect. Note that it is the only member
-whose `T` is a *promotion* over the leaves rather than a guarantee that every leaf is a `T`.
+A set of parameters enters this package as a container and never as a bare `NamedTuple`. That is the
+constraint every other alias in this file is written against, so it is worth saying why the obvious
+alternative is not available.
+
+**A parameter set has to be a type somebody owns.**
+`NamedTuple{S,<:Tuple{Vararg{AbstractArray{T}}}}` picks out the same values, but it is an *alias for
+`Base.NamedTuple`* rather than a type of its own, and three things follow:
+
+  - a method taking one is a method on `Base.NamedTuple`. Unless the function is also this package's,
+    that is type piracy — and it is global, changing what the function means for every keyed
+    `NamedTuple` in any session that loads this package, directly or through a dependency. Issue
+    [#16](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16) is the record of what that
+    costs to undo;
+  - it cannot be told apart from any *other* `NamedTuple` alias in the same method table. It would
+    overlap `GlobalSectionNamedTuple` and the bare `NamedTuple` that a nested section tree is written
+    on, and on the overlap neither method of such a pair is more specific — an ambiguity rather than a
+    choice. `optimizers/named_tuple_wrapper.jl` is where that would bite;
+  - its `T` binds through a `Vararg` bound on the *values*, which asserts "flat, and every leaf an
+    `AbstractArray{T}`". `NetworkParameters{T}` asserts something else: a promotion over leaves at any
+    depth. A union of the two would say one thing about one argument shape and another about the
+    other.
+
+`NetworkParameters{T}` has none of those properties. It also binds `T` from a direct type parameter
+rather than through a `Vararg` bound on value types, which makes it the cheapest member of this union
+to intersect, and it is the only member whose `T` is a *promotion* over the leaves rather than a
+guarantee that every leaf is a `T`.
+
+!!! note "A caller holding a bare `NamedTuple` wraps it"
+    `NetworkParameters(ps)` shares the leaf arrays rather than copying them, so an in-place solve
+    still writes through to the caller's own arrays and nothing has to be copied back. That is what
+    `GeometricMachineLearning` and `GMLDatasets` do at the boundary.
 """
-const OptimizerSolution{T} = Union{AbstractVector{T},Manifold{T},ParameterContainer{T}}
+const OptimizerSolution{T} = Union{AbstractVector{T},Manifold{T},NetworkParameters{T}}
 
-const GradientArrayOrNamedTuple{T} = Union{AbstractArray{T},ParameterContainer{T}}
+# A gradient is one leaf's worth of storage or a whole set of them. `AbstractArray` and not
+# `AbstractVecOrMat`: a horizontal lift and a [`VectorStorageMatrix`](@ref) are both `AbstractArray`s
+# that are neither.
+const GradientStorage{T} = Union{AbstractArray{T},NetworkParameters{T}}
 
-# see the remark on the diagonal rule above
+# note that this is *not* `Tuple{Vararg{ST}} where {ST<:GlobalSection{T}}`, as Julia's diagonal rule
+# would make that homogeneous, i.e. it would not allow a `NamedTuple` holding the section of a
+# `StiefelManifold` beside the section of an ordinary `Matrix` at the same time.
 const GlobalSectionTuple{T} = Tuple{Vararg{GlobalSection{T}}}
 
 const GlobalSectionNamedTuple{T,X} = begin

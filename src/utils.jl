@@ -57,7 +57,7 @@ end
 # `test/`, `docs/` or `scripts/` ever called it, and `GeometricMachineLearning` deleted its own
 # `NamedTuple` arm of `AbstractNeuralNetworks.add!` for the same reason in 0.7 -- so this had the
 # distinction of being the only signature in 0.6.0 that got *narrower* rather than wider. It was
-# `::NamedTuple` and became `::ParameterContainer`, which drops a nested plain `NamedTuple` and any
+# `::NamedTuple` and became `::NetworkParameters`, which drops a nested plain `NamedTuple` and any
 # layer whose weights do not share one element type: exactly the two cases every other primitive in
 # this release went out of its way to keep. Deleted rather than widened, since widening dead code only
 # makes it harder to notice.
@@ -129,7 +129,7 @@ RiemannianGradient(gradient::RiemannianGradient) = gradient
 # it, because its leaves are projected one at a time and `SimpleSolvers` has no method that reaches
 # them.
 _riemannian_gradient(grad::Gradient, ::Union{AbstractVector,Manifold}) = grad
-_riemannian_gradient(grad::Gradient, ::ParameterContainer) = RiemannianGradient(grad)
+_riemannian_gradient(grad::Gradient, ::NetworkParameters) = RiemannianGradient(grad)
 
 function compute_new_iterate!(xₖ₁::Manifold{T}, xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T}, cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
     _retraction(x) = retraction(retraction_type, x)

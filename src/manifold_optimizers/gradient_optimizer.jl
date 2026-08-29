@@ -46,20 +46,20 @@ struct GradientCache{T,MT,VT,ST} <: OptimizerCache{T}
     section::ST
 end
 
-function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientStorage{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
     GradientCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
 end
 
-function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientStorage{T}}
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
     GradientCache(x, g, δ, Δg)
 end
 
-function GradientCache(x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function GradientCache(x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     δ = _similar(g)
     _fill!(δ, T(NaN))
     GradientCache(x, g, δ)
@@ -118,7 +118,7 @@ previous_value(state::GradientState) = state.f̄
 
 section(state::GradientState) = state.section
 
-function GradientState(x::OST, g::GradientArrayOrNamedTuple{T}) where {T,OST<:OptimizerSolution{T}}
+function GradientState(x::OST, g::GradientStorage{T}) where {T,OST<:OptimizerSolution{T}}
     _x = _copy(x)
     _g = _copy(g)
     gs = GlobalSection(_x)
@@ -129,7 +129,7 @@ GradientState(x::OptimizerSolution) = GradientState(x, _zero(x))
 
 OptimizerState(::GradientMethod, x...) = GradientState(x...)
 
-function update!(state::GradientState{T}, gradient_array::GradientArrayOrNamedTuple{T}, direction::GradientArrayOrNamedTuple{T}, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
+function update!(state::GradientState{T}, gradient_array::GradientStorage{T}, direction::GradientStorage{T}, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)

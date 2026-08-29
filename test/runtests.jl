@@ -96,7 +96,7 @@ begin
     @safetestset "Scalar-moment Adam           " include("scalar_moment_adam.jl")
 end
 begin
-    @safetestset "NamedTuple Parameters        " include("named_tuple_parameters.jl")
+    @safetestset "Flat Parameters              " include("flat_parameters.jl")
 end
 begin
     @safetestset "NeuralNetworkParameters      " include("neural_network_parameters_protocol.jl")

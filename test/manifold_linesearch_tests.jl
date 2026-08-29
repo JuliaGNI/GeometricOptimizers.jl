@@ -94,7 +94,7 @@ end
     Y = rand(StiefelManifold, 6, 3)
     # a `NamedTuple` mixing a manifold with an ordinary array, so that the pass-through for a
     # Euclidean block is covered too -- its retraction is addition, so `D(α) = B` there
-    mixed = (w=rand(StiefelManifold, 6, 3), b=randn(4))
+    mixed = NetworkParameters((w=rand(StiefelManifold, 6, 3), b=randn(4)))
 
     for retraction in (Geodesic(), Cayley())
         for e in slope_errors(Y, Z -> sum(abs2, Z .- 0.3) + sum(sin.(Z)), retraction, αs)
@@ -203,11 +203,11 @@ end
     Random.seed!(1234)
     A = rand(10, 10)
     n = 3
-    err(ps::NamedTuple) = norm(A - ps.w₁ * ps.w₂' * A)
+    err(ps::NetworkParameters) = norm(A - ps.w₁ * ps.w₂' * A)
 
     for linesearch in (Backtracking(Float64), Bisection(Float64))
         Random.seed!(1234)
-        ps = (w₁=rand(StiefelManifold, 10, n), w₂=rand(StiefelManifold, 10, n))
+        ps = NetworkParameters((w₁=rand(StiefelManifold, 10, n), w₂=rand(StiefelManifold, 10, n)))
         state = OptimizerState(BFGS(), ps)
         opt = Optimizer(ps, err; algorithm=BFGS(), linesearch=linesearch, retraction=Cayley())
 
@@ -236,12 +236,12 @@ end
 # issue; see the CHANGELOG.
 const TARGET₂ = [0.0, 1.5, 0.0]
 const MINIMIZER₂ = StiefelManifold([0.0; 1.0; 0.0;;])
-two_spheres(ps::NamedTuple) = l2norm(vec(ps.w₁), TARGET) + l2norm(vec(ps.w₂), TARGET₂)
+two_spheres(ps::NetworkParameters) = l2norm(vec(ps.w₁), TARGET) + l2norm(vec(ps.w₂), TARGET₂)
 
 function ps₀()
     Random.seed!(1234)
-    (w₁=StiefelManifold([0.0; sqrt(0.5); sqrt(0.5);;]),
-        w₂=StiefelManifold([sqrt(0.5); 0.0; sqrt(0.5);;]))
+    NetworkParameters((w₁=StiefelManifold([0.0; sqrt(0.5); sqrt(0.5);;]),
+        w₂=StiefelManifold([sqrt(0.5); 0.0; sqrt(0.5);;])))
 end
 
 const NT_LINESEARCHES = (Static(0.1), Backtracking(Float64), Backtracking(Float64; expand=true),
@@ -422,9 +422,9 @@ end
     lift(scale) = scale * rand(Random.Xoshiro(1234), StiefelLieAlgHorMatrix{Float64}, 6, 3)
 
     # two manifold blocks: the *smallest* per-block ceiling, i.e. the largest direction, and not the
-    # quadrature combination of the two that `l2norm` over the whole `NamedTuple` would give
-    let sol = (a=rand(StiefelManifold, 6, 3), b=rand(StiefelManifold, 6, 3)),
-        δ = (a=lift(1.0), b=lift(3.0))
+    # quadrature combination of the two that `l2norm` over the whole set would give
+    let sol = NetworkParameters((a=rand(StiefelManifold, 6, 3), b=rand(StiefelManifold, 6, 3))),
+        δ = NetworkParameters((a=lift(1.0), b=lift(3.0)))
 
         @test _manifold_αmax(sol, δ, 1.0) ==
               min(step_αmax(1.0, δ.a), step_αmax(1.0, δ.b))
@@ -437,8 +437,8 @@ end
     # mixed: the Euclidean block neither imposes a ceiling nor tightens the manifold block's. This is
     # the direction of the A15 error -- a Euclidean block of large norm used to drag the whole
     # ceiling down with it through the quadrature norm.
-    let sol = (Y=rand(StiefelManifold, 6, 3), W=zeros(3, 4)),
-        δ = (Y=lift(1.0), W=fill(1.0e3, 3, 4))
+    let sol = NetworkParameters((Y=rand(StiefelManifold, 6, 3), W=zeros(3, 4))),
+        δ = NetworkParameters((Y=lift(1.0), W=fill(1.0e3, 3, 4)))
 
         @test _manifold_αmax(sol, δ, 1.0) == step_αmax(1.0, δ.Y)
         @test _manifold_αmax(sol, δ, 1.0) > step_αmax(1.0, δ)
@@ -446,12 +446,13 @@ end
 
     # no manifold block at all: no scale exists, so there is no ceiling. `Inf` and not a number:
     # `SimpleSolvers.linesearch_αmax` reads it as "the caller has no scale of its own".
-    let sol = (W=zeros(3, 4), b=zeros(3)), δ = (W=fill(2.0, 3, 4), b=fill(5.0, 3))
+    let sol = NetworkParameters((W=zeros(3, 4), b=zeros(3))),
+        δ = NetworkParameters((W=fill(2.0, 3, 4), b=fill(5.0, 3)))
         @test _manifold_αmax(sol, δ, 1.0) == Inf
     end
 
     # in `T`, as `step_αmax` is
-    let sol = (W=zeros(Float32, 2, 2),), δ = (W=fill(2.0f0, 2, 2),)
+    let sol = NetworkParameters((W=zeros(Float32, 2, 2),)), δ = NetworkParameters((W=fill(2.0f0, 2, 2),))
         @test _manifold_αmax(sol, δ, 1.0f0) isa Float32
     end
 end
@@ -499,10 +500,10 @@ end
         @test 0 < params.αmax < Inf
     end
 
-    # A `NamedTuple` with *no* manifold block is Euclidean, whatever `ArrayNamedTuple` says: it is
-    # any `NamedTuple` of arrays, so this used to take the manifold branch and be handed a ceiling
-    # derived from a rotation the problem does not have. See the solve below.
-    let ps = (W=[1.0 2.0; 3.0 4.0], b=[5.0, 6.0])
+    # A set of parameters with *no* manifold block is Euclidean, and telling the two apart is not
+    # free: taking the manifold branch here hands the problem a ceiling derived from a rotation it
+    # does not have. See the solve below for what that costs.
+    let ps = NetworkParameters((W=[1.0 2.0; 3.0 4.0], b=[5.0, 6.0]))
         algorithm = GradientMethod()
         state = OptimizerState(algorithm, ps)
         c = OptimizerCache(algorithm, ps)
@@ -515,9 +516,9 @@ end
 # step-size cap of `6e-4`, so the solve crawls where it should converge outright -- measured at 3 184
 # iterations against 1 before the ceiling became block-wise. The assertion is *relative*, between the
 # ceiling and no ceiling on the same problem, so it pins no figure of its own.
-@testset "a NamedTuple with no manifold block is not bounded by a manifold's geometry" begin
+@testset "a parameter set with no manifold block is not bounded by a manifold's geometry" begin
     target = fill(1.0e4, 4)
-    far_away(ps::NamedTuple) = sum(abs2, ps.w .- target) / 2
+    far_away(ps::NetworkParameters) = sum(abs2, ps.w .- target) / 2
     far_away(x::AbstractVector) = sum(abs2, x .- target) / 2
 
     iterations(x, ceiling) = let state = OptimizerState(BFGS(), x)
@@ -526,9 +527,11 @@ end
         iteration_number(state)
     end
 
-    @test iterations((w=zeros(4),), DEFAULT_STEP_CEILING) == iterations((w=zeros(4),), Inf)
+    @test iterations(NetworkParameters((w=zeros(4),)), DEFAULT_STEP_CEILING) ==
+          iterations(NetworkParameters((w=zeros(4),)), Inf)
     # ... and the same problem written as a vector, which never had a ceiling, agrees with both
-    @test iterations((w=zeros(4),), DEFAULT_STEP_CEILING) == iterations(zeros(4), DEFAULT_STEP_CEILING)
+    @test iterations(NetworkParameters((w=zeros(4),)), DEFAULT_STEP_CEILING) ==
+          iterations(zeros(4), DEFAULT_STEP_CEILING)
 end
 
 # Issue B3. A search stopped *at* the ceiling `solver_step!` itself imposed, with the merit still

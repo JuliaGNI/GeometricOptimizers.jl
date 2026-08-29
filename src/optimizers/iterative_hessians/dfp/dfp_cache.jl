@@ -105,7 +105,7 @@ Update the [`DFPCache`](@ref) based on `x` and `g`.
 
 The update rule used here can be found in [kochenderfer2019algorithms](@cite) and [nocedal2006numerical](@cite).
 """
-function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     update!(cache, state, x)
     _copyto!(gradient(cache), g)
     _copyto!(rhs(cache), g)
