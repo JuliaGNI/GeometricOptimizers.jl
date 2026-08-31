@@ -25,8 +25,8 @@ import Random
 
 Random.seed!(1234)
 
-const nt  = (a = rand(3), b = rand(2, 2))
-const np  = NetworkParameters((a = rand(3), b = rand(2, 2)))
+const nt = (a = rand(3), b = rand(2, 2))
+const np = NetworkParameters((a = rand(3), b = rand(2, 2)))
 const sec = (a = GlobalSection(rand(3)), b = GlobalSection(rand(2, 2)))
 
 @testset "the four shapes on the overlap dispatch to exactly one method" begin
@@ -68,8 +68,8 @@ end
 # a consumer's shape rather than a constructed one.
 @testset "a flat `NetworkParameters` with a manifold leaf takes a step" begin
     ps = NetworkParameters((PQ = rand(StiefelManifold{Float64}, 6, 3),
-                            W  = rand(4, 4),
-                            b  = zeros(4)))
+        W = rand(4, 4),
+        b = zeros(4)))
     F(p) = sum(abs2, flatten(p)[1])
     before = F(ps)
 

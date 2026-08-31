@@ -2,7 +2,7 @@ using GeometricOptimizers
 using GeometricOptimizers: AdamState, MomentumState, GradientState
 using GeometricOptimizers: first_moment, second_moment, _second_moment, momentum
 using GeometricOptimizers: cache, gradient_array, increase_iteration_number!, solver_step!,
-    update!, _square, _mul
+                           update!, _square, _mul
 using SimpleSolvers: Static
 using LinearAlgebra: norm
 using Test
@@ -16,14 +16,19 @@ manifold_error(x::StiefelManifold) = norm(A - x * x' * A)
 named_tuple_error(ps::NetworkParameters) = norm(A - ps.w * ps.w' * A) + norm(ps.b)
 
 # both a bare `Manifold` and a whole set of parameters are tested
-problems() = ((rand(StiefelManifold, 5, 3), manifold_error),
-    (NetworkParameters((w=rand(StiefelManifold, 5, 3), b=randn(3))), named_tuple_error))
+function problems()
+    ((rand(StiefelManifold, 5, 3), manifold_error),
+        (NetworkParameters((w = rand(StiefelManifold, 5, 3), b = randn(3))),
+            named_tuple_error))
+end
 
 _all_zero(a::AbstractArray) = all(iszero, a)
 _all_zero(a::NetworkParameters) = all(_all_zero, values(a))
 
 _isapprox(a::AbstractArray, b::AbstractArray) = isapprox(a, b)
-_isapprox(a::NetworkParameters, b::NetworkParameters) = all(_isapprox(a[k], b[k]) for k in keys(a))
+function _isapprox(a::NetworkParameters, b::NetworkParameters)
+    all(_isapprox(a[k], b[k]) for k in keys(a))
+end
 
 # The moments of an `AdamState` and the momentum of a `MomentumState` are read in the first
 # call to `update!(::OptimizerCache, ...)`, i.e. before they are written to for the first
@@ -53,9 +58,9 @@ end
 # is the one call sequence in which `t + 1` gives the right answer. `test/optimizer_step_formulas.jl`
 # pins the resulting step size.
 @testset "the first Adam step" begin
-    x = NetworkParameters((w=rand(StiefelManifold, 5, 3), b=randn(3)))
+    x = NetworkParameters((w = rand(StiefelManifold, 5, 3), b = randn(3)))
     algorithm = Adam()
-    optimizer = Optimizer(x, named_tuple_error; algorithm=algorithm, linesearch=Static(0.01))
+    optimizer = Optimizer(x, named_tuple_error; algorithm = algorithm, linesearch = Static(0.01))
     state = AdamState(x)
 
     ps = deepcopy(x)
@@ -74,11 +79,11 @@ end
 # change of section (its moments are updated element-wise).
 @testset "the same seed gives the same result" begin
     for algorithm in (GradientMethod(), MomentumMethod(0.5), Adam(), AdamWithEuclideanDecay())
-        x = NetworkParameters((w=rand(StiefelManifold, 5, 3), b=randn(3)))
+        x = NetworkParameters((w = rand(StiefelManifold, 5, 3), b = randn(3)))
         results = map(1:2) do _
             Random.seed!(1234)
             ps = deepcopy(x)
-            optimizer = Optimizer(ps, named_tuple_error; algorithm=algorithm, linesearch=Static(0.01))
+            optimizer = Optimizer(ps, named_tuple_error; algorithm = algorithm, linesearch = Static(0.01))
             state = OptimizerState(algorithm, ps)
             for _ in 1:5
                 increase_iteration_number!(state)

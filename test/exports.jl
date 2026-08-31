@@ -39,19 +39,19 @@ end
 # the *Exports* entry in the changelog.
 @testset "the manifold, section and retraction interface is exported" begin
     for name in (
-        # the geometry
+    # the geometry
         :Manifold, :StiefelManifold, :GrassmannManifold,
         :rgrad, :metric, :check, :Ω,
-        # the structured matrices and the lifts
+    # the structured matrices and the lifts
         :SkewSymMatrix, :SymmetricMatrix, :LowerTriangular, :UpperTriangular,
         :AbstractTriangular, :StiefelProjection,
         :AbstractLieAlgHorMatrix, :StiefelLieAlgHorMatrix, :GrassmannLieAlgHorMatrix,
-        # global sections
+    # global sections
         :GlobalSection, :global_section, :global_rep,
         :apply_section, :apply_section!, :update_section!,
-        # retractions
+    # retractions
         :AbstractRetraction, :Geodesic, :Cayley, :geodesic, :cayley, :retraction,
-        # the optimizer types a caller dispatches on
+    # the optimizer types a caller dispatches on
         :OptimizerMethod, :OptimizerState, :OptimizerSolution)
         @test name in names(GeometricOptimizers)
     end

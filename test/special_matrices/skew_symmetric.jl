@@ -5,13 +5,13 @@ import Random
 
 Random.seed!(123)
 
-function skew_symmetrization_operation(N::Integer, T::DataType=Float32)
-    A = rand(T, N,N)
+function skew_symmetrization_operation(N::Integer, T::DataType = Float32)
+    A = rand(T, N, N)
     A_skew = SkewSymMatrix(A)
 
-    for i in 1:N 
-        for j in 1:N 
-            @test abs(.5*(A - A')[i,j] - A_skew[i,j]) < eps(T)
+    for i in 1:N
+        for j in 1:N
+            @test abs(0.5*(A - A')[i, j] - A_skew[i, j]) < eps(T)
         end
     end
 end
@@ -21,12 +21,12 @@ function check_if_symmetric_matrix_works_for_1x1_matrices(T::DataType)
     W = rand(T, 1, 1)
     S = SkewSymMatrix(W)
     # a 1×1-skew-symmetric matrix is 0
-    @test abs(S[1,1]) < eps(T)
+    @test abs(S[1, 1]) < eps(T)
 end
 
 #check if built-in projection, matrix addition & subtraction works   
-function skew_mat_add_sub(N::Integer, T::DataType=Float32)
-    anti_symmetrize(W) = .5 * (W - W')
+function skew_mat_add_sub(N::Integer, T::DataType = Float32)
+    anti_symmetrize(W) = 0.5 * (W - W')
     W₁ = rand(T, N, N)
     S₁ = SkewSymMatrix(W₁)
     W₂ = rand(T, N, N)
@@ -40,24 +40,24 @@ function skew_mat_add_sub(N::Integer, T::DataType=Float32)
 end
 
 # this function tests if the matrix multiplication for the SkewSym Matrix is the same as the implied one.
-function skew_mat_mul(n::Integer, T::DataType=Float64)
+function skew_mat_mul(n::Integer, T::DataType = Float64)
     S = rand(SkewSymMatrix{T}, n)
     A = rand(T, n, n)
-    SA1 = S * A 
-    SA2 = Matrix{T}(S) * A 
+    SA1 = S * A
+    SA2 = Matrix{T}(S) * A
     @test isapprox(SA1, SA2)
 end
 
 # tests if multiplication from the right also works correctly
-function skew_mat_mul_from_the_right(N::Integer, T::DataType=Float64)
+function skew_mat_mul_from_the_right(N::Integer, T::DataType = Float64)
     S = rand(SkewSymMatrix{T}, N)
     A = rand(T, N, N)
-    AS1 = A * S 
+    AS1 = A * S
     AS2 = A * Matrix{T}(S)
     @test isapprox(AS1, AS2)
 end
 
-function check_map_to_Skew(N::Integer, T::DataType=Float64)
+function check_map_to_Skew(N::Integer, T::DataType = Float64)
     A = rand(SkewSymMatrix{T}, N)
     @test A.S ≈ map_to_Skew(A)
 end
@@ -106,13 +106,13 @@ end
 # zero(::Type{SkewSymMatrix})` — and took `zeros(::Type{StiefelLieAlgHorMatrix}, N, n)`, its
 # only in-repo caller, down with it.
 @testset "zeros for SkewSymMatrix" begin
-    for n ∈ 2:5
+    for n in 2:5
         A = zeros(SkewSymMatrix, n)
         @test A isa SkewSymMatrix{Float64}
         @test size(A) == (n, n)
         @test all(iszero, A)
 
-        for T ∈ (Float32, Float64)
+        for T in (Float32, Float64)
             A_T = zeros(SkewSymMatrix{T}, n)
             @test A_T isa SkewSymMatrix{T}
             @test size(A_T) == (n, n)
@@ -121,9 +121,9 @@ end
     end
 end
 
-for T ∈ (Float32, Float64)
+for T in (Float32, Float64)
     check_if_symmetric_matrix_works_for_1x1_matrices(T)
-    for N ∈ 2:5
+    for N in 2:5
         skew_symmetrization_operation(N, T)
         skew_mat_add_sub(N, T)
         skew_mat_mul(N, T)

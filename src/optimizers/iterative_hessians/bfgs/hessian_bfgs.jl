@@ -3,11 +3,11 @@
 
 A `struct` derived from [`SimpleSolvers.Hessian`](@extref) to be used for an [`Optimizer`](@ref).
 """
-struct HessianBFGS{T,FT<:Callable} <: IterativeHessian{T}
+struct HessianBFGS{T, FT <: Callable} <: IterativeHessian{T}
     F::FT
 
-    function HessianBFGS(F::FT, ::OptimizerSolution{T}) where {T,FT<:Callable}
-        new{T,FT}(F)
+    function HessianBFGS(F::FT, ::OptimizerSolution{T}) where {T, FT <: Callable}
+        new{T, FT}(F)
     end
 end
 
@@ -28,5 +28,6 @@ Hessian(::BFGS, ForOBJ::OptimizerProblem, x::OptimizerSolution) = HessianBFGS(Fo
 # `HessianDFP`; the `NoHessian` arm is in `manifold_optimizers/gradient_optimizer.jl`, where that type
 # is defined, because a signature needs its types to exist and that file is included after this one.
 # See issue #16.
-(hes::IterativeHessian)(::AbstractMatrix, ::OptimizerSolution) =
+function (hes::IterativeHessian)(::AbstractMatrix, ::OptimizerSolution)
     error("This has to be called together with a cache.")
+end

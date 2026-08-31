@@ -13,8 +13,9 @@ geodesic(A::AbstractVecOrMat, ::AbstractExponentialAlgorithm) = A
 # parameters it was derived from — so these take the container, as every direction in this package is
 # one.
 geodesic(B::NetworkParameters) = mapparameters(geodesic, B)
-geodesic(B::NetworkParameters, algorithm::AbstractExponentialAlgorithm) =
+function geodesic(B::NetworkParameters, algorithm::AbstractExponentialAlgorithm)
     mapparameters(Bᵢ -> geodesic(Bᵢ, algorithm), B)
+end
 
 @doc raw"""
     lift_factors(B::AbstractLieAlgHorMatrix)
@@ -93,7 +94,7 @@ true
 Internally this `geodesic` method calls [`geodesic(::AbstractLieAlgHorMatrix)`](@ref).
 """
 function geodesic(Y::Manifold{T}, Δ::AbstractMatrix{T},
-    algorithm::AbstractExponentialAlgorithm=ScaledSquaring()) where {T}
+        algorithm::AbstractExponentialAlgorithm = ScaledSquaring()) where {T}
     λY = GlobalSection(Y)
     B = global_rep(λY, Δ)
     E = StiefelProjection(B)
@@ -217,7 +218,8 @@ function cayley(B::StiefelLieAlgHorMatrix)
     𝕀_big = one(B)
     B̂, B̄ = lift_factors(B)
 
-    StiefelManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') * (𝕀_big + T(0.5) * B))
+    StiefelManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') *
+                    (𝕀_big + T(0.5) * B))
 end
 
 @doc raw"""
@@ -238,7 +240,8 @@ function cayley(B::GrassmannLieAlgHorMatrix)
     𝕀_big = one(B)
     B̂, B̄ = lift_factors(B)
 
-    GrassmannManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') * (𝕀_big + T(0.5) * B))
+    GrassmannManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') *
+                      (𝕀_big + T(0.5) * B))
 end
 
 @doc raw"""
@@ -296,17 +299,19 @@ Both inverses are taken through [`lift_factors`](@ref) and the Woodbury identity
 [`SimpleSolvers.Backtracking`](@extref) — the default of [`default_linesearch`](@ref) — evaluates
 ``\varphi'`` only at ``\alpha = 0``, so it never reaches the general branch.
 """
-retraction_differential(R::AbstractRetraction, B, α) =
-    error("retraction_differential is not implemented for $(typeof(R)) and $(typeof(B)); " *
-          "a line search that evaluates φ' needs it, and pairing the gradient with `B` instead is " *
-          "correct only where α ↦ retract(αB) is a one-parameter subgroup.")
+retraction_differential(R::AbstractRetraction,
+    B,
+    α) = error("retraction_differential is not implemented for $(typeof(R)) and $(typeof(B)); " *
+               "a line search that evaluates φ' needs it, and pairing the gradient with `B` instead is " *
+               "correct only where α ↦ retract(αB) is a one-parameter subgroup.")
 
 retraction_differential(::Geodesic, B, α) = B
 
 retraction_differential(::Cayley, B::AbstractVecOrMat, α) = B
 
-retraction_differential(R::Cayley, B::NetworkParameters, α) =
+function retraction_differential(R::Cayley, B::NetworkParameters, α)
     mapparameters(Bᵢ -> retraction_differential(R, Bᵢ, α), B)
+end
 
 function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) where {T}
     iszero(α) && return B
@@ -335,11 +340,12 @@ Not to be confused with the *canonical horizontal lift* [`GeometricOptimizers.Ω
 tangent vector to an element of ``\mathfrak{g}^\mathrm{hor}``. This one takes the columns of a matrix
 that is already in the Lie algebra.
 """
-lift_from_columns(B::StiefelLieAlgHorMatrix, V::AbstractMatrix) =
-    StiefelLieAlgHorMatrix(SkewSymMatrix(V[1:(B.n), :]), V[(B.n+1):(B.N), :], B.N, B.n)
+lift_from_columns(B::StiefelLieAlgHorMatrix, V::AbstractMatrix) = StiefelLieAlgHorMatrix(
+    SkewSymMatrix(V[1:(B.n), :]), V[(B.n + 1):(B.N), :], B.N, B.n)
 
-lift_from_columns(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix) =
-    GrassmannLieAlgHorMatrix(V[(B.n+1):(B.N), :], B.N, B.n)
+function lift_from_columns(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix)
+    GrassmannLieAlgHorMatrix(V[(B.n + 1):(B.N), :], B.N, B.n)
+end
 
 @doc raw"""
     retraction(R::AbstractRetraction, x)

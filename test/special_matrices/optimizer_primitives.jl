@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: VectorStorageMatrix, _add!, _rac!, _square!, _div!, _rmul!,
-    _difference!, increase_iteration_number!, solver_step!
+                           _difference!, increase_iteration_number!, solver_step!
 using NeuralNetworkParameters: flatten, unflatten
 using SimpleSolvers: Static, l2norm
 using Test
@@ -165,15 +165,15 @@ end
 Minimize ``\\frac{1}{2}\\|A - A_\\star\\|^2`` over the free parameters of an `MT`, and return the
 objective before and after `steps` steps.
 """
-function optimize(MT, algorithm; steps=5, η=0.1)
+function optimize(MT, algorithm; steps = 5, η = 0.1)
     Random.seed!(1234)
     A_target = rand(MT{Float64}, N)
-    ps = NetworkParameters((A=rand(MT{Float64}, N),))
+    ps = NetworkParameters((A = rand(MT{Float64}, N),))
     # on `parent`, i.e. on the free parameters: the ambient Frobenius norm would count the strict
     # triangle of a `SkewSymMatrix` twice and the objective is not the point here
     F(p) = sum(abs2, parent(p.A) .- parent(A_target)) / 2
 
-    optimizer = Optimizer(ps, F; algorithm=algorithm, linesearch=Static(η))
+    optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(η))
     state = OptimizerState(algorithm, ps)
 
     before = F(ps)
@@ -186,8 +186,8 @@ function optimize(MT, algorithm; steps=5, η=0.1)
     before, F(ps), ps
 end
 
-@testset "an optimizer runs over a $(nameof(MT)) parameter -- $(nameof(typeof(algorithm)))" for
-MT in TYPES, algorithm in (GradientMethod(), MomentumMethod(0.1), Adam(Float64))
+@testset "an optimizer runs over a $(nameof(MT)) parameter -- $(nameof(typeof(algorithm)))" for MT in TYPES,
+    algorithm in (GradientMethod(), MomentumMethod(0.1), Adam(Float64))
 
     before, after, ps = optimize(MT, algorithm)
     @test after < before

@@ -31,13 +31,13 @@ SkewSymMatrix(S, 4)
  4   5   6   0
 ```
 """
-mutable struct SkewSymMatrix{T,AT<:AbstractVector{T}} <: AbstractMatrix{T}
+mutable struct SkewSymMatrix{T, AT <: AbstractVector{T}} <: AbstractMatrix{T}
     S::AT
     n::Int
 
     function SkewSymMatrix(S::AbstractVector{T}, n::Int) where {T}
         @assert length(S) == n * (n - 1) ÷ 2
-        new{T,typeof(S)}(S, n)
+        new{T, typeof(S)}(S, n)
     end
 end
 
@@ -89,16 +89,15 @@ function return_element(S::AbstractVector{T}, i::Int, j::Int) where {T}
     if j == i
         zero(T)
     elseif i > j
-        S[(i-2)*(i-1)÷2+j]
+        S[(i - 2) * (i - 1) ÷ 2 + j]
     else
-        -S[(j-2)*(j-1)÷2+i]
+        -S[(j - 2) * (j - 1) ÷ 2 + i]
     end
 end
 
 function Base.getindex(A::SkewSymMatrix, i::Int, j::Int)
     return_element(A.S, i, j)
 end
-
 
 Base.parent(A::SkewSymMatrix) = A.S
 Base.size(A::SkewSymMatrix) = (A.n, A.n)
@@ -114,7 +113,7 @@ function Base.:+(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(B)
     addition! = addition_kernel!(backend)
     C = KernelAbstractions.allocate(backend, T, size(A)...)
-    addition!(C, A.S, B; ndrange=size(A))
+    addition!(C, A.S, B; ndrange = size(A))
 
     C
 end
@@ -190,7 +189,8 @@ function Base.rand(type::Type{SkewSymMatrix}, n::Integer)
     rand(Random.default_rng(), type, n)
 end
 
-function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend, type::Type{SkewSymMatrix{T}}, n::Integer) where {T}
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
+        type::Type{SkewSymMatrix{T}}, n::Integer) where {T}
     S = KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
     Random.rand!(rng, S)
     SkewSymMatrix(S, n)
@@ -231,19 +231,20 @@ function Base.:*(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     C = KernelAbstractions.allocate(backend, T, A.n, m2)
 
     skew_mat_mul! = skew_mat_mul_kernel!(backend)
-    skew_mat_mul!(C, A.S, B, A.n, ndrange=size(C))
+    skew_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
     C
 end
 
-@kernel function skew_mat_mul_kernel!(C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
+@kernel function skew_mat_mul_kernel!(
+        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
     i, j = @index(Global, NTuple)
 
     tmp_sum = zero(T)
-    for k = 1:(i-1)
-        tmp_sum += S[(i-2)*(i-1)÷2+k] * B[k, j]
+    for k in 1:(i - 1)
+        tmp_sum += S[(i - 2) * (i - 1) ÷ 2 + k] * B[k, j]
     end
-    for k = (i+1):n
-        tmp_sum += -S[(k-2)*(k-1)÷2+i] * B[k, j]
+    for k in (i + 1):n
+        tmp_sum += -S[(k - 2) * (k - 1) ÷ 2 + i] * B[k, j]
     end
     C[i, j] = tmp_sum
 end
@@ -259,7 +260,6 @@ end
 function Base.one(A::SkewSymMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A.S), T, A.n)
 end
-
 
 # the first matrix is multiplied onto A2 in order for it to not be SkewSymMatrix!
 function Base.:*(A1::SkewSymMatrix{T}, A2::SkewSymMatrix{T}) where {T}
@@ -315,7 +315,7 @@ Base.similar(A::SkewSymMatrix) = SkewSymMatrix(similar(A.S), A.n)
 
 @kernel function assign_Skew_val_kernel!(S, A_skew, i)
     j = @index(Global)
-    S[((i-2)*(i-1)÷2+j)] = A_skew[i, j]
+    S[((i - 2) * (i - 1) ÷ 2 + j)] = A_skew[i, j]
 end
 
 function map_to_Skew(A::AbstractMatrix{T}) where {T}
@@ -330,12 +330,12 @@ function map_to_Skew(A::AbstractMatrix{T}) where {T}
     end
     assign_Skew_val! = assign_Skew_val_kernel!(backend)
     for i in 2:n
-        assign_Skew_val!(S, A_skew, i, ndrange=(i - 1))
+        assign_Skew_val!(S, A_skew, i, ndrange = (i - 1))
     end
     S
 end
 
-function map_to_Skew(A::AbstractMatrix{T}) where {T<:Integer}
+function map_to_Skew(A::AbstractMatrix{T}) where {T <: Integer}
     Float = T == Int64 ? Float64 : Float32
     map_to_Skew(Float.(A))
 end
@@ -360,6 +360,12 @@ function _round(A::AbstractArray; kwargs...)
 end
 
 # define routines for generalizing ChainRulesCore to SkewSymMatrix
-ChainRulesCore.ProjectTo(A::SkewSymMatrix) = ProjectTo{SkewSymMatrix}(; skew_sym=ProjectTo(A.S))
-(project::ProjectTo{SkewSymMatrix})(dA::AbstractMatrix) = SkewSymMatrix(project.skew_sym(map_to_Skew(dA)), size(dA, 2))
-(project::ProjectTo{SkewSymMatrix})(dA::SkewSymMatrix) = SkewSymMatrix(project.skew_sym(dA.S), dA.n)
+function ChainRulesCore.ProjectTo(A::SkewSymMatrix)
+    ProjectTo{SkewSymMatrix}(; skew_sym = ProjectTo(A.S))
+end
+function (project::ProjectTo{SkewSymMatrix})(dA::AbstractMatrix)
+    SkewSymMatrix(project.skew_sym(map_to_Skew(dA)), size(dA, 2))
+end
+function (project::ProjectTo{SkewSymMatrix})(dA::SkewSymMatrix)
+    SkewSymMatrix(project.skew_sym(dA.S), dA.n)
+end

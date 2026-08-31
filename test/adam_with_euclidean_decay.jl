@@ -1,6 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: AdamState, Manifold, first_moment, second_moment, check,
-    increase_iteration_number!, solver_step!, update!, _square, _weight_decay!, _is_decayable
+                           increase_iteration_number!, solver_step!, update!, _square,
+                           _weight_decay!, _is_decayable
 using SimpleSolvers: Static
 using LinearAlgebra: I, norm, tr, Symmetric
 using Test
@@ -38,12 +39,17 @@ named_tuple_error(ps::NetworkParameters) = norm(A - ps.w * ps.w' * A) + norm(ps.
 
 # a bare `Manifold`, a whole set of parameters and an ordinary `Vector` — the three kinds of
 # parameters the unified interface accepts
-problems() = ((rand(StiefelManifold, 5, 3), Y -> norm(A - Y * Y' * A)),
-    (NetworkParameters((w=rand(StiefelManifold, 5, 3), b=randn(3))), named_tuple_error),
-    ([1.0, -2.0, 0.5], objective))
+function problems()
+    ((rand(StiefelManifold, 5, 3), Y -> norm(A - Y * Y' * A)),
+        (NetworkParameters((w = rand(StiefelManifold, 5, 3), b = randn(3))),
+            named_tuple_error),
+        ([1.0, -2.0, 0.5], objective))
+end
 
 _isequal(a::AbstractArray, b::AbstractArray) = a == b
-_isequal(a::NetworkParameters, b::NetworkParameters) = all(_isequal(a[k], b[k]) for k in keys(a))
+function _isequal(a::NetworkParameters, b::NetworkParameters)
+    all(_isequal(a[k], b[k]) for k in keys(a))
+end
 
 """
     run!(ps, algorithm, f, steps)
@@ -51,9 +57,9 @@ _isequal(a::NetworkParameters, b::NetworkParameters) = all(_isequal(a[k], b[k]) 
 Take `steps` optimizer steps on `f`, exactly as `solve!` does it but without its stopping
 criteria, and return the parameters.
 """
-function run!(ps, algorithm, f, steps; α=η)
+function run!(ps, algorithm, f, steps; α = η)
     Random.seed!(1234)
-    optimizer = Optimizer(ps, f; algorithm=algorithm, linesearch=Static(α))
+    optimizer = Optimizer(ps, f; algorithm = algorithm, linesearch = Static(α))
     state = OptimizerState(algorithm, ps)
     for _ in 1:steps
         increase_iteration_number!(state)
@@ -74,7 +80,7 @@ end
 @testset "the decayed Adam recursion, in closed form" begin
     steps = 20
     x₀ = [1.0, -2.0, 0.5]
-    x = run!(copy(x₀), AdamWithEuclideanDecay(; λ=λ), objective, steps)
+    x = run!(copy(x₀), AdamWithEuclideanDecay(; λ = λ), objective, steps)
 
     decayed = (1 - η * λ)^steps
     @test x ≈ decayed * x₀ - sign.(C) / λ * (1 - decayed) rtol = 1e-6
@@ -89,7 +95,7 @@ end
 @testset "a vanishing gradient leaves the decay by itself" begin
     steps = 15
     x₀ = [1.0, -2.0, 0.5]
-    x = run!(copy(x₀), AdamWithEuclideanDecay(; λ=λ), x -> 0 * sum(x), steps)
+    x = run!(copy(x₀), AdamWithEuclideanDecay(; λ = λ), x -> 0 * sum(x), steps)
 
     @test x ≈ (1 - η * λ)^steps * x₀ rtol = 1e-6
 end
@@ -99,8 +105,8 @@ end
 # `objective(x) + λ/2‖x‖²` does — then `m₁` would be `C + λx₀` here.
 @testset "the weight decay stays out of the moments" begin
     x = [1.0, -2.0, 0.5]
-    algorithm = AdamWithEuclideanDecay(; λ=λ)
-    optimizer = Optimizer(x, objective; algorithm=algorithm, linesearch=Static(η))
+    algorithm = AdamWithEuclideanDecay(; λ = λ)
+    optimizer = Optimizer(x, objective; algorithm = algorithm, linesearch = Static(η))
     state = AdamState(x)
 
     increase_iteration_number!(state)
@@ -124,7 +130,7 @@ end
 @testset "λ = 0 is Adam" begin
     for (ps, f) in problems()
         adam = run!(deepcopy(ps), Adam(), f, 10)
-        adamw = run!(deepcopy(ps), AdamWithEuclideanDecay(; λ=0.0), f, 10)
+        adamw = run!(deepcopy(ps), AdamWithEuclideanDecay(; λ = 0.0), f, 10)
 
         @test _isequal(adam, adamw)
         @test f(adam) == f(adamw)
@@ -154,9 +160,9 @@ end
         f(Y::StiefelManifold) = norm(vec(Y) - target)
         x₀ = StiefelManifold(T[0.0; sqrt(T(0.5)); sqrt(T(0.5));;])
 
-        adam = run!(deepcopy(x₀), Adam(T), f, 25; α=T(0.1))
+        adam = run!(deepcopy(x₀), Adam(T), f, 25; α = T(0.1))
         adamw = @test_logs (:warn, r"none of the parameters") match_mode = :any run!(
-            deepcopy(x₀), AdamWithEuclideanDecay(T; λ=T(λ)), f, 25; α=T(0.1))
+            deepcopy(x₀), AdamWithEuclideanDecay(T; λ = T(λ)), f, 25; α = T(0.1))
 
         @test adamw isa StiefelManifold{T}
         @test adamw.A == adam.A                     # bit for bit, not just to a tolerance
@@ -181,9 +187,9 @@ end
         Random.seed!(1234)
         x₀ = rand(GrassmannManifold{T}, 3, 1)
 
-        adam = run!(deepcopy(x₀), Adam(T), f, 25; α=T(0.1))
+        adam = run!(deepcopy(x₀), Adam(T), f, 25; α = T(0.1))
         adamw = @test_logs (:warn, r"none of the parameters") match_mode = :any run!(
-            deepcopy(x₀), AdamWithEuclideanDecay(T; λ=T(λ)), f, 25; α=T(0.1))
+            deepcopy(x₀), AdamWithEuclideanDecay(T; λ = T(λ)), f, 25; α = T(0.1))
 
         @test adamw isa GrassmannManifold{T}
         @test adamw.A == adam.A                     # bit for bit, as on the Stiefel manifold
@@ -240,11 +246,12 @@ end
 # either. `warn_iterations = 0` because `Adam` on a fixed step is expected to use its budget.
 @testset "solve! runs the decayed method end to end" begin
     Random.seed!(1234)
-    ps = NetworkParameters((w=rand(StiefelManifold, 5, 3), b=10 * randn(3)))
-    algorithm = AdamWithEuclideanDecay(; λ=λ)
+    ps = NetworkParameters((w = rand(StiefelManifold, 5, 3), b = 10 * randn(3)))
+    algorithm = AdamWithEuclideanDecay(; λ = λ)
 
-    optimizer = Optimizer(ps, named_tuple_error; algorithm=algorithm, linesearch=Static(η),
-        max_iterations=200, warn_iterations=0)
+    optimizer = Optimizer(
+        ps, named_tuple_error; algorithm = algorithm, linesearch = Static(η),
+        max_iterations = 200, warn_iterations = 0)
     state = OptimizerState(algorithm, ps)
     f₀, b₀ = named_tuple_error(ps), norm(ps.b)
     solve!(ps, state, optimizer)
@@ -261,10 +268,10 @@ end
 # runs sit at different `b`, and the gradient with respect to `w` sees that.
 @testset "a NamedTuple is decayed entry by entry" begin
     Random.seed!(1234)
-    ps₀ = NetworkParameters((w=rand(StiefelManifold, 5, 3), b=randn(3)))
+    ps₀ = NetworkParameters((w = rand(StiefelManifold, 5, 3), b = randn(3)))
 
     adam = run!(deepcopy(ps₀), Adam(), named_tuple_error, 1)
-    adamw = run!(deepcopy(ps₀), AdamWithEuclideanDecay(; λ=λ), named_tuple_error, 1)
+    adamw = run!(deepcopy(ps₀), AdamWithEuclideanDecay(; λ = λ), named_tuple_error, 1)
 
     @test adamw.w.A == adam.w.A                     # the manifold entry is untouched ...
     @test adamw.b ≈ adam.b - η * λ * ps₀.b          # ... and the ordinary one is decayed
@@ -277,10 +284,10 @@ end
 # of settling.
 @testset "the decay shrinks the ordinary entries of a NamedTuple" begin
     Random.seed!(1234)
-    ps₀ = NetworkParameters((w=rand(StiefelManifold, 5, 3), b=10 * randn(3)))
+    ps₀ = NetworkParameters((w = rand(StiefelManifold, 5, 3), b = 10 * randn(3)))
 
     adam = run!(deepcopy(ps₀), Adam(), named_tuple_error, 200)
-    adamw = run!(deepcopy(ps₀), AdamWithEuclideanDecay(; λ=λ), named_tuple_error, 200)
+    adamw = run!(deepcopy(ps₀), AdamWithEuclideanDecay(; λ = λ), named_tuple_error, 200)
 
     @test norm(adamw.b) < norm(adam.b)
     @test norm(adamw.b) < norm(ps₀.b)
@@ -292,7 +299,7 @@ end
 @testset "the element type is the one that was asked for" begin
     @test AdamWithEuclideanDecay(Float32) isa AdamWithEuclideanDecay{Float32}
     @test AdamWithEuclideanDecay() isa AdamWithEuclideanDecay{Float64}
-    @test AdamWithEuclideanDecay(Float32; λ=0.5).λ === 0.5f0
+    @test AdamWithEuclideanDecay(Float32; λ = 0.5).λ === 0.5f0
     # the method only produces a direction; the learning rate is the line search's `α`
     @test !hasproperty(AdamWithEuclideanDecay(), :η)
 end
@@ -307,22 +314,23 @@ end
 
     @test !_is_decayable(Y)
     @test _is_decayable(randn(3))
-    @test _is_decayable(NetworkParameters((w=Y, b=randn(3))))
+    @test _is_decayable(NetworkParameters((w = Y, b = randn(3))))
 
     @test_logs (:warn, r"none of the parameters") match_mode = :any Optimizer(
-        deepcopy(Y), f; algorithm=AdamWithEuclideanDecay(; λ=λ), linesearch=Static(η))
+        deepcopy(Y), f; algorithm = AdamWithEuclideanDecay(; λ = λ), linesearch = Static(η))
     # `λ = 0` asks for no decay in the first place, and a `NamedTuple` with an ordinary entry
     # gets one, so neither has anything to warn about
-    @test_logs Optimizer(deepcopy(Y), f; algorithm=AdamWithEuclideanDecay(; λ=0.0), linesearch=Static(η))
-    @test_logs Optimizer(NetworkParameters((w=deepcopy(Y), b=randn(3))), named_tuple_error;
-        algorithm=AdamWithEuclideanDecay(; λ=λ), linesearch=Static(η))
+    @test_logs Optimizer(deepcopy(Y), f; algorithm = AdamWithEuclideanDecay(; λ = 0.0), linesearch = Static(η))
+    @test_logs Optimizer(
+        NetworkParameters((w = deepcopy(Y), b = randn(3))), named_tuple_error;
+        algorithm = AdamWithEuclideanDecay(; λ = λ), linesearch = Static(η))
 end
 
 # `AdamW` is the name a user coming from `torch.optim` will reach for, and on a manifold it would
 # be `Adam` with extra steps. It is defined so that reaching for it says so.
 @testset "the name `AdamW` is reserved and explains itself" begin
     @test_throws ErrorException AdamW()
-    @test_throws ErrorException AdamW(Float32; λ=0.5)
+    @test_throws ErrorException AdamW(Float32; λ = 0.5)
 
     message = try
         AdamW()

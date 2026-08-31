@@ -26,7 +26,9 @@ See [`NewtonOptimizerState`](@ref) for a `struct` that was derived from `Optimiz
 """
 abstract type OptimizerState{T} <: AbstractSolverState end
 
-OptimizerState(alg::OptimizerMethod, args...; kwargs...) = error("OptimizerState not implemented for $(typeof(alg))")
+function OptimizerState(alg::OptimizerMethod, args...; kwargs...)
+    error("OptimizerState not implemented for $(typeof(alg))")
+end
 
 """
     isaOptimizerState(alg)
@@ -37,12 +39,12 @@ function isaOptimizerState(alg)
     x = rand(3)
 
     applicable(gradient, alg) &&
-    applicable(hessian, alg) &&
-    applicable(linesearch, alg) &&
-    applicable(problem, alg) &&
-    applicable(initialize!, alg, x) &&
-    applicable(update!, alg, x) &&
-    applicable(solver_step!, x, alg)
+        applicable(hessian, alg) &&
+        applicable(linesearch, alg) &&
+        applicable(problem, alg) &&
+        applicable(initialize!, alg, x) &&
+        applicable(update!, alg, x) &&
+        applicable(solver_step!, x, alg)
 end
 
 iteration_number(state::OptimizerState) = state.iterations

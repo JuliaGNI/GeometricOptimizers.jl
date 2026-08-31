@@ -29,16 +29,17 @@ function return_correct_value(obj1::OptimizerProblem, obj2::OptimizerProblem, x:
 end
 
 # test value-related functionality (clear Objective object after every run)
-for (x_temp, y_temp) ∈ zip((x, 2x), (f, F(2x)))
+for (x_temp, y_temp) in zip((x, 2x), (f, F(2x)))
     return_correct_value(obj1, obj2, x_temp, y_temp)
 end
 
-function return_correct_gradients(obj1::OptimizerProblem, obj2::OptimizerProblem, x::AbstractVector, z::AbstractVector)
+function return_correct_gradients(obj1::OptimizerProblem, obj2::OptimizerProblem,
+        x::AbstractVector, z::AbstractVector)
     @test gradient(obj2, x) == z
     @test_throws "There is no gradient stored in this `OptimizerProblem`!" gradient(obj1, x)
 end
 
 # test gradient-related functionality (clear Objective object after every run)
-for (x_temp, z_temp) ∈ zip((x, 2x), (g, 4x))
+for (x_temp, z_temp) in zip((x, 2x), (g, 4x))
     return_correct_gradients(obj1, obj2, x_temp, z_temp)
 end

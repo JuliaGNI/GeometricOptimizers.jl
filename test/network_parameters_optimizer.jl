@@ -12,8 +12,10 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: OptimizerCache, OptimizerSolution,
-    Cayley, Geodesic, check, increase_iteration_number!, solver_step!,
-    _zero, _copy, _similar, _fill!, _manifold_αmax, l2norm, solution_scale
+                           Cayley, Geodesic, check, increase_iteration_number!,
+                           solver_step!,
+                           _zero, _copy, _similar, _fill!, _manifold_αmax, l2norm,
+                           solution_scale
 using NeuralNetworkParameters: NetworkParameters, params, flatten, unflatten, flatlength
 using SimpleSolvers: Static
 using Test
@@ -32,25 +34,32 @@ const B₀ = randn(N, m)
 other. Nested, which is the point — and heterogeneous, so that the container is not merely a wrapper
 around something uniform.
 """
-initial_parameters(::Type{T}) where {T} = NetworkParameters((
-    attention = (Y = rand(Random.Xoshiro(1234), StiefelManifold{T}, N, n),),
-    dense     = (W = randn(Random.Xoshiro(5678), T, n, m), b = zeros(T, N)),
-))
+function initial_parameters(::Type{T}) where {T}
+    NetworkParameters((
+        attention = (Y = rand(Random.Xoshiro(1234), StiefelManifold{T}, N, n),),
+        dense = (W = randn(Random.Xoshiro(5678), T, n, m), b = zeros(T, N))
+    ))
+end
 
 # The same parameters as one flat `NamedTuple`, in the order the container flattens them. This is the
 # reference the container is compared against: the two describe the same problem and the same flat
 # vector, so an optimizer must take the same steps on both.
-flat_parameters(::Type{T}) where {T} = let ps = initial_parameters(T)
-    NetworkParameters((Y = ps.attention.Y, W = ps.dense.W, b = ps.dense.b))
+function flat_parameters(::Type{T}) where {T}
+    let ps = initial_parameters(T)
+        NetworkParameters((Y = ps.attention.Y, W = ps.dense.W, b = ps.dense.b))
+    end
 end
 
 _loss(Y, W, b, B) = sum(abs2, Y * W .+ b .- B) / 2
 
 # Both shapes are a `NetworkParameters`, so the branch is on the *keys* and not on the type: that is
 # the whole point of the comparison below, which needs one objective that both can be handed.
-test_problem(::Type{T}) where {T} = let B = T.(B₀)
-    ps -> haskey(params(ps), :attention) ? _loss(ps.attention.Y, ps.dense.W, ps.dense.b, B) :
-          _loss(ps.Y, ps.W, ps.b, B)
+function test_problem(::Type{T}) where {T}
+    let B = T.(B₀)
+        ps -> haskey(params(ps), :attention) ?
+              _loss(ps.attention.Y, ps.dense.W, ps.dense.b, B) :
+              _loss(ps.Y, ps.W, ps.b, B)
+    end
 end
 
 """
@@ -66,7 +75,7 @@ function optimize(ps, F, algorithm; steps = 20, η = 0.1, retraction = Cayley())
     T = typeof(F(ps))
     Random.seed!(1234)
     optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(T(η)),
-                          retraction = retraction)
+        retraction = retraction)
     state = OptimizerState(algorithm, ps)
 
     checks = T[]
@@ -105,6 +114,7 @@ end
 # means anything — so these failed before the walk changed.
 @testset "the out-of-place primitives return a container of the same shape" begin
     for T in (Float64, Float32), f in (_zero, _copy, _similar)
+
         ps = initial_parameters(T)
         out = f(ps)
         @test out isa NetworkParameters
@@ -168,6 +178,7 @@ end
 # same problem written two ways, so the optimizer has to take the same steps on both.
 @testset "a nested container reaches the same iterates as the equivalent flat one" begin
     for T in (Float64, Float32), algorithm in algorithms(T)
+
         F = test_problem(T)
         psₙ, _, lossesₙ = optimize(initial_parameters(T), F, algorithm)
         psₐ, _, lossesₐ = optimize(flat_parameters(T), F, algorithm)
@@ -183,12 +194,13 @@ end
 # and `solution_scale` on the parameters and `_difference!` on the gradient blocks.
 @testset "solve! runs on a container" begin
     for T in (Float64, Float32), algorithm in algorithms(T)
+
         Random.seed!(1234)
         F = test_problem(T)
         ps = initial_parameters(T)
         f₀ = F(ps)
         optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(T(0.1)),
-                              max_iterations = 100)
+            max_iterations = 100)
         result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
         @test result.f < f₀
@@ -210,7 +222,8 @@ end
     f₀ = F(ps)
 
     # `Q` is sized by the flattening of the *direction*, i.e. of the horizontal lift
-    @test size(OptimizerState(algorithm, ps).Q) == (flatlength(_zero(ps)), flatlength(_zero(ps)))
+    @test size(OptimizerState(algorithm, ps).Q) ==
+          (flatlength(_zero(ps)), flatlength(_zero(ps)))
 
     optimizer = Optimizer(ps, F; algorithm = algorithm, max_iterations = 50)
     result = solve!(ps, OptimizerState(algorithm, ps), optimizer)

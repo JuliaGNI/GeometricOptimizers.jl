@@ -3,7 +3,7 @@
 
 The `GrassmannManifold` is based on the [`StiefelManifold`](@ref).
 """
-mutable struct GrassmannManifold{T,AT<:AbstractMatrix{T}} <: Manifold{T}
+mutable struct GrassmannManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
     A::AT
 end
 

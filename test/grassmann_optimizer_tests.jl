@@ -35,10 +35,10 @@ Random.seed!(1234)
 # rather than drawn, so a failure is reproducible without the RNG.
 const M₃ = Symmetric([3.0 0.5 0.0; 0.5 2.0 0.1; 0.0 0.1 1.0])
 const M₅ = Symmetric([5.0 0.4 0.1 0.0 0.2
-    0.4 4.0 0.3 0.1 0.0
-    0.1 0.3 3.0 0.2 0.1
-    0.0 0.1 0.2 2.0 0.3
-    0.2 0.0 0.1 0.3 1.0])
+                      0.4 4.0 0.3 0.1 0.0
+                      0.1 0.3 3.0 0.2 0.1
+                      0.0 0.1 0.2 2.0 0.3
+                      0.2 0.0 0.1 0.3 1.0])
 
 # The problem matrix for `Gr(n, N)`, in element type `T`. The fallthrough is an error rather than
 # `M₅`, so that a wrong `N` says so here instead of surfacing as a `DimensionMismatch` several frames
@@ -49,9 +49,10 @@ function problem_matrix(::Type{T}, N::Integer) where {T}
     error("no problem matrix for N = $N; this file covers Gr(1, 3) and Gr(2, 5)")
 end
 
-objective(::Type{T}, N::Integer) where {T} = let M = problem_matrix(T, N)
-    Y -> -tr(Y' * M * Y)
-end
+objective(::Type{T}, N::Integer) where {T} =
+    let M = problem_matrix(T, N)
+        Y -> -tr(Y' * M * Y)
+    end
 
 """
     dominant_projector(T, N, n)
@@ -64,18 +65,20 @@ the equivalence class `Y ∼ YO`, so it is what a Grassmann solve can be asserte
 `Y` itself would be asserting on the arbitrary basis the solve happened to end in.
 """
 function dominant_projector(::Type{T}, N::Integer, n::Integer) where {T}
-    V = eigen(Matrix(problem_matrix(T, N))).vectors[:, (N-n+1):N]
+    V = eigen(Matrix(problem_matrix(T, N))).vectors[:, (N - n + 1):N]
     V * V'
 end
 
-function optimize(::Type{T}, N::Integer, n::Integer, algorithm; retraction=Geodesic(), linesearch=nothing, seed::Integer=1234) where {T}
+function optimize(::Type{T}, N::Integer, n::Integer, algorithm; retraction = Geodesic(),
+        linesearch = nothing, seed::Integer = 1234) where {T}
     Random.seed!(seed)
     f = objective(T, N)
     x = rand(GrassmannManifold{T}, N, n)
     x₀ = copy(x)
     optimizer = isnothing(linesearch) ?
-                Optimizer(x, f; algorithm=algorithm, retraction=retraction) :
-                Optimizer(x, f; algorithm=algorithm, retraction=retraction, linesearch=linesearch)
+                Optimizer(x, f; algorithm = algorithm, retraction = retraction) :
+                Optimizer(
+        x, f; algorithm = algorithm, retraction = retraction, linesearch = linesearch)
     solve!(x, OptimizerState(algorithm, x), optimizer)
     x, x₀, f
 end
@@ -98,9 +101,10 @@ subspace_tolerance(::Type{T}) where {T} = 100 * sqrt(eps(T))
 const METHODS = (GradientMethod(), MomentumMethod(0.1), Adam(Float64), BFGS(), DFP())
 
 @testset "a bare GrassmannManifold can be optimized" begin
-    for (N, n) in ((3, 1), (5, 2)), retraction in (Geodesic(), Cayley()), algorithm in METHODS
-        x, x₀, f = optimize(Float64, N, n, algorithm; retraction=retraction,
-            linesearch=linesearch_for(algorithm))
+    for (N, n) in ((3, 1), (5, 2)), retraction in (Geodesic(), Cayley()),
+        algorithm in METHODS
+        x, x₀, f = optimize(Float64, N, n, algorithm; retraction = retraction,
+            linesearch = linesearch_for(algorithm))
 
         @test x isa GrassmannManifold{Float64}                              # the type is preserved
         @test check(x) < manifold_tolerance(Float64)                        # and so is the manifold
@@ -114,13 +118,15 @@ end
 # have caught it, because nothing here could run at all.
 @testset "…in Float32 as well as Float64" begin
     for (N, n) in ((3, 1), (5, 2)), retraction in (Geodesic(), Cayley())
+
         for algorithm in (GradientMethod(), MomentumMethod(0.1f0), Adam(Float32), BFGS(), DFP())
-            x, x₀, f = optimize(Float32, N, n, algorithm; retraction=retraction,
-                linesearch=linesearch_for(Float32, algorithm))
+            x, x₀, f = optimize(Float32, N, n, algorithm; retraction = retraction,
+                linesearch = linesearch_for(Float32, algorithm))
 
             @test x isa GrassmannManifold{Float32}
             @test check(x) < manifold_tolerance(Float32)
-            @test norm(x * x' - dominant_projector(Float32, N, n)) < subspace_tolerance(Float32)
+            @test norm(x * x' - dominant_projector(Float32, N, n)) <
+                  subspace_tolerance(Float32)
             @test f(x) < f(x₀)
         end
     end
@@ -134,17 +140,19 @@ end
 @testset "a NamedTuple holding a GrassmannManifold" begin
     for algorithm in METHODS
         Random.seed!(7)
-        ps = NetworkParameters((Y=rand(GrassmannManifold{Float64}, 5, 2), W=randn(2, 2)))
+        ps = NetworkParameters((
+            Y = rand(GrassmannManifold{Float64}, 5, 2), W = randn(2, 2)))
         f = p -> -tr(p.Y' * M₅ * p.Y) + sum(abs2, p.W .- 1.0)
         f₀ = f(ps)
         ls = linesearch_for(algorithm)
-        optimizer = isnothing(ls) ? Optimizer(ps, f; algorithm=algorithm) :
-                    Optimizer(ps, f; algorithm=algorithm, linesearch=ls)
+        optimizer = isnothing(ls) ? Optimizer(ps, f; algorithm = algorithm) :
+                    Optimizer(ps, f; algorithm = algorithm, linesearch = ls)
         solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
         @test ps.Y isa GrassmannManifold{Float64}
         @test check(ps.Y) < manifold_tolerance(Float64)
-        @test norm(ps.Y * ps.Y' - dominant_projector(Float64, 5, 2)) < subspace_tolerance(Float64)
+        @test norm(ps.Y * ps.Y' - dominant_projector(Float64, 5, 2)) <
+              subspace_tolerance(Float64)
         @test norm(ps.W .- 1.0) < subspace_tolerance(Float64)   # the Euclidean block converged too
         @test f(ps) < f₀
     end
@@ -158,10 +166,11 @@ end
 @testset "a NamedTuple holding both kinds of manifold" begin
     for retraction in (Geodesic(), Cayley())
         Random.seed!(3)
-        ps = NetworkParameters((Y=rand(GrassmannManifold{Float64}, 5, 2), S=rand(StiefelManifold{Float64}, 5, 1)))
+        ps = NetworkParameters((Y = rand(GrassmannManifold{Float64}, 5, 2),
+            S = rand(StiefelManifold{Float64}, 5, 1)))
         f = p -> -tr(p.Y' * M₅ * p.Y) - tr(p.S' * M₅ * p.S)
         f₀ = f(ps)
-        optimizer = Optimizer(ps, f; algorithm=BFGS(), retraction=retraction)
+        optimizer = Optimizer(ps, f; algorithm = BFGS(), retraction = retraction)
         solve!(ps, OptimizerState(BFGS(), ps), optimizer)
 
         @test ps.Y isa GrassmannManifold{Float64}       # each block keeps its own manifold type

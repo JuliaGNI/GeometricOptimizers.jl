@@ -107,7 +107,8 @@
 # the next three cells' figures were nonsense that did not reproduce.
 
 using GeometricOptimizers
-using GeometricOptimizers: _dot, _zero, _copy, _similar, l2norm, solution_scale, _manifold_αmax
+using GeometricOptimizers: _dot, _zero, _copy, _similar, l2norm, solution_scale,
+                           _manifold_αmax
 using NeuralNetworkParameters
 using NeuralNetworkParameters: mapparameters, parameterlayout
 
@@ -117,7 +118,9 @@ const T = Float32
 # arrays in it, and a 4×4 keeps the run time next to nothing beside the compilation.
 _leaf() = randn(T, 4, 4)
 
-flat_set(k::Integer) = NamedTuple{Tuple(Symbol("p", i) for i in 1:k)}(Tuple(_leaf() for _ in 1:k))
+function flat_set(k::Integer)
+    NamedTuple{Tuple(Symbol("p", i) for i in 1:k)}(Tuple(_leaf() for _ in 1:k))
+end
 
 # Distinct keys per block, deliberately: sixteen branches that are sixteen distinct `NamedTuple` types
 # is the shape a network has, where sixteen of one type would be compiled once and flatten the sweep.
@@ -128,12 +131,14 @@ flat_set(k::Integer) = NamedTuple{Tuple(Symbol("p", i) for i in 1:k)}(Tuple(_lea
 # 0.2.2 reads 14.28 s here against the 13.91 s recorded then, and `OptimizerCache(Adam)` 85.70 s against
 # 87.56 s. Named because it is a change to what the numbers are *of*, which is the class of thing this
 # whole file is about.
-_block(b::Integer, k::Integer) =
+function _block(b::Integer, k::Integer)
     NamedTuple{Tuple(Symbol("L", b, "p", i) for i in 1:k)}(Tuple(_leaf() for _ in 1:k))
+end
 
-nested_set(nblocks::Integer, nleaves::Integer) =
+function nested_set(nblocks::Integer, nleaves::Integer)
     NamedTuple{Tuple(Symbol("L", b) for b in 1:nblocks)}(
         Tuple(_block(b, nleaves) for b in 1:nblocks))
+end
 
 # `time_ns()` and not `@elapsed`: the point is the very first call, and `@elapsed` in a loop would
 # report the second.
@@ -277,14 +282,16 @@ end
 # away there say so. The container is what makes nesting a solution at all.
 const CELLS = (("flat", false), ("flat", true), ("nested", false), ("nested", true))
 
-_bare(name) = name == "flat" ? flat_set(FLAT_ENTRIES) : nested_set(NESTED_BLOCKS, NESTED_LEAVES)
+function _bare(name)
+    name == "flat" ? flat_set(FLAT_ENTRIES) : nested_set(NESTED_BLOCKS, NESTED_LEAVES)
+end
 
 _shape(name, wrapped) = wrapped ? NetworkParameters(_bare(name)) : _bare(name)
 
 function _label(name, wrapped)
     shape = name == "flat" ? string("FLAT, ", FLAT_ENTRIES, " entries") :
             string("NESTED, ", NESTED_BLOCKS, " × ", NESTED_LEAVES, " = ",
-                   NESTED_BLOCKS * NESTED_LEAVES, " leaves")
+        NESTED_BLOCKS * NESTED_LEAVES, " leaves")
     string(shape, wrapped ? ", in a NetworkParameters" : ", bare NamedTuple")
 end
 
@@ -313,7 +320,7 @@ end
 function run_one(mode, name, wrapped)
     ps = _shape(name, wrapped)
     label = _label(name, wrapped)
-    mode == "caches"   ? cache_construction(label, ps) :
+    mode == "caches" ? cache_construction(label, ps) :
     mode == "gradient" ? gradient_construction(label, ps) : table(label, ps)
 end
 

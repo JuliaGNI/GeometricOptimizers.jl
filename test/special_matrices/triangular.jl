@@ -14,14 +14,16 @@ Random.seed!(1234)
 @testset "the two triangles and the diagonal partition the matrix" begin
     # `A - L - U` leaves exactly the diagonal, so summing it is the trace. This is the property that
     # says the two constructors take the *strict* triangles and agree on where the split is.
-    for T ∈ (Float32, Float64), n ∈ 2:5
+    for T in (Float32, Float64), n in 2:5
+
         A = rand(T, n, n)
         @test tr(A) ≈ sum(A - LowerTriangular(A) - UpperTriangular(A))
     end
 end
 
 @testset "multiplication agrees with the dense matrix" begin
-    for T ∈ (Float32, Float64), n ∈ 2:5
+    for T in (Float32, Float64), n in 2:5
+
         Aₗ = rand(LowerTriangular{T}, n)
         Aᵤ = rand(UpperTriangular{T}, n)
         B = rand(T, n, n)
@@ -37,12 +39,13 @@ end
 end
 
 @testset "addition and scalar multiplication are linear" begin
-    for T ∈ (Float32, Float64), n ∈ 2:5
+    for T in (Float32, Float64), n in 2:5
+
         A = rand(T, n, n)
         B = rand(T, n, n)
         α = rand(T)
 
-        for MT ∈ (LowerTriangular, UpperTriangular)
+        for MT in (LowerTriangular, UpperTriangular)
             @test MT(A + B) ≈ MT(A) + MT(B)
             @test MT(α * A) ≈ α * MT(A)
             @test typeof(MT(A) + MT(B)) <: MT{T}
@@ -52,7 +55,7 @@ end
 end
 
 @testset "random generation" begin
-    for T ∈ (Float32, Float64), n ∈ 2:5, MT ∈ (LowerTriangular, UpperTriangular)
+    for T in (Float32, Float64), n in 2:5, MT in (LowerTriangular, UpperTriangular)
         A = rand(MT{T}, n)
         @test typeof(A) <: MT{T}
         @test eltype(A) == T

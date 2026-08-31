@@ -22,14 +22,16 @@ const N, n = 5, 2
 
 # One representative of every type that defines a scalar `mul!`. `triangular.jl` defines a
 # single method for `AbstractTriangular`, which is why both of its subtypes appear.
-instances() = (
-    rand(SkewSymMatrix, n),
-    rand(SymmetricMatrix, n),
-    rand(GeometricOptimizers.LowerTriangular, n),
-    rand(GeometricOptimizers.UpperTriangular, n),
-    rand(StiefelLieAlgHorMatrix, N, n),
-    rand(GrassmannLieAlgHorMatrix, N, n),
-)
+function instances()
+    (
+        rand(SkewSymMatrix, n),
+        rand(SymmetricMatrix, n),
+        rand(GeometricOptimizers.LowerTriangular, n),
+        rand(GeometricOptimizers.UpperTriangular, n),
+        rand(StiefelLieAlgHorMatrix, N, n),
+        rand(GrassmannLieAlgHorMatrix, N, n)
+    )
+end
 
 name(A) = string(typeof(A).name.name)
 

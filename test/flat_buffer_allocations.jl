@@ -24,9 +24,11 @@
 # floor at 1.11 the file would have failed outright, which is how it was found.
 
 using GeometricOptimizers
-using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update!, solver_step!,
-    increase_iteration_number!, gradient, inverse_hessian, cache, direction, rhs,
-    OptimizerCache, _flat_δ!, _flat_γ!, _flat_mul!, outer!
+using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update!,
+                           solver_step!,
+                           increase_iteration_number!, gradient, inverse_hessian, cache,
+                           direction, rhs,
+                           OptimizerCache, _flat_δ!, _flat_γ!, _flat_mul!, outer!
 using NeuralNetworkParameters: NetworkParameters, flatten
 using SimpleSolvers: Static
 using LinearAlgebra: dot
@@ -38,15 +40,20 @@ const N, n, m = 6, 3, 4
 Random.seed!(1234)
 const B = randn(N, m)
 
-lift(seed) = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Random.Xoshiro(seed), n, n)),
-                                   rand(Random.Xoshiro(seed + 1), N - n, n), N, n)
-
-flat_set(seed) = (A = lift(seed), W = rand(Random.Xoshiro(seed + 2), 3, 4),
-                  b = rand(Random.Xoshiro(seed + 3), 5))
-
-container(seed) = let p = flat_set(seed)
-    NetworkParameters((L1 = (A = p.A,), L2 = (W = p.W, b = p.b)))
+function lift(seed)
+    StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Random.Xoshiro(seed), n, n)),
+        rand(Random.Xoshiro(seed + 1), N - n, n), N, n)
 end
+
+function flat_set(seed)
+    (A = lift(seed), W = rand(Random.Xoshiro(seed + 2), 3, 4),
+        b = rand(Random.Xoshiro(seed + 3), 5))
+end
+
+container(seed) =
+    let p = flat_set(seed)
+        NetworkParameters((L1 = (A = p.A,), L2 = (W = p.W, b = p.b)))
+    end
 
 # The same leaves, wrapped without regrouping. `container` and `flat_container` are therefore the two
 # *groupings* of one leaf list, which is what the equalities below are about.
@@ -68,18 +75,25 @@ flat_container(seed) = NetworkParameters(flat_set(seed))
 # it holds exactly these leaves.
 const WIDE_ENTRIES = 369
 
-wide_set(seed) = NamedTuple{ntuple(i -> Symbol(:p, i), WIDE_ENTRIES)}(
-    ntuple(i -> randn(Random.Xoshiro(seed * 1000 + i), Float32, 4, 4), WIDE_ENTRIES))
+function wide_set(seed)
+    NamedTuple{ntuple(i -> Symbol(:p, i), WIDE_ENTRIES)}(
+        ntuple(i -> randn(Random.Xoshiro(seed * 1000 + i), Float32, 4, 4), WIDE_ENTRIES))
+end
 
-nested_bare(seed) = (L1 = (A = lift(seed),), L2 = (W = rand(Random.Xoshiro(seed + 2), 3, 4),
-                                                  b = rand(Random.Xoshiro(seed + 3), 5)))
+function nested_bare(seed)
+    (L1 = (A = lift(seed),),
+        L2 = (W = rand(Random.Xoshiro(seed + 2), 3, 4),
+            b = rand(Random.Xoshiro(seed + 3), 5)))
+end
 
 # A set whose leaves are *not* all one element type, which is what makes the accumulator's type a
 # question. `NetworkParameters` derives its `T` by promotion, so this is a `NetworkParameters{Float64}`
 # whose first leaf in `flatten` order is `Float32`.
-mixed_container(seed) = NetworkParameters((
-    L1 = (W = rand(Random.Xoshiro(seed), Float32, 3, 4),),
-    L2 = (b = rand(Random.Xoshiro(seed + 1), Float64, 5),)))
+function mixed_container(seed)
+    NetworkParameters((
+        L1 = (W = rand(Random.Xoshiro(seed), Float32, 3, 4),),
+        L2 = (b = rand(Random.Xoshiro(seed + 1), Float64, 5),)))
+end
 
 # what `_dot` and `l2norm` used to be written as, kept here as the thing to agree with
 _reference_dot(a, b) = dot(flatten(Float64, a)[1], flatten(Float64, b)[1])
@@ -98,7 +112,8 @@ _reference_norm(a) = l2norm(flatten(Float64, a)[1])
 # is the thing this testset is about.
 @testset "_dot is the flattened inner product" begin
     @test _dot(lift(1), lift(11)) ≈ _reference_dot(lift(1), lift(11))
-    @test _dot(flat_container(1), flat_container(11)) ≈ _reference_dot(flat_set(1), flat_set(11))
+    @test _dot(flat_container(1), flat_container(11)) ≈
+          _reference_dot(flat_set(1), flat_set(11))
     @test _dot(container(1), container(11)) ≈ _reference_dot(container(1), container(11))
     # and the two shapes describing the same numbers agree with each other exactly.
     #
@@ -138,7 +153,7 @@ end
 # thing that separates the two.
 @testset "_dot of two lifts is intrinsic at every element-type pairing" begin
     a32 = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Random.Xoshiro(8), Float32, n, n)),
-                                 rand(Random.Xoshiro(9), Float32, N - n, n), N, n)
+        rand(Random.Xoshiro(9), Float32, N - n, n), N, n)
     b64 = lift(11)
     @test _dot(a32, b64) ≈ _reference_dot(a32, b64)
     # and not the ambient product, which is where it went before -- named as a number rather than as a
@@ -154,7 +169,8 @@ end
         @test l2norm(a) ≈ _reference_norm(a)
     end
     # the same leaves flat and nested, which is the statement that grouping changes nothing
-    flat = NetworkParameters((Y = rand(Random.Xoshiro(7), StiefelManifold{Float64}, N, n), W = rand(3, 4)))
+    flat = NetworkParameters((
+        Y = rand(Random.Xoshiro(7), StiefelManifold{Float64}, N, n), W = rand(3, 4)))
     nested = NetworkParameters((L1 = (Y = flat.Y,), L2 = (W = flat.W,)))
     @test solution_scale(flat) ≈ solution_scale(nested)
 end
@@ -167,15 +183,15 @@ _measured_dot(a, b) = (_dot(a, b); @allocated _dot(a, b))
 
 @testset "_dot allocates nothing" begin
     for (name, a, b) in (("lift", lift(1), lift(11)),
-                         ("flat container", flat_container(1), flat_container(11)),
-                         ("container", container(1), container(11)),
-                         # 369 leaves in one branch, which is where a boxed `op` would show
-                         ("369-wide container", NetworkParameters(wide_set(1)),
-                          NetworkParameters(wide_set(2))),
-                         # the method that reaches `parameter_eltype` rather than taking its element
-                         # type off the signature -- see the comment on it in
-                         # `src/optimizers/named_tuple_wrapper.jl`
-                         ("mixed-precision container", mixed_container(1), mixed_container(11)))
+        ("flat container", flat_container(1), flat_container(11)),
+        ("container", container(1), container(11)),
+    # 369 leaves in one branch, which is where a boxed `op` would show
+        ("369-wide container", NetworkParameters(wide_set(1)),
+        NetworkParameters(wide_set(2))),
+    # the method that reaches `parameter_eltype` rather than taking its element
+    # type off the signature -- see the comment on it in
+    # `src/optimizers/named_tuple_wrapper.jl`
+        ("mixed-precision container", mixed_container(1), mixed_container(11)))
         @test _measured_dot(a, b) == 0
     end
 end
@@ -189,7 +205,7 @@ _measured_norm(a) = (l2norm(a); @allocated l2norm(a))
 
 @testset "l2norm allocates nothing, for every shape" begin
     for a in (lift(1), flat_container(1), container(1),
-              NetworkParameters((a = rand(4), b = rand(5))), NetworkParameters(wide_set(1)))
+        NetworkParameters((a = rand(4), b = rand(5))), NetworkParameters(wide_set(1)))
         @test _measured_norm(a) == 0
     end
 end
@@ -205,7 +221,7 @@ _measured_αmax(a, b) = (_manifold_αmax(a, b, 1.0f0); @allocated _manifold_αma
         @test _measured_scale(a) == 0
     end
     for (a, b) in ((flat_container(1), flat_container(11)), (container(1), container(11)),
-                   (NetworkParameters(wide_set(1)), NetworkParameters(wide_set(2))))
+        (NetworkParameters(wide_set(1)), NetworkParameters(wide_set(2))))
         @test _measured_αmax(a, b) == 0
     end
 end
@@ -213,16 +229,23 @@ end
 # The three shapes of solution this package accepts, each with an objective. Used by the testset below
 # and named here so that "for every shape" is a list rather than a claim. A whole set of parameters is
 # one of the three whether it is flat or nested, because both arrive as a `NetworkParameters`.
-manifold_problem() = (rand(Random.Xoshiro(4), StiefelManifold{Float64}, N, n),
-                      Y -> sum(abs2, Y * ones(n, m) .- B) / 2)
+function manifold_problem()
+    (rand(Random.Xoshiro(4), StiefelManifold{Float64}, N, n),
+        Y -> sum(abs2, Y * ones(n, m) .- B) / 2)
+end
 
-flat_problem() = (NetworkParameters((Y = rand(Random.Xoshiro(1), StiefelManifold{Float64}, N, n),
-                                     W = randn(Random.Xoshiro(2), n, m), b = zeros(N))),
-                  ps -> sum(abs2, ps.Y * ps.W .+ ps.b .- B) / 2)
+function flat_problem()
+    (
+        NetworkParameters((Y = rand(Random.Xoshiro(1), StiefelManifold{Float64}, N, n),
+            W = randn(Random.Xoshiro(2), n, m), b = zeros(N))),
+        ps -> sum(abs2, ps.Y * ps.W .+ ps.b .- B) / 2)
+end
 
-container_problem() = let (ps, _) = flat_problem()
-    (NetworkParameters((L1 = (Y = ps.Y,), L2 = (W = ps.W, b = ps.b))),
-     ps -> sum(abs2, ps.L1.Y * ps.L2.W .+ ps.L2.b .- B) / 2)
+function container_problem()
+    let (ps, _) = flat_problem()
+        (NetworkParameters((L1 = (Y = ps.Y,), L2 = (W = ps.W, b = ps.b))),
+            ps -> sum(abs2, ps.L1.Y * ps.L2.W .+ ps.L2.b .- B) / 2)
+    end
 end
 
 vector_problem() = (randn(Random.Xoshiro(3), 12), v -> sum(abs2, v))
@@ -235,17 +258,22 @@ vector_problem() = (randn(Random.Xoshiro(3), 12), v -> sum(abs2, v))
 # figure, taken over a whole `solve!` where the branch does fire, is in the CHANGELOG.
 
 _measured_secant!(c) = (_flat_δ!(c); _flat_γ!(c);
-                        @allocated begin _flat_δ!(c); _flat_γ!(c) end)
+    @allocated begin
+        _flat_δ!(c)
+        _flat_γ!(c)
+    end)
 _measured_outer!(m, a, b) = (outer!(m, a, b); @allocated outer!(m, a, b))
 _measured_quad(γ, Q) = (dot(γ, Q, γ); @allocated dot(γ, Q, γ))
-_measured_mul!(c, A, b, scratch) = (_flat_mul!(c, A, b, scratch);
-                                    @allocated _flat_mul!(c, A, b, scratch))
+function _measured_mul!(c, A, b, scratch)
+    (_flat_mul!(c, A, b, scratch);
+        @allocated _flat_mul!(c, A, b, scratch))
+end
 
 @testset "the flat sites of $(nameof(typeof(algorithm))) allocate nothing" for algorithm in (BFGS(), DFP())
     for (name, x) in (("Vector", vector_problem()[1]),
-                      ("Manifold", manifold_problem()[1]),
-                      ("flat container", flat_problem()[1]),
-                      ("nested container", container_problem()[1]))
+        ("Manifold", manifold_problem()[1]),
+        ("flat container", flat_problem()[1]),
+        ("nested container", container_problem()[1]))
         c = OptimizerCache(algorithm, x)
         state = OptimizerState(algorithm, x)
         Q = inverse_hessian(state)

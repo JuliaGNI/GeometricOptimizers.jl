@@ -46,7 +46,8 @@ using SimpleSolvers
 using SimpleSolvers: Gradient, GradientAutodiff, GradientFunction, alloc_h
 
 @testset "the five methods that went upstream are upstream" begin
-    ps = NetworkParameters((L1 = (W = [3.0 0.0; 0.0 4.0], b = [0.0, 0.0]), L2 = (W = [0.0 0.0], b = [12.0])))
+    ps = NetworkParameters((
+        L1 = (W = [3.0 0.0; 0.0 4.0], b = [0.0, 0.0]), L2 = (W = [0.0 0.0], b = [12.0])))
 
     ss_ext = Base.get_extension(SimpleSolvers, :SimpleSolversNeuralNetworkParametersExt)
     @test ss_ext isa Module
@@ -54,14 +55,15 @@ using SimpleSolvers: Gradient, GradientAutodiff, GradientFunction, alloc_h
     # `NeuralNetworkParameters` itself and not an extension of it: `GeometricBase` is a hard
     # dependency there, which this ecosystem takes anyway.
     @test which(L2norm, Tuple{typeof(ps)}).module === NeuralNetworkParameters
-    for m in (which(GradientAutodiff, Tuple{typeof(l2norm),typeof(ps)}),
-              which(GradientFunction, Tuple{typeof(l2norm),Function,typeof(ps)}),
-              which(alloc_h, Tuple{typeof(ps)}))
+    for m in (which(GradientAutodiff, Tuple{typeof(l2norm), typeof(ps)}),
+        which(GradientFunction, Tuple{typeof(l2norm), Function, typeof(ps)}),
+        which(alloc_h, Tuple{typeof(ps)}))
         @test m.module === ss_ext
     end
 
     # And the sixth, which went to `SimpleSolvers` proper rather than to its extension.
-    @test which(GradientAutodiff, Tuple{typeof(l2norm),Matrix{Float64}}).module === SimpleSolvers
+    @test which(GradientAutodiff, Tuple{typeof(l2norm), Matrix{Float64}}).module ===
+          SimpleSolvers
 
     # The quadrature sum survived the move, and so did this package's leaf methods: `l2norm` of a
     # lift is over the free parameters, which is what the fold upstream calls at every leaf.

@@ -1,5 +1,6 @@
 using GeometricOptimizers
-using GeometricOptimizers: BFGS, DFP, cache, solver_step!, initialize_state!, inverse_hessian,
+using GeometricOptimizers: BFGS, DFP, cache, solver_step!, initialize_state!,
+                           inverse_hessian,
                            increase_iteration_number!, iteration_number, update!
 using LinearAlgebra: norm, dot
 using Test
@@ -15,7 +16,7 @@ using Test
 
 # a genuinely non-separable, non-quadratic objective, so that a wrong `Q` cannot go unnoticed the way
 # it does on a problem an exact line search solves in one step
-rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i+1] - x[i]^2)^2 for i in 1:(length(x)-1))
+rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i + 1] - x[i]^2)^2 for i in 1:(length(x) - 1))
 
 @testset "the secant pair is formed from consecutive iterates" begin
     # Rosenbrock rather than `F`, and only ten iterations, so that the whole window stays in the
@@ -29,7 +30,7 @@ rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i+1] - x[i]^2)^2 for i in 1:(length(
     for algorithm in (BFGS(), DFP())
         x = [-1.2, 1.0]
         state = OptimizerState(algorithm, x)
-        opt = Optimizer(x, rosenbrock; algorithm=algorithm, linesearch=Backtracking())
+        opt = Optimizer(x, rosenbrock; algorithm = algorithm, linesearch = Backtracking())
 
         initialize_state!(state)
         updates = 0
@@ -89,8 +90,9 @@ const ROSENBROCK_MAX_ITERATIONS = 100
     for algorithm in (BFGS(), DFP())
         x = copy(x₀)
         state = OptimizerState(algorithm, x)
-        opt = Optimizer(x, rosenbrock; algorithm=algorithm, linesearch=Backtracking(expand=true),
-            max_iterations=3 * ROSENBROCK_MAX_ITERATIONS, warn_iterations=0)
+        opt = Optimizer(
+            x, rosenbrock; algorithm = algorithm, linesearch = Backtracking(expand = true),
+            max_iterations = 3 * ROSENBROCK_MAX_ITERATIONS, warn_iterations = 0)
 
         solve!(x, state, opt)
 

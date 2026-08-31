@@ -2,7 +2,9 @@
 # the cache and the state, are the same objects. It therefore reuses [`AdamCache`](@ref) and
 # [`AdamState`](@ref) rather than duplicating them, and
 # `OptimizerState(AdamWithEuclideanDecay(), x)` returns an `AdamState`.
-Hessian(::AdamWithEuclideanDecay, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
+function Hessian(::AdamWithEuclideanDecay, ::OptimizerProblem, ::OptimizerSolution{T}) where {T}
+    NoHessian{T}()
+end
 OptimizerState(::AdamWithEuclideanDecay, x...) = AdamState(x...)
 
 @doc raw"""
@@ -105,7 +107,8 @@ function _weight_decay!(δ::NetworkParameters{T}, x::NetworkParameters{T}, λ::T
     δ
 end
 
-function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}, method::AdamWithEuclideanDecay{T}, x::OptimizerSolution{T}) where {T}
+function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
+        method::AdamWithEuclideanDecay{T}, x::OptimizerSolution{T}) where {T}
     update!(cache, state, gradient, method.β₁, method.β₂, method.δ, state.iterations, x)
     _weight_decay!(direction(cache), x, method.λ)
 

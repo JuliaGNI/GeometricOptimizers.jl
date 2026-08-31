@@ -33,7 +33,7 @@ links = InterLinks(
         "https://juliagni.github.io/GeometricMachineLearning.jl/latest",
         "https://juliagni.github.io/GeometricMachineLearning.jl/latest/objects.inv",
         joinpath(@__DIR__, "inventories", "GeometricMachineLearning.toml")
-    ),
+    )
 )
 
 # The chapters that moved here from `GeometricMachineLearning` state their definitions, theorems and
@@ -58,11 +58,13 @@ function theorem(statement::String, name::String; label::Union{Nothing, String} 
             \t $(statement)""")
     else
         theorem_label = isnothing(label) ? "" : raw"\label{th:" * label * raw"}"
-        Markdown.parse(raw"\begin{thrm}[" * name * "]" * statement * theorem_label * raw"\end{thrm}")
+        Markdown.parse(raw"\begin{thrm}[" * name * "]" * statement * theorem_label *
+                       raw"\end{thrm}")
     end
 end
 
-function theorem(statement::String; name::Union{Nothing, String} = nothing, label::Union{Nothing, String} = nothing)
+function theorem(statement::String; name::Union{Nothing, String} = nothing,
+        label::Union{Nothing, String} = nothing)
     theorem(statement, name; label = label)
 end
 
@@ -123,21 +125,21 @@ const indentation = output_type == :html ? "\t" : ""
 bib = CitationBibliography(joinpath(@__DIR__, "src", "GeometricOptimizers.bib"))
 Bibliography.sort_bibliography!(bib.entries, :nyt)  # name-year-title
 
-DocMeta.setdocmeta!(GeometricOptimizers, :DocTestSetup, :(using GeometricOptimizers); recursive=true)
+DocMeta.setdocmeta!(GeometricOptimizers, :DocTestSetup, :(using GeometricOptimizers); recursive = true)
 
 makedocs(;
-    plugins=[bib, links],
-    modules=[GeometricOptimizers],
-    authors="Michael Kraus",
-    repo="https://github.com/JuliaGNI/GeometricOptimizers.jl/blob/{commit}{path}#{line}",
-    sitename="GeometricOptimizers.jl",
-    format=Documenter.HTML(;
-        prettyurls=get(ENV, "CI", "false") == "true",
-        canonical="https://JuliaGNI.github.io/GeometricOptimizers.jl",
-        edit_link="main",
+    plugins = [bib, links],
+    modules = [GeometricOptimizers],
+    authors = "Michael Kraus",
+    repo = "https://github.com/JuliaGNI/GeometricOptimizers.jl/blob/{commit}{path}#{line}",
+    sitename = "GeometricOptimizers.jl",
+    format = Documenter.HTML(;
+        prettyurls = get(ENV, "CI", "false") == "true",
+        canonical = "https://JuliaGNI.github.io/GeometricOptimizers.jl",
+        edit_link = "main",
         # The moved chapters include each of their figures twice, once per theme; without this
         # stylesheet both variants render, stacked. See `docs/src/assets/extra_styles.css`.
-        assets=["assets/extra_styles.css"],
+        assets = ["assets/extra_styles.css"],
         # `api.md` is one catch-all `@autodocs` over the whole package, so it is large by design.
         # `size_threshold_warn` is left at its default: the warning it prints for that one page is
         # the reminder that the docstrings are still not distributed over the chapters that explain
@@ -149,9 +151,9 @@ makedocs(;
         # actually bounds it is continuing the migration that moved the manifold, matrix,
         # global-section and retraction docstrings onto the chapters that explain them. Until that
         # is done this number will need raising again, and the warning above says so on every build.
-        size_threshold=450 * 2^10,
+        size_threshold = 450 * 2^10
     ),
-    pages=[
+    pages = [
         "Home" => "index.md",
         # The `Manifolds`, `Special Matrices` and `Optimizers` chapters came over from
         # `GeometricMachineLearning` with the types they describe; see GeometricMachineLearning#239.
@@ -162,30 +164,30 @@ makedocs(;
             "General Theory on Manifolds" => "manifolds/manifolds.md",
             "Differential Equations and the EAU theorem" => "manifolds/existence_and_uniqueness_theorem.md",
             "Riemannian Manifolds" => "manifolds/riemannian_manifolds.md",
-            "Homogeneous Spaces" => "manifolds/homogeneous_spaces.md",
+            "Homogeneous Spaces" => "manifolds/homogeneous_spaces.md"
         ],
         "Special Matrices" => [
             "Symmetric, Skew-Symmetric and Triangular Matrices" => "special_matrices.md",
-            "Global Tangent Spaces" => "global_tangent_spaces.md",
+            "Global Tangent Spaces" => "global_tangent_spaces.md"
         ],
         "Optimizers" => [
             "Optimization on Homogeneous Spaces" => "manifold_optimizers.md",
             "Retractions" => "retractions.md",
             "Parallel Transport" => "parallel_transport.md",
-            "Optimizer Methods" => "optimizer_methods.md",
+            "Optimizer Methods" => "optimizer_methods.md"
         ],
         "Linesearch" => [
             "Linesearch" => "linesearch.md",
             "Linesearches on Manifolds" => "linesearch_on_manifolds.md",
-            "Weight Decay on Manifolds" => "weight_decay.md",
+            "Weight Decay on Manifolds" => "weight_decay.md"
         ],
         "References" => "references.md",
-        "API" => "api.md",
-    ],
+        "API" => "api.md"
+    ]
 )
 
 deploydocs(;
-    repo="github.com/JuliaGNI/GeometricOptimizers.jl",
-    devurl="latest",
-    devbranch="main",
+    repo = "github.com/JuliaGNI/GeometricOptimizers.jl",
+    devurl = "latest",
+    devbranch = "main"
 )

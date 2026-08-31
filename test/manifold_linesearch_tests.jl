@@ -3,13 +3,16 @@ using GeometricOptimizers: Cayley, Geodesic, StiefelManifold, check, iteration_n
                            status, DecayingStatic, step_size, increase_iteration_number!,
                            solver_step!, update!
 using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew
-using GeometricOptimizers: linesearch_problem, retraction_differential, retraction, initialize!,
+using GeometricOptimizers: linesearch_problem, retraction_differential, retraction,
+                           initialize!,
                            cache, gradient, hessian, problem, StiefelProjection
 using GeometricOptimizers: step_αmax, _manifold_αmax, linesearch_parameters, _caller_αmax,
                            step_ceiling, DEFAULT_STEP_CEILING, linesearch_rejected,
                            OptimizerCache, GradientMethod, direction, StiefelLieAlgHorMatrix
-using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe, l2norm
-using SimpleSolvers: LinesearchStatus, LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT,
+using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic,
+                     StrongWolfe, l2norm
+using SimpleSolvers: LinesearchStatus, LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED,
+                     LINESEARCH_NO_DESCENT,
                      LINESEARCH_DECREASED
 using LinearAlgebra: norm
 using Test
@@ -69,16 +72,17 @@ const SLOPE_TOLERANCE = 1e-7
 The relative error of `φ'(α)` against a central difference of `φ(α)`, both taken from the
 `LinesearchProblem` the optimizer actually builds, at each `α`.
 """
-function slope_errors(ps, F, retraction, αs; h=1e-6)
+function slope_errors(ps, F, retraction, αs; h = 1e-6)
     Random.seed!(7)
-    opt = Optimizer(ps, F; algorithm=BFGS(), retraction=retraction, linesearch=Backtracking(Float64))
+    opt = Optimizer(ps, F; algorithm = BFGS(), retraction = retraction,
+        linesearch = Backtracking(Float64))
     state = OptimizerState(BFGS(), ps)
     c = cache(opt)
     initialize!(c, ps)
     update!(c, state, gradient(opt), hessian(opt), ps)
 
     ls = linesearch_problem(problem(opt), gradient(opt), c, retraction)
-    params = (x=ps, state=state)
+    params = (x = ps, state = state)
 
     map(αs) do α
         φ′ = ls.D(α, params)
@@ -94,7 +98,7 @@ end
     Y = rand(StiefelManifold, 6, 3)
     # a `NamedTuple` mixing a manifold with an ordinary array, so that the pass-through for a
     # Euclidean block is covered too -- its retraction is addition, so `D(α) = B` there
-    mixed = NetworkParameters((w=rand(StiefelManifold, 6, 3), b=randn(4)))
+    mixed = NetworkParameters((w = rand(StiefelManifold, 6, 3), b = randn(4)))
 
     for retraction in (Geodesic(), Cayley())
         for e in slope_errors(Y, Z -> sum(abs2, Z .- 0.3) + sum(sin.(Z)), retraction, αs)
@@ -127,6 +131,7 @@ struct UncoveredRetraction <: GeometricOptimizers.AbstractRetraction end
         frame(retr, α) = Matrix(retraction(retr, α * B))
 
         for retr in (Geodesic(), Cayley()), α in (0.25, 0.5, 1.0, 2.0)
+
             h = 1e-6
             difference = (frame(retr, α + h) * E - frame(retr, α - h) * E) / (2h)
             velocity = frame(retr, α) * Matrix(retraction_differential(retr, B, α)) * E
@@ -148,23 +153,27 @@ end
     # every one of these threw `Not implemented for StiefelManifold{...}` from
     # `SimpleSolvers.compute_new_iterate!` before. All four searching methods this package exports are
     # covered, not just the two the rest of the file uses.
-    searching = (Backtracking(Float64), Backtracking(Float64; expand=true), Bisection(Float64),
+    searching = (
+        Backtracking(Float64), Backtracking(Float64; expand = true), Bisection(Float64),
         Quadratic(Float64), BierlaireQuadratic(Float64))
     # All four exponential algorithms are put through a real solve here, not just through
     # `geodesic` in isolation: they have to agree on where the optimizer ends up, not merely on the
     # value of one retraction. `TaylorSeries` is the one left out, and deliberately — it is not a
     # retraction at a large lift and this asserts convergence.
-    retractions = (Geodesic(ScaledSquaring()), Geodesic(NativePade()), Geodesic(AugmentedPade()),
+    retractions = (
+        Geodesic(ScaledSquaring()), Geodesic(NativePade()), Geodesic(AugmentedPade()),
         Geodesic(ProjectedSkew()), Cayley())
     for linesearch in searching, retraction in retractions
+
         x = x₀()
-        opt = Optimizer(x, f; algorithm=GradientMethod(), linesearch=linesearch, retraction=retraction)
+        opt = Optimizer(x, f; algorithm = GradientMethod(),
+            linesearch = linesearch, retraction = retraction)
 
         solve!(x, OptimizerState(GradientMethod(), x), opt)
 
         @test x isa StiefelManifold{Float64}       # the type survives ...
         @test check(x) < MANIFOLD_TOLERANCE        # ... and so does the manifold
-        @test isapprox(x, MINIMIZER; atol=1e-7)
+        @test isapprox(x, MINIMIZER; atol = 1e-7)
     end
 end
 
@@ -174,9 +183,11 @@ end
     results = map((Static(0.1), Backtracking(Float64), Bisection(Float64))) do linesearch
         x = x₀()
         state = OptimizerState(GradientMethod(), x)
-        opt = Optimizer(x, f; algorithm=GradientMethod(), linesearch=linesearch, retraction=Geodesic())
+        opt = Optimizer(x, f; algorithm = GradientMethod(),
+            linesearch = linesearch, retraction = Geodesic())
         result = solve!(x, state, opt)
-        (its=iteration_number(state), g=status(result).rg, g_converged=status(result).g_converged)
+        (its = iteration_number(state), g = status(result).rg,
+            g_converged = status(result).g_converged)
     end
 
     static, backtracking, bisection = results
@@ -207,9 +218,11 @@ end
 
     for linesearch in (Backtracking(Float64), Bisection(Float64))
         Random.seed!(1234)
-        ps = NetworkParameters((w₁=rand(StiefelManifold, 10, n), w₂=rand(StiefelManifold, 10, n)))
+        ps = NetworkParameters((
+            w₁ = rand(StiefelManifold, 10, n), w₂ = rand(StiefelManifold, 10, n)))
         state = OptimizerState(BFGS(), ps)
-        opt = Optimizer(ps, err; algorithm=BFGS(), linesearch=linesearch, retraction=Cayley())
+        opt = Optimizer(
+            ps, err; algorithm = BFGS(), linesearch = linesearch, retraction = Cayley())
 
         result = solve!(ps, state, opt)
 
@@ -236,34 +249,36 @@ end
 # issue; see the CHANGELOG.
 const TARGET₂ = [0.0, 1.5, 0.0]
 const MINIMIZER₂ = StiefelManifold([0.0; 1.0; 0.0;;])
-two_spheres(ps::NetworkParameters) = l2norm(vec(ps.w₁), TARGET) + l2norm(vec(ps.w₂), TARGET₂)
+function two_spheres(ps::NetworkParameters)
+    l2norm(vec(ps.w₁), TARGET) + l2norm(vec(ps.w₂), TARGET₂)
+end
 
 function ps₀()
     Random.seed!(1234)
-    NetworkParameters((w₁=StiefelManifold([0.0; sqrt(0.5); sqrt(0.5);;]),
-        w₂=StiefelManifold([sqrt(0.5); 0.0; sqrt(0.5);;])))
+    NetworkParameters((w₁ = StiefelManifold([0.0; sqrt(0.5); sqrt(0.5);;]),
+        w₂ = StiefelManifold([sqrt(0.5); 0.0; sqrt(0.5);;])))
 end
 
-const NT_LINESEARCHES = (Static(0.1), Backtracking(Float64), Backtracking(Float64; expand=true),
-    Bisection(Float64), Quadratic(Float64), BierlaireQuadratic(Float64), StrongWolfe(Float64; c₂=0.1))
+const NT_LINESEARCHES = (
+    Static(0.1), Backtracking(Float64), Backtracking(Float64; expand = true),
+    Bisection(Float64), Quadratic(Float64), BierlaireQuadratic(Float64), StrongWolfe(Float64; c₂ = 0.1))
 
 @testset "the first-order methods solve on a manifold NamedTuple, on every line search" begin
     for method in (GradientMethod(), MomentumMethod(0.1)),
         linesearch in NT_LINESEARCHES,
         retraction in (Geodesic(), Cayley())
-
         ps = ps₀()
         state = OptimizerState(method, ps)
-        opt = Optimizer(ps, two_spheres; algorithm=method, linesearch=linesearch,
-            retraction=retraction, max_iterations=1000)
+        opt = Optimizer(ps, two_spheres; algorithm = method, linesearch = linesearch,
+            retraction = retraction, max_iterations = 1000)
 
         solve!(ps, state, opt)
 
         # 64 is the worst of the 28, and it is a `Static` one: every searching line search here is
         # under 25
         @test iteration_number(state) < 100                     # terminates on a criterion ...
-        @test isapprox(ps.w₁, MINIMIZER; atol=1e-6)             # ... at the minimiser ...
-        @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-6)
+        @test isapprox(ps.w₁, MINIMIZER; atol = 1e-6)             # ... at the minimiser ...
+        @test isapprox(ps.w₂, MINIMIZER₂; atol = 1e-6)
         for Y in values(ps)
             @test check(Y) < MANIFOLD_TOLERANCE                 # ... and still on the manifold
         end
@@ -290,16 +305,18 @@ end
     # change can touch; every *searching* one is at 1.8e-8 or better, against the 6.8e-6 that
     # `BierlaireQuadratic` used to sit at while exhausting the cap.
     for linesearch in NT_LINESEARCHES, retraction in (Geodesic(), Cayley())
+
         ps = ps₀()
         state = OptimizerState(Adam(Float64), ps)
-        opt = Optimizer(ps, two_spheres; algorithm=Adam(Float64), linesearch=linesearch,
-            retraction=retraction, max_iterations=1000, warn_iterations=0)
+        opt = Optimizer(
+            ps, two_spheres; algorithm = Adam(Float64), linesearch = linesearch,
+            retraction = retraction, max_iterations = 1000, warn_iterations = 0)
 
         solve!(ps, state, opt)
 
         @test iteration_number(state) < 1000                    # terminates on a criterion ...
-        @test isapprox(ps.w₁, MINIMIZER; atol=1e-6)             # ... 5.0e-7 is the worst of the 14
-        @test isapprox(ps.w₂, MINIMIZER₂; atol=1e-6)
+        @test isapprox(ps.w₁, MINIMIZER; atol = 1e-6)             # ... 5.0e-7 is the worst of the 14
+        @test isapprox(ps.w₂, MINIMIZER₂; atol = 1e-6)
         for Y in values(ps)
             @test check(Y) < MANIFOLD_TOLERANCE
         end
@@ -319,12 +336,14 @@ end
 
         ps = ps₀()
         state = OptimizerState(method, ps)
-        opt = Optimizer(ps, two_spheres; algorithm=method, linesearch=Bisection(Float64),
-            retraction=retraction)
+        opt = Optimizer(
+            ps, two_spheres; algorithm = method, linesearch = Bisection(Float64),
+            retraction = retraction)
         grad = GeometricOptimizers.gradient(opt)
 
         for k in 1:6
-            @test GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, ps) == (k > 1)
+            @test GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, ps) ==
+                  (k > 1)
 
             fresh = GeometricOptimizers.global_rep(GeometricOptimizers.section(state), grad(ps))
             increase_iteration_number!(state)
@@ -340,7 +359,7 @@ end
 end
 
 @testset "DecayingStatic decays the step geometrically" begin
-    ls = DecayingStatic(; η₁=1.0e-2, η₂=1.0e-6, n=1000)
+    ls = DecayingStatic(; η₁ = 1.0e-2, η₂ = 1.0e-6, n = 1000)
 
     @test step_size(ls, 0) ≈ 1.0e-2                 # starts at η₁ ...
     @test step_size(ls, 1000) ≈ 1.0e-6              # ... reaches η₂ at the horizon ...
@@ -348,9 +367,9 @@ end
     @test step_size(ls, 500) ≈ sqrt(1.0e-2 * 1.0e-6)  # geometric, so the midpoint is the geometric mean
 
     @test eltype(DecayingStatic(Float32)) == Float32
-    @test_throws AssertionError DecayingStatic(; η₁=1.0e-6, η₂=1.0e-2)   # η₂ ≤ η₁
-    @test_throws AssertionError DecayingStatic(; η₁=-1.0)
-    @test_throws AssertionError DecayingStatic(; n=0)
+    @test_throws AssertionError DecayingStatic(; η₁ = 1.0e-6, η₂ = 1.0e-2)   # η₂ ≤ η₁
+    @test_throws AssertionError DecayingStatic(; η₁ = -1.0)
+    @test_throws AssertionError DecayingStatic(; n = 0)
 end
 
 @testset "DecayingStatic drives the step of a solve to zero" begin
@@ -359,14 +378,14 @@ end
     # the `Float64`/`Cayley` case that used to run out its 1000 iterations.
     x = x₀()
     state = OptimizerState(Adam(Float64), x)
-    opt = Optimizer(x, f; algorithm=Adam(Float64), retraction=Cayley(),
-        linesearch=DecayingStatic(; η₁=0.1, η₂=1.0e-8, n=400))
+    opt = Optimizer(x, f; algorithm = Adam(Float64), retraction = Cayley(),
+        linesearch = DecayingStatic(; η₁ = 0.1, η₂ = 1.0e-8, n = 400))
 
     result = solve!(x, state, opt)
 
     @test iteration_number(state) < 1000            # terminates on a criterion rather than the cap
     @test status(result).rxₐ < 1e-10                # the step really has gone to zero
-    @test isapprox(x, MINIMIZER; atol=1e-3)
+    @test isapprox(x, MINIMIZER; atol = 1e-3)
 end
 
 @testset "the quasi-Newton methods run on a bare Manifold" begin
@@ -375,10 +394,12 @@ end
     # methods that the `NamedTuple` case had and the bare case did not (`outer!`, `_mul!`, `alloc_h`
     # and `_copyto!` for a section) sat on that boundary; without them `BFGS` on a bare `Manifold`
     # died in `outer!` with `AssertionError: axes(O, 1) == axes(x, 1)`.
-    for algorithm in (BFGS(), DFP()), linesearch in (Backtracking(Float64), Bisection(Float64))
+    for algorithm in (BFGS(), DFP()),
+        linesearch in (Backtracking(Float64), Bisection(Float64))
+
         x = x₀()
         state = OptimizerState(algorithm, x)
-        opt = Optimizer(x, f; algorithm=algorithm, linesearch=linesearch)
+        opt = Optimizer(x, f; algorithm = algorithm, linesearch = linesearch)
 
         result = solve!(x, state, opt)
 
@@ -386,7 +407,7 @@ end
         @test check(x) < MANIFOLD_TOLERANCE
         @test iteration_number(state) < 100          # 2 with `Bisection`, 17 and 26 with `Backtracking`
         @test status(result).rg < 1e-7
-        @test isapprox(x, MINIMIZER; atol=1e-7)
+        @test isapprox(x, MINIMIZER; atol = 1e-7)
     end
 end
 
@@ -423,8 +444,9 @@ end
 
     # two manifold blocks: the *smallest* per-block ceiling, i.e. the largest direction, and not the
     # quadrature combination of the two that `l2norm` over the whole set would give
-    let sol = NetworkParameters((a=rand(StiefelManifold, 6, 3), b=rand(StiefelManifold, 6, 3))),
-        δ = NetworkParameters((a=lift(1.0), b=lift(3.0)))
+    let sol = NetworkParameters((
+            a = rand(StiefelManifold, 6, 3), b = rand(StiefelManifold, 6, 3))),
+        δ = NetworkParameters((a = lift(1.0), b = lift(3.0)))
 
         @test _manifold_αmax(sol, δ, 1.0) ==
               min(step_αmax(1.0, δ.a), step_αmax(1.0, δ.b))
@@ -437,8 +459,8 @@ end
     # mixed: the Euclidean block neither imposes a ceiling nor tightens the manifold block's. This is
     # the direction of the A15 error -- a Euclidean block of large norm used to drag the whole
     # ceiling down with it through the quadrature norm.
-    let sol = NetworkParameters((Y=rand(StiefelManifold, 6, 3), W=zeros(3, 4))),
-        δ = NetworkParameters((Y=lift(1.0), W=fill(1.0e3, 3, 4)))
+    let sol = NetworkParameters((Y = rand(StiefelManifold, 6, 3), W = zeros(3, 4))),
+        δ = NetworkParameters((Y = lift(1.0), W = fill(1.0e3, 3, 4)))
 
         @test _manifold_αmax(sol, δ, 1.0) == step_αmax(1.0, δ.Y)
         @test _manifold_αmax(sol, δ, 1.0) > step_αmax(1.0, δ)
@@ -446,13 +468,16 @@ end
 
     # no manifold block at all: no scale exists, so there is no ceiling. `Inf` and not a number:
     # `SimpleSolvers.linesearch_αmax` reads it as "the caller has no scale of its own".
-    let sol = NetworkParameters((W=zeros(3, 4), b=zeros(3))),
-        δ = NetworkParameters((W=fill(2.0, 3, 4), b=fill(5.0, 3)))
+    let sol = NetworkParameters((W = zeros(3, 4), b = zeros(3))),
+        δ = NetworkParameters((W = fill(2.0, 3, 4), b = fill(5.0, 3)))
+
         @test _manifold_αmax(sol, δ, 1.0) == Inf
     end
 
     # in `T`, as `step_αmax` is
-    let sol = NetworkParameters((W=zeros(Float32, 2, 2),)), δ = NetworkParameters((W=fill(2.0f0, 2, 2),))
+    let sol = NetworkParameters((W = zeros(Float32, 2, 2),)),
+        δ = NetworkParameters((W = fill(2.0f0, 2, 2),))
+
         @test _manifold_αmax(sol, δ, 1.0f0) isa Float32
     end
 end
@@ -475,7 +500,7 @@ end
     let x = x₀()
         algorithm = BFGS()
         state = OptimizerState(algorithm, x)
-        opt = Optimizer(x, f; algorithm=algorithm)
+        opt = Optimizer(x, f; algorithm = algorithm)
         # the same two calls `slope_errors` above makes to get a cache holding a real direction
         initialize!(cache(opt), x)
         update!(cache(opt), state, gradient(opt), hessian(opt), x)
@@ -490,7 +515,7 @@ end
     let ps = ps₀()
         algorithm = BFGS()
         state = OptimizerState(algorithm, ps)
-        opt = Optimizer(ps, two_spheres; algorithm=algorithm)
+        opt = Optimizer(ps, two_spheres; algorithm = algorithm)
         initialize!(cache(opt), ps)
         update!(cache(opt), state, gradient(opt), hessian(opt), ps)
 
@@ -503,7 +528,7 @@ end
     # A set of parameters with *no* manifold block is Euclidean, and telling the two apart is not
     # free: taking the manifold branch here hands the problem a ceiling derived from a rotation it
     # does not have. See the solve below for what that costs.
-    let ps = NetworkParameters((W=[1.0 2.0; 3.0 4.0], b=[5.0, 6.0]))
+    let ps = NetworkParameters((W = [1.0 2.0; 3.0 4.0], b = [5.0, 6.0]))
         algorithm = GradientMethod()
         state = OptimizerState(algorithm, ps)
         c = OptimizerCache(algorithm, ps)
@@ -521,16 +546,19 @@ end
     far_away(ps::NetworkParameters) = sum(abs2, ps.w .- target) / 2
     far_away(x::AbstractVector) = sum(abs2, x .- target) / 2
 
-    iterations(x, ceiling) = let state = OptimizerState(BFGS(), x)
-        solve!(x, state, Optimizer(x, far_away; algorithm=BFGS(), max_iterations=20_000,
-            warn_iterations=0, step_ceiling=ceiling))
-        iteration_number(state)
-    end
+    iterations(x, ceiling) =
+        let state = OptimizerState(BFGS(), x)
+            solve!(x,
+                state,
+                Optimizer(x, far_away; algorithm = BFGS(), max_iterations = 20_000,
+                    warn_iterations = 0, step_ceiling = ceiling))
+            iteration_number(state)
+        end
 
-    @test iterations(NetworkParameters((w=zeros(4),)), DEFAULT_STEP_CEILING) ==
-          iterations(NetworkParameters((w=zeros(4),)), Inf)
+    @test iterations(NetworkParameters((w = zeros(4),)), DEFAULT_STEP_CEILING) ==
+          iterations(NetworkParameters((w = zeros(4),)), Inf)
     # ... and the same problem written as a vector, which never had a ceiling, agrees with both
-    @test iterations(NetworkParameters((w=zeros(4),)), DEFAULT_STEP_CEILING) ==
+    @test iterations(NetworkParameters((w = zeros(4),)), DEFAULT_STEP_CEILING) ==
           iterations(zeros(4), DEFAULT_STEP_CEILING)
 end
 
@@ -560,18 +588,18 @@ end
         @test linesearch_rejected(status, Inf) == linesearch_rejected(status)
     end
 
-    @test _caller_αmax(Float64, (x=1, state=2, αmax=3.0)) == 3.0
-    @test _caller_αmax(Float64, (x=1, state=2)) == Inf
+    @test _caller_αmax(Float64, (x = 1, state = 2, αmax = 3.0)) == 3.0
+    @test _caller_αmax(Float64, (x = 1, state = 2)) == Inf
 end
 
 @testset "the ceiling is a per-Optimizer knob, and Inf switches it off" begin
     x = x₀()
-    @test step_ceiling(Optimizer(x, f; algorithm=BFGS())) == DEFAULT_STEP_CEILING
-    @test step_ceiling(Optimizer(x, f; algorithm=BFGS(), step_ceiling=0.5)) == 0.5
-    @test step_ceiling(Optimizer(x, f; algorithm=BFGS(), step_ceiling=Inf)) == Inf
+    @test step_ceiling(Optimizer(x, f; algorithm = BFGS())) == DEFAULT_STEP_CEILING
+    @test step_ceiling(Optimizer(x, f; algorithm = BFGS(), step_ceiling = 0.5)) == 0.5
+    @test step_ceiling(Optimizer(x, f; algorithm = BFGS(), step_ceiling = Inf)) == Inf
 
     # carried in the element type of the parameters, not in whatever the keyword was written as
-    @test step_ceiling(Optimizer(x, f; algorithm=BFGS(), step_ceiling=1)) isa Float64
+    @test step_ceiling(Optimizer(x, f; algorithm = BFGS(), step_ceiling = 1)) isa Float64
 end
 
 # The regression test for A1b itself. `svd_optim.jl` runs the two polynomial searches on seed `1234`
@@ -579,14 +607,17 @@ end
 # problem that reproduces the mechanism -- a bounded merit on a compact manifold -- rather than the
 # `St(20, 3)²` SVD problem, whose eight-seed sweep is in `scripts/retraction_accuracy.jl`.
 @testset "a bounded merit does not produce an unbounded step" begin
-    for retraction in (Geodesic(), Cayley()), linesearch in (Quadratic(Float64), BierlaireQuadratic(Float64))
+    for retraction in (Geodesic(), Cayley()),
+        linesearch in (Quadratic(Float64), BierlaireQuadratic(Float64))
+
         x = x₀()
         state = OptimizerState(BFGS(), x)
-        opt = Optimizer(x, f; algorithm=BFGS(), linesearch=linesearch, retraction=retraction)
+        opt = Optimizer(
+            x, f; algorithm = BFGS(), linesearch = linesearch, retraction = retraction)
 
         solve!(x, state, opt)
 
         @test check(x) < MANIFOLD_TOLERANCE
-        @test isapprox(x, MINIMIZER; atol=1e-6)
+        @test isapprox(x, MINIMIZER; atol = 1e-6)
     end
 end

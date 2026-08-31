@@ -27,15 +27,19 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: geodesic, cayley, check, 𝔄, lift_factors, Geodesic, Cayley
-using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
+using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew,
+                           TaylorSeries
 using GeometricOptimizers: iteration_number, status
-using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe
+using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic,
+                     StrongWolfe
 using LinearAlgebra
 using Printf
 import Random
 
-const ALGORITHMS = (TaylorSeries(), ScaledSquaring(), NativePade(), AugmentedPade(), ProjectedSkew())
-const ALGORITHM_NAMES = ("TaylorSeries", "ScaledSquaring", "NativePade", "AugmentedPade", "ProjectedSkew")
+const ALGORITHMS = (
+    TaylorSeries(), ScaledSquaring(), NativePade(), AugmentedPade(), ProjectedSkew())
+const ALGORITHM_NAMES = (
+    "TaylorSeries", "ScaledSquaring", "NativePade", "AugmentedPade", "ProjectedSkew")
 
 # The three that have an `𝔄` method, which is what the isolated-`𝔄` timing can call at all:
 # `TaylorSeries` overflows on the lift used there, and `ProjectedSkew` is a `geodesic`-level algorithm
@@ -49,7 +53,7 @@ const 𝔄_ALGORITHMS = (("ScaledSquaring", ScaledSquaring()), ("NativePade", Na
 
 The fastest of `repetitions` runs of `f`, in milliseconds, after one warm-up call.
 """
-function best(f, repetitions::Integer=20)
+function best(f, repetitions::Integer = 20)
     f()
     minimum(1:repetitions) do _
         t₀ = time_ns()
@@ -85,7 +89,7 @@ function sweep(T, N, n)
     [T(s) * rand(StiefelLieAlgHorMatrix{T}, N, n) for s in SCALES]
 end
 
-function exponential_tables(; N::Integer=20, n::Integer=3)
+function exponential_tables(; N::Integer = 20, n::Integer = 3)
     BLAS.set_num_threads(1)
 
     println("== check(geodesic(B, algorithm)), St($N, $n), Float64 ==")
@@ -177,7 +181,8 @@ function exponential_tables(; N::Integer=20, n::Integer=3)
     foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES)
     println(lpad("Cayley", 16))
     Random.seed!(7)
-    for (N, n) in ((10, 2), (20, 3), (50, 5), (100, 5), (200, 10), (500, 10), (500, 50), (1000, 20))
+    for (N, n) in ((10, 2), (20, 3), (50, 5), (100, 5), (200, 10), (500, 10), (500, 50), (
+        1000, 20))
         B = rand(StiefelLieAlgHorMatrix{Float64}, N, n)
         @printf("%-7d%-6d", N, n)
         foreach(a -> @printf("%16.3f", best(() -> geodesic(B, a), 50)), ALGORITHMS)
@@ -189,7 +194,8 @@ function exponential_tables(; N::Integer=20, n::Integer=3)
     foreach(name -> print(lpad(name, 16)), ALGORITHM_NAMES)
     println(lpad("Cayley", 16))
     Random.seed!(7)
-    for (N, n) in ((10, 2), (20, 3), (50, 5), (100, 5), (200, 10), (500, 10), (500, 50), (1000, 20))
+    for (N, n) in ((10, 2), (20, 3), (50, 5), (100, 5), (200, 10), (500, 10), (500, 50), (
+        1000, 20))
         B = rand(StiefelLieAlgHorMatrix{Float64}, N, n)
         @printf("%-7d%-6d", N, n)
         foreach(a -> @printf("%16.1f", bytes(() -> geodesic(B, a))), ALGORITHMS)
@@ -201,19 +207,20 @@ end
 # The SVD problem of `test/optimizer_convergence/svd_optim.jl`, which is where every iteration and
 # evaluation count this package quotes comes from.
 
-const A = include(joinpath(@__DIR__, "..", "test", "optimizer_convergence", "svd_matrix.jl"))
+const A = include(joinpath(
+    @__DIR__, "..", "test", "optimizer_convergence", "svd_matrix.jl"))
 
 const COMBINATIONS = (
-    ("BFGS  Backtracking(expand)", BFGS(), () -> Backtracking(Float64; expand=true)),
+    ("BFGS  Backtracking(expand)", BFGS(), () -> Backtracking(Float64; expand = true)),
     ("BFGS  Backtracking        ", BFGS(), () -> Backtracking(Float64)),
     ("BFGS  Bisection           ", BFGS(), () -> Bisection(Float64)),
-    ("BFGS  StrongWolfe(c₂=0.1) ", BFGS(), () -> StrongWolfe(Float64; c₂=0.1)),
+    ("BFGS  StrongWolfe(c₂=0.1) ", BFGS(), () -> StrongWolfe(Float64; c₂ = 0.1)),
     ("BFGS  Quadratic           ", BFGS(), () -> Quadratic(Float64)),
     ("BFGS  BierlaireQuadratic  ", BFGS(), () -> BierlaireQuadratic(Float64)),
-    ("DFP   Backtracking(expand)", DFP(), () -> Backtracking(Float64; expand=true)),
+    ("DFP   Backtracking(expand)", DFP(), () -> Backtracking(Float64; expand = true)),
     ("DFP   Bisection           ", DFP(), () -> Bisection(Float64)),
-    ("DFP   StrongWolfe(c₂=0.1) ", DFP(), () -> StrongWolfe(Float64; c₂=0.1)),
-    ("DFP   Quadratic           ", DFP(), () -> Quadratic(Float64)),
+    ("DFP   StrongWolfe(c₂=0.1) ", DFP(), () -> StrongWolfe(Float64; c₂ = 0.1)),
+    ("DFP   Quadratic           ", DFP(), () -> Quadratic(Float64))
 )
 
 # The cap the "iters over 8 seeds" column of `svd_optim.jl` reports against, and the value that makes
@@ -234,26 +241,27 @@ keyword rather than a constant because the *comparison* between a ceiling and no
 the entry rests on, and both halves of it have to come from this harness rather than from a REPL:
 `svd_tables(step_ceiling = Inf)` is the "before" column of every table this script feeds.
 """
-function solve_once(algorithm, linesearch, retraction, seed::Integer; max_iterations::Integer=SVD_MAX_ITERATIONS,
-    step_ceiling=GeometricOptimizers.DEFAULT_STEP_CEILING)
+function solve_once(algorithm, linesearch, retraction, seed::Integer;
+        max_iterations::Integer = SVD_MAX_ITERATIONS,
+        step_ceiling = GeometricOptimizers.DEFAULT_STEP_CEILING)
     evaluations = Ref(0)
     objective(ps::NetworkParameters) = (evaluations[] += 1; norm(A - ps.w₁ * ps.w₂' * A))
 
     Random.seed!(seed)
-    ps = NetworkParameters((w₁=rand(StiefelManifold, size(A, 1), 3),
-                            w₂=rand(StiefelManifold, size(A, 1), 3)))
+    ps = NetworkParameters((w₁ = rand(StiefelManifold, size(A, 1), 3),
+        w₂ = rand(StiefelManifold, size(A, 1), 3)))
     state = OptimizerState(algorithm, ps)
-    optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
-        linesearch=linesearch, max_iterations=max_iterations, warn_iterations=0,
-        step_ceiling=step_ceiling)
+    optimizer = Optimizer(ps, objective; retraction = retraction, algorithm = algorithm,
+        linesearch = linesearch, max_iterations = max_iterations, warn_iterations = 0,
+        step_ceiling = step_ceiling)
     result = solve!(ps, state, optimizer)
 
     U, _, _ = svd(A)
     err_best = norm(A - U[:, 1:3] * U[:, 1:3]' * A)
 
-    (iterations=iteration_number(state), evaluations=evaluations[],
-        rg=status(result).rg, check=maximum(check, values(ps)),
-        error=abs((objective(ps) - err_best) / err_best))
+    (iterations = iteration_number(state), evaluations = evaluations[],
+        rg = status(result).rg, check = maximum(check, values(ps)),
+        error = abs((objective(ps) - err_best) / err_best))
 end
 
 # The tolerance `test/optimizer_convergence/svd_optim.jl` and `test/manifold_linesearch_tests.jl` both
@@ -274,15 +282,17 @@ strayed. The two say different things — one bad seed and four bad seeds can gi
 """
 on_the_manifold(results) = count(r -> r.check ≤ MANIFOLD_TOLERANCE, results)
 
-function svd_tables(; seeds=1:8, step_ceiling=GeometricOptimizers.DEFAULT_STEP_CEILING)
+function svd_tables(; seeds = 1:8, step_ceiling = GeometricOptimizers.DEFAULT_STEP_CEILING)
     for (name, retraction) in (("Geodesic", Geodesic()), ("Cayley", Cayley()))
         println("\n== $name: seed 1234, then the spread over seeds $(first(seeds))..$(last(seeds)), " *
                 "cap $(SVD_MAX_ITERATIONS), step_ceiling $(step_ceiling) ==")
         println(rpad("combination", 30) * lpad("iters", 8) * lpad("evals", 11) *
                 lpad("rg", 11) * lpad("check", 11) * "   iters over the seeds")
         for (label, algorithm, linesearch) in COMBINATIONS
-            pinned = solve_once(algorithm, linesearch(), retraction, 1234; step_ceiling=step_ceiling)
-            over_seeds = [solve_once(algorithm, linesearch(), retraction, seed; step_ceiling=step_ceiling)
+            pinned = solve_once(
+                algorithm, linesearch(), retraction, 1234; step_ceiling = step_ceiling)
+            over_seeds = [solve_once(algorithm, linesearch(), retraction,
+                              seed; step_ceiling = step_ceiling)
                           for seed in seeds]
             @printf("%-30s%8d%11d%11.2e%11.2e   %d..%d  (%d/%d on the manifold, worst rg %.2e, worst check %.2e)\n",
                 label, pinned.iterations, pinned.evaluations, pinned.rg, pinned.check,

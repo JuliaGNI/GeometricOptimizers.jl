@@ -1,10 +1,12 @@
 using LinearAlgebra
 using NaNMath: log
 using GeometricOptimizers
-using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!, solver_step!
+using GeometricOptimizers: gradient, hessian, linesearch, problem, initialize!, update!,
+                           solver_step!
 using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
 using GeometricOptimizers: iteration_number, increase_iteration_number!, status
-using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection, StrongWolfe, GradientAutodiff, GradientFunction
+using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection,
+                     StrongWolfe, GradientAutodiff, GradientFunction
 using Test
 using Random
 Random.seed!(123)
@@ -29,12 +31,12 @@ test_obj = OptimizerProblem(F, test_x)
 
 for T in (Float64, Float32)
     for method in (Newton(), DFP(), BFGS())
-        for _linesearch in (Static(T(0.1)), Backtracking(T), Backtracking(T; expand=true),
-            BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂=T(0.1)))
+        for _linesearch in (Static(T(0.1)), Backtracking(T), Backtracking(T; expand = true),
+            BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂ = T(0.1)))
             @testset "$(method) & $(_linesearch) & $(T)" begin
                 n = 1
                 x = ones(T, n)
-                opt = Optimizer(x, F; algorithm=method, linesearch=_linesearch)
+                opt = Optimizer(x, F; algorithm = method, linesearch = _linesearch)
                 state = OptimizerState(method, x)
 
                 @test typeof(gradient(opt)) <: GradientAutodiff
@@ -44,7 +46,8 @@ for T in (Float64, Float32)
                 @test F(x) ≈ F(zero(T)) atol = ∛(2000eps(T))
 
                 x = ones(T, n)
-                opt = Optimizer(x, F; (∇F!)=∇F!, algorithm=method, linesearch=_linesearch)
+                opt = Optimizer(
+                    x, F; (∇F!) = ∇F!, algorithm = method, linesearch = _linesearch)
 
                 @test typeof(gradient(opt)) <: GradientFunction
 
@@ -57,7 +60,6 @@ for T in (Float64, Float32)
         end
     end
 end
-
 
 # The first-order methods produce a *direction* of their own and nothing more, so the step
 # length is entirely the `α` of the line search: for them a fixed learning rate is
@@ -83,7 +85,7 @@ end
             @test ls.α == T(DEFAULT_LEARNING_RATE)
 
             x = ones(T, 3)
-            @test linesearch(Optimizer(x, F; algorithm=method)).method isa Static{T}
+            @test linesearch(Optimizer(x, F; algorithm = method)).method isa Static{T}
         end
 
         # Everything else searches. `GradientMethod` and `MomentumMethod` joined this group in 0.2.0,
@@ -100,7 +102,7 @@ end
             @test ls.expand
 
             x = ones(T, 3)
-            opt_ls = linesearch(Optimizer(x, F; algorithm=method)).method
+            opt_ls = linesearch(Optimizer(x, F; algorithm = method)).method
             @test opt_ls isa Backtracking{T}
             @test opt_ls.expand
         end
@@ -133,8 +135,8 @@ Fsmooth(x) = sum(sqrt.(1 .+ x .^ 2))
 
 @testset "the first-order methods solve on every line search" begin
     for T in (Float64, Float32)
-        linesearches = (Static(T(0.1)), Backtracking(T), Backtracking(T; expand=true),
-            BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂=T(0.1)))
+        linesearches = (Static(T(0.1)), Backtracking(T), Backtracking(T; expand = true),
+            BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂ = T(0.1)))
         # `Adam` is in this loop but *not* in `default_linesearch`'s searching group, and the two are
         # not in conflict: a sufficient-decrease search has nothing to work with when the direction is
         # a moving average that is deliberately allowed not to descend, so `AdamFamily` keeps
@@ -143,11 +145,11 @@ Fsmooth(x) = sum(sqrt.(1 .+ x .^ 2))
         for method in (GradientMethod(), MomentumMethod(T(0.1)), Adam(T)),
             _linesearch in linesearches,
             (name, obj, ∇obj!) in (("F", F, ∇F!), ("Fsmooth", Fsmooth, ∇Fsmooth!))
-
             @testset "$(method) & $(_linesearch) & $(T) & $(name)" begin
                 x = ones(T, 3)
                 state = OptimizerState(method, x)
-                opt = Optimizer(x, obj; algorithm=method, linesearch=_linesearch, max_iterations=1000)
+                opt = Optimizer(x, obj; algorithm = method,
+                    linesearch = _linesearch, max_iterations = 1000)
 
                 solve!(x, state, opt)
 
@@ -160,8 +162,9 @@ Fsmooth(x) = sum(sqrt.(1 .+ x .^ 2))
                 # and the same with an explicit gradient rather than the autodiff one
                 x = ones(T, 3)
                 state = OptimizerState(method, x)
-                opt = Optimizer(x, obj; (∇F!)=∇obj!, algorithm=method, linesearch=_linesearch,
-                    max_iterations=1000)
+                opt = Optimizer(
+                    x, obj; (∇F!) = ∇obj!, algorithm = method, linesearch = _linesearch,
+                    max_iterations = 1000)
 
                 solve!(x, state, opt)
 
@@ -186,12 +189,13 @@ end
     ∇f!(g, x) = (g .= 2 .* x .+ 0.4 .* x .^ 3 .+ 0.9 .* cos.(3x))
     α = 0.1
 
-    for _linesearch in (Bisection(), Quadratic(), BierlaireQuadratic(), StrongWolfe(; c₂=0.1),
-        Backtracking(; expand=true), Static(0.1))
+    for _linesearch in (Bisection(), Quadratic(), BierlaireQuadratic(), StrongWolfe(;
+        c₂ = 0.1),
+        Backtracking(; expand = true), Static(0.1))
         x = [1.5, -0.8, 0.4]
         method = MomentumMethod(α)
         state = OptimizerState(method, x)
-        opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=method, linesearch=_linesearch)
+        opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = method, linesearch = _linesearch)
         g = similar(x)
 
         for _ in 1:8
@@ -221,12 +225,12 @@ end
     ∇F(x) = 2 .* x
 
     for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), BFGS(), DFP()),
-        _linesearch in (Backtracking(; expand=true), Bisection(), Quadratic(), BierlaireQuadratic(),
-            StrongWolfe(; c₂=0.1))
+        _linesearch in (Backtracking(; expand = true), Bisection(), Quadratic(), BierlaireQuadratic(),
+            StrongWolfe(; c₂ = 0.1))
 
         x = ones(3)
         state = OptimizerState(method, x)
-        result = solve!(x, state, Optimizer(x, F; algorithm=method, linesearch=_linesearch))
+        result = solve!(x, state, Optimizer(x, F; algorithm = method, linesearch = _linesearch))
 
         # the residual belongs to the point the solve returns, and not to the one before it
         @test status(result).rg ≈ norm(∇F(x))
@@ -251,19 +255,20 @@ end
     ∇f!(g, x) = (g .= 2 .* x .+ 0.4 .* x .^ 3 .+ 0.9 .* cos.(3x))
 
     for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), BFGS(), DFP()),
-        _linesearch in (Static(0.1), Backtracking(; expand=true), Bisection(), Quadratic(),
-            BierlaireQuadratic(), StrongWolfe(; c₂=0.1))
+        _linesearch in (Static(0.1), Backtracking(; expand = true), Bisection(), Quadratic(),
+            BierlaireQuadratic(), StrongWolfe(; c₂ = 0.1))
 
         x = [1.5, -0.8, 0.4]
         state = OptimizerState(method, x)
-        opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=method, linesearch=_linesearch)
+        opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = method, linesearch = _linesearch)
         g = similar(x)
 
         for k in 1:8
             increase_iteration_number!(state)
             # the reuse is available on every iteration but the first, where the scratch array has
             # never been written and the two `GlobalSection`s are independent draws
-            @test GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, x) == (k > 1)
+            @test GeometricOptimizers.latest_gradient_is_current(GeometricOptimizers.cache(opt), state, x) ==
+                  (k > 1)
 
             ∇f!(g, x)
             solver_step!(x, state, opt)
@@ -282,10 +287,10 @@ end
     # costs for `Newton` and for nothing else. It comes back once the solve has converged, where both
     # the gradient and the step have gone to zero and the frames agree again -- which is why what is
     # asserted here is the gradient the direction is built from and not the branch taken to get it.
-    for _linesearch in (Static(0.1), Backtracking(; expand=true), Bisection())
+    for _linesearch in (Static(0.1), Backtracking(; expand = true), Bisection())
         x = [1.5, -0.8, 0.4]
         state = OptimizerState(Newton(), x)
-        opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=Newton(), linesearch=_linesearch)
+        opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = Newton(), linesearch = _linesearch)
         g = similar(x)
 
         # not current on the first iteration, where nothing has written the scratch array yet
@@ -312,7 +317,8 @@ end
 
     x = [1.5, -0.8, 0.4]
     state = OptimizerState(GradientMethod(), x)
-    opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=GradientMethod(), linesearch=Bisection())
+    opt = Optimizer(
+        x, f; (∇F!) = ∇f!, algorithm = GradientMethod(), linesearch = Bisection())
     g = similar(x)
 
     for _ in 1:4
@@ -352,14 +358,15 @@ end
 
         x = [1.5, -0.8, 0.4]
         state = OptimizerState(method, x)
-        opt = Optimizer(x, f; (∇F!)=∇f!, algorithm=method, linesearch=_linesearch)
+        opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = method, linesearch = _linesearch)
 
         for _ in 1:5
             increase_iteration_number!(state)
             x_before = copy(x)
             solver_step!(x, state, opt)
-            _status = GeometricOptimizers.OptimizerStatus(state, GeometricOptimizers.cache(opt),
-                f(x); config=GeometricOptimizers.config(opt))
+            _status = GeometricOptimizers.OptimizerStatus(
+                state, GeometricOptimizers.cache(opt),
+                f(x); config = GeometricOptimizers.config(opt))
 
             @test _status.rgₐ ≈ norm(∇f(x) .- ∇f(x_before))
             # and `rg` is the other end of that same step, so the two rows the status prints are
@@ -375,26 +382,27 @@ end
     for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64))
         x = ones(3)
         result = solve!(x, OptimizerState(method, x),
-            Optimizer(x, F; algorithm=method, linesearch=Static(0.1), max_iterations=1))
+            Optimizer(
+                x, F; algorithm = method, linesearch = Static(0.1), max_iterations = 1))
 
         @test isfinite(status(result).rgₐ)
     end
 end
 
 @testset "Test Nan handling in optimizers" begin
-
     fnan(x::T) where {T} = log(x) + x^2
     Fnan(x::AbstractVector) = sum(fnan.(x))
 
     function test_nan_handling_for_optimizers(F, n::Integer, ::Type{T}; kwargs...) where {T}
         x = 0.2 * ones(T, n)
-        opt = Optimizer(x, F; algorithm=Newton(), linesearch=Static(), verbosity=2, kwargs...)
+        opt = Optimizer(
+            x, F; algorithm = Newton(), linesearch = Static(), verbosity = 2, kwargs...)
         state = OptimizerState(Newton(), x)
         solve!(x, state, opt)
     end
 
-    @test_warn "NaN or Inf detected in optimizer. Reducing length of direction vector." test_nan_handling_for_optimizers(Fnan, 1, Float64; max_iterations=5)
-
+    @test_warn "NaN or Inf detected in optimizer. Reducing length of direction vector." test_nan_handling_for_optimizers(
+        Fnan, 1, Float64; max_iterations = 5)
 end
 
 @testset "store_trace records one entry per iteration" begin
@@ -404,18 +412,21 @@ end
     Fquad(x::AbstractVector) = sum(x .^ 2)
     x = [1.0, 2.0]
     state = OptimizerState(Newton(), x)
-    result = solve!(x, state, Optimizer(x, Fquad; algorithm=Newton(), store_trace=true))
+    result = solve!(x, state, Optimizer(x, Fquad; algorithm = Newton(), store_trace = true))
 
-    @test length(GeometricOptimizers.trace(result)) == GeometricOptimizers.iteration_number(state)
-    @test [entry.iteration for entry in GeometricOptimizers.trace(result)] == 1:GeometricOptimizers.iteration_number(state)
+    @test length(GeometricOptimizers.trace(result)) ==
+          GeometricOptimizers.iteration_number(state)
+    @test [entry.iteration for entry in GeometricOptimizers.trace(result)] ==
+          1:GeometricOptimizers.iteration_number(state)
 
     # the last entry is the status the solve reports, so the trace and the status cannot disagree
     # about where the solve ended up
-    @test last(GeometricOptimizers.trace(result)).rg == GeometricOptimizers.status(result).rg
+    @test last(GeometricOptimizers.trace(result)).rg ==
+          GeometricOptimizers.status(result).rg
     @test last(GeometricOptimizers.trace(result)).f == minimum(result)
 
     # and without the option there is no trace and no error
     y = [1.0, 2.0]
-    result_untraced = solve!(y, OptimizerState(Newton(), y), Optimizer(y, Fquad; algorithm=Newton()))
+    result_untraced = solve!(y, OptimizerState(Newton(), y), Optimizer(y, Fquad; algorithm = Newton()))
     @test isempty(GeometricOptimizers.trace(result_untraced))
 end

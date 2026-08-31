@@ -28,7 +28,7 @@ OptimizerStatus(state, cache, f; config = config)
 
 ```
 """
-struct OptimizerStatus{XT,YT}
+struct OptimizerStatus{XT, YT}
     rxₐ::XT  # absolute change in x
     rxᵣ::XT  # relative change in x
     rfₐ::YT  # absolute change in f
@@ -88,9 +88,12 @@ different ones; see [`convergence_measures`](@ref) for which iterate `rg` belong
 `state.ḡ` is still two iterates behind for the first-order methods, and `Δf̃` above still reads it.
 That is recorded as open issue A10 in `CHANGELOG.md`.
 """
-gradient_difference!(cache::OptimizerCache, state::OptimizerState) = _difference!(cache.Δg, cache.g, state.ḡ)
+function gradient_difference!(cache::OptimizerCache, state::OptimizerState)
+    _difference!(cache.Δg, cache.g, state.ḡ)
+end
 
-function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T,OST<:OptimizerState{T},OCT<:OptimizerCache{T}}
+function OptimizerStatus(state::OST, cache::OCT, f::T;
+        config::Options) where {T, OST <: OptimizerState{T}, OCT <: OptimizerCache{T}}
     rxₐ = l2norm(direction(cache))
     # `solution_scale`, not `l2norm`: on a manifold the norm of the iterate is a constant the geometry
     # supplies, and a measured norm that is not that constant means the iterate has left the manifold
@@ -130,11 +133,13 @@ function OptimizerStatus(state::OST, cache::OCT, f::T; config::Options) where {T
     f_nonfinite = contains_nonfinite(f)
     g_nonfinite = contains_nonfinite(latest_gradient(cache))
 
-    _status = OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false, f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
+    _status = OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false,
+        f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
 
     (x_converged, f_converged, f_converged_strong, g_converged) = convergence_measures(_status, config)
 
-    OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, x_converged, f_converged, g_converged, f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
+    OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, x_converged, f_converged,
+        g_converged, f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
 end
 
 @doc raw"""
@@ -289,7 +294,6 @@ contains_nonfinite(a::Real) = !isfinite(a)
 contains_nonfinite(a) = any(contains_nonfinite, a)
 
 function Base.show(io::IO, s::OptimizerStatus)
-
     @printf io " * Convergence measures\n"
     @printf io "\n"
     @printf io "    |x - x'|               = %.2e\n" x_abschange(s)
@@ -298,7 +302,6 @@ function Base.show(io::IO, s::OptimizerStatus)
     @printf io "    |f(x) - f(x')|/|f(x')| = %.2e\n" f_relchange(s)
     @printf io "    |g(x) - g(x')|         = %.2e\n" g_abschange(s)
     @printf io "    |g(x)|                 = %.2e\n" g_residual(s)
-
 end
 
 """
@@ -316,7 +319,9 @@ see [`meets_stopping_criteria`](@ref).
 ratio, and a diverging solve is where the denominator stops meaning anything. See the warning under
 [`convergence_measures`](@ref) for the two guards on it and for the one case they do not cover.
 """
-isconverged(status::OptimizerStatus) = status.x_converged || status.f_converged || status.g_converged
+function isconverged(status::OptimizerStatus)
+    status.x_converged || status.f_converged || status.g_converged
+end
 
 @doc raw"""
     convergence_measures(status, config)

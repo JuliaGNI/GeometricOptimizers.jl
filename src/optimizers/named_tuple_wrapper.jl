@@ -25,7 +25,8 @@ end
 # type so that a caller with a gradient of its own that knows how to project onto a parameter set
 # reaches it too; `grad(x)` below is what has to have such a method, and for anything
 # [`Optimizer`](@ref) builds that is [`RiemannianGradient`](@ref).
-function (grad::Gradient{T})(g::NetworkParameters{T}, x::NetworkParameters{T}, state::OptimizerState{T}) where {T}
+function (grad::Gradient{T})(g::NetworkParameters{T}, x::NetworkParameters{T},
+        state::OptimizerState{T}) where {T}
     _copyto!(g, global_rep(section(state), grad(x)))
 end
 
@@ -115,7 +116,7 @@ function _copyto!(Λ::NamedTuple, x::NetworkParameters)
     Λ
 end
 
-function Base.copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold}
+function Base.copyto!(Λ::GlobalSection{T, MT}, x::MT) where {T, MT <: Manifold}
     # only the anchor moves; `Λ.λ` is deliberately left alone, since recomputing the lift would move
     # the frame the secant pair of a quasi-Newton method is expressed in
     copyto!(Λ.Y, x)
@@ -123,7 +124,7 @@ function Base.copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold}
 end
 
 # the bare-`Manifold` counterpart of the line above
-_copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
+_copyto!(Λ::GlobalSection{T, MT}, x::MT) where {T, MT <: Manifold} = copyto!(Λ, x)
 
 function _copyto!(x::NetworkParameters, Λ::GlobalSectionNamedTuple)
     mapparameters!(copyto!, x, Λ)
@@ -152,7 +153,6 @@ end
 # a method somebody later has to reason about. The way to triage a reported pair is `typeintersect` on
 # the two signatures and then an attempt to construct a witness; this one has none.
 
-
 # Two *nested* section trees, which is the shape a container's section takes and which
 # `GlobalSectionNamedTuple` cannot describe. Written on the bare `NamedTuple` because neither argument
 # is a container to dispatch on; the flat method above is strictly more specific, so it still wins
@@ -163,7 +163,8 @@ function _copyto!(Λ₁::NamedTuple, Λ₂::NamedTuple)
     Λ₁
 end
 
-function _copyto!(Λ₁::GlobalSection{T,MT}, Λ₂::GlobalSection{T,MT}) where {T,MT<:Manifold{T}}
+function _copyto!(Λ₁::GlobalSection{T, MT}, Λ₂::GlobalSection{
+        T, MT}) where {T, MT <: Manifold{T}}
     _copyto!(Λ₁.Y, Λ₂.Y)
     _copyto!(Λ₁.λ, Λ₂.λ)
     Λ₁
@@ -180,7 +181,7 @@ function _difference!(c::AbstractArray{T}, a::AbstractArray{T}, b::AbstractArray
     c .= a .- b
 end
 
-function _difference!(c::MT, a::MT, b::MT) where {MT<:VectorStorageMatrix}
+function _difference!(c::MT, a::MT, b::MT) where {MT <: VectorStorageMatrix}
     _difference!(parent(c), parent(a), parent(b))
     c
 end
@@ -197,8 +198,9 @@ function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b:
     c
 end
 
-_difference!(c::NetworkParameters{T}, a::NetworkParameters{T}, b::NetworkParameters{T}) where {T} =
+function _difference!(c::NetworkParameters{T}, a::NetworkParameters{T}, b::NetworkParameters{T}) where {T}
     mapparameters!(_difference!, c, a, b)
+end
 
 _rmul!(a::AbstractArray, b) = rmul!(a, b)
 
@@ -287,7 +289,7 @@ _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 # arity two on a 369-leaf set.
 _dot_leaf(acc, x, y) = acc + dot(x, y)
 
-const LiftOrParameters{T} = Union{AbstractLieAlgHorMatrix{T},NetworkParameters{T}}
+const LiftOrParameters{T} = Union{AbstractLieAlgHorMatrix{T}, NetworkParameters{T}}
 
 # Everything `_dot` accepts, with the element type left off, so this reaches the pair whose element
 # types *differ* — that binds no `T` and so misses the alias above.
@@ -305,7 +307,7 @@ const LiftOrParameters{T} = Union{AbstractLieAlgHorMatrix{T},NetworkParameters{T
 # It works because `parameter_eltype` recurses: its `AbstractArray` method asks `freeparameters` first
 # and only falls back to `eltype` for a terminal leaf, so a lift answers with the promotion over its
 # blocks rather than with the union's `Union{}` catch-all. Nothing had to be added upstream for that.
-const DottableSet = Union{AbstractLieAlgHorMatrix,NetworkParameters}
+const DottableSet = Union{AbstractLieAlgHorMatrix, NetworkParameters}
 
 # `zero(T)` and not the strong zero `false`. Upstream's fold is a **left** fold where the recursion this
 # replaced was a right one, so `false` would take its type from the *first* leaf in `flatten` order:
@@ -314,8 +316,9 @@ const DottableSet = Union{AbstractLieAlgHorMatrix,NetworkParameters}
 # is a *promotion* over the leaves rather than a guarantee about each of them, which is exactly what an
 # accumulator wants -- and it is why the old form named `T` on the result, `T(_dot_leaves(a, b))`,
 # converting after pairing. Accumulating in it subsumes that conversion.
-_dot(a::LiftOrParameters{T}, b::LiftOrParameters{T}) where {T} =
+function _dot(a::LiftOrParameters{T}, b::LiftOrParameters{T}) where {T}
     foldstorage(_dot_leaf, zero(T), a, b)
+end
 
 # The widened shape, and the pair whose element types differ, neither of which binds a `T` on the
 # signature. `parameter_eltype` is upstream's promotion over the leaves — the same quantity
@@ -329,12 +332,14 @@ _dot(a::LiftOrParameters{T}, b::LiftOrParameters{T}) where {T} =
 # path. Written as one method it did. Above, `T` comes off the signature and costs nothing; here the
 # shapes that reach it are the nested ones, whose branches are narrow enough for the chain to be
 # cheap. Measured in `test/flat_buffer_allocations.jl`, which pins both paths at zero.
-_dot(a::DottableSet, b::DottableSet) = foldstorage(
-    _dot_leaf, zero(promote_type(parameter_eltype(a), parameter_eltype(b))), a, b)
+function _dot(a::DottableSet, b::DottableSet)
+    foldstorage(
+        _dot_leaf, zero(promote_type(parameter_eltype(a), parameter_eltype(b))), a, b)
+end
 
 _add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
 
-function _add!(a::MT, b::MT) where {MT<:VectorStorageMatrix}
+function _add!(a::MT, b::MT) where {MT <: VectorStorageMatrix}
     _add!(parent(a), parent(b))
     a
 end
@@ -369,7 +374,7 @@ Compute the element-wise square-root of `A`.
 """
 _rac!(B::AbstractArray, A::AbstractArray) = B .= sqrt.(A)
 
-function _rac!(B::MT, A::MT) where {MT<:VectorStorageMatrix}
+function _rac!(B::MT, A::MT) where {MT <: VectorStorageMatrix}
     _rac!(parent(B), parent(A))
     B
 end
@@ -393,7 +398,7 @@ function _div!(C::AbstractArray, A::AbstractArray, B::AbstractArray)
     C .= A ./ B
 end
 
-function _div!(C::MT, A::MT, B::MT) where {MT<:VectorStorageMatrix}
+function _div!(C::MT, A::MT, B::MT) where {MT <: VectorStorageMatrix}
     _div!(parent(C), parent(A), parent(B))
     C
 end
@@ -416,7 +421,7 @@ _div!(a, b) = _div!(a, a, b)
 """
 _square!(B::AbstractArray, A::AbstractArray) = B .= A .^ 2
 
-function _square!(B::MT, A::MT) where {MT<:VectorStorageMatrix}
+function _square!(B::MT, A::MT) where {MT <: VectorStorageMatrix}
     _square!(parent(B), parent(A))
     B
 end
@@ -434,8 +439,9 @@ function _square(a)
     b
 end
 
-
-Base.copyto!(dest::AT, src::GlobalSection{T,AT}) where {T,AT<:AbstractArray{T}} = copyto!(dest, src.Y)
+function Base.copyto!(dest::AT, src::GlobalSection{T, AT}) where {T, AT <: AbstractArray{T}}
+    copyto!(dest, src.Y)
+end
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)
 rgrad(ps::NetworkParameters, dx::NetworkParameters) = mapparameters(rgrad, ps, dx)
 

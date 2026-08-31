@@ -39,7 +39,9 @@ rebuild(A::UpperTriangular, data) = UpperTriangular(data, A.n)
 
 # The blocks arrive in the order `parent` returned them. `A` is itself a `SkewSymMatrix`, so it has
 # already been rebuilt by the time this sees it.
-rebuild(A::StiefelLieAlgHorMatrix, data) = StiefelLieAlgHorMatrix(data[1], data[2], A.N, A.n)
+function rebuild(A::StiefelLieAlgHorMatrix, data)
+    StiefelLieAlgHorMatrix(data[1], data[2], A.N, A.n)
+end
 rebuild(A::GrassmannLieAlgHorMatrix, data) = GrassmannLieAlgHorMatrix(data[1], A.N, A.n)
 
 # What `rebuild` takes from its prototype and a file has no prototype to take it from. `n` does
@@ -59,7 +61,9 @@ parameter_metadata(A::AbstractLieAlgHorMatrix) = (N = A.N, n = A.n)
 # `NamedTuple` in each position. Normalising here is what keeps those files loading, and this is the
 # only place that can do it, since this is where the types are.
 _dense(storage) = storage isa NamedTuple ? storage.A : storage
-_vector(storage, metadata) = storage isa NamedTuple ? (storage.S, storage.n) :
-                             (storage, metadata.n)
+function _vector(storage, metadata)
+    storage isa NamedTuple ? (storage.S, storage.n) :
+    (storage, metadata.n)
+end
 
 # The registrations live in the module's `__init__`; see the bottom of `GeometricOptimizers.jl`.

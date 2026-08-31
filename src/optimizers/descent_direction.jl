@@ -49,7 +49,8 @@ function ensure_descent!(cache::OptimizerCache, method::OptimizerMethod, config:
     r = rhs(cache)
 
     if !(dot(r, δ) > 0)
-        config.verbosity ≥ 2 && @warn "the $(method) direction is not a descent direction, so the Hessian is not positive definite here; using the steepest-descent direction for this step." maxlog = 1
+        config.verbosity ≥ 2 &&
+            @warn "the $(method) direction is not a descent direction, so the Hessian is not positive definite here; using the steepest-descent direction for this step." maxlog = 1
         _copyto!(δ, r)
     end
 
@@ -142,12 +143,13 @@ it resolves silently to the wrong page.)
     ceiling was in force. A Euclidean solve passes no ceiling at all, so `αmax` is `Inf` there, the
     exemption is unreachable and the two forms agree.
 """
-linesearch_rejected(status::LinesearchStatus) =
-    outcome(status) ∈ (LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT)
+linesearch_rejected(status::LinesearchStatus) = outcome(status) ∈ (
+    LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT)
 
-linesearch_rejected(status::LinesearchStatus, αmax) =
+function linesearch_rejected(status::LinesearchStatus, αmax)
     linesearch_rejected(status) &&
-    !(outcome(status) == LINESEARCH_FLOOR && steplength(status) ≥ αmax)
+        !(outcome(status) == LINESEARCH_FLOOR && steplength(status) ≥ αmax)
+end
 
 @doc raw"""
     steepest_descent!(cache)

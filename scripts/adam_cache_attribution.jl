@@ -53,7 +53,8 @@
 # what is being measured is what each step adds.
 
 using GeometricOptimizers
-using GeometricOptimizers: _zero, _copy, _similar, _fill!, AdamCache, OptimizerCache, OptimizerState
+using GeometricOptimizers: _zero, _copy, _similar, _fill!, AdamCache, OptimizerCache,
+                           OptimizerState
 using NeuralNetworkParameters: NetworkParameters, parameterlayout, flatten
 
 const T = Float32
@@ -61,8 +62,12 @@ const T = Float32
 # 16 × 24 = 384 leaves, and distinct keys per block so the sixteen branches are sixteen distinct
 # `NamedTuple` types — which is what a network has, where sixteen of one type would be compiled once.
 _leaf() = randn(T, 4, 4)
-_block(b, k) = NamedTuple{Tuple(Symbol("L", b, "p", i) for i in 1:k)}(Tuple(_leaf() for _ in 1:k))
-nested(o, k) = NamedTuple{Tuple(Symbol("L", b) for b in 1:o)}(Tuple(_block(b, k) for b in 1:o))
+function _block(b, k)
+    NamedTuple{Tuple(Symbol("L", b, "p", i) for i in 1:k)}(Tuple(_leaf() for _ in 1:k))
+end
+function nested(o, k)
+    NamedTuple{Tuple(Symbol("L", b) for b in 1:o)}(Tuple(_block(b, k) for b in 1:o))
+end
 
 # `invokelatest` for the reason `walk_compile_cost.jl` gives at length: a direct call lets the caller's
 # own compilation infer through it before the clock starts. `time_ns()` and not `time()` for the reason
@@ -79,19 +84,19 @@ const NBLOCKS, NLEAVES = 16, 24
 
 ps = NetworkParameters(nested(NBLOCKS, NLEAVES))
 println("NESTED ", NBLOCKS, " × ", NLEAVES, " = ", NBLOCKS * NLEAVES,
-        " leaves in a NetworkParameters, cumulative in one process:")
+    " leaves in a NetworkParameters, cumulative in one process:")
 
-g   = fc("_zero(ps)",                _zero, ps)
-      fc("_fill!(g, NaN)",           (a, b) -> _fill!(a, b), g, T(NaN))
-      fc("_zero(g)",                 _zero, g)
-sim = fc("_similar(g)",              _similar, g)
-xc  = fc("_copy(ps)",                _copy, ps)
-      fc("GlobalSection(_copy(ps))", x -> GlobalSection(_copy(x)), ps)
-      fc("AdamCache(x, g, δ, Δg)",   (a, b, c, d) -> AdamCache(a, b, c, d), xc, g, _zero(g), sim)
-      fc("AdamCache(x, g, δ)",       (a, b, c) -> AdamCache(a, b, c), _copy(ps), _zero(ps), _zero(ps))
-      fc("OptimizerCache(Adam, ps)", x -> OptimizerCache(Adam(T), x), ps)
-      fc("OptimizerState(Adam, ps)", x -> OptimizerState(Adam(T), x), ps)
+g = fc("_zero(ps)", _zero, ps)
+fc("_fill!(g, NaN)", (a, b) -> _fill!(a, b), g, T(NaN))
+fc("_zero(g)", _zero, g)
+sim = fc("_similar(g)", _similar, g)
+xc = fc("_copy(ps)", _copy, ps)
+fc("GlobalSection(_copy(ps))", x -> GlobalSection(_copy(x)), ps)
+fc("AdamCache(x, g, δ, Δg)", (a, b, c, d) -> AdamCache(a, b, c, d), xc, g, _zero(g), sim)
+fc("AdamCache(x, g, δ)", (a, b, c) -> AdamCache(a, b, c), _copy(ps), _zero(ps), _zero(ps))
+fc("OptimizerCache(Adam, ps)", x -> OptimizerCache(Adam(T), x), ps)
+fc("OptimizerState(Adam, ps)", x -> OptimizerState(Adam(T), x), ps)
 # The two the old diagnosis blamed, measured last so their figures are what they add to everything
 # above — which is the fairest possible reading for that diagnosis, and they are still under 2 s.
-      fc("parameterlayout(ps)",      parameterlayout, ps)
-      fc("flatten(ps)",              flatten, ps)
+fc("parameterlayout(ps)", parameterlayout, ps)
+fc("flatten(ps)", flatten, ps)

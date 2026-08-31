@@ -3,7 +3,8 @@ module GeometricOptimizers
 using Base: Callable
 using GeometricBase: AbstractProblem, SolverMethod, AbstractSolver
 using SimpleSolvers: Options
-using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem, LU
+using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem,
+                     LU
 import SimpleSolvers: outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_suctol, f_mindec
 import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
@@ -19,7 +20,8 @@ export RiemannianGradient
 
 # `Static` is exported because it is how a fixed learning rate is specified: the optimizer
 # methods only produce a direction, see `default_linesearch`.
-using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection, StrongWolfe
+using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection,
+                     StrongWolfe
 export Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection, StrongWolfe
 export DecayingStatic
 # `AdamOptimizerWithDecay` is a convenience pairing of `Adam` with `DecayingStatic`, not a method
@@ -27,7 +29,8 @@ export AdamOptimizerWithDecay
 
 export Options
 
-import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache, l2norm
+import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache,
+                      l2norm
 import SimpleSolvers: change_precision, solve_with_status
 using SimpleSolvers: method, LinesearchStatus, LINESEARCH_UNKNOWN
 # The ceiling on the step a line search may return, SimpleSolvers 0.12's half of issue A1b. Read by
@@ -127,14 +130,14 @@ include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")
 
 export Optimizer,
-    OptimizerProblem,
-    OptimizerMethod,
-    OptimizerSolution,
-    OptimizerState, isaOptimizerState,
-    NewtonOptimizerState,
-    HessianAutodiff,
-    HessianBFGS,
-    HessianDFP
+       OptimizerProblem,
+       OptimizerMethod,
+       OptimizerSolution,
+       OptimizerState, isaOptimizerState,
+       NewtonOptimizerState,
+       HessianAutodiff,
+       HessianBFGS,
+       HessianDFP
 
 import SimpleSolvers: solve!, solve
 # `Newton`, `BFGS` and `DFP` are the optimizer methods, and `BFGSState`/`DFPState` are the states

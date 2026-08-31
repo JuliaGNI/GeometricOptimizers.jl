@@ -14,33 +14,38 @@ function assign_columns(Q::AbstractMatrix{T}, N::Integer, n::Integer) where {T}
     backend = KernelAbstractions.get_backend(Q)
     Y = KernelAbstractions.allocate(backend, T, N, n)
     assign_columns! = assign_columns_kernel!(backend)
-    assign_columns!(Y, Q, ndrange=size(Y))
+    assign_columns!(Y, Q, ndrange = size(Y))
     Y
 end
 
 # TODO: check the distribution this is coming from - related to the Haar measure ???
-function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::Integer) where {T,MT<:Manifold{T}}
+function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
+        N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
     A = randn(rng, T, N, n)
     MT{typeof(A)}(assign_columns(typeof(A)(qr!(A).Q), N, n))
 end
 
-function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::Integer) where {T,MT<:Manifold{T}}
+function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
+        N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
     A = KernelAbstractions.allocate(backend, T, N, n)
     Random.randn!(rng, A)
     MT{typeof(A)}(assign_columns(typeof(A)(qr!(A).Q), N, n))
 end
 
-function Base.rand(backend::CPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::Integer) where {MT<:Manifold}
+function Base.rand(backend::CPU, rng::Random.AbstractRNG, ::Type{MT},
+        N::Integer, n::Integer) where {MT <: Manifold}
     rand(backend, rng, MT{Float64}, N, n)
 end
 
-function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::Integer) where {MT<:Manifold}
+function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
+        N::Integer, n::Integer) where {MT <: Manifold}
     rand(backend, rng, MT{Float32}, N, n)
 end
 
-function Base.rand(rng::Random.AbstractRNG, manifold_type::Type{MT}, N::Integer, n::Integer) where {MT<:Manifold}
+function Base.rand(rng::Random.AbstractRNG, manifold_type::Type{MT},
+        N::Integer, n::Integer) where {MT <: Manifold}
     rand(CPU(), rng, manifold_type, N, n)
 end
 
@@ -67,7 +72,8 @@ rand(CUDABackend(), StiefelManifold{Float32}, N, n)
 
 ... for drawing elements on a `CUDA` device.
 """
-function Base.rand(backend::KernelAbstractions.Backend, manifold_type::Type{MT}, N::Integer, n::Integer) where {MT<:Manifold}
+function Base.rand(backend::KernelAbstractions.Backend, manifold_type::Type{MT},
+        N::Integer, n::Integer) where {MT <: Manifold}
     rand(backend, Random.default_rng(), manifold_type, N, n)
 end
 
@@ -107,7 +113,7 @@ We then perform a QR decomposition `Q, R = qr(Y)` with the `qr` function from th
 
 The final output are then the first `n` columns of the `Q` matrix.
 """
-function Base.rand(manifold_type::Type{MT}, N::Integer, n::Integer) where {MT<:Manifold}
+function Base.rand(manifold_type::Type{MT}, N::Integer, n::Integer) where {MT <: Manifold}
     rand(Random.default_rng(), manifold_type, N, n)
 end
 
@@ -146,7 +152,7 @@ check(Y::Manifold) = norm(Y.A' * Y.A - I)
 Base.size(A::Manifold) = size(A.A)
 Base.parent(A::Manifold) = A.A
 Base.getindex(A::Manifold, i::Int, j::Int) = A.A[i, j]
-Base.copy(A::MT) where {MT<:Manifold} = MT(copy(A.A))
+Base.copy(A::MT) where {MT <: Manifold} = MT(copy(A.A))
 
 @doc raw"""
     manifold_constructor(x::Manifold)
@@ -173,8 +179,12 @@ manifold_constructor(x::Manifold) = Base.typename(typeof(x)).wrapper
 # `update!(::BFGSCache, …)`; see issue A11. It returns `A` and not `nothing`: that is the `copyto!`
 # contract, and it is what `copyto!(::GrassmannLieAlgHorMatrix, …)` and
 # `copyto!(::GlobalSection, …)` next to it already do.
-Base.copyto!(A::MT, B::MT) where {MT<:Manifold} = (A.A .= B.A; A)
+Base.copyto!(A::MT, B::MT) where {MT <: Manifold} = (A.A .= B.A; A)
 
-Base.similar(::Manifold) = error("The function `similar` does not make sense in this context. Consider using rand.")
+function Base.similar(::Manifold)
+    error("The function `similar` does not make sense in this context. Consider using rand.")
+end
 
-Base.fill!(::Manifold, b) = error("The function `fill!` does not make sense in this context.")
+function Base.fill!(::Manifold, b)
+    error("The function `fill!` does not make sense in this context.")
+end

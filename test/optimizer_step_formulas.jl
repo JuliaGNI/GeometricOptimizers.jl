@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: AdamState, MomentumState, momentum, cache, direction,
-    increase_iteration_number!, solver_step!, update!
+                           increase_iteration_number!, solver_step!, update!
 using Test
 
 # The update formulas of the two stateful first-order methods, pinned on ordinary (Euclidean)
@@ -28,7 +28,7 @@ const η = 0.01
 @testset "the first Adam step is the learning rate times sign(∇L)" begin
     x = [1.0, -2.0, 0.5]
     algorithm = Adam()
-    optimizer = Optimizer(x, objective; algorithm=algorithm, linesearch=Static(η))
+    optimizer = Optimizer(x, objective; algorithm = algorithm, linesearch = Static(η))
     state = AdamState(x)
 
     x₀ = copy(x)
@@ -47,7 +47,7 @@ end
 
     x = zeros(3)
     algorithm = MomentumMethod(α)
-    optimizer = Optimizer(x, objective; algorithm=algorithm, linesearch=Static(η))
+    optimizer = Optimizer(x, objective; algorithm = algorithm, linesearch = Static(η))
     state = MomentumState(x)
 
     p = zeros(3)

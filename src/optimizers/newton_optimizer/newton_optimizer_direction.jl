@@ -9,4 +9,6 @@ end
 function compute_direction!(opt::Optimizer{T, Newton}) where {T}
     compute_direction!(cache(opt))
 end
-compute_direction!(opt::Optimizer{T, Newton}, ::NewtonOptimizerState) where {T} = compute_direction!(opt)
+function compute_direction!(opt::Optimizer{T, Newton}, ::NewtonOptimizerState) where {T}
+    compute_direction!(opt)
+end

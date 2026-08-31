@@ -1,8 +1,11 @@
 using GeometricOptimizers
-using GeometricOptimizers: cache, default_linesearch, direction, first_moment, second_moment,
-    _second_moment, gradient, gradient_array, global_rep, increase_iteration_number!,
-    isconverged, iteration_number, l2norm, linesearch, section, solver_step!, status, update!,
-    DEFAULT_LEARNING_RATE
+using GeometricOptimizers: cache, default_linesearch, direction, first_moment,
+                           second_moment,
+                           _second_moment, gradient, gradient_array, global_rep,
+                           increase_iteration_number!,
+                           isconverged, iteration_number, l2norm, linesearch, section,
+                           solver_step!, status, update!,
+                           DEFAULT_LEARNING_RATE
 using LinearAlgebra: norm
 using Test
 import Random
@@ -34,19 +37,20 @@ function paper_W(Y::AbstractMatrix, Z::AbstractMatrix)
 end
 
 @testset "ScalarMomentAdam constructor and scope" begin
-    method = ScalarMomentAdam(Float32; β₁=0.8, β₂=0.95, δ=1.0f-6)
+    method = ScalarMomentAdam(Float32; β₁ = 0.8, β₂ = 0.95, δ = 1.0f-6)
     @test method.β₁ isa Float32
     @test method.β₂ isa Float32
     @test method.δ isa Float32
-    @test_throws ArgumentError ScalarMomentAdam(; β₁=1.0)
-    @test_throws ArgumentError ScalarMomentAdam(; β₂=-0.1)
-    @test_throws ArgumentError ScalarMomentAdam(; δ=-1.0)
-    @test_throws ArgumentError ScalarMomentAdam(; β₂=1.0)
+    @test_throws ArgumentError ScalarMomentAdam(; β₁ = 1.0)
+    @test_throws ArgumentError ScalarMomentAdam(; β₂ = -0.1)
+    @test_throws ArgumentError ScalarMomentAdam(; δ = -1.0)
+    @test_throws ArgumentError ScalarMomentAdam(; β₂ = 1.0)
     @test method.ambient_norm == false
-    @test ScalarMomentAdam(; ambient_norm=true).ambient_norm
+    @test ScalarMomentAdam(; ambient_norm = true).ambient_norm
 
     @test_throws ArgumentError OptimizerState(method, rand(3))
-    @test_throws ArgumentError OptimizerState(method, (Y=rand(StiefelManifold, 4, 2), z=rand(3)))
+    @test_throws ArgumentError OptimizerState(method, (
+        Y = rand(StiefelManifold, 4, 2), z = rand(3)))
     @test_throws ArgumentError OptimizerState(method, rand(GrassmannManifold{Float32}, 4, 2))
 
     # The state carries a gradient too, as `Adam` does through `OptimizerState(::Adam, x...)`.
@@ -71,14 +75,14 @@ end
 @testset "ScalarMomentAdam rejects unsupported parameters through Optimizer" begin
     f(x) = sum(abs2, x)
     for x in (rand(3),
-        NetworkParameters((Y=rand(StiefelManifold, 4, 2), z=rand(3))),
+        NetworkParameters((Y = rand(StiefelManifold, 4, 2), z = rand(3))),
         rand(GrassmannManifold, 4, 2),
         rand(StiefelManifold{Float32}, 4, 2))
-        @test_throws ArgumentError Optimizer(x, f; algorithm=ScalarMomentAdam())
+        @test_throws ArgumentError Optimizer(x, f; algorithm = ScalarMomentAdam())
     end
     # ... and the element-type mismatch says so, rather than claiming the manifold is unsupported
     err = try
-        Optimizer(rand(StiefelManifold{Float32}, 4, 2), f; algorithm=ScalarMomentAdam())
+        Optimizer(rand(StiefelManifold{Float32}, 4, 2), f; algorithm = ScalarMomentAdam())
     catch e
         e
     end
@@ -101,7 +105,8 @@ end
     end
     # and the matching element type still works, on both arities
     @test OptimizerState(ScalarMomentAdam(Float32), Y32) isa ScalarMomentAdamState{Float32}
-    @test OptimizerState(ScalarMomentAdam(Float32), Y32, Ḡ32) isa ScalarMomentAdamState{Float32}
+    @test OptimizerState(ScalarMomentAdam(Float32), Y32, Ḡ32) isa
+          ScalarMomentAdamState{Float32}
     # the scope message, not the element-type one, when `x` is not a Stiefel manifold at all -- on the
     # gradient-supplying arity as well
     @test_throws ArgumentError OptimizerState(ScalarMomentAdam(), rand(3), rand(3))
@@ -119,7 +124,7 @@ end
         @test ls.α == T(DEFAULT_LEARNING_RATE)
 
         Y = rand(StiefelManifold{T}, 5, 2)
-        opt = Optimizer(Y, Ỹ -> sum(abs2, Ỹ.A .- 1); algorithm=ScalarMomentAdam(T))
+        opt = Optimizer(Y, Ỹ -> sum(abs2, Ỹ.A .- 1); algorithm = ScalarMomentAdam(T))
         @test linesearch(opt).method isa Static{T}
         @test linesearch(opt).method.α == T(DEFAULT_LEARNING_RATE)
     end
@@ -148,8 +153,8 @@ end
         C = T[1 2; -3 4; 2 -1; 1 0; -2 3]
         β₁, β₂, δ = T(0.5), T(0.25), T(0.1)
         method = ScalarMomentAdam(T; β₁, β₂, δ)
-        opt = Optimizer(Y, linear_stiefel_objective(C); algorithm=method,
-            linesearch=Static(T(0.01)), retraction=Cayley())
+        opt = Optimizer(Y, linear_stiefel_objective(C); algorithm = method,
+            linesearch = Static(T(0.01)), retraction = Cayley())
         state = OptimizerState(method, Y)
 
         # ---- the first update: `t = 1` makes both bias-correction factors `1` ----
@@ -197,15 +202,15 @@ end
     C = randn(6, 3)
 
     method = ScalarMomentAdam()
-    opt = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm=method,
-        linesearch=Static(0.01), retraction=Cayley())
+    opt = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = method,
+        linesearch = Static(0.01), retraction = Cayley())
     state = OptimizerState(method, Y)
     increase_iteration_number!(state)
     update!(cache(opt), state, gradient(opt), method, Y)
 
     adam = Adam()
-    opt_adam = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm=adam,
-        linesearch=Static(0.01), retraction=Cayley())
+    opt_adam = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = adam,
+        linesearch = Static(0.01), retraction = Cayley())
     state_adam = OptimizerState(adam, Y)
     increase_iteration_number!(state_adam)
     update!(cache(opt_adam), state_adam, gradient(opt_adam), adam, Y)
@@ -215,8 +220,8 @@ end
     @test second_moment(cache(opt)) isa Real
     @test second_moment(cache(opt_adam)) isa StiefelLieAlgHorMatrix
     # not parallel: `Adam`'s direction has magnitude ≈ 1 per *component*, this one has ≈ 1 overall
-    @test !isapprox(δ_scalar, δ_adam; rtol=1e-8)
-    @test !isapprox(δ_scalar ./ norm(δ_scalar), δ_adam ./ norm(δ_adam); rtol=1e-8)
+    @test !isapprox(δ_scalar, δ_adam; rtol = 1e-8)
+    @test !isapprox(δ_scalar ./ norm(δ_scalar), δ_adam ./ norm(δ_adam); rtol = 1e-8)
     # ... and that is the difference in step length the docstring warns about, in the norm that decides
     # it: `step_αmax` and `OptimizerStatus` both measure the direction with `l2norm`, which on a lift
     # is the norm of its free parameters. There are `n(n-1)/2 + (N-n)n` of them; `Adam` drives each to
@@ -241,7 +246,8 @@ end
 
     Ḡ = gradient_array(cache(opt))
     @test l2norm(direction(cache(opt))) ≈ l2norm(Ḡ) / √(l2norm(Ḡ)^2 + method.δ)
-    @test l2norm(direction(cache(opt_adam)))^2 ≈ sum(abs2(g / (abs(g) + adam.δ)) for g in free)
+    @test l2norm(direction(cache(opt_adam)))^2 ≈
+          sum(abs2(g / (abs(g) + adam.δ)) for g in free)
 
     # And the scale claim itself, *exactly*. The `≈` in "≈ √dim" and "≈ 1" is entirely `δ`: at `δ = 0`
     # `Adam`'s direction is `-sign(Ḡᵢ)` per component and this one's is `-Ḡ/‖Ḡ‖`, so the two `l2norm`s
@@ -249,9 +255,10 @@ end
     # honest form for something whose whole content is that limit — a tolerance on the `δ > 0` values
     # is a tolerance on the draw, which is what failed in CI. It also exercises the `δ = 0` the
     # constructors explicitly permit and nothing else covers.
-    for (δ₀_method, expected) in ((Adam(; δ=0.0), √dim), (ScalarMomentAdam(; δ=0.0), 1.0))
-        opt₀ = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm=δ₀_method,
-            linesearch=Static(0.01), retraction=Cayley())
+    for (δ₀_method, expected) in ((Adam(; δ = 0.0), √dim), (
+        ScalarMomentAdam(; δ = 0.0), 1.0))
+        opt₀ = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = δ₀_method,
+            linesearch = Static(0.01), retraction = Cayley())
         state₀ = OptimizerState(δ₀_method, Y)
         increase_iteration_number!(state₀)
         update!(cache(opt₀), state₀, gradient(opt₀), δ₀_method, Y)
@@ -280,8 +287,8 @@ end
     increase_iteration_number!(state)
     cache_lift, cache_ambient = map((false, true)) do ambient_norm
         method = ScalarMomentAdam(; ambient_norm)
-        opt = Optimizer(copy(Y), objective; algorithm=method, linesearch=Static(0.01),
-            retraction=Cayley())
+        opt = Optimizer(copy(Y), objective; algorithm = method, linesearch = Static(0.01),
+            retraction = Cayley())
         update!(cache(opt), state, gradient(opt), method, Y)
     end
 
@@ -292,7 +299,8 @@ end
     # the first moment is the same gradient either way -- only the divisor differs
     @test Matrix(first_moment(cache_lift)) ≈ Matrix(first_moment(cache_ambient))
     @test Matrix(direction(cache_lift)) ≈
-          Matrix(direction(cache_ambient)) * √(second_moment(cache_ambient) + ScalarMomentAdam().δ) /
+          Matrix(direction(cache_ambient)) *
+          √(second_moment(cache_ambient) + ScalarMomentAdam().δ) /
           √(second_moment(cache_lift) + ScalarMomentAdam().δ)
 
     # `ambient_norm = true` reaches the ambient gradient through the flattened closure
@@ -301,7 +309,7 @@ end
     for ambient_norm in (false, true)
         Yₛ = rand(StiefelManifold, 6, 3)
         method = ScalarMomentAdam(; ambient_norm)
-        opt = Optimizer(Yₛ, objective; algorithm=method, linesearch=Static(0.01))
+        opt = Optimizer(Yₛ, objective; algorithm = method, linesearch = Static(0.01))
         stateₛ = OptimizerState(method, Yₛ)
         f₀ = objective(Yₛ)
         for _ in 1:5
@@ -331,8 +339,8 @@ end
             Y = rand(StiefelManifold{T}, 5, 2)
             C = T[1 2; -3 4; 2 -1; 1 0; -2 3]
             method = ScalarMomentAdam(T)
-            opt = Optimizer(Y, linear_stiefel_objective(C); algorithm=method,
-                linesearch=Static(T(0.01)), retraction=retraction)
+            opt = Optimizer(Y, linear_stiefel_objective(C); algorithm = method,
+                linesearch = Static(T(0.01)), retraction = retraction)
             state = OptimizerState(method, Y)
 
             for _ in 1:3
@@ -363,8 +371,8 @@ end
         Y = rand(StiefelManifold, 6, 3)
         f₀ = objective(Y)
         method = ScalarMomentAdam(; ambient_norm)
-        opt = Optimizer(Y, objective; algorithm=method, linesearch=Static(0.05),
-            max_iterations=2000)
+        opt = Optimizer(Y, objective; algorithm = method, linesearch = Static(0.05),
+            max_iterations = 2000)
         state = OptimizerState(method, Y)
 
         result = solve!(Y, state, opt)
@@ -387,13 +395,15 @@ end
     Y₂ = copy(Y₁)
     C = randn(6, 3)
     objective = linear_stiefel_objective(C)
-    opt₁ = Optimizer(Y₁, objective; algorithm=Adam(), linesearch=Static(0.01), retraction=Cayley())
-    opt₂ = Optimizer(Y₂, objective; algorithm=ScalarMomentAdam(), linesearch=Static(0.01), retraction=Cayley())
+    opt₁ = Optimizer(
+        Y₁, objective; algorithm = Adam(), linesearch = Static(0.01), retraction = Cayley())
+    opt₂ = Optimizer(Y₂, objective; algorithm = ScalarMomentAdam(),
+        linesearch = Static(0.01), retraction = Cayley())
     state₁ = OptimizerState(opt₁.algorithm, Y₁)
     state₂ = OptimizerState(opt₂.algorithm, Y₂)
     increase_iteration_number!(state₁)
     increase_iteration_number!(state₂)
     solver_step!(Y₁, state₁, opt₁)
     solver_step!(Y₂, state₂, opt₂)
-    @test !isapprox(Y₁.A, Y₂.A; atol=1e-12, rtol=1e-12)
+    @test !isapprox(Y₁.A, Y₂.A; atol = 1e-12, rtol = 1e-12)
 end

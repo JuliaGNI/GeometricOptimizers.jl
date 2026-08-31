@@ -20,9 +20,9 @@ function stiefel_proj_is_identity_over_zeros(N::Integer, n::Integer, T::DataType
     @test eltype(E) == T
 end
 
-for T ∈ (Float32, Float64)
-    for N ∈ 3:5
-        for n ∈ 1:N
+for T in (Float32, Float64)
+    for N in 3:5
+        for n in 1:N
             stiefel_proj(N, n, T)
             stiefel_proj_is_identity_over_zeros(N, n, T)
         end

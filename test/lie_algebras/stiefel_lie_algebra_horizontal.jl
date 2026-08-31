@@ -26,7 +26,7 @@ function add_and_sub(n::Int, N::Int, T::Type)
     @test typeof(CD_slahm2_sub) <: StiefelLieAlgHorMatrix{T}
 end
 
-function stiefel_lie_alg_projection(n::Integer, N::Integer, T::DataType=Float32)
+function stiefel_lie_alg_projection(n::Integer, N::Integer, T::DataType = Float32)
     E = StiefelProjection(T, N, n)
     projection(W::SkewSymMatrix) = W - (I - E * E') * W * (I - E * E')
     W₁ = SkewSymMatrix(rand(T, N, N))
@@ -45,12 +45,12 @@ function stiefel_lie_alg_projection(n::Integer, N::Integer, T::DataType=Float32)
     @test A + S₁ ≈ Matrix(S₁) + A
 end
 
-function stiefel_lie_alg_vectorization_test(n::Integer, N::Integer, T::DataType=Float32)
+function stiefel_lie_alg_vectorization_test(n::Integer, N::Integer, T::DataType = Float32)
     A = rand(StiefelLieAlgHorMatrix{T}, N, n)
     @test isapprox(StiefelLieAlgHorMatrix(vec(A), N, n), A)
 end
 
-function scalar_multiplication(n::Integer, N::Integer, T::DataType=Float32)
+function scalar_multiplication(n::Integer, N::Integer, T::DataType = Float32)
     C = rand(T, N, N)
     α = rand(T)
 
@@ -83,9 +83,9 @@ function zeros_array_generation(n::Integer, N::Integer, T::DataType)
     @test all(iszero, A₆₄)
 end
 
-for T ∈ (Float32, Float64)
-    for N ∈ 3:5
-        for n ∈ 1:N
+for T in (Float32, Float64)
+    for N in 3:5
+        for n in 1:N
             add_and_sub(n, N, T)
             stiefel_lie_alg_projection(n, N, T)
             stiefel_lie_alg_vectorization_test(n, N, T)

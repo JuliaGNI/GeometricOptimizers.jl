@@ -17,7 +17,8 @@ Compute ``\mathfrak{A}(A) := \sum_{n=1}^\infty \frac{1}{n!} (A)^{n-1}.``
 This uses a Taylor expansion that iteratively adds terms with
 
 ```julia
-""" * update_algorithm * raw"""
+""" * update_algorithm *
+      raw"""
 
 ```
 
@@ -66,7 +67,8 @@ least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. The v
 used to pick the number of halvings `s = ⌈log₂(‖X‖₁/θ)⌉`, so a difference of an ulp can at most
 shift `s` by one, and only for an argument that lands exactly on a power of two.
 """
-opnorm₁(X::AbstractMatrix) = isempty(X) ? zero(real(eltype(X))) : maximum(sum(abs, X; dims=1))
+opnorm₁(X::AbstractMatrix) = isempty(X) ? zero(real(eltype(X))) :
+                             maximum(sum(abs, X; dims = 1))
 
 @doc raw"""
     𝔄(X, algorithm)
@@ -185,7 +187,7 @@ function 𝔄(X::AbstractMatrix, ::AugmentedPade)
     T = eltype(X)
     augmented = [X one(X); zeros(T, m, m) zeros(T, m, m)]
 
-    exp(augmented)[1:m, (m+1):(2m)]
+    exp(augmented)[1:m, (m + 1):(2m)]
 end
 
 @doc raw"""
@@ -280,6 +282,6 @@ B̄ = hcat(vcat(one(B.A), zero(B.B)), vcat(-.5 * B.A, -B.B))
 true
 ```
 """
-function 𝔄exp(B̂::AbstractMatrix, B̄::AbstractMatrix, algorithm::AbstractExponentialAlgorithm=ScaledSquaring())
+function 𝔄exp(B̂::AbstractMatrix, B̄::AbstractMatrix, algorithm::AbstractExponentialAlgorithm = ScaledSquaring())
     I + B̂ * 𝔄(B̂, B̄, algorithm) * B̄'
 end

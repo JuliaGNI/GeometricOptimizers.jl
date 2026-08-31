@@ -47,14 +47,18 @@ const T = Float64
 type_nodes(x) = x isa DataType ? 1 + sum(type_nodes(p) for p in x.parameters; init = 0) : 1
 
 # Distinct keys, and 1 × 1 leaves so that the *width* is the variable and `n` stays small.
-wide_set(k::Integer) = NamedTuple{Tuple(Symbol("p", i) for i in 1:k)}(
-    Tuple(fill(T(i), 1, 1) for i in 1:k))
+function wide_set(k::Integer)
+    NamedTuple{Tuple(Symbol("p", i) for i in 1:k)}(
+        Tuple(fill(T(i), 1, 1) for i in 1:k))
+end
 
 # Alternating `Matrix` and `Vector`: two distinct leaf *shapes*, so this is the set that would show a
 # `LeafLayout` parameter keyed on anything but the shape. It is also the shape upstream's issue #15 used
 # to argue that leaf diversity was not the driver — which was right, and beside the point.
-mixed_set(k::Integer) = NamedTuple{Tuple(Symbol("p", i) for i in 1:k)}(
-    Tuple(isodd(i) ? fill(T(i), 1, 1) : fill(T(i), 2) for i in 1:k))
+function mixed_set(k::Integer)
+    NamedTuple{Tuple(Symbol("p", i) for i in 1:k)}(
+        Tuple(isodd(i) ? fill(T(i), 1, 1) : fill(T(i), 2) for i in 1:k))
+end
 
 # Two leaves, 160 400 elements: the retention question, with no width to confuse it.
 big_set() = (W = fill(one(T), 400, 400), b = fill(one(T), 400))
@@ -66,10 +70,10 @@ function report(label, ps)
     floor_bytes = 4 * n * sizeof(T)
     total = Base.summarysize(flat)
     println(rpad(label, 44),
-            " flatlength ", lpad(n, 7),
-            " | type nodes ", lpad(type_nodes(typeof(flat)), 6),
-            " | bytes ", lpad(total, 9),
-            " | over floor ", lpad(total - floor_bytes, 9))
+        " flatlength ", lpad(n, 7),
+        " | type nodes ", lpad(type_nodes(typeof(flat)), 6),
+        " | bytes ", lpad(total, 9),
+        " | over floor ", lpad(total - floor_bytes, 9))
 end
 
 println("`_flat_scratch`, i.e. `FT` on BFGSCache/DFPCache. Floor is 4 × flatlength × ", sizeof(T), " B.")

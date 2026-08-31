@@ -1,4 +1,6 @@
-OptimizerCache(::Adam{T}, x::OptimizerSolution{T}) where {T} = AdamCache(_copy(x), _zero(x), _zero(x))
+function OptimizerCache(::Adam{T}, x::OptimizerSolution{T}) where {T}
+    AdamCache(_copy(x), _zero(x), _zero(x))
+end
 Hessian(::Adam, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
 
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
@@ -17,7 +19,7 @@ Cache for the gradient optimizer.
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 """
-struct AdamCache{T,MT,VT,ST} <: OptimizerCache{T}
+struct AdamCache{T, MT, VT, ST} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT
@@ -51,18 +53,20 @@ _second_moment(cache::AdamCache) = cache.m̃₂
 # the nesting so each frame infers from its signature — took 940 s to 6.53 s. This is that control
 # applied here. See the changelog for what it measured.
 @noinline function _adam_cache(x::OptimizerSolution{T}, g::VT, δ::VT, Δg::VT, g̃::VT,
-    m₁::VT, m₂::VT, m̃₂::VT, sec::ST) where {T,VT,ST}
-    AdamCache{T,typeof(x),VT,ST}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, m̃₂, sec)
+        m₁::VT, m₂::VT, m̃₂::VT, sec::ST) where {T, VT, ST}
+    AdamCache{T, typeof(x), VT, ST}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, m̃₂, sec)
 end
 
-function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientStorage{T}}
+function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
+        T, AT <: GradientStorage{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
     _adam_cache(x, g, δ, Δg, g̃, _similar(g), _similar(g), _similar(g), sec)
 end
 
-function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientStorage{T}}
+function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {
+        T, AT <: GradientStorage{T}}
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
     AdamCache(x, g, δ, Δg)
@@ -83,11 +87,16 @@ solution(cache::AdamCache) = cache.x
 gradient(cache::AdamCache) = cache.g
 gradient_array(cache::AdamCache) = gradient(cache)
 latest_gradient(cache::AdamCache) = cache.g̃
-refresh_latest_gradient!(cache::AdamCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
-latest_gradient_is_current(cache::AdamCache, state::OptimizerState, x::OptimizerSolution) =
+function refresh_latest_gradient!(cache::AdamCache, g::Gradient)
+    _refresh_latest_gradient!(cache, g)
+end
+function latest_gradient_is_current(cache::AdamCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
+end
 invalidate_latest_gradient!(cache::AdamCache) = _invalidate_latest_gradient!(cache)
-gradient_difference!(cache::AdamCache, ::OptimizerState) = _latest_gradient_difference!(cache)
+function gradient_difference!(cache::AdamCache, ::OptimizerState)
+    _latest_gradient_difference!(cache)
+end
 direction(cache::AdamCache) = cache.δ
 rhs(cache::AdamCache) = direction(cache)
 # As for `MomentumCache`: `rhs` aliases the direction, which is `-m₁/(√m₂ + δ)` and not `-∇f`.
@@ -101,7 +110,7 @@ section(cache::AdamCache) = cache.section
 
 State for the gradient optimizer.
 """
-mutable struct AdamState{T,OT,GS,VT} <: OptimizerState{T}
+mutable struct AdamState{T, OT, GS, VT} <: OptimizerState{T}
     section::GS
     iterations::Int
 
@@ -128,21 +137,26 @@ _second_moment(state::AdamState) = state.m̃₂
 
 section(state::AdamState) = state.section
 
-function AdamState(x::OST, g::GradientStorage{T}) where {T,OST<:OptimizerSolution{T}}
+function AdamState(x::OST, g::GradientStorage{T}) where {T, OST <: OptimizerSolution{T}}
     _x = _copy(x)
     _g = _copy(g)
     gs = GlobalSection(_x)
     # note that the moments have to be initialized with zeros (and not with `_similar`):
     # they are read in the first call to `update!(::AdamCache, ...)` before they are
     # written to for the first time, so uninitialized memory would be used there.
-    AdamState{T,typeof(_x),typeof(gs),typeof(_g)}(gs, 0, _x, _similar(_x), _g, _similar(_g), _zero(_g), _zero(_g), _zero(_g), T(NaN), T(NaN))
+    AdamState{T, typeof(_x), typeof(gs), typeof(_g)}(
+        gs, 0, _x, _similar(_x), _g, _similar(_g),
+        _zero(_g), _zero(_g), _zero(_g), T(NaN), T(NaN))
 end
 
 AdamState(x::OptimizerSolution) = AdamState(x, _zero(x))
 
 OptimizerState(::Adam, x...) = AdamState(x...)
 
-function update!(state::AdamState{T}, gradient_array::GradientStorage{T}, direction::GradientStorage{T}, _first_moment::GradientStorage{T}, _second_moment::GradientStorage{T}, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
+function update!(state::AdamState{T}, gradient_array::GradientStorage{T},
+        direction::GradientStorage{T}, _first_moment::GradientStorage{T},
+        _second_moment::GradientStorage{T},
+        x::OptimizerSolution{T}, f::Callable, retraction) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
@@ -158,10 +172,13 @@ function update!(state::AdamState{T}, gradient_array::GradientStorage{T}, direct
 end
 
 function update!(state::AdamState, opt::Optimizer, x::OptimizerSolution)
-    update!(state, gradient_array(cache(opt)), direction(cache(opt)), first_moment(opt.cache), second_moment(opt.cache), x, problem(opt).F, opt.retraction)
+    update!(
+        state, gradient_array(cache(opt)), direction(cache(opt)), first_moment(opt.cache),
+        second_moment(opt.cache), x, problem(opt).F, opt.retraction)
 end
 
-function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}, β₁::T, β₂::T, δ::T, t::Integer, x::OptimizerSolution{T}) where {T}
+function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
+        β₁::T, β₂::T, δ::T, t::Integer, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`
     store_gradient!(cache, state, gradient, x)
     _copyto!(section(cache), section(state))
@@ -198,6 +215,7 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     cache
 end
 
-function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}, method::Adam{T}, x::OptimizerSolution{T}) where {T}
+function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
+        method::Adam{T}, x::OptimizerSolution{T}) where {T}
     update!(cache, state, gradient, method.β₁, method.β₂, method.δ, state.iterations, x)
 end

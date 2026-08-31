@@ -1,5 +1,6 @@
 using GeometricOptimizers
-using GeometricOptimizers: ensure_descent!, NewtonOptimizerCache, direction, rhs, iteration_number
+using GeometricOptimizers: ensure_descent!, NewtonOptimizerCache, direction, rhs,
+                           iteration_number
 using SimpleSolvers: Options
 using LinearAlgebra: dot
 using Test
@@ -16,7 +17,7 @@ F(x) = sum(sin.(x) .^ 2)
             for x₀ in (0.5, 1.0, 2.0, 3.0)
                 x = fill(x₀, 3)
                 state = OptimizerState(algorithm, x)
-                opt = Optimizer(x, F; algorithm=algorithm, linesearch=linesearch)
+                opt = Optimizer(x, F; algorithm = algorithm, linesearch = linesearch)
 
                 solve!(x, state, opt)
 

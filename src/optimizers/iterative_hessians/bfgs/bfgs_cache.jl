@@ -10,7 +10,7 @@ The [`OptimizerCache`](@ref) for the [`BFGS`](@ref) algorithm. Also see [`update
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
 [`store_gradient!`](@ref).
 """
-struct BFGSCache{T,VT,GT,MT,GS,FT} <: OptimizerCache{T}
+struct BFGSCache{T, VT, GT, MT, GS, FT} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::GT    # current gradient
@@ -32,7 +32,7 @@ struct BFGSCache{T,VT,GT,MT,GS,FT} <: OptimizerCache{T}
     # the flat buffers `outer!` and `_mul!` write through; see `_flat_scratch`
     flat::FT
 
-    function BFGSCache(x::AT) where {T,AT<:OptimizerSolution{T}}
+    function BFGSCache(x::AT) where {T, AT <: OptimizerSolution{T}}
         # `_zero(x)` is *not* redundant here, and dropping it is a real bug: `zero` of a manifold
         # element is its horizontal lift, whose free-parameter count is the intrinsic dimension and
         # not the size of the dense storage. For a `StiefelManifold(6, 3)` that is 12 against 18, and
@@ -44,7 +44,10 @@ struct BFGSCache{T,VT,GT,MT,GS,FT} <: OptimizerCache{T}
         g = _zero(x)
         # from the same `_zero(x)` as `n` above, and for the same reason
         flat = _flat_scratch(T, g)
-        cache = new{T,AT,typeof(g),typeof(q),typeof(section),typeof(flat)}(_copy(x), _similar(g), _similar(g), Ref(false), _similar(q), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section, flat)
+        cache = new{T, AT, typeof(g), typeof(q), typeof(section), typeof(flat)}(
+            _copy(x), _similar(g), _similar(g), Ref(false), _similar(q),
+            similar(q), similar(q), similar(q), similar(q),
+            _similar(g), _similar(g), _similar(g), section, flat)
         initialize!(cache, x)
         cache
     end
@@ -71,9 +74,12 @@ gradient(cache::BFGSCache) = cache.g
 # writes the gradient the direction is built from into
 gradient_array(cache::BFGSCache) = gradient(cache)
 latest_gradient(cache::BFGSCache) = cache.g̃
-refresh_latest_gradient!(cache::BFGSCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
-latest_gradient_is_current(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution) =
+function refresh_latest_gradient!(cache::BFGSCache, g::Gradient)
+    _refresh_latest_gradient!(cache, g)
+end
+function latest_gradient_is_current(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
+end
 invalidate_latest_gradient!(cache::BFGSCache) = _invalidate_latest_gradient!(cache)
 
 """
@@ -85,8 +91,12 @@ direction(cache::BFGSCache) = cache.Δx
 
 solution(cache::BFGSCache) = cache.x
 
-hessian(::BFGSCache) = error("BFGSCache does not store the Hessian, but it's inverse! Call inverse_hessian.")
-inverse_hessian(::BFGSCache) = error("The inverse Hessian is stored in the state, not the cache!")
+function hessian(::BFGSCache)
+    error("BFGSCache does not store the Hessian, but it's inverse! Call inverse_hessian.")
+end
+function inverse_hessian(::BFGSCache)
+    error("The inverse Hessian is stored in the state, not the cache!")
+end
 
 function update!(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     _copyto!(cache.x, x)
@@ -128,7 +138,8 @@ Q & \gets Q - (T_1 + T_2 - T_3)/{\delta^T\gamma}
 \end{aligned}
 ```
 """
-function update!(cache::BFGSCache{T}, state::BFGSState{T}, x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
+function update!(cache::BFGSCache{T}, state::BFGSState{T},
+        x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     update!(cache, state, x)
     _copyto!(gradient(cache), g)
     _copyto!(rhs(cache), g)
@@ -190,12 +201,17 @@ function update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, x::Opt
     update!(cache, state, x, gradient(cache))
 end
 
-update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, ::HessianBFGS, x::OptimizerSolution) = update!(cache, state, grad, x)
+function update!(cache::BFGSCache, state::OptimizerState,
+        grad::Gradient, ::HessianBFGS, x::OptimizerSolution)
+    update!(cache, state, grad, x)
+end
 
 # `∇f(x_{k+1}) - ∇f(x_k)`, from the two gradients the cache holds. This used to return `cache.Δg`
 # untouched -- the `γ` of the secant pair, i.e. `∇f(x_k) - ∇f(x_{k-1})`, which is one step behind the
 # `rg` that `latest_gradient` now reports. See `gradient_difference!`.
-gradient_difference!(cache::BFGSCache, ::OptimizerState) = _latest_gradient_difference!(cache)
+function gradient_difference!(cache::BFGSCache, ::OptimizerState)
+    _latest_gradient_difference!(cache)
+end
 
 function initialize!(cache::BFGSCache{T}, ::OptimizerSolution{T}) where {T}
     _fill!(solution(cache), T(NaN))

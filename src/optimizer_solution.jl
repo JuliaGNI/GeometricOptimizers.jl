@@ -80,20 +80,21 @@ guarantee that every leaf is a `T`.
     still writes through to the caller's own arrays and nothing has to be copied back. That is what
     `GeometricMachineLearning` and `GMLDatasets` do at the boundary.
 """
-const OptimizerSolution{T} = Union{AbstractVector{T},Manifold{T},NetworkParameters{T}}
+const OptimizerSolution{T} = Union{AbstractVector{T}, Manifold{T}, NetworkParameters{T}}
 
 # A gradient is one leaf's worth of storage or a whole set of them. `AbstractArray` and not
 # `AbstractVecOrMat`: a horizontal lift and a [`VectorStorageMatrix`](@ref) are both `AbstractArray`s
 # that are neither.
-const GradientStorage{T} = Union{AbstractArray{T},NetworkParameters{T}}
+const GradientStorage{T} = Union{AbstractArray{T}, NetworkParameters{T}}
 
 # note that this is *not* `Tuple{Vararg{ST}} where {ST<:GlobalSection{T}}`, as Julia's diagonal rule
 # would make that homogeneous, i.e. it would not allow a `NamedTuple` holding the section of a
 # `StiefelManifold` beside the section of an ordinary `Matrix` at the same time.
 const GlobalSectionTuple{T} = Tuple{Vararg{GlobalSection{T}}}
 
-const GlobalSectionNamedTuple{T,X} = begin
-    NamedTuple{X,<:GlobalSectionTuple{T}}
+const GlobalSectionNamedTuple{T, X} = begin
+    NamedTuple{X, <:GlobalSectionTuple{T}}
 end
 
-const GlobalSectionSingleOrNamedTuple{T} = Union{GlobalSection{T},GlobalSectionNamedTuple{T}}
+const GlobalSectionSingleOrNamedTuple{T} = Union{
+    GlobalSection{T}, GlobalSectionNamedTuple{T}}

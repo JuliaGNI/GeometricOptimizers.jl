@@ -100,10 +100,10 @@ this paragraph claims.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the alternatives.
 """
-struct ScaledSquaring{T<:Real} <: AbstractExponentialAlgorithm
+struct ScaledSquaring{T <: Real} <: AbstractExponentialAlgorithm
     θ::T
 
-    function ScaledSquaring(θ::T = 0.5) where {T<:Real}
+    function ScaledSquaring(θ::T = 0.5) where {T <: Real}
         @assert θ > zero(T) "the scaling threshold has to be positive, got $(θ)"
         new{T}(θ)
     end
@@ -178,7 +178,7 @@ the exponential. [`AugmentedPade`](@ref) remains the CPU reference that delegate
 
 See [`AbstractExponentialAlgorithm`](@ref) for the comparison.
 """
-struct NativePade{T<:Real} <: AbstractExponentialAlgorithm
+struct NativePade{T <: Real} <: AbstractExponentialAlgorithm
     θ::T
 
     # The upper bound is not decoration. `𝔄(X, ::NativePade)` runs a *fixed* five Newton--Schulz
@@ -187,7 +187,7 @@ struct NativePade{T<:Real} <: AbstractExponentialAlgorithm
     # `169` at `θ = 3`, with nothing raised. `ScaledSquaring` takes any positive `θ` because it sums
     # its series until the terms vanish; this one does a fixed amount of work, so it has to refuse.
     # The docstring above has the table and the norm bound behind `1/2`.
-    function NativePade(θ::T = 0.5) where {T<:Real}
+    function NativePade(θ::T = 0.5) where {T <: Real}
         @assert zero(T) < θ ≤ 1 // 2 "the scaling threshold has to be in (0, 1/2], got $(θ)"
         new{T}(θ)
     end

@@ -137,8 +137,8 @@ end
 # Generated rather than written out so that `--levels` means something. `_ctor_1` is the entry point and
 # `_ctor_$LEVELS` is the one that actually builds the `Widget`.
 let
-    @eval $(Symbol(:_ctor_, LEVELS))(x; kwargs...) =
-        Widget(x, get(kwargs, :b, 0), get(kwargs, :c, 0.0), get(kwargs, :d, Int8(0)))
+    @eval $(Symbol(:_ctor_, LEVELS))(x; kwargs...) = Widget(
+        x, get(kwargs, :b, 0), get(kwargs, :c, 0.0), get(kwargs, :d, Int8(0)))
     for l in (LEVELS - 1):-1:1
         @eval $(Symbol(:_ctor_, l))(x; kwargs...) = $(Symbol(:_ctor_, l + 1))(x + $l; kwargs...)
     end
@@ -191,7 +191,8 @@ const WITH_PACKAGE = "--with-package" in ARGS
 if WITH_PACKAGE
     @eval begin
         using GeometricOptimizers
-        using GeometricOptimizers: Optimizer, OptimizerState, solve!, GradientMethod, MomentumMethod,
+        using GeometricOptimizers: Optimizer, OptimizerState, solve!, GradientMethod,
+                                   MomentumMethod,
                                    Adam, StiefelManifold, Geodesic, Cayley
         using SimpleSolvers: Static
         import Random
@@ -207,17 +208,19 @@ if WITH_PACKAGE
         _pkg_lvl1(x, F; kwargs...) = _pkg_lvl2(x, F; kwargs...)
 
         _opts(alg, retr) = (retraction = retr, algorithm = alg, linesearch = Static(0.01),
-                            max_iterations = 2, warn_iterations = 0)
+            max_iterations = 2, warn_iterations = 0)
 
         # one algorithm: construction and solve in one body, nested against flat
         function pkg_nested()
-            ps = _start(); alg = GradientMethod()
+            ps = _start()
+            alg = GradientMethod()
             opt = _pkg_lvl1(ps, _objective; _opts(alg, Cayley())...)
             solve!(ps, OptimizerState(alg, ps), opt)
         end
 
         function pkg_flat()
-            ps = _start(); alg = GradientMethod()
+            ps = _start()
+            alg = GradientMethod()
             opt = Optimizer(ps, _objective; _opts(alg, Cayley())...)
             solve!(ps, OptimizerState(alg, ps), opt)
         end
@@ -225,7 +228,9 @@ if WITH_PACKAGE
         # and the same with three algorithm types and two retractions in the one frame, which is the
         # breadth `svd_optim.jl`'s loop has and the single-algorithm controls above do not
         function pkg_nested_multi()
-            for retr in (Geodesic(), Cayley()), alg in (GradientMethod(), MomentumMethod(), Adam())
+            for retr in (Geodesic(), Cayley()),
+                alg in (GradientMethod(), MomentumMethod(), Adam())
+
                 ps = _start()
                 opt = _pkg_lvl1(ps, _objective; _opts(alg, retr)...)
                 solve!(ps, OptimizerState(alg, ps), opt)
@@ -233,7 +238,9 @@ if WITH_PACKAGE
         end
 
         function pkg_flat_multi()
-            for retr in (Geodesic(), Cayley()), alg in (GradientMethod(), MomentumMethod(), Adam())
+            for retr in (Geodesic(), Cayley()),
+                alg in (GradientMethod(), MomentumMethod(), Adam())
+
                 ps = _start()
                 opt = Optimizer(ps, _objective; _opts(alg, retr)...)
                 solve!(ps, OptimizerState(alg, ps), opt)
@@ -271,14 +278,14 @@ const PKG_CONTROLS = ("pkg-flat", "pkg-nested", "pkg-flat-multi", "pkg-nested-mu
 
 function run_one(which)
     println("LEVELS = ", LEVELS, ", WIDTH = ", WIDTH, "   [", which, "]")
-    which == "plain"            ? row("plain", plain) :
-    which == "noinline"         ? row("@noinline barrier", noinline_barrier) :
-    which == "nospecialize"     ? row("@nospecialize", nospecialized, 1.0) :
-    which == "one-level"        ? row("one level", one_level) :
-    which == "pkg-flat"         ? row("pkg, one level", pkg_flat) :
-    which == "pkg-nested"       ? row("pkg, three levels", pkg_nested) :
-    which == "pkg-flat-multi"   ? row("pkg, flat, 3 algs", pkg_flat_multi) :
-                                  row("pkg, nested, 3 algs", pkg_nested_multi)
+    which == "plain" ? row("plain", plain) :
+    which == "noinline" ? row("@noinline barrier", noinline_barrier) :
+    which == "nospecialize" ? row("@nospecialize", nospecialized, 1.0) :
+    which == "one-level" ? row("one level", one_level) :
+    which == "pkg-flat" ? row("pkg, one level", pkg_flat) :
+    which == "pkg-nested" ? row("pkg, three levels", pkg_nested) :
+    which == "pkg-flat-multi" ? row("pkg, flat, 3 algs", pkg_flat_multi) :
+    row("pkg, nested, 3 algs", pkg_nested_multi)
 end
 
 function fan_out()

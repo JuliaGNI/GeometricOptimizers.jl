@@ -32,7 +32,7 @@ The matrix form takes the backend and the element type from `A` and its size fro
 function unit_matrix(backend, ::Type{T}, n::Integer) where {T}
     matrix = KernelAbstractions.zeros(backend, T, n, n)
     write_ones! = write_ones_kernel!(backend)
-    write_ones!(matrix; ndrange=n)
+    write_ones!(matrix; ndrange = n)
 
     matrix
 end
@@ -75,7 +75,9 @@ end
 # `SimpleSolvers`' own method as of 0.13.2 -- the same body with the `Manifold` reconstruction taken
 # out -- and this one takes precedence over it for a manifold. The functor is [`RiemannianGradient`](@ref)
 # below.
-GradientAutodiff(F, x::Manifold) = GradientAutodiff(_x -> F(manifold_constructor(x)(reshape(_x, size(x)...))), vec(x))
+function GradientAutodiff(F, x::Manifold)
+    GradientAutodiff(_x -> F(manifold_constructor(x)(reshape(_x, size(x)...))), vec(x))
+end
 
 @doc raw"""
     RiemannianGradient(gradient) <: SimpleSolvers.Gradient
@@ -105,7 +107,7 @@ A `Manifold` iterate needs no wrapper, because `Manifold` is this package's type
 is therefore already owned; wrapping one is harmless all the same, since the functor below leaves that
 method to handle it.
 """
-struct RiemannianGradient{T,GT<:Gradient{T}} <: Gradient{T}
+struct RiemannianGradient{T, GT <: Gradient{T}} <: Gradient{T}
     gradient::GT
 end
 
@@ -116,30 +118,40 @@ RiemannianGradient(gradient::RiemannianGradient) = gradient
 
 # The coordinate interface forwards. Only the two-argument form is needed: `SimpleSolvers`'
 # `(grad::Gradient)(x::AbstractVector)` allocates a gradient and calls this.
-(grad::RiemannianGradient{T})(g::AbstractVector{T}, x::AbstractVector{T}) where {T} =
+function (grad::RiemannianGradient{T})(g::AbstractVector{T}, x::AbstractVector{T}) where {T}
     grad.gradient(g, x)
+end
 
 # `Matrix` and not `AbstractMatrix`: widening it would make a `RiemannianGradient` called on a
 # `Manifold` ambiguous against `(::Gradient)(::Manifold)` above, which is the method that rebuilds the
 # manifold and so the one that has to win.
-(grad::RiemannianGradient{T})(x::Matrix{T}) where {T} = rgrad(x, reshape(grad.gradient(vec(x)), size(x)...))
+function (grad::RiemannianGradient{T})(x::Matrix{T}) where {T}
+    rgrad(x, reshape(grad.gradient(vec(x)), size(x)...))
+end
 
 # Wrap only where the wrapper changes something. A plain vector iterate has no projection to apply,
 # and a `Manifold` reaches the owned method above either way; a parameter set is the case that needs
 # it, because its leaves are projected one at a time and `SimpleSolvers` has no method that reaches
 # them.
-_riemannian_gradient(grad::Gradient, ::Union{AbstractVector,Manifold}) = grad
+_riemannian_gradient(grad::Gradient, ::Union{AbstractVector, Manifold}) = grad
 _riemannian_gradient(grad::Gradient, ::NetworkParameters) = RiemannianGradient(grad)
 
-function compute_new_iterate!(xₖ₁::Manifold{T}, xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T}, cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
+function compute_new_iterate!(
+        xₖ₁::Manifold{T}, xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T},
+        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
     _retraction(x) = retraction(retraction_type, x)
     update_section!(section(cache), α * pₖ, _retraction)
     apply_section!(xₖ₁, section(cache), xₖ)
 end
 
-compute_new_iterate!(xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T}, cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T} = compute_new_iterate!(xₖ, xₖ, α, pₖ, cache, retraction_type)
+function compute_new_iterate!(xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T},
+        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
+    compute_new_iterate!(xₖ, xₖ, α, pₖ, cache, retraction_type)
+end
 
-function compute_new_iterate!(xₖ::AbstractVector{T}, x::AbstractVector{T}, α::T, pₖ::AbstractVector{T}, cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
+function compute_new_iterate!(
+        xₖ::AbstractVector{T}, x::AbstractVector{T}, α::T, pₖ::AbstractVector{T},
+        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
     _retraction(x) = retraction(retraction_type, x)
     update_section!(section(cache), α * pₖ, _retraction)
     apply_section!(xₖ, section(cache), x)

@@ -14,7 +14,7 @@ include("../grassmann_test_help.jl")
 # it at a lift norm large enough to matter.
 const MANIFOLD_TOLERANCE = 1e-5     # `Float32`; `check` cannot go much below `1e-6` in that format
 
-function geodesic_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Type=Float32)
+function geodesic_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Type = Float32)
     Y = rand(StiefelManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = geodesic(Y, Δ / 1000)
@@ -22,7 +22,7 @@ function geodesic_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Typ
     norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
 end
 
-function cayley_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Type=Float32)
+function cayley_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Type = Float32)
     Y = rand(StiefelManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = cayley(Y, Δ / 1000)
@@ -30,7 +30,7 @@ function cayley_retraction_for_stiefel_manifold(N::Integer, n::Integer, T::Type=
     norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
 end
 
-function geodesic_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::Type=Float32)
+function geodesic_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::Type = Float32)
     Y = rand(GrassmannManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = geodesic(Y, Δ / 1000)
@@ -38,7 +38,7 @@ function geodesic_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::T
     norm(1000 * (Y₁ - Y) - Δ) / norm(Δ) < 1e-2
 end
 
-function cayley_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::Type=Float32)
+function cayley_retraction_for_grassmann_manifold(N::Integer, n::Integer, T::Type = Float32)
     Y = rand(GrassmannManifold{T}, N, n)
     Δ = rgrad(Y, rand(T, N, n))
     Y₁ = cayley(Y, Δ / 1000)
@@ -64,8 +64,8 @@ end
 
 T = Float32
 
-for N ∈ 3:5
-    for n ∈ 1:N
+for N in 3:5
+    for n in 1:N
         @test geodesic_retraction_for_stiefel_manifold(N, n, T)
         @test cayley_retraction_for_stiefel_manifold(N, n, T)
         grassmann_test_help(geodesic_retraction_for_grassmann_manifold(N, n, T), N, n)

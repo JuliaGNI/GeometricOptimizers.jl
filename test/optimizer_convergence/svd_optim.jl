@@ -1,6 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: StiefelManifold, Cayley
-using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic, StrongWolfe
+using SimpleSolvers: Static, Backtracking, Bisection, Quadratic, BierlaireQuadratic,
+                     StrongWolfe
 using LinearAlgebra: norm, svd
 using Test
 import Random
@@ -97,7 +98,7 @@ const CONVERGED_GRADIENT_TOLERANCE = 1e-5
 #
 # So there is no per-step convergence regression to paper over here; `Static(0.01)` interacts
 # with the retraction exactly as it used to.
-const RELATIVE_ERROR_TOLERANCE = (gradient=2e-2, momentum=2e-2)
+const RELATIVE_ERROR_TOLERANCE = (gradient = 2e-2, momentum = 2e-2)
 
 # The number of trailing iterations the `Adam` statistic averages over, out of `1000`.
 const ADAM_ORBIT_WINDOW = 500
@@ -148,7 +149,8 @@ pinned.
 """
 function starting_point(n)
     Random.seed!(1234)
-    NetworkParameters((w₁=rand(StiefelManifold, size(A, 1), n), w₂=rand(StiefelManifold, size(A, 1), n)))
+    NetworkParameters((w₁ = rand(StiefelManifold, size(A, 1), n),
+        w₂ = rand(StiefelManifold, size(A, 1), n)))
 end
 
 """
@@ -177,8 +179,9 @@ The mean relative error over `entries` of a [`GeometricOptimizers.trace`](@ref).
 Spelled out rather than taken from `Statistics.mean`, which is not a test dependency and is not worth
 becoming one for a mean over a fixed-length window.
 """
-mean_orbit_error(entries, err_best) =
+function mean_orbit_error(entries, err_best)
     sum(abs((entry.f - err_best) / err_best) for entry in entries) / length(entries)
+end
 
 # `warn_iterations = 0` silences "Optimizer took 1000 iterations", which is true and is the point:
 # this is a fixed-budget comparison of three first-order methods at one learning rate, not a
@@ -228,9 +231,10 @@ for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
     for algorithm in (GradientMethod(), MomentumMethod(), GeometricOptimizers.Adam())
         ps = starting_point(3)
         state = OptimizerState(algorithm, ps)
-        optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
-            linesearch=Static(0.01), max_iterations=FIXED_BUDGET_STEPS, warn_iterations=0,
-            store_trace=true)
+        optimizer = Optimizer(
+            ps, objective; retraction = retraction, algorithm = algorithm,
+            linesearch = Static(0.01), max_iterations = FIXED_BUDGET_STEPS, warn_iterations = 0,
+            store_trace = true)
         result = solve!(ps, state, optimizer)
 
         for Y in values(ps)
@@ -240,7 +244,7 @@ for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
         push!(relative_errors, relative_error(ps, err_best))
 
         # the trace records `f`, so the relative error per iteration comes straight out of it
-        window = @view GeometricOptimizers.trace(result)[(end-ADAM_ORBIT_WINDOW+1):end]
+        window = @view GeometricOptimizers.trace(result)[(end - ADAM_ORBIT_WINDOW + 1):end]
         push!(mean_orbit_errors, mean_orbit_error(window, err_best))
     end
 
@@ -495,20 +499,21 @@ const CONVERGENCE_MAX_ITERATIONS = 5000
 # `svd_convergence_check`; see the comment there for why that used to matter on Julia 1.12.
 for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
     for (algorithm, linesearch) in ((GeometricOptimizers.BFGS(), Backtracking(Float64)),
-        (GeometricOptimizers.BFGS(), Backtracking(Float64; expand=true)),
+        (GeometricOptimizers.BFGS(), Backtracking(Float64; expand = true)),
         (GeometricOptimizers.BFGS(), Bisection(Float64)),
-        # The two polynomial searches. On *this* starting point they converge and always did, so this
-        # loop is coverage of the searches; the starting points that failed are covered by
-        # `a1b_seeds` below, which is the regression test for A1b proper.
+    # The two polynomial searches. On *this* starting point they converge and always did, so this
+    # loop is coverage of the searches; the starting points that failed are covered by
+    # `a1b_seeds` below, which is the regression test for A1b proper.
         (GeometricOptimizers.BFGS(), Quadratic(Float64)),
         (GeometricOptimizers.BFGS(), BierlaireQuadratic(Float64)),
-        # `DFP` with the two searches whose cost on this problem is stable across starting points
+    # `DFP` with the two searches whose cost on this problem is stable across starting points
         (GeometricOptimizers.DFP(), Bisection(Float64)),
-        (GeometricOptimizers.DFP(), StrongWolfe(Float64; c₂=0.1)))
+        (GeometricOptimizers.DFP(), StrongWolfe(Float64; c₂ = 0.1)))
         ps = starting_point(3)
         state = OptimizerState(algorithm, ps)
-        optimizer = Optimizer(ps, objective; retraction=retraction, algorithm=algorithm,
-            linesearch=linesearch, max_iterations=CONVERGENCE_MAX_ITERATIONS, warn_iterations=0)
+        optimizer = Optimizer(
+            ps, objective; retraction = retraction, algorithm = algorithm,
+            linesearch = linesearch, max_iterations = CONVERGENCE_MAX_ITERATIONS, warn_iterations = 0)
         result = solve!(ps, state, optimizer)
         svd_convergence_check(3, ps, state, result, CONVERGENCE_MAX_ITERATIONS)
     end
@@ -534,17 +539,19 @@ const A1B_SEEDS = (2, 8)
 
 function a1b_starting_point(seed)
     Random.seed!(seed)
-    NetworkParameters((w₁=rand(StiefelManifold, size(A, 1), 3), w₂=rand(StiefelManifold, size(A, 1), 3)))
+    NetworkParameters((w₁ = rand(StiefelManifold, size(A, 1), 3),
+        w₂ = rand(StiefelManifold, size(A, 1), 3)))
 end
 
 @testset "a bounded merit does not produce an unbounded step (issue A1b)" begin
     for linesearch in (Quadratic(Float64), BierlaireQuadratic(Float64)), seed in A1B_SEEDS
+
         algorithm = GeometricOptimizers.BFGS()
         ps = a1b_starting_point(seed)
         state = OptimizerState(algorithm, ps)
-        optimizer = Optimizer(ps, objective; retraction=GeometricOptimizers.Cayley(),
-            algorithm=algorithm, linesearch=linesearch,
-            max_iterations=CONVERGENCE_MAX_ITERATIONS, warn_iterations=0)
+        optimizer = Optimizer(ps, objective; retraction = GeometricOptimizers.Cayley(),
+            algorithm = algorithm, linesearch = linesearch,
+            max_iterations = CONVERGENCE_MAX_ITERATIONS, warn_iterations = 0)
         result = solve!(ps, state, optimizer)
 
         # Both of these ran to a 20_000 cap before, at `check` of 3.2e-1 and 5.5e-1. They now take

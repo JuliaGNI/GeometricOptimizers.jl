@@ -68,11 +68,13 @@ function _refresh_latest_gradient!(cache::OptimizerCache, g::Gradient)
     cache
 end
 
-_refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::Gradient) =
+function _refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::Gradient)
     g(latest_gradient(cache), solution(cache))
+end
 
-_refresh_latest_gradient!(::Union{Manifold,NetworkParameters}, cache::OptimizerCache, g::Gradient) =
+function _refresh_latest_gradient!(::Union{Manifold, NetworkParameters}, cache::OptimizerCache, g::Gradient)
     _copyto!(latest_gradient(cache), global_rep(section(cache), g(solution(cache))))
+end
 
 @doc raw"""
     latest_gradient_is_current(cache, state, x)
@@ -96,8 +98,9 @@ latest_gradient_is_current(::OptimizerCache, ::OptimizerState, ::OptimizerSoluti
 # The flag is not redundant with the comparisons: on Euclidean parameters the cache's and the state's
 # sections both start life as a copy of `x₀` with `λ = nothing`, so before the first step they compare
 # *equal*, and without the flag the `NaN`-filled scratch would be reused.
-_latest_gradient_is_current(cache::OptimizerCache, state::OptimizerState, x::OptimizerSolution) =
+function _latest_gradient_is_current(cache::OptimizerCache, state::OptimizerState, x::OptimizerSolution)
     cache.g̃_is_current[] && solution(cache) == x && section(cache) == section(state)
+end
 
 """
     invalidate_latest_gradient!(cache)
@@ -152,5 +155,6 @@ end
 # The shared body of the three first-order caches' `gradient_difference!`. Both gradients are in the
 # cache once `solver_step!` has refreshed `latest_gradient`, so unlike the generic method this needs
 # no `state.ḡ` -- see `gradient_difference!` for why that matters here.
-_latest_gradient_difference!(cache::OptimizerCache) =
+function _latest_gradient_difference!(cache::OptimizerCache)
     _difference!(cache.Δg, latest_gradient(cache), gradient(cache))
+end

@@ -15,14 +15,14 @@ Also see [`apply_section`](@ref) and [`global_rep`](@ref).
 
 For an implementation of `GlobalSection` for a custom array (especially manifolds), the function [`global_section`](@ref) has to be generalized.
 """
-struct GlobalSection{T,AT<:AbstractArray{T},λT<:Union{AbstractArray{T},Nothing}}
+struct GlobalSection{T, AT <: AbstractArray{T}, λT <: Union{AbstractArray{T}, Nothing}}
     Y::AT
     # for now the only lift that is implemented is the Stiefel one - these types will have to be expanded!
     λ::λT
 
     function GlobalSection(Y::AbstractVecOrMat)
         λ = global_section(Y)
-        new{eltype(Y),typeof(Y),typeof(λ)}(copy(Y), λ)
+        new{eltype(Y), typeof(Y), typeof(λ)}(copy(Y), λ)
     end
 end
 
@@ -81,7 +81,7 @@ Mathematically this is the group action of the element ``\lambda{}Y\in{}G`` on t
 
 Internally it calls [`apply_section!`](@ref).
 """
-function apply_section(λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:StiefelManifold{T}}
+function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {T, AT <: StiefelManifold{T}}
     Y = StiefelManifold(zero(Y₂.A))
     apply_section!(Y, λY, Y₂)
 
@@ -95,10 +95,11 @@ Apply `λY` to `Y₂` and store the result in `Y`.
 
 This is the inplace version of [`apply_section`](@ref).
 """
-function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::MT) where {T,AT<:StiefelManifold{T},MT<:StiefelManifold{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T, AT},
+        Y₂::MT) where {T, AT <: StiefelManifold{T}, MT <: StiefelManifold{T}}
     N, n = size(λY.Y)
 
-    @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n+1):N, :]
+    @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n + 1):N, :]
 
     Y
 end
@@ -106,31 +107,34 @@ end
 # This one is `StiefelManifold`-only and stays so: it has no live caller — the only `apply_section!`
 # call sites in the package are the two in `src/utils.jl` — and the commented-out `update_section!`
 # below is what it was written for. Widening it to `Manifold` would be widening dead code.
-function apply_section!(Λᵗ::GlobalSection{T,MT}, λY::GlobalSection{T,MT}, Y₂::MT) where {T,MT<:StiefelManifold{T}}
+function apply_section!(Λᵗ::GlobalSection{T, MT}, λY::GlobalSection{T, MT},
+        Y₂::MT) where {T, MT <: StiefelManifold{T}}
     N, n = size(Λᵗ.Y)
     @assert size(Y₂) == size(Λᵗ) == size(λY)
 
     @views apply_section!(Λᵗ.Y, λY, StiefelManifold(Y₂.A[:, 1:n]))
-    @views Λᵗ.λ .= λY.Y * Y₂.A[1:n, (n+1):N] .+ λY.λ * Y₂.A[(n+1):N, (n+1):N]
+    @views Λᵗ.λ .= λY.Y * Y₂.A[1:n, (n + 1):N] .+ λY.λ * Y₂.A[(n + 1):N, (n + 1):N]
 
     Λᵗ
 end
 
-function apply_section(λY::GlobalSection{T,AT}, Y₂::AT) where {T,AT<:GrassmannManifold{T}}
+function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {
+        T, AT <: GrassmannManifold{T}}
     Y = GrassmannManifold(zero(Y₂.A))
     apply_section!(Y, λY, Y₂)
 
     Y
 end
 
-function apply_section!(Y::AT, λY::GlobalSection{T,AT}, Y₂::MT) where {T,AT<:GrassmannManifold{T},MT<:GrassmannManifold{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T, AT},
+        Y₂::MT) where {T, AT <: GrassmannManifold{T}, MT <: GrassmannManifold{T}}
     N, n = size(λY.Y)
 
     # `.=` and not `=`, as in the Stiefel method above: assigning the field replaced `Y`'s array on
     # every solver step rather than writing into it, and returned that array instead of `Y`. Safe
     # where `Y === Y₂`, which `update_section!` relies on -- the two products are materialised before
     # the broadcast assignment.
-    @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n+1):N, :]
+    @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n + 1):N, :]
 
     Y
 end
@@ -140,7 +144,8 @@ function apply_section(λY::GlobalSection{T}, Y₂::AbstractVecOrMat{T}) where {
     apply_section!(Y, λY, Y₂)
 end
 
-function apply_section!(Y::AT, λY::GlobalSection{T,AT,Nothing}, Y₂::AbstractVecOrMat{T}) where {T,AT<:AbstractVecOrMat{T}}
+function apply_section!(Y::AT, λY::GlobalSection{T, AT, Nothing},
+        Y₂::AbstractVecOrMat{T}) where {T, AT <: AbstractVecOrMat{T}}
     Y .= Y₂ .+ λY.Y
 end
 
@@ -168,11 +173,13 @@ end
 #
 # The section stays the plain tree `GlobalSection(::NetworkParameters)` returns; it is passed through
 # as the second argument and `mapparameters` normalises it.
-apply_section(λY::NamedTuple, Y₂::NetworkParameters) =
+function apply_section(λY::NamedTuple, Y₂::NetworkParameters)
     mapparameters((y, λ) -> apply_section(λ, y), Y₂, λY)
+end
 
-global_rep(λY::NamedTuple, gx::NetworkParameters) =
+function global_rep(λY::NamedTuple, gx::NetworkParameters)
     mapparameters((g, λ) -> global_rep(λ, g), gx, λY)
+end
 
 ##auxiliary function
 function global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) where {T}
@@ -236,7 +243,8 @@ to get the small skew-symmetric matrix ``A\in\mathcal{S}_\mathrm{skew}(n)`` and
 
 to get the arbitrary matrix ``B\in\mathbb{R}^{(N-n)\times{}n}``.
 """
-function global_rep(λY::GlobalSection{T,AT}, Δ::AbstractMatrix{T}) where {T,AT<:StiefelManifold{T}}
+function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {
+        T, AT <: StiefelManifold{T}}
     N, n = size(λY.Y)
     StiefelLieAlgHorMatrix(
         SkewSymMatrix(λY.Y.A' * Δ),
@@ -279,7 +287,8 @@ _round(global_rep(λY, Δ); digits = 3)
  -0.4     0.919  -1.085   0.0     0.0     0.0
 ```
 """
-function global_rep(λY::GlobalSection{T,AT}, Δ::AbstractMatrix{T}) where {T,AT<:GrassmannManifold{T}}
+function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {
+        T, AT <: GrassmannManifold{T}}
     N, n = size(λY.Y)
     GrassmannLieAlgHorMatrix(
         λY.λ' * Δ,
@@ -319,27 +328,30 @@ a vector space is addition, so `retraction` is then ignored.
 The three-argument form is the two-argument section written in place, `Λᵗ === Λ⁽ᵗ⁻¹⁾`. A `NamedTuple`
 of parameters is walked leaf by leaf.
 """
-function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T,MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T,MT<:Manifold{T}}
+function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T},
+        retraction) where {T, MT <: Manifold{T}}
     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
     expB = retraction(B⁽ᵗ⁻¹⁾)
     apply_section!(expB, Λ⁽ᵗ⁻¹⁾, expB)
     Λ⁽ᵗ⁻¹⁾.Y.A .= @view expB.A[:, 1:n]
-    Λ⁽ᵗ⁻¹⁾.λ .= @view expB.A[:, (n+1):N]
+    Λ⁽ᵗ⁻¹⁾.λ .= @view expB.A[:, (n + 1):N]
 
     nothing
 end
 
-function update_section!(Λᵗ::GlobalSection{T,MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T,MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T,MT<:Manifold{T}}
+function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT},
+        B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold{T}}
     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
     expB = retraction(B⁽ᵗ⁻¹⁾)
     apply_section!(expB, Λ⁽ᵗ⁻¹⁾, expB)
     Λᵗ.Y.A .= @view expB.A[:, 1:n]
-    Λᵗ.λ .= @view expB.A[:, (n+1):N]
+    Λᵗ.λ .= @view expB.A[:, (n + 1):N]
 
     nothing
 end
 
-function update_section!(Λᵗ::GlobalSection{T,AT,Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T,AT}, B⁽ᵗ⁻¹⁾::AT, retraction) where {T,AT<:AbstractVecOrMat{T}}
+function update_section!(Λᵗ::GlobalSection{T, AT, Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, AT},
+        B⁽ᵗ⁻¹⁾::AT, retraction) where {T, AT <: AbstractVecOrMat{T}}
     Λᵗ.Y .= Λ⁽ᵗ⁻¹⁾.Y .+ B⁽ᵗ⁻¹⁾
 
     Λᵗ
@@ -349,7 +361,8 @@ end
 # retraction on a vector space is addition -- but written on the free parameters, which is where a
 # [`VectorStorageMatrix`](@ref) keeps them. Three of the four have no `setindex!` for the broadcast
 # above to write through, and for the fourth (`SymmetricMatrix`) it would visit each entry twice.
-function update_section!(Λᵗ::GlobalSection{T,AT,Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T,AT}, B⁽ᵗ⁻¹⁾::AT, retraction) where {T,AT<:VectorStorageMatrix{T}}
+function update_section!(Λᵗ::GlobalSection{T, AT, Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, AT},
+        B⁽ᵗ⁻¹⁾::AT, retraction) where {T, AT <: VectorStorageMatrix{T}}
     parent(Λᵗ.Y) .= parent(Λ⁽ᵗ⁻¹⁾.Y) .+ parent(B⁽ᵗ⁻¹⁾)
 
     Λᵗ
@@ -365,7 +378,9 @@ function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽�
     Λᵗ
 end
 
-update_section!(Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction) = update_section!(Λ⁽ᵗ⁻¹⁾, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
+function update_section!(Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
+    update_section!(Λ⁽ᵗ⁻¹⁾, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
+end
 
 # The default for a `struct` is `===`, which is `false` for two sections that hold equal frames in
 # different arrays -- and comparing the frames is exactly what `latest_gradient_is_current` needs in
@@ -373,23 +388,28 @@ update_section!(Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction) = update_section!
 # point". `λ === nothing` on Euclidean parameters, and `nothing == nothing` is `true`.
 Base.:(==)(Λ₁::GlobalSection, Λ₂::GlobalSection) = Λ₁.Y == Λ₂.Y && Λ₁.λ == Λ₂.λ
 
-function Base.copyto!(dest::GlobalSection{T,MT}, src::GlobalSection{T,MT}) where {T,MT<:Manifold}
+function Base.copyto!(dest::GlobalSection{T, MT}, src::GlobalSection{
+        T, MT}) where {T, MT <: Manifold}
     copyto!(dest.Y, src.Y)
     copyto!(dest.λ, src.λ)
     dest
 end
 
-function Base.copyto!(dest::GlobalSection{T,AT,Nothing}, src::GlobalSection{T,AT,Nothing}) where {T,AT<:AbstractVecOrMat{T}}
+function Base.copyto!(dest::GlobalSection{T, AT, Nothing},
+        src::GlobalSection{T, AT, Nothing}) where {T, AT <: AbstractVecOrMat{T}}
     copyto!(dest.Y, src.Y)
     dest
 end
 
-function Base.copyto!(dest::GlobalSection{T,AT,Nothing}, src::AT) where {T,AT<:AbstractVecOrMat{T}}
+function Base.copyto!(
+        dest::GlobalSection{
+            T, AT, Nothing}, src::AT) where {T, AT <: AbstractVecOrMat{T}}
     copyto!(dest.Y, src)
     dest
 end
 
 # auxiliary function
-function global_rep(::GlobalSection{T,AT,Nothing}, gx::AbstractVecOrMat{T}) where {T,AT<:AbstractVecOrMat{T}}
+function global_rep(::GlobalSection{T, AT, Nothing},
+        gx::AbstractVecOrMat{T}) where {T, AT <: AbstractVecOrMat{T}}
     gx
 end

@@ -3,8 +3,10 @@ using JLArrays: JLArray
 using GPUArraysCore: allowscalar
 using LinearAlgebra: norm, opnorm, I
 using GeometricOptimizers
-using GeometricOptimizers: geodesic, check, rgrad, 𝔄, 𝔄exp, opnorm₁, unit_matrix, Geodesic, retraction
-using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
+using GeometricOptimizers: geodesic, check, rgrad, 𝔄, 𝔄exp, opnorm₁, unit_matrix, Geodesic,
+                           retraction
+using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew,
+                           TaylorSeries
 import Random
 
 Random.seed!(1234)
@@ -35,6 +37,7 @@ const LIFTS = (("Stiefel", stiefel_lift), ("Grassmann", grassmann_lift))
 @testset "every algorithm stays on the manifold at every lift norm" begin
     N, n = 20, 3
     for (_, lift) in LIFTS, s in NORM_SCALES
+
         B = lift(Float64, N, n, s)
         reference = exp(Matrix(B))
 
@@ -51,6 +54,7 @@ end
 @testset "the algorithms agree with each other" begin
     N, n = 20, 3
     for (_, lift) in LIFTS, s in NORM_SCALES
+
         B = lift(Float64, N, n, s)
         Y = Matrix(geodesic(B, first(ALGORITHMS)))
 
@@ -65,7 +69,8 @@ end
     for T in (Float64, Float32), (_, lift) in LIFTS, s in NORM_SCALES
         B = lift(T, N, n, s)
         reference = Matrix(geodesic(B, AugmentedPade()))
-        relative_error = norm(Matrix(geodesic(B, NativePade())) - reference) / norm(reference)
+        relative_error = norm(Matrix(geodesic(B, NativePade())) - reference) /
+                         norm(reference)
         @test relative_error < (T === Float64 ? 1e-10 : 1e-4)
     end
 end
@@ -185,6 +190,7 @@ end
     Random.seed!(99)
 
     for T in (Float64, Float32), m in (1, 2, 6, 20)
+
         X = randn(T, m, m) * T(10)
         @test opnorm₁(X) ≈ opnorm(X, 1) rtol = 8 * eps(T)
         @test opnorm₁(X) isa T
@@ -255,7 +261,9 @@ end
     # among them — it is a `geodesic`-level algorithm with its own branch there and no `𝔄` method —
     # so `ALGORITHMS`, which exists for the `geodesic` sweeps above and includes it, is not what to
     # loop over here.
-    for algorithm in (TaylorSeries(), ScaledSquaring(), NativePade(), AugmentedPade()), T in (Float32, Float64)
+    for algorithm in (TaylorSeries(), ScaledSquaring(), NativePade(), AugmentedPade()),
+        T in (Float32, Float64)
+
         A = T(0.1) * rand(T, 8, 3)
         B = T(0.1) * rand(T, 8, 3)
         @test eltype(𝔄exp(A, B, algorithm)) == T

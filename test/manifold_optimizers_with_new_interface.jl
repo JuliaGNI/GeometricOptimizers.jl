@@ -23,15 +23,18 @@ const MINIMIZER = StiefelManifold([0.0; 0.0; 1.0;;])
 # `x₀` is deliberately far from the minimizer: it is on the equator relative to it.
 initial_point(::Type{T}) where {T} = StiefelManifold(T[0.0; sqrt(0.5); sqrt(0.5);;])
 
-objective(::Type{T}) where {T} = let target = T.(TARGET)
-    x::StiefelManifold -> l2norm(vec(x), target)
-end
+objective(::Type{T}) where {T} =
+    let target = T.(TARGET)
+        x::StiefelManifold -> l2norm(vec(x), target)
+    end
 
-function optimize(::Type{T}, algorithm; α=0.1, retraction=Geodesic(), linesearch=Static(T(α))) where {T}
+function optimize(::Type{T}, algorithm; α = 0.1, retraction = Geodesic(),
+        linesearch = Static(T(α))) where {T}
     Random.seed!(1234)
     f = objective(T)
     x = initial_point(T)
-    optimizer = Optimizer(x, f; algorithm=algorithm, linesearch=linesearch, retraction=retraction)
+    optimizer = Optimizer(
+        x, f; algorithm = algorithm, linesearch = linesearch, retraction = retraction)
     solve!(x, OptimizerState(algorithm, x), optimizer)
     x, f
 end
@@ -42,11 +45,12 @@ manifold_tolerance(::Type{T}) where {T} = 10 * eps(T)
 
 @testset "a bare Manifold can be optimized with the unified interface" begin
     for T in (Float64, Float32), retraction in (Geodesic(), Cayley())
-        x, f = optimize(T, GradientMethod(); retraction=retraction)
+
+        x, f = optimize(T, GradientMethod(); retraction = retraction)
 
         @test x isa StiefelManifold{T}                          # the type is preserved ...
         @test check(x) < manifold_tolerance(T)                  # ... and so is the manifold
-        @test isapprox(x, MINIMIZER; atol=sqrt(eps(T)))         # it found the minimizer
+        @test isapprox(x, MINIMIZER; atol = sqrt(eps(T)))         # it found the minimizer
         @test f(x) < f(initial_point(T))                        # and it improved on the start
     end
 end
@@ -58,7 +62,7 @@ end
         Random.seed!(1234)
         f = objective(T)
         x = initial_point(T)
-        optimizer = Optimizer(x, f; algorithm=GradientMethod(), linesearch=Static(T(0.1)))
+        optimizer = Optimizer(x, f; algorithm = GradientMethod(), linesearch = Static(T(0.1)))
         solve!(x, GradientState(x), optimizer)
 
         x′, _ = optimize(T, GradientMethod())
@@ -97,16 +101,17 @@ convergence_tolerance(::Type{T}, ::Adam) where {T} = 10 * sqrt(eps(T))
 
 @testset "the stateful algorithms accept a bare Manifold too" begin
     for T in (Float64, Float32), retraction in (Geodesic(), Cayley())
+
         for algorithm in (MomentumMethod(T(0.1)), Adam(T))
             # `Adam` gets a searching line search; see `convergence_tolerance` above. `Bisection`
             # rather than `Backtracking` because Adam's direction is not required to descend, and a
             # sufficient-decrease search reports that on every step where it does not.
             linesearch = algorithm isa Adam ? Bisection(T) : Static(T(0.1))
-            x, f = optimize(T, algorithm; retraction=retraction, linesearch=linesearch)
+            x, f = optimize(T, algorithm; retraction = retraction, linesearch = linesearch)
 
             @test x isa StiefelManifold{T}                              # type preserved ...
             @test check(x) < stateful_manifold_tolerance(T)             # ... and the manifold
-            @test isapprox(x, MINIMIZER; atol=convergence_tolerance(T, algorithm)) # minimizer found
+            @test isapprox(x, MINIMIZER; atol = convergence_tolerance(T, algorithm)) # minimizer found
             @test f(x) < f(initial_point(T))                            # and improved on the start
         end
     end
