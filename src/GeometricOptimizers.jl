@@ -8,7 +8,7 @@ using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, Linesear
 import SimpleSolvers: outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_suctol, f_mindec
 import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
-using SimpleSolvers: HessianAutodiff, HessianFunction
+using SimpleSolvers: HessianAutodiff
 
 import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff, alloc_h
 export GradientAutodiff, GradientFunction, GradientFiniteDifferences
@@ -46,7 +46,7 @@ using Printf
 
 using KernelAbstractions
 using Random
-using LinearAlgebra: Adjoint, qr, qr!, norm, I, mul!, rmul!, dot, ⋅
+using LinearAlgebra: Adjoint, qr, qr!, norm, I, mul!, rmul!, dot
 using LinearAlgebra: Diagonal, Hermitian, eigen
 import LinearAlgebra
 import ChainRulesCore
@@ -63,7 +63,7 @@ import LazyArrays
 # The list is what this package actually uses, so that it says which walks these optimizers are
 # written in terms of. `ext/AbstractNeuralNetworksExt.jl` imports `mapstorage` for itself.
 using NeuralNetworkParameters: NetworkParameters, params,
-                               parameterlayout, flatlength,
+                               flatlength,
                                flatten, flatten!, unflatten, unflatten!,
                                FlatParameters,
                                mapparameters, mapparameters!,
