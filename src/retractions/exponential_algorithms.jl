@@ -262,7 +262,7 @@ fixed, so past ``\theta \approx 1`` the inverse it computes stops being one, and
 Only the pattern is reproducible, not the digits: these are maxima over a random draw, and the two
 rightmost columns move by orders of magnitude between seeds. Where the transition happens does not.
 One such draw is recomputed at build time in
-[What a large ``\theta`` costs `NativePade`](@ref).
+[What a large ``\theta`` costs `NativePade`](@ref native-pade-large-theta).
 
 The constructor therefore requires ``0 < \theta \leq 1/2``, where [`ScaledSquaring`](@ref) accepts any
 positive value: the two thresholds are not interchangeable. Lowering this one is safe and merely adds
