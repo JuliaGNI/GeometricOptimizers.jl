@@ -372,7 +372,8 @@ differs between the two algorithms:
 - For [`NativePade`](@ref) it is **forced**. Its five Newton–Schulz steps are only accurate while
   ``\|I - q_6(Y)\|_1 < 1``, and ``\theta \leq 1/2`` is what guarantees that with room to spare. See
   [Applying the denominator without a matrix solve](@ref) for the bound and
-  [What a large ``\theta`` costs `NativePade`](@ref) for the measured failures above it.
+  [What a large ``\theta`` costs `NativePade`](@ref native-pade-large-theta) for the measured
+  failures above it.
 - For `ScaledSquaring` it is an **empirical choice, and a nearly free one**, because the algorithm
   turns out to be insensitive to it. The measurement is in
   [Sensitivity to the threshold `θ`](@ref) below, recomputed at build time rather than quoted here:
@@ -884,7 +885,7 @@ The last column is the same kernel with steps 1 and 5 of the algorithm around it
 ``10^{-14}`` across the sweep. What the framework supplies is the guarantee that the kernel is only
 ever asked for ``\|Y\|_1 \leq \theta``, where both failure modes are absent.
 
-### What a large ``\theta`` costs `NativePade`
+### [What a large ``\theta`` costs `NativePade`](@id native-pade-large-theta)
 
 ``\theta`` means something different in the two algorithms, and the difference is the reason
 `NativePade(θ)` **rejects** ``\theta > 1/2`` where `ScaledSquaring(θ)` accepts any positive value.
