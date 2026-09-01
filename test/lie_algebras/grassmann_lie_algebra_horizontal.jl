@@ -46,9 +46,9 @@ function random_array_generation(n::Integer, N::Integer, T::DataType)
     @test eltype(A_Grassmann_hor) == T
 end
 
-for T ∈ (Float32, Float64)
-    for N ∈ 3:5
-        for n ∈ 1:N
+for T in (Float32, Float64)
+    for N in 3:5
+        for n in 1:N
             add_and_sub(n, N, T)
             scalar_multiplication(n, N, T)
             random_array_generation(n, N, T)
@@ -62,7 +62,9 @@ end
 # lift either raised (no `setindex!`) or silently got the ambient answer. That is issue A11; they are
 # one method over `Base.parent` now.
 
-lifts(T, N, n) = (rand(StiefelLieAlgHorMatrix{T}, N, n), rand(GrassmannLieAlgHorMatrix{T}, N, n))
+function lifts(T, N, n)
+    (rand(StiefelLieAlgHorMatrix{T}, N, n), rand(GrassmannLieAlgHorMatrix{T}, N, n))
+end
 
 # `l2norm` of a lift is the norm of its *flattening*, which is what `Q` is sized by, what `outer!`
 # forms its outer product in, and what the `α` of a line search parameterizes. The ambient Frobenius
@@ -70,7 +72,7 @@ lifts(T, N, n) = (rand(StiefelLieAlgHorMatrix{T}, N, n), rand(GrassmannLieAlgHor
 # fell through to `l2norm(::AbstractMatrix)` bounded the step ceiling, the curvature condition and
 # `rg` by a number that was too large by that factor.
 @testset "l2norm of a horizontal lift is the norm of its flattening" begin
-    for T in (Float32, Float64), N in 3:6, n in 1:(N-1)
+    for T in (Float32, Float64), N in 3:6, n in 1:(N - 1)
         for B in lifts(T, N, n)
             v, _ = flatten(T, B)
             @test l2norm(B) ≈ l2norm(v)
@@ -86,7 +88,7 @@ end
 free(::Type{T}, B) where {T} = flatten(T, B)[1]
 
 @testset "the elementwise helpers act on the free parameters" begin
-    for T in (Float32, Float64), N in 3:6, n in 1:(N-1)
+    for T in (Float32, Float64), N in 3:6, n in 1:(N - 1)
         for B in lifts(T, N, n)
             b = free(T, B)
 
@@ -115,7 +117,7 @@ end
 # reaches it on every retraction; it existed for the Stiefel lift only, so the Grassmann retraction
 # was on the scalar-indexed path. See the note on issue A19.
 @testset "one(::AbstractLieAlgHorMatrix) is the ambient identity" begin
-    for T in (Float32, Float64), N in 3:6, n in 1:(N-1)
+    for T in (Float32, Float64), N in 3:6, n in 1:(N - 1)
         for B in lifts(T, N, n)
             @test one(B) == Matrix{T}(I, N, N)
             @test eltype(one(B)) == T

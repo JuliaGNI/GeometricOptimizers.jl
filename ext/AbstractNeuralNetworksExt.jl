@@ -28,8 +28,9 @@ using AbstractNeuralNetworks: NeuralNetworkBackend
 
 using NeuralNetworkParameters: mapstorage
 
-changebackend(backend::NeuralNetworkBackend,
-    x::Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix}) =
+function changebackend(backend::NeuralNetworkBackend,
+        x::Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix})
     mapstorage(y -> changebackend(backend, y), x)
+end
 
 end

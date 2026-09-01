@@ -13,7 +13,7 @@ One iteration's worth of the trace [`solve!`](@ref) records when
 
 See [`trace`](@ref).
 """
-struct OptimizerTraceEntry{YT,XT}
+struct OptimizerTraceEntry{YT, XT}
     iteration::Int
     f::YT
     rg::XT
@@ -37,17 +37,19 @@ Serves as a diagnostic tool for the [`Optimizer`](@ref) and is the return argume
   empty otherwise. See [`trace`](@ref).
 
 """
-mutable struct OptimizerResult{T,YT,VT,OST<:OptimizerStatus{T,YT}}
+mutable struct OptimizerResult{T, YT, VT, OST <: OptimizerStatus{T, YT}}
     status::OST
 
     x::VT    # current solution
     f::YT    # current function
 
-    trace::Vector{OptimizerTraceEntry{YT,T}}
+    trace::Vector{OptimizerTraceEntry{YT, T}}
 end
 
-OptimizerResult(status::OptimizerStatus{T,YT}, x::OptimizerSolution{T}, f::YT) where {T,YT} =
-    OptimizerResult(status, x, f, OptimizerTraceEntry{YT,T}[])
+function OptimizerResult(status::OptimizerStatus{T, YT}, x::OptimizerSolution{T}, f::YT) where {
+        T, YT}
+    OptimizerResult(status, x, f, OptimizerTraceEntry{YT, T}[])
+end
 
 status(result::OptimizerResult) = result.status
 

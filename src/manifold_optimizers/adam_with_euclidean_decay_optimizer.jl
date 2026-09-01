@@ -2,7 +2,9 @@
 # the cache and the state, are the same objects. It therefore reuses [`AdamCache`](@ref) and
 # [`AdamState`](@ref) rather than duplicating them, and
 # `OptimizerState(AdamWithEuclideanDecay(), x)` returns an `AdamState`.
-Hessian(::AdamWithEuclideanDecay, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
+function Hessian(::AdamWithEuclideanDecay, ::OptimizerProblem, ::OptimizerSolution{T}) where {T}
+    NoHessian{T}()
+end
 OptimizerState(::AdamWithEuclideanDecay, x...) = AdamState(x...)
 
 @doc raw"""
@@ -32,10 +34,11 @@ _is_decayable(::GrassmannManifold) = false
 _is_decayable(::AbstractArray) = true
 # `any` over the values and not over the leaves: a block that is itself a branch is asked recursively,
 # which is what a container needs -- its top-level values are layers, never parameters. Written on
-# `ParameterSet` rather than on [`ParameterContainer`](@ref) because a layer
-# whose weights do not share one element type is not an `ArrayNamedTuple`, and the recursion has to
-# reach it all the same.
-_is_decayable(ps::ParameterSet) = any(_is_decayable, values(ps))
+# Two methods, because this one recurses through `values` itself rather than through
+# `mapparameters`: it meets a container's *layers* -- plain `NamedTuple`s -- on the way down and needs
+# a method for each shape.
+_is_decayable(ps::NetworkParameters) = any(_is_decayable, values(ps))
+_is_decayable(layer::NamedTuple) = any(_is_decayable, values(layer))
 
 # no `Manifold` fallback: see the docstring above. Without this method the `AbstractArray` one
 # would catch a new manifold (`Manifold <: AbstractMatrix`) and claim it *is* decayable, which is
@@ -98,13 +101,14 @@ function _weight_decay!(δ::AbstractLieAlgHorMatrix{T}, x::Manifold{T}, ::T) whe
     δ
 end
 
-function _weight_decay!(δ::ParameterContainer{T}, x::ParameterContainer{T}, λ::T) where {T}
+function _weight_decay!(δ::NetworkParameters{T}, x::NetworkParameters{T}, λ::T) where {T}
     weight_decay_closure!(δᵢ, xᵢ) = _weight_decay!(δᵢ, xᵢ, λ)
     mapparameters!(weight_decay_closure!, δ, x)
     δ
 end
 
-function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}, method::AdamWithEuclideanDecay{T}, x::OptimizerSolution{T}) where {T}
+function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
+        method::AdamWithEuclideanDecay{T}, x::OptimizerSolution{T}) where {T}
     update!(cache, state, gradient, method.β₁, method.β₂, method.δ, state.iterations, x)
     _weight_decay!(direction(cache), x, method.λ)
 

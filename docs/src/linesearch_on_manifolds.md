@@ -20,9 +20,9 @@ For an ordinary vector, a line search evaluates the one-dimensional merit functi
 
 That construction is not available when ``x_k`` lies on a manifold: adding a tangent or
 horizontal-lift direction to a point on ``\operatorname{St}(N,n)`` generally leaves the manifold.
-[`linesearch_problem`](@ref) therefore failed for every *searching* line search on a `NamedTuple` of
-[`StiefelManifold`](@ref) points, and [`SimpleSolvers.Static`](@extref) only appeared to work because
-it never evaluates the merit at all.
+[`linesearch_problem`](@ref) therefore has to retract rather than add, for every *searching* line
+search on a set of [`StiefelManifold`](@ref) points. [`SimpleSolvers.Static`](@extref) is the one case
+that would appear to work without it, and only because it never evaluates the merit at all.
 
 The manifold trial point is formed by applying the selected retraction to the current point and
 direction: [`trial_iterate!`](@ref) uses the same construction as [`solver_step!`](@ref) does once the
@@ -200,12 +200,12 @@ at every solver step, and cannot be measured by a line search. Hence the split:
   `c` the [`DEFAULT_STEP_CEILING`](@ref) — `1`, i.e. never more than one full turn — settable per
   solve as `Optimizer(x, F; step_ceiling = …)` and disabled with `Inf`.
 
-  On a `NamedTuple` the one ``\alpha`` scales every block, so the ceiling is derived *per block* and
-  the smallest over the blocks that live on a manifold is the one that binds
+  On a set of parameters the one ``\alpha`` scales every block, so the ceiling is derived *per block*
+  and the smallest over the blocks that live on a manifold is the one that binds
   ([`_manifold_αmax`](@ref)). A block that is an ordinary array contributes
   none — the ``2\pi`` is the turn of a rotation, and a vector space has no such scale either to
-  impose or to tighten its neighbours with. A `NamedTuple` of ordinary arrays therefore gets no
-  ceiling at all, exactly as a plain vector does.
+  impose or to tighten its neighbours with. A set with no manifold block therefore gets no ceiling at
+  all, exactly as a plain vector does.
 
 Over the eight starting points of `scripts/retraction_accuracy.jl`, counting the ones that end with
 both factors still on ``\operatorname{St}(20,3)``:
@@ -279,11 +279,11 @@ search reaches about ``10^{-7}`` on the same Adam problem.
 accidental: like [`BFGS`](@ref) it is built from a secant pair and never needs a vector-valued point.
 The cache operates at the [`OptimizerSolution`](@ref) level, with separate type parameters for the
 solution and the gradient, because a manifold point and its horizontal lift need not have the same
-shape. Its section may be a `NamedTuple`, ``Q`` is sized by the *intrinsic* dimension rather than by
-`length(x)`, and ``\gamma^\mathsf{T}Q\gamma`` uses the intrinsic pairing.
+shape. Its section may be a tree of sections rather than one, ``Q`` is sized by the *intrinsic*
+dimension rather than by `length(x)`, and ``\gamma^\mathsf{T}Q\gamma`` uses the intrinsic pairing.
 
-The same boundaries let both methods run on a bare [`Manifold`](@ref), not only on a `NamedTuple` of
-them. For ``\operatorname{St}(3,1)`` the intrinsic dimension is 2 even though the gradient and the
+The same boundaries let both methods run on a bare [`Manifold`](@ref), not only on a whole set of
+parameters holding several. For ``\operatorname{St}(3,1)`` the intrinsic dimension is 2 even though the gradient and the
 direction are ambient ``3\times3`` lifts — which is exactly the mismatch the separate type parameters
 exist for. The supporting pieces are [`_flat_scratch`](@ref) and `_flat_mul!` for
 [`AbstractLieAlgHorMatrix`](@ref), `alloc_h` for a `Manifold`, and copying a point into a

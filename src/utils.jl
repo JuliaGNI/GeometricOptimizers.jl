@@ -32,7 +32,7 @@ The matrix form takes the backend and the element type from `A` and its size fro
 function unit_matrix(backend, ::Type{T}, n::Integer) where {T}
     matrix = KernelAbstractions.zeros(backend, T, n, n)
     write_ones! = write_ones_kernel!(backend)
-    write_ones!(matrix; ndrange=n)
+    write_ones!(matrix; ndrange = n)
 
     matrix
 end
@@ -57,7 +57,7 @@ end
 # `test/`, `docs/` or `scripts/` ever called it, and `GeometricMachineLearning` deleted its own
 # `NamedTuple` arm of `AbstractNeuralNetworks.add!` for the same reason in 0.7 -- so this had the
 # distinction of being the only signature in 0.6.0 that got *narrower* rather than wider. It was
-# `::NamedTuple` and became `::ParameterContainer`, which drops a nested plain `NamedTuple` and any
+# `::NamedTuple` and became `::NetworkParameters`, which drops a nested plain `NamedTuple` and any
 # layer whose weights do not share one element type: exactly the two cases every other primitive in
 # this release went out of its way to keep. Deleted rather than widened, since widening dead code only
 # makes it harder to notice.
@@ -69,20 +69,89 @@ end
 # rebuilt with `manifold_constructor` and not with `typeof(x)`, for the reason that function gives:
 # the argument this closure is called on is a vector of `ForwardDiff.Dual`s, whose element type is
 # not `x`'s.
-GradientAutodiff(F, x::Manifold) = GradientAutodiff(_x -> F(manifold_constructor(x)(reshape(_x, size(x)...))), vec(x))
+#
+# Both of these dispatch on `Manifold`, which is this package's type, so neither is type piracy; the
+# `Matrix` pair that used to stand below them was. `GradientAutodiff(F, ::AbstractMatrix)` is
+# `SimpleSolvers`' own method as of 0.13.2 -- the same body with the `Manifold` reconstruction taken
+# out -- and this one takes precedence over it for a manifold. The functor is [`RiemannianGradient`](@ref)
+# below.
+function GradientAutodiff(F, x::Manifold)
+    GradientAutodiff(_x -> F(manifold_constructor(x)(reshape(_x, size(x)...))), vec(x))
+end
 
-(grad::Gradient{T})(x::Matrix{T}) where {T} = rgrad(x, reshape(grad(vec(x)), size(x)...))
-GradientAutodiff(F, x::Matrix{T}) where {T} = GradientAutodiff(_x -> F(reshape(_x, size(x)...)), vec(x))
+@doc raw"""
+    RiemannianGradient(gradient) <: SimpleSolvers.Gradient
 
-function compute_new_iterate!(xₖ₁::Manifold{T}, xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T}, cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
+A [`SimpleSolvers.Gradient`](@extref) whose value is projected onto the tangent space of the point it
+is evaluated at.
+
+`gradient` is the Euclidean gradient, over the *flattened* iterate; the functor evaluates it there and
+then applies [`rgrad`](@ref) — leaf by leaf for a parameter set, whole for a matrix. Vector calls are
+forwarded unchanged, so a line search that works in coordinates sees the inner gradient and nothing
+else.
+
+# Implementation
+
+This type exists to own a signature. The projection used to be written as methods on
+`SimpleSolvers.Gradient` itself, which for a `Matrix` and for a parameter set was type piracy: the
+function is `SimpleSolvers`' and neither `Base.Matrix` nor
+[`NeuralNetworkParameters.NetworkParameters`](@extref) is this package's, so any package that loaded
+this one changed what calling *any* gradient on either of those meant. Unlike the two `Gradient`
+constructors that went upstream in 0.6.1, these bodies cannot follow them: `rgrad` is this package's
+Riemannian projection, and `SimpleSolvers` neither has it nor should. Wrapping is the other way to
+de-pirate a method, and it is the shape `GeometricMachineLearning` already uses for its
+`_GMLGradient`. See issue #16.
+
+[`Optimizer`](@ref) wraps for you, and only where it changes something — see `_riemannian_gradient`.
+A `Manifold` iterate needs no wrapper, because `Manifold` is this package's type and the method above
+is therefore already owned; wrapping one is harmless all the same, since the functor below leaves that
+method to handle it.
+"""
+struct RiemannianGradient{T, GT <: Gradient{T}} <: Gradient{T}
+    gradient::GT
+end
+
+# Julia's own outer constructor solves `T` out of `GT <: Gradient{T}`, so `RiemannianGradient(grad)`
+# needs no method of its own. This one makes wrapping idempotent, so that `_riemannian_gradient` may
+# be applied to a gradient a caller has already wrapped.
+RiemannianGradient(gradient::RiemannianGradient) = gradient
+
+# The coordinate interface forwards. Only the two-argument form is needed: `SimpleSolvers`'
+# `(grad::Gradient)(x::AbstractVector)` allocates a gradient and calls this.
+function (grad::RiemannianGradient{T})(g::AbstractVector{T}, x::AbstractVector{T}) where {T}
+    grad.gradient(g, x)
+end
+
+# `Matrix` and not `AbstractMatrix`: widening it would make a `RiemannianGradient` called on a
+# `Manifold` ambiguous against `(::Gradient)(::Manifold)` above, which is the method that rebuilds the
+# manifold and so the one that has to win.
+function (grad::RiemannianGradient{T})(x::Matrix{T}) where {T}
+    rgrad(x, reshape(grad.gradient(vec(x)), size(x)...))
+end
+
+# Wrap only where the wrapper changes something. A plain vector iterate has no projection to apply,
+# and a `Manifold` reaches the owned method above either way; a parameter set is the case that needs
+# it, because its leaves are projected one at a time and `SimpleSolvers` has no method that reaches
+# them.
+_riemannian_gradient(grad::Gradient, ::Union{AbstractVector, Manifold}) = grad
+_riemannian_gradient(grad::Gradient, ::NetworkParameters) = RiemannianGradient(grad)
+
+function compute_new_iterate!(
+        xₖ₁::Manifold{T}, xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T},
+        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
     _retraction(x) = retraction(retraction_type, x)
     update_section!(section(cache), α * pₖ, _retraction)
     apply_section!(xₖ₁, section(cache), xₖ)
 end
 
-compute_new_iterate!(xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T}, cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T} = compute_new_iterate!(xₖ, xₖ, α, pₖ, cache, retraction_type)
+function compute_new_iterate!(xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T},
+        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
+    compute_new_iterate!(xₖ, xₖ, α, pₖ, cache, retraction_type)
+end
 
-function compute_new_iterate!(xₖ::AbstractVector{T}, x::AbstractVector{T}, α::T, pₖ::AbstractVector{T}, cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
+function compute_new_iterate!(
+        xₖ::AbstractVector{T}, x::AbstractVector{T}, α::T, pₖ::AbstractVector{T},
+        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
     _retraction(x) = retraction(retraction_type, x)
     update_section!(section(cache), α * pₖ, _retraction)
     apply_section!(xₖ, section(cache), x)

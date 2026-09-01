@@ -23,12 +23,14 @@
 # unrelated reason, [`step_αmax`](@ref).
 
 const _SCALAR_MOMENT_ADAM_SCOPE = "ScalarMomentAdam supports exactly one StiefelManifold solution; " *
-                                 "ordinary arrays, Grassmann solutions, NamedTuples and mixed parameter trees are unsupported"
+                                  "ordinary arrays, Grassmann solutions, NamedTuples and mixed parameter trees are unsupported"
 
-_scalar_moment_adam_eltype_message(method::ScalarMomentAdam{T}, x::StiefelManifold{S}) where {T,S} =
+function _scalar_moment_adam_eltype_message(method::ScalarMomentAdam{T}, x::StiefelManifold{S}) where {
+        T, S}
     "ScalarMomentAdam($(T)) cannot optimize StiefelManifold{$(S)} parameters. Like `Adam`, " *
     "`ScalarMomentAdam` carries parameters of its own and is not converted by `Optimizer`, so it has " *
     "to be constructed with the element type of the parameters: `ScalarMomentAdam($(S))`."
+end
 
 # The scope check, as an error rather than a `MethodError`. The second argument has to be typed
 # `::OptimizerSolution` and *not* left as `Any`: the fallback in
@@ -39,13 +41,21 @@ _scalar_moment_adam_eltype_message(method::ScalarMomentAdam{T}, x::StiefelManifo
 # algorithm = ScalarMomentAdam())` for an `AbstractVector`, a `NamedTuple`, a `GrassmannManifold` and
 # an element-type-mismatched `StiefelManifold` alike -- every path a caller reaches this by.
 # `test/scalar_moment_adam.jl` pins all four.
-OptimizerCache(::ScalarMomentAdam, ::OptimizerSolution) = throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
+function OptimizerCache(::ScalarMomentAdam, ::OptimizerSolution)
+    throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
+end
 # The element-type mismatch gets its own message: `ScalarMomentAdam()` is `Float64` and, as for
 # [`Adam`](@ref), is not converted by [`Optimizer`](@ref), so `Float32` parameters are the likeliest
 # way to arrive here and "supports exactly one StiefelManifold" would be a lie about the reason.
-OptimizerCache(method::ScalarMomentAdam, x::StiefelManifold) = throw(ArgumentError(_scalar_moment_adam_eltype_message(method, x)))
-OptimizerCache(::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T} = ScalarMomentAdamCache(x)
-Hessian(::ScalarMomentAdam, ::OptimizerProblem, ::StiefelManifold{T}) where {T} = NoHessian{T}()
+function OptimizerCache(method::ScalarMomentAdam, x::StiefelManifold)
+    throw(ArgumentError(_scalar_moment_adam_eltype_message(method, x)))
+end
+function OptimizerCache(::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T}
+    ScalarMomentAdamCache(x)
+end
+function Hessian(::ScalarMomentAdam, ::OptimizerProblem, ::StiefelManifold{T}) where {T}
+    NoHessian{T}()
+end
 
 """
     ScalarMomentAdamCache <: OptimizerCache
@@ -67,7 +77,7 @@ The fields are [`AdamCache`](@ref)'s, except that `m₂` is a single number rath
   [`ScalarMomentAdam`](@ref)'s regularizer and not the `δ` field above, which is the direction,
 - `section`: the [`GlobalSection`](@ref).
 """
-mutable struct ScalarMomentAdamCache{T,XT,VT,ST} <: OptimizerCache{T}
+mutable struct ScalarMomentAdamCache{T, XT, VT, ST} <: OptimizerCache{T}
     x::XT
     g::VT
     δ::VT
@@ -92,7 +102,7 @@ function ScalarMomentAdamCache(x::StiefelManifold{T}) where {T}
     _fill!(Δg, T(NaN))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    ScalarMomentAdamCache{T,typeof(x),typeof(g),typeof(sec)}(
+    ScalarMomentAdamCache{T, typeof(x), typeof(g), typeof(sec)}(
         _copy(x), g, δ, Δg, g̃, Ref(false), _zero(g), zero(T), zero(T), sec)
 end
 
@@ -100,11 +110,18 @@ solution(cache::ScalarMomentAdamCache) = cache.x
 gradient(cache::ScalarMomentAdamCache) = cache.g
 gradient_array(cache::ScalarMomentAdamCache) = cache.g
 latest_gradient(cache::ScalarMomentAdamCache) = cache.g̃
-refresh_latest_gradient!(cache::ScalarMomentAdamCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
-latest_gradient_is_current(cache::ScalarMomentAdamCache, state::OptimizerState, x::OptimizerSolution) =
+function refresh_latest_gradient!(cache::ScalarMomentAdamCache, g::Gradient)
+    _refresh_latest_gradient!(cache, g)
+end
+function latest_gradient_is_current(cache::ScalarMomentAdamCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
-invalidate_latest_gradient!(cache::ScalarMomentAdamCache) = _invalidate_latest_gradient!(cache)
-gradient_difference!(cache::ScalarMomentAdamCache, ::OptimizerState) = _latest_gradient_difference!(cache)
+end
+function invalidate_latest_gradient!(cache::ScalarMomentAdamCache)
+    _invalidate_latest_gradient!(cache)
+end
+function gradient_difference!(cache::ScalarMomentAdamCache, ::OptimizerState)
+    _latest_gradient_difference!(cache)
+end
 direction(cache::ScalarMomentAdamCache) = cache.δ
 rhs(cache::ScalarMomentAdamCache) = cache.δ
 steepest_descent!(cache::ScalarMomentAdamCache) = _steepest_descent_from_gradient!(cache)
@@ -120,7 +137,7 @@ State for [`ScalarMomentAdam`](@ref).
 
 As for [`ScalarMomentAdamCache`](@ref), `m₂` is a scalar and not a horizontal lift.
 """
-mutable struct ScalarMomentAdamState{T,OT,GS,VT} <: OptimizerState{T}
+mutable struct ScalarMomentAdamState{T, OT, GS, VT} <: OptimizerState{T}
     section::GS
     iterations::Int
     x::OT
@@ -133,8 +150,9 @@ mutable struct ScalarMomentAdamState{T,OT,GS,VT} <: OptimizerState{T}
     f̄::T
 end
 
-function ScalarMomentAdamState(x::StiefelManifold{T}, g::GradientArrayOrNamedTuple{T}) where {T}
-    g isa StiefelLieAlgHorMatrix || throw(ArgumentError("ScalarMomentAdam requires a single Stiefel gradient"))
+function ScalarMomentAdamState(x::StiefelManifold{T}, g::GradientStorage{T}) where {T}
+    g isa StiefelLieAlgHorMatrix ||
+        throw(ArgumentError("ScalarMomentAdam requires a single Stiefel gradient"))
     _g = _copy(g)
     _x = _copy(x)
     gs = GlobalSection(_x)
@@ -142,7 +160,7 @@ function ScalarMomentAdamState(x::StiefelManifold{T}, g::GradientArrayOrNamedTup
     # first call to `update!(::ScalarMomentAdamCache, ...)` before it is written to. Same for `m₂` --
     # the paper initializes it with `1` in its line 2 and with `0` in the authors' implementation,
     # and `0` is what is followed; see the docstring of [`ScalarMomentAdam`](@ref).
-    ScalarMomentAdamState{T,typeof(_x),typeof(gs),typeof(_g)}(
+    ScalarMomentAdamState{T, typeof(_x), typeof(gs), typeof(_g)}(
         gs, 0, _x, _copy(_x), _g, _copy(_g), _zero(_g), zero(T), T(NaN), T(NaN))
 end
 
@@ -161,20 +179,28 @@ ScalarMomentAdamState(x::StiefelManifold{T}) where {T} = ScalarMomentAdamState(x
 # promises the check on this path as well as on `Optimizer`'s, and until this it was only on
 # `Optimizer`'s: `OptimizerState(ScalarMomentAdam(), rand(StiefelManifold{Float32}, 4, 2))` returned
 # a `ScalarMomentAdamState{Float32}` for a `Float64` method.
-OptimizerState(::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T} = ScalarMomentAdamState(x)
-OptimizerState(method::ScalarMomentAdam, x::StiefelManifold) =
+function OptimizerState(::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T}
+    ScalarMomentAdamState(x)
+end
+function OptimizerState(method::ScalarMomentAdam, x::StiefelManifold)
     throw(ArgumentError(_scalar_moment_adam_eltype_message(method, x)))
+end
 # The gradient-supplying form, as [`Adam`](@ref) has through its `OptimizerState(::Adam, x...)`. It is
 # what [`ScalarMomentAdamState`](@ref)'s two-argument constructor is for, and without this method it
 # reached the generic `OptimizerState(::OptimizerMethod, args...)` and was told that
 # `OptimizerState` is "not implemented for ScalarMomentAdam", which was untrue.
-OptimizerState(::ScalarMomentAdam{T}, x::StiefelManifold{T}, g) where {T} = ScalarMomentAdamState(x, g)
-OptimizerState(method::ScalarMomentAdam, x::StiefelManifold, g) =
+function OptimizerState(::ScalarMomentAdam{T}, x::StiefelManifold{T}, g) where {T}
+    ScalarMomentAdamState(x, g)
+end
+function OptimizerState(method::ScalarMomentAdam, x::StiefelManifold, g)
     throw(ArgumentError(_scalar_moment_adam_eltype_message(method, x)))
+end
 # `x, args...` and not just `x`: the gradient-supplying form has to reject an unsupported `x` with
 # the scope message too, and a `Vararg` tail is less specific than every `StiefelManifold` method
 # above, so it catches exactly what they do not.
-OptimizerState(::ScalarMomentAdam, x, args...) = throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
+function OptimizerState(::ScalarMomentAdam, x, args...)
+    throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
+end
 
 solution(state::ScalarMomentAdamState) = state.x
 previous_solution(state::ScalarMomentAdamState) = state.x̄
@@ -186,9 +212,10 @@ first_moment(state::ScalarMomentAdamState) = state.m₁
 second_moment(state::ScalarMomentAdamState) = state.m₂
 section(state::ScalarMomentAdamState) = state.section
 
-function update!(state::ScalarMomentAdamState{T}, gradient_array::StiefelLieAlgHorMatrix{T},
-    direction::StiefelLieAlgHorMatrix{T}, _first_moment::StiefelLieAlgHorMatrix{T},
-    _second_moment::Real, x::StiefelManifold{T}, f::Callable, retraction) where {T}
+function update!(
+        state::ScalarMomentAdamState{T}, gradient_array::StiefelLieAlgHorMatrix{T},
+        direction::StiefelLieAlgHorMatrix{T}, _first_moment::StiefelLieAlgHorMatrix{T},
+        _second_moment::Real, x::StiefelManifold{T}, f::Callable, retraction) where {T}
     _copyto!(state.x̄, state.x)
     _copyto!(state.ḡ, state.g)
     state.f̄ = state.f
@@ -202,7 +229,8 @@ function update!(state::ScalarMomentAdamState{T}, gradient_array::StiefelLieAlgH
 end
 
 function update!(state::ScalarMomentAdamState, opt::Optimizer, x::OptimizerSolution)
-    update!(state, gradient_array(cache(opt)), direction(cache(opt)), first_moment(opt.cache),
+    update!(
+        state, gradient_array(cache(opt)), direction(cache(opt)), first_moment(opt.cache),
         second_moment(opt.cache), x, problem(opt).F, opt.retraction)
 end
 
@@ -223,12 +251,13 @@ The two are not interchangeable up to a constant, and which to reach for when is
 [Optimizer Methods](@ref "Standard Neural Network Optimizers") page.
 """
 function _squared_gradient_norm(method::ScalarMomentAdam, cache::ScalarMomentAdamCache,
-    gradient::Gradient, x::StiefelManifold)
+        gradient::Gradient, x::StiefelManifold)
     method.ambient_norm ? sum(abs2, gradient(vec(x))) : l2norm(gradient_array(cache))^2
 end
 
-function update!(cache::ScalarMomentAdamCache{T}, state::ScalarMomentAdamState{T}, gradient::Gradient{T},
-    method::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T}
+function update!(cache::ScalarMomentAdamCache{T},
+        state::ScalarMomentAdamState{T}, gradient::Gradient{T},
+        method::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`
     store_gradient!(cache, state, gradient, x)
     _copyto!(section(cache), section(state))

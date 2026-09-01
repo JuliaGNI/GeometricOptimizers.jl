@@ -36,9 +36,9 @@ mutable struct SymmetricMatrix{T, AT <: AbstractVector{T}} <: AbstractMatrix{T}
 
     function SymmetricMatrix(S::AbstractVector, n::Integer)
         @assert length(S) == n*(n+1)÷2
-        new{eltype(S),typeof(S)}(S, n)
+        new{eltype(S), typeof(S)}(S, n)
     end
-end 
+end
 
 @doc raw"""
     SymmetricMatrix(A::AbstractMatrix)
@@ -83,28 +83,28 @@ function SymmetricMatrix(A::AbstractMatrix{T}) where {T}
 end
 
 # I'm not 100% sure this is the best solution (needed for broadcasting operations ...)
-function Base.setindex!(A::SymmetricMatrix{T}, val::T, i::Int, j::Int) where T
-    if i ≥ j 
-        A.S[i * (i-1)÷2 + j] = val 
+function Base.setindex!(A::SymmetricMatrix{T}, val::T, i::Int, j::Int) where {T}
+    if i ≥ j
+        A.S[i * (i - 1) ÷ 2 + j] = val
     else
-        A.S[j * (j-1)÷2 + i] = val 
+        A.S[j * (j - 1) ÷ 2 + i] = val
     end
 end
 
 @kernel function assign_S_val_kernel!(S, A_sym, i)
     j = @index(Global)
-    S[i * (i-1)÷2 + j] = A_sym[i, j]
+    S[i * (i - 1) ÷ 2 + j] = A_sym[i, j]
 end
 
 function map_to_S(A::AbstractMatrix{T}) where {T <: Number}
     n = size(A, 1)
-    @assert size(A, 2) == n 
-    A_sym = T(.5)*(A + A')
+    @assert size(A, 2) == n
+    A_sym = T(0.5)*(A + A')
     backend = KernelAbstractions.get_backend(A)
     S = KernelAbstractions.zeros(backend, T, n*(n+1)÷2)
     assign_S_val! = assign_S_val_kernel!(backend)
     for i in 1:n
-        assign_S_val!(S, A_sym, i, ndrange=i)
+        assign_S_val!(S, A_sym, i, ndrange = i)
     end
     S
 end
@@ -115,7 +115,7 @@ function map_to_S(A::AbstractMatrix{T}) where {T <: Integer}
 end
 
 function LinearAlgebra.Adjoint(A::SymmetricMatrix)
-    A 
+    A
 end
 
 function Base.zero(A::SymmetricMatrix)
@@ -132,21 +132,21 @@ Base.similar(A::SymmetricMatrix) = SymmetricMatrix(similar(A.S), A.n)
 # poison scratch arrays with `NaN`.
 Base.fill!(A::SymmetricMatrix, val) = (fill!(A.S, val); A)
 
-function Base.getindex(A::SymmetricMatrix,i::Int,j::Int)
+function Base.getindex(A::SymmetricMatrix, i::Int, j::Int)
     if i ≥ j
-        A.S[((i-1)*i)÷2+j]
+        A.S[((i - 1) * i) ÷ 2 + j]
     else
-        A.S[(j-1)*j÷2+i]
+        A.S[(j - 1) * j ÷ 2 + i]
     end
 end
 
 Base.parent(A::SymmetricMatrix) = A.S
-Base.size(A::SymmetricMatrix) = (A.n,A.n)
+Base.size(A::SymmetricMatrix) = (A.n, A.n)
 
 function Base.:+(A::SymmetricMatrix, B::SymmetricMatrix)
-    @assert A.n == B.n 
-    SymmetricMatrix(A.S + B.S, A.n) 
-end 
+    @assert A.n == B.n
+    SymmetricMatrix(A.S + B.S, A.n)
+end
 
 function add!(C::SymmetricMatrix, A::SymmetricMatrix, B::SymmetricMatrix)
     @assert A.n == B.n == C.n
@@ -154,10 +154,9 @@ function add!(C::SymmetricMatrix, A::SymmetricMatrix, B::SymmetricMatrix)
 end
 
 function Base.:-(A::SymmetricMatrix, B::SymmetricMatrix)
-    @assert A.n == B.n 
-    SymmetricMatrix(A.S - B.S, A.n) 
-end 
-
+    @assert A.n == B.n
+    SymmetricMatrix(A.S - B.S, A.n)
+end
 
 function Base.:-(A::SymmetricMatrix)
     SymmetricMatrix(-A.S, A.n)
@@ -169,16 +168,16 @@ end
 
 Base.:*(α::Real, A::SymmetricMatrix) = A*α
 
-function Base.zeros(::Type{SymmetricMatrix{T}}, n::Int) where T
+function Base.zeros(::Type{SymmetricMatrix{T}}, n::Int) where {T}
     SymmetricMatrix(zeros(T, n*(n+1)÷2), n)
 end
-    
+
 function Base.zeros(::Type{SymmetricMatrix}, n::Int)
     SymmetricMatrix(zeros(n*(n+1)÷2), n)
 end
 
-function Base.rand(rng::Random.AbstractRNG, ::Type{SymmetricMatrix{T}}, n::Int) where T
-    SymmetricMatrix(rand(rng, T, n*(n+1)÷2),n)
+function Base.rand(rng::Random.AbstractRNG, ::Type{SymmetricMatrix{T}}, n::Int) where {T}
+    SymmetricMatrix(rand(rng, T, n*(n+1)÷2), n)
 end
 
 function Base.rand(rng::Random.AbstractRNG, ::Type{SymmetricMatrix}, n::Int)
@@ -186,7 +185,7 @@ function Base.rand(rng::Random.AbstractRNG, ::Type{SymmetricMatrix}, n::Int)
 end
 
 #TODO: make defaults when no rng is specified!!! (prbabaly rng ← Random.default_rng())
-function Base.rand(type::Type{SymmetricMatrix{T}}, n::Integer) where T
+function Base.rand(type::Type{SymmetricMatrix{T}}, n::Integer) where {T}
     rand(Random.default_rng(), type, n)
 end
 
@@ -201,13 +200,13 @@ end
 
 #element-wise squares and square root (for Adam)
 function ⊙²(A::SymmetricMatrix)
-    SymmetricMatrix(A.S.^2, A.n)
+    SymmetricMatrix(A.S .^ 2, A.n)
 end
 function racᵉˡᵉ(A::SymmetricMatrix)
     SymmetricMatrix(sqrt.(A.S), A.n)
 end
 function /ᵉˡᵉ(A::SymmetricMatrix, B::SymmetricMatrix)
-    @assert A.n == B.n 
+    @assert A.n == B.n
     SymmetricMatrix(A.S ./ B.S, A.n)
 end
 
@@ -218,15 +217,16 @@ end
 LinearAlgebra.mul!(C::SymmetricMatrix, α::Real, A::SymmetricMatrix) = mul!(C, A, α)
 LinearAlgebra.rmul!(C::SymmetricMatrix, α::Real) = mul!(C, C, α)
 
-@kernel function symmetric_mat_mul_kernel!(C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where T 
+@kernel function symmetric_mat_mul_kernel!(
+        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
     i, j = @index(Global, NTuple)
 
     tmp_sum = zero(T)
-    for k = 1:i 
-        tmp_sum += S[((i-1)*i)÷2+k] * B[k, j]
+    for k in 1:i
+        tmp_sum += S[((i - 1) * i) ÷ 2 + k] * B[k, j]
     end
-    for k = (i+1):n 
-        tmp_sum += S[((k-1)*k)÷2+i] * B[k, j]
+    for k in (i + 1):n
+        tmp_sum += S[((k - 1) * k) ÷ 2 + i] * B[k, j]
     end
     C[i, j] = tmp_sum
 end
@@ -237,18 +237,19 @@ function LinearAlgebra.mul!(C::AbstractMatrix, A::SymmetricMatrix, B::AbstractMa
     @assert A.n == size(C, 1)
     backend = KernelAbstractions.get_backend(A.S)
     symmetric_mat_mul! = symmetric_mat_mul_kernel!(backend)
-    symmetric_mat_mul!(C, A.S, B, A.n, ndrange=size(C))
+    symmetric_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
 end
 
-@kernel function symmetric_vector_mul_kernel!(c::AbstractVector{T}, S::AbstractVector{T}, b::AbstractVector{T}, n) where T 
+@kernel function symmetric_vector_mul_kernel!(
+        c::AbstractVector{T}, S::AbstractVector{T}, b::AbstractVector{T}, n) where {T}
     i = @index(Global)
 
     tmp_sum = zero(T)
-    for k = 1:i
-        tmp_sum += S[((i-1)*i)÷2+k] * b[k]
+    for k in 1:i
+        tmp_sum += S[((i - 1) * i) ÷ 2 + k] * b[k]
     end
-    for k = (i+1):n 
-        tmp_sum += S[((k-1)*k)÷2+i] * b[k]
+    for k in (i + 1):n
+        tmp_sum += S[((k - 1) * k) ÷ 2 + i] * b[k]
     end
     c[i] = tmp_sum
 end
@@ -257,35 +258,35 @@ function LinearAlgebra.mul!(c::AbstractVector, A::SymmetricMatrix, b::AbstractVe
     @assert A.n == length(c) == length(b)
     backend = KernelAbstractions.get_backend(A.S)
     symmetric_vector_mul! = symmetric_vector_mul_kernel!(backend)
-    symmetric_vector_mul!(c, A.S, b, A.n, ndrange=size(c))
+    symmetric_vector_mul!(c, A.S, b, A.n, ndrange = size(c))
 end
 
-function Base.:*(A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where T
+function Base.:*(A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(A.S)
     C = KernelAbstractions.allocate(backend, T, A.n, size(B, 2))
     LinearAlgebra.mul!(C, A, B)
     C
 end
 
-Base.:*(B::AbstractMatrix{T}, A::SymmetricMatrix{T}) where T = (A * B')'
+Base.:*(B::AbstractMatrix{T}, A::SymmetricMatrix{T}) where {T} = (A * B')'
 
-function Base.:*(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where T 
+function Base.:*(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where {T}
     A * (B * one(B))
 end
 
-function Base.:*(A::SymmetricMatrix{T}, b::AbstractVector{T}) where T 
+function Base.:*(A::SymmetricMatrix{T}, b::AbstractVector{T}) where {T}
     backend = KernelAbstractions.get_backend(A.S)
     c = KernelAbstractions.allocate(backend, T, A.n)
     LinearAlgebra.mul!(c, A, b)
     c
 end
 
-function Base.one(A::SymmetricMatrix{T}) where T
+function Base.one(A::SymmetricMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A.S), T, A.n)
 end
 
-function assign!(B::SymmetricMatrix{T}, C::SymmetricMatrix{T}) where T 
-    B.S .= C.S 
+function assign!(B::SymmetricMatrix{T}, C::SymmetricMatrix{T}) where {T}
+    B.S .= C.S
 
     nothing
 end
@@ -296,13 +297,19 @@ end
 
 Base.vec(A::SymmetricMatrix) = A.S
 
-function Base.copyto!(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where T
+function Base.copyto!(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where {T}
     A.S .= B.S
 
     nothing
 end
 
 # define routines for generalizing ChainRulesCore to SymmetricMatrix 
-ChainRulesCore.ProjectTo(A::SymmetricMatrix) = ProjectTo{SymmetricMatrix}(; symmetric=ProjectTo(A.S))
-(project::ProjectTo{SymmetricMatrix})(dA::AbstractMatrix) = SymmetricMatrix(project.symmetric(map_to_S(dA)), size(dA, 2))
-(project::ProjectTo{SymmetricMatrix})(dA::SymmetricMatrix) = SymmetricMatrix(project.symmetric(dA.S), dA.n)
+function ChainRulesCore.ProjectTo(A::SymmetricMatrix)
+    ProjectTo{SymmetricMatrix}(; symmetric = ProjectTo(A.S))
+end
+function (project::ProjectTo{SymmetricMatrix})(dA::AbstractMatrix)
+    SymmetricMatrix(project.symmetric(map_to_S(dA)), size(dA, 2))
+end
+function (project::ProjectTo{SymmetricMatrix})(dA::SymmetricMatrix)
+    SymmetricMatrix(project.symmetric(dA.S), dA.n)
+end

@@ -16,7 +16,7 @@ We note that this is also used for the [`BFGS`](@ref) and the [`DFP`](@ref) opti
 - `f̄`
 - `f̄`
 """
-mutable struct NewtonOptimizerState{T,AT,GT,GS} <: OptimizerState{T}
+mutable struct NewtonOptimizerState{T, AT, GT, GS} <: OptimizerState{T}
     iterations::Int
 
     x::AT
@@ -28,7 +28,8 @@ mutable struct NewtonOptimizerState{T,AT,GT,GS} <: OptimizerState{T}
 
     section::GS
 
-    function NewtonOptimizerState(X::AT, G::GT) where {T,AT<:AbstractArray{T},GT<:AbstractArray{T}}
+    function NewtonOptimizerState(X::AT, G::GT) where {
+            T, AT <: AbstractArray{T}, GT <: AbstractArray{T}}
         x = zero(X)
         x̄ = zero(X)
         g = zero(X)
@@ -38,7 +39,7 @@ mutable struct NewtonOptimizerState{T,AT,GT,GS} <: OptimizerState{T}
         g .= T(NaN)
         ḡ .= T(NaN)
         section = GlobalSection(x)
-        new{T,AT,GT,typeof(section)}(0, x, x̄, g, ḡ, T(NaN), T(NaN), section)
+        new{T, AT, GT, typeof(section)}(0, x, x̄, g, ḡ, T(NaN), T(NaN), section)
     end
 
     NewtonOptimizerState(x) = NewtonOptimizerState(x, x)

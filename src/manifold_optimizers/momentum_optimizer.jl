@@ -1,5 +1,9 @@
-OptimizerCache(::MomentumMethod{T}, x::OptimizerSolution{T}) where {T} = MomentumCache(_copy(x), _zero(x), _zero(x))
-Hessian(::MomentumMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
+function OptimizerCache(::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
+    MomentumCache(_copy(x), _zero(x), _zero(x))
+end
+function Hessian(::MomentumMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T}
+    NoHessian{T}()
+end
 
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
 # The invariant is enforced by the outer constructors below.
@@ -18,7 +22,7 @@ Cache for the gradient optimizer.
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 """
-struct MomentumCache{T,MT,VT,ST} <: OptimizerCache{T}
+struct MomentumCache{T, MT, VT, ST} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT
@@ -28,20 +32,22 @@ struct MomentumCache{T,MT,VT,ST} <: OptimizerCache{T}
     section::ST
 end
 
-function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
+        T, AT <: GradientStorage{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    MomentumCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
+    MomentumCache{T, typeof(x), typeof(g), typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
 end
 
-function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {
+        T, AT <: GradientStorage{T}}
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
     MomentumCache(x, g, δ, Δg)
 end
 
-function MomentumCache(x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function MomentumCache(x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     δ = _zero(g)
     MomentumCache(x, g, δ)
 end
@@ -56,11 +62,16 @@ solution(cache::MomentumCache) = cache.x
 gradient(cache::MomentumCache) = cache.g
 gradient_array(cache::MomentumCache) = gradient(cache)
 latest_gradient(cache::MomentumCache) = cache.g̃
-refresh_latest_gradient!(cache::MomentumCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
-latest_gradient_is_current(cache::MomentumCache, state::OptimizerState, x::OptimizerSolution) =
+function refresh_latest_gradient!(cache::MomentumCache, g::Gradient)
+    _refresh_latest_gradient!(cache, g)
+end
+function latest_gradient_is_current(cache::MomentumCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
+end
 invalidate_latest_gradient!(cache::MomentumCache) = _invalidate_latest_gradient!(cache)
-gradient_difference!(cache::MomentumCache, ::OptimizerState) = _latest_gradient_difference!(cache)
+function gradient_difference!(cache::MomentumCache, ::OptimizerState)
+    _latest_gradient_difference!(cache)
+end
 direction(cache::MomentumCache) = cache.δ
 rhs(cache::MomentumCache) = direction(cache)
 # `rhs` above is an alias for the direction, so the default `steepest_descent!` would be a silent
@@ -75,7 +86,7 @@ section(cache::MomentumCache) = cache.section
 
 State for the gradient optimizer.
 """
-mutable struct MomentumState{T,OT,GS,VT} <: OptimizerState{T}
+mutable struct MomentumState{T, OT, GS, VT} <: OptimizerState{T}
     section::GS
     iterations::Int
 
@@ -98,20 +109,23 @@ momentum(state::MomentumState) = state.p
 
 section(state::MomentumState) = state.section
 
-function MomentumState(x::OST, g::GradientArrayOrNamedTuple{T}) where {T,OST<:OptimizerSolution{T}}
+function MomentumState(x::OST, g::GradientStorage{T}) where {T, OST <: OptimizerSolution{T}}
     _x = _copy(x)
     _g = _copy(g)
     gs = GlobalSection(_x)
     # as for [`AdamState`](@ref), the momentum has to be initialized with zeros: it is read
     # in the first call to `update!(::MomentumCache, ...)` before it is written to.
-    MomentumState{T,typeof(_x),typeof(gs),typeof(_g)}(gs, 0, _x, _similar(_x), _g, _similar(_g), _zero(_g), T(NaN), T(NaN))
+    MomentumState{T, typeof(_x), typeof(gs), typeof(_g)}(
+        gs, 0, _x, _similar(_x), _g, _similar(_g), _zero(_g), T(NaN), T(NaN))
 end
 
 MomentumState(x::OptimizerSolution) = MomentumState(x, _zero(x))
 
 OptimizerState(::MomentumMethod, x...) = MomentumState(x...)
 
-function update!(state::MomentumState{T}, gradient_array::GradientArrayOrNamedTuple{T}, direction::GradientArrayOrNamedTuple{T}, α::T, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
+function update!(state::MomentumState{T}, gradient_array::GradientStorage{T},
+        direction::GradientStorage{T}, α::T,
+        x::OptimizerSolution{T}, f::Callable, retraction) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
@@ -132,10 +146,12 @@ function update!(state::MomentumState{T}, gradient_array::GradientArrayOrNamedTu
 end
 
 function update!(state::MomentumState, opt::Optimizer, x::OptimizerSolution)
-    update!(state, gradient_array(cache(opt)), direction(cache(opt)), algorithm(opt).α, x, problem(opt).F, opt.retraction)
+    update!(state, gradient_array(cache(opt)), direction(cache(opt)),
+        algorithm(opt).α, x, problem(opt).F, opt.retraction)
 end
 
-function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T}, method::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
+function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T},
+        method::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`
     store_gradient!(cache, state, gradient, x)
     _copyto!(section(cache), section(state))

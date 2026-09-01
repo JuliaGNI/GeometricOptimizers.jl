@@ -35,31 +35,39 @@ const B = randn(N, m)
 # distinction bite: `Q` is sized by the flattening of the horizontal lift and the parameters are not.
 vector_problem() = (randn(Random.Xoshiro(3), 12), v -> sum(abs2, v))
 
-manifold_problem() = (rand(Random.Xoshiro(4), StiefelManifold{Float64}, N, n),
-                      Y -> sum(abs2, Y * ones(n, m) .- B) / 2)
+function manifold_problem()
+    (rand(Random.Xoshiro(4), StiefelManifold{Float64}, N, n),
+        Y -> sum(abs2, Y * ones(n, m) .- B) / 2)
+end
 
-namedtuple_problem() = ((Y = rand(Random.Xoshiro(1), StiefelManifold{Float64}, N, n),
-                         W = randn(Random.Xoshiro(2), n, m), b = zeros(N)),
-                        ps -> sum(abs2, ps.Y * ps.W .+ ps.b .- B) / 2)
+function flat_problem()
+    (
+        NetworkParameters((Y = rand(Random.Xoshiro(1), StiefelManifold{Float64}, N, n),
+            W = randn(Random.Xoshiro(2), n, m), b = zeros(N))),
+        ps -> sum(abs2, ps.Y * ps.W .+ ps.b .- B) / 2)
+end
 
-container_problem() = let (ps, _) = namedtuple_problem()
-    (NetworkParameters((L1 = (Y = ps.Y,), L2 = (W = ps.W, b = ps.b))),
-     ps -> sum(abs2, ps.L1.Y * ps.L2.W .+ ps.L2.b .- B) / 2)
+function container_problem()
+    let (ps, _) = flat_problem()
+        (NetworkParameters((L1 = (Y = ps.Y,), L2 = (W = ps.W, b = ps.b))),
+            ps -> sum(abs2, ps.L1.Y * ps.L2.W .+ ps.L2.b .- B) / 2)
+    end
 end
 
 const PROBLEMS = (("Vector", vector_problem), ("Manifold", manifold_problem),
-                  ("NamedTuple", namedtuple_problem), ("container", container_problem))
+    ("flat container", flat_problem), ("nested container", container_problem))
 
 function solve_once(x, F, algorithm)
     Random.seed!(1234)
     optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Static(0.1),
-                          max_iterations = ITERATIONS)
+        max_iterations = ITERATIONS)
     solve!(x, OptimizerState(algorithm, x), optimizer)
 end
 
 function main()
     println("solve!, ", ITERATIONS, " iterations, bytes allocated")
     for algorithm in (BFGS(), DFP()), (name, make) in PROBLEMS
+
         label = rpad(string(nameof(typeof(algorithm)), " ", name), 24)
         # a fresh problem for each of the two calls: `solve!` writes into `x`, so measuring the second
         # call on the first call's answer would be measuring a solve that starts at the minimum

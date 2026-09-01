@@ -77,9 +77,9 @@ julia> Random.seed!(1234);
 
 julia> A = randn(5, 3);
 
-julia> ps = (w = rand(StiefelManifold, 5, 3), b = randn(3));
+julia> ps = NetworkParameters((w = rand(StiefelManifold, 5, 3), b = randn(3)));
 
-julia> loss(ps::NamedTuple) = norm(A - ps.w * ps.w' * A) + norm(ps.b);
+julia> loss(ps::NetworkParameters) = norm(A - ps.w * ps.w' * A) + norm(ps.b);
 
 julia> algorithm = AdamWithEuclideanDecay(; λ = 1e-2);
 

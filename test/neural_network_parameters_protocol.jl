@@ -35,9 +35,12 @@ struct DummyManifold{T} <: Manifold{T} end
 
 # `freeparameters` of a horizontal lift is a tuple of blocks, one of which is itself structured, so
 # comparing storage sizes means walking it.
-_storage_lengths(x) = (s = freeparameters(x); s === x ? (length(x),) :
-                       s isa Tuple ? mapreduce(_storage_lengths, (a, b) -> (a..., b...), s) :
-                       _storage_lengths(s))
+function _storage_lengths(x)
+    (s = freeparameters(x);
+        s === x ? (length(x),) :
+        s isa Tuple ? mapreduce(_storage_lengths, (a, b) -> (a..., b...), s) :
+        _storage_lengths(s))
+end
 
 const N, n = 6, 3
 
@@ -46,15 +49,15 @@ const N, n = 6, 3
 # holding `SubArray`s can never compare type-equal to one rebuilt from a flat vector, and that is a
 # property of the constructor, not of the protocol under test.
 leaves = (
-    stiefel   = rand(StiefelManifold{Float64}, N, n),
+    stiefel = rand(StiefelManifold{Float64}, N, n),
     grassmann = rand(GrassmannManifold{Float64}, N, n),
     symmetric = SymmetricMatrix(rand(n, n)),
-    skew      = SkewSymMatrix(rand(n, n)),
-    lower     = LowerTriangular(rand(n, n)),
-    upper     = UpperTriangular(rand(n, n)),
-    stiefhor  = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(n, n)), rand(N - n, n), N, n),
-    grasshor  = GrassmannLieAlgHorMatrix(rand(N - n, n), N, n),
-    plain     = rand(2, 2),
+    skew = SkewSymMatrix(rand(n, n)),
+    lower = LowerTriangular(rand(n, n)),
+    upper = UpperTriangular(rand(n, n)),
+    stiefhor = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(n, n)), rand(N - n, n), N, n),
+    grasshor = GrassmannLieAlgHorMatrix(rand(N - n, n), N, n),
+    plain = rand(2, 2)
 )
 
 # `NeuralNetworkParameters` is a hard dependency as of 0.5.0, so the protocol is simply there -- no
@@ -141,7 +144,7 @@ end
 
 # The flat ordering, pinned absolutely.
 #
-# Downstream code indexes this vector by hand -- `test/named_tuple_parameters.jl` asserts literal
+# Downstream code indexes this vector by hand -- `test/flat_parameters.jl` asserts literal
 # ranges and its `∇F!` slices with them -- so the order is part of the contract, not an implementation
 # detail. When this landed it was written as an elementwise comparison against
 # `ParameterHandling.flatten`, which was still present, and the two agreed on every leaf family; see
@@ -173,10 +176,12 @@ end
     # purpose: a manifold, a storage matrix, a lift and a plain array in one set.
     ps = (Y = leaves.stiefel, S = leaves.symmetric, G = leaves.stiefhor, W = leaves.plain)
     v, layout = flatten(Float64, ps)
-    @test v == vcat(flatten(Float64, leaves.stiefel)[1], flatten(Float64, leaves.symmetric)[1],
-                    flatten(Float64, leaves.stiefhor)[1], flatten(Float64, leaves.plain)[1])
+    @test v ==
+          vcat(flatten(Float64, leaves.stiefel)[1], flatten(Float64, leaves.symmetric)[1],
+        flatten(Float64, leaves.stiefhor)[1], flatten(Float64, leaves.plain)[1])
     @test parameterrange(layout.children.Y) == 1:(N * n)
-    @test parameterrange(layout.children.W) == (length(v) - length(leaves.plain) + 1):length(v)
+    @test parameterrange(layout.children.W) ==
+          (length(v) - length(leaves.plain) + 1):length(v)
 end
 
 @testset "parameter_metadata records what the storage does not determine" begin
@@ -251,7 +256,7 @@ end
 @testset "Float32 parameters stay Float32" begin
     # `parameter_eltype` promotes over the leaves' storage, so a single-precision set must not widen
     ps = NetworkParameters((L1 = (W = SymmetricMatrix(rand(Float32, n, n)),
-                                  Y = rand(StiefelManifold{Float32}, N, n)),))
+        Y = rand(StiefelManifold{Float32}, N, n)),))
     v, layout = flatten(ps)
     @test eltype(v) == Float32
     back = unflatten(layout, v)
@@ -317,12 +322,17 @@ end
     # a structured leaf reaches its element type through the protocol above
     @test bound(NetworkParameters((L1 = (W = SymmetricMatrix(rand(3, 3)),),))) === Float64
 
-    # and the members that were already there still bind, which is what the wider union must not cost
+    # and the other members of the union still bind
     @test bound([1.0, 2.0]) === Float64
-    @test bound((a = [1.0], b = Float64[2 3])) === Float64
-    @test bound((a = Float32[1],)) === Float32
     @test bound(rand(StiefelManifold{Float64}, 4, 2)) === Float64
-    @test bound((a = rand(StiefelManifold{Float64}, 4, 2), b = [1.0])) === Float64
+
+    # a *flat* set binds through the same type parameter as a nested one, because `T` comes off
+    # `NetworkParameters{T}` directly rather than off a bound on the values -- see
+    # `src/optimizer_solution.jl` for why that distinction is the whole design
+    @test bound(NetworkParameters((a = [1.0], b = Float64[2 3]))) === Float64
+    @test bound(NetworkParameters((a = Float32[1],))) === Float32
+    @test bound(NetworkParameters((
+        a = rand(StiefelManifold{Float64}, 4, 2), b = [1.0]))) === Float64
 end
 
 # The checks `_dot` and `_manifold_αmax` gained when they stopped writing their own recursion, which is
@@ -341,13 +351,16 @@ end
 @testset "the zipped folds check keys and widths" begin
     a = NetworkParameters((L1 = (W = rand(2, 2), b = rand(2)),))
 
-    @test_throws "different keys" _dot(a, NetworkParameters((L2 = (W = rand(2, 2), b = rand(2)),)))
-    @test_throws "and, in argument 2," _dot(a, NetworkParameters((L2 = (W = rand(2, 2), b = rand(2)),)))
+    @test_throws "different keys" _dot(a, NetworkParameters((L2 = (
+        W = rand(2, 2), b = rand(2)),)))
+    @test_throws "and, in argument 2," _dot(a, NetworkParameters((L2 = (
+        W = rand(2, 2), b = rand(2)),)))
 
     # key *order*, which a positional fold crossed over silently and is the worse of the two failures:
     # it produced a number rather than an error. Both sides need the same width here, or
     # `_children_arity` raises the width message first.
-    @test_throws "different keys" _dot(a, NetworkParameters((L1 = (b = rand(2), W = rand(2, 2)),)))
+    @test_throws "different keys" _dot(a, NetworkParameters((L1 = (
+        b = rand(2), W = rand(2, 2)),)))
 
     @test_throws "same number of children" _dot(a, NetworkParameters((L1 = (W = rand(2, 2),),)))
 
@@ -360,15 +373,17 @@ end
     @test_throws "partial sum" _dot(whole, holed)
 
     # `_manifold_αmax` is the same walk at the same arity, and gained the same checks
-    @test_throws "different keys" _manifold_αmax((Y = rand(2),), (Z = rand(2),), 1.0)
-    @test_throws "same number of children" _manifold_αmax((a = rand(2), b = rand(2)),
-                                                          (a = rand(2),), 1.0)
+    @test_throws "different keys" _manifold_αmax(NetworkParameters((Y = rand(2),)),
+        NetworkParameters((Z = rand(2),)), 1.0)
+    @test_throws "same number of children" _manifold_αmax(
+        NetworkParameters((a = rand(2), b = rand(2))),
+        NetworkParameters((a = rand(2),)), 1.0)
 
     # and the check cannot be spelled around, which is the other half of it. Upstream pairs a `Tuple`
     # branch *positionally* -- a `Tuple`'s blocks have no keys to agree on -- so `_manifold_αmax` bounds
-    # its first argument to a `ParameterSet` rather than taking anything. Without that bound
+    # its first argument to a `NetworkParameters` rather than taking anything. Without that bound
     # `_manifold_αmax(values(sol), values(δ), c)`, which is how every call site here was spelled until
     # this release, would still compile and would still cross the keys silently.
     @test_throws MethodError _manifold_αmax(values((Y = rand(2), Z = rand(2))),
-                                            values((Z = rand(2), Y = rand(2))), 1.0)
+        values((Z = rand(2), Y = rand(2))), 1.0)
 end

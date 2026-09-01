@@ -26,19 +26,20 @@ An element of GrassmannLieAlgMatrix takes the form:
 ```
 where ``\bar{\mathbb{O}}\in\mathbb{R}^{n\times{}n}`` and ``\mathbb{O}\in\mathbb{R}^{(N - n)\times(N-n)}.``
 """
-mutable struct GrassmannLieAlgHorMatrix{T, ST <: AbstractMatrix{T}} <: AbstractLieAlgHorMatrix{T}
+mutable struct GrassmannLieAlgHorMatrix{T, ST <: AbstractMatrix{T}} <:
+               AbstractLieAlgHorMatrix{T}
     B::ST
     N::Int
-    n::Int 
+    n::Int
 
     #maybe modify this - you don't need N & n as inputs!
     function GrassmannLieAlgHorMatrix(B::AbstractMatrix{T}, N::Int, n::Int) where {T}
-        @assert n == size(B,2) 
-        @assert N == size(B,1) + n
+        @assert n == size(B, 2)
+        @assert N == size(B, 1) + n
 
         new{T, typeof(B)}(B, N, n)
-    end 
-end 
+    end
+end
 
 @doc raw"""
     GrassmannLieAlgHorMatrix(D::AbstractMatrix, n::Integer)
@@ -71,94 +72,103 @@ where ``\Omega`` is the horizontal lift [`GeometricOptimizers.Ω`](@ref).
 """
 function GrassmannLieAlgHorMatrix(D::AbstractMatrix, n::Int)
     N = size(D, 1)
-    @assert N ≥ n 
+    @assert N ≥ n
 
-    @views B = D[(n + 1):N,1:n]
+    @views B = D[(n + 1):N, 1:n]
     GrassmannLieAlgHorMatrix(B, N, n)
 end
 
-Base.parent(A::GrassmannLieAlgHorMatrix) = (A.B, )
+Base.parent(A::GrassmannLieAlgHorMatrix) = (A.B,)
 Base.size(A::GrassmannLieAlgHorMatrix) = (A.N, A.N)
 
 manifold_type(::GrassmannLieAlgHorMatrix) = GrassmannManifold
 
-KernelAbstractions.get_backend(B::GrassmannLieAlgHorMatrix) = KernelAbstractions.get_backend(B.B)
+function KernelAbstractions.get_backend(B::GrassmannLieAlgHorMatrix)
+    KernelAbstractions.get_backend(B.B)
+end
 
 function Base.getindex(A::GrassmannLieAlgHorMatrix{T}, i::Integer, j::Integer) where {T}
     if i ≤ A.n
-        if j ≤ A.n 
-            return T(0.)
+        if j ≤ A.n
+            return T(0.0)
         end
         return -A.B[j - A.n, i]
     end
-    if j ≤ A.n 
+    if j ≤ A.n
         return A.B[i - A.n, j]
     end
-    return T(0.)
+    return T(0.0)
 end
 
 function Base.:+(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
-    @assert A.N == B.N 
-    @assert A.n == B.n 
-    GrassmannLieAlgHorMatrix(A.B + B.B, 
-                            A.N,
-                            A.n)
+    @assert A.N == B.N
+    @assert A.n == B.n
+    GrassmannLieAlgHorMatrix(A.B + B.B,
+        A.N,
+        A.n)
 end
 
 function Base.:-(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
-    @assert A.N == B.N 
-    @assert A.n == B.n 
-    GrassmannLieAlgHorMatrix(A.B - B.B, 
-                            A.N,
-                            A.n)
+    @assert A.N == B.N
+    @assert A.n == B.n
+    GrassmannLieAlgHorMatrix(A.B - B.B,
+        A.N,
+        A.n)
 end
 
 function add!(C::GrassmannLieAlgHorMatrix, A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
     @assert A.N == B.N == C.N
-    @assert A.n == B.n == C.n 
-    add!(C.B, A.B, B.B)  
+    @assert A.n == B.n == C.n
+    add!(C.B, A.B, B.B)
 end
 
 function Base.:-(A::GrassmannLieAlgHorMatrix)
-    GrassmannLieAlgHorMatrix( -A.B, A.N, A.n)
+    GrassmannLieAlgHorMatrix(-A.B, A.N, A.n)
 end
 
 function Base.:*(A::GrassmannLieAlgHorMatrix, α::Real)
-    GrassmannLieAlgHorMatrix( α*A.B, A.N, A.n)
+    GrassmannLieAlgHorMatrix(α*A.B, A.N, A.n)
 end
 
 Base.:*(α::Real, A::GrassmannLieAlgHorMatrix) = A*α
 
-function Base.zeros(::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T
+function Base.zeros(::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     GrassmannLieAlgHorMatrix(
         zeros(T, N-n, n),
-        N, 
-        n
-    )
-end
-    
-function Base.zeros(::Type{GrassmannLieAlgHorMatrix}, N::Integer, n::Integer)
-    GrassmannLieAlgHorMatrix(
-        zeros(N-n, n),
-        N, 
+        N,
         n
     )
 end
 
-function Base.zeros(backend::KernelAbstractions.Backend, ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T 
+function Base.zeros(::Type{GrassmannLieAlgHorMatrix}, N::Integer, n::Integer)
+    GrassmannLieAlgHorMatrix(
+        zeros(N-n, n),
+        N,
+        n
+    )
+end
+
+function Base.zeros(backend::KernelAbstractions.Backend,
+        ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     GrassmannLieAlgHorMatrix(
         KernelAbstractions.zeros(backend, T, N-n, n),
-        N, 
+        N,
         n
     )
 end
 
 # `typeof(A)` is the two-parameter `GrassmannLieAlgHorMatrix{T, AT}`, which `zeros` has no
 # method for; it has to be narrowed to the one-parameter form, as in the Stiefel case.
-Base.similar(A::GrassmannLieAlgHorMatrix, dims::Union{Integer, AbstractUnitRange}...) = zeros(GrassmannLieAlgHorMatrix{eltype(A)}, dims...)
-Base.similar(A::GrassmannLieAlgHorMatrix) = zeros(GrassmannLieAlgHorMatrix{eltype(A)}, A.N, A.n)
+function Base.similar(A::GrassmannLieAlgHorMatrix, dims::Union{
+        Integer, AbstractUnitRange}...)
+    zeros(GrassmannLieAlgHorMatrix{eltype(A)}, dims...)
+end
+function Base.similar(A::GrassmannLieAlgHorMatrix)
+    zeros(GrassmannLieAlgHorMatrix{eltype(A)}, A.N, A.n)
+end
 
-function Base.rand(rng::Random.AbstractRNG, ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T
+function Base.rand(rng::Random.AbstractRNG, ::Type{GrassmannLieAlgHorMatrix{T}},
+        N::Integer, n::Integer) where {T}
     GrassmannLieAlgHorMatrix(rand(rng, T, N-n, n), N, n)
 end
 
@@ -166,7 +176,7 @@ function Base.rand(rng::Random.AbstractRNG, ::Type{GrassmannLieAlgHorMatrix}, N:
     GrassmannLieAlgHorMatrix(rand(rng, N-n, n), N, n)
 end
 
-function Base.rand(::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where T
+function Base.rand(::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     rand(Random.default_rng(), GrassmannLieAlgHorMatrix{T}, N, n)
 end
 
@@ -180,20 +190,22 @@ end
 
 #define these functions more generally! (maybe make a fallback script!!)
 function ⊙²(A::GrassmannLieAlgHorMatrix)
-    GrassmannLieAlgHorMatrix(A.B.^2, A.N, A.n)
+    GrassmannLieAlgHorMatrix(A.B .^ 2, A.N, A.n)
 end
 function racᵉˡᵉ(A::GrassmannLieAlgHorMatrix)
     GrassmannLieAlgHorMatrix(sqrt.(A.B), A.N, A.n)
 end
 function /ᵉˡᵉ(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
-    GrassmannLieAlgHorMatrix(A.B./B.B, A.N, A.n)
-end 
+    GrassmannLieAlgHorMatrix(A.B ./ B.B, A.N, A.n)
+end
 
 function LinearAlgebra.mul!(C::GrassmannLieAlgHorMatrix, A::GrassmannLieAlgHorMatrix, α::Real)
     mul!(C.B, A.B, α)
     C
 end
-LinearAlgebra.mul!(C::GrassmannLieAlgHorMatrix, α::Real, A::GrassmannLieAlgHorMatrix) = mul!(C, A, α)
+function LinearAlgebra.mul!(C::GrassmannLieAlgHorMatrix, α::Real, A::GrassmannLieAlgHorMatrix)
+    mul!(C, A, α)
+end
 LinearAlgebra.rmul!(C::GrassmannLieAlgHorMatrix, α::Real) = mul!(C, C, α)
 
 function _round(B::GrassmannLieAlgHorMatrix; kwargs...)

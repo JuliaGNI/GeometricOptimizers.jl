@@ -1,7 +1,18 @@
-OptimizerCache(::GradientMethod, x::OptimizerSolution) = GradientCache(_copy(x), _zero(x), _zero(x))
-Hessian(::GradientMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
+function OptimizerCache(::GradientMethod, x::OptimizerSolution)
+    GradientCache(_copy(x), _zero(x), _zero(x))
+end
+function Hessian(::GradientMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T}
+    NoHessian{T}()
+end
 
 struct NoHessian{T} <: Hessian{T} end
+
+# The other half of the owned `Hessian` functor error; see the note on
+# `(::IterativeHessian)(::AbstractMatrix, ::OptimizerSolution)` in
+# `optimizers/iterative_hessians/bfgs/hessian_bfgs.jl` for why the two are split.
+function (hes::NoHessian)(::AbstractMatrix, ::OptimizerSolution)
+    error("This has to be called together with a cache.")
+end
 
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
 # The invariant is enforced by the outer constructors below.
@@ -30,7 +41,7 @@ Cache for the gradient optimizer.
     the CHANGELOG entry for issue A2). [`MomentumCache`](@ref) and [`AdamCache`](@ref) carry the same
     field for the same reason.
 """
-struct GradientCache{T,MT,VT,ST} <: OptimizerCache{T}
+struct GradientCache{T, MT, VT, ST} <: OptimizerCache{T}
     x::MT
     g::VT
     δ::VT
@@ -40,20 +51,22 @@ struct GradientCache{T,MT,VT,ST} <: OptimizerCache{T}
     section::ST
 end
 
-function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
+        T, AT <: GradientStorage{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    GradientCache{T,typeof(x),typeof(g),typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
+    GradientCache{T, typeof(x), typeof(g), typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
 end
 
-function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {T,AT<:GradientArrayOrNamedTuple{T}}
+function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {
+        T, AT <: GradientStorage{T}}
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
     GradientCache(x, g, δ, Δg)
 end
 
-function GradientCache(x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function GradientCache(x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     δ = _similar(g)
     _fill!(δ, T(NaN))
     GradientCache(x, g, δ)
@@ -72,14 +85,19 @@ solution(cache::GradientCache) = cache.x
 gradient(cache::GradientCache) = cache.g
 gradient_array(cache::GradientCache) = gradient(cache)
 latest_gradient(cache::GradientCache) = cache.g̃
-refresh_latest_gradient!(cache::GradientCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
-latest_gradient_is_current(cache::GradientCache, state::OptimizerState, x::OptimizerSolution) =
+function refresh_latest_gradient!(cache::GradientCache, g::Gradient)
+    _refresh_latest_gradient!(cache, g)
+end
+function latest_gradient_is_current(cache::GradientCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
+end
 invalidate_latest_gradient!(cache::GradientCache) = _invalidate_latest_gradient!(cache)
 # `∇f(x_{k+1}) - ∇f(x_k)`, the successive difference `OptimizerStatus` prints as `|g(x) - g(x')|`,
 # from the two gradients the cache holds rather than from a `state.ḡ` that is two iterates behind
 # here. See `gradient_difference!`.
-gradient_difference!(cache::GradientCache, ::OptimizerState) = _latest_gradient_difference!(cache)
+function gradient_difference!(cache::GradientCache, ::OptimizerState)
+    _latest_gradient_difference!(cache)
+end
 direction(cache::GradientCache) = cache.δ
 rhs(cache::GradientCache) = direction(cache)
 section(cache::GradientCache) = cache.section
@@ -91,7 +109,7 @@ section(cache::GradientCache) = cache.section
 
 State for the gradient optimizer.
 """
-mutable struct GradientState{T,OT,GS,VT} <: OptimizerState{T}
+mutable struct GradientState{T, OT, GS, VT} <: OptimizerState{T}
     section::GS
     iterations::Int
 
@@ -112,18 +130,21 @@ previous_value(state::GradientState) = state.f̄
 
 section(state::GradientState) = state.section
 
-function GradientState(x::OST, g::GradientArrayOrNamedTuple{T}) where {T,OST<:OptimizerSolution{T}}
+function GradientState(x::OST, g::GradientStorage{T}) where {T, OST <: OptimizerSolution{T}}
     _x = _copy(x)
     _g = _copy(g)
     gs = GlobalSection(_x)
-    GradientState{T,typeof(_x),typeof(gs),typeof(_g)}(gs, 0, _x, _similar(_x), _g, _similar(_g), T(NaN), T(NaN))
+    GradientState{T, typeof(_x), typeof(gs), typeof(_g)}(
+        gs, 0, _x, _similar(_x), _g, _similar(_g), T(NaN), T(NaN))
 end
 
 GradientState(x::OptimizerSolution) = GradientState(x, _zero(x))
 
 OptimizerState(::GradientMethod, x...) = GradientState(x...)
 
-function update!(state::GradientState{T}, gradient_array::GradientArrayOrNamedTuple{T}, direction::GradientArrayOrNamedTuple{T}, x::OptimizerSolution{T}, f::Callable, retraction) where {T}
+function update!(state::GradientState{T}, gradient_array::GradientStorage{T},
+        direction::GradientStorage{T}, x::OptimizerSolution{T},
+        f::Callable, retraction) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
@@ -137,14 +158,16 @@ function update!(state::GradientState{T}, gradient_array::GradientArrayOrNamedTu
 end
 
 function update!(state::GradientState, opt::Optimizer, x::OptimizerSolution)
-    update!(state, gradient_array(cache(opt)), direction(cache(opt)), x, problem(opt).F, opt.retraction)
+    update!(state, gradient_array(cache(opt)), direction(cache(opt)),
+        x, problem(opt).F, opt.retraction)
 end
 
 # function compute_direction!(opt::Optimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
 #     direction(opt) .= rhs(opt)
 # end
 
-function update!(cache::GradientCache{T}, state::GradientState{T}, gradient::Gradient{T}, ::Hessian{T}, x::OptimizerSolution{T}) where {T}
+function update!(cache::GradientCache{T}, state::GradientState{T},
+        gradient::Gradient{T}, ::Hessian{T}, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below: it compares `solution(cache)` against `x` and
     # `section(cache)` against `section(state)`, which those overwrite
     store_gradient!(cache, state, gradient, x)
@@ -158,5 +181,6 @@ end
 
 # this should be moved to a different file
 function update!(state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}) where {T}
-    update!(state, direction(cache(opt)), gradient(opt), x, problem(opt).F(x), opt.retraction)
+    update!(
+        state, direction(cache(opt)), gradient(opt), x, problem(opt).F(x), opt.retraction)
 end

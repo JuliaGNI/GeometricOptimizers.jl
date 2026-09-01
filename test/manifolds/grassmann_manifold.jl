@@ -2,12 +2,12 @@
 Warning: all these tests seem to be fine for double precision, but require a ridicolously high tolerance (~5f-3) for single precision!
 """
 
-using Test 
+using Test
 using LinearAlgebra
 using GeometricOptimizers
 using GeometricOptimizers: Ω, metric, check
 using GeometricOptimizers: global_section, global_rep
-import Random 
+import Random
 
 Random.seed!(1234)
 
@@ -44,7 +44,7 @@ function metric_test(T, N, n)
     Y = rand(GrassmannManifold{T}, N, n)
     Δ₁ = rgrad(Y, rand(T, N, n))
     Δ₂ = rgrad(Y, rand(T, N, n))
-    @test T(.5) * tr(Ω(Y, Δ₁)' * Ω(Y, Δ₂)) ≈ metric(Y, Δ₁, Δ₂)
+    @test T(0.5) * tr(Ω(Y, Δ₁)' * Ω(Y, Δ₂)) ≈ metric(Y, Δ₁, Δ₂)
 end
 
 function run_tests(T, N, n, tol)
@@ -53,17 +53,17 @@ function run_tests(T, N, n, tol)
     # `GrassmannManifold` point satisfies `YᵗY = I` just as the Stiefel one does.
     @test check(rand(GrassmannManifold{T}, N, n)) < tol
     @test check_gradient(T, N, n) < tol
-    @test norm(tangent_space_rep(T, N, n)[1:n,1:n])/N/n < tol
+    @test norm(tangent_space_rep(T, N, n)[1:n, 1:n])/N/n < tol
     @test typeof(gloabl_tangent_space_representation(T, N, n)) <: GrassmannLieAlgHorMatrix
     # because of the matrix inversion the tolerance here is set to a higher value
-    @test norm(coordinate_chart_rep(T, N, n)[1:n,1:n]-I(n)) / N / n < tol*10
+    @test norm(coordinate_chart_rep(T, N, n)[1:n, 1:n]-I(n)) / N / n < tol*10
     metric_test(T, N, n)
 end
 
 tol = 1e-8
 T = Float64
 for N in 1:10
-    for n in 1:(N-1) 
+    for n in 1:(N - 1)
         run_tests(T, N, n, tol)
     end
 end

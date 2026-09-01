@@ -27,7 +27,7 @@ UpperTriangular(S, 4)
 mutable struct UpperTriangular{T, AT <: AbstractVector{T}} <: AbstractTriangular{T}
     S::AT
     n::Int
-end 
+end
 
 @doc raw"""
     UpperTriangular(A::AbstractMatrix)
@@ -58,29 +58,30 @@ function UpperTriangular(S::AbstractMatrix{T}) where {T}
     UpperTriangular(S_vec, n)
 end
 
-function Base.getindex(A::UpperTriangular{T}, i::Int, j::Int) where T
+function Base.getindex(A::UpperTriangular{T}, i::Int, j::Int) where {T}
     if j == i
         return zero(T)
     end
     if j > i
-        return A.S[(j-2) * (j-1) ÷ 2 + i]
+        return A.S[(j - 2) * (j - 1) ÷ 2 + i]
     end
-    return zero(T) 
+    return zero(T)
 end
 
-@kernel function up_mat_mul_kernel!(C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where T
+@kernel function up_mat_mul_kernel!(
+        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
     i, j = @index(Global, NTuple)
 
     tmp_sum = zero(T)
-    for k = (i + 1):n 
+    for k in (i + 1):n
         tmp_sum += S[(k - 2) * (k - 1) ÷ 2 + i] * B[k, j]
     end
     C[i, j] = tmp_sum
 end
 
-function map_to_up(A::AbstractMatrix{T}) where T
+function map_to_up(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
-    @assert size(A, 2) == n 
+    @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
     S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
     assign_Skew_val! = assign_Skew_val_kernel!(backend)
@@ -90,11 +91,16 @@ function map_to_up(A::AbstractMatrix{T}) where T
     S
 end
 
-
 # define routines for generalizing ChainRulesCore to UpperTriangular 
-ChainRulesCore.ProjectTo(A::AT) where AT <: UpperTriangular = ProjectTo{AT}(; triang = ProjectTo(A.S))
-(project::ProjectTo{<:UpperTriangular})(dA::AbstractMatrix) = UpperTriangular(project.triang(map_to_up(dA)), size(dA, 2))
-(project::ProjectTo{<:UpperTriangular})(dA::UpperTriangular) = UpperTriangular(project.triang(dA.S), dA.n)
+function ChainRulesCore.ProjectTo(A::AT) where {AT <: UpperTriangular}
+    ProjectTo{AT}(; triang = ProjectTo(A.S))
+end
+function (project::ProjectTo{<:UpperTriangular})(dA::AbstractMatrix)
+    UpperTriangular(project.triang(map_to_up(dA)), size(dA, 2))
+end
+function (project::ProjectTo{<:UpperTriangular})(dA::UpperTriangular)
+    UpperTriangular(project.triang(dA.S), dA.n)
+end
 
 function Base.adjoint(A::LowerTriangular)
     UpperTriangular(A.S, A.n)

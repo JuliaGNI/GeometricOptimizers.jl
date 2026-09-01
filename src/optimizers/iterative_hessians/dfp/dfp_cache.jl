@@ -10,7 +10,7 @@ The [`OptimizerCache`](@ref) corresponding to the [`DFP`](@ref) method.
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
 [`store_gradient!`](@ref).
 """
-struct DFPCache{T,VT,GT,MT,GS,FT} <: OptimizerCache{T}
+struct DFPCache{T, VT, GT, MT, GS, FT} <: OptimizerCache{T}
     x::VT    # current solution
 
     g::GT    # current gradient
@@ -36,7 +36,7 @@ struct DFPCache{T,VT,GT,MT,GS,FT} <: OptimizerCache{T}
     # differences are horizontal lifts of shape `N × N`. `Q` is sized by neither -- it is sized by the
     # length of the *flattening*, the intrinsic dimension, which for a `NamedTuple` is emphatically
     # not `length(x)` (that is the number of entries).
-    function DFPCache(x::AT) where {T,AT<:OptimizerSolution{T}}
+    function DFPCache(x::AT) where {T, AT <: OptimizerSolution{T}}
         # see `BFGSCache` for why the `_zero` is load-bearing rather than redundant
         n = flatlength(_zero(x))
         q = zeros(T, n, n)
@@ -44,7 +44,9 @@ struct DFPCache{T,VT,GT,MT,GS,FT} <: OptimizerCache{T}
         g = _zero(x)
         # from the same `_zero(x)` as `n` above, and for the same reason
         flat = _flat_scratch(T, g)
-        cache = new{T,AT,typeof(g),typeof(q),typeof(section),typeof(flat)}(_copy(x), _similar(g), _similar(g), Ref(false), similar(q), similar(q), similar(q), similar(q), _similar(g), _similar(g), _similar(g), section, flat)
+        cache = new{T, AT, typeof(g), typeof(q), typeof(section), typeof(flat)}(
+            _copy(x), _similar(g), _similar(g), Ref(false), similar(q), similar(q),
+            similar(q), similar(q), _similar(g), _similar(g), _similar(g), section, flat)
         initialize!(cache, x)
         cache
     end
@@ -71,8 +73,9 @@ gradient(cache::DFPCache) = cache.g
 gradient_array(cache::DFPCache) = gradient(cache)
 latest_gradient(cache::DFPCache) = cache.g̃
 refresh_latest_gradient!(cache::DFPCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
-latest_gradient_is_current(cache::DFPCache, state::OptimizerState, x::OptimizerSolution) =
+function latest_gradient_is_current(cache::DFPCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
+end
 invalidate_latest_gradient!(cache::DFPCache) = _invalidate_latest_gradient!(cache)
 
 """
@@ -84,8 +87,12 @@ direction(cache::DFPCache) = cache.Δx
 
 solution(cache::DFPCache) = cache.x
 
-hessian(::DFPCache) = error("DFPCache does not store the Hessian, but it's inverse! Call inverse_hessian.")
-inverse_hessian(::DFPCache) = error("The inverse Hessian is stored in the state, not the cache!")
+function hessian(::DFPCache)
+    error("DFPCache does not store the Hessian, but it's inverse! Call inverse_hessian.")
+end
+function inverse_hessian(::DFPCache)
+    error("The inverse Hessian is stored in the state, not the cache!")
+end
 
 function update!(cache::DFPCache, state::OptimizerState, x::OptimizerSolution)
     _copyto!(cache.x, x)
@@ -105,7 +112,8 @@ Update the [`DFPCache`](@ref) based on `x` and `g`.
 
 The update rule used here can be found in [kochenderfer2019algorithms](@cite) and [nocedal2006numerical](@cite).
 """
-function update!(cache::DFPCache{T}, state::DFPState{T}, x::OptimizerSolution{T}, g::GradientArrayOrNamedTuple{T}) where {T}
+function update!(cache::DFPCache{T}, state::DFPState{T},
+        x::OptimizerSolution{T}, g::GradientStorage{T}) where {T}
     update!(cache, state, x)
     _copyto!(gradient(cache), g)
     _copyto!(rhs(cache), g)
@@ -159,11 +167,16 @@ function update!(cache::DFPCache, state::OptimizerState, grad::Gradient, x::Opti
     update!(cache, state, x, gradient(cache))
 end
 
-update!(cache::DFPCache, state::OptimizerState, grad::Gradient, ::HessianDFP, x::OptimizerSolution) = update!(cache, state, grad, x)
+function update!(cache::DFPCache, state::OptimizerState,
+        grad::Gradient, ::HessianDFP, x::OptimizerSolution)
+    update!(cache, state, grad, x)
+end
 
 # see the remark in `bfgs_cache.jl`: the successive difference the status prints, and not the `γ` of
 # the secant pair, which is one step behind it
-gradient_difference!(cache::DFPCache, ::OptimizerState) = _latest_gradient_difference!(cache)
+function gradient_difference!(cache::DFPCache, ::OptimizerState)
+    _latest_gradient_difference!(cache)
+end
 
 function initialize!(cache::DFPCache{T}, ::OptimizerSolution{T}) where {T}
     _fill!(solution(cache), T(NaN))

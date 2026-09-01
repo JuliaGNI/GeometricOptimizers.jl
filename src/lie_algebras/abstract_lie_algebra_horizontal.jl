@@ -39,11 +39,13 @@ general meaning of `parent` for all of them.
 """
 Base.parent(::AbstractLieAlgHorMatrix)
 
-_add!(A::AbstractLieAlgHorMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T} =
+function _add!(A::AbstractLieAlgHorMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T}
     (foreach(_add!, parent(A), parent(B)); A)
+end
 
-assign!(B::AbstractLieAlgHorMatrix{T}, C::AbstractLieAlgHorMatrix{T}) where {T} =
+function assign!(B::AbstractLieAlgHorMatrix{T}, C::AbstractLieAlgHorMatrix{T}) where {T}
     (foreach(assign!, parent(B), parent(C)); nothing)
+end
 
 @doc raw"""
     vec(B::AbstractLieAlgHorMatrix)

@@ -49,8 +49,8 @@ end
 
 T = Float32
 
-for N ∈ 3:5
-    for n ∈ 1:N
+for N in 3:5
+    for n in 1:N
         @test stiefel_global_section(N, n, T)
         @test grassmann_global_section(N, n, T)
         @test global_tangent_space_rep(N, n, T)

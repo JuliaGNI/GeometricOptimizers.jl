@@ -55,13 +55,13 @@ DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
     caller's to fix — but a `params.αmax` clamps the step it hands back. On a manifold
     [`solver_step!`](@ref) supplies one; see [`linesearch_parameters`](@ref).
 """
-struct DecayingStatic{T<:Number} <: LinesearchMethod{T}
+struct DecayingStatic{T <: Number} <: LinesearchMethod{T}
     η₁::T
     η₂::T
     γ::T
     n::Int
 
-    function DecayingStatic(::Type{T}=Float64; η₁=T(1.0e-2), η₂=T(1.0e-6), n::Integer=1000) where {T}
+    function DecayingStatic(::Type{T} = Float64; η₁ = T(1.0e-2), η₂ = T(1.0e-6), n::Integer = 1000) where {T}
         @assert η₁ > 0 && η₂ > 0 "the step sizes have to be positive, got η₁ = $(η₁) and η₂ = $(η₂)"
         @assert η₂ ≤ η₁ "this decays, so η₂ = $(η₂) has to be at most η₁ = $(η₁)"
         @assert n > 0 "the decay horizon has to be positive, got n = $(n)"
@@ -91,7 +91,7 @@ step_size(method::DecayingStatic{T}, t::Integer) where {T} = method.γ^t * metho
 # own — the schedule is the caller's to fix, exactly as `Static`'s `α` is — so only a caller's
 # `params.αmax` can bind here, and a caller that says no step above a given length is admissible means
 # a scheduled one too. See `linesearch_parameters`, which is what supplies it on a manifold.
-function solve_with_status(ls::Linesearch{T,<:DecayingStatic}, ::T, params) where {T}
+function solve_with_status(ls::Linesearch{T, <:DecayingStatic}, ::T, params) where {T}
     hasproperty(params, :state) ||
         error("DecayingStatic needs the iteration number and therefore the `state` in the line " *
               "search parameters; `solver_step!` passes it, a bare `solve(ls, α)` does not.")
@@ -102,11 +102,13 @@ end
 
 function change_precision(::Type{T}, method::DecayingStatic) where {T}
     T ≠ eltype(method) || return method
-    DecayingStatic(T; η₁=T(method.η₁), η₂=T(method.η₂), n=method.n)
+    DecayingStatic(T; η₁ = T(method.η₁), η₂ = T(method.η₂), n = method.n)
 end
 
-Base.show(io::IO, alg::DecayingStatic) =
-    print(io, "DecayingStatic from α = ", alg.η₁, " to α = ", alg.η₂, " over ", alg.n, " iterations.")
+function Base.show(io::IO, alg::DecayingStatic)
+    print(io, "DecayingStatic from α = ", alg.η₁, " to α = ",
+        alg.η₂, " over ", alg.n, " iterations.")
+end
 
 @doc raw"""
     AdamOptimizerWithDecay(n_epochs, T; η₁, η₂, kwargs...)
@@ -175,10 +177,12 @@ AdamOptimizerWithDecay(1000).linesearch
 DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
 ```
 """
-function AdamOptimizerWithDecay(n_epochs::Integer, ::Type{T}=Float64; η₁=T(1.0e-2), η₂=T(1.0e-6),
+function AdamOptimizerWithDecay(
+        n_epochs::Integer, ::Type{T} = Float64; η₁ = T(1.0e-2), η₂ = T(1.0e-6),
         kwargs...) where {T}
     # the `η` defaults are written in `T` (and not as bare `Float64` literals) so that `γ` is computed
     # in `T`, i.e. so that this really is the `DecayingStatic(T; …)` it claims to be down to the last
     # bit; they are `DecayingStatic`'s defaults, which are also GML's.
-    (algorithm=Adam(T; kwargs...), linesearch=DecayingStatic(T; η₁=η₁, η₂=η₂, n=n_epochs))
+    (algorithm = Adam(T; kwargs...),
+        linesearch = DecayingStatic(T; η₁ = η₁, η₂ = η₂, n = n_epochs))
 end

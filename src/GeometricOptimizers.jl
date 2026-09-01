@@ -3,18 +3,25 @@ module GeometricOptimizers
 using Base: Callable
 using GeometricBase: AbstractProblem, SolverMethod, AbstractSolver
 using SimpleSolvers: Options
-using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem, LU
+using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem,
+                     LU
 import SimpleSolvers: outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_suctol, f_mindec
 import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
-using SimpleSolvers: HessianAutodiff, HessianFunction
+using SimpleSolvers: HessianAutodiff
 
 import SimpleSolvers: Hessian, GradientFunction, HessianAutodiff, alloc_h
 export GradientAutodiff, GradientFunction, GradientFiniteDifferences
+# `RiemannianGradient` is this package's own `Gradient`, and exported because it is what `Optimizer`
+# stores for a parameter set and therefore what `gradient(opt)` returns. A caller supplying its own
+# gradient does not need to wrap it -- `Optimizer` does that -- but does need the name to dispatch on.
+# See `utils.jl`.
+export RiemannianGradient
 
 # `Static` is exported because it is how a fixed learning rate is specified: the optimizer
 # methods only produce a direction, see `default_linesearch`.
-using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection, StrongWolfe
+using SimpleSolvers: Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection,
+                     StrongWolfe
 export Static, Backtracking, Quadratic, BierlaireQuadratic, Bisection, StrongWolfe
 export DecayingStatic
 # `AdamOptimizerWithDecay` is a convenience pairing of `Adam` with `DecayingStatic`, not a method
@@ -22,7 +29,8 @@ export AdamOptimizerWithDecay
 
 export Options
 
-import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache, l2norm
+import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache,
+                      l2norm
 import SimpleSolvers: change_precision, solve_with_status
 using SimpleSolvers: method, LinesearchStatus, LINESEARCH_UNKNOWN
 # The ceiling on the step a line search may return, SimpleSolvers 0.12's half of issue A1b. Read by
@@ -38,7 +46,7 @@ using Printf
 
 using KernelAbstractions
 using Random
-using LinearAlgebra: Adjoint, qr, qr!, norm, I, mul!, rmul!, dot, ⋅
+using LinearAlgebra: Adjoint, qr, qr!, norm, I, mul!, rmul!, dot
 using LinearAlgebra: Diagonal, Hermitian, eigen
 import LinearAlgebra
 import ChainRulesCore
@@ -55,14 +63,23 @@ import LazyArrays
 # The list is what this package actually uses, so that it says which walks these optimizers are
 # written in terms of. `ext/AbstractNeuralNetworksExt.jl` imports `mapstorage` for itself.
 using NeuralNetworkParameters: NetworkParameters, params,
-                               parameterlayout, flatlength,
+                               flatlength,
                                flatten, flatten!, unflatten, unflatten!,
-                               FlatParameters, ParameterSet,
+                               FlatParameters,
                                mapparameters, mapparameters!,
                                foldparameters, foldstorage,
                                parameter_eltype,
                                register_parameter_type!
 import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
+
+# `NetworkParameters` *is* re-exported, and it is the one exception to the paragraph above. It is the
+# only shape in which a whole set of parameters enters this package -- see [`OptimizerSolution`](@ref)
+# -- so a caller holding a bare `NamedTuple` writes `Optimizer(NetworkParameters(ps), F)`, and having
+# to reach for a second `using` to say that would make the wrap look like a foreign concern rather
+# than this package's own entry condition. The name collides with nothing:
+# `AbstractNeuralNetworks`, `SymbolicNeuralNetworks` and `GeometricMachineLearning` all take it from
+# `NeuralNetworkParameters` too, so a downstream package meeting it twice meets the same binding.
+export NetworkParameters
 
 # `metric`, `check` and `Ω` join `rgrad` in being public: they are the geometry a caller works in,
 # not implementation detail, and a downstream package that defines its own manifold layers on top of
@@ -113,14 +130,14 @@ include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")
 
 export Optimizer,
-    OptimizerProblem,
-    OptimizerMethod,
-    OptimizerSolution,
-    OptimizerState, isaOptimizerState,
-    NewtonOptimizerState,
-    HessianAutodiff,
-    HessianBFGS,
-    HessianDFP
+       OptimizerProblem,
+       OptimizerMethod,
+       OptimizerSolution,
+       OptimizerState, isaOptimizerState,
+       NewtonOptimizerState,
+       HessianAutodiff,
+       HessianBFGS,
+       HessianDFP
 
 import SimpleSolvers: solve!, solve
 # `Newton`, `BFGS` and `DFP` are the optimizer methods, and `BFGSState`/`DFPState` are the states

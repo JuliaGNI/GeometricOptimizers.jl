@@ -136,7 +136,7 @@ check(Geodesic()(B)) < 1e-12, check(Geodesic(TaylorSeries())(B)) < 1e-12
 See [`geodesic`](@ref) for the implementation and [`Cayley`](@ref) for the rational alternative, and
 [Exponential Algorithms](@ref) for the choice of `algorithm`.
 """
-struct Geodesic{AT<:AbstractExponentialAlgorithm} <: AbstractRetraction
+struct Geodesic{AT <: AbstractExponentialAlgorithm} <: AbstractRetraction
     algorithm::AT
 end
 

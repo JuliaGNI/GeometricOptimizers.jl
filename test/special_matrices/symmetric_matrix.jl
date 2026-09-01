@@ -6,7 +6,7 @@ Random.seed!(123)
 
 # import ChainRulesTestUtils
 
-symmetrize(W::AbstractMatrix{T}) where T = T(.5) * (W + W')
+symmetrize(W::AbstractMatrix{T}) where {T} = T(0.5) * (W + W')
 
 function sym_mat_add_sub(n::Integer, T::DataType)
     W₁ = rand(T, n, n)
@@ -21,13 +21,13 @@ function sym_mat_add_sub(n::Integer, T::DataType)
     @test all(abs.(symmetrize(W₁ - W₂) - S₄) .< 2 * eps(T))
 end
 
-function random_generation(N::Integer, T::DataType=Float64)
+function random_generation(N::Integer, T::DataType = Float64)
     A_sym = rand(SymmetricMatrix{T}, N)
     @test typeof(A_sym) <: SymmetricMatrix{T}
     @test eltype(A_sym) == T
 end
 
-function multiplication(n::Integer=5, T::DataType=Float32)
+function multiplication(n::Integer = 5, T::DataType = Float32)
     A = rand(SymmetricMatrix{T}, n)
     b = rand(T, n)
     B = rand(T, n, n)
@@ -36,12 +36,12 @@ function multiplication(n::Integer=5, T::DataType=Float32)
     @test A * B ≈ Matrix{T}(A) * B
 end
 
-function calling_symmetric_matrix(n::Integer=5, T::DataType=Float32)
+function calling_symmetric_matrix(n::Integer = 5, T::DataType = Float32)
     B = rand(T, n, n)
-    @test isapprox(SymmetricMatrix(B), .5*(B + B'))
+    @test isapprox(SymmetricMatrix(B), 0.5*(B + B'))
 end
 
-function test_pullback_routine(n::Integer=5, T::DataType=Float32)
+function test_pullback_routine(n::Integer = 5, T::DataType = Float32)
     A = rand(SymmetricMatrix{T}, n)
     B = rand(T, n, n)
 
@@ -60,8 +60,8 @@ function scalar_multiplication(n::Integer, T::DataType)
     @test typeof(Aα_sym2) <: SymmetricMatrix{T}
 end
 
-for T ∈ (Float32, Float64)
-    for n ∈ 1:5
+for T in (Float32, Float64)
+    for n in 1:5
         sym_mat_add_sub(n, T)
         random_generation(n, T)
         multiplication(n, T)
@@ -73,6 +73,6 @@ end
 @testset "storage layout" begin
     M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
     @test SymmetricMatrix([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4) ==
-        [1 2 4 7; 2 3 5 8; 4 5 6 9; 7 8 9 10]
+          [1 2 4 7; 2 3 5 8; 4 5 6 9; 7 8 9 10]
     @test SymmetricMatrix(vec(SymmetricMatrix(M)), 4) ≈ SymmetricMatrix(M)
 end

@@ -24,6 +24,6 @@ StiefelProjection(B₁) ≈ StiefelProjection(B₂) ≈ E
 true
 ```
 """
-function StiefelProjection(B::AbstractLieAlgHorMatrix{T}) where T 
+function StiefelProjection(B::AbstractLieAlgHorMatrix{T}) where {T}
     StiefelProjection(KernelAbstractions.get_backend(B), T, B.N, B.n)
 end

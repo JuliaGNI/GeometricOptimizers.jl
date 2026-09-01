@@ -48,16 +48,16 @@ makes a ceiling that forbids the ``10^8`` step cost the ordinary ones nothing.
 
 !!! info "Euclidean parameters do not get one"
     [`linesearch_parameters`](@ref) omits `αmax` for an `AbstractVector`, and passes `Inf` — which
-    says the same thing — for a `NamedTuple` carrying no manifold block. There is no geometric scale
+    says the same thing — for a parameter set carrying no manifold block. There is no geometric scale
     in either case, and none is needed: ``f(x + \alpha{}p)`` grows with ``\alpha``, so the search's
     own decrease test rejects an over-long step unaided.
 
-    The `NamedTuple` half of that is not free: `ArrayNamedTuple` is *any* `NamedTuple` of arrays, so
-    a manifold-free one used to take the manifold branch and be bounded by a rotation its problem
-    does not have. See [`_manifold_αmax`](@ref), which derives the ceiling per block instead.
+    Telling the two apart is not free, and getting it wrong bounds a set of parameters carrying no
+    manifold block by a rotation its problem does not have. [`_manifold_αmax`](@ref) derives the
+    ceiling per block, over the manifold blocks only, which is what makes the distinction.
 
 !!! info "One `α`, one ceiling per block"
-    On a `NamedTuple` the same ``\alpha`` scales every block, so the ceiling is the *smallest* of the
+    On a parameter set the same ``\alpha`` scales every block, so the ceiling is the *smallest* of the
     per-block ones over the blocks that live on a manifold — [`_manifold_αmax`](@ref) — and not
     ``2\pi{}c`` over the norm of the whole direction. The latter is what this was written as, and it
     made every block pay for its neighbours: on the SVD problem, where both blocks are manifolds,
@@ -127,13 +127,13 @@ true
 
 """
 struct Optimizer{T,
-    ALG<:OptimizerMethod,
-    OBJ<:OptimizerProblem{T},
-    GT<:Gradient{T},
-    HT<:Hessian{T},
-    OCT<:Union{OptimizerCache,NamedTuple},
-    LST<:Linesearch,
-    RT<:AbstractRetraction} <: AbstractSolver
+    ALG <: OptimizerMethod,
+    OBJ <: OptimizerProblem{T},
+    GT <: Gradient{T},
+    HT <: Hessian{T},
+    OCT <: Union{OptimizerCache, NamedTuple},
+    LST <: Linesearch,
+    RT <: AbstractRetraction} <: AbstractSolver
     algorithm::ALG
     problem::OBJ
     gradient::GT
@@ -146,15 +146,28 @@ struct Optimizer{T,
 
     # Everything positional, and in particular the `Options` already built. See the note on Julia 1.12
     # below `Optimizer(x, F)`.
-    function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod, config::Options{T}, gradient::Gradient{T}, retraction::AbstractRetraction, step_ceiling::Real=DEFAULT_STEP_CEILING) where {T}
+    function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T},
+            hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod,
+            config::Options{T}, gradient::Gradient{T}, retraction::AbstractRetraction,
+            step_ceiling::Real = DEFAULT_STEP_CEILING) where {T}
         ls_problem = linesearch_problem(problem, gradient, cache, retraction)
         ls = Linesearch(ls_problem, linesearch)
-        new{T,typeof(algorithm),typeof(problem),typeof(gradient),typeof(hessian),typeof(cache),typeof(ls),typeof(retraction)}(algorithm, problem, gradient, hessian, config, cache, ls, retraction, T(step_ceiling))
+        new{T, typeof(algorithm), typeof(problem), typeof(gradient),
+            typeof(hessian), typeof(cache), typeof(ls), typeof(retraction)}(
+            algorithm, problem, gradient, hessian, config,
+            cache, ls, retraction, T(step_ceiling))
     end
 end
 
-function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T}, hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod; gradient=default_gradient(problem, cache.x), retraction=Cayley(), step_ceiling=DEFAULT_STEP_CEILING, options_kwargs...) where {T}
-    Optimizer(algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...), gradient, retraction, step_ceiling)
+function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T},
+        hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod;
+        gradient = default_gradient(problem, cache.x), retraction = Cayley(),
+        step_ceiling = DEFAULT_STEP_CEILING, options_kwargs...) where {T}
+    # `_riemannian_gradient` here as in the two methods below, so that every route into the inner
+    # constructor projects; see the note there.
+    Optimizer(
+        algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...),
+        _riemannian_gradient(gradient, cache.x), retraction, step_ceiling)
 end
 
 """
@@ -165,15 +178,23 @@ supplied.
 
 # Implementation
 
-The `NamedTuple` method is not just a matter of the *length*: a `Gradient` built for a
-`NamedTuple` is called on the flattened parameters, so it has to be constructed from `x`
-itself (see `GradientAutodiff(F, ::NamedTuple)`), which composes `problem.F` with the
-`unflatten` that belongs to `x`. Sizing it with `length(x)` — the number of entries of the
-`NamedTuple` rather than the length of its flattening — used to make the first step fail with
-a `DimensionMismatch`.
+The [`NeuralNetworkParameters.NetworkParameters`](@extref) method is not just a matter of the
+*length*: a `Gradient` built for a parameter set is called on the flattened parameters, so it has to
+be constructed from `x` itself — `SimpleSolvers`' `GradientAutodiff(F, ::NetworkParameters)`, which
+composes `problem.F` with the `unflatten` that belongs to `x`. Sizing it with `length(x)` — the
+number of *layers* rather than the length of the flattening — used to make the first step fail with a
+`DimensionMismatch`.
+
+It wraps in a [`RiemannianGradient`](@ref), which is what projects the result leaf by leaf. `Optimizer`
+would wrap it anyway, and the wrap is idempotent; doing it here as well keeps this function's own
+return value the thing `Optimizer` will actually store.
 """
-default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
-default_gradient(problem::OptimizerProblem, x::ParameterContainer) = GradientAutodiff(problem.F, x)
+function default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T}
+    GradientAutodiff{T}(problem.F, length(x))
+end
+function default_gradient(problem::OptimizerProblem, x::NetworkParameters)
+    RiemannianGradient(GradientAutodiff(problem.F, x))
+end
 
 """
     _optimizer(x, problem, algorithm, linesearch, gradient, retraction, config)
@@ -184,22 +205,30 @@ constructor.
 Takes every argument positionally on purpose; see the note on Julia 1.12 below
 [`Optimizer(x, F)`](@ref).
 """
-function _optimizer(x::OptimizerSolution{T}, problem::OptimizerProblem{T}, algorithm::OptimizerMethod,
-    linesearch::LinesearchMethod, gradient::Gradient{T}, retraction::AbstractRetraction,
-    config::Options{T}, step_ceiling::Real) where {T}
+function _optimizer(
+        x::OptimizerSolution{T}, problem::OptimizerProblem{T}, algorithm::OptimizerMethod,
+        linesearch::LinesearchMethod, gradient::Gradient{T}, retraction::AbstractRetraction,
+        config::Options{T}, step_ceiling::Real) where {T}
     # translate to the correct type if we use the momentum method
-    algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) : algorithm
+    algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) :
+                algorithm
     cache = OptimizerCache(algorithm, x)
     hes = Hessian(algorithm, problem, x)
-    Optimizer(algorithm, problem, hes, cache, linesearch, config, gradient, retraction, step_ceiling)
+    Optimizer(algorithm, problem, hes, cache, linesearch,
+        config, gradient, retraction, step_ceiling)
 end
 
-function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod=BFGS(),
-    linesearch::LinesearchMethod=default_linesearch(T, algorithm),
-    gradient::Union{Gradient,Nothing}=nothing, retraction::AbstractRetraction=Cayley(),
-    step_ceiling=DEFAULT_STEP_CEILING, options_kwargs...) where {T,VT<:OptimizerSolution{T}}
-    G = isnothing(gradient) ? default_gradient(problem, x) : gradient
-    _optimizer(x, problem, algorithm, linesearch, G, retraction, Options(T; options_kwargs...), step_ceiling)
+function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod = BFGS(),
+        linesearch::LinesearchMethod = default_linesearch(T, algorithm),
+        gradient::Union{Gradient, Nothing} = nothing, retraction::AbstractRetraction = Cayley(),
+        step_ceiling = DEFAULT_STEP_CEILING, options_kwargs...) where {
+        T, VT <: OptimizerSolution{T}}
+    # `_riemannian_gradient` on the caller's gradient too, and not only on the default: a parameter
+    # set's leaves are projected one at a time, and a `SimpleSolvers` gradient built for the flat
+    # vector has no method that reaches them. It is the identity on everything else.
+    G = _riemannian_gradient(isnothing(gradient) ? default_gradient(problem, x) : gradient, x)
+    _optimizer(x, problem, algorithm, linesearch, G, retraction,
+        Options(T; options_kwargs...), step_ceiling)
 end
 
 @doc raw"""
@@ -233,13 +262,13 @@ Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
     upstream and already fixed there — but a 140× compile-time cliff on a released Julia is worth one
     flat call chain.
 """
-function Optimizer(x::VT, F::Function; (∇F!)=nothing, mode=:autodiff,
-    algorithm::OptimizerMethod=BFGS(), linesearch::Union{LinesearchMethod,Nothing}=nothing,
-    retraction::AbstractRetraction=Cayley(), step_ceiling=DEFAULT_STEP_CEILING,
-    options_kwargs...) where {T,VT<:OptimizerSolution{T}}
+function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = :autodiff,
+        algorithm::OptimizerMethod = BFGS(), linesearch::Union{LinesearchMethod, Nothing} = nothing,
+        retraction::AbstractRetraction = Cayley(), step_ceiling = DEFAULT_STEP_CEILING,
+        options_kwargs...) where {T, VT <: OptimizerSolution{T}}
     # `T` comes from the `OptimizerSolution{T}` bound and not from `eltype(x)`: for a `NamedTuple` of
     # manifolds the latter is `StiefelManifold{Float64, Matrix{Float64}}` rather than `Float64`.
-    G = if (ismissing(∇F!) | isnothing(∇F!))
+    _G = if (ismissing(∇F!) | isnothing(∇F!))
         if mode == :autodiff
             GradientAutodiff(F, x)
         else
@@ -248,9 +277,14 @@ function Optimizer(x::VT, F::Function; (∇F!)=nothing, mode=:autodiff,
     else
         GradientFunction(F, ∇F!, x)
     end
-    problem = (ismissing(∇F!) | isnothing(∇F!)) ? OptimizerProblem(F, x) : OptimizerProblem(F, ∇F!, x)
+    # See the note on the other `Optimizer` method: the wrapper is what projects a parameter set's
+    # leaves, and it is the identity on a vector or a `Manifold`.
+    G = _riemannian_gradient(_G, x)
+    problem = (ismissing(∇F!) | isnothing(∇F!)) ? OptimizerProblem(F, x) :
+              OptimizerProblem(F, ∇F!, x)
     ls = isnothing(linesearch) ? default_linesearch(T, algorithm) : linesearch
-    _optimizer(x, problem, algorithm, ls, G, retraction, Options(T; options_kwargs...), step_ceiling)
+    _optimizer(x, problem, algorithm, ls, G, retraction,
+        Options(T; options_kwargs...), step_ceiling)
 end
 
 config(opt::Optimizer) = opt.config
@@ -269,7 +303,9 @@ step_ceiling(opt::Optimizer) = opt.step_ceiling
 check_gradient(opt::Optimizer) = check_gradient(gradient(problem(opt)))
 print_gradient(opt::Optimizer) = print_gradient(gradient(problem(opt)))
 
-meets_stopping_criteria(status::OptimizerStatus, opt::Optimizer, state::OptimizerState) = meets_stopping_criteria(status, config(opt), iteration_number(state))
+function meets_stopping_criteria(status::OptimizerStatus, opt::Optimizer, state::OptimizerState)
+    meets_stopping_criteria(status, config(opt), iteration_number(state))
+end
 
 function initialize!(opt::Optimizer, x::OptimizerSolution)
     initialize!(cache(opt), x)
@@ -351,7 +387,8 @@ julia> solver_step!(x, state, opt)
     best, so that case is exempt and the step is taken. See [`linesearch_rejected`](@ref) and issue
     B3.
 """
-function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{T,MT}) where {T,MT}
+function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{
+        T, MT}) where {T, MT}
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
@@ -376,7 +413,8 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
         # compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)), cache(opt), opt.retraction)
         f = value(problem(opt), solution(cache(opt)))
         if isnan(f) || isinf(f)
-            (opt.config.verbosity ≥ 2 && @warn "NaN or Inf detected in optimizer. Reducing length of direction vector.")
+            (opt.config.verbosity ≥ 2 &&
+             @warn "NaN or Inf detected in optimizer. Reducing length of direction vector.")
             _rmul!(direction(cache(opt)), T(config(opt).nan_factor))
         else
             break
@@ -420,7 +458,8 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     # caller permits decreases the merit measurably, so that step is taken rather than answered with
     # a restart. Euclidean parameters carry no ceiling, so `αmax` is `Inf` and nothing changes there.
     if linesearch_rejected(ls_status, _caller_αmax(T, ls_params))
-        config(opt).verbosity ≥ 2 && @warn "the line search returned $(outcome(ls_status)), i.e. no step along the $(algorithm(opt)) direction decreased the merit; restarting the inverse Hessian and searching along the steepest-descent direction instead." maxlog = 1
+        config(opt).verbosity ≥ 2 &&
+            @warn "the line search returned $(outcome(ls_status)), i.e. no step along the $(algorithm(opt)) direction decreased the merit; restarting the inverse Hessian and searching along the steepest-descent direction instead." maxlog = 1
         restart!(state)
         steepest_descent!(cache(opt))
         update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
@@ -511,23 +550,26 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
     # per iteration when `store_trace` is unset. See `trace`.
     f = value(problem(opt), x)
     tracing = config(opt).store_trace
-    _trace = OptimizerTraceEntry{typeof(f),T}[]
+    _trace = OptimizerTraceEntry{typeof(f), T}[]
 
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
-        status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config=config(opt))
-        tracing && push!(_trace, OptimizerTraceEntry(iteration_number(state), value(problem(opt), x), g_residual(status)))
+        status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config = config(opt))
+        tracing && push!(_trace,
+            OptimizerTraceEntry(iteration_number(state), value(problem(opt), x), g_residual(status)))
         meets_stopping_criteria(status, opt, state) && break
         update!(state, opt, x)
     end
 
-    status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config=config(opt))
+    status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config = config(opt))
     warn_iteration_number(state, config(opt))
     OptimizerResult(status, x, value(problem(opt), x), _trace)
 end
 
-update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution) = update!(state, gradient(opt), x)
+function update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution)
+    update!(state, gradient(opt), x)
+end
 
 function initialize_state!(state::OptimizerState)
     state
@@ -537,7 +579,7 @@ const INITIAL_BFGS_X = 0.12345
 const INITIAL_BFGS_G = 0.54321
 const INITIAL_BFGS_F = 0.23456
 
-function initialize_state!(state::Union{BFGSState{T},DFPState{T}}) where {T}
+function initialize_state!(state::Union{BFGSState{T}, DFPState{T}}) where {T}
     _fill!(state.x̄, T(INITIAL_BFGS_X))
     _fill!(state.ḡ, T(INITIAL_BFGS_G))
     state.f̄ = T(INITIAL_BFGS_F)

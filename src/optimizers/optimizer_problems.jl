@@ -3,7 +3,7 @@
 
 See [`SimpleSolvers.LinesearchProblem`](@extref) and [`OptimizerProblem`](@ref).
 """
-abstract type AbstractOptimizerProblem{T<:Number} <: AbstractProblem end
+abstract type AbstractOptimizerProblem{T <: Number} <: AbstractProblem end
 
 """
     value(obj::AbstractOptimizerProblem, x)
@@ -32,32 +32,37 @@ OptimizerProblem{Float64, typeof(F), Missing, Missing}(F, missing, missing)
 !!! info
     If `OptimizerProblem` is called on a single function, the fields for [`SimpleSolvers.Gradient`](@extref) and [`SimpleSolvers.Hessian`](@extref) are `missing`.
 """
-mutable struct OptimizerProblem{T,TF<:Callable,TG<:Union{Callable,Missing},TH<:Union{Callable,Missing}} <: AbstractOptimizerProblem{T}
+mutable struct OptimizerProblem{
+    T, TF <: Callable, TG <: Union{Callable, Missing}, TH <: Union{Callable, Missing}} <:
+               AbstractOptimizerProblem{T}
     F::TF
     G::TG
     H::TH
 end
 
-function OptimizerProblem(F::Callable, G::TG, H::Callable, ::OptimizerSolution{T}) where {T<:Number,TG<:Union{Callable,Missing}}
-    OptimizerProblem{T,typeof(F),TG,typeof(H)}(F, G, H)
+function OptimizerProblem(F::Callable, G::TG, H::Callable,
+        ::OptimizerSolution{T}) where {T <: Number, TG <: Union{Callable, Missing}}
+    OptimizerProblem{T, typeof(F), TG, typeof(H)}(F, G, H)
 end
 
-function OptimizerProblem(F::Callable, G::TG, ::OptimizerSolution{T}) where {T<:Number,TG<:Union{Callable,Missing}}
-    OptimizerProblem{T,typeof(F),TG,Missing}(F, G, missing)
+function OptimizerProblem(F::Callable, G::TG,
+        ::OptimizerSolution{T}) where {T <: Number, TG <: Union{Callable, Missing}}
+    OptimizerProblem{T, typeof(F), TG, Missing}(F, G, missing)
 end
 
-function OptimizerProblem(F::Callable, x::OptimizerSolution; gradient=missing, hessian=missing)
-    ismissing(hessian) ? OptimizerProblem(F, gradient, x) : OptimizerProblem(F, gradient, hessian, x)
+function OptimizerProblem(F::Callable, x::OptimizerSolution; gradient = missing, hessian = missing)
+    ismissing(hessian) ? OptimizerProblem(F, gradient, x) :
+    OptimizerProblem(F, gradient, hessian, x)
 end
 
 gradient(prob::OptimizerProblem) = prob.G
 hessian(prob::OptimizerProblem) = prob.H
 
 function GradientFunction(prob::OptimizerProblem{T}) where {T}
-    GradientFunction{T,typeof(prob.F),typeof(prob.G)}(prob.F, prob.G)
+    GradientFunction{T, typeof(prob.F), typeof(prob.G)}(prob.F, prob.G)
 end
 
-function GradientFunction(::OptimizerProblem{T,TF,Missing}) where {T,TF<:Callable}
+function GradientFunction(::OptimizerProblem{T, TF, Missing}) where {T, TF <: Callable}
     error("There is no gradient stored in this `OptimizerProblem`!")
 end
 

@@ -21,7 +21,7 @@
 
 Also compare this to [`SimpleSolvers.NonlinearSolverCache`](@extref).
 """
-struct NewtonOptimizerCache{T,AT,HT,GS} <: OptimizerCache{T}
+struct NewtonOptimizerCache{T, AT, HT, GS} <: OptimizerCache{T}
     x::AT
     Δx::AT
     g::AT
@@ -33,10 +33,12 @@ struct NewtonOptimizerCache{T,AT,HT,GS} <: OptimizerCache{T}
 
     section::GS
 
-    function NewtonOptimizerCache(x::AT) where {T,AT<:AbstractArray{T}}
+    function NewtonOptimizerCache(x::AT) where {T, AT <: AbstractArray{T}}
         h = zeros(T, length(x), length(x))
         section = GlobalSection(x)
-        cache = new{T,AT,typeof(h),typeof(section)}(similar(x), similar(x), similar(x), similar(x), Ref(false), similar(x), similar(x), h, section)
+        cache = new{T, AT, typeof(h), typeof(section)}(
+            similar(x), similar(x), similar(x), similar(x),
+            Ref(false), similar(x), similar(x), h, section)
         initialize!(cache, x)
         cache
     end
@@ -44,17 +46,21 @@ struct NewtonOptimizerCache{T,AT,HT,GS} <: OptimizerCache{T}
     # we probably don't need this constructor -- and nothing calls it, which is how it came to pass
     # eight values for seven fields (it would have thrown on the first call). The field list is
     # spelled out here so that the next person to reach for it gets a cache and not an arity error.
-    function NewtonOptimizerCache(x::AT, problem::OptimizerProblem) where {T<:Number,AT<:AbstractArray{T}}
+    function NewtonOptimizerCache(x::AT, problem::OptimizerProblem) where {
+            T <: Number, AT <: AbstractArray{T}}
         g = Gradient(problem)(x)
         h = Hessian(problem)(x)
         section = GlobalSection(x)
         g̃ = similar(x)
         fill!(g̃, T(NaN))
-        new{T,AT,typeof(h),typeof(section)}(copy(x), zero(x), g, g̃, Ref(false), zero(x), -g, h, section)
+        new{T, AT, typeof(h), typeof(section)}(
+            copy(x), zero(x), g, g̃, Ref(false), zero(x), -g, h, section)
     end
 end
 
-OptimizerCache(::Union{Newton,QuasiNewtonOptimizerMethod}, x::OptimizerSolution) = NewtonOptimizerCache(x)
+function OptimizerCache(::Union{Newton, QuasiNewtonOptimizerMethod}, x::OptimizerSolution)
+    NewtonOptimizerCache(x)
+end
 
 # This fallback used to be `OptimizerCache(::OptimizerMethod, x) = NewtonOptimizerCache(x)`, so a
 # method that *does* have a cache of its own but missed its `OptimizerCache(::Adam{T},
@@ -83,15 +89,22 @@ Return the stored gradient (array) of an instance of [`NewtonOptimizerCache`](@r
 gradient(cache::NewtonOptimizerCache) = cache.g
 gradient_array(cache::NewtonOptimizerCache) = gradient(cache)
 latest_gradient(cache::NewtonOptimizerCache) = cache.g̃
-refresh_latest_gradient!(cache::NewtonOptimizerCache, g::Gradient) = _refresh_latest_gradient!(cache, g)
-latest_gradient_is_current(cache::NewtonOptimizerCache, state::OptimizerState, x::OptimizerSolution) =
+function refresh_latest_gradient!(cache::NewtonOptimizerCache, g::Gradient)
+    _refresh_latest_gradient!(cache, g)
+end
+function latest_gradient_is_current(cache::NewtonOptimizerCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
-invalidate_latest_gradient!(cache::NewtonOptimizerCache) = _invalidate_latest_gradient!(cache)
+end
+function invalidate_latest_gradient!(cache::NewtonOptimizerCache)
+    _invalidate_latest_gradient!(cache)
+end
 # `∇f(x_{k+1}) - ∇f(x_k)`, from the two gradients the cache holds. The default differences against
 # `state.ḡ`, and for `Newton` that is *the same gradient* `cache.g` holds: `solver_step!` calls
 # `update!(state, gradient(opt), x)` at the top of the step, at the iterate the cache takes its
 # gradient at, so the difference the status printed was structurally zero. See `gradient_difference!`.
-gradient_difference!(cache::NewtonOptimizerCache, ::OptimizerState) = _latest_gradient_difference!(cache)
+function gradient_difference!(cache::NewtonOptimizerCache, ::OptimizerState)
+    _latest_gradient_difference!(cache)
+end
 
 """
     direction(cache)
@@ -124,7 +137,8 @@ H^\mathtt{cache} & \gets H(x), \\
 ```
 where we wrote ``H`` for the Hessian (i.e. the input argument `hes`).
 """
-function update!(cache::NewtonOptimizerCache, state::OptimizerState, g::Gradient, ∇²f::Hessian, x::AbstractVector)
+function update!(cache::NewtonOptimizerCache, state::OptimizerState,
+        g::Gradient, ∇²f::Hessian, x::AbstractVector)
     # first, and before the two `copyto!`s below: `store_gradient!` compares `solution(cache)` against
     # `x` and `section(cache)` against `section(state)`, which those overwrite. It is what the other
     # five caches use, and going through it rather than calling `g(gradient(cache), x)` directly is

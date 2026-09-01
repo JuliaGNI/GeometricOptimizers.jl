@@ -1,20 +1,21 @@
 # A `NeuralNetworkParameters.NetworkParameters` as the solution of an optimizer.
 #
-# `test/named_tuple_parameters.jl` covers the other member of [`ParameterContainer`](@ref), a *flat*
-# `NamedTuple` — the shape the MNIST scripts of GMLDatasets.jl keep a transformer's parameters in.
-# This file covers the container, and it is deliberately **nested**: a container is a tree of layers,
-# so its leaves are one level below what `Base.map` reaches, and that is the whole difference between
-# the two shapes. Every primitive that used to be written with `map` is what these testsets are for.
+# `test/flat_parameters.jl` covers the *flat* shape — the one the MNIST scripts of GMLDatasets.jl
+# keep a transformer's parameters in. This file covers the **nested** one: a container is a tree of
+# layers, so its leaves are one level below what `Base.map` reaches, and that is the whole difference
+# between the two. Every elementwise primitive is walked with `mapparameters` for that reason, and
+# these testsets are what hold it down — `map` would hand `zero`, `copy` and `similar` a whole layer.
 #
-# 0.5.0 made `NetworkParameters{T}` a member of `OptimizerSolution{T}`, which bound `T` at the eleven
-# sites that take it from the *type* of the solution but left every elementwise primitive dispatching
-# on `ArrayNamedTuple` — so a container got several frames into a solve before failing. This is what
-# pins that it no longer does.
+# `NetworkParameters{T}` is a member of `OptimizerSolution{T}`, so `T` binds at the eleven sites that
+# take it from the *type* of the solution as well as at the primitives. A container therefore has to
+# work end to end and not merely be accepted at the door, which is what the solve below is for.
 
 using GeometricOptimizers
-using GeometricOptimizers: OptimizerCache, OptimizerSolution, ParameterContainer,
-    Cayley, Geodesic, check, increase_iteration_number!, solver_step!,
-    _zero, _copy, _similar, _fill!, _manifold_αmax, l2norm, solution_scale
+using GeometricOptimizers: OptimizerCache, OptimizerSolution,
+                           Cayley, Geodesic, check, increase_iteration_number!,
+                           solver_step!,
+                           _zero, _copy, _similar, _fill!, _manifold_αmax, l2norm,
+                           solution_scale
 using NeuralNetworkParameters: NetworkParameters, params, flatten, unflatten, flatlength
 using SimpleSolvers: Static
 using Test
@@ -33,23 +34,32 @@ const B₀ = randn(N, m)
 other. Nested, which is the point — and heterogeneous, so that the container is not merely a wrapper
 around something uniform.
 """
-initial_parameters(::Type{T}) where {T} = NetworkParameters((
-    attention = (Y = rand(Random.Xoshiro(1234), StiefelManifold{T}, N, n),),
-    dense     = (W = randn(Random.Xoshiro(5678), T, n, m), b = zeros(T, N)),
-))
+function initial_parameters(::Type{T}) where {T}
+    NetworkParameters((
+        attention = (Y = rand(Random.Xoshiro(1234), StiefelManifold{T}, N, n),),
+        dense = (W = randn(Random.Xoshiro(5678), T, n, m), b = zeros(T, N))
+    ))
+end
 
 # The same parameters as one flat `NamedTuple`, in the order the container flattens them. This is the
 # reference the container is compared against: the two describe the same problem and the same flat
 # vector, so an optimizer must take the same steps on both.
-flat_parameters(::Type{T}) where {T} = let ps = initial_parameters(T)
-    (Y = ps.attention.Y, W = ps.dense.W, b = ps.dense.b)
+function flat_parameters(::Type{T}) where {T}
+    let ps = initial_parameters(T)
+        NetworkParameters((Y = ps.attention.Y, W = ps.dense.W, b = ps.dense.b))
+    end
 end
 
 _loss(Y, W, b, B) = sum(abs2, Y * W .+ b .- B) / 2
 
-test_problem(::Type{T}) where {T} = let B = T.(B₀)
-    ps -> ps isa NetworkParameters ? _loss(ps.attention.Y, ps.dense.W, ps.dense.b, B) :
-          _loss(ps.Y, ps.W, ps.b, B)
+# Both shapes are a `NetworkParameters`, so the branch is on the *keys* and not on the type: that is
+# the whole point of the comparison below, which needs one objective that both can be handed.
+function test_problem(::Type{T}) where {T}
+    let B = T.(B₀)
+        ps -> haskey(params(ps), :attention) ?
+              _loss(ps.attention.Y, ps.dense.W, ps.dense.b, B) :
+              _loss(ps.Y, ps.W, ps.b, B)
+    end
 end
 
 """
@@ -59,13 +69,13 @@ Take `steps` steps and return the parameters, `check` of the manifold block afte
 and the objective before and after each.
 
 The seed is fixed per run because the [`GlobalSection`](@ref) is drawn at random and the iterates
-depend on it — the same reason `test/named_tuple_parameters.jl` gives.
+depend on it — the same reason `test/flat_parameters.jl` gives.
 """
 function optimize(ps, F, algorithm; steps = 20, η = 0.1, retraction = Cayley())
     T = typeof(F(ps))
     Random.seed!(1234)
     optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(T(η)),
-                          retraction = retraction)
+        retraction = retraction)
     state = OptimizerState(algorithm, ps)
 
     checks = T[]
@@ -74,29 +84,28 @@ function optimize(ps, F, algorithm; steps = 20, η = 0.1, retraction = Cayley())
         increase_iteration_number!(state)
         solver_step!(ps, state, optimizer)
         update!(state, optimizer, ps)
-        push!(checks, check(ps isa NetworkParameters ? ps.attention.Y : ps.Y))
+        push!(checks, check(haskey(params(ps), :attention) ? ps.attention.Y : ps.Y))
         push!(losses, F(ps))
     end
 
     ps, checks, losses
 end
 
-# see `test/named_tuple_parameters.jl` for why `Adam` is constructed with the element type
+# see `test/flat_parameters.jl` for why `Adam` is constructed with the element type
 algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(T(0.1)), Adam(T))
 retractions() = (Geodesic(), Cayley())
 
-# see the note on `MANIFOLD_TOLERANCE_IN_EPS` in `test/named_tuple_parameters.jl`: a round-off
+# see the note on `MANIFOLD_TOLERANCE_IN_EPS` in `test/flat_parameters.jl`: a round-off
 # tolerance with a factor of ten in hand, where leaving the manifold is an error of the step size
 const MANIFOLD_TOLERANCE_IN_EPS = 100
 
-@testset "a container is an OptimizerSolution and a ParameterContainer" begin
+@testset "a nested container is an OptimizerSolution" begin
     for T in (Float64, Float32)
         ps = initial_parameters(T)
         @test ps isa OptimizerSolution{T}
-        @test ps isa ParameterContainer{T}
+        @test ps isa NetworkParameters{T}
         # ... and the nesting is real, i.e. this is not the flat case in disguise
         @test all(v -> v isa NamedTuple, values(ps))
-        @test !(ps isa GeometricOptimizers.ArrayNamedTuple)
     end
 end
 
@@ -105,6 +114,7 @@ end
 # means anything — so these failed before the walk changed.
 @testset "the out-of-place primitives return a container of the same shape" begin
     for T in (Float64, Float32), f in (_zero, _copy, _similar)
+
         ps = initial_parameters(T)
         out = f(ps)
         @test out isa NetworkParameters
@@ -164,10 +174,11 @@ end
     end
 end
 
-# The statement that the swap is behaviour-preserving: the container and the flat `NamedTuple` are the
+# The statement that the swap is behaviour-preserving: the nested and the flat container are the
 # same problem written two ways, so the optimizer has to take the same steps on both.
-@testset "a container reaches the same iterates as the equivalent flat NamedTuple" begin
+@testset "a nested container reaches the same iterates as the equivalent flat one" begin
     for T in (Float64, Float32), algorithm in algorithms(T)
+
         F = test_problem(T)
         psₙ, _, lossesₙ = optimize(initial_parameters(T), F, algorithm)
         psₐ, _, lossesₐ = optimize(flat_parameters(T), F, algorithm)
@@ -183,12 +194,13 @@ end
 # and `solution_scale` on the parameters and `_difference!` on the gradient blocks.
 @testset "solve! runs on a container" begin
     for T in (Float64, Float32), algorithm in algorithms(T)
+
         Random.seed!(1234)
         F = test_problem(T)
         ps = initial_parameters(T)
         f₀ = F(ps)
         optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(T(0.1)),
-                              max_iterations = 100)
+            max_iterations = 100)
         result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
         @test result.f < f₀
@@ -210,7 +222,8 @@ end
     f₀ = F(ps)
 
     # `Q` is sized by the flattening of the *direction*, i.e. of the horizontal lift
-    @test size(OptimizerState(algorithm, ps).Q) == (flatlength(_zero(ps)), flatlength(_zero(ps)))
+    @test size(OptimizerState(algorithm, ps).Q) ==
+          (flatlength(_zero(ps)), flatlength(_zero(ps)))
 
     optimizer = Optimizer(ps, F; algorithm = algorithm, max_iterations = 50)
     result = solve!(ps, OptimizerState(algorithm, ps), optimizer)

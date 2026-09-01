@@ -24,18 +24,19 @@ retraction into the cache's section, and read the point back out.
     its `NaN` loop and for the accepted step, so the line search leaves nothing behind that it does
     not overwrite itself.
 """
-trial_iterate!(cache::OptimizerCache, params, α, retraction) =
-    _trial_iterate!(solution(cache), cache, params, α, retraction)
+trial_iterate!(cache::OptimizerCache, params, α, retraction) = _trial_iterate!(
+    solution(cache), cache, params, α, retraction)
 
-function _trial_iterate!(::AbstractVector, cache::OptimizerCache, params, α, ::AbstractRetraction)
+function _trial_iterate!(
+        ::AbstractVector, cache::OptimizerCache, params, α, ::AbstractRetraction)
     compute_new_iterate!(solution(cache), params.x, α, direction(cache))
 end
 
-@noinline _no_state_error() =
-    error("a trial step on a manifold retracts from `section(params.state)`, so the line search " *
-          "parameters have to carry the `state`; `solver_step!` passes it, a bare `(x = x,)` does not.")
+@noinline _no_state_error() = error("a trial step on a manifold retracts from `section(params.state)`, so the line search " *
+                                    "parameters have to carry the `state`; `solver_step!` passes it, a bare `(x = x,)` does not.")
 
-function _trial_iterate!(::Union{Manifold,ParameterContainer}, cache::OptimizerCache, params, α, retraction)
+function _trial_iterate!(
+        ::Union{Manifold, NetworkParameters}, cache::OptimizerCache, params, α, retraction)
     # `params` is a concrete `NamedTuple` here, so this is constant-folded away rather than checked on
     # every merit evaluation. Without it a missing `state` surfaces as `has no field state`.
     hasproperty(params, :state) || _no_state_error()
@@ -93,7 +94,7 @@ That last part is what this function exists for. The ceiling used to be
 quadrature — so a `NamedTuple` of *ordinary arrays* was bounded by a rotation that does not exist in
 its problem (measured: a Euclidean `NamedTuple` solve took 3 184 iterations against 1 for the same
 problem written as a vector), and in a mixed `NamedTuple` the Euclidean blocks tightened the manifold
-blocks' bound for no reason (measured on the mixed problem of `test/named_tuple_parameters.jl`:
+blocks' bound for no reason (measured on the mixed problem of `test/flat_parameters.jl`:
 ``\|\delta_Y\| = 2.5\times10^{-16}`` against a total of `3.9`, bounding ``\alpha`` at `1.6` where the
 geometry of the manifold block permits ``2.6\times10^{16}``). That was catalogued as issue A15 and is
 what this closes.
@@ -125,17 +126,17 @@ paired with the plain `NamedTuple` its `GlobalSection` tree is built as, which u
 normalises. Two local normalisers stood here for that, `_as_blocks` and then `_as_walkable`, and then a
 pair of `values` calls; all are gone.
 
-`y::ParameterSet` and not an unconstrained `y`, and that bound is the *point* of the paragraph above
+`y::NetworkParameters` and not an unconstrained `y`, and that bound is the *point* of the paragraph above
 rather than housekeeping. Upstream pairs the children of a keyed branch by key and the children of a
 `Tuple` branch **positionally** — a `Tuple`'s blocks have no keys to agree on — so an unconstrained
 signature would still accept `_manifold_αmax(values(sol), values(δ), c)`, which is how every call site
 here was spelled until this release, and fold it positionally: crossed keys would come back a number
 again. Measured on a two-block set with the direction's keys swapped, `3.12` by key against `6.40`
 positionally. The four-method recursion this replaced made that call unspellable by running out of
-methods; the bound is what puts it back. Every caller passes a `ParameterSet`.
+methods; the bound is what puts it back. Every caller passes a whole set of parameters.
 """
-_manifold_αmax(y::ParameterSet, δ, c::T) where {T} =
-    foldparameters((acc, yᵢ, δᵢ) -> min(acc, _block_αmax(yᵢ, δᵢ, c)), T(Inf), y, δ)
+_manifold_αmax(y::NetworkParameters, δ, c::T) where {T} = foldparameters(
+    (acc, yᵢ, δᵢ) -> min(acc, _block_αmax(yᵢ, δᵢ, c)), T(Inf), y, δ)
 
 _block_αmax(::Manifold, δ, c) = step_αmax(c, δ)
 _block_αmax(::Any, ::Any, c::T) where {T} = T(Inf)
@@ -174,23 +175,29 @@ manifold-free `NamedTuple` passes `Inf` rather than joining the `AbstractVector`
 *shape* of the parameters on the block types makes the return type a `Union` of two `NamedTuple`s,
 which the merit closures then pay for on every evaluation.
 """
-linesearch_parameters(cache::OptimizerCache, x, state, c) =
-    _linesearch_parameters(solution(cache), cache, x, state, c)
+linesearch_parameters(cache::OptimizerCache, x, state, c) = _linesearch_parameters(
+    solution(cache), cache, x, state, c)
 
-_linesearch_parameters(::AbstractVector, ::OptimizerCache, x, state, _) = (x=x, state=state)
+function _linesearch_parameters(::AbstractVector, ::OptimizerCache, x, state, _)
+    (x = x, state = state)
+end
 
-_linesearch_parameters(::Manifold, cache::OptimizerCache, x, state, c) =
-    (x=x, state=state, αmax=step_αmax(c, direction(cache)))
+function _linesearch_parameters(::Manifold, cache::OptimizerCache, x, state, c)
+    (x = x, state = state, αmax = step_αmax(c, direction(cache)))
+end
 
-_linesearch_parameters(sol::ParameterContainer, cache::OptimizerCache, x, state, c) =
-    (x=x, state=state,
-     αmax=_manifold_αmax(sol, direction(cache), c))
+function _linesearch_parameters(sol::NetworkParameters, cache::OptimizerCache, x, state, c)
+    (x = x, state = state,
+        αmax = _manifold_αmax(sol, direction(cache), c))
+end
 
 # The ceiling a `linesearch_parameters` actually carries, read back by `solver_step!` so that it can
 # recognise a step of its own making; see `linesearch_rejected` and issue B3. This mirrors
 # SimpleSolvers' `caller_αmax`, which is what reads the field on the other side: `Inf` where the
 # field is absent, and `hasproperty` on a concrete `NamedTuple` constant-folds either way.
-_caller_αmax(::Type{T}, params) where {T} = hasproperty(params, :αmax) ? T(params.αmax) : T(Inf)
+function _caller_αmax(::Type{T}, params) where {T}
+    hasproperty(params, :αmax) ? T(params.αmax) : T(Inf)
+end
 
 @doc raw"""
     trial_slope(gradient_instance, cache, retraction, α)
@@ -235,8 +242,8 @@ exact for both retractions at every ``\alpha``.
 
     `α = 0` still returns `B` untouched, so the `Backtracking` default costs nothing for this.
 """
-trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction, α) =
-    _trial_slope(solution(cache), gradient_instance, cache, retraction, α)
+trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction, α) = _trial_slope(
+    solution(cache), gradient_instance, cache, retraction, α)
 
 # These two differ in one respect worth knowing about: the `AbstractVector` method evaluates *into* an
 # array of the cache — that is what makes it allocation-free — and so leaves the gradient at the last
@@ -252,12 +259,14 @@ trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction, α) 
 # but it made `rg` a statement about the last point the line search probed rather than about the
 # iterate the solve returns, which is issue A8. `Backtracking` is exact for both, and only because it
 # evaluates `φ'` once, at `α = 0`, where the trial gradient *is* `∇f(xₖ)`.
-function _trial_slope(::AbstractVector, gradient_instance::Gradient, cache::OptimizerCache, ::AbstractRetraction, α)
+function _trial_slope(::AbstractVector, gradient_instance::Gradient,
+        cache::OptimizerCache, ::AbstractRetraction, α)
     gradient_instance(latest_gradient(cache), solution(cache))
     _dot(latest_gradient(cache), direction(cache))
 end
 
-function _trial_slope(::Union{Manifold,ParameterContainer}, gradient_instance::Gradient, cache::OptimizerCache, retraction::AbstractRetraction, α)
+function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::Gradient,
+        cache::OptimizerCache, retraction::AbstractRetraction, α)
     _dot(global_rep(section(cache), gradient_instance(solution(cache))),
         retraction_differential(retraction, direction(cache), α))
 end
@@ -309,7 +318,8 @@ julia> ls_obj.D(0., params)
 !!! info
     Note that in the example above calling [`update!`](@ref) on the [`NewtonOptimizerCache`](@ref) requires a [`SimpleSolvers.Hessian`](@extref).
 """
-function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gradient, cache::OptimizerCache{T}, retraction::AbstractRetraction) where {T}
+function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gradient,
+        cache::OptimizerCache{T}, retraction::AbstractRetraction) where {T}
     function f(α, params)
         trial_iterate!(cache, params, α, retraction)
         value(problem, solution(cache))

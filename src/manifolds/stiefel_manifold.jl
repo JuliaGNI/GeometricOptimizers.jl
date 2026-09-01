@@ -10,22 +10,26 @@ An implementation of the Stiefel manifold [hairer2006geometric](@cite). The Stie
 The Stiefel manifold can be shown to have manifold structure (as the name suggests) and this is heavily used in `GeometricOptimizers`. It is further a compact space.
 More information can be found in the docstrings for [`rgrad(::StiefelManifold, ::AbstractMatrix)`](@ref) and [`metric(::StiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref).
 """
-mutable struct StiefelManifold{T,AT<:AbstractMatrix{T}} <: Manifold{T}
+mutable struct StiefelManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
     A::AT
 end
 
 Base.:*(Y::StiefelManifold, B::AbstractMatrix) = Y.A * B
 Base.:*(B::AbstractMatrix, Y::StiefelManifold) = B * Y.A
 
-function Base.:*(Y::Adjoint{T,StiefelManifold{T,AT}}, B::AbstractMatrix) where {T,AT<:AbstractMatrix{T}}
+function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where {
+        T, AT <: AbstractMatrix{T}}
     Y.parent.A' * B
 end
 
-function Base.:*(Y::Adjoint{T,StiefelManifold{T,AT}}, B::StiefelManifold{T,AT}) where {T,AT<:AbstractMatrix{T}}
+function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
+        B::StiefelManifold{T, AT}) where {T, AT <: AbstractMatrix{T}}
     Y.parent.A' * B.A
 end
 
-function Base.:*(Y::Adjoint{T,ST}, B::ST) where {T,AT<:AbstractMatrix{T},ST<:StiefelManifold{T,AT}}
+function Base.:*(
+        Y::Adjoint{
+            T, ST}, B::ST) where {T, AT <: AbstractMatrix{T}, ST <: StiefelManifold{T, AT}}
     Y.parent.A' * B.A
 end
 
@@ -132,7 +136,8 @@ function global_section(Y::StiefelManifold{T}) where {T}
     typeof(Y.A)(qr!(A).Q)
 end
 
-function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer, n::Integer) where {T,AT<:AbstractMatrix{T},MT<:StiefelManifold{T,AT}}
+function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer,
+        n::Integer) where {T, AT <: AbstractMatrix{T}, MT <: StiefelManifold{T, AT}}
     @assert N ≥ n
     A = randn(rng, T, N, n)
     MT(assign_columns(typeof(A)(qr!(A).Q), N, n))

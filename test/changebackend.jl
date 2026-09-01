@@ -17,14 +17,14 @@ Random.seed!(1234)
 const N, n = 6, 3
 
 leaves = (
-    stiefel   = rand(StiefelManifold{Float64}, N, n),
+    stiefel = rand(StiefelManifold{Float64}, N, n),
     grassmann = rand(GrassmannManifold{Float64}, N, n),
     symmetric = SymmetricMatrix(rand(n, n)),
-    skew      = SkewSymMatrix(rand(n, n)),
-    lower     = LowerTriangular(rand(n, n)),
-    upper     = UpperTriangular(rand(n, n)),
-    stiefhor  = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(n, n)), rand(N - n, n), N, n),
-    grasshor  = GrassmannLieAlgHorMatrix(rand(N - n, n), N, n),
+    skew = SkewSymMatrix(rand(n, n)),
+    lower = LowerTriangular(rand(n, n)),
+    upper = UpperTriangular(rand(n, n)),
+    stiefhor = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(n, n)), rand(N - n, n), N, n),
+    grasshor = GrassmannLieAlgHorMatrix(rand(N - n, n), N, n)
 )
 
 @testset "the extension is loaded" begin
@@ -67,7 +67,7 @@ end
     # `AbstractNeuralNetworks` supplies the `NamedTuple`/`NetworkParameters` methods; this is the check
     # that the leaf methods above meet them correctly
     ps = NetworkParameters((L1 = (Y = leaves.stiefel, b = rand(N)),
-                            L2 = (S = leaves.symmetric, G = leaves.stiefhor)))
+        L2 = (S = leaves.symmetric, G = leaves.stiefhor)))
     back = changebackend(CPU(), ps)
 
     @test back isa NetworkParameters

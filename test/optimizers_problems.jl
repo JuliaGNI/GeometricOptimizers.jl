@@ -15,7 +15,7 @@ end
 function H!(g, x)
     g .= 0
     for i in eachindex(x)
-        g[i,i] = 2
+        g[i, i] = 2
     end
     g
 end

@@ -35,7 +35,9 @@ direction for it.
 """
 struct Newton <: OptimizerMethod end
 
-Hessian(::Newton, ForOBJ::Union{Callable,OptimizerProblem}, x::AbstractVector) = HessianAutodiff(ForOBJ, x)
+function Hessian(::Newton, ForOBJ::Union{Callable, OptimizerProblem}, x::AbstractVector)
+    HessianAutodiff(ForOBJ, x)
+end
 HessianAutodiff(F::OptimizerProblem, x) = HessianAutodiff(F.F, x)
 
 @doc raw"""
@@ -117,7 +119,7 @@ and the direction is ``-p``.
 struct MomentumMethod{T} <: OptimizerMethod
     α::T
 
-    MomentumMethod(α::T=DEFAULT_MOMENTUM_α) where {T} = new{T}(α)
+    MomentumMethod(α::T = DEFAULT_MOMENTUM_α) where {T} = new{T}(α)
 end
 
 @doc raw"""
@@ -165,7 +167,7 @@ struct Adam{T} <: OptimizerMethod
 
     # the defaults are written as `Float64` literals so that `T(9.0e-1)` is `0.9` and not
     # `Float64(9.0f-1) = 0.8999999761581421`; for `T = Float32` they are the same numbers
-    function Adam(::Type{T}=Float64; β₁=9.0e-1, β₂=9.9e-1, δ=1.0e-8) where {T}
+    function Adam(::Type{T} = Float64; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8) where {T}
         new{T}(T(β₁), T(β₂), T(δ))
     end
 end
@@ -264,8 +266,8 @@ struct ScalarMomentAdam{T} <: OptimizerMethod
     δ::T
     ambient_norm::Bool
 
-    function ScalarMomentAdam(::Type{T}=Float64; β₁=9.0e-1, β₂=9.9e-1, δ=1.0e-8,
-        ambient_norm::Bool=false) where {T<:AbstractFloat}
+    function ScalarMomentAdam(::Type{T} = Float64; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8,
+            ambient_norm::Bool = false) where {T <: AbstractFloat}
         β₁T, β₂T, δT = T(β₁), T(β₂), T(δ)
         0 ≤ β₁T < 1 || throw(ArgumentError("β₁ must satisfy 0 ≤ β₁ < 1"))
         0 ≤ β₂T < 1 || throw(ArgumentError("β₂ must satisfy 0 ≤ β₂ < 1"))
@@ -342,7 +344,8 @@ struct AdamWithEuclideanDecay{T} <: OptimizerMethod
     λ::T
 
     # see the remark on the `Float64` literals in `Adam`
-    function AdamWithEuclideanDecay(::Type{T}=Float64; β₁=9.0e-1, β₂=9.9e-1, δ=1.0e-8, λ=DEFAULT_WEIGHT_DECAY) where {T}
+    function AdamWithEuclideanDecay(::Type{T} = Float64; β₁ = 9.0e-1, β₂ = 9.9e-1,
+            δ = 1.0e-8, λ = DEFAULT_WEIGHT_DECAY) where {T}
         new{T}(T(β₁), T(β₂), T(δ), T(λ))
     end
 end
@@ -385,7 +388,7 @@ cache:
   element of `𝔤ʰᵒʳ` and its recursion is therefore not `Adam`'s. It carries
   `ScalarMomentAdamCache` and [`ScalarMomentAdamState`](@ref) of its own.
 """
-const AdamFamily = Union{Adam,AdamWithEuclideanDecay,ScalarMomentAdam}
+const AdamFamily = Union{Adam, AdamWithEuclideanDecay, ScalarMomentAdam}
 
 """
 The methods whose `update!` needs the *method* rather than a
@@ -406,7 +409,7 @@ restart *after* it as well. It no longer is — see [`linesearch_rejected`](@ref
 Declining to overrule the direction is not the same as taking the longest step along it, which
 is what a rejected search hands back.
 """
-const FirstOrderMethodWithState = Union{MomentumMethod,AdamFamily}
+const FirstOrderMethodWithState = Union{MomentumMethod, AdamFamily}
 
 @doc raw"""
     default_linesearch(T, method)
@@ -568,7 +571,7 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     JuliaGNI/SimpleSolvers.jl#174, which was filed from these measurements and released in
     SimpleSolvers 0.11.
 """
-default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T; expand=true)
+default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T; expand = true)
 default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNING_RATE))
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")

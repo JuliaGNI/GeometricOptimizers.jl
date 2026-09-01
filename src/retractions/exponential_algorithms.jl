@@ -143,10 +143,10 @@ those matrix operations.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the alternatives.
 """
-struct ScaledSquaring{T<:Real} <: AbstractExponentialAlgorithm
+struct ScaledSquaring{T <: Real} <: AbstractExponentialAlgorithm
     θ::T
 
-    function ScaledSquaring(θ::T = 0.5) where {T<:Real}
+    function ScaledSquaring(θ::T = 0.5) where {T <: Real}
         @assert θ > zero(T) "the scaling threshold has to be positive, got $(θ)"
         new{T}(θ)
     end
@@ -300,17 +300,16 @@ not the agreement with the exponential.
 
 See [`AbstractExponentialAlgorithm`](@ref) for the comparison.
 """
-struct NativePade{T<:Real} <: AbstractExponentialAlgorithm
+struct NativePade{T <: Real} <: AbstractExponentialAlgorithm
     θ::T
 
     # The upper bound is not decoration. `𝔄(X, ::NativePade)` runs a *fixed* five Newton--Schulz
-    # steps, and their residual `(𝕀 - q₆)³²` is below round-off only while `θ` is small: over 400
-    # random 6×6 arguments of one-norm `θ`, the worst relative error is around `1e-16` at `θ = 1`,
-    # `1e-10` at `θ = 3/2`, `1e-4` at `θ = 2` and `1e5` at `θ = 3`, with nothing raised.
-    # `ScaledSquaring` takes any positive `θ` because it sums its series until the terms vanish; this
-    # one does a fixed amount of work, so it has to refuse. The docstring above tabulates the same
-    # measurement and derives the norm bound behind `1/2`.
-    function NativePade(θ::T = 0.5) where {T<:Real}
+    # steps, and their residual `(𝕀 - q₆)³²` is below round-off only while `θ` is small: measured
+    # worst relative error is `6e-16` at `θ = 1`, `1.2e-10` at `θ = 3/2`, `1.1e-5` at `θ = 2` and
+    # `169` at `θ = 3`, with nothing raised. `ScaledSquaring` takes any positive `θ` because it sums
+    # its series until the terms vanish; this one does a fixed amount of work, so it has to refuse.
+    # The docstring above has the table and the norm bound behind `1/2`.
+    function NativePade(θ::T = 0.5) where {T <: Real}
         @assert zero(T) < θ ≤ 1 // 2 "the scaling threshold has to be in (0, 1/2], got $(θ)"
         new{T}(θ)
     end

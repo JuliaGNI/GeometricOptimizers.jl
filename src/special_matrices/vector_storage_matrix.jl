@@ -32,4 +32,5 @@ and what this package could not do before.
 The alias lives in a file of its own because it is needed by `global_sections.jl`, which is included
 long before the primitives are.
 """
-const VectorStorageMatrix{T} = Union{SkewSymMatrix{T},SymmetricMatrix{T},AbstractTriangular{T}}
+const VectorStorageMatrix{T} = Union{
+    SkewSymMatrix{T}, SymmetricMatrix{T}, AbstractTriangular{T}}
