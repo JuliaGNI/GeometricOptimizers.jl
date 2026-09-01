@@ -17,6 +17,32 @@ them on [Optimization on Homogeneous Spaces](@ref).
 
 ## The exponential needs an algorithm
 
+### The notation this page uses
+
+Everything below is stated in the notation of
+[Both retractions factor the lift](@ref) on the [Retractions](@ref) page, which is where it is
+derived. Briefly:
+
+- ``\bar{B} \in \mathbb{R}^{N\times{}N}`` is the **horizontal lift**, a skew-symmetric matrix of rank
+  at most ``2n``. It is the direction an [`OptimizerMethod`](@ref) produces and the argument the
+  retraction is applied to; concretely it is a [`StiefelLieAlgHorMatrix`](@ref) or a
+  [`GrassmannLieAlgHorMatrix`](@ref).
+- ``B'`` and ``B''`` are the two ``N\times{}2n`` **thin factors** of that lift, so that
+  ``\bar{B} = B'(B'')^T``. [`lift_factors`](@ref) returns them; for the Stiefel manifold they are
+  the two matrices in
+  ```math
+  \begin{bmatrix} A & -B^T \\ B & \mathbb{O} \end{bmatrix}
+  = \underbrace{\begin{bmatrix} \tfrac{1}{2}A & \mathbb{I} \\ B & \mathbb{O} \end{bmatrix}}_{B'}
+    \underbrace{\begin{bmatrix} \mathbb{I} & \mathbb{O} \\ \tfrac{1}{2}A & -B^T \end{bmatrix}}_{(B'')^T},
+  ```
+  and for a [`GrassmannLieAlgHorMatrix`](@ref) the same expression with ``A \equiv \mathbb{O}``.
+- ``X := (B'')^TB' \in \mathbb{R}^{2n\times{}2n}`` is the **reduced matrix**. It is small even when
+  ``N`` is large, and it is the argument every matrix function on this page is evaluated on. It is
+  also considerably worse-behaved than ``\bar{B}``, which is the subject of
+  [1. Direct Taylor series](@ref) below.
+
+### The reduction
+
 The geodesic requires ``\exp(\bar{B})``, but forming and exponentiating the full ``N\times{}N`` lift
 would throw away its low-rank structure. Writing ``\bar{B}=B'(B'')^T`` and
 ``X=(B'')^TB'`` gives, for every ``k\geq 1``,
@@ -33,21 +59,23 @@ Substitution into the exponential series therefore gives the exact identity
 \mathfrak{A}(X) = \sum_{k=1}^\infty \frac{X^{k-1}}{k!},
 ```
 
-so computing ``\mathfrak{A}(X)`` is the central numerical task: once it is available, the
-``N\times{}N`` exponential is assembled using only the two thin factors. The argument ``X`` is only
-``2n\times{}2n``, which preserves the cost advantage when ``n\ll N``. ``\mathfrak{A}`` is the
-function usually written ``\varphi_1(X) = \left(\exp(X) - \mathbb{I}\right)X^{-1}``, though its
-series definition remains valid when ``X`` is singular.
+so **computing ``\mathfrak{A}(X)`` is the central numerical task**: once it is available, the
+``N\times{}N`` exponential is assembled using only the two thin factors, and the only matrix function
+evaluated anywhere is ``\mathfrak{A}`` on a ``2n\times{}2n`` argument.[^1] That is what preserves the
+cost advantage when ``n\ll N``, and it is why this page is about ``\mathfrak{A}`` throughout rather
+than about ``\exp``.
 
-There are two separate algorithmic choices:
+There are two separate algorithmic choices to make in evaluating it:
 
-1. how to approximate the matrix function at a small argument; and
-2. whether to scale a large argument down and recover the original value afterwards.
+1. how to approximate ``\mathfrak{A}`` at a **small** argument — the *kernel*; and
+2. whether to **scale** a large argument down and recover the original value afterwards — the
+   *recovery*.
 
-Taylor and Padé are approximation kernels. Scaling and squaring is a framework around such a kernel,
-not a competing approximation. Classical dense matrix-exponential routines normally combine a Padé
-approximant with scaling and squaring [higham2005scaling, almohy2010new](@cite). Taylor kernels can
-also be effective when scaling keeps the argument small [skaflestad2009scaling](@cite).
+Taylor and Padé are kernels. Scaling and modified squaring is a framework around a kernel, not a
+competing approximation, so the two choices are independent. Classical dense matrix-exponential
+routines normally combine a Padé kernel with scaling and squaring
+[higham2005scaling, almohy2010new](@cite); Taylor kernels can also be effective when scaling keeps
+the argument small [skaflestad2009scaling](@cite).
 
 All five algorithms in this package are:
 
@@ -57,69 +85,19 @@ All five algorithms in this package are:
 | [`ScaledSquaring`](@ref) | ``\mathfrak{A}(X)`` | Taylor series | low-rank modified squaring | matrix products and reductions |
 | [`NativePade`](@ref) | ``\mathfrak{A}(X)`` | degree-6 Padé | low-rank modified squaring | matrix products and reductions |
 | [`AugmentedPade`](@ref) | ``\mathfrak{A}(X)`` as a block of a ``4n\times{}4n`` exponential | delegated to `Base.exp` | delegated to `Base.exp` | CPU (dense LAPACK) |
-| [`ProjectedSkew`](@ref) | projected lift exponential | eigendecomposition | none | CPU (dense LAPACK) |
+| [`ProjectedSkew`](@ref) | ``\exp(M)`` for the ``2n\times{}2n`` skew ``M = Q^T\bar{B}Q`` | eigendecomposition | none | CPU (dense LAPACK) |
+
+Note that the two algorithms a reader is most likely to reach for, [`ScaledSquaring`](@ref) and
+[`NativePade`](@ref), differ **only in the kernel column**. Both scale the argument down and both
+recover it with the same modified-squaring recurrence; the names are historical and unfortunate in
+this respect, since `NativePade` scales and squares exactly as much as `ScaledSquaring` does.
 
 The Backend column says what the algorithm needs, not what it is known to run on: the first three
 require only matrix products and reductions, so whether they run on a particular accelerator depends
 on that backend's support for those operations, while the last two call into dense LAPACK and are
 therefore CPU-only.
 
-These algorithms return the same exponential map, so the one-parameter subgroup property above holds
-for every one of them. Two of the five are not ordinary choices — [`TaylorSeries`](@ref) is a
-regression baseline and [`AugmentedPade`](@ref) a reference implementation — and both are documented
-here anyway, because both are constructible and both appear in the test suite.
-
-## 1. Direct Taylor series
-
-[`TaylorSeries`](@ref) evaluates ``\mathfrak{A}`` directly from its defining series, without scaling,
-and stops when a term falls below `eps`. The series converges for every matrix, but convergence alone
-does not guarantee an accurate floating-point sum.
-
-The reduced argument here is particularly difficult. ``X``'s lower-left block is
-``\tfrac{1}{4}A^2 - B^TB``, so
-
-```math
-\|X\| \approx \tfrac{1}{4}\|\bar{B}\|^2
-\qquad\text{while}\qquad
-\rho(X) \approx \|\bar{B}\|,
-```
-
-because the eigenvalues of ``X`` are the nonzero, purely imaginary eigenvalues of the skew matrix
-``\bar{B}``. A norm quadratically larger than the spectral radius is a strongly non-normal matrix, and
-on such an argument the intermediate terms become enormous before cancelling to a result of moderate
-size: at ``\|\bar{B}\| \approx 79`` the partial sums exceed the answer by some twenty orders of
-magnitude, reaching ``4\cdot10^{21}`` where the result is of order one, and 174 terms are needed before
-one falls below `eps`. Stopping there therefore leaves a relative error of
-``\varepsilon\|\mathfrak{A}(X)\|`` rather than ``\varepsilon``. That the direct series is not a
-method for the matrix exponential is a very old observation [moler2003nineteen](@cite); what is
-specific here is that the factorisation makes the argument *worse* than the matrix one started with.
-
-How badly this goes is worth measuring rather than asserting. `check(geodesic(B, TaylorSeries()))`
-on a random `StiefelLieAlgHorMatrix(20, 3)` scaled up:
-
-| ``\|\bar{B}\|`` | 0.66 | 5.8 | 17.8 | 36.5 | 78.8 | 160 | 361 | 767 |
-|---|---|---|---|---|---|---|---|---|
-| `check` | `4.5e-16` | `2.1e-15` | `2.6e-12` | `4.4e-7` | `8.3e10` | `4.2e55` | `1.4e168` | `NaN` |
-
-At ``\|\bar{B}\| \approx 79`` the "retracted" point is not on the Stiefel manifold in any sense, and
-by ``767`` the series has overflowed. The same figures are recomputed in
-[Staying on the manifold](@ref) below, so this table is a quotation of that measurement rather than a
-separate claim.
-
-!!! danger "This is not a usable retraction"
-    `TaylorSeries` is retained as a regression baseline for the pre-0.2.0 implementation. It can
-    silently lose orthogonality for large lifts. Do not select it for optimization.
-
-Two things about it are worth recording rather than merely deprecating. The failure is *silent*: an
-optimizer using it takes a step, gets a matrix back, and nothing anywhere reports that the matrix is
-not on the manifold — which is why the defect survived until [`check`](@ref) was made generic over
-[`Manifold`](@ref) instead of being defined for [`StiefelManifold`](@ref) alone. And the obvious first
-fix does not work: making the termination test relative to the partial sum rather than absolute was
-measured to change *none* of the numbers above, at any lift norm. The loss is in the cancellation
-inside the sum, not in the point at which the summation stops. Scaling the argument down is what
-helps, which is the next section.
-
-[`Geodesic`](@ref) makes the algorithm choice visible:
+[`Geodesic`](@ref) makes the choice visible:
 
 ```julia
 Geodesic(ScaledSquaring())   # the default, and `Geodesic()`
@@ -129,108 +107,351 @@ Geodesic(ProjectedSkew())
 Geodesic(TaylorSeries())     # the pre-0.2.0 behaviour; not a usable retraction
 ```
 
+All five return the same exponential map, so the one-parameter subgroup property holds for every one
+of them. Two of the five are not ordinary choices, and both are documented here for a reason beyond
+being constructible:
+
+- [`TaylorSeries`](@ref) is the **small-argument kernel that [`ScaledSquaring`](@ref) uses**. The
+  section on it is not a deprecation notice but the case for scaling: it is what the kernel does when
+  the argument is *not* small, and therefore what the framework of the next section exists to
+  prevent.
+- [`AugmentedPade`](@ref) is the route that hands ``\mathfrak{A}`` to a **native LAPACK exponential**
+  via one embedding. That route is available if wanted, and is strongly discouraged: it exponentiates
+  a matrix four times the size needed, discards three quarters of the result, and gives up the
+  backend portability of the direct algorithms for no gain in accuracy.
+
+[^1]: In the exponential-integrator literature ``\mathfrak{A}`` is written ``\varphi_1``, the first of
+      the ``\varphi``-functions ``\varphi_{k+1}(z) = (\varphi_k(z) - 1/k!)/z`` with
+      ``\varphi_0 = \exp`` [hochbruck2010exponential; §2.1](@cite), and its closed form is
+      ``\varphi_1(X) = (\exp(X) - \mathbb{I})X^{-1}``. That form is only valid at an invertible ``X``,
+      while the series above is not, so this page uses ``\mathfrak{A}`` and the series — which is also
+      the notation of the implementation and of
+      [brantner2023generalizing](@cite). The names of the recovery formulas in
+      [skaflestad2009scaling](@cite) refer to the ``\varphi``-functions, and that is the only place the
+      correspondence is needed here.
+
+```@setup retractions
+using GeometricOptimizers
+using GeometricOptimizers: geodesic, cayley, check, ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
+using GeometricOptimizers: lift_factors, 𝔄, _native_pade_polynomials, unit_matrix, opnorm₁
+using LinearAlgebra: norm
+using Markdown
+using Printf
+import Random
+
+# A `Markdown.MD` rather than a string: Documenter renders it as a table instead of as the code
+# block a printed string would give.
+function table(header, rows)
+    io = IOBuffer()
+    println(io, "| ", join(header, " | "), " |")
+    println(io, "|", repeat("---|", length(header)))
+    for row in rows
+        println(io, "| ", join(row, " | "), " |")
+    end
+    Markdown.parse(String(take!(io)))
+end
+
+# `TaylorSeries` overflows at the top of the sweep, so both formatters have to survive a `NaN` and
+# an `Inf` — a bare `@sprintf` of one is fine, but the guard makes the intent explicit.
+sci(x) = isfinite(x) ? (@sprintf "%.2e" x) : string(x)
+fixed(x) = isfinite(x) ? (@sprintf "%.2f" x) : string(x)
+
+"""
+A sweep of horizontal lifts of increasing norm, all drawn from the same seed — the same eight
+`scripts/retraction_accuracy.jl` sweeps, so that every table on this page agrees row for row.
+"""
+function sweep(T)
+    Random.seed!(1234)
+    [T(s) * rand(StiefelLieAlgHorMatrix{T}, 20, 3) for s in (0.1, 1.0, 3.0, 6.0, 12.0, 30.0, 60.0, 120.0)]
+end
+
+lifts = sweep(Float64)
+```
+
+## 1. Direct Taylor series
+
+[`TaylorSeries`](@ref) evaluates ``\mathfrak{A}`` directly from its defining series, without scaling,
+and stops when a term falls below `eps`. The series converges for every matrix, but convergence alone
+does not guarantee an accurate floating-point sum.
+
+### Why the reduced argument is the hard case
+
+The reduction of the previous section bought a small matrix, and it did so at a price: ``X`` is a
+considerably worse argument for a power series than ``\bar{B}`` is. ``X``'s lower-left block is
+``\tfrac{1}{4}A^2 - B^TB``, quadratic in the entries of the lift, so its norm is quadratic in
+``\|\bar{B}\|``. Its *spectrum*, on the other hand, is not: the nonzero eigenvalues of ``X`` are the
+nonzero, purely imaginary eigenvalues of the skew matrix ``\bar{B}``, whose modulus is bounded by
+``\|\bar{B}\|``. Writing ``\rho`` for the **spectral radius**, ``\rho(X) := \max_i|\lambda_i(X)|``,
+
+```math
+\|X\| \approx \tfrac{1}{4}\|\bar{B}\|^2
+\qquad\text{while}\qquad
+\rho(X) \approx \|\bar{B}\|.
+```
+
+A matrix whose norm is quadratically larger than its spectral radius is **strongly non-normal**, and
+that gap is exactly what a truncated power series is bad at. The size of the terms is governed by the
+norm, while the size of the answer is governed by the spectrum, so the intermediate terms become
+enormous before cancelling down to a result of moderate size. Every digit of that cancellation is a
+digit lost:
+
+```math
+\text{digits lost} \approx \log_{10}
+\frac{\max_m\left\|\sum_{k=1}^{m}X^{k-1}/k!\right\|}{\|\mathfrak{A}(X)\|}.
+```
+
+At ``\|\bar{B}\| \approx 79`` the reduced matrix has ``\|X\|_1 \approx 2.7\cdot10^3`` against
+``\rho(X) \approx 51``. The partial sums peak at ``5\cdot10^{20}`` where ``\|\mathfrak{A}(X)\|`` is
+``0.99``, so that ratio is ``5\cdot10^{20}``: **the summation loses about 21 decimal digits where
+`Float64` has 16.** There is nothing left, and the computed ``\mathfrak{A}(X)`` comes out with a
+relative error of ``1.5\cdot10^{5}`` — not a lost digit or two, but no correct digits at all. The 168
+terms it takes before one falls below `eps` are 168 chances to accumulate that loss, and the
+termination test cannot detect it: a *term* below `eps` bounds the truncation error, and what has gone
+wrong is the rounding error, which is of size ``\varepsilon\cdot5\cdot10^{20}`` and not
+``\varepsilon``.
+
+That the direct series is not a method for the matrix exponential has been known since
+[moler1978nineteen](@cite) — restated with twenty-five more years of evidence in
+[moler2003nineteen](@cite). What is specific here is the direction of the effect: the factorisation
+that made the problem cheap also made its argument *worse* than the matrix one started with, so this
+package meets the failure earlier than a dense implementation would.
+
+How badly it goes is worth measuring rather than asserting. `check(geodesic(B, TaylorSeries()))`,
+i.e. ``\|Y^TY - \mathbb{I}\|`` of the retracted point, over a random `StiefelLieAlgHorMatrix(20, 3)`
+scaled up:
+
+```@example retractions
+table(["‖B̄‖", "`check`"],
+      [[fixed(norm(Matrix(B))), sci(check(geodesic(B, TaylorSeries())))] for B in lifts])
+```
+
+By ``\|\bar{B}\| \approx 79`` the "retracted" point is not on the Stiefel manifold in any sense, and
+at the top of the sweep the series has overflowed outright. The [`Cayley`](@ref) and
+[`ScaledSquaring`](@ref) columns of the same sweep, for comparison, are in
+[Staying on the manifold](@ref) below and stay at round-off throughout.
+
+!!! danger "This is not a usable retraction"
+    `TaylorSeries` is retained as a regression baseline for the pre-0.2.0 implementation — the
+    behaviour of every release up to 0.2.0, and of the algorithm as published in earlier versions of
+    [brantner2023generalizing](@cite). It can silently lose orthogonality for large lifts. Do not
+    select it for optimization. Its role in the current package is as the small-argument kernel of
+    [`ScaledSquaring`](@ref), where the argument it is handed is guaranteed small.
+
+Two things about the failure are worth recording rather than merely deprecating. First, it is
+*silent*: an optimizer using it takes a step, gets a matrix back, and nothing anywhere reports that
+the matrix is no longer on the manifold. No optimizer in this package currently verifies that a
+retracted point is still on its manifold, which is a gap rather than a decision — see
+[#76](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/76). Second, the obvious first fix does
+not work: making the termination test relative to the partial sum rather than absolute was measured to
+change *none* of the numbers above, at any lift norm, for the reason the displayed ratio gives. The
+loss is in the cancellation inside the sum, not in the point at which the summation stops. Making the
+argument small is what helps, and that is the next section.
+
 ## 2. Scaling and modified squaring
 
-Scaling and squaring first evaluates a matrix function at a smaller argument and then reconstructs
-the value at the original argument. The classical exponential algorithm repeatedly squares
-``\exp(X/2^s)``. For ``\varphi``-functions such as ``\mathfrak{A}=\varphi_1``, the corresponding
-recovery formulas are usually called *modified squaring* [skaflestad2009scaling](@cite).
+The previous section blames the size of the argument, so the remedy is to evaluate the kernel
+somewhere else. Scaling and squaring computes a matrix function at ``X/2^s`` and then reconstructs its
+value at ``X`` — for ``\exp`` by repeated squaring, ``\exp(X) = (\exp(X/2^s))^{2^s}``. For
+``\mathfrak{A}`` the recovery formula is not squaring but a *modified* squaring
+[skaflestad2009scaling](@cite), and it is worth deriving because it is the one step of these
+algorithms that has no counterpart in the classical dense routine.
 
-[`ScaledSquaring`](@ref) uses a Taylor kernel, while [`NativePade`](@ref) uses a Padé kernel. Both
-scale the argument first and use the same recovery recurrence. `ScaledSquaring`'s advantage over
-[`TaylorSeries`](@ref) comes entirely from that scaling: the Taylor series is evaluated only where
-``\|X/2^s\|_1\leq\theta``, so its terms remain modest and the catastrophic cancellation of the
-unscaled series is avoided. In exact arithmetic the subsequent modified-squaring steps are algebraic
-identities and not additional approximations, so scaling changes *where* the kernel is evaluated
-without changing the function being computed. In floating point they are not free — each squaring
-amplifies whatever error it is handed, which is what the note at the end of this section is about —
-but the error they amplify is far smaller than the one the unscaled series commits. In this way
-`ScaledSquaring` makes the otherwise unreliable Taylor kernel usable for the reduced matrices
-encountered here.
+### The doubling identity for ``\mathfrak{A}``
 
-The low-rank form is closed under squaring:
+Everything follows from one identity. From ``\exp(2Y) - \mathbb{I} = (\exp(Y) -
+\mathbb{I})(\exp(Y) + \mathbb{I})`` and ``\exp(Y) = \mathbb{I} + Y\mathfrak{A}(Y)``,
 
 ```math
-\left(\mathbb{I} + B'W(B'')^T\right)^2 = \mathbb{I} + B'\left(2W + WXW\right)(B'')^T,
+\mathfrak{A}(2Y)
+= \frac{\exp(2Y) - \mathbb{I}}{2Y}
+= \mathfrak{A}(Y)\,\frac{\exp(Y) + \mathbb{I}}{2}
+= \mathfrak{A}(Y)\,\frac{2\mathbb{I} + Y\mathfrak{A}(Y)}{2},
 ```
 
-so recovery needs only ``2n\times{}2n`` matrix products. It never squares an ``N\times{}N`` matrix.
-
-Let ``L = B'(B'')^T``, ``X = (B'')^TB'``, and ``\alpha = 2^s``. The scaled exponential is
+that is
 
 ```math
-\exp(L/\alpha)
-= \mathbb{I} + B'\left[\frac{\mathfrak{A}(X/\alpha)}{\alpha}\right](B'')^T.
+\mathfrak{A}(2Y) = \mathfrak{A}(Y) + \tfrac{1}{2}Y\mathfrak{A}(Y)^2.
 ```
 
-Thus the complete computation is:
+The middle step divides by ``Y``, but the two ends do not: both sides are power series in ``Y``, so
+the identity holds as an identity of power series and therefore at every ``Y``, singular or not. It is
+an **exact algebraic identity, not an approximation** — the ``\mathfrak{A}`` case of the modified
+squaring of [skaflestad2009scaling](@cite).
 
-1. **Choose the scaling.** Set
-   ``s = \max(0, \lceil\log_2(\|X\|_1/\theta)\rceil)`` and ``\alpha = 2^s``.
-2. **Evaluate the scaled problem.** Compute
-   ``W_s = \mathfrak{A}(X/\alpha)/\alpha`` with the Taylor kernel. The argument now satisfies
-   ``\|X/\alpha\|_1 \leq \theta``.
-3. **Undo the scaling.** If
-   ``\exp(L/2^k) = \mathbb{I} + B'W_k(B'')^T``, then squaring gives
-   ``W_{k-1} = 2W_k + W_kXW_k``. Apply this update for ``k=s,s-1,\ldots,1``. The recurrence uses the
-   original ``X``, not ``X/\alpha``.
-4. **Return the result.** After the loop, ``W_0 = \mathfrak{A}(X)``, so
-   ``\mathbb{I} + B'W_0(B'')^T = \exp(B'(B'')^T)``.
+Now put
 
-The initial division by ``\alpha`` follows directly from the scaled-exponential identity and is not
-an approximation. The recurrence uses the original ``X`` because it represents repeated squaring of
-``\exp(L/2^s)``. Every recovery step remains a ``2n\times{}2n`` update, so no dense ``N\times{}N``
-exponential, square, or solve is formed.
+```math
+W_k := \frac{\mathfrak{A}(X/2^k)}{2^k},
+```
 
-The threshold `θ` defaults to `0.5`. A smaller value performs more scaling steps; a larger value asks
-the Taylor kernel to handle a larger argument. Measured at ``\|\bar{B}\| \approx 155``, every
-``\theta \in [0.125, 4]`` — a 32-fold range — gives a `check` between ``9.9\cdot10^{-15}`` and
-``5.0\cdot10^{-14}`` and a forward error between ``6.4\cdot10^{-15}`` and ``8.3\cdot10^{-15}``, and
-neither column is monotone in ``\theta``. That sweep is recomputed at build time in
-[Sensitivity to the threshold `θ`](@ref) below. Nothing in it singles out `0.5`; it is a reasonable
-value rather than a tuned one, and the sweep is an empirical check over one lift rather than a
-general error bound.
+which is the object both algorithms below actually carry: not ``\mathfrak{A}`` of anything, but
+``\mathfrak{A}`` at the ``k``-times-halved argument, divided by ``2^k``. That scaling is what makes
+the recovery step clean. Applying the doubling identity at ``Y = X/2^k`` gives
 
-**Advantages.** It is the cheapest of the algorithms on the ``\mathfrak{A}`` call itself — `0.021 ms`
-at ``N = 200``, ``n = 10``, against [`NativePade`](@ref)'s `0.037 ms` and [`AugmentedPade`](@ref)'s
-`0.053 ms` — and as close to `exp(Matrix(B))` as [`AugmentedPade`](@ref), which is as close as
-anything here gets: `2.0e-14` against `1.9e-14` at ``\|\bar{B}\| = 361``. It needs only matrix
-products, norms and a kernel-written identity, so it has no dense-LAPACK dependency. It is the
-default because it is the cheapest of the algorithms that have none.
+```math
+W_{k-1}
+= \frac{\mathfrak{A}(X/2^{k-1})}{2^{k-1}}
+= \frac{1}{2^{k-1}}\left(\mathfrak{A}(Y) + \tfrac{1}{2}Y\mathfrak{A}(Y)^2\right)
+= 2W_k + W_kXW_k,
+```
+
+where the last equality uses ``Y = X/2^k`` to turn ``Y\mathfrak{A}(Y)^2/2^k`` into ``W_kXW_k``. So one
+recovery step is one application of
+
+```math
+W \longleftarrow 2W + WXW,
+```
+
+at ``2n\times{}2n``, with the **original** ``X`` and not the scaled one. Starting from ``W_s`` and
+applying it ``s`` times lands on ``W_0 = \mathfrak{A}(X)``, which is what was wanted.[^2]
+
+### The framework, and the two algorithms in it
+
+Scaling and modified squaring is a *framework*: it says nothing about how ``W_s`` is obtained, only
+how to get from ``W_s`` to ``W_0``. Filling in a kernel gives an algorithm, and this package has two:
+
+| | kernel for ``W_s`` | recovery | ``\theta`` |
+|---|---|---|---|
+| [`ScaledSquaring`](@ref) | the Taylor series of [1. Direct Taylor series](@ref) | ``W\leftarrow2W+WXW``, ``s`` times | a preference, any positive value |
+| [`NativePade`](@ref) | the degree-6 Padé kernel of [3. Padé approximation](@ref) | ``W\leftarrow2W+WXW``, ``s`` times | a ceiling, ``\theta\leq1/2`` |
+
+They differ in one column. In particular **[`NativePade`](@ref) scales and squares too**, with the
+same rule for ``s`` and the same recurrence; the algorithm names suggest a contrast that does not
+exist.
+
+The names are a historical record rather than a taxonomy, and they are worth reading carefully because
+of what they do *not* offer. `ScaledSquaring` means scaling with a Taylor kernel and `NativePade` means
+scaling with a Padé kernel: the two axes are welded together, so there is no way to ask for the
+framework with a kernel of your choosing, and in particular `ScaledSquaring` has no Padé support of any
+kind. Separating the two — a kernel argument to one scaling-and-squaring algorithm, with Taylor the
+default — is the natural shape for this code and is
+[#63](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/63), along with the question of which
+kernel is the better choice, which this page does not settle.
+
+What scaling buys the Taylor kernel is exactly what [1. Direct Taylor series](@ref) measured. The
+series is summed only where ``\|X/2^s\|_1\leq\theta``. There the terms decrease monotonically from the
+first one, so the cancellation ratio of that section is of order one rather than ``5\cdot10^{20}``,
+and the sum converges in a handful of terms rather than 168. In this way the framework makes an
+otherwise unusable kernel usable.
+
+### The complete `ScaledSquaring` algorithm
+
+Given the reduced matrix ``X = (B'')^TB'`` and the threshold ``\theta``:
+
+1. **Choose the scaling.** Set ``s = \max(0, \lceil\log_2(\|X\|_1/\theta)\rceil)``, so that
+   ``\|X/2^s\|_1 \leq \theta``.
+2. **Evaluate the kernel.** Sum the Taylor series of [1. Direct Taylor series](@ref) at ``X/2^s`` and
+   divide by ``2^s``, giving ``W_s = \mathfrak{A}(X/2^s)/2^s``.
+3. **Recover.** Apply ``W \leftarrow 2W + WXW`` exactly ``s`` times, with the original ``X``.
+4. **Return** ``W_0 = \mathfrak{A}(X)``.
+
+The division by ``2^s`` in step 2 is part of the definition of ``W_s`` and not an approximation, and
+neither is step 3. Every operation is ``2n\times{}2n``; nothing ``N\times{}N`` is squared, inverted or
+exponentiated anywhere.[^2]
+
+!!! note "Which errors the recovery contributes, and which it does not"
+    Steps 2 and 3 make errors of two different kinds, and only one of them belongs to the recovery.
+    The *approximation* (truncation) error is committed entirely in step 2, by the kernel; step 3
+    introduces none, because the doubling identity is exact. What step 3 does contribute is
+    **rounding** error: each application of ``W \leftarrow 2W + WXW`` roughly doubles whatever error
+    it is handed, so an error ``\epsilon`` in ``W_s`` reaches ``W_0`` at about ``2^s\epsilon``. That is
+    why the halving count matters beyond its cost, and it is the subject of the note at the end of this
+    section. The trade is nonetheless overwhelmingly favourable: the error being amplified is
+    round-off at a small argument, not the ``5\cdot10^{20}\varepsilon`` the unscaled sum commits.
+
+### The threshold ``\theta``
+
+`θ` defaults to `0.5`. A smaller value performs more scaling steps; a larger value asks the kernel to
+handle a larger argument. That default is **not** taken from the literature: the ``\theta_m`` tables of
+[higham2005scaling, almohy2010new](@cite) are derived for ``\exp`` rather than for ``\mathfrak{A}``,
+and they bound a backward error in ``\|X\|`` — the least informative norm available here, for the
+reason [Why the reduced argument is the hard case](@ref) gives. How `0.5` was in fact arrived at
+differs between the two algorithms:
+
+- For [`NativePade`](@ref) it is **forced**. Its five Newton–Schulz steps are only accurate while
+  ``\|I - q_6(Y)\|_1 < 1``, and ``\theta \leq 1/2`` is what guarantees that with room to spare. See
+  [Applying the denominator without a matrix solve](@ref) for the bound and
+  [What a large ``\theta`` costs `NativePade`](@ref) for the measured failures above it.
+- For `ScaledSquaring` it is an **empirical choice, and a nearly free one**, because the algorithm
+  turns out to be insensitive to it. The measurement is in
+  [Sensitivity to the threshold `θ`](@ref) below, recomputed at build time rather than quoted here:
+  over the 32-fold range ``\theta \in [0.125, 4]`` both `check` and the forward error move by less
+  than a factor of six, and neither is monotone in ``\theta``. Nothing in that table singles out
+  `0.5`; it is a reasonable value rather than a tuned one, and it is one lift and one seed rather
+  than a general error bound.
+
+**Advantages.** It is the cheapest of the algorithms on the ``\mathfrak{A}`` call itself, and it comes
+as close to `exp(Matrix(B))` as [`AugmentedPade`](@ref) does, which is as close as anything here gets;
+the two measurements are [What they cost](@ref) and [Agreeing with the exponential](@ref) below. It
+needs only matrix products, norms and a kernel-written identity, so it has no dense-LAPACK dependency.
+It is the default because it is the cheapest of the algorithms that have none.[^3]
 
 **Disadvantages.** Its orthogonality is the outcome of an arithmetic cancellation rather than a
-structural property, so `check` drifts upwards with the size of the lift — from ``10^{-15}`` to around
-``7\cdot10^{-14}`` over the sweep below, and considerably further in `Float32`. Only
+structural property, so `check` drifts upwards with the size of the lift — by two to three orders of
+magnitude over [Staying on the manifold](@ref), and considerably further in [`Float32`](@ref). Only
 [`ProjectedSkew`](@ref) avoids that drift. And it takes about twice the squarings it needs, for the
 reason in the note below.
 
-The implementation uses matrix products and reductions and avoids scalar indexing in package code.
-The norm is taken by [`GeometricOptimizers.opnorm₁`](@ref) rather than by
-`LinearAlgebra.opnorm(X, 1)`, whose `LinearAlgebra.opnorm1` is a double loop over `X[i, j]`, and the
-identities come from [`GeometricOptimizers.unit_matrix`](@ref) rather than from `Base.one`, whose
-diagonal write is the same hazard one level down. Execution on an accelerator still depends on the
-backend's support for those matrix operations.
-
 !!! note "The halving count is loose"
-    The implementation chooses `s` from ``\|X\|_1``, i.e.
-    ``s = \lceil\log_2(\|X\|_1/\theta)\rceil``. For these reduced matrices that norm is roughly
-    ``\|\bar{B}\|^2/4`` where the spectral radius is only ``\approx\|\bar{B}\|``, so
-    ``s \approx 2\log_2\|\bar{B}\|`` where ``\log_2\|\bar{B}\|`` would do, and the rule performs
-    about twice the squarings it needs. Each squaring amplifies the error it is handed, so this costs
-    both time and accuracy. It is the overscaling phenomenon discussed for the matrix exponential by
-    Al-Mohy and Higham [almohy2010new](@cite). It is left alone because the tighter bound needs the
-    spectral radius, and an eigenvalue computation would forfeit exactly the freedom from dense
-    LAPACK that makes this the default algorithm. [`NativePade`](@ref) takes ``s`` the same way and
-    inherits all of this.
+    `s` is chosen from a **norm**, ``s = \lceil\log_2(\|X\|_1/\theta)\rceil``, because that is the
+    quantity available without an eigendecomposition. What actually limits the kernel is the
+    *spectrum*: as [Why the reduced argument is the hard case](@ref) sets out,
+    ``\|X\|_1 \approx \|\bar{B}\|^2/4`` where ``\rho(X) \approx \|\bar{B}\|``, so this rule takes
+    ``s \approx 2\log_2\|\bar{B}\|`` halvings where ``\log_2\|\bar{B}\|`` would suffice — about twice
+    as many as necessary. By the note above, those extra steps cost both time and a factor of
+    ``2^{s}`` in amplified round-off.
+
+    Choosing a scaling parameter from a norm that overestimates what the spectrum requires is the same
+    underlying cause as the *overscaling* that Al-Mohy and Higham identify for the dense exponential
+    [almohy2010new; §3](@cite), and their remedy — replacing ``\|X\|`` by estimates of
+    ``\|X^k\|^{1/k}``, which approach ``\rho(X)`` — would apply here too. It is not the same
+    phenomenon, though: their analysis is a backward-error statement about ``\exp`` on a general
+    matrix, whereas the gap here is a structural property of the ``2n\times{}2n`` reduction, present
+    at every lift and quantified exactly by ``\|X\| \approx \|\bar{B}\|^2/4`` against
+    ``\rho(X) \approx \|\bar{B}\|``.
+
+    The rule is left alone because a tighter one needs the spectral radius, and an eigenvalue
+    computation would forfeit exactly the freedom from dense LAPACK that makes this the default
+    algorithm; ``\|X^k\|^{1/k}`` estimates would not, and are the obvious thing to try.
+    [`NativePade`](@ref) takes ``s`` the same way and inherits all of this.
+
+[^2]: The recurrence has an equivalent reading on the assembled exponential, which is where the name
+      "squaring" comes from and which is how the implementation comments put it: the low-rank form is
+      closed under squaring,
+      ``(\mathbb{I} + B'W(B'')^T)^2 = \mathbb{I} + B'(2W + WXW)(B'')^T``, so squaring the
+      ``N\times{}N`` exponential *is* the ``2n\times{}2n`` update ``W \mapsto 2W + WXW``. The
+      derivation above avoids ``\exp`` because nothing on this page needs it: ``\mathfrak{A}`` is what
+      is computed, and the doubling identity is a statement about ``\mathfrak{A}`` alone.
+
+[^3]: "Only matrix products, norms and a kernel-written identity" is a portability requirement rather
+      than a stylistic preference, and it is why two apparently redundant helpers exist. A
+      `KernelAbstractions` array cannot serve a scalar index, so the norm is taken by
+      [`GeometricOptimizers.opnorm₁`](@ref) as a reduction rather than by
+      `LinearAlgebra.opnorm(X, 1)`, whose `LinearAlgebra.opnorm1` is a double loop over `X[i, j]`, and
+      identities come from [`GeometricOptimizers.unit_matrix`](@ref) rather than from `Base.one`, whose
+      diagonal write is the same hazard one level down. One such call anywhere in the algorithm would
+      make it CPU-only, which is the whole distinction between the first three rows of the table above
+      and the last two. Whether a given accelerator then runs it still depends on that backend's
+      support for the matrix operations that remain.
 
 ## 3. Padé approximation
 
-Scaling is settled: the previous section made the argument small and gave an exact recovery for the
-original one. What it did not settle is *which* approximation to evaluate at the small argument.
-[`ScaledSquaring`](@ref) evaluates a Taylor series there because that is what it already had;
-[`NativePade`](@ref) evaluates a rational function instead, and this section is why that is a
-different and defensible choice. A degree-``m`` Taylor polynomial simply keeps the first ``m+1``
-terms,
+Scaling is settled. The previous section made the argument small and gave an exact recovery for the
+original one, and it did so without committing to any particular kernel. What it did not settle is
+*which* approximation to evaluate at the small argument. [`ScaledSquaring`](@ref) evaluates a Taylor
+series there because that is what it already had; [`NativePade`](@ref) evaluates a rational function
+instead, and this section is why that is a different and defensible choice.
+
+!!! note "`NativePade` is the previous section's framework with a different kernel"
+    Everything in [2. Scaling and modified squaring](@ref) applies to `NativePade` unchanged: the same
+    ``s = \max(0, \lceil\log_2(\|X\|_1/\theta)\rceil)``, the same ``W_s = \mathfrak{A}(X/2^s)/2^s``
+    read as a definition, the same ``s`` applications of ``W \leftarrow 2W + WXW``, and the same
+    doubling identity behind them. Only steps 2's *contents* differ. The name `NativePade` names the
+    kernel, not the algorithm's relationship to scaling; the two are not alternatives, and
+    [What scaling buys the Padé kernel](@ref) below measures what happens without it.
+
+A degree-``m`` Taylor polynomial simply keeps the first ``m+1`` terms,
 
 ```math
 T_m(z)=\sum_{k=0}^m c_kz^k,
@@ -294,16 +515,23 @@ Q_n(z)=\sum_{j=0}^n b_jz^j,
 \qquad b_0=1.
 ```
 
-Because ``e^z=\sum_{r\geq0}z^r/r!``, the ``z^k`` coefficient of ``Q_n(z)e^z`` is the convolution
-``\sum_j b_j/(k-j)!``, reading ``1/(k-j)!`` as zero when ``j>k``. The matching condition
-``Q_ne^z-P_m=O(z^{m+n+1})`` then says two different things, one on each of the two ranges of ``k``
-that it covers:
+Because ``e^z=\sum_{r\geq0}z^r/r!``, the ``z^k`` coefficient of ``Q_n(z)e^z`` is the **convolution at
+degree ``k``**,
 
 ```math
-a_k=\sum_{j=0}^{n}\frac{b_j}{(k-j)!}
+c_k := \sum_{j=0}^{n}\frac{b_j}{(k-j)!},
+```
+
+reading ``1/(k-j)!`` as zero when ``j>k``. That single quantity is what the rest of the derivation is
+about. The matching condition ``Q_ne^z-P_m=O(z^{m+n+1})`` says that the ``z^k`` coefficient of
+``Q_ne^z-P_m`` vanishes for every ``k\leq m+n``, and since ``P_m`` has no term above degree ``m``, it
+says two different things on the two ranges of ``k``:
+
+```math
+a_k=c_k
 \quad (k=0,\ldots,m),
 \qquad
-\sum_{j=0}^{n}\frac{b_j}{(k-j)!}=0
+c_k=0
 \quad (k=m+1,\ldots,m+n).
 ```
 
@@ -321,36 +549,56 @@ a_k=\frac{(m+n-k)!}{(m+n)!}\binom{m}{k},
 b_k=(-1)^k\frac{(m+n-k)!}{(m+n)!}\binom{n}{k},
 ```
 
-and one binomial identity settles both blocks at once. Substitute this ``b_j`` into the convolution at
-degree ``k`` and clear the constant:
+and one binomial identity settles both blocks at once. Substituting this ``b_j`` into the convolution
+at degree ``k`` and multiplying through by ``(m+n)!`` to clear the constant gives, in full,
 
 ```math
-(m+n)!\sum_{j=0}^n\frac{b_j}{(k-j)!}
-=\sum_{j=0}^n(-1)^j\binom{n}{j}\frac{(m+n-j)!}{(k-j)!}.
+\begin{aligned}
+(m+n)!\,c_k
+&= (m+n)!\sum_{j=0}^n\frac{1}{(k-j)!}\cdot(-1)^j\frac{(m+n-j)!}{(m+n)!}\binom{n}{j}\\
+&= \sum_{j=0}^n(-1)^j\binom{n}{j}\frac{(m+n-j)!}{(k-j)!}\\
+&= d!\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d},
+\qquad d := m+n-k.
+\end{aligned}
 ```
 
-Put ``d=m+n-k``. The ratio ``(m+n-j)!/(k-j)!`` is a product of ``d`` consecutive integers, that is
-``d!\binom{m+n-j}{d}``, which also reproduces the convention above: for ``j>k`` the binomial has
-``m+n-j<d`` and vanishes. So the right-hand side is ``d!`` times
+The last step is the only one that needs a word. With ``d = m+n-k`` fixed, the exponent difference
+``(m+n-j) - (k-j) = d`` does not depend on ``j``, so ``(m+n-j)!/(k-j)!`` is always a product of ``d``
+consecutive integers,
+
+```math
+\frac{(m+n-j)!}{(k-j)!}
+= (m+n-j)(m+n-j-1)\cdots(k-j+1)
+= d!\binom{m+n-j}{d},
+```
+
+which also reproduces the convention above: for ``j>k`` the binomial has upper index ``m+n-j<d`` and
+vanishes, matching ``1/(k-j)! = 0``. What remains is the claim
 
 ```math
 \sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}=\binom{m}{d-n}.
 ```
 
-This is the binomial theorem read at a single degree. Introduce a bookkeeping variable ``x``, unrelated
-to the ``z`` of the approximant and used only to extract a coefficient:
+This is the binomial theorem, applied twice and then read off one degree at a time. Introduce a
+bookkeeping variable ``x``, unrelated to the ``z`` of the approximant and used only to carry
+coefficients. The alternating sum on the left is a binomial expansion in the *quantity* ``(1+x)``:
 
 ```math
 \sum_{j=0}^n(-1)^j\binom{n}{j}(1+x)^{m+n-j}
+=(1+x)^m\sum_{j=0}^n\binom{n}{j}(1+x)^{n-j}(-1)^j
 =(1+x)^m\bigl((1+x)-1\bigr)^n
-=x^n(1+x)^m,
+=x^n(1+x)^m.
 ```
 
-and the coefficient of ``x^d`` on the left is ``\sum_j(-1)^j\binom{n}{j}\binom{m+n-j}{d}``, on the
-right ``\binom{m}{d-n}``. That single evaluation splits exactly where the matching condition splits.
-If ``k\geq m+1``, then ``d-n=m-k<0`` and ``x^n(1+x)^m`` has no ``x^d`` term, so the sum vanishes and
-all ``n`` denominator equations hold. If ``k\leq m``, the coefficient is
-``\binom{m}{m-k}=\binom{m}{k}``; restoring ``d!/(m+n)!`` gives the claimed ``a_k``.
+Now compare the coefficient of ``x^d`` on the two ends. On the left, expanding each
+``(1+x)^{m+n-j}`` by the binomial theorem gives ``\sum_j(-1)^j\binom{n}{j}\binom{m+n-j}{d}``; on the
+right, ``x^n(1+x)^m`` contributes ``\binom{m}{d-n}``. That proves the claim, and it splits exactly
+where the matching condition splits:
+
+- if ``k\geq m+1``, then ``d-n=m-k<0``, and ``x^n(1+x)^m`` has no ``x^d`` term at all, so ``c_k=0`` —
+  all ``n`` denominator equations hold;
+- if ``k\leq m``, the coefficient is ``\binom{m}{m-k}=\binom{m}{k}``, and restoring the ``d!/(m+n)!``
+  gives ``c_k = \frac{(m+n-k)!}{(m+n)!}\binom{m}{k}``, which is the claimed ``a_k``.
 
 The two formulas are one expression with ``m`` and ``n`` interchanged and a sign,
 ``a_k(m,n)=(-1)^kb_k(n,m)``: the reflection that ``e^{-z}=1/e^z`` induces on the table. They are
@@ -374,13 +622,19 @@ k & a_k & b_k & a_k-b_k\\\hline
 The last column is the promised subtraction. Since ``\mathfrak{A}(z)=(e^z-1)/z``,
 
 ```math
+\begin{aligned}
 \mathfrak{A}(z)
-= \frac{e^z-1}{z}
-= \frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{zQ^{\exp}_6(z)} + O(z^{13})
-= \frac{p_6(z)}{q_6(z)} + O(z^{13}),
-\qquad
+&= \frac{e^z-1}{z}\\
+&= \frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{z\,Q^{\exp}_6(z)} + O(z^{13})\\
+&= \frac{p_6(z)}{q_6(z)} + O(z^{13}),
+\end{aligned}
+```
+
+where
+
+```math
 p_6(z)=\frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{z},
-\quad
+\qquad
 q_6(z)=Q^{\exp}_6(z).
 ```
 
@@ -457,16 +711,29 @@ A conventional evaluation of this rational matrix function would solve
 q_6(Y)W=p_6(Y).
 ```
 
-!!! info "Why Newton--Schulz rather than LU?"
-    For dense CPU matrices, the standard choice is pivoted LU followed by triangular solves; one
-    would not normally form an explicit inverse. `NativePade` instead uses Newton--Schulz because
-    its updates need only matrix multiplication and addition, keeping the direct algorithm
-    independent of backend-specific factorization support. This is a portability choice, not a
-    generally faster solver: five matrix products may cost more than LU on a CPU. It is viable here
-    because scaling gives the initial-residual bound below, fixing both the iteration count and the
-    resulting error.
+!!! info "Newton--Schulz here is *not* the standard practice — LU is"
+    Pairing a Padé denominator with a Newton–Schulz inverse is a choice specific to this package, and
+    it should not be read as the textbook recipe. The Padé coefficients and the Newton–Schulz
+    iteration are each entirely standard on their own — the coefficients from
+    [higham2005scaling](@cite) and [higham2008functions; §10.3](@cite), and the iteration from
+    [schulz1933iterative](@cite), analysed as a matrix-inverse iteration in
+    [higham2008functions; §7.2](@cite) — but the *conventional* way to apply a Padé denominator, and
+    what `Base.exp` and every dense library routine do, is a pivoted LU followed by triangular
+    solves. One would not normally form an explicit inverse at all.
 
-To derive the iteration [schulz1933iterative](@cite), temporarily write
+    `NativePade` departs from that for one reason: Newton–Schulz needs only matrix multiplication and
+    addition, so it keeps the algorithm independent of backend-specific factorization support, which
+    is the entire point of having a direct implementation next to [`AugmentedPade`](@ref). It is a
+    portability choice and not a faster solver — five matrix products may well cost more than an LU on
+    a CPU, and the measurement that would settle that has not been made. It is
+    [#67](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/67).
+
+    What makes it *viable*, as opposed to merely portable, is that scaling supplies the
+    initial-residual bound derived below, which fixes both the iteration count and the resulting
+    error in advance. Without scaling there would be no such bound and no fixed count.
+
+To derive the iteration [schulz1933iterative](@cite), analysed in [higham2008functions; §7.2](@cite),
+temporarily write
 ``A=q_6(Y)`` and seek a matrix ``Z`` satisfying ``Z^{-1}-A=0``. The Fréchet derivative of matrix
 inversion is
 
@@ -489,11 +756,15 @@ Z_{j+1}=Z_j+H_j=Z_j\left(2I-AZ_j\right).
 ```
 
 This rearrangement is Newton's method using no factorization or linear solve. It is not safe from an
-arbitrary starting point: convergence requires the initial inverse residual to be smaller than one
-in a submultiplicative norm.
+arbitrary starting point. Writing ``E_j := I - AZ_j`` for the **inverse residual** at step ``j``, the
+condition is that the *initial* one be a contraction in some submultiplicative norm:
 
-For the present choice ``A=q_6(Y)`` and ``Z_0=I``, define ``E_j=I-AZ_j``. Since
-``AZ_j=I-E_j`` and ``2I-AZ_j=I+E_j``, the update gives
+```math
+\|E_0\| = \|I - AZ_0\| < 1.
+```
+
+For the present choice ``A=q_6(Y)`` and ``Z_0=I`` that reads ``\|I-q_6(Y)\|<1``, which is exactly what
+scaling will deliver below. Since ``AZ_j=I-E_j`` and ``2I-AZ_j=I+E_j``, the update gives
 
 ```math
 AZ_{j+1}=(I-E_j)(I+E_j)=I-E_j^2,
@@ -503,19 +774,33 @@ E_{j+1}=E_j^2.
 
 Consequently ``E_j=E_0^{2^j}`` in exact arithmetic and
 ``\|E_j\|\leq\|E_0\|^{2^j}``: once ``\|E_0\|<1``, the iteration converges quadratically, squaring
-the residual at every step. The code writes the first step explicitly as ``Z_1=2I-q_6(Y)`` and
+the residual at every step.[^4] The code writes the first step explicitly as ``Z_1=2I-q_6(Y)`` and
 performs four more, giving
 ``E_5=(I-q_6(Y))^{32}``. Scaling ensures ``\|Y\|_1\leq 1/2``; from the displayed coefficients,
 
 ```math
 \|I-q_6(Y)\|_1
 \leq \sum_{k=1}^6 |(q_6)_k|\,\|Y\|_1^k
+\leq \sum_{k=1}^6 \frac{|(q_6)_k|}{2^k}
+= 0.2563204283419127\ldots
 <0.257,
 ```
 
-so ``\|E_5\|_1<0.257^{32}<1.3\cdot10^{-19}``. This explains both the fixed five Newton--Schulz
+so ``\|E_5\|_1 \leq 0.257^{32}<1.3\cdot10^{-19}``. This explains both the fixed five Newton--Schulz
 steps and the constructor restriction ``0<\theta\leq 1/2``: together they make the solve-free inverse
-accurate to approximately `Float64` precision using matrix multiplication alone.
+accurate to approximately `Float64` precision using matrix multiplication alone. It is also the same
+order as the ``8\cdot10^{-19}`` kernel truncation error derived above, so neither half of the accuracy
+argument is the weaker one.
+
+[^4]: The condition ``\|E_0\| < 1`` and the language of contraction invite a comparison with the
+      Banach fixed-point theorem, but the two are not the same statement and the identification is not
+      one the literature makes. Banach would give ``\|E_{j+1}\| \leq L\|E_j\|`` for a fixed
+      ``L<1``, i.e. *linear* convergence at a rate the map supplies. What holds here is the exact
+      identity ``E_{j+1}=E_j^2``, hence ``\|E_{j+1}\| \leq \|E_j\|^2`` — quadratic convergence, with
+      the rate improving at every step, which is the ordinary local behaviour of Newton's method and
+      strictly stronger than a contraction estimate. The role of ``\|E_0\|<1`` is to identify the
+      *basin* of that local convergence, not to supply a contraction constant. See
+      [higham2008functions; §7.2](@cite) for the standard analysis.
 
 ### The complete `NativePade` algorithm
 
@@ -541,59 +826,133 @@ difference between the two algorithms. Scaling makes the rational approximation 
 denominator application reliable; modified squaring transports that small-argument result back to the
 original ``X``.
 
+### What scaling buys the Padé kernel
+
+[1. Direct Taylor series](@ref) is what the Taylor kernel does at an argument that is not small. The
+same measurement for the Padé kernel, over the same eight lifts, makes the point that the two kernels
+are in the same position: neither is usable on its own.
+
+Two unscaled variants are worth separating, because an unscaled Padé kernel fails in two independent
+ways. The first evaluates ``q_6(X)^{-1}p_6(X)`` with an exact dense solve, so its error is the
+*approximation* error of the ``[6/6]`` rational function alone — the best the kernel could possibly do
+without scaling, and not something `NativePade` could run on a GPU backend anyway. The second is what
+`NativePade` would actually compute with ``s=0``: the same rational function with the five
+Newton–Schulz steps, which lose their residual bound the moment ``\|Y\|_1`` exceeds ``1/2``. Relative
+error against [`AugmentedPade`](@ref):
+
+```@example retractions
+# The kernel of the previous subsections on its own, with an exact denominator solve — the best an
+# unscaled `[6/6]` can do. `\` is a dense LAPACK solve and is used only for this comparison.
+function pade_exact_solve(X)
+    p, q = _native_pade_polynomials(X, unit_matrix(X))
+    q \ p
+end
+
+# The same kernel with the denominator applied the way `NativePade` applies it.
+function pade_newton_schulz(X)
+    𝕀 = unit_matrix(X)
+    p, q = _native_pade_polynomials(X, 𝕀)
+    q⁻¹ = 2 * 𝕀 - q
+    for _ in 1:4
+        q⁻¹ = q⁻¹ * (2 * 𝕀 - q * q⁻¹)
+    end
+    q⁻¹ * p
+end
+
+rows = map(lifts) do B
+    B′, B′′ = lift_factors(B)
+    X = B′′' * B′
+    reference = 𝔄(X, AugmentedPade())
+    relative(W) = norm(W - reference) / norm(reference)
+    [fixed(norm(Matrix(B))), fixed(opnorm₁(X)),
+     sci(relative(pade_exact_solve(X))), sci(relative(pade_newton_schulz(X))),
+     sci(relative(𝔄(X, NativePade())))]
+end
+
+table(["‖B̄‖", "‖X‖₁", "kernel, exact solve", "kernel, Newton–Schulz", "`NativePade`"], rows)
+```
+
+The kernel column with the exact solve is accurate at the first lift, has lost half its digits by
+``\|X\|_1 \approx 16``, and is wrong by ``O(1)`` — a relative error above one, meaning no correct
+digits at all — from ``\|X\|_1 \approx 600`` upwards. It does not overflow the way the Taylor kernel
+does, because a rational function stays bounded where a truncated series does not; it simply
+approximates a different function. The Newton–Schulz column is worse and worse for the separate
+reason of the previous subsection: past ``\|Y\|_1 = 1/2`` the residual no longer contracts, so five
+squarings of a quantity larger than one amplify rather than converge.
+
+The last column is the same kernel with steps 1 and 5 of the algorithm around it, and it holds
+``10^{-14}`` across the sweep. What the framework supplies is the guarantee that the kernel is only
+ever asked for ``\|Y\|_1 \leq \theta``, where both failure modes are absent.
+
+### What a large ``\theta`` costs `NativePade`
+
+``\theta`` means something different in the two algorithms, and the difference is the reason
+`NativePade(θ)` **rejects** ``\theta > 1/2`` where `ScaledSquaring(θ)` accepts any positive value.
+`ScaledSquaring` sums its series until the terms vanish, so a larger ``\theta`` only asks it to sum
+more terms; [Sensitivity to the threshold `θ`](@ref) shows what that costs, which is almost nothing
+over a 32-fold range. `NativePade` does a *fixed* five Newton–Schulz steps against a fixed rational
+approximant, and both were sized for ``\|Y\|_1 \leq 1/2``. Above that, the iteration count is simply
+too small, and no quantity the algorithm computes says so.
+
+Worst relative error of the kernel against [`AugmentedPade`](@ref) over 400 random ``6\times6``
+arguments of one-norm exactly ``\theta`` — that is, the kernel asked for exactly what a threshold of
+``\theta`` would hand it:
+
+```@example retractions
+Random.seed!(2024)  # nothing else on this page draws after `lifts`, so this is self-contained
+
+worst(θ) = maximum(1:400) do _
+    Y = randn(6, 6)
+    Y = θ * Y / opnorm₁(Y)
+    reference = 𝔄(Y, AugmentedPade())
+    norm(pade_newton_schulz(Y) - reference) / norm(reference)
+end
+
+θs = [0.5, 1.0, 1.5, 2.0, 3.0]
+table(vcat("``\\theta``", string.(θs)), [vcat("worst relative error", sci.(worst.(θs)))])
+```
+
+Only the pattern is reproducible, not the digits: these are maxima over a random draw, and the two
+rightmost entries move by orders of magnitude between seeds. What does not move is where the
+transition happens — full accuracy up to ``\theta = 1``, several digits gone by ``3/2``, none left by
+``2``. The default sits a factor of two below the first of those, which is the room the residual bound
+of [Applying the denominator without a matrix solve](@ref) quantifies.
+
+Lowering ``\theta`` below ``1/2`` is safe and only adds modified-squaring steps. Raising it is not
+available, and that asymmetry is deliberate: the two thresholds are not interchangeable, even though
+both constructors spell the argument `θ`.
+
 **Advantages.** It never forms a matrix larger than ``2n\times{}2n`` and uses only reductions, matrix
-products and a kernel-written identity, so it is the independent implementation
-[`ScaledSquaring`](@ref) can be checked against on a backend that forbids scalar indexing — which is
-what `test/retractions/exponential_accuracy.jl` does, on a `JLArray`. Its numerics share nothing with
-`ScaledSquaring`'s beyond the scaling and the recovery, so agreement between the two is evidence
-rather than tautology. At ``\|\bar{B}\| = 361`` its `check` is `3.9e-14` and its forward error
-`2.1e-14`, indistinguishable in `Float64` from both [`ScaledSquaring`](@ref) and
-[`AugmentedPade`](@ref).
+products and a kernel-written identity, so it is the algorithm [`ScaledSquaring`](@ref) can be checked
+against on a backend that forbids scalar indexing. The two share their scaling rule and their recovery
+step, but nothing in the kernel: a truncated series against a rational function, and a division by
+``2^s`` against a Newton–Schulz inverse. Agreement between them is therefore evidence about the two
+kernels, though not about the framework they have in common. Its accuracy is indistinguishable from
+[`ScaledSquaring`](@ref)'s and [`AugmentedPade`](@ref)'s in `Float64` throughout
+[Agreeing with the exponential](@ref).
 
 **Disadvantages.** Its fixed rational evaluation does more small matrix products than
-[`ScaledSquaring`](@ref): at ``N = 200``, ``n = 10`` the ``\mathfrak{A}`` call costs `0.037 ms`
-against `0.021 ms`, though it stays under [`AugmentedPade`](@ref)'s `0.053 ms`. It also allocates the
-most of the three that evaluate ``\mathfrak{A}`` directly — `330 KiB` against `201 KiB` and
-`114 KiB` — and an allocation count is the figure least likely to stay a constant factor on a backend
-where allocating can cost a synchronisation rather than a `malloc`.
+[`ScaledSquaring`](@ref) — around `1.8×` the ``\mathfrak{A}`` call in [What they cost](@ref), still
+below [`AugmentedPade`](@ref) — and it allocates the most of the three algorithms that evaluate
+``\mathfrak{A}`` directly. An allocation count is the figure least likely to stay a constant factor on
+a backend where allocating can cost a synchronisation rather than a `malloc`, and the ordering of the
+three is itself unexplained; both are
+[#77](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/77).
 
-The `Float64` indifference above does not carry to `Float32`. At the top of the norm sweep its `check`
-is ``1.0\cdot10^{-4}`` against ``4.0\cdot10^{-5}`` for [`ScaledSquaring`](@ref) and
-``4.1\cdot10^{-5}`` for [`AugmentedPade`](@ref) — the worst of the three — while its *forward* error
-there is ``1.2\cdot10^{-5}`` against ``1.1\cdot10^{-5}`` and ``9.3\cdot10^{-6}``, which is no
-outlier at all. What degrades in `Float32` is the orthogonality of the retracted point rather than the
-agreement with the exponential. Both figures are recomputed in [`Float32`](@ref) below.
-
-!!! warning "`θ` is a ceiling here, not a preference"
-    `ScaledSquaring(θ)` accepts any positive threshold and stays accurate over a 32-fold range,
-    because it sums its series until the terms vanish. `NativePade` does a *fixed* five
-    Newton--Schulz steps, so past ``\theta \approx 1`` the inverse it computes stops being one.
-    Worst relative error against [`AugmentedPade`](@ref) over 400 random ``6\times6`` arguments of
-    one-norm exactly ``\theta``:
-
-    | ``\theta`` | 1/2 | 1 | 3/2 | 2 | 3 |
-    |---|---|---|---|---|---|
-    | relative error | `5.8e-16` | `6.4e-16` | `1.5e-10` | `1.1e-5` | `242` |
-
-    The two rightmost entries are the worst of a random draw and move by a factor of a few between
-    seeds; their magnitudes do not, and the magnitudes are the point.
-
-    Nothing in the result says so — a fixed number of refinements simply stops converging, silently.
-    `NativePade(θ)` therefore refuses ``\theta > 1/2``, where `ScaledSquaring` accepts any positive
-    value. The two thresholds are not interchangeable. Lowering this one is safe and only adds
-    modified-squaring steps.
+The `Float64` indifference does not carry to `Float32`, where it has the worst `check` of the three
+while its *forward* error there is no outlier at all. What degrades is the orthogonality of the
+retracted point rather than the agreement with the exponential; both are in [`Float32`](@ref) below.
 
 !!! note "What justifies `θ = 1/2`, and what does not"
     Not a backward-error table. The ``\theta_m`` of [higham2005scaling, almohy2010new](@cite) are
-    derived for ``\exp`` rather than for ``\varphi_1``, and they bound a backward error in
+    derived for ``\exp`` rather than for ``\mathfrak{A}``, and they bound a backward error in
     ``\|X\|`` — the least informative norm available here, since
     ``\|X\| \approx \|\bar{B}\|^2/4`` against a spectral radius of only
     ``\approx\|\bar{B}\|``. What justifies the threshold is narrower, and is stated as such: the
     Newton--Schulz residual bound above, the ``8\cdot10^{-19}`` kernel truncation error, and the
     measured forward error over the norm sweep and over the 400 random arguments tabulated. A
-    backward-error criterion for ``\varphi_1`` on a strongly non-normal argument is one of the things
-    [#52](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52) asked for and this does not
-    settle.
+    backward-error criterion for ``\mathfrak{A}`` on a strongly non-normal argument is a genuine gap,
+    and nothing on this page closes it.
 
 ## 4. `AugmentedPade`
 
@@ -605,7 +964,7 @@ delegates both. For the ``4n\times{}4n`` augmented matrix,
 = \begin{pmatrix} \exp(X) & \mathfrak{A}(X) \\ \mathbb{O} & \mathbb{I} \end{pmatrix},
 ```
 
-which is the standard device for getting a ``\varphi`` function out of an exponential routine
+which is the standard device for recovering ``\mathfrak{A}`` from a routine that computes only ``\exp``
 [sidje1998expokit, higham2008functions](@cite). One call to `Base.exp` therefore returns
 ``\mathfrak{A}(X)`` in its upper-right block, and the numerics are Julia's own dense matrix
 exponential — a Padé approximant with its own scaling and squaring
@@ -613,29 +972,32 @@ exponential — a Padé approximant with its own scaling and squaring
 the conventional Padé description of scaling and squaring, and the one place a reader can compare the
 two sections above against a textbook implementation.
 
-**Advantages.** It introduces no package-specific approximation at all. Everything delicate is done
-by the most heavily exercised matrix-exponential implementation available, which is why it is the CPU
-reference in `test/retractions/exponential_accuracy.jl`. Its accuracy is the same order as
-[`ScaledSquaring`](@ref)'s — `3.0e-14` `check` and `1.9e-14` forward error at ``\|\bar{B}\| = 361``
-— and it is, unexpectedly, the *lightest* allocator of the three algorithms that evaluate
-``\mathfrak{A}``, at `114 KiB` against `201 KiB` and `330 KiB`, because `Base.exp` works in a few
-reused buffers where both native algorithms produce a fresh ``2n\times{}2n`` temporary per operation.
+**Advantages.** It introduces no package-specific approximation at all. Everything delicate is done by
+the most heavily exercised matrix-exponential implementation available, which is why it is the
+reference every accuracy table on this page is measured against. Its accuracy matches
+[`ScaledSquaring`](@ref)'s throughout [Agreeing with the exponential](@ref), and it is, unexpectedly,
+the *lightest* allocator of the three algorithms that evaluate ``\mathfrak{A}`` — see
+[What they cost](@ref) — because `Base.exp` works in a few reused buffers where both native algorithms
+produce a fresh ``2n\times{}2n`` temporary per operation.
 
-**Disadvantages.** It exponentiates a matrix four times the size needed and discards three quarters
-of the result, so the ``\mathfrak{A}`` call is about `2.5×` [`ScaledSquaring`](@ref)'s — `0.053 ms`
-against `0.021 ms` — though much less than that once the ``N\times{}N`` assembly around it is
-counted. And `Base.exp` on a dense matrix needs LAPACK, so it does not run on a GPU backend.
+**Disadvantages.** It exponentiates a matrix four times the size needed and discards three quarters of
+the result, which makes the ``\mathfrak{A}`` call the most expensive of the three, though much less so
+once the ``N\times{}N`` assembly around it is counted. And `Base.exp` on a dense matrix needs LAPACK,
+so it does not run on a GPU backend.
 
 !!! note "A reference, not a normal choice"
-    `AugmentedPade` is constructible and supported, and it is documented here because the test suite
-    and `scripts/retraction_accuracy.jl` both use it as the reference the direct implementations are
-    measured against. It is not what to select for an optimization run: it costs more than
+    `AugmentedPade` is constructible and supported, and it is documented here because it is the
+    reference the direct implementations are measured against, both in the test suite and in the tables
+    below. It is not what to select for an optimization run: it costs more than
     [`ScaledSquaring`](@ref), is no more accurate, and needs dense LAPACK.
 
 ## 5. `ProjectedSkew`
 
-[`ProjectedSkew`](@ref) does not go through ``\mathfrak{A}`` at all. It exponentiates the lift in a
-basis of the lift's own range, where it is a small skew-symmetric matrix.
+[`ProjectedSkew`](@ref) does not go through ``\mathfrak{A}`` at all. It nonetheless exploits the same
+rank-``2n`` structure as the other four, and nothing ``N\times{}N`` is exponentiated here either; it
+simply reaches that structure by a change of basis rather than by [The reduction](@ref). It
+exponentiates the lift in a basis of the lift's own range, where the lift is a small skew-symmetric
+matrix.
 
 ``\bar{B}`` is skew-symmetric of rank at most ``2n``, so its range and its row space coincide and
 both sit inside the range of ``B'``. A thin QR of ``B'`` gives an ``N\times{}2n`` orthonormal ``Q``
@@ -661,20 +1023,17 @@ Unlike the other four, `ProjectedSkew` bypasses ``\mathfrak{A}`` and specialises
 directly. It therefore has no `𝔄(X, ProjectedSkew())` method — worth knowing if you call
 ``\mathfrak{A}`` yourself.
 
-**Advantages.** It is the only algorithm whose `check` does not degrade with the size of the lift.
-Over the sweep below it stays between ``2\cdot10^{-15}`` and ``5\cdot10^{-15}`` from
-``\|\bar{B}\| \approx 6`` to ``\|\bar{B}\| \approx 770``, where the other four drift from
-``5\cdot10^{-16}`` to around ``8\cdot10^{-14}``. The gap is widest in `Float32`, where the others are at the
-mercy of the format: over the same sweep their `check` climbs into the ``10^{-5}``s — into the
-``10^{-4}``s for [`NativePade`](@ref) — while this stays at a few ``10^{-6}`` from one end to the
-other. That is the case for choosing it: a long `Float32` run, where the departure from the manifold
-accumulates over thousands of steps and staying on the manifold matters more than agreeing with the
-exponential to the last bit.
+**Advantages.** It is the only algorithm whose `check` does not degrade with the size of the lift: its
+column in [Staying on the manifold](@ref) is level where the other four climb by two orders of
+magnitude. The gap is widest in [`Float32`](@ref), where the others are at the mercy of the format and
+this one is not. That is the case for choosing it: a long `Float32` run, where the departure from the
+manifold accumulates over thousands of steps and staying on the manifold matters more than agreeing
+with the exponential to the last bit.
 
-**Disadvantages.** It usually has the largest forward error against `exp(Matrix(B))` — up to about
-`4.3×` [`ScaledSquaring`](@ref)'s, and largest at all but the top of the sweep. It needs a `qr` and an
-`eigen` instead of matrix products, which costs `1.1×`–`1.6×` one whole retraction over the sizes
-measured and rules out a GPU backend.
+**Disadvantages.** It usually has the largest forward error against `exp(Matrix(B))`, in both formats
+and at all but the top of the sweep — see [Agreeing with the exponential](@ref). It needs a `qr` and
+an `eigen` instead of matrix products, which costs more than [`ScaledSquaring`](@ref) per retraction
+in [What they cost](@ref) and rules out a GPU backend.
 
 The trade is a real exchange rather than a ranking: orthogonality is structural here and accuracy
 against the exponential is not, and the two tables below disagree with each other for exactly that
@@ -982,7 +1341,8 @@ and it does not rank the three the way runtime does. [`AugmentedPade`](@ref), wh
 `Base.exp` works in a few reused buffers where both native algorithms produce a fresh
 ``2n\times{}2n`` temporary per operation. On a CPU that is a detail. On a backend where an allocation
 costs a synchronisation it may not be, which is worth knowing about the algorithm whose whole purpose
-is to be portable.
+is to be portable. Neither native algorithm reuses buffers, and both could; that is
+[#77](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/77).
 
 One whole retraction, which adds the ``N\times{}N`` assembly they all share, in milliseconds:
 

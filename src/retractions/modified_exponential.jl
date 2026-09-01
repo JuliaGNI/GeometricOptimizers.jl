@@ -137,7 +137,7 @@ p_6(z)=\frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{z},
 q_6(z)=Q^{\exp}_6(z),
 ```
 
-so ``q_6(X)^{-1}p_6(X)`` agrees with ``\mathfrak{A}(X)=\varphi_1(X)`` through the ``X^{12}`` term.
+so ``q_6(X)^{-1}p_6(X)`` agrees with ``\mathfrak{A}(X)`` through the ``X^{12}`` term.
 The implementation shares ``X^2`` and ``X^4`` between the two polynomials and groups the remaining
 terms to avoid forming every matrix power separately. `𝕀` must be the multiplicative identity with
 the same size, element type, and backend as `X`.

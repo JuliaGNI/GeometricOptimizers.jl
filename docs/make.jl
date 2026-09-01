@@ -134,13 +134,15 @@ makedocs(;
         # the reminder that the docstrings are still not distributed over the chapters that explain
         # them.
         #
-        # The number was `400 * 2^10` and is raised because `ScalarMomentAdam` took the page to
-        # 411.84 KiB and `size_threshold` is an *error*, not a warning. Raising it is the smaller
-        # half of the fix and not the fix: the page grows with every documented addition, and what
-        # actually bounds it is continuing the migration that moved the manifold, matrix,
-        # global-section and retraction docstrings onto the chapters that explain them. Until that
-        # is done this number will need raising again, and the warning above says so on every build.
-        size_threshold=450 * 2^10,
+        # The number was `400 * 2^10`, then `450 * 2^10` because `ScalarMomentAdam` took the page to
+        # 411.84 KiB, and is raised again because the exponential-algorithm docstrings take it to
+        # 439.62 KiB — `size_threshold` is an *error*, not a warning, so the headroom has to stay
+        # ahead of the page. Raising it is the smaller half of the fix and not the fix: the page grows
+        # with every documented addition, and what actually bounds it is continuing the migration that
+        # moved the manifold, matrix, global-section and retraction docstrings onto the chapters that
+        # explain them. Until that is done this number will need raising again, and the warning above
+        # says so on every build.
+        size_threshold=550 * 2^10,
     ),
     pages=[
         "Home" => "index.md",
