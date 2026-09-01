@@ -44,7 +44,7 @@ end
 # autodiff gradient, an in-place user gradient, and the vectorized call made by
 # this package's Manifold/NetworkParameters adapters without changing any of
 # their allocation or projection semantics.
-struct ObservedGradient{T,GT<:Gradient{T},OT} <: Gradient{T}
+struct ObservedGradient{T, GT <: Gradient{T}, OT} <: Gradient{T}
     gradient::GT
     observer::OT
 end
@@ -55,13 +55,14 @@ end
     end
 end
 
-
-@inline function (g::ObservedGradient{T})(dest::AbstractVector{T}, x::AbstractVector{T}) where {T}
+@inline function (g::ObservedGradient{T})(
+        dest::AbstractVector{T}, x::AbstractVector{T}) where {T}
     observe_optimizer_phase(g.observer, :gradient) do
         g.gradient(dest, x)
     end
 end
 
 _observed_gradient(g::Gradient, ::NoStepObserver) = g
-_observed_gradient(g::Gradient{T}, observer) where {T} =
-    ObservedGradient{T,typeof(g),typeof(observer)}(g, observer)
+function _observed_gradient(g::Gradient{T}, observer) where {T}
+    ObservedGradient{T, typeof(g), typeof(observer)}(g, observer)
+end

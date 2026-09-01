@@ -25,7 +25,8 @@
 const _SCALAR_MOMENT_ADAM_SCOPE = "ScalarMomentAdam supports exactly one StiefelManifold solution; " *
                                   "ordinary arrays, Grassmann solutions, NamedTuples and mixed parameter trees are unsupported"
 
-function _scalar_moment_adam_eltype_message(method::ScalarMomentAdam{T}, x::StiefelManifold{S}) where {
+function _scalar_moment_adam_eltype_message(
+        method::ScalarMomentAdam{T}, x::StiefelManifold{S}) where {
         T, S}
     "ScalarMomentAdam($(T)) cannot optimize StiefelManifold{$(S)} parameters. Like `Adam`, " *
     "`ScalarMomentAdam` carries parameters of its own and is not converted by `Optimizer`, so it has " *
@@ -113,7 +114,8 @@ latest_gradient(cache::ScalarMomentAdamCache) = cache.g̃
 function refresh_latest_gradient!(cache::ScalarMomentAdamCache, g::Gradient)
     _refresh_latest_gradient!(cache, g)
 end
-function latest_gradient_is_current(cache::ScalarMomentAdamCache, state::OptimizerState, x::OptimizerSolution)
+function latest_gradient_is_current(
+        cache::ScalarMomentAdamCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
 end
 function invalidate_latest_gradient!(cache::ScalarMomentAdamCache)

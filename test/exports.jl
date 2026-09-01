@@ -8,7 +8,8 @@ using Test
 # list in `0eab6b1`, and already dead there — survived from March 2026 until they were removed by
 # hand. The check below is one line and it closes the class rather than those three instances.
 @testset "every exported name is defined" begin
-    @test isempty(filter(n -> !isdefined(GeometricOptimizers, n), names(GeometricOptimizers)))
+    @test isempty(filter(
+        n -> !isdefined(GeometricOptimizers, n), names(GeometricOptimizers)))
 end
 
 # A spot check on the names a user reaches for first, so that a rename which drops one from the
@@ -39,21 +40,21 @@ end
 # the *Exports* entry in the changelog.
 @testset "the manifold, section and retraction interface is exported" begin
     for name in (
-    # the geometry
+        # the geometry
         :Manifold, :StiefelManifold, :GrassmannManifold,
         :rgrad, :metric, :check, :Ω,
-    # the structured matrices and the lifts
+        # the structured matrices and the lifts
         :SkewSymMatrix, :SymmetricMatrix, :LowerTriangular, :UpperTriangular,
         :AbstractTriangular, :StiefelProjection,
         :AbstractLieAlgHorMatrix, :StiefelLieAlgHorMatrix, :GrassmannLieAlgHorMatrix,
-    # global sections
+        # global sections
         :GlobalSection, :global_section, :global_rep,
         :apply_section, :apply_section!, :update_section!,
-    # retractions
+        # retractions
         :AbstractRetraction, :Geodesic, :Cayley, :geodesic, :cayley, :retraction,
-    # the optimizer types a caller dispatches on
+        # the optimizer types a caller dispatches on
         :OptimizerMethod, :OptimizerState, :OptimizerSolution,
-    # opt-in phase observation
+        # opt-in phase observation
         :NoStepObserver, :observe_optimizer_phase, :step_observer)
         @test name in names(GeometricOptimizers)
     end

@@ -1,9 +1,10 @@
 using GeometricOptimizers
-using GeometricOptimizers: gradient, increase_iteration_number!, initialize_state!, solver_step!
+using GeometricOptimizers: gradient, increase_iteration_number!, initialize_state!,
+                           solver_step!
 using Test
 
 mutable struct EventObserver
-    events::Vector{Tuple{Symbol,Symbol}}
+    events::Vector{Tuple{Symbol, Symbol}}
 end
 
 (observer::EventObserver)(phase, event) = (push!(observer.events, (phase, event)); nothing)
@@ -17,13 +18,13 @@ const EXPECTED_STEP_EVENTS = [
     (:gradient, :enter), (:gradient, :exit),
     (:objective, :enter), (:objective, :exit),
     (:retraction_application, :enter), (:retraction_application, :exit),
-    (:optimizer_state_direction, :exit),
+    (:optimizer_state_direction, :exit)
 ]
 
 function observed_step_events(x, objective, method)
-    observer = EventObserver(Tuple{Symbol,Symbol}[])
-    optimizer = Optimizer(x, objective; algorithm=method, linesearch=Static(0.01),
-        observer=observer)
+    observer = EventObserver(Tuple{Symbol, Symbol}[])
+    optimizer = Optimizer(x, objective; algorithm = method, linesearch = Static(0.01),
+        observer = observer)
     state = OptimizerState(method, x)
     initialize_state!(state)
 
@@ -44,17 +45,18 @@ end
 
     Y = StiefelManifold([1.0 0.0; 0.0 1.0; 0.0 0.0])
     stiefel_objective(Y) = sum(abs2, Y.A .- 1)
-    @test observed_step_events(Y, stiefel_objective, ScalarMomentAdam()) == EXPECTED_STEP_EVENTS
+    @test observed_step_events(Y, stiefel_objective, ScalarMomentAdam()) ==
+          EXPECTED_STEP_EVENTS
 end
 
 @testset "parameter-set gradients retain the Riemannian wrapper" begin
-    observer = EventObserver(Tuple{Symbol,Symbol}[])
-    ps = NetworkParameters((w=[1.0, -2.0],))
+    observer = EventObserver(Tuple{Symbol, Symbol}[])
+    ps = NetworkParameters((w = [1.0, -2.0],))
     objective(ps) = sum(abs2, ps.w)
     gradient!(g, x) = (g .= 2 .* x; g)
     method = GradientMethod()
-    optimizer = Optimizer(ps, objective; (∇F!)=gradient!, algorithm=method,
-        linesearch=Static(0.1), observer=observer)
+    optimizer = Optimizer(ps, objective; (∇F!) = gradient!, algorithm = method,
+        linesearch = Static(0.1), observer = observer)
     observed_gradient = gradient(optimizer)
     @test observed_gradient isa RiemannianGradient
     @test observed_gradient.gradient isa GeometricOptimizers.ObservedGradient
@@ -73,7 +75,7 @@ end
 end
 
 @testset "observer exit is exception-safe and the default is a no-op" begin
-    observer = EventObserver(Tuple{Symbol,Symbol}[])
+    observer = EventObserver(Tuple{Symbol, Symbol}[])
     @test_throws ErrorException observe_optimizer_phase(observer, :gradient) do
         error("expected failure")
     end

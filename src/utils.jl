@@ -121,8 +121,9 @@ RiemannianGradient(gradient::RiemannianGradient) = gradient
 # would hide that method; placing it here also measures differentiation without charging the
 # leaf-wise tangent projection to the gradient/AD phase.
 _observed_gradient(grad::RiemannianGradient, ::NoStepObserver) = grad
-_observed_gradient(grad::RiemannianGradient, observer) =
+function _observed_gradient(grad::RiemannianGradient, observer)
     RiemannianGradient(_observed_gradient(grad.gradient, observer))
+end
 
 # The coordinate interface forwards. Only the two-argument form is needed: `SimpleSolvers`'
 # `(grad::Gradient)(x::AbstractVector)` allocates a gradient and calls this.

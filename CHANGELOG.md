@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Added
+
+- Added opt-in optimizer phase observation through the exported `NoStepObserver`,
+  `observe_optimizer_phase`, and `step_observer` API. The default `NoStepObserver` preserves the
+  existing behavior when no observer is supplied.
+
 ## [0.7.0]
 
 **A whole set of parameters is a `NetworkParameters` and never a bare `NamedTuple`.** This is a

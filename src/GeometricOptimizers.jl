@@ -204,10 +204,13 @@ include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
 function __init__()
     register_parameter_type!("StiefelManifold", (S, md) -> StiefelManifold(_dense(S)))
     register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(_dense(S)))
-    register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
+    register_parameter_type!(
+        "SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
     register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
-    register_parameter_type!("LowerTriangular", (S, md) -> LowerTriangular(_vector(S, md)...))
-    register_parameter_type!("UpperTriangular", (S, md) -> UpperTriangular(_vector(S, md)...))
+    register_parameter_type!(
+        "LowerTriangular", (S, md) -> LowerTriangular(_vector(S, md)...))
+    register_parameter_type!(
+        "UpperTriangular", (S, md) -> UpperTriangular(_vector(S, md)...))
     # These two index positionally where the six above go by name, because they can: the older layout
     # covered five types and never a lift, so their `storage` is only ever the `Tuple` this protocol
     # wrote, in the order `parent` returned. A `NamedTuple` from that layout records no key order, so

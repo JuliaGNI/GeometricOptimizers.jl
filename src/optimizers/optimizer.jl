@@ -154,7 +154,8 @@ struct Optimizer{T,
             step_ceiling::Real = DEFAULT_STEP_CEILING,
             observer = NoStepObserver()) where {T}
         observed_gradient = _observed_gradient(gradient, observer)
-        ls_problem = linesearch_problem(problem, observed_gradient, cache, retraction, observer)
+        ls_problem = linesearch_problem(
+            problem, observed_gradient, cache, retraction, observer)
         ls = Linesearch(ls_problem, linesearch)
         new{T, typeof(algorithm), typeof(problem), typeof(observed_gradient),
             typeof(hessian), typeof(cache), typeof(ls), typeof(retraction), typeof(observer)}(
@@ -213,7 +214,7 @@ Takes every argument positionally on purpose; see the note on Julia 1.12 below
 function _optimizer(
         x::OptimizerSolution{T}, problem::OptimizerProblem{T}, algorithm::OptimizerMethod,
         linesearch::LinesearchMethod, gradient::Gradient{T}, retraction::AbstractRetraction,
-    config::Options{T}, step_ceiling::Real, observer) where {T}
+        config::Options{T}, step_ceiling::Real, observer) where {T}
     # translate to the correct type if we use the momentum method
     algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) :
                 algorithm
@@ -226,12 +227,14 @@ end
 function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod = BFGS(),
         linesearch::LinesearchMethod = default_linesearch(T, algorithm),
         gradient::Union{Gradient, Nothing} = nothing, retraction::AbstractRetraction = Cayley(),
-        step_ceiling = DEFAULT_STEP_CEILING, observer = NoStepObserver(), options_kwargs...) where {
+        step_ceiling = DEFAULT_STEP_CEILING, observer = NoStepObserver(),
+        options_kwargs...) where {
         T, VT <: OptimizerSolution{T}}
     # `_riemannian_gradient` on the caller's gradient too, and not only on the default: a parameter
     # set's leaves are projected one at a time, and a `SimpleSolvers` gradient built for the flat
     # vector has no method that reaches them. It is the identity on everything else.
-    G = _riemannian_gradient(isnothing(gradient) ? default_gradient(problem, x) : gradient, x)
+    G = _riemannian_gradient(
+        isnothing(gradient) ? default_gradient(problem, x) : gradient, x)
     _optimizer(x, problem, algorithm, linesearch, G, retraction,
         Options(T; options_kwargs...), step_ceiling, observer)
 end
@@ -270,7 +273,8 @@ Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
 function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = :autodiff,
         algorithm::OptimizerMethod = BFGS(), linesearch::Union{LinesearchMethod, Nothing} = nothing,
         retraction::AbstractRetraction = Cayley(), step_ceiling = DEFAULT_STEP_CEILING,
-        observer = NoStepObserver(), options_kwargs...) where {T, VT <: OptimizerSolution{T}}
+        observer = NoStepObserver(), options_kwargs...) where {
+        T, VT <: OptimizerSolution{T}}
     # `T` comes from the `OptimizerSolution{T}` bound and not from `eltype(x)`: for a `NamedTuple` of
     # manifolds the latter is `StiefelManifold{Float64, Matrix{Float64}}` rather than `Float64`.
     _G = if (ismissing(∇F!) | isnothing(∇F!))
@@ -304,12 +308,20 @@ gradient(opt::Optimizer) = opt.gradient
 # The step ceiling in multiples of 2π, not the `αmax` derived from it: that one depends on `‖δ‖` and
 # so changes at every step. See `DEFAULT_STEP_CEILING` and `step_αmax`.
 step_ceiling(opt::Optimizer) = opt.step_ceiling
+
+"""
+    step_observer(opt::Optimizer)
+
+Return the phase observer installed on `opt`. This is a [`NoStepObserver`](@ref) when the caller did
+not supply the `observer` keyword to [`Optimizer`](@ref).
+"""
 step_observer(opt::Optimizer) = opt.observer
 
 check_gradient(opt::Optimizer) = check_gradient(gradient(problem(opt)))
 print_gradient(opt::Optimizer) = print_gradient(gradient(problem(opt)))
 
-function meets_stopping_criteria(status::OptimizerStatus, opt::Optimizer, state::OptimizerState)
+function meets_stopping_criteria(
+        status::OptimizerStatus, opt::Optimizer, state::OptimizerState)
     meets_stopping_criteria(status, config(opt), iteration_number(state))
 end
 
@@ -393,8 +405,9 @@ julia> solver_step!(x, state, opt)
     best, so that case is exempt and the step is taken. See [`linesearch_rejected`](@ref) and issue
     B3.
 """
-function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{
-        T, MT}) where {T, MT}
+function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
+        opt::Optimizer{
+            T, MT}) where {T, MT}
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
@@ -415,7 +428,8 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
 
     for _ in 1:config(opt).nan_max_iterations
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
-            update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+            update_section!(
+                section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
             _copyto!(solution(cache(opt)), section(cache(opt)))
         end
         # compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)), cache(opt), opt.retraction)
@@ -473,7 +487,8 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
         restart!(state)
         steepest_descent!(cache(opt))
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
-            update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+            update_section!(
+                section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
             _copyto!(solution(cache(opt)), section(cache(opt)))
         end
         # rebuilt rather than reused: `steepest_descent!` has just replaced the direction, so `‖δ‖`
@@ -492,7 +507,8 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
 
     # compute new minimizer
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
-        update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+        update_section!(
+            section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
         _copyto!(solution(cache(opt)), section(cache(opt)))
         _copyto!(x, solution(cache(opt)))
     end
@@ -568,14 +584,17 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
-        status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config = config(opt))
+        status = OptimizerStatus(
+            state, cache(opt), value(problem(opt), x); config = config(opt))
         tracing && push!(_trace,
-            OptimizerTraceEntry(iteration_number(state), value(problem(opt), x), g_residual(status)))
+            OptimizerTraceEntry(
+                iteration_number(state), value(problem(opt), x), g_residual(status)))
         meets_stopping_criteria(status, opt, state) && break
         update!(state, opt, x)
     end
 
-    status = OptimizerStatus(state, cache(opt), value(problem(opt), x); config = config(opt))
+    status = OptimizerStatus(
+        state, cache(opt), value(problem(opt), x); config = config(opt))
     warn_iteration_number(state, config(opt))
     OptimizerResult(status, x, value(problem(opt), x), _trace)
 end
@@ -610,6 +629,7 @@ end
 # put this somewhere else eventually!
 function update!(state::NewtonOptimizerState, opt::Optimizer, x::AbstractVector)
     update!(state, gradient(opt), x)
-    update_section!(state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
+    update_section!(
+        state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
     state
 end
