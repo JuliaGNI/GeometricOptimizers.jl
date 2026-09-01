@@ -188,6 +188,10 @@ end
 
 # this should be moved to a different file
 function update!(state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}) where {T}
+    observer = step_observer(opt)
+    f = observe_optimizer_phase(observer, :objective) do
+        problem(opt).F(x)
+    end
     update!(
-        state, direction(cache(opt)), gradient(opt), x, problem(opt).F(x), opt.retraction)
+        state, direction(cache(opt)), gradient(opt), x, f, opt.retraction, observer)
 end

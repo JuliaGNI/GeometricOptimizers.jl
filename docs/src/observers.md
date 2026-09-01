@@ -282,20 +282,15 @@ assert that a code path was taken at all — which is how this package's own
 
 ## Coverage
 
-The phases above are emitted from the step machinery: `solver_step!`, the line-search merit and slope
-functions, and the `update!` methods of [`GradientMethod`](@ref), [`MomentumMethod`](@ref),
-[`Adam`](@ref) and [`ScalarMomentAdam`](@ref).
+The phases above are emitted from the complete [`solve!`](@ref) loop, the step machinery, the
+line-search merit and slope functions, and the `update!` methods of [`GradientMethod`](@ref),
+[`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref), [`BFGS`](@ref) and
+[`DFP`](@ref). Every direct objective evaluation made by `solve!`, including those for
+[`GeometricOptimizers.OptimizerStatus`](@ref), trace entries and the final result, is reported as
+`:objective`.
 
-Three boundaries need stating, and a caller doing arithmetic on the totals should know all three.
+One boundary needs stating for a caller doing arithmetic on the totals:
 
-* [`solve!`](@ref) evaluates the objective for the [`GeometricOptimizers.OptimizerStatus`](@ref) and, when tracing, for
-  each trace entry. Those evaluations are not inside an `:objective` phase, so an observer attached to
-  a whole `solve!` will report fewer objective evaluations than the objective actually receives.
-  Driving the loop directly — `solver_step!` and `update!`, as the examples above do — avoids the
-  discrepancy.
-* The end-of-iteration state update of the quasi-Newton methods, [`BFGS`](@ref) and [`DFP`](@ref),
-  evaluates the objective and advances its section without notifying the observer. Their
-  `solver_step!` is observed as usual; it is the `update!` that is not.
 * The slope ``\varphi'(\alpha)`` a differentiable line search asks for is reported as
   `:retraction_application`, because on a manifold that is what most of it is: the differential of the
   retraction, paired against the globally represented gradient. The gradient evaluation it needs is

@@ -574,29 +574,44 @@ Also see [`solver_step!`](@ref).
 """
 function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T}) where {T}
     initialize_state!(state)
+    observer = step_observer(opt)
 
     # `status` below is computed on every iteration regardless, so recording it costs one `Bool` test
     # per iteration when `store_trace` is unset. See `trace`.
-    f = value(problem(opt), x)
+    f = observe_optimizer_phase(observer, :objective) do
+        value(problem(opt), x)
+    end
     tracing = config(opt).store_trace
     _trace = OptimizerTraceEntry{typeof(f), T}[]
 
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
+        f = observe_optimizer_phase(observer, :objective) do
+            value(problem(opt), x)
+        end
         status = OptimizerStatus(
-            state, cache(opt), value(problem(opt), x); config = config(opt))
-        tracing && push!(_trace,
-            OptimizerTraceEntry(
-                iteration_number(state), value(problem(opt), x), g_residual(status)))
+            state, cache(opt), f; config = config(opt))
+        if tracing
+            trace_f = observe_optimizer_phase(observer, :objective) do
+                value(problem(opt), x)
+            end
+            push!(_trace,
+                OptimizerTraceEntry(iteration_number(state), trace_f, g_residual(status)))
+        end
         meets_stopping_criteria(status, opt, state) && break
         update!(state, opt, x)
     end
 
-    status = OptimizerStatus(
-        state, cache(opt), value(problem(opt), x); config = config(opt))
+    f = observe_optimizer_phase(observer, :objective) do
+        value(problem(opt), x)
+    end
+    status = OptimizerStatus(state, cache(opt), f; config = config(opt))
     warn_iteration_number(state, config(opt))
-    OptimizerResult(status, x, value(problem(opt), x), _trace)
+    f = observe_optimizer_phase(observer, :objective) do
+        value(problem(opt), x)
+    end
+    OptimizerResult(status, x, f, _trace)
 end
 
 function update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution)
