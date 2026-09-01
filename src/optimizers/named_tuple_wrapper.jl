@@ -52,7 +52,12 @@ end
 #
 # Both check that the keys agree at every level, which is the property this file depends on and which
 # `Base.foreach` over `NamedTuple`s does *not* have -- it goes through `zip`, iterates values, and so
-# neither compares the keys nor notices that one tree is shorter. `mapparameters` normalises its
+# neither compares the keys nor notices that one tree is shorter. [`_dot`](@ref) joins them in this
+# release, and more cheaply than either: `foldstorage` checks the keys and the widths in its
+# *generator*, so both cost nothing at run time and a mismatch raises before the fold is specialised at
+# all. Until now that one paired positionally over `values` and checked neither — inherited from the
+# `dot(flatten(a), flatten(b))` it replaced rather than chosen, and its own comment said this was where
+# such a check would go if one were ever wanted. `mapparameters` normalises its
 # trailing arguments through an exhaustive three-method `_as_namedtuple`, so a container may be walked
 # in lockstep with the plain `NamedTuple` tree `GlobalSection(::NetworkParameters)` deliberately
 # returns, and pairing a *leaf* with a branch raises a `MethodError` naming the type.
@@ -100,12 +105,23 @@ end
 #
 # `mapparameters!` walks whichever shape it is given first and normalises the rest, so the bodies are
 # identical either way.
-function Base.copyto!(Λ::GlobalSectionNamedTuple{T}, x::ParameterContainer{T}) where {T}
+#
+# `_copyto!` and not `Base.copyto!`, which is what these two were until this release: `copyto!` is
+# `Base`'s, `NamedTuple` is `Base`'s and `NetworkParameters` is `NeuralNetworkParameters`', so a method
+# pairing them owned neither side. Those were two of the three surviving sites of issue [#16] group 3,
+# and unlike the third they needed no coordination to remove — every caller in this package and every
+# caller in `GeometricMachineLearning` (`src/optimizers/optimizer.jl:233-245`, six sites) already went
+# through `_copyto!`, and the two `Base.copyto!` methods existed only to be forwarded to. The
+# signatures are unchanged, so dispatch resolves exactly as it did. The `copyto!` passed to
+# `mapparameters!` is the *leaf* operation and stays `Base`'s: at the bottom of this walk a pair is two
+# arrays or a `GlobalSection` and its anchor, and the method for the latter dispatches on a type of
+# this package's own.
+function _copyto!(Λ::GlobalSectionNamedTuple{T}, x::ParameterContainer{T}) where {T}
     mapparameters!(copyto!, Λ, x)
     Λ
 end
 
-function Base.copyto!(Λ::NamedTuple, x::NetworkParameters)
+function _copyto!(Λ::NamedTuple, x::NetworkParameters)
     mapparameters!(copyto!, Λ, x)
     Λ
 end
@@ -116,9 +132,6 @@ function Base.copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold}
     copyto!(Λ.Y, x)
     Λ
 end
-
-_copyto!(Λ::GlobalSectionNamedTuple, x::ParameterContainer) = copyto!(Λ, x)
-_copyto!(Λ::NamedTuple, x::NetworkParameters) = copyto!(Λ, x)
 
 # the bare-`Manifold` counterpart of the line above
 _copyto!(Λ::GlobalSection{T,MT}, x::MT) where {T,MT<:Manifold} = copyto!(Λ, x)
@@ -247,48 +260,78 @@ divides.
     The summation order changes with it: per leaf and then across, rather than one `dot` over the
     concatenation. Both are ``\sum_i a_ib_i``; they differ at round-off, and
     `test/flat_buffer_allocations.jl` pins the two against each other.
+
+    What the *grouping* of the leaves does to that sum is nothing, and as of this release that holds by
+    construction rather than by luck. `foldstorage` threads its accumulator through the nested branches,
+    so a left fold over a tree is the left fold over the flat leaf list whatever shape the tree has —
+    where the `Base.tail` recursion this replaced was a right fold that happened to align. So the same
+    numbers written flat, written nested, and wrapped in a container all pair to the same `Float64`,
+    exactly, and the test asserts `==` for the three of them.
 """
 _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 
+# `foldstorage` and not `foldparameters`: down to the free parameters and no further, exactly as
+# `flatten` goes. `dot` of a lift is the *ambient* Frobenius product, and `dot` of a
+# [`VectorStorageMatrix`](@ref) reads a dense interface that has neither the right length nor, for
+# three of the four, any way to be read at all. `foldstorage` descends through `freeparameters` until a
+# leaf is terminal, which is the same protocol `flatten` walks — so the two agree leaf for leaf by
+# construction rather than by two implementations happening to concur.
+#
+# A named method and not a closure, so that nothing here depends on how `op` is specialised. Upstream
+# does not annotate its `op` and says why: the obligation is the caller's, discharged either by a
+# closure (which is its own type) or by a literal like this one. What must not come between the two is a
+# function boundary that only *passes* `op` along — `foldstorage` is `@inline` and folds into the body
+# below, where `_dot_leaf` is a constant, but behind a `@noinline` the same fold costs 6 160 bytes at
+# arity two on a 369-leaf set.
+_dot_leaf(acc, x, y) = acc + dot(x, y)
+
 const LiftOrNamedTuple{T} = Union{AbstractLieAlgHorMatrix{T},ParameterContainer{T}}
 
-# `T` is named on the result rather than on a `flatten`, and for the same reason the `flatten(T, ·)`
-# this replaced named it there: every quantity this is combined with downstream is a `T`, and a
-# container's `T` is a *promotion* over its leaves rather than a guarantee about each of them, so a
-# mixed-precision set must not decide the type of the pairing. It is the one place where the two forms
-# differ by more than round-off — the old one converted the leaves and then paired them, this one
-# pairs them and then converts.
-_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} = T(_dot_leaves(a, b))
-
-# Down to the free parameters and no further, exactly as `flatten` goes: `dot` of a lift is the
-# *ambient* Frobenius product and `dot` of a [`VectorStorageMatrix`](@ref) reads a dense interface that
-# has neither the right length nor, for three of the four, any way to be read at all. `freeparameters`
-# is the same protocol `flatten` walks, so the two agree leaf for leaf by construction rather than by
-# two implementations happening to concur.
+# Everything `_dot` accepts, with the element type left off. The widening is that a nested plain
+# `NamedTuple` is covered now — its values are branches rather than arrays, so it is not an
+# `ArrayNamedTuple` and the alias above does not reach it. `l2norm` and `solution_scale` took it in
+# 0.6.0 and this was deliberately left out, for the reason the accumulator comment below gives; the
+# compile sweep reported the gap as a `MethodError` on one of its four cells.
 #
-# Positional, over `values`, and so it checks neither that the keys agree nor that the two branches are
-# the same width -- where `mapparameters` gets the first from `_check_keys` and the second from
-# `_children_arity`. That is not a regression: the
-# `dot(flatten(a), flatten(b))` this replaced was positional over the flattening in exactly the same
-# way. It is named here because this is where such a check would go if one is ever wanted, and because
-# the arity case is the worse of the two: a width mismatch falls through to the generic method below
-# with a `Tuple` in hand and raises `freeparameters`' "no protocol" error, which names neither `_dot`
-# nor the shapes.
-_dot_leaves(a::ParameterSet, b) = _dot_leaves(values(a), values(b))
+# **The lift is in this union to fix a wrong number, not to widen anything**, and it is the one member
+# whose old behaviour was silent. An [`AbstractLieAlgHorMatrix`](@ref) is an `AbstractMatrix`, so a pair
+# of lifts whose element types *differ* did not miss the alias above and raise — it fell through to
+# `_dot(::AbstractVecOrMat, ::AbstractVecOrMat)` and came back with the *ambient* Frobenius product,
+# which is twice the pairing of the free parameters. Measured on `St(6,3)`, `Float32` against `Float64`:
+# 5.504356027190567 before, 2.7521780135952834 here, and the second is `dot(flatten(a), flatten(b))`.
+# That is the factor of two `docs/src/linesearch_on_manifolds.md` gives a section to — it reaches
+# [`trial_slope`](@ref), the quasi-Newton denominator and the predicted decrease. Same-eltype pairs
+# always took the method above, which is why nothing caught it.
+#
+# It works because `parameter_eltype` recurses: its `AbstractArray` method asks `freeparameters` first
+# and only falls back to `eltype` for a terminal leaf, so a lift answers with the promotion over its
+# blocks rather than with the union's `Union{}` catch-all. Nothing had to be added upstream for that.
+const DottableSet = Union{AbstractLieAlgHorMatrix,ParameterSet}
 
-# `false` is the strong zero: it takes its type from whatever it is added to, and there is no `T` in
-# scope to write `zero(T)` with. A one-leaf set adds it to that leaf's pairing and stays a `T`.
-_dot_leaves(::Tuple{}, ::Tuple{}) = false
-_dot_leaves(a::Tuple, b::Tuple) =
-    _dot_leaves(first(a), first(b)) + _dot_leaves(Base.tail(a), Base.tail(b))
+# `zero(T)` and not the strong zero `false`. Upstream's fold is a **left** fold where the recursion this
+# replaced was a right one, so `false` would take its type from the *first* leaf in `flatten` order:
+# a mixed-precision set would accumulate its narrow prefix in the narrow type, losing significant
+# figures of the small terms and depending on where in the set the widest leaf happens to sit. `T` here
+# is a *promotion* over the leaves rather than a guarantee about each of them, which is exactly what an
+# accumulator wants -- and it is why the old form named `T` on the result, `T(_dot_leaves(a, b))`,
+# converting after pairing. Accumulating in it subsumes that conversion.
+_dot(a::LiftOrNamedTuple{T}, b::LiftOrNamedTuple{T}) where {T} =
+    foldstorage(_dot_leaf, zero(T), a, b)
 
-# `s === a` is `NeuralNetworkParameters.isterminal(a)`, which exists for exactly this question. Written
-# out because the storage is wanted either way, so asking the predicate would call `freeparameters`
-# twice -- but named, so that the two cannot drift apart unnoticed.
-function _dot_leaves(a, b)
-    s = freeparameters(a)
-    s === a ? dot(a, b) : _dot_leaves(s, freeparameters(b))
-end
+# The widened shape, and the pair whose element types differ, neither of which binds a `T` on the
+# signature. `parameter_eltype` is upstream's promotion over the leaves — the same quantity
+# `NetworkParameters{T}` derives at construction — so this agrees with the method above wherever both
+# would apply, and that one is strictly more specific, so it wins whenever it does.
+#
+# It is a separate method and not one widened signature because **`parameter_eltype` is not free on a
+# wide bare `NamedTuple`**: upstream's `_promote_eltypes` is a `@generated` `promote_type` chain, and at
+# 369 children in one branch it costs 6 144 bytes a call even though it infers to `Type{Float32}`. That
+# is the flat MNIST shape and `trial_slope` is the hottest caller there is, so it must not land on that
+# path. Written as one method it did. Above, `T` comes off the signature and costs nothing; here the
+# shapes that reach it are the nested ones, whose branches are narrow enough for the chain to be
+# cheap. Measured in `test/flat_buffer_allocations.jl`, which pins both paths at zero.
+_dot(a::DottableSet, b::DottableSet) = foldstorage(
+    _dot_leaf, zero(promote_type(parameter_eltype(a), parameter_eltype(b))), a, b)
 
 _add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
 

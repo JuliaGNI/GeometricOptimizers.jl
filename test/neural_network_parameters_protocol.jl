@@ -3,7 +3,7 @@
 # back rather than a densified copy of it.
 
 using GeometricOptimizers
-using GeometricOptimizers: OptimizerSolution
+using GeometricOptimizers: OptimizerSolution, _dot, _manifold_αmax
 using HDF5
 using NeuralNetworkParameters
 using NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata, flatlength,
@@ -323,4 +323,52 @@ end
     @test bound((a = Float32[1],)) === Float32
     @test bound(rand(StiefelManifold{Float64}, 4, 2)) === Float64
     @test bound((a = rand(StiefelManifold{Float64}, 4, 2), b = [1.0])) === Float64
+end
+
+# The checks `_dot` and `_manifold_αmax` gained when they stopped writing their own recursion, which is
+# the half of issue #70's fix that is not about the clock.
+#
+# Both used to pair *positionally* over `values` and check neither that the keys agreed nor that the two
+# branches were the same width -- inherited from the `dot(flatten(a), flatten(b))` and the per-block
+# ceiling they replaced rather than chosen, and `_dot`'s own comment said this was where such a check
+# would go if one were ever wanted. Upstream's zipped fold pairs by key and checks the widths in its
+# *generator*, so both are free at run time and a mismatch raises before the fold is specialised.
+#
+# The messages are upstream's, matched on substrings. `"and, in argument 2,"` is matched as well as
+# `"different keys"` because the latter prefix is shared with the run-time `_check_keys` that
+# `mapparameters` pays -- so this pins that the error came from the fold, which is the cheaper of the
+# two.
+@testset "the zipped folds check keys and widths" begin
+    a = NetworkParameters((L1 = (W = rand(2, 2), b = rand(2)),))
+
+    @test_throws "different keys" _dot(a, NetworkParameters((L2 = (W = rand(2, 2), b = rand(2)),)))
+    @test_throws "and, in argument 2," _dot(a, NetworkParameters((L2 = (W = rand(2, 2), b = rand(2)),)))
+
+    # key *order*, which a positional fold crossed over silently and is the worse of the two failures:
+    # it produced a number rather than an error. Both sides need the same width here, or
+    # `_children_arity` raises the width message first.
+    @test_throws "different keys" _dot(a, NetworkParameters((L1 = (b = rand(2), W = rand(2, 2)),)))
+
+    @test_throws "same number of children" _dot(a, NetworkParameters((L1 = (W = rand(2, 2),),)))
+
+    # a whole set that is `nothing`. A fold reduces every leaf it is given, so a missing set would make
+    # the answer a partial sum without saying so -- where `foreachparameters` skips one. The hole is at
+    # a *branch*: against a single-block leaf a `nothing` reaches the operator by design, and what it
+    # contributes is the caller's to decide, so that case is a `MethodError` from `dot` instead.
+    holed = NetworkParameters((L1 = (W = rand(2, 2),), L2 = nothing))
+    whole = NetworkParameters((L1 = (W = rand(2, 2),), L2 = (b = rand(2),)))
+    @test_throws "partial sum" _dot(whole, holed)
+
+    # `_manifold_αmax` is the same walk at the same arity, and gained the same checks
+    @test_throws "different keys" _manifold_αmax((Y = rand(2),), (Z = rand(2),), 1.0)
+    @test_throws "same number of children" _manifold_αmax((a = rand(2), b = rand(2)),
+                                                          (a = rand(2),), 1.0)
+
+    # and the check cannot be spelled around, which is the other half of it. Upstream pairs a `Tuple`
+    # branch *positionally* -- a `Tuple`'s blocks have no keys to agree on -- so `_manifold_αmax` bounds
+    # its first argument to a `ParameterSet` rather than taking anything. Without that bound
+    # `_manifold_αmax(values(sol), values(δ), c)`, which is how every call site here was spelled until
+    # this release, would still compile and would still cross the keys silently.
+    @test_throws MethodError _manifold_αmax(values((Y = rand(2), Z = rand(2))),
+                                            values((Z = rand(2), Y = rand(2))), 1.0)
 end

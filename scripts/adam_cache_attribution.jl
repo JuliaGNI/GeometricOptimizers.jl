@@ -23,11 +23,30 @@
 # what 1.11's inference does with that one composition.
 #
 # That shape — cheap parts, expensive composition, and one Julia version far worse than the others — is
-# open issue **D1**'s, and D1's own experiments are the reason no fix is attempted from this script:
-# `@noinline` around the expensive composition did nothing there (925 s against 940 s), and what did
-# work was flattening the nesting. Anyone splitting this constructor should re-run this file on all
-# three: `OptimizerCache(Adam)` on this shape is 88.59 s on 1.11.9, 12.34 s on 1.12.7 and 15.72 s on
-# 1.13.0-rc3.
+# open issue **D1**'s.
+#
+# ## It is fixed, and this file is what measured the fix
+#
+# The paragraph that stood here said no fix was attempted, on the grounds that D1's `@noinline` control
+# did nothing there (925 s against 940 s) and what worked was flattening the nesting. Both halves of
+# that turned out to be needed:
+#
+#   * The ten-field `new` moved into `_adam_cache`, reached with every member already computed and
+#     passed in, so the frame infers from its own signature. **Alone: 84.37 s against 81.49, i.e.
+#     nothing.**
+#   * `@noinline` on `_adam_cache` as well. **Together: 2.91 s.**
+#
+# So the annotation is what stops inference re-crossing the boundary the split created, and D1's
+# negative result was about *where* the barrier goes — it put one around the construction, leaving the
+# composition intact on the far side. The row to watch below is `AdamCache(x, g, δ, Δg)`.
+#
+# `OptimizerCache(Adam)` on this shape, before against after, both on the branch that made the change:
+# **88.23 → 6.87 s** on 1.11.9, 12.65 → 17.35 on 1.12.7 and 15.14 → 20.65 on 1.13.0-rc3. The last two
+# are the cost of the annotation on versions that did not need it, and they are why this file wants
+# running on all three rather than on the floor alone.
+#
+# `MomentumCache` has the same shape and has not been measured. It is not in this file and not in the
+# sweep; that is the next thing to point this script at.
 #
 # `walk_compile_cost.jl --caches` is where the top-line figures come from and it forks a process per
 # shape. This file deliberately does *not*: the rows only mean anything in one process, in order, since
