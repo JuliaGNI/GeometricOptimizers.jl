@@ -129,7 +129,8 @@ the choice of `algorithm` and [`GeometricOptimizers.𝔄`](@ref) for the impleme
     carries the measurements. The default is now [`ScaledSquaring`](@ref), which is both accurate at
     every lift norm and faster.
 """
-function geodesic(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgorithm = ScaledSquaring())
+function geodesic(B::AbstractLieAlgHorMatrix,
+        algorithm::AbstractExponentialAlgorithm = ScaledSquaring())
     B̂, B̄ = lift_factors(B)
 
     manifold_type(B)(one(B) + B̂ * 𝔄(B̂, B̄, algorithm) * B̄')
@@ -227,7 +228,7 @@ end
 
 Compute the Cayley retraction of `B`.
 
-This is equivalent to the method of [`cayley`](@ref) for [StiefelLieAlgHorMatrix](@ref).
+This is equivalent to the method of [`cayley`](@ref) for [`StiefelLieAlgHorMatrix`](@ref).
 
 See [`cayley(::StiefelLieAlgHorMatrix)`](@ref).
 """
@@ -340,7 +341,8 @@ Not to be confused with the *canonical horizontal lift* [`GeometricOptimizers.Ω
 tangent vector to an element of ``\mathfrak{g}^\mathrm{hor}``. This one takes the columns of a matrix
 that is already in the Lie algebra.
 """
-lift_from_columns(B::StiefelLieAlgHorMatrix, V::AbstractMatrix) = StiefelLieAlgHorMatrix(
+lift_from_columns(B::StiefelLieAlgHorMatrix,
+    V::AbstractMatrix) = StiefelLieAlgHorMatrix(
     SkewSymMatrix(V[1:(B.n), :]), V[(B.n + 1):(B.N), :], B.N, B.n)
 
 function lift_from_columns(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix)

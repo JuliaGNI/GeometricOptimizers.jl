@@ -4,7 +4,7 @@
 """
     BFGSCache
 
-The [`OptimizerCache`](@ref) for the [`BFGS`](@ref) algorithm. Also see [`update!(::BFGSCache, ::OptimizerState, ::AbstractVector, ::AbstractVector`)](@ref).
+The [`OptimizerCache`](@ref) for the [`BFGS`](@ref) algorithm. Also see [`update!`](@ref).
 
 `g̃` is the scratch for [`latest_gradient`](@ref) and `g̃_is_current` says whether it is the gradient at
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
@@ -77,7 +77,8 @@ latest_gradient(cache::BFGSCache) = cache.g̃
 function refresh_latest_gradient!(cache::BFGSCache, g::Gradient)
     _refresh_latest_gradient!(cache, g)
 end
-function latest_gradient_is_current(cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
+function latest_gradient_is_current(
+        cache::BFGSCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
 end
 invalidate_latest_gradient!(cache::BFGSCache) = _invalidate_latest_gradient!(cache)
@@ -196,7 +197,8 @@ end
 # `_copyto!(gradient(cache), g)` in the four-argument method is a copy onto itself. That method is
 # also called with a `g` of its own, from `update!(cache, state, x, g)` directly, which is why it
 # keeps the copy.
-function update!(cache::BFGSCache, state::OptimizerState, grad::Gradient, x::OptimizerSolution)
+function update!(
+        cache::BFGSCache, state::OptimizerState, grad::Gradient, x::OptimizerSolution)
     store_gradient!(cache, state, grad, x)
     update!(cache, state, x, gradient(cache))
 end
