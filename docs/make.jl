@@ -174,7 +174,8 @@ makedocs(;
             "Optimization on Homogeneous Spaces" => "manifold_optimizers.md",
             "Retractions" => "retractions.md",
             "Parallel Transport" => "parallel_transport.md",
-            "Optimizer Methods" => "optimizer_methods.md"
+            "Optimizer Methods" => "optimizer_methods.md",
+            "Observing Optimizer Phases" => "observers.md"
         ],
         "Linesearch" => [
             "Linesearch" => "linesearch.md",

@@ -13,6 +13,10 @@ breaking release).
 - Added opt-in optimizer phase observation through the exported `NoStepObserver`,
   `observe_optimizer_phase`, and `step_observer` API. The default `NoStepObserver` preserves the
   existing behavior when no observer is supplied.
+- Added the *Observing Optimizer Phases* documentation chapter, which states the measurement problem
+  the observer solves — a per-step cost that cannot be decomposed from outside the package, and a
+  device timestamp that is meaningless without a synchronization the package must not perform on the
+  caller's behalf — and documents the protocol, the phases, and their coverage.
 
 ## [0.7.0]
 
