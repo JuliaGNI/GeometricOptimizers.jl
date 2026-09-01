@@ -44,6 +44,14 @@ jobs:
             GKSwstype: "100"
         steps:
             - uses: actions/checkout@v7
+            # The six theme-specific figures are generated from the tracked TikZ sources. They are
+            # deliberately not committed, so they have to be built before Documenter checks links.
+            - name: Install the TeX toolchain the TikZ figures need
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y texlive-xetex texlive-science poppler-utils
+            - name: Make TikZ images
+              run: make all -C docs/src/tikz
             - uses: julia-actions/setup-julia@v3
               with:
                   version: "1"
