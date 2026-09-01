@@ -23,10 +23,8 @@ Everything below is stated in the notation of
 [Both retractions factor the lift](@ref) on the [Retractions](@ref) page, which is where it is
 derived. Briefly:
 
-- ``\bar{B} \in \mathbb{R}^{N\times{}N}`` is the **horizontal lift**, a skew-symmetric matrix of rank
-  at most ``2n``. It is the direction an [`OptimizerMethod`](@ref) produces and the argument the
-  retraction is applied to; concretely it is a [`StiefelLieAlgHorMatrix`](@ref) or a
-  [`GrassmannLieAlgHorMatrix`](@ref).
+- ``\bar{B} \in \mathbb{R}^{N\times{}N}`` is the **horizontal lift**, a skew-symmetric matrix of the same rank the dimension of the manifold (see [`StiefelLieAlgHorMatrix`](@ref) and [`GrassmannLieAlgHorMatrix`](@ref)). It is the direction an [`OptimizerMethod`](@ref) produces and the argument the
+  retraction is applied to.
 - ``B'`` and ``B''`` are the two ``N\times{}2n`` **thin factors** of that lift, so that
   ``\bar{B} = B'(B'')^T``. [`lift_factors`](@ref) returns them; for the Stiefel manifold they are
   the two matrices in
@@ -37,9 +35,7 @@ derived. Briefly:
   ```
   and for a [`GrassmannLieAlgHorMatrix`](@ref) the same expression with ``A \equiv \mathbb{O}``.
 - ``X := (B'')^TB' \in \mathbb{R}^{2n\times{}2n}`` is the **reduced matrix**. It is small even when
-  ``N`` is large, and it is the argument every matrix function on this page is evaluated on. It is
-  also considerably worse-behaved than ``\bar{B}``, which is the subject of
-  [1. Direct Taylor series](@ref) below.
+  ``N`` is large, and it is the argument every matrix function on this page is evaluated on.
 
 ### The reduction
 
