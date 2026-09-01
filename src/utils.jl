@@ -116,6 +116,14 @@ end
 # be applied to a gradient a caller has already wrapped.
 RiemannianGradient(gradient::RiemannianGradient) = gradient
 
+# Keep the observation wrapper around the flat Euclidean gradient, inside the Riemannian wrapper.
+# A whole parameter set dispatches specifically on `RiemannianGradient`, so wrapping outside it
+# would hide that method; placing it here also measures differentiation without charging the
+# leaf-wise tangent projection to the gradient/AD phase.
+_observed_gradient(grad::RiemannianGradient, ::NoStepObserver) = grad
+_observed_gradient(grad::RiemannianGradient, observer) =
+    RiemannianGradient(_observed_gradient(grad.gradient, observer))
+
 # The coordinate interface forwards. Only the two-argument form is needed: `SimpleSolvers`'
 # `(grad::Gradient)(x::AbstractVector)` allocates a gradient and calls this.
 function (grad::RiemannianGradient{T})(g::AbstractVector{T}, x::AbstractVector{T}) where {T}

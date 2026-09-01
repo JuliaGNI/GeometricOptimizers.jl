@@ -52,7 +52,9 @@ end
     # retractions
         :AbstractRetraction, :Geodesic, :Cayley, :geodesic, :cayley, :retraction,
     # the optimizer types a caller dispatches on
-        :OptimizerMethod, :OptimizerState, :OptimizerSolution)
+        :OptimizerMethod, :OptimizerState, :OptimizerSolution,
+    # opt-in phase observation
+        :NoStepObserver, :observe_optimizer_phase, :step_observer)
         @test name in names(GeometricOptimizers)
     end
 end

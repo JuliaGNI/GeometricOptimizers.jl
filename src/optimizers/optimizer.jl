@@ -133,7 +133,8 @@ struct Optimizer{T,
     HT <: Hessian{T},
     OCT <: Union{OptimizerCache, NamedTuple},
     LST <: Linesearch,
-    RT <: AbstractRetraction} <: AbstractSolver
+    RT <: AbstractRetraction,
+    OT} <: AbstractSolver
     algorithm::ALG
     problem::OBJ
     gradient::GT
@@ -143,31 +144,35 @@ struct Optimizer{T,
     linesearch::LST
     retraction::RT
     step_ceiling::T
+    observer::OT
 
     # Everything positional, and in particular the `Options` already built. See the note on Julia 1.12
     # below `Optimizer(x, F)`.
     function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T},
             hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod,
             config::Options{T}, gradient::Gradient{T}, retraction::AbstractRetraction,
-            step_ceiling::Real = DEFAULT_STEP_CEILING) where {T}
-        ls_problem = linesearch_problem(problem, gradient, cache, retraction)
+            step_ceiling::Real = DEFAULT_STEP_CEILING,
+            observer = NoStepObserver()) where {T}
+        observed_gradient = _observed_gradient(gradient, observer)
+        ls_problem = linesearch_problem(problem, observed_gradient, cache, retraction, observer)
         ls = Linesearch(ls_problem, linesearch)
-        new{T, typeof(algorithm), typeof(problem), typeof(gradient),
-            typeof(hessian), typeof(cache), typeof(ls), typeof(retraction)}(
-            algorithm, problem, gradient, hessian, config,
-            cache, ls, retraction, T(step_ceiling))
+        new{T, typeof(algorithm), typeof(problem), typeof(observed_gradient),
+            typeof(hessian), typeof(cache), typeof(ls), typeof(retraction), typeof(observer)}(
+            algorithm, problem, observed_gradient, hessian, config,
+            cache, ls, retraction, T(step_ceiling), observer)
     end
 end
 
 function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T},
         hessian::Hessian{T}, cache::OptimizerCache, linesearch::LinesearchMethod;
         gradient = default_gradient(problem, cache.x), retraction = Cayley(),
-        step_ceiling = DEFAULT_STEP_CEILING, options_kwargs...) where {T}
+        step_ceiling = DEFAULT_STEP_CEILING, observer = NoStepObserver(),
+        options_kwargs...) where {T}
     # `_riemannian_gradient` here as in the two methods below, so that every route into the inner
     # constructor projects; see the note there.
     Optimizer(
         algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...),
-        _riemannian_gradient(gradient, cache.x), retraction, step_ceiling)
+        _riemannian_gradient(gradient, cache.x), retraction, step_ceiling, observer)
 end
 
 """
@@ -208,31 +213,31 @@ Takes every argument positionally on purpose; see the note on Julia 1.12 below
 function _optimizer(
         x::OptimizerSolution{T}, problem::OptimizerProblem{T}, algorithm::OptimizerMethod,
         linesearch::LinesearchMethod, gradient::Gradient{T}, retraction::AbstractRetraction,
-        config::Options{T}, step_ceiling::Real) where {T}
+    config::Options{T}, step_ceiling::Real, observer) where {T}
     # translate to the correct type if we use the momentum method
     algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) :
                 algorithm
     cache = OptimizerCache(algorithm, x)
     hes = Hessian(algorithm, problem, x)
     Optimizer(algorithm, problem, hes, cache, linesearch,
-        config, gradient, retraction, step_ceiling)
+        config, gradient, retraction, step_ceiling, observer)
 end
 
 function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod = BFGS(),
         linesearch::LinesearchMethod = default_linesearch(T, algorithm),
         gradient::Union{Gradient, Nothing} = nothing, retraction::AbstractRetraction = Cayley(),
-        step_ceiling = DEFAULT_STEP_CEILING, options_kwargs...) where {
+        step_ceiling = DEFAULT_STEP_CEILING, observer = NoStepObserver(), options_kwargs...) where {
         T, VT <: OptimizerSolution{T}}
     # `_riemannian_gradient` on the caller's gradient too, and not only on the default: a parameter
     # set's leaves are projected one at a time, and a `SimpleSolvers` gradient built for the flat
     # vector has no method that reaches them. It is the identity on everything else.
     G = _riemannian_gradient(isnothing(gradient) ? default_gradient(problem, x) : gradient, x)
     _optimizer(x, problem, algorithm, linesearch, G, retraction,
-        Options(T; options_kwargs...), step_ceiling)
+        Options(T; options_kwargs...), step_ceiling, observer)
 end
 
 @doc raw"""
-    Optimizer(x, F; ∇F!, mode, algorithm, linesearch, retraction, options_kwargs...)
+    Optimizer(x, F; ∇F!, mode, algorithm, linesearch, retraction, observer, options_kwargs...)
 
 Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
 
@@ -265,7 +270,7 @@ Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
 function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = :autodiff,
         algorithm::OptimizerMethod = BFGS(), linesearch::Union{LinesearchMethod, Nothing} = nothing,
         retraction::AbstractRetraction = Cayley(), step_ceiling = DEFAULT_STEP_CEILING,
-        options_kwargs...) where {T, VT <: OptimizerSolution{T}}
+        observer = NoStepObserver(), options_kwargs...) where {T, VT <: OptimizerSolution{T}}
     # `T` comes from the `OptimizerSolution{T}` bound and not from `eltype(x)`: for a `NamedTuple` of
     # manifolds the latter is `StiefelManifold{Float64, Matrix{Float64}}` rather than `Float64`.
     _G = if (ismissing(∇F!) | isnothing(∇F!))
@@ -284,7 +289,7 @@ function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = :autodiff,
               OptimizerProblem(F, ∇F!, x)
     ls = isnothing(linesearch) ? default_linesearch(T, algorithm) : linesearch
     _optimizer(x, problem, algorithm, ls, G, retraction,
-        Options(T; options_kwargs...), step_ceiling)
+        Options(T; options_kwargs...), step_ceiling, observer)
 end
 
 config(opt::Optimizer) = opt.config
@@ -299,6 +304,7 @@ gradient(opt::Optimizer) = opt.gradient
 # The step ceiling in multiples of 2π, not the `αmax` derived from it: that one depends on `‖δ‖` and
 # so changes at every step. See `DEFAULT_STEP_CEILING` and `step_αmax`.
 step_ceiling(opt::Optimizer) = opt.step_ceiling
+step_observer(opt::Optimizer) = opt.observer
 
 check_gradient(opt::Optimizer) = check_gradient(gradient(problem(opt)))
 print_gradient(opt::Optimizer) = print_gradient(gradient(problem(opt)))
@@ -408,10 +414,14 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
 
     for _ in 1:config(opt).nan_max_iterations
-        update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
-        _copyto!(solution(cache(opt)), section(cache(opt)))
+        observe_optimizer_phase(step_observer(opt), :retraction_application) do
+            update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+            _copyto!(solution(cache(opt)), section(cache(opt)))
+        end
         # compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)), cache(opt), opt.retraction)
-        f = value(problem(opt), solution(cache(opt)))
+        f = observe_optimizer_phase(step_observer(opt), :objective) do
+            value(problem(opt), solution(cache(opt)))
+        end
         if isnan(f) || isinf(f)
             (opt.config.verbosity ≥ 2 &&
              @warn "NaN or Inf detected in optimizer. Reducing length of direction vector.")
@@ -462,8 +472,10 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
             @warn "the line search returned $(outcome(ls_status)), i.e. no step along the $(algorithm(opt)) direction decreased the merit; restarting the inverse Hessian and searching along the steepest-descent direction instead." maxlog = 1
         restart!(state)
         steepest_descent!(cache(opt))
-        update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
-        _copyto!(solution(cache(opt)), section(cache(opt)))
+        observe_optimizer_phase(step_observer(opt), :retraction_application) do
+            update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+            _copyto!(solution(cache(opt)), section(cache(opt)))
+        end
         # rebuilt rather than reused: `steepest_descent!` has just replaced the direction, so `‖δ‖`
         # and with it the ceiling are not what they were for the first search.
         ls_status = solve_with_status(linesearch(opt), one(T),
@@ -479,10 +491,11 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
     _rmul!(direction(cache(opt)), α)
 
     # compute new minimizer
-    update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
-    _copyto!(solution(cache(opt)), section(cache(opt)))
-
-    _copyto!(x, solution(cache(opt)))
+    observe_optimizer_phase(step_observer(opt), :retraction_application) do
+        update_section!(section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+        _copyto!(solution(cache(opt)), section(cache(opt)))
+        _copyto!(x, solution(cache(opt)))
+    end
 
     # `rg` is measured at the iterate this step *ended* at, not at the one it started from; see
     # `refresh_latest_gradient!` and the note on `convergence_measures`. Costs one gradient
