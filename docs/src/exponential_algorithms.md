@@ -130,7 +130,7 @@ being constructible:
 using GeometricOptimizers
 using GeometricOptimizers: geodesic, cayley, check, ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
 using GeometricOptimizers: lift_factors, 𝔄, _native_pade_polynomials, unit_matrix, opnorm₁
-using LinearAlgebra: norm
+using LinearAlgebra: norm, eigvals, opnorm
 using Markdown
 using Printf
 import Random
@@ -173,38 +173,213 @@ does not guarantee an accurate floating-point sum.
 ### Why the reduced argument is the hard case
 
 The reduction of the previous section bought a small matrix, and it did so at a price: ``X`` is a
-considerably worse argument for a power series than ``\bar{B}`` is. ``X``'s lower-left block is
-``\tfrac{1}{4}A^2 - B^TB``, quadratic in the entries of the lift, so its norm is quadratic in
-``\|\bar{B}\|``. Its *spectrum*, on the other hand, is not: the nonzero eigenvalues of ``X`` are the
-nonzero, purely imaginary eigenvalues of the skew matrix ``\bar{B}``, whose modulus is bounded by
-``\|\bar{B}\|``. Writing ``\rho`` for the **spectral radius**, ``\rho(X) := \max_i|\lambda_i(X)|``,
+considerably worse argument for a power series than ``\bar{B}`` is. Two facts about the pair say why,
+and both are short enough to derive here, because everything the rest of the page does about scaling
+follows from them.
+
+#### ``X`` and ``\bar{B}`` have the same nonzero eigenvalues
+
+This is the standard fact that ``MK`` and ``KM`` share their nonzero spectrum
+[horn2012matrix](@cite), applied to ``\bar{B} = B'(B'')^T`` and ``X = (B'')^TB'``. In one direction, if
+``\bar{B}v = \lambda{}v`` with ``\lambda\neq0``, put ``w := (B'')^Tv``; then
 
 ```math
-\|X\| \approx \tfrac{1}{4}\|\bar{B}\|^2
-\qquad\text{while}\qquad
-\rho(X) \approx \|\bar{B}\|.
+Xw = (B'')^TB'(B'')^Tv = (B'')^T\bar{B}v = \lambda\,(B'')^Tv = \lambda{}w,
 ```
 
-A matrix whose norm is quadratically larger than its spectral radius is **strongly non-normal**, and
-that gap is exactly what a truncated power series is bad at. The size of the terms is governed by the
-norm, while the size of the answer is governed by the spectrum, so the intermediate terms become
-enormous before cancelling down to a result of moderate size. Every digit of that cancellation is a
-digit lost:
+and ``w\neq0`` because ``B'w = \bar{B}v = \lambda{}v \neq 0``. In the other, if ``Xw = \lambda{}w``
+with ``\lambda\neq0``, put ``v := B'w``; then
+``\bar{B}v = B'(B'')^TB'w = B'Xw = \lambda{}v``, and ``v\neq0`` because
+``(B'')^Tv = Xw = \lambda{}w \neq 0``. The two constructions are mutually inverse, so the nonzero
+eigenvalues agree. Since ``X`` is ``2n\times{}2n`` and ``\bar{B}`` has rank at most ``2n``, that is
+the entire spectrum of both, apart from the zeros ``\bar{B}`` carries on its null space.
+
+That pins the spectral radius exactly. ``\bar{B}`` is real skew-symmetric and therefore **normal**,
+``\bar{B}^T\bar{B} = -\bar{B}^2 = \bar{B}\bar{B}^T``, so its singular values are the moduli of its
+eigenvalues and its spectral radius *is* its two-norm. Writing ``\rho`` for the **spectral radius**,
+``\rho(X) := \max_i|\lambda_i(X)|``, the paragraph above gives an equality rather than an estimate:
+
+```math
+\rho(X) = \rho(\bar{B}) = \|\bar{B}\|_2.
+```
+
+#### The norm of ``X`` is *quadratic* in the norm of ``\bar{B}``
+
+Multiplying out the two thin factors of [The notation this page uses](@ref) gives ``X`` in closed
+form:
+
+```math
+X = (B'')^TB'
+= \begin{bmatrix} \mathbb{I} & \mathbb{O} \\ \tfrac{1}{2}A & -B^T \end{bmatrix}
+  \begin{bmatrix} \tfrac{1}{2}A & \mathbb{I} \\ B & \mathbb{O} \end{bmatrix}
+= \begin{bmatrix}
+    \tfrac{1}{2}A & \mathbb{I} \\
+    \tfrac{1}{4}A^2 - B^TB & \tfrac{1}{2}A
+  \end{bmatrix}.
+```
+
+Every block is linear in the entries of the lift except the lower-left one, which is quadratic.
+Replacing ``(A, B)`` by ``(tA, tB)`` therefore multiplies ``\bar{B}`` by ``t`` and that block by
+``t^2``, so ``\|X\|`` grows like ``\|\bar{B}\|_2^2``. The constant depends on how the lift's weight is
+split between its two blocks, and the two pure cases bracket it:
+
+- with ``B = \mathbb{O}`` the block is ``\tfrac{1}{4}A^2`` and ``\|\bar{B}\|_2 = \|A\|_2``, so
+  ``\|X\|_2 \to \tfrac{1}{4}\|\bar{B}\|_2^2``;
+- with ``A = \mathbb{O}`` — which is every [`GrassmannLieAlgHorMatrix`](@ref) — it is ``-B^TB`` and
+  ``\|\bar{B}\|_2 = \|B\|_2``, so ``\|X\|_2 \to \|\bar{B}\|_2^2``.
+
+A lift with a full ``B`` block sits at the top of that range, ``B`` being ``(N-n)\times{}n`` against
+``A``'s ``n\times{}n``. Both claims are cheap to check, so the sweep checks them — ``\rho(X)`` against
+``\|\bar{B}\|_2`` column by column, the eigenvalues themselves against each other, and the quadratic
+ratio:
+
+```@example retractions
+# The 2n eigenvalues of B̄ of largest modulus, in the same order as `eigvals(X)`: the rest are the
+# zeros on its null space.
+byᵢₘ(λs) = sort(λs, by = λ -> (imag(λ), real(λ)))
+top(λs, k) = byᵢₘ(λs[partialsortperm(abs.(λs), 1:k, rev = true)])
+
+rows = map(lifts) do B
+    B′, B′′ = lift_factors(B)
+    X = B′′' * B′
+    λX = byᵢₘ(eigvals(X))
+    λB = top(eigvals(Matrix(B)), length(λX))
+    nrm = opnorm(Matrix(B), 2)
+    [fixed(nrm), fixed(maximum(abs, λX)), sci(maximum(abs, λX - λB)),
+     sci(opnorm₁(X)), fixed(opnorm(X, 2) / nrm^2)]
+end
+
+table(["‖B̄‖₂", "ρ(X)", "‖λ(X) − λ(B̄)‖∞", "‖X‖₁", "‖X‖₂/‖B̄‖₂²"], rows)
+```
+
+The first two columns are the same number to every digit printed — the equality above — and the third
+says the whole spectrum agrees and not just its largest modulus. The last column is the quadratic
+constant, and from the second row on it sits at the ``B``-dominant end of ``[\tfrac{1}{4}, 1]``, as it
+should for a lift whose ``B`` block is the larger one. The first row is the one place the asymptotic
+statement does not apply: ``X`` carries an identity block, so ``\|X\| \geq 1`` however small the lift
+is, and a quadratic in ``\|\bar{B}\|_2`` cannot describe a lift of norm ``0.44``. That regime is
+harmless — it is the regime in which the series needs no help at all.
+
+#### Why that combination is bad for a power series
+
+The two facts together are the difficulty. ``X`` carries the spectrum of a normal matrix while its
+norm is the *square* of that spectrum's radius, so
+
+```math
+\frac{\rho(X)}{\|X\|_2} \approx \frac{1}{\|\bar{B}\|_2} \longrightarrow 0
+\qquad\text{as}\qquad
+\|\bar{B}\|_2 \to \infty:
+```
+
+the reduction takes a normal matrix and returns one that is as far from normal as its size allows. That
+is measurable rather than rhetorical. Henrici's **departure from normality**
+[henrici1962bounds](@cite),
+
+```math
+\operatorname{dep}_F(M) := \left(\|M\|_F^2 - \sum_i|\lambda_i(M)|^2\right)^{1/2},
+```
+
+which vanishes exactly on the normal matrices, is available here in closed form: the eigenvalues of
+``X`` are those of ``\bar{B}``, and ``\bar{B}`` is normal, so
+``\sum_i|\lambda_i(X)|^2 = \|\bar{B}\|_F^2`` and
+
+```math
+\operatorname{dep}_F(X)^2 = \|X\|_F^2 - \|\bar{B}\|_F^2.
+```
+
+Both readings of that quantity, and the fraction of ``\|X\|_F`` it accounts for — every norm in this
+table is the Frobenius norm, which is what `norm` returns:
+
+```@example retractions
+rows = map(lifts) do B
+    B′, B′′ = lift_factors(B)
+    X = B′′' * B′
+    dep = sqrt(norm(X)^2 - sum(abs2, eigvals(X)))     # the definition
+    dep_lift = sqrt(norm(X)^2 - norm(Matrix(B))^2)    # the closed form above
+    [fixed(norm(Matrix(B))), sci(dep), sci(dep_lift), fixed(dep / norm(X))]
+end
+
+table(["‖B̄‖", "dep(X)", "√(‖X‖² − ‖B̄‖²)", "dep(X)/‖X‖"], rows)
+```
+
+The last column tends to one: asymptotically *all* of ``X`` is its departure from normality. Such a
+matrix is informally called "strongly non-normal", and that is the sense in which this page and the
+docstrings use the phrase. The label matters less than its consequence, which is the subject of
+[trefethen2005spectra](@cite): for a non-normal matrix the transient behaviour of powers and of the
+exponential is governed by the norm while the asymptotics are governed by the spectrum, and the gap
+between the two can be arbitrarily large.
+
+A truncated power series is precisely what that gap breaks. The kernel forms the partial sums
+
+```math
+S_m := \sum_{k=1}^{m}\frac{X^{k-1}}{k!},
+\qquad m = 1, 2, \ldots, M,
+```
+
+and returns ``S_M``, where ``M`` is the first index at which a term falls below `eps`. The individual
+terms are sized by ``\|X\|``, while the limit ``\mathfrak{A}(X)`` is of moderate size because it is
+sized by the spectrum. The sequence ``S_1, S_2, \ldots, S_M`` therefore *rises to a peak* and cancels
+back down to its limit. Rounding error is committed at the scale of the largest partial sum and
+survives into an answer of size ``\|\mathfrak{A}(X)\|``, so the decimal digits lost to that
+cancellation are about
 
 ```math
 \text{digits lost} \approx \log_{10}
-\frac{\max_m\left\|\sum_{k=1}^{m}X^{k-1}/k!\right\|}{\|\mathfrak{A}(X)\|}.
+\frac{\max_{1\leq m\leq M}\|S_m\|}{\|\mathfrak{A}(X)\|}.
 ```
 
-At ``\|\bar{B}\| \approx 79`` the reduced matrix has ``\|X\|_1 \approx 2.7\cdot10^3`` against
-``\rho(X) \approx 51``. The partial sums peak at ``5\cdot10^{20}`` where ``\|\mathfrak{A}(X)\|`` is
-``0.99``, so that ratio is ``5\cdot10^{20}``: **the summation loses about 21 decimal digits where
-`Float64` has 16.** There is nothing left, and the computed ``\mathfrak{A}(X)`` comes out with a
-relative error of ``1.5\cdot10^{5}`` — not a lost digit or two, but no correct digits at all. The 168
-terms it takes before one falls below `eps` are 168 chances to accumulate that loss, and the
-termination test cannot detect it: a *term* below `eps` bounds the truncation error, and what has gone
-wrong is the rounding error, which is of size ``\varepsilon\cdot5\cdot10^{20}`` and not
-``\varepsilon``.
+The maximum is over ``m``: it is the largest of the ``M`` partial sums the summation actually forms —
+a peak along a finite sequence, not a limit. The sequence ``S_m`` converges, and the ratio measures how
+far above its own limit it travels on the way. Where the norm and the spectral radius are comparable —
+a normal argument, or any small one — the terms decrease from the first, the largest partial sum is
+``S_M`` itself, and the ratio is one: nothing cancels and nothing is lost. The denominator is the
+*true* ``\mathfrak{A}(X)``, taken from [`AugmentedPade`](@ref), rather than the computed ``S_M``, which
+is the quantity under suspicion.
+
+Summing the series exactly as [`𝔄`](@ref) does — the same recurrence, the same termination test — and
+recording the peak on the way:
+
+```@example retractions
+"""
+The peak of the partial sums against the value they converge to. The recurrence divides before it
+multiplies, as the kernel's does, so no *term* overflows where the sum itself does not.
+"""
+function cancellation(X)
+    term = unit_matrix(X)               # k = 1, i.e. X⁰/1!
+    S = copy(term)
+    peak = norm(S)
+    k = 1
+    while norm(term) > eps(eltype(X))
+        k += 1
+        term = term * X / k             # Xᵏ⁻¹/k!
+        S = S + term
+        peak = max(peak, norm(S))
+    end
+    (; terms = k, peak = peak, computed = norm(S))
+end
+
+rows = map(lifts) do B
+    B′, B′′ = lift_factors(B)
+    X = B′′' * B′
+    c = cancellation(X)
+    reference = 𝔄(X, AugmentedPade())
+    [fixed(norm(Matrix(B))), string(c.terms), sci(c.peak), fixed(norm(reference)),
+     fixed(log10(c.peak / norm(reference))),
+     sci(norm(𝔄(X, TaylorSeries()) - reference) / norm(reference))]
+end
+
+table(["‖B̄‖", "terms", "peak ‖Sₘ‖", "‖𝔄(X)‖", "digits lost", "relative error"], rows)
+```
+
+The estimate and the measurement track each other: at the fourth lift about eight and a half digits
+are predicted lost and the computed series is wrong in the eighth, while by the fifth the predicted loss
+passes the sixteen digits `Float64` has and the relative error is above one — no correct digits at all,
+rather than a lost digit or two. The number of terms is the number of chances to accumulate that loss,
+and it grows with the lift. The termination test cannot see any of it: a *term* below `eps` bounds the
+**truncation** error, and what has gone wrong is the **rounding** error, which is of size
+``\varepsilon\cdot\max_m\|S_m\|`` where the test is calibrated for
+``\varepsilon\cdot\|\mathfrak{A}(X)\|``. That the two coincide at a small argument is the entire reason
+the kernel is usable there and nowhere else.
 
 That the direct series is not a method for the matrix exponential has been known since
 [moler1978nineteen](@cite) — restated with twenty-five more years of evidence in
@@ -212,9 +387,9 @@ That the direct series is not a method for the matrix exponential has been known
 that made the problem cheap also made its argument *worse* than the matrix one started with, so this
 package meets the failure earlier than a dense implementation would.
 
-How badly it goes is worth measuring rather than asserting. `check(geodesic(B, TaylorSeries()))`,
-i.e. ``\|Y^TY - \mathbb{I}\|`` of the retracted point, over a random `StiefelLieAlgHorMatrix(20, 3)`
-scaled up:
+What that forward error does to the retraction is the number an optimizer actually cares about.
+`check(geodesic(B, TaylorSeries()))`, i.e. ``\|Y^TY - \mathbb{I}\|`` of the retracted point, over the
+same sweep:
 
 ```@example retractions
 table(["‖B̄‖", "`check`"],
@@ -307,14 +482,24 @@ applying it ``s`` times lands on ``W_0 = \mathfrak{A}(X)``, which is what was wa
 Scaling and modified squaring is a *framework*: it says nothing about how ``W_s`` is obtained, only
 how to get from ``W_s`` to ``W_0``. Filling in a kernel gives an algorithm, and this package has two:
 
-| | kernel for ``W_s`` | recovery | ``\theta`` |
-|---|---|---|---|
-| [`ScaledSquaring`](@ref) | the Taylor series of [1. Direct Taylor series](@ref) | ``W\leftarrow2W+WXW``, ``s`` times | a preference, any positive value |
-| [`NativePade`](@ref) | the degree-6 Padé kernel of [3. Padé approximation](@ref) | ``W\leftarrow2W+WXW``, ``s`` times | a ceiling, ``\theta\leq1/2`` |
+| | kernel for ``W_s`` | scaling | recovery | admissible ``\theta`` |
+|---|---|---|---|---|
+| [`ScaledSquaring`](@ref) | the Taylor series of [1. Direct Taylor series](@ref) | ``s = \max(0, \lceil\log_2(\|X\|_1/\theta)\rceil)`` | ``W\leftarrow2W+WXW``, ``s`` times | any positive value |
+| [`NativePade`](@ref) | the degree-6 Padé kernel of [3. Padé approximation](@ref) | ``s = \max(0, \lceil\log_2(\|X\|_1/\theta)\rceil)`` | ``W\leftarrow2W+WXW``, ``s`` times | ``0 < \theta \leq 1/2`` |
 
-They differ in one column. In particular **[`NativePade`](@ref) scales and squares too**, with the
-same rule for ``s`` and the same recurrence; the algorithm names suggest a contrast that does not
-exist.
+They differ in one column — the kernel. In particular **[`NativePade`](@ref) scales and squares too**,
+with the same rule for ``s`` and the same recurrence; the algorithm names suggest a contrast that does
+not exist.
+
+``\theta`` is also **the same quantity in both**, and means the same thing: the ceiling the scaled
+argument is brought below, entering each algorithm through the one formula in the scaling column and
+nowhere else. Only the *admissible range* differs, and it does so because of the kernel rather than
+because of ``\theta``: the Taylor series sums until its terms vanish, so it copes with whatever it is
+handed, whereas the Padé kernel does a fixed number of steps that were sized for
+``\|Y\|_1\leq1/2`` and is inaccurate above it. Both constructors default to `0.5`, so the same
+``\theta`` and the same ``s`` are what the comparisons on this page hold fixed; see
+[What a large ``\theta`` costs `NativePade`](@ref native-pade-large-theta) for the measurement behind
+the restriction.
 
 The names are a historical record rather than a taxonomy, and they are worth reading carefully because
 of what they do *not* offer. `ScaledSquaring` means scaling with a Taylor kernel and `NativePade` means
@@ -325,11 +510,32 @@ default — is the natural shape for this code and is
 [#63](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/63), along with the question of which
 kernel is the better choice, which this page does not settle.
 
-What scaling buys the Taylor kernel is exactly what [1. Direct Taylor series](@ref) measured. The
-series is summed only where ``\|X/2^s\|_1\leq\theta``. There the terms decrease monotonically from the
-first one, so the cancellation ratio of that section is of order one rather than ``5\cdot10^{20}``,
-and the sum converges in a handful of terms rather than 168. In this way the framework makes an
-otherwise unusable kernel usable.
+What scaling buys the Taylor kernel is exactly what [1. Direct Taylor series](@ref) measured, and the
+same `cancellation` function measures it — this time on ``X/2^s``, which is the argument the kernel is
+actually handed:
+
+```@example retractions
+θ = 0.5   # the default of both algorithms
+
+rows = map(lifts) do B
+    B′, B′′ = lift_factors(B)
+    X = B′′' * B′
+    s = max(0, ceil(Int, log2(opnorm₁(X) / θ)))
+    c = cancellation(X / 2^s)
+    reference = 𝔄(X, AugmentedPade())
+    [fixed(norm(Matrix(B))), string(s), fixed(opnorm₁(X / 2^s)), string(c.terms),
+     fixed(c.peak / c.computed),
+     sci(norm(𝔄(X, ScaledSquaring()) - reference) / norm(reference))]
+end
+
+table(["‖B̄‖", "s", "‖X/2ˢ‖₁", "terms", "cancellation ratio", "relative error"], rows)
+```
+
+Every row is summed below ``\theta``, where the terms decrease from the first one: the cancellation
+ratio is one to four decimals instead of the ``10^{20}`` of the unscaled table, six to eleven terms
+suffice instead of hundreds, and the relative error of the whole algorithm stays at round-off across a
+sweep on which the bare kernel loses every digit it has. In this way the framework makes an otherwise
+unusable kernel usable.
 
 ### The complete `ScaledSquaring` algorithm
 
@@ -393,10 +599,10 @@ reason in the note below.
 !!! note "The halving count is loose"
     `s` is chosen from a **norm**, ``s = \lceil\log_2(\|X\|_1/\theta)\rceil``, because that is the
     quantity available without an eigendecomposition. What actually limits the kernel is the
-    *spectrum*: as [Why the reduced argument is the hard case](@ref) sets out,
-    ``\|X\|_1 \approx \|\bar{B}\|^2/4`` where ``\rho(X) \approx \|\bar{B}\|``, so this rule takes
-    ``s \approx 2\log_2\|\bar{B}\|`` halvings where ``\log_2\|\bar{B}\|`` would suffice — about twice
-    as many as necessary. By the note above, those extra steps cost both time and a factor of
+    *spectrum*: as [Why the reduced argument is the hard case](@ref) derives, ``\|X\|`` is quadratic
+    in ``\|\bar{B}\|_2`` where ``\rho(X) = \|\bar{B}\|_2`` exactly, so this rule takes
+    ``s \approx 2\log_2\|\bar{B}\|_2`` halvings where ``\log_2\|\bar{B}\|_2`` would suffice — about
+    twice as many as necessary. By the note above, those extra steps cost both time and a factor of
     ``2^{s}`` in amplified round-off.
 
     Choosing a scaling parameter from a norm that overestimates what the spectrum requires is the same
@@ -405,8 +611,10 @@ reason in the note below.
     ``\|X^k\|^{1/k}``, which approach ``\rho(X)`` — would apply here too. It is not the same
     phenomenon, though: their analysis is a backward-error statement about ``\exp`` on a general
     matrix, whereas the gap here is a structural property of the ``2n\times{}2n`` reduction, present
-    at every lift and quantified exactly by ``\|X\| \approx \|\bar{B}\|^2/4`` against
-    ``\rho(X) \approx \|\bar{B}\|``.
+    at every lift and quantified by the two derivations of
+    [Why the reduced argument is the hard case](@ref): ``\|X\|_2`` between
+    ``\tfrac{1}{4}\|\bar{B}\|_2^2`` and ``\|\bar{B}\|_2^2`` against a spectral radius of exactly
+    ``\|\bar{B}\|_2``.
 
     The rule is left alone because a tighter one needs the spectral radius, and an eigenvalue
     computation would forfeit exactly the freedom from dense LAPACK that makes this the default
@@ -883,13 +1091,15 @@ ever asked for ``\|Y\|_1 \leq \theta``, where both failure modes are absent.
 
 ### [What a large ``\theta`` costs `NativePade`](@id native-pade-large-theta)
 
-``\theta`` means something different in the two algorithms, and the difference is the reason
-`NativePade(θ)` **rejects** ``\theta > 1/2`` where `ScaledSquaring(θ)` accepts any positive value.
-`ScaledSquaring` sums its series until the terms vanish, so a larger ``\theta`` only asks it to sum
-more terms; [Sensitivity to the threshold `θ`](@ref) shows what that costs, which is almost nothing
-over a 32-fold range. `NativePade` does a *fixed* five Newton–Schulz steps against a fixed rational
-approximant, and both were sized for ``\|Y\|_1 \leq 1/2``. Above that, the iteration count is simply
-too small, and no quantity the algorithm computes says so.
+``\theta`` is the same quantity in the two algorithms — the same ceiling on ``\|X/2^s\|_1``, reached
+through the same formula for ``s``, as [The framework, and the two algorithms in it](@ref) sets out.
+What differs is how much of it the kernel tolerates, and that is the reason `NativePade(θ)`
+**rejects** ``\theta > 1/2`` where `ScaledSquaring(θ)` accepts any positive value. `ScaledSquaring`
+sums its series until the terms vanish, so a larger ``\theta`` only asks it to sum more terms;
+[Sensitivity to the threshold `θ`](@ref) shows what that costs, which is almost nothing over a 32-fold
+range. `NativePade` does a *fixed* five Newton–Schulz steps against a fixed rational approximant, and
+both were sized for ``\|Y\|_1 \leq 1/2``. Above that, the iteration count is simply too small, and no
+quantity the algorithm computes says so.
 
 Worst relative error of the kernel against [`AugmentedPade`](@ref) over 400 random ``6\times6``
 arguments of one-norm exactly ``\theta`` — that is, the kernel asked for exactly what a threshold of
@@ -916,8 +1126,10 @@ transition happens — full accuracy up to ``\theta = 1``, several digits gone b
 of [Applying the denominator without a matrix solve](@ref) quantifies.
 
 Lowering ``\theta`` below ``1/2`` is safe and only adds modified-squaring steps. Raising it is not
-available, and that asymmetry is deliberate: the two thresholds are not interchangeable, even though
-both constructors spell the argument `θ`.
+available, and that asymmetry is deliberate. It is a restriction on the argument, not a redefinition of
+it: a `NativePade(θ)` and a `ScaledSquaring(θ)` built with the same ``\theta`` scale identically and
+hand their kernels the same matrix, which is why every comparison on this page can hold ``\theta``
+fixed at the shared default.
 
 **Advantages.** It never forms a matrix larger than ``2n\times{}2n`` and uses only reductions, matrix
 products and a kernel-written identity, so it is the algorithm [`ScaledSquaring`](@ref) can be checked
@@ -943,13 +1155,13 @@ retracted point rather than the agreement with the exponential; both are in [`Fl
 !!! note "What justifies `θ = 1/2`, and what does not"
     Not a backward-error table. The ``\theta_m`` of [higham2005scaling, almohy2010new](@cite) are
     derived for ``\exp`` rather than for ``\mathfrak{A}``, and they bound a backward error in
-    ``\|X\|`` — the least informative norm available here, since
-    ``\|X\| \approx \|\bar{B}\|^2/4`` against a spectral radius of only
-    ``\approx\|\bar{B}\|``. What justifies the threshold is narrower, and is stated as such: the
-    Newton-Schulz residual bound above, the ``8\cdot10^{-19}`` kernel truncation error, and the
-    measured forward error over the norm sweep and over the 400 random arguments tabulated. A
-    backward-error criterion for ``\mathfrak{A}`` on a strongly non-normal argument is a genuine gap,
-    and nothing on this page closes it.
+    ``\|X\|`` — the least informative norm available here, since ``\|X\|`` is quadratic in
+    ``\|\bar{B}\|_2`` against a spectral radius of exactly ``\|\bar{B}\|_2``. What justifies the
+    threshold is narrower, and is stated as such: the Newton-Schulz residual bound above, the
+    ``8\cdot10^{-19}`` kernel truncation error, and the measured forward error over the norm sweep and
+    over the 400 random arguments tabulated. A backward-error criterion for ``\mathfrak{A}`` on an
+    argument this far from normal — see [Why the reduced argument is the hard case](@ref) for how far
+    that is — is a genuine gap, and nothing on this page closes it.
 
 ## 4. `AugmentedPade`
 

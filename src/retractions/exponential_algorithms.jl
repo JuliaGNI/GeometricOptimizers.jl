@@ -135,11 +135,15 @@ diagonal write is a scalar-indexing hazard, and the norm from
 those matrix operations.
 
 !!! note "The argument is worse-conditioned than the lift"
-    ``X``'s lower-left block is ``\frac{1}{4}A^2 - B^TB``, so ``\|X\| \approx \|\bar{B}\|^2/4`` while
-    its spectral radius is only ``\approx\|\bar{B}\|`` — the eigenvalues of ``X`` are the nonzero
-    (purely imaginary) eigenvalues of ``\bar{B}``. The factorisation is strongly non-normal, which is
-    why the unscaled series does worse here than it would on ``\bar{B}`` itself, and why `s` grows
-    like ``2\log_2\|\bar{B}\|`` rather than ``\log_2\|\bar{B}\|``.
+    ``X``'s lower-left block is ``\frac{1}{4}A^2 - B^TB``, quadratic where every other block is
+    linear, so ``\|X\|_2`` grows like ``\|\bar{B}\|_2^2`` — with a constant between ``1/4`` and ``1``
+    depending on which block of the lift dominates. Its spectral radius does not grow like that at
+    all: the eigenvalues of ``X`` are the nonzero (purely imaginary) eigenvalues of ``\bar{B}``, so
+    ``\rho(X) = \|\bar{B}\|_2`` exactly, ``\bar{B}`` being skew and hence normal. A matrix whose norm
+    is the square of its spectral radius is far from normal, which is why the unscaled series does
+    worse here than it would on ``\bar{B}`` itself, and why `s` grows like ``2\log_2\|\bar{B}\|_2``
+    rather than ``\log_2\|\bar{B}\|_2``. Both statements are derived and measured in
+    [Why the reduced argument is the hard case](@ref).
 
 See [`AbstractExponentialAlgorithm`](@ref) for the alternatives.
 """
@@ -277,12 +281,12 @@ and low-rank modified squaring.
     ``\theta = 1/2`` is **not** taken from a backward-error table. The ``\theta_m`` of
     [higham2005scaling, almohy2010new](@cite) are derived for ``\exp`` rather than for
     ``\mathfrak{A}``, and they bound a backward error in ``\|X\|`` — which is the least informative
-    norm available here, since ``X``'s lower-left block gives ``\|X\| \approx \|\bar{B}\|^2/4``
-    against a spectral radius of only ``\approx\|\bar{B}\|`` (see the note under
+    norm available here, since ``X``'s lower-left block makes ``\|X\|`` quadratic in
+    ``\|\bar{B}\|_2`` against a spectral radius of exactly ``\|\bar{B}\|_2`` (see the note under
     [`ScaledSquaring`](@ref)). What justifies the threshold is narrower, and is stated as such: the
     Newton--Schulz residual bound above, plus the measured forward error over the norm sweep and over
-    the 400 random arguments tabulated. A backward-error criterion for ``\mathfrak{A}`` on a strongly
-    non-normal argument is not settled here.
+    the 400 random arguments tabulated. A backward-error criterion for ``\mathfrak{A}`` on an argument
+    that far from normal is not settled here.
 
 Like [`ScaledSquaring`](@ref), this uses package-defined identities and norms, reductions, and matrix
 products, and avoids scalar indexing in package code. Accelerator execution depends on the backend's
@@ -403,13 +407,14 @@ Sum the series for ``\mathfrak{A}`` directly, without scaling. **This is not a u
 It is the behaviour of every version of this package up to 0.2.0, retained only so that the regression
 is reproducible from the test suite and so the working algorithms have a baseline to be compared
 against. The series is summed on ``X = (B'')^TB'``, formed from the factors
-[`lift_factors`](@ref) returns, and that reduced matrix is strongly non-normal: its norm is
-``\approx\|\bar{B}\|^2/4`` where its spectral radius is only ``\approx\|\bar{B}\|``. On such an
-argument the terms cancel — at ``\|\bar{B}\| \approx 79`` the intermediate partial sums exceed the
-result by some twenty orders of magnitude, reaching ``5\cdot10^{20}`` where the answer is of order one,
-and the summation takes 168 terms to reach `eps` where the scaled series takes a handful — so stopping
-when a *term* falls below `eps` leaves a relative error of
-``\varepsilon\|\mathfrak{A}(X)\|`` rather than ``\varepsilon``.
+[`lift_factors`](@ref) returns, and that reduced matrix is far from normal: its norm is quadratic in
+``\|\bar{B}\|_2`` where its spectral radius is exactly ``\|\bar{B}\|_2``. On such an argument the terms
+cancel — at ``\|\bar{B}\| \approx 79`` the intermediate partial sums exceed the result by some twenty
+orders of magnitude, reaching ``5\cdot10^{20}`` where the answer is of order one, and the summation
+takes 169 terms to reach `eps` where the scaled series takes a handful — so stopping when a *term*
+falls below `eps` leaves an error of size ``\varepsilon\max_m\|S_m\|`` rather than
+``\varepsilon\|\mathfrak{A}(X)\|``, where ``S_m`` are the partial sums. [Why the reduced argument is the hard case](@ref) derives both
+statements about ``X`` and computes every number in this paragraph.
 `check(geodesic(B, TaylorSeries()))`, on a random `StiefelLieAlgHorMatrix(20, 3)` scaled up:
 
 | ``\|\bar{B}\|`` | 0.66 | 5.8 | 17.8 | 36.5 | 78.8 | 160 | 361 | 767 |
