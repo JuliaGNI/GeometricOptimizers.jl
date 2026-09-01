@@ -9,7 +9,7 @@ problem rather than a formula one writes down. Since 0.2.0 the retraction theref
 *algorithm* saying how that exponential is evaluated, and there are five of them. They compute the
 same map. They differ in accuracy at a large step, in cost, and in which backends they run on.
 
-This page is that numerical problem: why the exponential needs an algorithm at all, the two
+This page addresses that numerical problem: why the exponential needs an algorithm at all, the two
 independent choices any such algorithm makes, what each of the five does, what they measure, and
 which one to reach for. The retractions themselves — what they are, and how [`Cayley`](@ref) and
 [`Geodesic`](@ref) differ as maps — are on the [Retractions](@ref) page, and the optimizer that uses
