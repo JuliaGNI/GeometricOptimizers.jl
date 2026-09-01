@@ -708,7 +708,7 @@ A conventional evaluation of this rational matrix function would solve
 q_6(Y)W=p_6(Y).
 ```
 
-!!! info "Newton--Schulz here is *not* the standard practice — LU is"
+!!! info "Newton-Schulz here is *not* the standard practice — LU is"
     Pairing a Padé denominator with a Newton–Schulz inverse is a choice specific to this package, and
     it should not be read as the textbook recipe. The Padé coefficients and the Newton–Schulz
     iteration are each entirely standard on their own — the coefficients from
@@ -783,7 +783,7 @@ performs four more, giving
 <0.257,
 ```
 
-so ``\|E_5\|_1 \leq 0.257^{32}<1.3\cdot10^{-19}``. This explains both the fixed five Newton--Schulz
+so ``\|E_5\|_1 \leq 0.257^{32}<1.3\cdot10^{-19}``. This explains both the fixed five Newton-Schulz
 steps and the constructor restriction ``0<\theta\leq 1/2``: together they make the solve-free inverse
 accurate to approximately `Float64` precision using matrix multiplication alone. It is also the same
 order as the ``8\cdot10^{-19}`` kernel truncation error derived above, so neither half of the accuracy
@@ -805,7 +805,7 @@ Given the reduced matrix ``X=(B'')^TB'``:
 
 1. Choose ``s=\max(0,\lceil\log_2(\|X\|_1/\theta)\rceil)`` and set ``\alpha=2^s``.
 2. Set ``Y=X/\alpha``, so ``\|Y\|_1\leq\theta\leq1/2``, and evaluate ``p_6(Y)`` and ``q_6(Y)``.
-3. Compute ``Z_5\approx q_6(Y)^{-1}`` with the five Newton--Schulz steps above.
+3. Compute ``Z_5\approx q_6(Y)^{-1}`` with the five Newton-Schulz steps above.
 4. Form ``W_s=Z_5p_6(Y)/\alpha``. The division by ``\alpha`` is required because
 
    ```math
@@ -946,7 +946,7 @@ retracted point rather than the agreement with the exponential; both are in [`Fl
     ``\|X\|`` — the least informative norm available here, since
     ``\|X\| \approx \|\bar{B}\|^2/4`` against a spectral radius of only
     ``\approx\|\bar{B}\|``. What justifies the threshold is narrower, and is stated as such: the
-    Newton--Schulz residual bound above, the ``8\cdot10^{-19}`` kernel truncation error, and the
+    Newton-Schulz residual bound above, the ``8\cdot10^{-19}`` kernel truncation error, and the
     measured forward error over the norm sweep and over the 400 random arguments tabulated. A
     backward-error criterion for ``\mathfrak{A}`` on a strongly non-normal argument is a genuine gap,
     and nothing on this page closes it.
