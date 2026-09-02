@@ -140,17 +140,24 @@ end
 
 [`step_observer`](@ref) reads back the observer installed on an optimizer.
 
-## Example: the events of a single step
+## Example: the events of one iteration
 
-The smallest useful observer records what it is told. Printed with one level of indentation per open
-phase, the structure of a step becomes visible:
+Installing an [`EventLog`](@ref) is the whole setup. Printed with one level of indentation per open
+phase, the structure of an iteration becomes visible:
 
 ```@example observers
 using GeometricOptimizers
-using GeometricOptimizers: increase_iteration_number!, initialize_state!, solver_step!, update!
 
-function print_nested(events)
-    depth = 0
+loss(x) = sum(abs2, x)
+x = [1.0, -2.0]
+
+method = GradientMethod()
+recorder = EventLog()
+opt = Optimizer(x, loss; algorithm = method, max_iterations = 1, observer = recorder)
+
+solve!(x, OptimizerState(method, x), opt)
+
+function print_nested(events, depth = 0)
     for (phase, event) in events
         event === :exit && (depth -= 1)
         println("  "^depth, event === :enter ? "┌ " : "└ ", phase)
@@ -158,86 +165,64 @@ function print_nested(events)
     end
 end
 
-x = [1.0, -2.0]
-loss(x) = sum(abs2, x)
-
-recorder = EventLog()
-method = GradientMethod()
-opt = Optimizer(x, loss; algorithm = method, linesearch = Static(0.1),
-    observer = recorder)
-state = OptimizerState(method, x)
-initialize_state!(state)
-
-observe_optimizer_phase(recorder, :optimizer_state_direction) do
-    increase_iteration_number!(state)
-    solver_step!(x, state, opt)
-    update!(state, opt, x)
-end
-
 print_nested(recorder.events)
 ```
 
-Reading the trace: the first `:gradient` is the gradient at the current iterate, which the cache turns
-into a direction. The `:retraction_application`/`:objective` pair after it is the ``\mathrm{NaN}``
-guard building a trial point and checking that the objective there is finite. The next
-`:retraction_application` applies the accepted step. The second `:gradient` is the one taken *at the
-point the step ended at*, so that the convergence measures describe the iterate the step returns
-rather than the one it started from, and the last two pairs are
-`GeometricOptimizers.update!` recording the new objective value and advancing the state's
-section.
+Reading the trace from the top: the leading `:objective` is [`solve!`](@ref) evaluating the objective
+at the starting iterate. The first `:gradient` is the gradient the cache turns into a direction, and
+the `:retraction_application`/`:objective` pair after it is the ``\mathrm{NaN}`` guard, which builds a
+trial point and checks that the objective there is finite.
 
-The `Static(0.1)` line search takes no trials of its own. With a searching line search —
-`Backtracking`, the default — the same trace additionally contains one `:objective` per trial and the
-`:retraction_application` that built each trial point.
+The middle of the trace belongs to `Backtracking`, the default line search: one
+`:retraction_application` and one `:objective` for each trial step it takes, plus the pair in which a
+`:gradient` is *nested* — that is the slope ``\varphi'(\alpha)`` the search asks for once per step, and
+the nesting is what lets an exclusive timer charge the differentiation to `:gradient` rather than to
+the retraction. Passing `linesearch = Static(0.1)` removes all of it: a fixed step takes no trials.
+
+The last `:retraction_application` applies the accepted step, the `:gradient` after it is taken *at the
+point the step ended at* — so that the convergence measures describe the iterate the step returns
+rather than the one it started from — and the trailing `:objective` pairs are `solve!` evaluating the
+objective for the status and for the result it hands back.
 
 ## Example: exclusive time per phase
 
 [`PhaseTimer`](@ref) keeps a stack of open phases; opening a nested phase stops the clock on its
 parent and closing it starts the parent's clock again, so the accumulated times are mutually
-exclusive.
-
-No recorder implementation is needed in user code. Constructing the built-in timer and running it
-over the same step reports how often each phase was entered and how much time belongs to it alone:
+exclusive. No recorder implementation is needed in user code:
 
 ```@example observers
 y = [1.0, -2.0]
 timer = PhaseTimer()
-opt = Optimizer(y, loss; algorithm = GradientMethod(), linesearch = Static(0.1),
-    observer = timer)
-state = OptimizerState(GradientMethod(), y)
-initialize_state!(state)
+opt = Optimizer(y, loss; algorithm = method, max_iterations = 1, observer = timer)
 
-observe_optimizer_phase(timer, :optimizer_state_direction) do
-    increase_iteration_number!(state)
-    solver_step!(y, state, opt)
-    update!(state, opt, y)
-end
+solve!(y, OptimizerState(method, y), opt)
 
-for phase in sort(collect(keys(timer.calls)))
-    println(rpad(phase, 26), timer.calls[phase], " call(s)")
-end
+timer.calls
 ```
 
-The durations are deliberately not printed here — on a single step of a two-parameter problem they are
-dominated by the clock's own resolution, and the point of the example is the accounting rather than the
-numbers. They are available in `timer.exclusive`, in nanoseconds. What the accounting gives is the
-comparison the measurement was wanted for: the time in
+The accumulated times live in `timer.exclusive`, in nanoseconds. They are not printed here: on one
+iteration of a two-parameter problem they are dominated by the clock's own resolution, and the point
+of the example is the accounting rather than the numbers.
+
+What the accounting gives is the comparison the measurement was wanted for. The time in
 `:retraction_application` is the price of the geometry, the time in `:gradient` is the price of
-differentiation, `:objective` is the line search's own cost, and what is left in the outer
-`:optimizer_state_direction` is the optimizer's bookkeeping.
+differentiation, and `:objective` is the line search's own cost. Bracketing `solver_step!` and
+`update!` in an outer phase, as in the snippet above, adds the fourth: whatever is left in
+`:optimizer_state_direction` once the three inner phases have subtracted themselves is the
+optimizer's own bookkeeping.
 
 Two things are worth doing before believing such numbers, neither of which the package can do for the
-caller. Discard a warm-up step: Julia compiles on first call, and on a short run that compilation can
-exceed everything being measured. And on a device, synchronize before every timestamp — the marked
-constructor option above does this — or the intervals describe kernel launches rather than kernel
-execution.
+caller. Discard a warm-up iteration: Julia compiles on first call, and on a short run that compilation
+can exceed everything being measured. And on a device, synchronize before every timestamp —
+`PhaseTimer(synchronize=CUDA.synchronize)` does this — or the intervals describe kernel launches
+rather than kernel execution.
 
 ## What else observers are good for
 
-**Counting work rather than timing it.** The number of `:objective` pairs in a step is the number of
-trials the line search took, which is a property of the search and the problem and is often more
-informative than its duration. The same count over a whole run distinguishes a line search that
-accepts its first trial from one that backtracks repeatedly.
+**Counting work rather than timing it.** The `:objective` pairs a step emits are one per line-search
+trial plus the ``\mathrm{NaN}`` guard's, so their number is a property of the search and the problem
+and is often more informative than its duration. The count over a whole run distinguishes a line
+search that accepts its first trial from one that backtracks repeatedly.
 
 **Progress and logging.** An observer that prints, or updates a progress bar, on `:enter` of
 `:gradient` gives a per-step heartbeat for a long training run without the optimizer needing a
@@ -268,6 +253,9 @@ One boundary needs stating for a caller doing arithmetic on the totals:
   nested inside as a `:gradient` pair and is therefore subtracted from it by an exclusive timer. For a
   plain vector iterate there is no retraction differential and what remains under that label is an
   inner product. `Backtracking`, the default, asks for the slope once per step, at ``\alpha = 0``.
+  A consequence for `calls` rather than for `exclusive`: `:retraction_application` is entered twice
+  per slope request — once for the trial point and once for the slope itself — so its call count
+  exceeds the number of retractions actually applied by one per request.
 
 For a whole set of parameters, the observed gradient sits *inside* the
 [`RiemannianGradient`](@ref) wrapper. `:gradient` therefore covers the flat gradient and the
