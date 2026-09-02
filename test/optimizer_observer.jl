@@ -62,6 +62,30 @@ end
     @test any(==(anchor_events), (events[i:(i + 9)] for i in 1:(length(events) - 9)))
 end
 
+@testset "second-order methods observe their state update" begin
+    objective(x) = sum(abs2, x)
+    for method in (Newton(), BFGS(), DFP())
+        timer = PhaseTimer()
+        x = [0.9, -1.8]
+        optimizer = Optimizer(x, objective; algorithm = method,
+            linesearch = Static(0.05), max_iterations = 2, observer = timer)
+
+        solve!(x, OptimizerState(method, x), optimizer)
+
+        @test isempty(timer.open)
+        @test issubset(
+            (:gradient, :objective, :retraction_application), keys(timer.calls))
+    end
+end
+
+@testset "malformed phase events are rejected" begin
+    timer = PhaseTimer()
+    @test_throws ArgumentError timer(:gradient, :exit)
+    timer(:gradient, :enter)
+    @test_throws ArgumentError timer(:objective, :exit)
+    @test_throws ArgumentError timer(:gradient, :resume)
+end
+
 @testset "solve! observes every objective evaluation" begin
     for store_trace in (false, true)
         observer = EventLog()

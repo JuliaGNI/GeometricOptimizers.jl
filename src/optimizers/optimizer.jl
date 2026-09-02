@@ -637,6 +637,9 @@ end
 # put this somewhere else eventually!
 function update!(state::NewtonOptimizerState, opt::Optimizer, x::AbstractVector)
     update!(state, gradient(opt), x)
-    update_section!(state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
+    observe_optimizer_phase(step_observer(opt), :retraction_application) do
+        update_section!(
+            state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
+    end
     state
 end
