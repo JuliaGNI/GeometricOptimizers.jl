@@ -138,7 +138,7 @@ export Optimizer,
        HessianAutodiff,
        HessianBFGS,
        HessianDFP
-export NoStepObserver, observe_optimizer_phase, step_observer
+export EventLog, PhaseTimer, NoStepObserver, observe_optimizer_phase, step_observer
 
 import SimpleSolvers: solve!, solve
 # `Newton`, `BFGS` and `DFP` are the optimizer methods, and `BFGSState`/`DFPState` are the states

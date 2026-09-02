@@ -23,7 +23,8 @@ a manifold it is at least three:
    [`update_section!`](@ref) that re-bases the [`GlobalSection`](@ref), and the copy of the result
    back onto the parameters.
 
-To which the line search adds a fourth: an **objective** evaluation for every trial step it takes.
+To which a searching line search adds a fourth: an **objective** evaluation for every trial step it
+takes. [`Static`](@extref SimpleSolvers.Static) selects its fixed step without evaluating a trial.
 
 The question a user of a geometric optimizer asks about this is a comparison. Standard `Adam` needs
 only the first two of the three; the geometric version pays for the third as well. *How much* does it
@@ -36,19 +37,19 @@ A stopwatch around the step cannot answer it. One number per step is one number:
 fraction of a step was spent differentiating and which was spent retracting. And the split cannot be
 recovered from outside the package either, because the boundaries are not at the outside:
 
-* the retraction is applied **more than once per step** — once per iteration of the ``\mathrm{NaN}``
-  guard in `solver_step!`, once for the accepted step, once more if the line search rejects every
-  trial and the step is retried along the steepest-descent direction, and once again in
-  `GeometricOptimizers.update!` when the state's own section is advanced;
-* it is also applied **once per line-search trial**, inside [`GeometricOptimizers.trial_iterate!`](@ref), which is called
-  from the merit function the [line search](@ref "Linesearches for Optimizers") owns;
-* the objective is evaluated once per trial in the same place.
+* the step machinery applies the retraction in the ``\mathrm{NaN}`` guard, for the accepted step,
+  once more if a rejected search is retried along the steepest-descent direction, and when
+  `GeometricOptimizers.update!` advances the state's own section;
+* a **searching** line search additionally applies it once per trial, inside
+  [`GeometricOptimizers.trial_iterate!`](@ref), which is called from the merit function the
+  [line search](@ref "Linesearches for Optimizers") owns, and evaluates the objective in the same
+  place. `Static` performs neither of these trial operations.
 
 A caller holding only `solver_step!` and `update!` sees none of those boundaries. It can time the two
 calls, and that total is the sum of all four kinds of work, in a proportion that depends on how many
 trials the line search happened to take.
 
-## Why the package does not simply time itself
+## Why the optimizer does not time every step automatically
 
 The obvious alternative — have the optimizer measure its own phases and hand back a table — is worse,
 for three reasons.
@@ -63,10 +64,11 @@ Whoever is measuring has to decide when to synchronize.
 *The clock is the caller's choice.* `time_ns`, a monotonic wall clock, CUDA events, or a counter of
 calls rather than of seconds are all reasonable, and they are not interchangeable.
 
-*So is the bookkeeping.* Accumulating per phase, keeping per-step vectors, reporting medians rather
-than means, writing rows to a file — these are properties of an experiment, not of an optimizer.
+*So is the bookkeeping.* The package supplies a basic event log and exclusive timer, but choices such
+as keeping per-step vectors, reporting medians rather than means, or writing rows to a file remain
+properties of an experiment, not of an optimizer.
 
-## The fix: the package reports boundaries, the caller owns the clock
+## The fix: observed boundaries and ready-made recorders
 
 An **observer** is a callable the caller installs on an [`Optimizer`](@ref). The optimizer notifies it
 immediately before and immediately after each of the phases above:
@@ -75,14 +77,21 @@ immediately before and immediately after each of the phases above:
 observer(phase, event)
 ```
 
-`phase` names the work and `event` is `:enter` or `:exit`. That is the whole interface. The observer
-is told *when* a boundary is crossed and nothing else — no duration, no unit, no storage. A caller
-that wants seconds reads its own clock in the callback; a caller on a GPU synchronizes the device
-first; a caller that only wants to count calls never reads a clock at all.
+`phase` names the work and `event` is `:enter` or `:exit`. That is the whole callback interface. The
+observer is told *when* a boundary is crossed and nothing else. [`EventLog`](@ref) and
+[`PhaseTimer`](@ref) implement the common recording and timing cases; callers can still supply any
+callable with this interface when they need different storage or behavior.
 
 The default is [`NoStepObserver`](@ref), which does nothing, and for which the package calls the
 observed operation directly rather than through the notification path. Supplying no observer
 therefore costs nothing.[^1]
+
+`EventLog()` records every `(phase, event)` pair. `PhaseTimer()` counts calls and accumulates
+exclusive nanoseconds for every phase. Both accept `phases=:gradient` or an iterable such as
+`phases=(:gradient, :retraction_application)` to record less. A GPU caller can construct
+`PhaseTimer(synchronize=CUDA.synchronize)` so that every host timestamp follows a device
+synchronization; `clock` is configurable as well. These are conveniences rather than restrictions:
+a custom callable remains a valid observer.
 
 [^1]: Measured on this package's own default step, the allocation figures for `GradientMethod`, `MomentumMethod`, `Adam` and `BFGS` are identical with and without the observer machinery present, and specialization on [`NoStepObserver`](@ref) removes the notification calls entirely.
 
@@ -138,14 +147,7 @@ phase, the structure of a step becomes visible:
 
 ```@example observers
 using GeometricOptimizers
-using GeometricOptimizers: increase_iteration_number!, initialize_state!, solver_step!,
-                           update!
-
-mutable struct EventLog
-    events::Vector{Tuple{Symbol, Symbol}}
-end
-
-(recorder::EventLog)(phase, event) = (push!(recorder.events, (phase, event)); nothing)
+using GeometricOptimizers: increase_iteration_number!, initialize_state!, solver_step!, update!
 
 function print_nested(events)
     depth = 0
@@ -159,7 +161,7 @@ end
 x = [1.0, -2.0]
 loss(x) = sum(abs2, x)
 
-recorder = EventLog(Tuple{Symbol, Symbol}[])
+recorder = EventLog()
 method = GradientMethod()
 opt = Optimizer(x, loss; algorithm = method, linesearch = Static(0.1),
     observer = recorder)
@@ -190,42 +192,9 @@ The `Static(0.1)` line search takes no trials of its own. With a searching line 
 
 ## Example: exclusive time per phase
 
-This is the observer the decomposition asks for. It keeps a stack of open phases; opening a nested
-phase stops the clock on its parent and closing it starts the parent's clock again, so the
-accumulated times are mutually exclusive.
-
-```@example observers
-mutable struct PhaseTimer
-    open::Vector{Tuple{Symbol, UInt64}}     # phase, when it last (re)started
-    exclusive::Dict{Symbol, UInt64}         # accumulated nanoseconds, excluding nested phases
-    calls::Dict{Symbol, Int}
-end
-
-PhaseTimer() = PhaseTimer(Tuple{Symbol, UInt64}[], Dict{Symbol, UInt64}(),
-    Dict{Symbol, Int}())
-
-# Charge the innermost open phase for everything since it last started.
-function charge!(timer::PhaseTimer, t::UInt64)
-    isempty(timer.open) && return nothing
-    phase, since = timer.open[end]
-    timer.exclusive[phase] = get(timer.exclusive, phase, UInt64(0)) + (t - since)
-    nothing
-end
-
-function (timer::PhaseTimer)(phase::Symbol, event::Symbol)
-    t = time_ns()                     # a GPU caller synchronizes the device here
-    if event === :enter
-        charge!(timer, t)             # the enclosing phase stops being charged
-        timer.calls[phase] = get(timer.calls, phase, 0) + 1
-        push!(timer.open, (phase, time_ns()))
-    else
-        charge!(timer, t)
-        pop!(timer.open)
-        isempty(timer.open) || (timer.open[end] = (timer.open[end][1], time_ns()))
-    end
-    nothing
-end
-```
+[`PhaseTimer`](@ref) keeps a stack of open phases; opening a nested phase stops the clock on its
+parent and closing it starts the parent's clock again, so the accumulated times are mutually
+exclusive.
 
 Run over the same step, it reports how often each phase was entered and how much time belongs to it
 alone:
@@ -251,7 +220,8 @@ end
 
 The durations are deliberately not printed here — on a single step of a two-parameter problem they are
 dominated by the clock's own resolution, and the point of the example is the accounting rather than the
-numbers. What the accounting gives is the comparison the measurement was wanted for: the time in
+numbers. They are available in `timer.exclusive`, in nanoseconds. What the accounting gives is the
+comparison the measurement was wanted for: the time in
 `:retraction_application` is the price of the geometry, the time in `:gradient` is the price of
 differentiation, `:objective` is the line search's own cost, and what is left in the outer
 `:optimizer_state_direction` is the optimizer's bookkeeping.
@@ -259,7 +229,8 @@ differentiation, `:objective` is the line search's own cost, and what is left in
 Two things are worth doing before believing such numbers, neither of which the package can do for the
 caller. Discard a warm-up step: Julia compiles on first call, and on a short run that compilation can
 exceed everything being measured. And on a device, synchronize before every timestamp — the marked
-line above — or the intervals describe kernel launches rather than kernel execution.
+constructor option above does this — or the intervals describe kernel launches rather than kernel
+execution.
 
 ## What else observers are good for
 

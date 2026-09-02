@@ -55,7 +55,7 @@ end
         # the optimizer types a caller dispatches on
         :OptimizerMethod, :OptimizerState, :OptimizerSolution,
         # opt-in phase observation
-        :NoStepObserver, :observe_optimizer_phase, :step_observer)
+        :EventLog, :PhaseTimer, :NoStepObserver, :observe_optimizer_phase, :step_observer)
         @test name in names(GeometricOptimizers)
     end
 end
