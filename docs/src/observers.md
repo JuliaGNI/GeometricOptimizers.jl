@@ -263,11 +263,12 @@ assert that a code path was taken at all — which is how this package's own
 
 The phases above are emitted from the complete [`solve!`](@ref) loop, the step machinery, the
 line-search merit and slope functions, and the `update!` methods of [`GradientMethod`](@ref),
-[`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref), [`Newton`](@ref),
-[`BFGS`](@ref) and [`DFP`](@ref). Every direct objective evaluation made by `solve!` is reported as
-`:objective`, including the ones made for [`GeometricOptimizers.OptimizerStatus`](@ref). Trace
-entries and the returned result carry the value already evaluated for the status at the same iterate
-rather than evaluating again, so they contribute no events of their own.
+[`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref),
+[`Newton`](@ref GeometricOptimizers.Newton), [`BFGS`](@ref) and [`DFP`](@ref). Every direct
+objective evaluation made by `solve!` is reported as `:objective`, including the ones made for
+[`GeometricOptimizers.OptimizerStatus`](@ref). Trace entries and the returned result carry the value
+already evaluated for the status at the same iterate rather than evaluating again, so they
+contribute no events of their own.
 
 One boundary needs stating for a caller doing arithmetic on the totals:
 
