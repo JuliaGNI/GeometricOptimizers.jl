@@ -183,8 +183,10 @@ the retraction. Passing `linesearch = Static(0.1)` removes all of it: a fixed st
 
 The last `:retraction_application` applies the accepted step, the `:gradient` after it is taken *at the
 point the step ended at* — so that the convergence measures describe the iterate the step returns
-rather than the one it started from — and the trailing `:objective` pairs are `solve!` evaluating the
-objective for the status and for the result it hands back.
+rather than the one it started from — and the two trailing `:objective` pairs are `solve!` evaluating
+the objective at the final iterate: once inside the loop, for the status that stopping is decided on,
+and once after it, for the status the result carries. The trace entry and the returned result reuse
+the value evaluated for the status at their own iterate rather than evaluating again.
 
 ## Example: exclusive time per phase
 
@@ -260,9 +262,10 @@ assert that a code path was taken at all — which is how this package's own
 The phases above are emitted from the complete [`solve!`](@ref) loop, the step machinery, the
 line-search merit and slope functions, and the `update!` methods of [`GradientMethod`](@ref),
 [`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref), [`BFGS`](@ref) and
-[`DFP`](@ref). Every direct objective evaluation made by `solve!`, including those for
-[`GeometricOptimizers.OptimizerStatus`](@ref), trace entries and the final result, is reported as
-`:objective`.
+[`DFP`](@ref). Every direct objective evaluation made by `solve!` is reported as `:objective`,
+including the ones made for [`GeometricOptimizers.OptimizerStatus`](@ref). Trace entries and the
+returned result carry the value already evaluated for the status at the same iterate rather than
+evaluating again, so they contribute no events of their own.
 
 One boundary needs stating for a caller doing arithmetic on the totals:
 

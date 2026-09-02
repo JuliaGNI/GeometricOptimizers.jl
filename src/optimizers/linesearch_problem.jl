@@ -24,8 +24,7 @@ retraction into the cache's section, and read the point back out.
     its `NaN` loop and for the accepted step, so the line search leaves nothing behind that it does
     not overwrite itself.
 """
-trial_iterate!(cache::OptimizerCache, params, α,
-    retraction) = _trial_iterate!(
+trial_iterate!(cache::OptimizerCache, params, α, retraction) = _trial_iterate!(
     solution(cache), cache, params, α, retraction)
 
 function _trial_iterate!(
@@ -44,8 +43,7 @@ function _trial_iterate!(
     # `_mul` allocates a scaled copy because `direction(cache)` has to stay intact for the next trial
     # step; `solver_step!` can afford the in-place `_rmul!` only because it scales exactly once, by
     # the `α` the line search has already settled on.
-    update_section!(
-        section(cache), section(params.state), _mul(α, direction(cache)), retraction)
+    update_section!(section(cache), section(params.state), _mul(α, direction(cache)), retraction)
     _copyto!(solution(cache), section(cache))
 end
 
@@ -137,9 +135,7 @@ again. Measured on a two-block set with the direction's keys swapped, `3.12` by 
 positionally. The four-method recursion this replaced made that call unspellable by running out of
 methods; the bound is what puts it back. Every caller passes a whole set of parameters.
 """
-_manifold_αmax(y::NetworkParameters,
-    δ,
-    c::T) where {T} = foldparameters(
+_manifold_αmax(y::NetworkParameters, δ, c::T) where {T} = foldparameters(
     (acc, yᵢ, δᵢ) -> min(acc, _block_αmax(yᵢ, δᵢ, c)), T(Inf), y, δ)
 
 _block_αmax(::Manifold, δ, c) = step_αmax(c, δ)
@@ -179,8 +175,7 @@ manifold-free `NamedTuple` passes `Inf` rather than joining the `AbstractVector`
 *shape* of the parameters on the block types makes the return type a `Union` of two `NamedTuple`s,
 which the merit closures then pay for on every evaluation.
 """
-linesearch_parameters(cache::OptimizerCache, x, state,
-    c) = _linesearch_parameters(
+linesearch_parameters(cache::OptimizerCache, x, state, c) = _linesearch_parameters(
     solution(cache), cache, x, state, c)
 
 function _linesearch_parameters(::AbstractVector, ::OptimizerCache, x, state, _)
@@ -247,8 +242,7 @@ exact for both retractions at every ``\alpha``.
 
     `α = 0` still returns `B` untouched, so the `Backtracking` default costs nothing for this.
 """
-trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction,
-    α) = _trial_slope(
+trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction, α) = _trial_slope(
     solution(cache), gradient_instance, cache, retraction, α)
 
 # These two differ in one respect worth knowing about: the `AbstractVector` method evaluates *into* an
@@ -278,7 +272,7 @@ function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::G
 end
 
 @doc raw"""
-    linesearch_problem(problem, gradient, cache, retraction)
+    linesearch_problem(problem, gradient, cache, retraction, observer)
 
 Create a [`SimpleSolvers.LinesearchProblem`](@extref) for the linesearch algorithm.
 

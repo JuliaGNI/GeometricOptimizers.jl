@@ -20,6 +20,15 @@ breaking release).
   device timestamp that is meaningless without a synchronization the package must not perform on the
   caller's behalf — and documents the protocol, the phases, and their coverage.
 
+### Changed
+
+- `solve!` no longer evaluates the objective a second time at an iterate it has just evaluated. With
+  `store_trace` set the loop body evaluated once for the status and again for the trace entry; after
+  the loop it evaluated once for the final status and again for the returned result. Nothing between
+  either pair moves `x`, so the repeat returned the value already in hand, and both are gone. An
+  expensive objective is correspondingly cheaper, and with an observer installed the `:objective`
+  events count real evaluations rather than repeats.
+
 ## [0.7.0]
 
 **A whole set of parameters is a `NetworkParameters` and never a bare `NamedTuple`.** This is a

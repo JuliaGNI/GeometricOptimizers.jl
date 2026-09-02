@@ -233,8 +233,7 @@ function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod 
     # `_riemannian_gradient` on the caller's gradient too, and not only on the default: a parameter
     # set's leaves are projected one at a time, and a `SimpleSolvers` gradient built for the flat
     # vector has no method that reaches them. It is the identity on everything else.
-    G = _riemannian_gradient(
-        isnothing(gradient) ? default_gradient(problem, x) : gradient, x)
+    G = _riemannian_gradient(isnothing(gradient) ? default_gradient(problem, x) : gradient, x)
     _optimizer(x, problem, algorithm, linesearch, G, retraction,
         Options(T; options_kwargs...), step_ceiling, observer)
 end
@@ -320,8 +319,7 @@ step_observer(opt::Optimizer) = opt.observer
 check_gradient(opt::Optimizer) = check_gradient(gradient(problem(opt)))
 print_gradient(opt::Optimizer) = print_gradient(gradient(problem(opt)))
 
-function meets_stopping_criteria(
-        status::OptimizerStatus, opt::Optimizer, state::OptimizerState)
+function meets_stopping_criteria(status::OptimizerStatus, opt::Optimizer, state::OptimizerState)
     meets_stopping_criteria(status, config(opt), iteration_number(state))
 end
 
@@ -405,9 +403,8 @@ julia> solver_step!(x, state, opt)
     best, so that case is exempt and the step is taken. See [`linesearch_rejected`](@ref) and issue
     B3.
 """
-function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
-        opt::Optimizer{
-            T, MT}) where {T, MT}
+function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{
+        T, MT}) where {T, MT}
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
@@ -587,18 +584,15 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
+        # One objective evaluation per iterate, reused for the status and the trace entry: both read
+        # the same `x`, and with an observer installed a second call would also emit a second
+        # `:objective` pair for a step that only ever evaluated once.
         f = observe_optimizer_phase(observer, :objective) do
             value(problem(opt), x)
         end
-        status = OptimizerStatus(
-            state, cache(opt), f; config = config(opt))
-        if tracing
-            trace_f = observe_optimizer_phase(observer, :objective) do
-                value(problem(opt), x)
-            end
-            push!(_trace,
-                OptimizerTraceEntry(iteration_number(state), trace_f, g_residual(status)))
-        end
+        status = OptimizerStatus(state, cache(opt), f; config = config(opt))
+        tracing && push!(_trace,
+            OptimizerTraceEntry(iteration_number(state), f, g_residual(status)))
         meets_stopping_criteria(status, opt, state) && break
         update!(state, opt, x)
     end
@@ -608,9 +602,8 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
     end
     status = OptimizerStatus(state, cache(opt), f; config = config(opt))
     warn_iteration_number(state, config(opt))
-    f = observe_optimizer_phase(observer, :objective) do
-        value(problem(opt), x)
-    end
+    # `warn_iteration_number` does not touch `x`, so the value above is still the one at the final
+    # iterate and the result reuses it rather than evaluating the objective a second time.
     OptimizerResult(status, x, f, _trace)
 end
 
@@ -644,7 +637,6 @@ end
 # put this somewhere else eventually!
 function update!(state::NewtonOptimizerState, opt::Optimizer, x::AbstractVector)
     update!(state, gradient(opt), x)
-    update_section!(
-        state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
+    update_section!(state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
     state
 end

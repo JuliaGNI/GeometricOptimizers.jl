@@ -29,7 +29,7 @@ julia> log.events
  (:gradient, :exit)
 ```
 """
-mutable struct EventLog{P}
+struct EventLog{P}
     events::Vector{Tuple{Symbol, Symbol}}
     phases::P
 end
@@ -68,7 +68,7 @@ reading and defaults to a no-op; a GPU caller can pass its device
 synchronization function. Call `empty!(timer)` between runs to reset its
 accumulators.
 """
-mutable struct PhaseTimer{P, C, S}
+struct PhaseTimer{P, C, S}
     open::Vector{Tuple{Symbol, UInt64, Bool}}
     exclusive::Dict{Symbol, UInt64}
     calls::Dict{Symbol, Int}
