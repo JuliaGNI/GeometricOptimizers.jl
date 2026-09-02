@@ -192,32 +192,49 @@ objective for the status and for the result it hands back.
 parent and closing it starts the parent's clock again, so the accumulated times are mutually
 exclusive. No recorder implementation is needed in user code:
 
+A timer records two numbers per phase. `timer.calls[phase]` counts how many times the phase was
+entered, and `timer.exclusive[phase]` accumulates the time spent in it, **in nanoseconds**. The first
+`solve!` below is a warm-up whose measurements are thrown away by `empty!`, for the reason given
+after the example:
+
 ```@example observers
 y = [1.0, -2.0]
 timer = PhaseTimer()
 opt = Optimizer(y, loss; algorithm = method, max_iterations = 1, observer = timer)
 
+solve!(y, OptimizerState(method, y), opt)   # warm-up: compiled, then discarded
+empty!(timer)
+
+y .= [1.0, -2.0]
 observe_optimizer_phase(timer, :bookkeeping) do
     solve!(y, OptimizerState(method, y), opt)
 end
 
-timer.calls
+for phase in sort!(collect(keys(timer.calls)))
+    println(rpad(phase, 26), timer.calls[phase], " call(s)  ",
+        timer.exclusive[phase], " ns")
+end
 ```
 
-That is the outer phase from above, executed. It is the only thing the caller adds, and it is what
-turns three measurements into four: the accumulated time in `timer.exclusive`, in nanoseconds, now
-splits the whole optimization into the price of the geometry (`:retraction_application`), the price of
-differentiation (`:gradient`), the caller's own objective (`:objective`), and — as the remainder left
-in `:bookkeeping` once the three inner phases have subtracted themselves — the direction computation,
-the cache and state updates, the line search's control flow and the convergence tests.
+`:bookkeeping` is the outer phase from above, executed, and it is what turns three measurements into
+four. The nanoseconds now split the whole optimization into the price of the geometry
+(`:retraction_application`), the price of differentiation (`:gradient`), the caller's own objective
+(`:objective`), and — as the remainder left once the three inner phases have subtracted themselves —
+the direction computation, the cache and state updates, the line search's control flow and the
+convergence tests. Its call count is `1` because the caller opened it once: a count is a count of
+*entries into the phase*, which is why `:objective` here is close to the number of line-search trials
+and not to anything measured in time.
 
-The durations are not printed here, because on one iteration of a two-parameter problem they would say
-nothing: the three inner phases are dominated by the clock's own resolution, and `:bookkeeping` is
-dominated by Julia compiling the run being measured. Which is the first of two things worth doing
-before believing such numbers, neither of which the package can do for the caller. Discard a warm-up
-iteration. And on a device, synchronize before every timestamp —
-`PhaseTimer(synchronize=CUDA.synchronize)` does this — or the intervals describe kernel launches
-rather than kernel execution.
+Two things are worth doing before believing the durations, neither of which the package can do for the
+caller. The warm-up is the first: Julia compiles on first call, and on a run this short that
+compilation lands in whichever phase was open when it happened — without the discarded run above,
+`:bookkeeping` reads in the hundreds of milliseconds against microseconds for everything else, and the
+comparison the measurement was wanted for is destroyed. The second is that on a device you must
+synchronize before every timestamp — `PhaseTimer(synchronize=CUDA.synchronize)` does this — or the
+intervals describe kernel launches rather than kernel execution.
+
+Even warmed, these particular numbers are a two-parameter problem measured at `time_ns` resolution, so
+read the shape rather than the digits.
 
 ## What else observers are good for
 
