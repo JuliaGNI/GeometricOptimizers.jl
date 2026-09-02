@@ -196,8 +196,8 @@ The `Static(0.1)` line search takes no trials of its own. With a searching line 
 parent and closing it starts the parent's clock again, so the accumulated times are mutually
 exclusive.
 
-Run over the same step, it reports how often each phase was entered and how much time belongs to it
-alone:
+No recorder implementation is needed in user code. Constructing the built-in timer and running it
+over the same step reports how often each phase was entered and how much time belongs to it alone:
 
 ```@example observers
 y = [1.0, -2.0]
