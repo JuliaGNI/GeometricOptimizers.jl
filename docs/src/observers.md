@@ -127,16 +127,18 @@ geometry; keeping them in a phase of their own is what stops them from being cha
 or to the gradient.
 
 A caller may add phases of its own with [`observe_optimizer_phase`](@ref), which is the same helper
-the package uses internally. Bracketing `solver_step!` and `update!` with an outer phase and letting
-the three inner phases subtract themselves from it yields the second of the three costs above — the
-optimizer's state and direction bookkeeping — without the package needing a phase for it:
+the package uses internally. Bracketing the whole optimization in one and letting the three inner
+phases subtract themselves from it yields the second of the three costs above — the optimizer's own
+bookkeeping — without the package needing a phase for it:
 
 ```julia
-observe_optimizer_phase(observer, :optimizer_state_direction) do
-    solver_step!(x, state, opt)
-    GeometricOptimizers.update!(state, opt, x)
+observe_optimizer_phase(observer, :bookkeeping) do
+    solve!(x, OptimizerState(method, x), opt)
 end
 ```
+
+A caller who drives the loop itself rather than calling [`solve!`](@ref) brackets `solver_step!` and
+`update!` the same way; the outer phase does not care what is inside it.
 
 [`step_observer`](@ref) reads back the observer installed on an optimizer.
 
@@ -195,25 +197,25 @@ y = [1.0, -2.0]
 timer = PhaseTimer()
 opt = Optimizer(y, loss; algorithm = method, max_iterations = 1, observer = timer)
 
-solve!(y, OptimizerState(method, y), opt)
+observe_optimizer_phase(timer, :bookkeeping) do
+    solve!(y, OptimizerState(method, y), opt)
+end
 
 timer.calls
 ```
 
-The accumulated times live in `timer.exclusive`, in nanoseconds. They are not printed here: on one
-iteration of a two-parameter problem they are dominated by the clock's own resolution, and the point
-of the example is the accounting rather than the numbers.
+That is the outer phase from above, executed. It is the only thing the caller adds, and it is what
+turns three measurements into four: the accumulated time in `timer.exclusive`, in nanoseconds, now
+splits the whole optimization into the price of the geometry (`:retraction_application`), the price of
+differentiation (`:gradient`), the caller's own objective (`:objective`), and — as the remainder left
+in `:bookkeeping` once the three inner phases have subtracted themselves — the direction computation,
+the cache and state updates, the line search's control flow and the convergence tests.
 
-What the accounting gives is the comparison the measurement was wanted for. The time in
-`:retraction_application` is the price of the geometry, the time in `:gradient` is the price of
-differentiation, and `:objective` is the line search's own cost. Bracketing `solver_step!` and
-`update!` in an outer phase, as in the snippet above, adds the fourth: whatever is left in
-`:optimizer_state_direction` once the three inner phases have subtracted themselves is the
-optimizer's own bookkeeping.
-
-Two things are worth doing before believing such numbers, neither of which the package can do for the
-caller. Discard a warm-up iteration: Julia compiles on first call, and on a short run that compilation
-can exceed everything being measured. And on a device, synchronize before every timestamp —
+The durations are not printed here, because on one iteration of a two-parameter problem they would say
+nothing: the three inner phases are dominated by the clock's own resolution, and `:bookkeeping` is
+dominated by Julia compiling the run being measured. Which is the first of two things worth doing
+before believing such numbers, neither of which the package can do for the caller. Discard a warm-up
+iteration. And on a device, synchronize before every timestamp —
 `PhaseTimer(synchronize=CUDA.synchronize)` does this — or the intervals describe kernel launches
 rather than kernel execution.
 
