@@ -116,3 +116,6 @@ end
 begin
     @safetestset "similar keeps the backend    " include("similar_backend.jl")
 end
+begin
+    @safetestset "rgrad matches the backend    " include("gradient_backend.jl")
+end
