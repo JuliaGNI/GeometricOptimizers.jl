@@ -19,6 +19,28 @@ breaking release).
   the observer solves — a per-step cost that cannot be decomposed from outside the package, and a
   device timestamp that is meaningless without a synchronization the package must not perform on the
   caller's behalf — and documents the protocol, the phases, and their coverage.
+- Added `test/similar_backend.jl`, which pins the allocation backend of the horizontal lifts and the
+  block agreement the four-argument cache constructors require, using `JLArray` as the device stand-in.
+
+### Fixed
+
+- `similar(::StiefelLieAlgHorMatrix)` and `similar(::GrassmannLieAlgHorMatrix)` now allocate on the
+  backend their argument is on, through the `zeros(::Backend, …)` methods next to them, instead of
+  calling the host `zeros`. A lift that lived on a device came back on the host, and because
+  `AdamCache(x, g, δ)` builds its fourth block as `Δg = _similar(g)` and forwards to a method whose
+  `AT <: GradientStorage{T}` binds `g`, `δ` and `Δg` to one type, that was a `MethodError` at
+  `Optimizer(Adam(), network)` for any device-resident network and not a wrong number. Reported from
+  the pendulum stage of `GMLDatasets`' revision harness on an RTX 4090 (`GMLDatasets#12`, run
+  `20260903T125418Z_smoke`); the image stages of the same run kept their parameters in a host
+  container and copied to the device inside the objective, which is why they were unaffected.
+  `MomentumCache` and `GradientCache` have the same three- and four-argument shape and were fixed by
+  the same change.
+- `_similar(::Manifold)` draws its point on the manifold's own backend rather than on the host. This
+  is the same defect on the state path: `AdamState` and `MomentumState` declare a single `OT` for `x`
+  and `x̄`, and `x̄` is `_similar(x)`, so a device `x` with a host `x̄` did not satisfy it. It is the
+  next thing the pendulum stage would have hit. `JLArrays` cannot materialize a QR factor as
+  `typeof(A)(qr!(A).Q)`, which `global_section` and the device `rand(::GPU, …)` both do and `CUDA`
+  implements, so this half is covered by the harness rather than by the test file.
 
 ## [0.7.0]
 
