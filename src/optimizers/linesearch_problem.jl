@@ -272,7 +272,7 @@ function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::G
 end
 
 @doc raw"""
-    linesearch_problem(problem, gradient, cache, retraction)
+    linesearch_problem(problem, gradient, cache, retraction, observer)
 
 Create a [`SimpleSolvers.LinesearchProblem`](@extref) for the linesearch algorithm.
 
@@ -319,15 +319,24 @@ julia> ls_obj.D(0., params)
     Note that in the example above calling [`update!`](@ref) on the [`NewtonOptimizerCache`](@ref) requires a [`SimpleSolvers.Hessian`](@extref).
 """
 function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gradient,
-        cache::OptimizerCache{T}, retraction::AbstractRetraction) where {T}
+        cache::OptimizerCache{T}, retraction::AbstractRetraction,
+        observer = NoStepObserver()) where {T}
     function f(α, params)
-        trial_iterate!(cache, params, α, retraction)
-        value(problem, solution(cache))
+        observe_optimizer_phase(observer, :retraction_application) do
+            trial_iterate!(cache, params, α, retraction)
+        end
+        observe_optimizer_phase(observer, :objective) do
+            value(problem, solution(cache))
+        end
     end
 
     function d(α, params)
-        trial_iterate!(cache, params, α, retraction)
-        trial_slope(gradient_instance, cache, retraction, α)
+        observe_optimizer_phase(observer, :retraction_application) do
+            trial_iterate!(cache, params, α, retraction)
+        end
+        observe_optimizer_phase(observer, :retraction_application) do
+            trial_slope(gradient_instance, cache, retraction, α)
+        end
     end
 
     LinesearchProblem{T}(f, d)

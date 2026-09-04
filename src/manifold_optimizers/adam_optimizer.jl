@@ -156,7 +156,8 @@ OptimizerState(::Adam, x...) = AdamState(x...)
 function update!(state::AdamState{T}, gradient_array::GradientStorage{T},
         direction::GradientStorage{T}, _first_moment::GradientStorage{T},
         _second_moment::GradientStorage{T},
-        x::OptimizerSolution{T}, f::Callable, retraction) where {T}
+        x::OptimizerSolution{T}, f::Callable, retraction,
+        observer = NoStepObserver()) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
@@ -164,9 +165,13 @@ function update!(state::AdamState{T}, gradient_array::GradientStorage{T},
     _copyto!(gradient(state), gradient_array)
     _copyto!(first_moment(state), _first_moment)
     _copyto!(second_moment(state), _second_moment)
-    state.f = f(x)
+    state.f = observe_optimizer_phase(observer, :objective) do
+        f(x)
+    end
 
-    update_section!(section(state), direction, retraction)
+    observe_optimizer_phase(observer, :retraction_application) do
+        update_section!(section(state), direction, retraction)
+    end
 
     state
 end
@@ -174,7 +179,7 @@ end
 function update!(state::AdamState, opt::Optimizer, x::OptimizerSolution)
     update!(
         state, gradient_array(cache(opt)), direction(cache(opt)), first_moment(opt.cache),
-        second_moment(opt.cache), x, problem(opt).F, opt.retraction)
+        second_moment(opt.cache), x, problem(opt).F, opt.retraction, step_observer(opt))
 end
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},

@@ -215,7 +215,8 @@ section(state::ScalarMomentAdamState) = state.section
 function update!(
         state::ScalarMomentAdamState{T}, gradient_array::StiefelLieAlgHorMatrix{T},
         direction::StiefelLieAlgHorMatrix{T}, _first_moment::StiefelLieAlgHorMatrix{T},
-        _second_moment::Real, x::StiefelManifold{T}, f::Callable, retraction) where {T}
+        _second_moment::Real, x::StiefelManifold{T}, f::Callable, retraction,
+        observer = NoStepObserver()) where {T}
     _copyto!(state.x̄, state.x)
     _copyto!(state.ḡ, state.g)
     state.f̄ = state.f
@@ -223,15 +224,19 @@ function update!(
     _copyto!(state.g, gradient_array)
     _copyto!(state.m₁, _first_moment)
     state.m₂ = T(_second_moment)
-    state.f = f(x)
-    update_section!(state.section, direction, retraction)
+    state.f = observe_optimizer_phase(observer, :objective) do
+        f(x)
+    end
+    observe_optimizer_phase(observer, :retraction_application) do
+        update_section!(state.section, direction, retraction)
+    end
     state
 end
 
 function update!(state::ScalarMomentAdamState, opt::Optimizer, x::OptimizerSolution)
     update!(
         state, gradient_array(cache(opt)), direction(cache(opt)), first_moment(opt.cache),
-        second_moment(opt.cache), x, problem(opt).F, opt.retraction)
+        second_moment(opt.cache), x, problem(opt).F, opt.retraction, step_observer(opt))
 end
 
 """

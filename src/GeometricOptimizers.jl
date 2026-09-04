@@ -138,6 +138,7 @@ export Optimizer,
        HessianAutodiff,
        HessianBFGS,
        HessianDFP
+export EventLog, PhaseTimer, NoStepObserver, observe_optimizer_phase, step_observer
 
 import SimpleSolvers: solve!, solve
 # `Newton`, `BFGS` and `DFP` are the optimizer methods, and `BFGSState`/`DFPState` are the states
@@ -154,6 +155,7 @@ include("optimizers/optimizer_methods.jl")
 
 include("optimizers/optimizer_state.jl")
 include("optimizers/optimizer_cache.jl")
+include("optimizers/optimizer_observer.jl")
 include("optimizers/descent_direction.jl")
 include("optimizers/optimizer_status.jl")
 include("optimizers/optimizer_result.jl")

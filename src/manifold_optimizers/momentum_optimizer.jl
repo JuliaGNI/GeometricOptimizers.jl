@@ -125,7 +125,8 @@ OptimizerState(::MomentumMethod, x...) = MomentumState(x...)
 
 function update!(state::MomentumState{T}, gradient_array::GradientStorage{T},
         direction::GradientStorage{T}, α::T,
-        x::OptimizerSolution{T}, f::Callable, retraction) where {T}
+        x::OptimizerSolution{T}, f::Callable, retraction,
+        observer = NoStepObserver()) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
@@ -138,16 +139,20 @@ function update!(state::MomentumState{T}, gradient_array::GradientStorage{T},
     # issue #18.
     _rmul!(momentum(state), α)
     _add!(momentum(state), gradient_array)
-    state.f = f(x)
+    state.f = observe_optimizer_phase(observer, :objective) do
+        f(x)
+    end
 
-    update_section!(section(state), direction, retraction)
+    observe_optimizer_phase(observer, :retraction_application) do
+        update_section!(section(state), direction, retraction)
+    end
 
     state
 end
 
 function update!(state::MomentumState, opt::Optimizer, x::OptimizerSolution)
     update!(state, gradient_array(cache(opt)), direction(cache(opt)),
-        algorithm(opt).α, x, problem(opt).F, opt.retraction)
+        algorithm(opt).α, x, problem(opt).F, opt.retraction, step_observer(opt))
 end
 
 function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T},

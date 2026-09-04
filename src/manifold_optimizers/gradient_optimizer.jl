@@ -144,22 +144,26 @@ OptimizerState(::GradientMethod, x...) = GradientState(x...)
 
 function update!(state::GradientState{T}, gradient_array::GradientStorage{T},
         direction::GradientStorage{T}, x::OptimizerSolution{T},
-        f::Callable, retraction) where {T}
+        f::Callable, retraction, observer = NoStepObserver()) where {T}
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
     _copyto!(solution(state), x)
     _copyto!(gradient(state), gradient_array)
-    state.f = f(x)
+    state.f = observe_optimizer_phase(observer, :objective) do
+        f(x)
+    end
 
-    update_section!(section(state), direction, retraction)
+    observe_optimizer_phase(observer, :retraction_application) do
+        update_section!(section(state), direction, retraction)
+    end
 
     state
 end
 
 function update!(state::GradientState, opt::Optimizer, x::OptimizerSolution)
     update!(state, gradient_array(cache(opt)), direction(cache(opt)),
-        x, problem(opt).F, opt.retraction)
+        x, problem(opt).F, opt.retraction, step_observer(opt))
 end
 
 # function compute_direction!(opt::Optimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
@@ -181,6 +185,10 @@ end
 
 # this should be moved to a different file
 function update!(state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}) where {T}
+    observer = step_observer(opt)
+    f = observe_optimizer_phase(observer, :objective) do
+        problem(opt).F(x)
+    end
     update!(
-        state, direction(cache(opt)), gradient(opt), x, problem(opt).F(x), opt.retraction)
+        state, direction(cache(opt)), gradient(opt), x, f, opt.retraction, observer)
 end

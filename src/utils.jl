@@ -116,11 +116,27 @@ end
 # be applied to a gradient a caller has already wrapped.
 RiemannianGradient(gradient::RiemannianGradient) = gradient
 
+# Keep the observation wrapper around the flat Euclidean gradient, inside the Riemannian wrapper.
+# A whole parameter set dispatches specifically on `RiemannianGradient`, so wrapping outside it
+# would hide that method; placing it here also measures differentiation without charging the
+# leaf-wise tangent projection to the gradient/AD phase.
+_observed_gradient(grad::RiemannianGradient, ::NoStepObserver) = grad
+function _observed_gradient(grad::RiemannianGradient, observer)
+    RiemannianGradient(_observed_gradient(grad.gradient, observer))
+end
+
 # The coordinate interface forwards. Only the two-argument form is needed: `SimpleSolvers`'
 # `(grad::Gradient)(x::AbstractVector)` allocates a gradient and calls this.
 function (grad::RiemannianGradient{T})(g::AbstractVector{T}, x::AbstractVector{T}) where {T}
     grad.gradient(g, x)
 end
+
+# `SimpleSolvers.Gradient` guarantees a functor and no field, so `grad.F` reaches a convention its
+# three concrete subtypes happen to share rather than an interface. Every wrapper in this package
+# therefore has to be asked for the objective instead of read for it -- `NewtonOptimizerState`'s
+# `update!` is the one consumer that needs the objective and holds only a gradient.
+_objective(grad::Gradient) = grad.F
+_objective(grad::RiemannianGradient) = _objective(grad.gradient)
 
 # `Matrix` and not `AbstractMatrix`: widening it would make a `RiemannianGradient` called on a
 # `Manifold` ambiguous against `(::Gradient)(::Manifold)` above, which is the method that rebuilds the

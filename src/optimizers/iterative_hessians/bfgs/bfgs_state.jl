@@ -101,7 +101,7 @@ end
 
 # `update!(state::BFGSState, ::Gradient, x, retraction)` was deleted in 0.6.0. It had no caller: for a
 # `BFGSState` the live path is `update!(state, opt, x)` in `gradient_optimizer.jl`, which reaches the
-# six-argument method below and hands it `problem(opt).F(x)` directly. Nothing in `src/`, `test/`,
+# method below and hands it the observed `problem(opt).F(x)` value. Nothing in `src/`, `test/`,
 # `docs/` or `scripts/` called the four-argument form, and neither does `GeometricMachineLearning` or
 # `GMLDatasets`.
 #
@@ -117,7 +117,9 @@ function _copyto!(sec::GlobalSection{T, AT, Nothing}, Y::AT) where {
 end
 
 function update!(state::BFGSState{T}, direction::GradientStorage{T}, gradient::Gradient,
-        x::XT, f::T, retraction) where {T, XT <: OptimizerSolution{T}}
+        x::XT, f::T, retraction,
+        observer = NoStepObserver()) where {
+        T, XT <: OptimizerSolution{T}}
     _copyto!(state.x̄, x)
     # `ḡ` is deliberately *not* refreshed here. This runs at the end of the iteration, at the same
     # iterate `x` that the next `Δg = ∇f(x) - ḡ` is formed at, so writing `∇f(x)` here made `Δg`
@@ -126,7 +128,9 @@ function update!(state::BFGSState{T}, direction::GradientStorage{T}, gradient::G
     state.f̄ = f
 
     _copyto!(state.s, direction)
-    update_section!(section(state), state.s, retraction)
+    observe_optimizer_phase(observer, :retraction_application) do
+        update_section!(section(state), state.s, retraction)
+    end
     _copyto!(state.section, x)
 
     state

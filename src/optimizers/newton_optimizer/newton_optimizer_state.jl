@@ -94,7 +94,7 @@ NewtonOptimizerState{Float64, Vector{Float64}, Vector{Float64}, GlobalSection{Fl
 ```
 """
 function update!(state::NewtonOptimizerState, gradient::Gradient, x::AbstractVector)
-    update!(state, x, gradient(x), gradient.F(x))
+    update!(state, x, gradient(x), _objective(gradient)(x))
 
     state
 end

@@ -8,7 +8,8 @@ using Test
 # list in `0eab6b1`, and already dead there — survived from March 2026 until they were removed by
 # hand. The check below is one line and it closes the class rather than those three instances.
 @testset "every exported name is defined" begin
-    @test isempty(filter(n -> !isdefined(GeometricOptimizers, n), names(GeometricOptimizers)))
+    @test isempty(filter(
+        n -> !isdefined(GeometricOptimizers, n), names(GeometricOptimizers)))
 end
 
 # A spot check on the names a user reaches for first, so that a rename which drops one from the
@@ -52,7 +53,9 @@ end
     # retractions
         :AbstractRetraction, :Geodesic, :Cayley, :geodesic, :cayley, :retraction,
     # the optimizer types a caller dispatches on
-        :OptimizerMethod, :OptimizerState, :OptimizerSolution)
+        :OptimizerMethod, :OptimizerState, :OptimizerSolution,
+    # opt-in phase observation
+        :EventLog, :PhaseTimer, :NoStepObserver, :observe_optimizer_phase, :step_observer)
         @test name in names(GeometricOptimizers)
     end
 end

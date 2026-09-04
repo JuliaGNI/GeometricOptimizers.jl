@@ -4,7 +4,7 @@
 """
     BFGSCache
 
-The [`OptimizerCache`](@ref) for the [`BFGS`](@ref) algorithm. Also see [`update!(::BFGSCache, ::OptimizerState, ::AbstractVector, ::AbstractVector`)](@ref).
+The [`OptimizerCache`](@ref) for the [`BFGS`](@ref) algorithm. Also see [`update!`](@ref).
 
 `g̃` is the scratch for [`latest_gradient`](@ref) and `g̃_is_current` says whether it is the gradient at
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
