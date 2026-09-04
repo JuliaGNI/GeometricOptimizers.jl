@@ -379,6 +379,38 @@ axis whose absence made the first of those possible. Two new *Known issues* came
 
 ### Added
 
+- **A separate *Exponential Algorithms* chapter, and the `ScaledSquaring` and `NativePade` algorithms
+  written out step by step.** Issue [#56] asked for the second of those; the first is what made room
+  for it. `retractions.md` had become a chapter about two retractions with five hundred lines of
+  numerical analysis inside it, and adding the derivation pushed the rendered page over Documenter's
+  `size_threshold_warn`. It is now split: `retractions.md` is the retractions as maps, and
+  `exponential_algorithms.md` is the numerical problem of evaluating the exponential — 47 KiB and
+  96 KiB against 100 KiB, where the single page was over.
+
+  The chapter separates the two choices any such algorithm makes, which the old text ran together: the
+  approximation kernel used at a small argument, and whether a large argument is scaled down and
+  recovered afterwards. Taylor and Padé are kernels; scaling and modified squaring is the framework
+  around one, not a competitor to it. Both algorithms are then given as numbered steps that match the
+  implementation line for line, including the `1/2ˢ` factor and the recurrence `W ← 2W + WXW`, which is
+  the φ₁ modified squaring of Skaflestad and Wright (2009) and follows from
+  `φ₁(2A) = φ₁(A) + Aφ₁(A)²/2`.
+
+  `NativePade`'s coefficients are derived rather than quoted. The `[m/n]` matching condition splits
+  into `n` equations that fix the denominator and `m+1` that merely read the numerator off, and one
+  coefficient extraction from `Σⱼ(-1)ʲC(n,j)(1+x)^{m+n-j} = xⁿ(1+x)^m` settles both blocks at once. The
+  `[6/6]` approximant of `𝔄` is then `p₆ = (P₇ᵉˣᵖ - Q₆ᵉˣᵖ)/z` over `q₆ = Q₆ᵉˣᵖ`. Verified in
+  `Rational{BigInt}`: the closed form satisfies all six denominator equations, `aₖ₊₁ - bₖ₊₁`
+  reproduces the seven implemented `p₆` coefficients and the six of `q₆` exactly, and `q₆𝔄 - p₆`
+  vanishes through `z¹²` with first nonzero coefficient exactly `1/149597947699200` — about
+  `8.2e-19` at `|z| ≤ 1/2`, the same order as the Newton–Schulz residual bound of `1.2e-19` derived
+  beside it, so the two halves of the accuracy argument are finally on one scale.
+
+  Newton–Schulz is derived as Newton's method on `Z⁻¹ - q₆(Y) = 0` rather than asserted, with the
+  residual identity `E_{j+1} = E_j²` and an info box saying why an explicit inverse is used at all: a
+  dense CPU implementation would pivot and solve, and the trade being made here is a
+  factorization-free denominator against five matrix products, sound only because scaling supplies the
+  initial-residual bound.
+
 - **The elementwise primitives, and the ~40 sites around them, take a container.** A new alias,
   `ParameterContainer{T} = Union{ArrayNamedTuple{T}, NetworkParameters{T}}`, is what they dispatch on;
   `GradientArrayOrNamedTuple` and `OptimizerSolution` are written in terms of it.
@@ -4110,6 +4142,7 @@ and both are corrected: see C8.)
 [#51]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/51
 [#52]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52
 [#54]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/54
+[#56]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/56
 [#59]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/59
 [#60]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/60
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
