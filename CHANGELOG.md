@@ -19,6 +19,57 @@ breaking release).
   the observer solves — a per-step cost that cannot be decomposed from outside the package, and a
   device timestamp that is meaningless without a synchronization the package must not perform on the
   caller's behalf — and documents the protocol, the phases, and their coverage.
+- Added `test/similar_backend.jl`, which pins the allocation backend of the horizontal lifts and the
+  block agreement the four-argument cache constructors require, using `JLArray` as the device stand-in.
+- Added `test/gradient_backend.jl`, which pins the temporary `_match_backend` shim described below
+  and the device path of `rgrad` for both manifolds, again with `JLArray` as the device stand-in.
+  Delete it with the shim.
+
+### Fixed
+
+- `rgrad(::GrassmannManifold, ∇L)` multiplies through the representative, `Y.A * (Y.A' * ∇L)`, as
+  `rgrad(::StiefelManifold, ∇L)` already did. `Y'` is a `Transpose{…, GrassmannManifold}` and this
+  manifold defines no `*` that unwraps one, so the product reached
+  `LinearAlgebra._generic_matmatmul_generic!`, which indexes elementwise through
+  `getindex(::Manifold, ::Int, ::Int)`: the slow path on the host, and `Scalar indexing is
+  disallowed` on a device. `rgrad` on a device-resident `GrassmannManifold` therefore could not run
+  at all, independently of where its gradient lived. The two expressions are the same matrix by
+  definition.
+
+### Temporary
+
+- `rgrad` accepts an ambient gradient that is not on its point's backend, moving it across through
+  the new `GeometricOptimizers._match_backend`. **This is a shim for a defect in another package and
+  should be reverted, together with `test/gradient_backend.jl`, once that defect is fixed**; see
+  `AbstractNeuralNetworks` and `GeometricMachineLearning` issues linked from #79.
+  `GeometricMachineLearning`'s `_gml_rgrad(x::Manifold, dp) = rgrad(x, dp)` passes the pullback's
+  leaf through unchanged, and on a device-resident network the leaf for a
+  `StiefelManifold{Float32, CuArray{Float32, 2}}` weight arrives as a host `Matrix{Float32}`, so
+  `∇L' * Y.A` was a CPU `gemm!` handed a device pointer: `ArgumentError: Illegal conversion of a
+  CUDA.DeviceMemory to a Ptr{Float32}`. This is one layer deeper than the `similar` defect below;
+  with the cache blocks on the right backend, `Optimizer(Adam(), network)` succeeds and the first
+  `optimization_step!` fails instead (`GMLDatasets#12`, run `20260903T191704Z_smoke`, RTX 4090). The
+  ambient gradient is an *input* to this package, so matching it here hides a caller's bug and pays
+  a host-to-device transfer per manifold leaf per step, inside the region `PhaseTimer` attributes to
+  the step. A host point leaves the gradient untouched, so no existing host path is affected.
+
+- `similar(::StiefelLieAlgHorMatrix)` and `similar(::GrassmannLieAlgHorMatrix)` now allocate on the
+  backend their argument is on, through the `zeros(::Backend, …)` methods next to them, instead of
+  calling the host `zeros`. A lift that lived on a device came back on the host, and because
+  `AdamCache(x, g, δ)` builds its fourth block as `Δg = _similar(g)` and forwards to a method whose
+  `AT <: GradientStorage{T}` binds `g`, `δ` and `Δg` to one type, that was a `MethodError` at
+  `Optimizer(Adam(), network)` for any device-resident network and not a wrong number. Reported from
+  the pendulum stage of `GMLDatasets`' revision harness on an RTX 4090 (`GMLDatasets#12`, run
+  `20260903T125418Z_smoke`); the image stages of the same run kept their parameters in a host
+  container and copied to the device inside the objective, which is why they were unaffected.
+  `MomentumCache` and `GradientCache` have the same three- and four-argument shape and were fixed by
+  the same change.
+- `_similar(::Manifold)` draws its point on the manifold's own backend rather than on the host. This
+  is the same defect on the state path: `AdamState` and `MomentumState` declare a single `OT` for `x`
+  and `x̄`, and `x̄` is `_similar(x)`, so a device `x` with a host `x̄` did not satisfy it. It is the
+  next thing the pendulum stage would have hit. `JLArrays` cannot materialize a QR factor as
+  `typeof(A)(qr!(A).Q)`, which `global_section` and the device `rand(::GPU, …)` both do and `CUDA`
+  implements, so this half is covered by the harness rather than by the test file.
 
 ### Fixed
 

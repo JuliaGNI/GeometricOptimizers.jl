@@ -170,10 +170,19 @@ function Base.zeros(backend::KernelAbstractions.Backend,
         KernelAbstractions.zeros(backend, T, N - n, n), N, n)
 end
 
+# Both methods allocate on the backend `A` is already on, through the method above, and that is the
+# property that makes `similar` usable as the like-for-like allocation of an optimizer cache. They
+# used to call the *host* `zeros` instead, so a lift that lived on a device came back on the host:
+# `AdamCache(x, g, δ)` builds its fourth block as `Δg = _similar(g)` and forwards to the
+# four-argument constructor, whose `AT <: GradientStorage{T}` binds `g`, `δ` and `Δg` to one type, so
+# a host `Δg` beside a device `g` was a `MethodError` at `OptimizerCache(Adam(), ps)` and not a wrong
+# answer. See the changelog.
 function Base.similar(A::StiefelLieAlgHorMatrix, dims::Union{Integer, AbstractUnitRange}...)
-    zeros(StiefelLieAlgHorMatrix{eltype(A)}, dims...)
+    zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, dims...)
 end
-Base.similar(A::StiefelLieAlgHorMatrix) = zeros(StiefelLieAlgHorMatrix{eltype(A)}, A.N, A.n)
+function Base.similar(A::StiefelLieAlgHorMatrix)
+    zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, A.N, A.n)
+end
 
 function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
