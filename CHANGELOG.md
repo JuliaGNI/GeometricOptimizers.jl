@@ -71,6 +71,31 @@ breaking release).
   `typeof(A)(qr!(A).Q)`, which `global_section` and the device `rand(::GPU, …)` both do and `CUDA`
   implements, so this half is covered by the harness rather than by the test file.
 
+### Fixed
+
+- A `Newton` optimizer no longer fails when its gradient is wrapped. `NewtonOptimizerState`'s
+  `update!` obtained the objective by reading the gradient's `F` field, which only the three concrete
+  `SimpleSolvers.Gradient` subtypes have — so any wrapper threw a `FieldError` on the first step.
+  That hit an observed `Newton` on the default path and a caller-supplied `RiemannianGradient`
+  before that; the objective is now requested through an accessor that unwraps. An observed `Newton`
+  also reports its own `:objective` and `:retraction_application` phases, which it previously
+  reported not at all.
+- Repaired the documentation build, which was failing on `main`. The theme-specific TikZ figures are
+  generated from tracked sources and deliberately not committed, so the workflow now installs the
+  TeX toolchain and builds them before Documenter checks links; two malformed cross-references, in
+  `BFGSCache` and in the Cayley retraction docstring, are also fixed.
+
+### Changed
+
+- `Optimizer` carries one further type parameter, for the observer. Code that spells the type out
+  with all of its parameters has to add it; the constructors and every accessor are unaffected.
+- `solve!` no longer evaluates the objective a second time at an iterate it has just evaluated. With
+  `store_trace` set the loop body evaluated once for the status and again for the trace entry; after
+  the loop it evaluated once for the final status and again for the returned result. Nothing between
+  either pair moves `x`, so the repeat returned the value already in hand, and both are gone. An
+  expensive objective is correspondingly cheaper, and with an observer installed the `:objective`
+  events count real evaluations rather than repeats.
+
 ## [0.7.0]
 
 **A whole set of parameters is a `NetworkParameters` and never a bare `NamedTuple`.** This is a

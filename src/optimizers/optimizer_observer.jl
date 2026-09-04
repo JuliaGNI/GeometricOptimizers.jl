@@ -17,19 +17,19 @@ to reuse an existing log.
 # Examples
 
 ```jldoctest
-julia> log = EventLog();
+julia> recorder = EventLog();
 
-julia> observe_optimizer_phase(log, :gradient) do
+julia> observe_optimizer_phase(recorder, :gradient) do
            nothing
        end
 
-julia> log.events
+julia> recorder.events
 2-element Vector{Tuple{Symbol, Symbol}}:
  (:gradient, :enter)
  (:gradient, :exit)
 ```
 """
-mutable struct EventLog{P}
+struct EventLog{P}
     events::Vector{Tuple{Symbol, Symbol}}
     phases::P
 end
@@ -52,7 +52,7 @@ end
 _no_synchronize() = nothing
 
 """
-    PhaseTimer(; phases=nothing, clock=time_ns, synchronize=() -> nothing)
+    PhaseTimer(; phases=nothing, clock=time_ns, synchronize=_no_synchronize)
 
 Accumulate exclusive phase times in nanoseconds.
 
@@ -62,13 +62,18 @@ from their parent. By default every phase is recorded; pass a phase name or an
 iterable of phase names as `phases` to record less. Unselected nested phases
 are still excluded from a selected parent's time.
 
-`clock` must return a value convertible to `UInt64` and defaults to `time_ns`.
+`clock` defaults to `time_ns` and must return a monotonically increasing count
+of nanoseconds that `UInt64` accepts exactly. `Base.time` is therefore not a
+usable clock: it returns seconds as a `Float64` and the conversion throws an
+`InexactError`. Differences are taken in `UInt64`, so a clock that ever goes
+backwards underflows rather than reporting a negative interval.
+
 `synchronize` is called immediately before every clock
 reading and defaults to a no-op; a GPU caller can pass its device
 synchronization function. Call `empty!(timer)` between runs to reset its
 accumulators.
 """
-mutable struct PhaseTimer{P, C, S}
+struct PhaseTimer{P, C, S}
     open::Vector{Tuple{Symbol, UInt64, Bool}}
     exclusive::Dict{Symbol, UInt64}
     calls::Dict{Symbol, Int}
@@ -191,6 +196,16 @@ end
         dest::AbstractVector{T}, x::AbstractVector{T}) where {T}
     observe_optimizer_phase(g.observer, :gradient) do
         g.gradient(dest, x)
+    end
+end
+
+# The wrapper reports the objective it mediates for the same reason it reports the gradient: the
+# Newton state evaluates both through the gradient it was handed, so leaving this one unwrapped would
+# make `:objective` undercount on that path. The closure exists only where an observer is installed.
+function _objective(g::ObservedGradient)
+    inner = _objective(g.gradient)
+    x -> observe_optimizer_phase(g.observer, :objective) do
+        inner(x)
     end
 end
 

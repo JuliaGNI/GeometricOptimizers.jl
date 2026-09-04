@@ -32,8 +32,7 @@ struct MomentumCache{T, MT, VT, ST} <: OptimizerCache{T}
     section::ST
 end
 
-function MomentumCache(
-        x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
+function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
         T, AT <: GradientStorage{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
@@ -41,8 +40,7 @@ function MomentumCache(
     MomentumCache{T, typeof(x), typeof(g), typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
 end
 
-function MomentumCache(
-        x::OptimizerSolution{T}, g::AT, δ::AT) where {
+function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {
         T, AT <: GradientStorage{T}}
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
@@ -67,8 +65,7 @@ latest_gradient(cache::MomentumCache) = cache.g̃
 function refresh_latest_gradient!(cache::MomentumCache, g::Gradient)
     _refresh_latest_gradient!(cache, g)
 end
-function latest_gradient_is_current(
-        cache::MomentumCache, state::OptimizerState, x::OptimizerSolution)
+function latest_gradient_is_current(cache::MomentumCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
 end
 invalidate_latest_gradient!(cache::MomentumCache) = _invalidate_latest_gradient!(cache)

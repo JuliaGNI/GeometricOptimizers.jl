@@ -57,8 +57,7 @@ _second_moment(cache::AdamCache) = cache.m̃₂
     AdamCache{T, typeof(x), VT, ST}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, m̃₂, sec)
 end
 
-function AdamCache(
-        x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
+function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
         T, AT <: GradientStorage{T}}
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
@@ -66,8 +65,7 @@ function AdamCache(
     _adam_cache(x, g, δ, Δg, g̃, _similar(g), _similar(g), _similar(g), sec)
 end
 
-function AdamCache(
-        x::OptimizerSolution{T}, g::AT, δ::AT) where {
+function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {
         T, AT <: GradientStorage{T}}
     Δg = _similar(g)
     _fill!(Δg, T(NaN))
@@ -92,8 +90,7 @@ latest_gradient(cache::AdamCache) = cache.g̃
 function refresh_latest_gradient!(cache::AdamCache, g::Gradient)
     _refresh_latest_gradient!(cache, g)
 end
-function latest_gradient_is_current(
-        cache::AdamCache, state::OptimizerState, x::OptimizerSolution)
+function latest_gradient_is_current(cache::AdamCache, state::OptimizerState, x::OptimizerSolution)
     _latest_gradient_is_current(cache, state, x)
 end
 invalidate_latest_gradient!(cache::AdamCache) = _invalidate_latest_gradient!(cache)
