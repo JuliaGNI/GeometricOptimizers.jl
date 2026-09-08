@@ -8,18 +8,6 @@ breaking release).
 
 ## [Unreleased]
 
-### Changed
-
-- `docs/src/retractions.md` is now Unicode NFC-normalised. It stored `Ā` as `A` plus a combining
-  macron, seven times, inherited from macOS rather than chosen. Three of those occurrences sit
-  inside an `@example` block, but they are identifiers and Julia's parser normalises identifiers to
-  NFC, so the block runs exactly as before; Documenter does not compare `@example` output either
-  way. What changes is that a `grep` pattern or an editor search typed in NFC now finds them. The
-  file is byte-equal to the NFC normalisation of its predecessor.
-
-  `B̄` in the same block is untouched, and correctly so: a macron over `B` has no precomposed
-  codepoint, so NFC leaves it decomposed.
-
 ### Added
 
 - Added opt-in optimizer phase observation through the exported `EventLog`, `PhaseTimer`,
@@ -56,6 +44,16 @@ breaking release).
   either pair moves `x`, so the repeat returned the value already in hand, and both are gone. An
   expensive objective is correspondingly cheaper, and with an observer installed the `:objective`
   events count real evaluations rather than repeats.
+- `docs/src/retractions.md` is Unicode NFC-normalised. It stored `Ā` as `A` plus a combining macron,
+  seven times, inherited from macOS rather than chosen. All seven sit on three lines inside one
+  `@example` block, and there are none elsewhere in the file — but they are identifiers, Julia's
+  parser normalises identifiers to NFC, and Documenter compares expected output only for
+  `jldoctest`, so the block runs exactly as before. What changes is that a `grep` pattern or an
+  editor search typed in NFC now finds them. The file is byte-equal to the NFC normalisation of its
+  predecessor.
+
+  `B̄` and `B̂` in the same block are untouched, and correctly so: neither a macron nor a circumflex
+  over `B` has a precomposed codepoint, so NFC leaves them decomposed.
 
 ## [0.7.0]
 
