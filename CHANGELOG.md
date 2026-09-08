@@ -8,6 +8,18 @@ breaking release).
 
 ## [Unreleased]
 
+### Changed
+
+- `docs/src/retractions.md` is now Unicode NFC-normalised. It stored `Ā` as `A` plus a combining
+  macron, seven times, inherited from macOS rather than chosen. Three of those occurrences sit
+  inside an `@example` block, but they are identifiers and Julia's parser normalises identifiers to
+  NFC, so the block runs exactly as before; Documenter does not compare `@example` output either
+  way. What changes is that a `grep` pattern or an editor search typed in NFC now finds them. The
+  file is byte-equal to the NFC normalisation of its predecessor.
+
+  `B̄` in the same block is untouched, and correctly so: a macron over `B` has no precomposed
+  codepoint, so NFC leaves it decomposed.
+
 ### Added
 
 - Added opt-in optimizer phase observation through the exported `EventLog`, `PhaseTimer`,
