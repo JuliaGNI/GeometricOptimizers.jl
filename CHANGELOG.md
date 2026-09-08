@@ -52,8 +52,8 @@ breaking release).
   editor search typed in NFC now finds them. The file is byte-equal to the NFC normalisation of its
   predecessor.
 
-  `B̄` and `B̂` in the same block are untouched, and correctly so: neither a macron nor a circumflex
-  over `B` has a precomposed codepoint, so NFC leaves them decomposed.
+  `B̄` in the same block, and `B̂` further down the page, are untouched, and correctly so: neither a
+  macron nor a circumflex over `B` has a precomposed codepoint, so NFC leaves them decomposed.
 
 ## [0.7.0]
 
