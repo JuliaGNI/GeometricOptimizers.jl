@@ -287,14 +287,14 @@ using GeometricOptimizers # hide
 import Random # hide
 Random.seed!(123) # hide
 B̄ = rand(SkewSymMatrix, 6) # ∈ 𝔤
-Ā = exp(B̄ - StiefelLieAlgHorMatrix(B̄, 3)) # ∈ exp(𝔤ᵛᵉʳ)
+Ā = exp(B̄ - StiefelLieAlgHorMatrix(B̄, 3)) # ∈ exp(𝔤ᵛᵉʳ)
 
 X = rand(StiefelLieAlgHorMatrix, 6, 3) # ∈ 𝔤ʰᵒʳ
 Y = rand(StiefelLieAlgHorMatrix, 6, 3) # ∈ 𝔤ʰᵒʳ
 Z = rand(StiefelLieAlgHorMatrix, 6, 3) # ∈ 𝔤ʰᵒʳ
 
-@assert StiefelLieAlgHorMatrix(Ā' * X * Ā, 3) ≈ Ā' * X * Ā # hide
-Ā' * X * Ā # this has to be in 𝔤ʰᵒʳ for St(3, 6) to be reductive
+@assert StiefelLieAlgHorMatrix(Ā' * X * Ā, 3) ≈ Ā' * X * Ā # hide
+Ā' * X * Ā # this has to be in 𝔤ʰᵒʳ for St(3, 6) to be reductive
 ```
 
 verifies the first property and
