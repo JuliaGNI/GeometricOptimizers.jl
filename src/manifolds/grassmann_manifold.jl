@@ -44,7 +44,17 @@ rgrad(Y, Δ)
 ```
 """
 function rgrad(Y::GrassmannManifold, ∇L::AbstractMatrix)
-    ∇L - Y * (Y' * ∇L)
+    ∇L = _match_backend(Y, ∇L) # TEMPORARY, see `_match_backend`
+
+    # `Y.A` and not `Y`, which is what `rgrad(::StiefelManifold, …)` already does. `Y'` is a
+    # `Transpose{…, GrassmannManifold}`, and unlike `StiefelManifold` this manifold defines no `*`
+    # that unwraps one, so `Y' * ∇L` reached `LinearAlgebra._generic_matmatmul_generic!`, which
+    # indexes its arguments elementwise through `getindex(::Manifold, ::Int, ::Int)`. On the host
+    # that is merely the slow path; on a device it is `Scalar indexing is disallowed`, so `rgrad` on
+    # a device-resident `GrassmannManifold` could not run at all, with or without a matching
+    # gradient. Multiplying through the representative reaches the backend's own `mul!`, and the two
+    # are the same matrix by definition.
+    ∇L - Y.A * (Y.A' * ∇L)
 end
 
 @doc raw"""

@@ -70,7 +70,14 @@ _copy(a::NetworkParameters) = mapparameters(_copy, a)
 # built with `manifold_constructor` for the same reason `flatten` above is: a `NamedTuple` holding a
 # `GrassmannManifold` used to reach the `AbstractArray` method below and raise that error while
 # building an `AdamState` or a `MomentumState`. See issue A11.
-_similar(a::Manifold{T}) where {T} = rand(manifold_constructor(a){T}, size(a)...)
+#
+# The point is drawn on `a`'s own backend, which is what the other two lines here do by construction
+# (`zero` and `copy` of a device array are device arrays) and what this one has to be told: a state
+# whose `x` is on a device and whose `x̄` came back on the host does not satisfy the single `OT` that
+# `AdamState` and `MomentumState` declare for the pair.
+function _similar(a::Manifold{T}) where {T}
+    rand(KernelAbstractions.get_backend(a), manifold_constructor(a){T}, size(a)...)
+end
 _similar(a::AbstractArray) = similar(a)
 _similar(a::NetworkParameters) = mapparameters(_similar, a)
 

@@ -5,6 +5,40 @@ A manifold in `GeometricOptimizers` is a sutype of `AbstractMatrix`. All manifol
 """
 abstract type Manifold{T} <: AbstractMatrix{T} end
 
+# TEMPORARY. This is a shim for a defect that is *not* in this package. See the two issues linked
+# from GeometricOptimizers#79; revert it once they are closed.
+#
+# `GeometricMachineLearning`'s `_gml_rgrad(x::Manifold, dp) = rgrad(x, dp)` hands the pullback's
+# output straight to `rgrad`, and on a device-resident network the leaf that arrives for a
+# `StiefelManifold{Float32, CuArray{Float32, 2}}` weight is a host `Matrix{Float32}`. So the
+# `∇L' * Y.A` inside `rgrad` pairs a host matrix with a device one, which is a CPU `gemm!` handed a
+# device pointer:
+#
+#     ArgumentError: Illegal conversion of a CUDA.DeviceMemory to a Ptr{Float32}
+#
+# Observed in the pendulum stage of `GMLDatasets`' revision harness on an RTX 4090 (`GMLDatasets#12`,
+# run `20260903T191704Z_smoke`), one layer deeper than the `similar` defect the rest of this branch
+# fixes: with the cache blocks allocated on the right backend, `Optimizer(Adam(), network)` now
+# succeeds and the first `optimization_step!` fails instead.
+#
+# The ambient gradient is an *input* to this package, so a caller holding its parameters on a device
+# and its gradients on the host is broken wherever those gradients are allocated, and matching them
+# here is the wrong place twice over: it hides that, and it pays a host-to-device transfer per
+# manifold leaf per step, inside the region `PhaseTimer` attributes to the step. What it buys is a
+# pendulum stage that runs at all.
+#
+# The point's backend and not the gradient's, because the point is the parameter: it is what the
+# caller chose to put on a device and what the retraction has to write back to. A host point leaves
+# `∇L` untouched, so every existing host path, `ForwardDiff.Dual` element types included, reaches the
+# arithmetic below exactly as before.
+function _match_backend(Y::Manifold, ∇L::AbstractMatrix)
+    parent(Y) isa Array && return ∇L
+    backend = KernelAbstractions.get_backend(Y)
+    KernelAbstractions.get_backend(∇L) == backend && return ∇L
+
+    copyto!(KernelAbstractions.allocate(backend, eltype(∇L), size(∇L)...), ∇L)
+end
+
 @kernel function assign_columns_kernel!(Y::AbstractMatrix{T}, A::AbstractMatrix{T}) where {T}
     i, j = @index(Global, NTuple)
     Y[i, j] = A[i, j]
