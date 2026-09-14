@@ -30,7 +30,7 @@ breaking release).
   inflection point of `f` — reads the bracket's right end, and asserts the descent test. It is the
   page that was wrong and not the package: inside a solve `ensure_descent!` substitutes the
   steepest-descent direction, and `SimpleSolvers.Quadratic` reports `LINESEARCH_NO_DESCENT` on such
-  a direction without taking a trial step. A new warning on the page says both. Closes
+  a direction without taking a trial step. A new warning on the page says both. Reported as
   JuliaGNI/SimpleSolvers.jl#106.
 - The same example prints the objective value on either side of the step again. `sum∘f(x)` parses
   as `sum ∘ f(x)`, so both blocks rendered a `ComposedFunction` over the *vector* `f(x)` rather than

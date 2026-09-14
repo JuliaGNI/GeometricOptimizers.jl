@@ -3,7 +3,7 @@
 In `GeometricOptimizers` we typically build the search direction by multiplying the gradient with a [Hessian](@extref SimpleSolvers Hessians). When starting at ``x_k`` we take:
 
 ```math
-    p_k = H_{x_k}^{-1}(\nabla_{x_k}f),
+    p_k = -H_{x_k}^{-1}(\nabla_{x_k}f),
 ```
 where ``[H_{x_k}]_{ij} = \partial^2{}f\partial{}x_i\partial{}x_j|_{x_k}`` is the [Hessian](@extref SimpleSolvers Hessians). Note that we often use approximations of this Hessian in practice (such as the [`HessianBFGS`](@ref)).
 
@@ -56,8 +56,8 @@ params = (x = state.x, state = state)
 # the retraction is how a trial step is taken; on an `AbstractVector` like this one it is
 # never consulted, but `linesearch_problem` needs it for the manifold case
 ls_obj = linesearch_problem(obj, grad, _cache, Cayley())
-# `rhs` is `-∇f`, so this is the descent test `∇f⋅p < 0` that `ensure_descent!` applies inside a
-# solve. Built by hand as it is here, the direction is not passed through that safeguard.
+# `rhs` is `-∇f`, so this is the descent test `∇f⋅p < 0` that `ensure_descent!` applies inside a # hide
+# solve. Built by hand as it is here, the direction is not passed through that safeguard. # hide
 @assert dot(rhs(_cache), direction(_cache)) > 0 # hide
 
 fˡˢ(alpha) = ls_obj.F(alpha, params)
@@ -83,16 +83,15 @@ nothing # hide
 
 !!! warning "The starting point is chosen so that the direction descends"
     A line search only ever returns a step ``\alpha \geq 0``, so it can minimise ``f^\mathrm{ls}``
-    only along a direction that *descends*. The Newton direction ``p = H^{-1}\nabla{}f`` descends
+    only along a direction that *descends*. The Newton direction ``p = -H^{-1}\nabla{}f`` descends
     only where ``H`` is positive definite. Started from ``x_0 = (0, 0.1, 0.2)`` — where ``f''`` is
     about ``-6`` in every component — this same construction gives ``(f^\mathrm{ls})'(0) = +6.45``
     and a *concave* ``f^\mathrm{ls}``, which no quadratic fit can minimise;
     [`SimpleSolvers.Quadratic`](@extref) reports `LINESEARCH_NO_DESCENT` on it without taking a
     single trial step. Inside a solve that case never reaches the search:
     [`ensure_descent!`](@ref GeometricOptimizers.ensure_descent!) substitutes the steepest-descent
-    direction for the step. Building the
-    direction by hand, as this page does, skips that safeguard, so the starting point has to supply
-    the descent itself.
+    direction for the step. Building the direction by hand, as this page does, skips that
+    safeguard, so the starting point has to supply the descent itself.
 
 We now again want to find the minimum with quadratic line search and repeat the procedure above:
 
