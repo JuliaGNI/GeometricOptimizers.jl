@@ -38,8 +38,12 @@ We hence use [`linesearch_problem`](@ref) not for a [`SimpleSolvers.NewtonSolver
 
 ```@example quadratic
 using GeometricOptimizers # hide
-using GeometricOptimizers: NewtonOptimizerCache, initialize!, gradient, compute_direction!, linesearch_problem, Cayley # hide
-x₀ = [0., .1, .2]
+using GeometricOptimizers: NewtonOptimizerCache, initialize!, gradient, compute_direction!, linesearch_problem, Cayley, rhs # hide
+using SimpleSolvers: direction # hide
+using LinearAlgebra: dot # hide
+# `f` has an inflection point at `x ≈ .75`; the starting point lies to the right of it, so the
+# Hessian is positive definite here and the Newton direction descends. See the warning below.
+x₀ = [.9, 1., 1.1]
 x = copy(x₀)
 obj = OptimizerProblem(sum∘f, x₀)
 grad = GradientAutodiff{Float64}(obj.F, length(x₀))
@@ -52,6 +56,9 @@ params = (x = state.x, state = state)
 # the retraction is how a trial step is taken; on an `AbstractVector` like this one it is
 # never consulted, but `linesearch_problem` needs it for the manifold case
 ls_obj = linesearch_problem(obj, grad, _cache, Cayley())
+# `rhs` is `-∇f`, so this is the descent test `∇f⋅p < 0` that `ensure_descent!` applies inside a
+# solve. Built by hand as it is here, the direction is not passed through that safeguard.
+@assert dot(rhs(_cache), direction(_cache)) > 0 # hide
 
 fˡˢ(alpha) = ls_obj.F(alpha, params)
 ∂fˡˢ∂α(alpha) = ls_obj.D(alpha, params)
@@ -62,7 +69,7 @@ nothing # hide
 using CairoMakie
 fig = Figure()
 ax = Axis(fig[1, 1])
-alpha = -3.:.01:3.
+alpha = -2.:.01:1.
 lines!(ax, alpha, fˡˢ.(alpha); label = L"f^\mathrm{ls}_\mathrm{opt}(\alpha)")
 axislegend(ax)
 save("f_ls_optimizer.png", fig)
@@ -73,6 +80,19 @@ nothing # hide
 
 !!! info
     Note the different shape of the line search problem in the case of the optimizer, especially that the line search problem can take negative values in this case!
+
+!!! warning "The starting point is chosen so that the direction descends"
+    A line search only ever returns a step ``\alpha \geq 0``, so it can minimise ``f^\mathrm{ls}``
+    only along a direction that *descends*. The Newton direction ``p = H^{-1}\nabla{}f`` descends
+    only where ``H`` is positive definite. Started from ``x_0 = (0, 0.1, 0.2)`` — where ``f''`` is
+    about ``-6`` in every component — this same construction gives ``(f^\mathrm{ls})'(0) = +6.45``
+    and a *concave* ``f^\mathrm{ls}``, which no quadratic fit can minimise;
+    [`SimpleSolvers.Quadratic`](@extref) reports `LINESEARCH_NO_DESCENT` on it without taking a
+    single trial step. Inside a solve that case never reaches the search:
+    [`ensure_descent!`](@ref GeometricOptimizers.ensure_descent!) substitutes the steepest-descent
+    direction for the step. Building the
+    direction by hand, as this page does, skips that safeguard, so the starting point has to supply
+    the descent itself.
 
 We now again want to find the minimum with quadratic line search and repeat the procedure above:
 
@@ -87,8 +107,10 @@ p₁ = ∂fˡˢ∂α(0.)
 ```@example quadratic
 using SimpleSolvers: bracket_minimum_with_fixed_point, compute_new_iterate! # hide
 params = (x = state.x, state = state)
-α₀ = bracket_minimum_with_fixed_point(ls_obj, params, 0.)[1]
-@assert !(α₀ == 0. || α₀ == .1) # hide
+# the second return value: the bracket's *right* end. The first is the left end, which is the
+# fixed point the bracketing starts from, i.e. `0.` here — and `p₂` divides by `α₀²`.
+α₀ = bracket_minimum_with_fixed_point(ls_obj, params, 0.)[2]
+@assert α₀ > 0. # hide
 y = fˡˢ(α₀)
 p₂ = (y - p₀ - p₁*α₀) / α₀^2
 p(α) = p₀ + p₁ * α + p₂ * α^2
@@ -108,6 +130,9 @@ ax = Axis(fig[1, 1])
 lines!(ax, alpha, fˡˢ.(alpha); label = L"f^\mathrm{ls}_\mathrm{opt}(\alpha)")
 lines!(ax, alpha, p.(alpha); label = L"p^{(1)}(\alpha)")
 scatter!(ax, α₁, p(α₁); color = mred, label = L"\alpha_1")
+# the fitted parabola reaches 81 at the left end of the range, which would flatten f^ls out of
+# sight; the two curves are only being compared near their minima anyway
+ylims!(ax, (-14., 12.))
 axislegend(ax)
 save("f_ls_opt1.png", fig)
 nothing # hide
@@ -118,14 +143,13 @@ nothing # hide
 We now again move the original ``x`` in the Newton direction with step length ``\alpha_1``:
 
 ```@example quadratic
-sum∘f(x)
+(sum∘f)(x)
 ```
 
 ```@example quadratic
-using SimpleSolvers: direction # hide
 compute_new_iterate!(x, α₁, direction(_cache))
 ```
 
 ```@example quadratic
-sum∘f(x)
+(sum∘f)(x)
 ```
