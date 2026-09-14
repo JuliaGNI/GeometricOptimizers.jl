@@ -1,17 +1,9 @@
 # `rgrad` tolerates an ambient gradient that is not on the point's backend.
 #
 # TEMPORARY, together with `GeometricOptimizers._match_backend`, which is what this file pins. The
-# defect it works around is not in this package: see the two issues linked from
-# GeometricOptimizers#79. Delete this file when they are closed and the shim comes out.
-#
-# `similar_backend.jl` next door pins the *allocation* side, which is what made
-# `Optimizer(Adam(), network)` a `MethodError` on a device-resident network. This is the next thing
-# the same pendulum stage hit once that was fixed, and it is on the *input* side:
-# `GeometricMachineLearning`'s `_gml_rgrad(x::Manifold, dp) = rgrad(x, dp)` passes the pullback's
-# leaf through unchanged, that leaf came back on the host for a device parameter, and `∇L' * Y.A`
-# then pairs a host matrix with a device one. On CUDA that is
-# `ArgumentError: Illegal conversion of a CUDA.DeviceMemory to a Ptr{Float32}` from a CPU `gemm!`
-# (`GMLDatasets#12`, run `20260903T191704Z_smoke`, RTX 4090).
+# defect it works around is not in this package. Delete this file with the shim; the two issues that
+# close it are named beside `_match_backend`. `similar_backend.jl` next door pins the *allocation*
+# side; this is the *input* side.
 #
 # `JLArray` stands in for the device, as it does in `similar_backend.jl`: its backend is a
 # `KernelAbstractions.GPU`, so `rgrad` takes the mismatched-backend branch without a GPU present.
@@ -23,6 +15,16 @@ using KernelAbstractions: KernelAbstractions
 using LinearAlgebra: qr!
 using Random
 using Test
+
+# A gradient `KernelAbstractions` cannot place: `parent` returns it, so `get_backend` throws. It
+# stands in for any matrix type outside `KernelAbstractions`' reach that a host caller may hand to
+# `rgrad`, and it is why the shim must decide from the point alone.
+struct OpaqueMatrix{T} <: AbstractMatrix{T}
+    A::Matrix{T}
+end
+
+Base.size(A::OpaqueMatrix) = size(A.A)
+Base.getindex(A::OpaqueMatrix, i::Int, j::Int) = A.A[i, j]
 
 Random.seed!(1234)
 
@@ -64,11 +66,23 @@ const host_gradient = randn(T, N, n)
     end
 
     # The host path is the one every existing caller is on, and it reaches the arithmetic untouched:
-    # `_match_backend` returns its second argument identically, without asking either argument for a
+    # `_match_backend` returns its second argument identically, without asking that argument for a
     # backend. That is what keeps element types `KernelAbstractions` cannot allocate, such as
     # `ForwardDiff.Dual`, working on a host point.
     @testset "host gradient, host point" begin
         @test _match_backend(host_Y, host_gradient) === host_gradient
         @test KernelAbstractions.get_backend(rgrad(host_Y, host_gradient)) == host
+    end
+
+    # The same, for a host point whose storage is not a plain `Array`. The decision has to come from
+    # the point's backend rather than from the type of its storage, or a wrapped point sends an
+    # unplaceable gradient to `get_backend` and a working host call becomes an `ArgumentError`.
+    @testset "host gradient, host point with wrapped storage" begin
+        wrapped_Y = MT(view(host_point, :, 1:n))
+        opaque_gradient = OpaqueMatrix(host_gradient)
+
+        @test _match_backend(wrapped_Y, host_gradient) === host_gradient
+        @test _match_backend(wrapped_Y, opaque_gradient) === opaque_gradient
+        @test rgrad(wrapped_Y, host_gradient) ≈ rgrad(host_Y, host_gradient)
     end
 end

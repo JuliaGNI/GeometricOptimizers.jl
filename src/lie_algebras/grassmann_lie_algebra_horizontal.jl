@@ -160,9 +160,7 @@ end
 # `typeof(A)` is the two-parameter `GrassmannLieAlgHorMatrix{T, AT}`, which `zeros` has no
 # method for; it has to be narrowed to the one-parameter form, as in the Stiefel case.
 #
-# The backend comes from `A` for the reason given beside `similar(::StiefelLieAlgHorMatrix)`: these
-# are the like-for-like allocations of the optimizer caches, and a host block beside a device one is
-# a `MethodError` at cache construction.
+# The backend comes from `A`, for the reason given beside `similar(::StiefelLieAlgHorMatrix)`.
 function Base.similar(A::GrassmannLieAlgHorMatrix, dims::Union{
         Integer, AbstractUnitRange}...)
     zeros(KernelAbstractions.get_backend(A), GrassmannLieAlgHorMatrix{eltype(A)}, dims...)

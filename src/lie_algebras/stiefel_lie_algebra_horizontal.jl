@@ -170,13 +170,10 @@ function Base.zeros(backend::KernelAbstractions.Backend,
         KernelAbstractions.zeros(backend, T, N - n, n), N, n)
 end
 
-# Both methods allocate on the backend `A` is already on, through the method above, and that is the
-# property that makes `similar` usable as the like-for-like allocation of an optimizer cache. They
-# used to call the *host* `zeros` instead, so a lift that lived on a device came back on the host:
-# `AdamCache(x, g, δ)` builds its fourth block as `Δg = _similar(g)` and forwards to the
-# four-argument constructor, whose `AT <: GradientStorage{T}` binds `g`, `δ` and `Δg` to one type, so
-# a host `Δg` beside a device `g` was a `MethodError` at `OptimizerCache(Adam(), ps)` and not a wrong
-# answer. See the changelog.
+# Both methods allocate on the backend `A` is already on, through the method above. That is what
+# makes `similar` usable as the like-for-like allocation of an optimizer cache: the four-argument
+# cache constructors bind their three gradient blocks to a single `AT <: GradientStorage{T}`, so a
+# host block beside a device one does not dispatch.
 function Base.similar(A::StiefelLieAlgHorMatrix, dims::Union{Integer, AbstractUnitRange}...)
     zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, dims...)
 end

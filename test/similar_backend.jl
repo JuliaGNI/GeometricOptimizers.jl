@@ -1,28 +1,17 @@
 # An allocation that stands in for another one is made on the backend that other one is on.
 #
-# This is the property an optimizer cache rests on, and nothing tested it before. `changebackend.jl`
-# next door pins *transfers*; this file pins the like-for-like allocations that happen once the
-# parameters are already on a device: `similar`, `zero` and `copy` on a leaf, and the
-# `_similar`/`_zero`/`_copy` walk over a whole set.
-#
-# `OptimizerCache(Adam(), x)` calls `AdamCache(_copy(x), _zero(x), _zero(x))`, that three-argument
-# method builds its fourth block as `Δg = _similar(g)`, and the four-argument method it forwards to
-# constrains `g`, `δ` and `Δg` to a single `AT <: GradientStorage{T}`. So a `similar` that came back
-# on the host beside a gradient that lives on a device is not a slow path or a wrong number: it is a
-# `MethodError` at cache construction, with the two `NetworkParameters` types printed side by side
-# and only the innermost array type differing.
-#
-# That is what the pendulum stage of `GMLDatasets`' revision harness hit on an RTX 4090
-# (`GMLDatasets#12`, run `20260903T125418Z_smoke`): `Optimizer(Adam(), network)` on a device-resident
-# network, `no method matching AdamCache(::NetworkParameters{…CuArray…}, …, ::NetworkParameters{…
-# StiefelLieAlgHorMatrix{Float32, SkewSymMatrix{Float32, Vector{Float32}}, Matrix{Float32}}})`. Both
-# horizontal lifts called the *host* `zeros` from `similar`. The image stages of the same run never
-# reached it because their script keeps the parameters in a host container and copies to the device
-# inside the objective, so the pendulum was the first device-resident optimizer in the harness.
+# This is the property an optimizer cache rests on. `changebackend.jl` next door pins *transfers*;
+# this file pins the like-for-like allocations that happen once the parameters are already on a
+# device: `similar`, `zero` and `copy` on a leaf, and the `_similar`/`_zero`/`_copy` walk over a
+# whole set. `OptimizerCache(Adam(), x)` calls `AdamCache(_copy(x), _zero(x), _zero(x))`, that
+# three-argument method builds its fourth block as `Δg = _similar(g)`, and the four-argument method
+# it forwards to constrains `g`, `δ` and `Δg` to a single `AT <: GradientStorage{T}`. So a `similar`
+# that comes back on the host beside a gradient that lives on a device is not a slow path or a wrong
+# number: it is a `MethodError` at cache construction.
 #
 # `JLArray` stands in for the device here, as it does in `retractions/exponential_accuracy.jl`: its
 # backend is a `KernelAbstractions.GPU`, so it takes the same `zeros(::Backend, …)` methods a
-# `CuArray` does, and it is what makes the regression visible without a GPU.
+# `CuArray` does, and it is what makes the property checkable without a GPU.
 #
 # `StiefelProjection` is deliberately not in the table below. It has a backend and it is an
 # `AbstractMatrix`, but `similar` and `zero` on it reach the generic fallbacks and return a host
