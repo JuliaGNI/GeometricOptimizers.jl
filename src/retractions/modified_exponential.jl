@@ -167,12 +167,12 @@ function _scaled_kernel(X::AbstractMatrix, ::NativePade)
     𝕀 = unit_matrix(X)
     p, q = _native_pade_polynomials(X, 𝕀)
 
-    # `q₆` differs from the identity by at most `Σ|qₖ|θᵏ = 0.256` in one-norm, which is what the
-    # constructor's bound `θ ≤ 1/2` buys, so the dense solve `q⁻¹p` can be a Newton--Schulz iteration
-    # instead: `q⁻¹ ↦ q⁻¹(2𝕀 - q·q⁻¹)` squares the residual `𝕀 - q·q⁻¹` at every step. From `q⁻¹ = 𝕀`
-    # the first step is just `2𝕀 - q`, and four more take the residual to `(𝕀 - q)³²` —
-    # `0.256³² ≈ 2e-19`, below `Float64` round-off. Matrix products only, so this is the part that
-    # stays portable where a dense solve would not.
+    # `q₆` differs from the identity by at most `Σ|qₖ|θᵏ = 0.2563… < 0.257` in one-norm, which is
+    # what the constructor's bound `θ ≤ 1/2` buys, so the dense solve `q⁻¹p` can be a Newton--Schulz
+    # iteration instead: `q⁻¹ ↦ q⁻¹(2𝕀 - q·q⁻¹)` squares the residual `𝕀 - q·q⁻¹` at every step. From
+    # `q⁻¹ = 𝕀` the first step is just `2𝕀 - q`, and four more take the residual to `(𝕀 - q)³²` —
+    # `1.3e-19`, below `Float64` round-off. Matrix products only, so this is the part that stays
+    # portable where a dense solve would not.
     q⁻¹ = 2 * 𝕀 - q
     for _ in 1:4
         q⁻¹ = q⁻¹ * (2 * 𝕀 - q * q⁻¹)
