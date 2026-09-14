@@ -461,16 +461,15 @@ axis whose absence made the first of those possible. Two new *Known issues* came
   for it. `retractions.md` had become a chapter about two retractions with five hundred lines of
   numerical analysis inside it, and adding the derivation pushed the rendered page over Documenter's
   `size_threshold_warn`. It is now split: `retractions.md` is the retractions as maps, and
-  `exponential_algorithms.md` is the numerical problem of evaluating the exponential — 47 KiB and
-  96 KiB against 100 KiB, where the single page was over.
+  `exponential_algorithms.md` is the numerical problem of evaluating the exponential.
 
   The chapter separates the two choices any such algorithm makes, which the old text ran together: the
   approximation kernel used at a small argument, and whether a large argument is scaled down and
   recovered afterwards. Taylor and Padé are kernels; scaling and modified squaring is the framework
   around one, not a competitor to it. Both algorithms are then given as numbered steps that match the
   implementation line for line, including the `1/2ˢ` factor and the recurrence `W ← 2W + WXW`, which is
-  the φ₁ modified squaring of Skaflestad and Wright (2009) and follows from
-  `φ₁(2A) = φ₁(A) + Aφ₁(A)²/2`.
+  the modified squaring of Skaflestad and Wright (2009) and follows from
+  `𝔄(2Y) = 𝔄(Y) + Y𝔄(Y)²/2`.
 
   `NativePade`'s coefficients are derived rather than quoted. The `[m/n]` matching condition splits
   into `n` equations that fix the denominator and `m+1` that merely read the numerator off, and one
@@ -487,6 +486,13 @@ axis whose absence made the first of those possible. Two new *Known issues* came
   dense CPU implementation would pivot and solve, and the trade being made here is a
   factorization-free denominator against five matrix products, sound only because scaling supplies the
   initial-residual bound.
+
+  The docstrings are **not** a second copy of the chapter. Each says what its algorithm is, when to
+  reach for it and what constraint a caller can violate, then links to the section that derives it.
+  That is deliberate: the chapter recomputes its tables on every build, a docstring freezes whatever
+  was measured when it was written, and two copies of a round-off-level figure can only drift apart.
+  Where a docstring does keep a table — `NativePade`'s `θ` sweep — it is because that table is the
+  only explanation of a constructor's `@assert`.
 
 - **The elementwise primitives, and the ~40 sites around them, take a container.** A new alias,
   `ParameterContainer{T} = Union{ArrayNamedTuple{T}, NetworkParameters{T}}`, is what they dispatch on;
@@ -599,6 +605,20 @@ axis whose absence made the first of those possible. Two new *Known issues* came
   returning.
 
 ### Changed
+
+- **`ScaledSquaring` and `NativePade` share one scaling framework.** Each carried its own copy of the
+  halving count, the `1/2ˢ` factor and the `W ← 2W + WXW` recurrence, and differed only in what it
+  evaluated at the scaled argument. That kernel is now `_scaled_kernel` and the framework is one `𝔄`
+  method on `ScaledAlgorithm = Union{ScaledSquaring, NativePade}`, so the code has the
+  kernel-versus-framework split the chapter describes. The Taylor kernel is now fully in place as
+  well: it had `mul!` and `rmul!` into a scratch matrix followed by `𝔄A += Aⁿ`, which allocated a
+  fresh matrix every iteration regardless.
+
+  Behaviour is unchanged — results are bitwise identical across `Float32` and `Float64`, over the
+  documented `θ` range, and on the zero matrix — so nothing about accuracy moves. What moves is
+  allocation: measured cold on one BLAS thread at `n = 60`, the kernel drops from 362 KiB to 99 KiB
+  and the whole `ScaledSquaring` call from 1348 KiB to 1085 KiB. Run times are unchanged. This does
+  not close [#67], which is about the denominator, or [#77], which is about the ordering.
 
 - **Julia 1.11 is the minimum**, up from the 1.10 LTS, in step with the rest of this family of
   packages. Nothing here was accommodating 1.10 directly; what the floor buys is that
@@ -4222,6 +4242,8 @@ and both are corrected: see C8.)
 [#56]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/56
 [#59]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/59
 [#60]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/60
+[#67]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/67
+[#77]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/77
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
