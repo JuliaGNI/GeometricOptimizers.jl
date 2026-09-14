@@ -24,7 +24,7 @@ breaking release).
 
 - The *Linesearches for Optimizers* example now starts where the Newton direction descends. Its
   starting point `(0, 0.1, 0.2)` sat where every diagonal entry of the Hessian is about `-6`, so
-  `p = H⁻¹∇f` pointed uphill: the plotted `fˡˢ` was concave with `(fˡˢ)'(0) = +6.45`, and the
+  `p = -H⁻¹∇f` pointed uphill: the plotted `fˡˢ` was concave with `(fˡˢ)'(0) = +6.45`, and the
   quadratic drawn beside it was fitted through the *left* end of the bracket, which the ascent
   direction placed at `α = -2.55`. The example starts at `(0.9, 1, 1.1)` instead — past the
   inflection point of `f` — reads the bracket's right end, and asserts the descent test. It is the
@@ -35,6 +35,10 @@ breaking release).
 - The same example prints the objective value on either side of the step again. `sum∘f(x)` parses
   as `sum ∘ f(x)`, so both blocks rendered a `ComposedFunction` over the *vector* `f(x)` rather than
   a number; they are parenthesised.
+- The same page states the sign of the Newton direction correctly. Its opening formula dropped the
+  minus, and the prose above it called the direction the gradient multiplied by a Hessian — both
+  name an *ascent* direction, on the page that explains why the direction has to descend. The
+  Hessian's own definition beneath them also lost its fraction bar.
 - A `Newton` optimizer no longer fails when its gradient is wrapped. `NewtonOptimizerState`'s
   `update!` obtained the objective by reading the gradient's `F` field, which only the three concrete
   `SimpleSolvers.Gradient` subtypes have — so any wrapper threw a `FieldError` on the first step.

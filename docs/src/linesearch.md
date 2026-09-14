@@ -1,11 +1,11 @@
 ## Linesearches for Optimizers
 
-In `GeometricOptimizers` we typically build the search direction by multiplying the gradient with a [Hessian](@extref SimpleSolvers Hessians). When starting at ``x_k`` we take:
+In `GeometricOptimizers` we typically build the search direction by applying the inverse [Hessian](@extref SimpleSolvers Hessians) to the negative gradient. When starting at ``x_k`` we take:
 
 ```math
     p_k = -H_{x_k}^{-1}(\nabla_{x_k}f),
 ```
-where ``[H_{x_k}]_{ij} = \partial^2{}f\partial{}x_i\partial{}x_j|_{x_k}`` is the [Hessian](@extref SimpleSolvers Hessians). Note that we often use approximations of this Hessian in practice (such as the [`HessianBFGS`](@ref)).
+where ``[H_{x_k}]_{ij} = \frac{\partial^2{}f}{\partial{}x_i\partial{}x_j}\Big|_{x_k}`` is the [Hessian](@extref SimpleSolvers Hessians). Note that we often use approximations of this Hessian in practice (such as the [`HessianBFGS`](@ref)).
 
 The linesearch objective is then built as
 ```math
@@ -83,10 +83,11 @@ nothing # hide
 
 !!! warning "The starting point is chosen so that the direction descends"
     A line search only ever returns a step ``\alpha \geq 0``, so it can minimise ``f^\mathrm{ls}``
-    only along a direction that *descends*. The Newton direction ``p = -H^{-1}\nabla{}f`` descends
-    only where ``H`` is positive definite. Started from ``x_0 = (0, 0.1, 0.2)`` — where ``f''`` is
-    about ``-6`` in every component — this same construction gives ``(f^\mathrm{ls})'(0) = +6.45``
-    and a *concave* ``f^\mathrm{ls}``, which no quadratic fit can minimise;
+    only along a direction that *descends*. The test is ``\nabla{}f\cdot{}p < 0``, and the Newton
+    direction ``p = -H^{-1}\nabla{}f`` passes it wherever ``H`` is positive definite. Started from
+    ``x_0 = (0, 0.1, 0.2)`` — where ``f''`` is about ``-6`` in every component — this same
+    construction gives ``(f^\mathrm{ls})'(0) = +6.45`` and a *concave* ``f^\mathrm{ls}``, which no
+    quadratic fit can minimise;
     [`SimpleSolvers.Quadratic`](@extref) reports `LINESEARCH_NO_DESCENT` on it without taking a
     single trial step. Inside a solve that case never reaches the search:
     [`ensure_descent!`](@ref GeometricOptimizers.ensure_descent!) substitutes the steepest-descent
