@@ -170,10 +170,16 @@ function Base.zeros(backend::KernelAbstractions.Backend,
         KernelAbstractions.zeros(backend, T, N - n, n), N, n)
 end
 
+# Both methods allocate on the backend `A` is already on, through the method above. That is what
+# makes `similar` usable as the like-for-like allocation of an optimizer cache: the four-argument
+# cache constructors bind their three gradient blocks to a single `AT <: GradientStorage{T}`, so a
+# host block beside a device one does not dispatch.
 function Base.similar(A::StiefelLieAlgHorMatrix, dims::Union{Integer, AbstractUnitRange}...)
-    zeros(StiefelLieAlgHorMatrix{eltype(A)}, dims...)
+    zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, dims...)
 end
-Base.similar(A::StiefelLieAlgHorMatrix) = zeros(StiefelLieAlgHorMatrix{eltype(A)}, A.N, A.n)
+function Base.similar(A::StiefelLieAlgHorMatrix)
+    zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, A.N, A.n)
+end
 
 function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}

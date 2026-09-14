@@ -5,6 +5,26 @@ A manifold in `GeometricOptimizers` is a sutype of `AbstractMatrix`. All manifol
 """
 abstract type Manifold{T} <: AbstractMatrix{T} end
 
+# TEMPORARY. A shim for a defect that is not in this package: the ambient gradient is an *input* to
+# `rgrad`, so a caller holding its parameters on a device and its gradients on the host is broken
+# wherever those gradients are allocated. Matching them here hides that, and pays a host-to-device
+# transfer per manifold leaf per step, inside the region `PhaseTimer` attributes to the step. Remove
+# this function, its two call sites and `test/gradient_backend.jl` once
+# JuliaGNI/GeometricMachineLearning.jl#258 and JuliaGNI/AbstractNeuralNetworks.jl#39 are closed.
+#
+# The point's backend and not the gradient's, because the point is the parameter: it is what the
+# caller chose to put on a device and what the retraction has to write back to. A point that is not
+# on a device returns `∇L` untouched, without asking it for a backend — which is what keeps a
+# gradient `KernelAbstractions` cannot place, a `ForwardDiff.Dual` matrix among them, on the host
+# path it was always on.
+function _match_backend(Y::Manifold, ∇L::AbstractMatrix)
+    backend = KernelAbstractions.get_backend(Y)
+    backend isa GPU || return ∇L
+    KernelAbstractions.get_backend(∇L) == backend && return ∇L
+
+    copyto!(KernelAbstractions.allocate(backend, eltype(∇L), size(∇L)...), ∇L)
+end
+
 @kernel function assign_columns_kernel!(Y::AbstractMatrix{T}, A::AbstractMatrix{T}) where {T}
     i, j = @index(Global, NTuple)
     Y[i, j] = A[i, j]
