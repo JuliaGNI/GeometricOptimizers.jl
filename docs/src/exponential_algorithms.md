@@ -271,43 +271,12 @@ norm is the *square* of that spectrum's radius, so
 \|\bar{B}\|_2 \to \infty:
 ```
 
-the reduction takes a normal matrix and returns one that is as far from normal as its size allows. That
-is measurable rather than rhetorical. Henrici's **departure from normality**
-[henrici1962bounds](@cite),
-
-```math
-\operatorname{dep}_F(M) := \left(\|M\|_F^2 - \sum_i|\lambda_i(M)|^2\right)^{1/2},
-```
-
-which vanishes exactly on the normal matrices, is available here in closed form: the eigenvalues of
-``X`` are those of ``\bar{B}``, and ``\bar{B}`` is normal, so
-``\sum_i|\lambda_i(X)|^2 = \|\bar{B}\|_F^2`` and
-
-```math
-\operatorname{dep}_F(X)^2 = \|X\|_F^2 - \|\bar{B}\|_F^2.
-```
-
-Both readings of that quantity, and the fraction of ``\|X\|_F`` it accounts for — every norm in this
-table is the Frobenius norm, which is what `norm` returns:
-
-```@example retractions
-rows = map(lifts) do B
-    B′, B′′ = lift_factors(B)
-    X = B′′' * B′
-    dep = sqrt(norm(X)^2 - sum(abs2, eigvals(X)))     # the definition
-    dep_lift = sqrt(norm(X)^2 - norm(Matrix(B))^2)    # the closed form above
-    [fixed(norm(Matrix(B))), sci(dep), sci(dep_lift), fixed(dep / norm(X))]
-end
-
-table(["‖B̄‖", "dep(X)", "√(‖X‖² − ‖B̄‖²)", "dep(X)/‖X‖"], rows)
-```
-
-The last column tends to one: asymptotically *all* of ``X`` is its departure from normality. Such a
-matrix is informally called "strongly non-normal", and that is the sense in which this page and the
-docstrings use the phrase. The label matters less than its consequence, which is the subject of
-[trefethen2005spectra](@cite): for a non-normal matrix the transient behaviour of powers and of the
-exponential is governed by the norm while the asymptotics are governed by the spectrum, and the gap
-between the two can be arbitrarily large.
+the reduction takes a normal matrix and returns one that is as far from normal as its size allows.
+That is the sense in which this page and the docstrings call ``X`` "strongly non-normal". The label
+matters less than its consequence, which is the subject of [trefethen2005spectra](@cite): for a
+non-normal matrix the transient behaviour of powers and of the exponential is governed by the norm
+while the asymptotics are governed by the spectrum, and the gap between the two can be arbitrarily
+large.
 
 A truncated power series is precisely what that gap breaks. The kernel forms the partial sums
 
@@ -597,29 +566,19 @@ magnitude over [Staying on the manifold](@ref), and considerably further in [`Fl
 reason in the note below.
 
 !!! note "The halving count is loose"
-    `s` is chosen from a **norm**, ``s = \lceil\log_2(\|X\|_1/\theta)\rceil``, because that is the
-    quantity available without an eigendecomposition. What actually limits the kernel is the
-    *spectrum*: as [Why the reduced argument is the hard case](@ref) derives, ``\|X\|`` is quadratic
-    in ``\|\bar{B}\|_2`` where ``\rho(X) = \|\bar{B}\|_2`` exactly, so this rule takes
-    ``s \approx 2\log_2\|\bar{B}\|_2`` halvings where ``\log_2\|\bar{B}\|_2`` would suffice — about
-    twice as many as necessary. By the note above, those extra steps cost both time and a factor of
-    ``2^{s}`` in amplified round-off.
+    `s` is chosen from a **norm**, because that is the quantity available without an
+    eigendecomposition, but what limits the kernel is the *spectrum*. Since ``\|X\|`` is quadratic in
+    ``\|\bar{B}\|_2`` where ``\rho(X) = \|\bar{B}\|_2`` exactly, the rule takes about twice the
+    halvings it needs, and by the note above each extra one costs time and a factor of two in
+    amplified round-off.
 
-    Choosing a scaling parameter from a norm that overestimates what the spectrum requires is the same
-    underlying cause as the *overscaling* that Al-Mohy and Higham identify for the dense exponential
-    [almohy2010new; §3](@cite), and their remedy — replacing ``\|X\|`` by estimates of
-    ``\|X^k\|^{1/k}``, which approach ``\rho(X)`` — would apply here too. It is not the same
-    phenomenon, though: their analysis is a backward-error statement about ``\exp`` on a general
-    matrix, whereas the gap here is a structural property of the ``2n\times{}2n`` reduction, present
-    at every lift and quantified by the two derivations of
-    [Why the reduced argument is the hard case](@ref): ``\|X\|_2`` between
-    ``\tfrac{1}{4}\|\bar{B}\|_2^2`` and ``\|\bar{B}\|_2^2`` against a spectral radius of exactly
-    ``\|\bar{B}\|_2``.
-
-    The rule is left alone because a tighter one needs the spectral radius, and an eigenvalue
-    computation would forfeit exactly the freedom from dense LAPACK that makes this the default
-    algorithm; ``\|X^k\|^{1/k}`` estimates would not, and are the obvious thing to try.
-    [`NativePade`](@ref) takes ``s`` the same way and inherits all of this.
+    That is the same underlying cause as the *overscaling* Al-Mohy and Higham identify for the dense
+    exponential [almohy2010new; §3](@cite), though not the same phenomenon: their analysis is a
+    backward-error statement about ``\exp`` on a general matrix, whereas the gap here is a structural
+    property of the reduction, present at every lift. Their remedy — replacing ``\|X\|`` by estimates
+    of ``\|X^k\|^{1/k}``, which approach ``\rho(X)`` — would apply, and is the obvious thing to try.
+    An eigenvalue computation would not: it would forfeit exactly the freedom from dense LAPACK that
+    makes this the default. [`NativePade`](@ref) takes ``s`` the same way and inherits all of this.
 
 [^2]: The recurrence has an equivalent reading on the assembled exponential, which is where the name
       "squaring" comes from and which is how the implementation comments put it: the low-rank form is
@@ -754,51 +713,20 @@ a_k=\frac{(m+n-k)!}{(m+n)!}\binom{m}{k},
 b_k=(-1)^k\frac{(m+n-k)!}{(m+n)!}\binom{n}{k},
 ```
 
-and one binomial identity settles both blocks at once. Substituting this ``b_j`` into the convolution
-at degree ``k`` and multiplying through by ``(m+n)!`` to clear the constant gives, in full,
+and one binomial identity settles both blocks at once. Substituting this ``b_j`` into ``c_k``,
+clearing ``(m+n)!``, and writing ``d := m+n-k`` turns the convolution into
+``(m+n)!\,c_k = d!\sum_{j}(-1)^j\binom{n}{j}\binom{m+n-j}{d}``, using
+``(m+n-j)!/(k-j)! = d!\binom{m+n-j}{d}`` — a product of ``d`` consecutive integers, since the exponent
+difference does not depend on ``j``. What remains is the claim
 
 ```math
-\begin{aligned}
-(m+n)!\,c_k
-&= (m+n)!\sum_{j=0}^n\frac{1}{(k-j)!}\cdot(-1)^j\frac{(m+n-j)!}{(m+n)!}\binom{n}{j}\\
-&= \sum_{j=0}^n(-1)^j\binom{n}{j}\frac{(m+n-j)!}{(k-j)!}\\
-&= d!\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d},
-\qquad d := m+n-k.
-\end{aligned}
+\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}=\binom{m}{d-n},
 ```
 
-The last step is the only one that needs a word. With ``d = m+n-k`` fixed, the exponent difference
-``(m+n-j) - (k-j) = d`` does not depend on ``j``, so ``(m+n-j)!/(k-j)!`` is always a product of ``d``
-consecutive integers,
-
-```math
-\frac{(m+n-j)!}{(k-j)!}
-= (m+n-j)(m+n-j-1)\cdots(k-j+1)
-= d!\binom{m+n-j}{d},
-```
-
-which also reproduces the convention above: for ``j>k`` the binomial has upper index ``m+n-j<d`` and
-vanishes, matching ``1/(k-j)! = 0``. What remains is the claim
-
-```math
-\sum_{j=0}^n(-1)^j\binom{n}{j}\binom{m+n-j}{d}=\binom{m}{d-n}.
-```
-
-This is the binomial theorem, applied twice and then read off one degree at a time. Introduce a
-bookkeeping variable ``x``, unrelated to the ``z`` of the approximant and used only to carry
-coefficients. The alternating sum on the left is a binomial expansion in the *quantity* ``(1+x)``:
-
-```math
-\sum_{j=0}^n(-1)^j\binom{n}{j}(1+x)^{m+n-j}
-=(1+x)^m\sum_{j=0}^n\binom{n}{j}(1+x)^{n-j}(-1)^j
-=(1+x)^m\bigl((1+x)-1\bigr)^n
-=x^n(1+x)^m.
-```
-
-Now compare the coefficient of ``x^d`` on the two ends. On the left, expanding each
-``(1+x)^{m+n-j}`` by the binomial theorem gives ``\sum_j(-1)^j\binom{n}{j}\binom{m+n-j}{d}``; on the
-right, ``x^n(1+x)^m`` contributes ``\binom{m}{d-n}``. That proves the claim, and it splits exactly
-where the matching condition splits:
+which is the coefficient of ``x^d`` in
+``\sum_j(-1)^j\binom{n}{j}(1+x)^{m+n-j} = (1+x)^m\bigl((1+x)-1\bigr)^n = x^n(1+x)^m``, where ``x`` is
+a bookkeeping variable unrelated to the ``z`` of the approximant. The claim splits exactly where the
+matching condition splits:
 
 - if ``k\geq m+1``, then ``d-n=m-k<0``, and ``x^n(1+x)^m`` has no ``x^d`` term at all, so ``c_k=0`` —
   all ``n`` denominator equations hold;
@@ -979,7 +907,9 @@ E_{j+1}=E_j^2.
 
 Consequently ``E_j=E_0^{2^j}`` in exact arithmetic and
 ``\|E_j\|\leq\|E_0\|^{2^j}``: once ``\|E_0\|<1``, the iteration converges quadratically, squaring
-the residual at every step.[^4] The code writes the first step explicitly as ``Z_1=2I-q_6(Y)`` and
+the residual at every step — the ordinary local behaviour of Newton's method
+[higham2008functions; §7.2](@cite), with ``\|E_0\|<1`` identifying the basin rather than supplying a
+contraction constant. The code writes the first step explicitly as ``Z_1=2I-q_6(Y)`` and
 performs four more, giving
 ``E_5=(I-q_6(Y))^{32}``. Scaling ensures ``\|Y\|_1\leq 1/2``; from the displayed coefficients,
 
@@ -996,16 +926,6 @@ steps and the constructor restriction ``0<\theta\leq 1/2``: together they make t
 accurate to approximately `Float64` precision using matrix multiplication alone. It is also the same
 order as the ``8\cdot10^{-19}`` kernel truncation error derived above, so neither half of the accuracy
 argument is the weaker one.
-
-[^4]: The condition ``\|E_0\| < 1`` and the language of contraction invite a comparison with the
-      Banach fixed-point theorem, but the two are not the same statement and the identification is not
-      one the literature makes. Banach would give ``\|E_{j+1}\| \leq L\|E_j\|`` for a fixed
-      ``L<1``, i.e. *linear* convergence at a rate the map supplies. What holds here is the exact
-      identity ``E_{j+1}=E_j^2``, hence ``\|E_{j+1}\| \leq \|E_j\|^2`` — quadratic convergence, with
-      the rate improving at every step, which is the ordinary local behaviour of Newton's method and
-      strictly stronger than a contraction estimate. The role of ``\|E_0\|<1`` is to identify the
-      *basin* of that local convergence, not to supply a contraction constant. See
-      [higham2008functions; §7.2](@cite) for the standard analysis.
 
 ### The complete `NativePade` algorithm
 
@@ -1371,42 +1291,6 @@ there to make each section's argument concrete, and the tables here are what to 
 numbers depend on the BLAS and the machine, so the last digit of a quotation will not always match the
 table below it. What does not move is the shape of each column, and that is what the sections claim.
 
-```@setup retractions
-using GeometricOptimizers
-using GeometricOptimizers: geodesic, cayley, check, ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
-using LinearAlgebra: norm
-using Markdown
-using Printf
-import Random
-
-# A `Markdown.MD` rather than a string: Documenter renders it as a table instead of as the code
-# block a printed string would give.
-function table(header, rows)
-    io = IOBuffer()
-    println(io, "| ", join(header, " | "), " |")
-    println(io, "|", repeat("---|", length(header)))
-    for row in rows
-        println(io, "| ", join(row, " | "), " |")
-    end
-    Markdown.parse(String(take!(io)))
-end
-
-# `TaylorSeries` overflows at the top of the sweep, so both formatters have to survive a `NaN` and
-# an `Inf` — a bare `@sprintf` of one is fine, but the guard makes the intent explicit.
-sci(x) = isfinite(x) ? (@sprintf "%.2e" x) : string(x)
-fixed(x) = isfinite(x) ? (@sprintf "%.2f" x) : string(x)
-
-"""
-A sweep of horizontal lifts of increasing norm, all drawn from the same seed — the same eight
-`scripts/retraction_accuracy.jl` sweeps, so that the tables below and the ones it prints agree row
-for row.
-"""
-function sweep(T)
-    Random.seed!(1234)
-    [T(s) * rand(StiefelLieAlgHorMatrix{T}, 20, 3) for s in (0.1, 1.0, 3.0, 6.0, 12.0, 30.0, 60.0, 120.0)]
-end
-```
-
 ### Staying on the manifold
 
 [`check`](@ref) of the retracted point, ``\|Y^TY - \mathbb{I}\|``, on a random
@@ -1415,8 +1299,6 @@ round-off, and it is the one the test suite asserts on. [`Cayley`](@ref) is in t
 reference, since it evaluates no matrix function at all.
 
 ```@example retractions
-lifts = sweep(Float64)
-
 table(["‖B̄‖", "`ScaledSquaring`", "`NativePade`", "`AugmentedPade`", "`ProjectedSkew`", "`TaylorSeries`", "`Cayley`"],
       [[fixed(norm(Matrix(B))),
         sci(check(geodesic(B, ScaledSquaring()))),
