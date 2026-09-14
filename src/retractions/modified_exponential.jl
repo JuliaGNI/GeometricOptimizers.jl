@@ -1,51 +1,32 @@
-update_algorithm = "while norm(Aⁿ) > ε
-mul!(A_temp, Aⁿ, A)
-Aⁿ .= A_temp
-rmul!(Aⁿ, T(inv(n)))
-
-𝔄A += Aⁿ
-n += 1
-end"
-
-@doc (raw"""
+@doc raw"""
     𝔄(A)
 
 Compute ``\mathfrak{A}(A) := \sum_{n=1}^\infty \frac{1}{n!} (A)^{n-1}.``
 
 # Implementation
 
-This uses a Taylor expansion that iteratively adds terms with
-
-```julia
-""" * update_algorithm *
-      raw"""
-
-```
-
-until the norm of `Aⁿ` becomes smaller than machine precision.
-The counter `n` in the above algorithm is initialized as `2`
-The matrices `Aⁿ` and `𝔄` are initialized as the identity matrix.
+The partial sum is accumulated term by term, each term obtained from its predecessor by
+``A^{n-1}/n! = (A^{n-2}/(n-1)!)\cdot{}A/n``, until the term's norm falls below machine precision.
+Both start at the identity, which is the ``n = 1`` term. The recurrence and the accumulation are
+in place, so the loop allocates nothing.
 
 !!! warning "Only accurate for a small argument"
-    The series converges for every `A` but cancels catastrophically for ``\|A\| \gg 1``, so this
-    method alone is not a usable exponential — see [`TaylorSeries`](@ref) for what it does at a
-    large argument. It is used here as the inner summation of [`ScaledSquaring`](@ref), which calls
-    it only on an argument that has been halved until its norm is below `θ`. Reach for it directly
-    only if you know the argument is small.
-""")
+    The series converges for every `A`, but cancellation can make direct summation inaccurate for
+    ``\|A\| \gg 1`` — see [`TaylorSeries`](@ref) for what it does at a large argument. This method
+    is therefore intended as a small-argument kernel. It is used by [`ScaledSquaring`](@ref) only
+    after the argument has been divided until its norm is below `θ`. Reach for it directly only if
+    you know the argument is small.
+"""
 function 𝔄(A::AbstractMatrix)
     T = eltype(A)
-    Aⁿ = unit_matrix(A)
-    𝔄A = copy(Aⁿ)
-    A_temp = zero(A)
+    term = unit_matrix(A)
+    next = zero(A)
+    𝔄A = copy(term)
     n = 2
-    ε = eps(T)
-    while norm(Aⁿ) > ε
-        LinearAlgebra.mul!(A_temp, Aⁿ, A)
-        Aⁿ .= A_temp
-        LinearAlgebra.rmul!(Aⁿ, T(inv(n)))
-
-        𝔄A += Aⁿ
+    while norm(term) > eps(real(T))
+        LinearAlgebra.mul!(next, term, A, T(inv(n)), zero(T))
+        term, next = next, term
+        𝔄A .+= term
         n += 1
     end
     𝔄A
@@ -57,10 +38,11 @@ end
 The induced 1-norm of `X`, i.e. its largest absolute column sum, as a reduction.
 
 `LinearAlgebra.opnorm(X, 1)` is the natural spelling and is *not* used, because
-`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. Scalar indexing is precisely what an array
-on a GPU backend cannot serve, and being free of it is the reason [`ScaledSquaring`](@ref) is the
-default algorithm — so the one norm that algorithm takes has to be expressible as `sum` and
-`maximum`, which every `KernelAbstractions` backend specializes.
+`LinearAlgebra.opnorm1` is a double loop over `X[i, j]`. Scalar indexing is precisely what an array on
+a GPU backend cannot serve, and being free of it is why [`ScaledSquaring`](@ref) and
+[`NativePade`](@ref) have no dense-LAPACK dependency at all — so the one norm they take has to be
+expressible as `sum` and `maximum`. Accelerator execution still depends on the array backend's support
+for those reductions.
 
 The two agree to a few `eps`, not bitwise: `opnorm1` accumulates each column sequentially in at
 least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. The value is only ever
@@ -103,22 +85,41 @@ true
 """
 𝔄(X::AbstractMatrix, ::TaylorSeries) = 𝔄(X)
 
-function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
-    # `X` is halved `s` times so that the series below is summed on an argument of norm ≤ θ, where
-    # it converges in a handful of terms and does not cancel. The halving is then undone by
-    # squaring the *assembled* exponential `I + B̂WB̄ᵗ`, which stays low-rank:
+@doc raw"""
+    _scaled_kernel(X, algorithm)
+
+Evaluate ``\mathfrak{A}(X)`` for ``\|X\|_1 \leq θ``, i.e. the small-argument kernel that
+[`ScaledSquaring`](@ref) and [`NativePade`](@ref) differ in.
+
+[`ScaledSquaring`](@ref) sums the Taylor series, [`NativePade`](@ref) evaluates the ``[6/6]`` Padé
+approximant. Everything else the two algorithms do — choosing the number of halvings, and undoing
+them — is the shared framework in `𝔄(::AbstractMatrix, ::ScaledAlgorithm)` below.
+"""
+_scaled_kernel(X::AbstractMatrix, ::ScaledSquaring) = 𝔄(X)
+
+@doc raw"""
+    ScaledAlgorithm
+
+The [`AbstractExponentialAlgorithm`](@ref)s built as a small-argument kernel inside scaling and
+modified squaring, i.e. [`ScaledSquaring`](@ref) and [`NativePade`](@ref). They share the `θ` field
+and the `𝔄` method below, and differ only in their [`_scaled_kernel`](@ref).
+"""
+const ScaledAlgorithm = Union{ScaledSquaring, NativePade}
+
+function 𝔄(X::AbstractMatrix, algorithm::ScaledAlgorithm)
+    # `X` is halved `s` times so that the kernel sees an argument of norm ≤ θ, where it is accurate.
+    # Initially `exp(B̂B̄ᵗ/2^s) = I + B̂(𝔄(X/2^s)/2^s)B̄ᵗ`. Squaring this represented exponential stays
+    # low-rank:
     #
     #     (I + B̂WB̄ᵗ)² = I + B̂(2W + WXW)B̄ᵗ,
     #
-    # so each squaring is one application of `W ↦ 2W + WXW` at 2n × 2n. Nothing is ever squared at
-    # N × N. `W` absorbs the `2^-s` that belongs to `B̂`, which is what makes `I + B̂WB̄ᵗ` the
-    # exponential of the *scaled* lift; after `s` squarings it is `𝔄(X)` itself, so every caller is
-    # unchanged.
+    # so each recovery step is `W ↦ 2W + WXW` at 2n × 2n, with the original `X`. After `s` steps
+    # `W = 𝔄(X)`. Nothing is ever squared at N × N.
     nrm = opnorm₁(X)
     s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
     scale = eltype(X)(2)^s
 
-    W = 𝔄(X / scale) / scale
+    W = _scaled_kernel(X / scale, algorithm) / scale
     for _ in 1:s
         W = 2 * W + W * X * W
     end
@@ -126,17 +127,27 @@ function 𝔄(X::AbstractMatrix, algorithm::ScaledSquaring)
     W
 end
 
-# The degree-6 diagonal Padé numerator `p₆` and denominator `q₆` of `𝔄`, sharing `X²` and `X⁴` and
-# grouped so that each costs two further matrix products.
-#
-# The coefficients are the [7/6] Padé approximant of `exp` rearranged. With `exp(x) ≈ N(x)/D(x)`,
-#
-#     φ₁(x) = (exp(x) - 1)/x ≈ (N(x) - D(x)) / (x·D(x)),
-#
-# and `N - D` is divisible by `x` because both have constant term `1`. So `q₆ = D`, of degree 6, and
-# `p₆(x) = (N(x) - D(x))/x`, also of degree 6 since `N` has degree 7 — a *diagonal* approximant, and
-# one that inherits `[7/6]`'s order: `p₆/q₆` agrees with `φ₁` to `O(x¹³)`. The identity is passed in
-# rather than rebuilt because `𝔄` below needs one of the same size anyway.
+@doc raw"""
+    _native_pade_polynomials(X, 𝕀)
+
+Evaluate the degree-6 numerator ``p_6(X)`` and denominator ``q_6(X)`` used by [`NativePade`](@ref).
+
+If ``P^{\exp}_7/Q^{\exp}_6`` is the ``[7/6]`` Padé approximant of the exponential, then
+
+```math
+p_6(z)=\frac{P^{\exp}_7(z)-Q^{\exp}_6(z)}{z},
+\qquad
+q_6(z)=Q^{\exp}_6(z),
+```
+
+so ``q_6(X)^{-1}p_6(X)`` agrees with ``\mathfrak{A}(X)`` through the ``X^{12}`` term.
+The implementation shares ``X^2`` and ``X^4`` between the two polynomials and groups the remaining
+terms to avoid forming every matrix power separately. `𝕀` must be the multiplicative identity with
+the same size, element type, and backend as `X`.
+
+This is an internal kernel; [`NativePade`](@ref) supplies scaling, applies the denominator, and undoes
+the scaling with modified squaring.
+"""
 function _native_pade_polynomials(X::AbstractMatrix, 𝕀::AbstractMatrix)
     T = eltype(X)
     X² = X * X
@@ -152,37 +163,28 @@ function _native_pade_polynomials(X::AbstractMatrix, 𝕀::AbstractMatrix)
     p, q
 end
 
-function 𝔄(X::AbstractMatrix, algorithm::NativePade)
-    nrm = opnorm₁(X)
-    s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
-    scale = eltype(X)(2)^s
+function _scaled_kernel(X::AbstractMatrix, ::NativePade)
     𝕀 = unit_matrix(X)
-    p, q = _native_pade_polynomials(X / scale, 𝕀)
+    p, q = _native_pade_polynomials(X, 𝕀)
 
-    # `q₆` differs from the identity by at most `Σ|qₖ|θᵏ = 0.256` in one-norm, which is what the
-    # constructor's bound `θ ≤ 1/2` buys, so the dense solve `q⁻¹p` can be a Newton--Schulz iteration
-    # instead: `q⁻¹ ↦ q⁻¹(2𝕀 - q·q⁻¹)` squares the residual `𝕀 - q·q⁻¹` at every step. From `q⁻¹ = 𝕀`
-    # the first step is just `2𝕀 - q`, and four more take the residual to `(𝕀 - q)³²` —
-    # `0.256³² ≈ 2e-19`, below `Float64` round-off. Matrix products only, so this is the part that
-    # stays portable where a dense solve would not.
+    # `q₆` differs from the identity by at most `Σ|qₖ|θᵏ = 0.2563… < 0.257` in one-norm, which is
+    # what the constructor's bound `θ ≤ 1/2` buys, so the dense solve `q⁻¹p` can be a Newton--Schulz
+    # iteration instead: `q⁻¹ ↦ q⁻¹(2𝕀 - q·q⁻¹)` squares the residual `𝕀 - q·q⁻¹` at every step. From
+    # `q⁻¹ = 𝕀` the first step is just `2𝕀 - q`, and four more take the residual to `(𝕀 - q)³²` —
+    # `1.3e-19`, below `Float64` round-off. Matrix products only, so this is the part that stays
+    # portable where a dense solve would not.
     q⁻¹ = 2 * 𝕀 - q
     for _ in 1:4
         q⁻¹ = q⁻¹ * (2 * 𝕀 - q * q⁻¹)
     end
 
-    # The squaring recursion of `ScaledSquaring` above, unchanged and for the same reason: `W`
-    # absorbs the `2^-s`, so `s` applications of `W ↦ 2W + WXW` undo the scaling at 2n × 2n.
-    W = q⁻¹ * p / scale
-    for _ in 1:s
-        W = 2 * W + W * X * W
-    end
-
-    W
+    q⁻¹ * p
 end
 
 function 𝔄(X::AbstractMatrix, ::AugmentedPade)
-    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so `Base.exp` — a degree-13 Padé approximant with its
-    # own scaling and squaring — returns `𝔄(X)` in the upper-right block.
+    # exp([X I; 0 0]) == [exp(X) 𝔄(X); 0 I], so Julia's Padé-based, scaling-and-squaring matrix
+    # exponential — the most heavily exercised implementation available — returns `𝔄(X)` in the
+    # upper-right block. Nothing delicate happens here, which is what makes this the reference.
     m = size(X, 1)
     T = eltype(X)
     augmented = [X one(X); zeros(T, m, m) zeros(T, m, m)]
@@ -248,9 +250,9 @@ does.
 
 # Implementation
 
-The default is [`ScaledSquaring`](@ref) and not the unscaled series, for the reason given under
-[`geodesic`](@ref): the series cancels catastrophically once ``\|\bar{B}\| \gtrsim 50``, which is not
-a regime a function that presents itself as an exponential may quietly get wrong. Relative error
+The default is [`ScaledSquaring`](@ref) rather than the unscaled series because cancellation makes the
+latter unreliable once ``\|\bar{B}\| \gtrsim 50``, which is not a regime a function that presents
+itself as an exponential may quietly get wrong. Relative error
 against `exp(Matrix(B))` for `B = scale * rand(StiefelLieAlgHorMatrix, 10, 2)`, as
 `test/retractions/exponential_accuracy.jl` draws it:
 

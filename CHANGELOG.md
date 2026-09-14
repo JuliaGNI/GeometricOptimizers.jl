@@ -456,6 +456,44 @@ axis whose absence made the first of those possible. Two new *Known issues* came
 
 ### Added
 
+- **A separate *Exponential Algorithms* chapter, and the `ScaledSquaring` and `NativePade` algorithms
+  written out step by step.** Issue [#56] asked for the second of those; the first is what made room
+  for it. `retractions.md` had become a chapter about two retractions with five hundred lines of
+  numerical analysis inside it, and adding the derivation pushed the rendered page over Documenter's
+  `size_threshold_warn`. It is now split: `retractions.md` is the retractions as maps, and
+  `exponential_algorithms.md` is the numerical problem of evaluating the exponential.
+
+  The chapter separates the two choices any such algorithm makes, which the old text ran together: the
+  approximation kernel used at a small argument, and whether a large argument is scaled down and
+  recovered afterwards. Taylor and Padé are kernels; scaling and modified squaring is the framework
+  around one, not a competitor to it. Both algorithms are then given as numbered steps that match the
+  implementation line for line, including the `1/2ˢ` factor and the recurrence `W ← 2W + WXW`, which is
+  the modified squaring of Skaflestad and Wright (2009) and follows from
+  `𝔄(2Y) = 𝔄(Y) + Y𝔄(Y)²/2`.
+
+  `NativePade`'s coefficients are derived rather than quoted. The `[m/n]` matching condition splits
+  into `n` equations that fix the denominator and `m+1` that merely read the numerator off, and one
+  coefficient extraction from `Σⱼ(-1)ʲC(n,j)(1+x)^{m+n-j} = xⁿ(1+x)^m` settles both blocks at once. The
+  `[6/6]` approximant of `𝔄` is then `p₆ = (P₇ᵉˣᵖ - Q₆ᵉˣᵖ)/z` over `q₆ = Q₆ᵉˣᵖ`. Verified in
+  `Rational{BigInt}`: the closed form satisfies all six denominator equations, `aₖ₊₁ - bₖ₊₁`
+  reproduces the seven implemented `p₆` coefficients and the six of `q₆` exactly, and `q₆𝔄 - p₆`
+  vanishes through `z¹²` with first nonzero coefficient exactly `1/149597947699200` — about
+  `8.2e-19` at `|z| ≤ 1/2`, the same order as the Newton–Schulz residual bound of `1.2e-19` derived
+  beside it, so the two halves of the accuracy argument are finally on one scale.
+
+  Newton–Schulz is derived as Newton's method on `Z⁻¹ - q₆(Y) = 0` rather than asserted, with the
+  residual identity `E_{j+1} = E_j²` and an info box saying why an explicit inverse is used at all: a
+  dense CPU implementation would pivot and solve, and the trade being made here is a
+  factorization-free denominator against five matrix products, sound only because scaling supplies the
+  initial-residual bound.
+
+  The docstrings are **not** a second copy of the chapter. Each says what its algorithm is, when to
+  reach for it and what constraint a caller can violate, then links to the section that derives it.
+  That is deliberate: the chapter recomputes its tables on every build, a docstring freezes whatever
+  was measured when it was written, and two copies of a round-off-level figure can only drift apart.
+  Where a docstring does keep a table — `NativePade`'s `θ` sweep — it is because that table is the
+  only explanation of a constructor's `@assert`.
+
 - **The elementwise primitives, and the ~40 sites around them, take a container.** A new alias,
   `ParameterContainer{T} = Union{ArrayNamedTuple{T}, NetworkParameters{T}}`, is what they dispatch on;
   `GradientArrayOrNamedTuple` and `OptimizerSolution` are written in terms of it.
@@ -567,6 +605,20 @@ axis whose absence made the first of those possible. Two new *Known issues* came
   returning.
 
 ### Changed
+
+- **`ScaledSquaring` and `NativePade` share one scaling framework.** Each carried its own copy of the
+  halving count, the `1/2ˢ` factor and the `W ← 2W + WXW` recurrence, and differed only in what it
+  evaluated at the scaled argument. That kernel is now `_scaled_kernel` and the framework is one `𝔄`
+  method on `ScaledAlgorithm = Union{ScaledSquaring, NativePade}`, so the code has the
+  kernel-versus-framework split the chapter describes. The Taylor kernel is now fully in place as
+  well: it had `mul!` and `rmul!` into a scratch matrix followed by `𝔄A += Aⁿ`, which allocated a
+  fresh matrix every iteration regardless.
+
+  Behaviour is unchanged — results are bitwise identical across `Float32` and `Float64`, over the
+  documented `θ` range, and on the zero matrix — so nothing about accuracy moves. What moves is
+  allocation: measured cold on one BLAS thread at `n = 60`, the kernel drops from 362 KiB to 99 KiB
+  and the whole `ScaledSquaring` call from 1348 KiB to 1085 KiB. Run times are unchanged. This does
+  not close [#67], which is about the denominator, or [#77], which is about the ordering.
 
 - **Julia 1.11 is the minimum**, up from the 1.10 LTS, in step with the rest of this family of
   packages. Nothing here was accommodating 1.10 directly; what the floor buys is that
@@ -4187,8 +4239,11 @@ and both are corrected: see C8.)
 [#51]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/51
 [#52]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52
 [#54]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/54
+[#56]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/56
 [#59]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/59
 [#60]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/60
+[#67]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/67
+[#77]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/77
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
