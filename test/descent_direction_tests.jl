@@ -1,8 +1,11 @@
 using GeometricOptimizers
-using GeometricOptimizers: ensure_descent!, NewtonOptimizerCache, direction, rhs,
-                           iteration_number
+using GeometricOptimizers: ensure_descent!, NewtonOptimizerCache, OptimizerCache, direction,
+                           rhs, iteration_number, _dot
 using SimpleSolvers: Options
 using LinearAlgebra: dot
+using GPUArraysCore: allowscalar
+using JLArrays: JLArray
+using Random
 using Test
 
 # `sin²` has second derivative `2cos(2x)`, which is negative on `(π/4, 3π/4)`. Started from a point in
@@ -47,7 +50,7 @@ F(x) = sum(sin.(x) .^ 2)
 end
 
 @testset "ensure_descent! leaves a descent direction alone" begin
-    # `rhs` is `-∇f`, so `dot(rhs, δ) > 0` is the descent test
+    # `rhs` is `-∇f`, so `_dot(rhs, δ) > 0` is the descent test
     cache = NewtonOptimizerCache([1.0, 2.0])
     rhs(cache) .= [1.0, 1.0]
     direction(cache) .= [2.0, 3.0]         # dot = 5 > 0, descends
@@ -71,7 +74,7 @@ end
 
 @testset "ensure_descent! catches an orthogonal and a NaN direction" begin
     # `dot == 0` makes no progress, and every comparison against `NaN` is `false`; both have to be
-    # replaced, which is why the test is written as `!(dot(r, δ) > 0)`
+    # replaced, which is why the test is written as `!(_dot(r, δ) > 0)`
     for δ in ([1.0, -1.0], [NaN, NaN])
         cache = NewtonOptimizerCache([1.0, 2.0])
         rhs(cache) .= [1.0, 1.0]
@@ -81,4 +84,57 @@ end
 
         @test direction(cache) == rhs(cache)
     end
+end
+
+# `dot(B1, B2) == 2 * _dot(B1, B2)` for a lift, exactly as `_dot`'s docstring says: `dot` is the
+# *ambient* Frobenius product and `_dot` the intrinsic one. The factor does not flip the sign of the
+# descent test on its own, so the test below is about the other consequence, not this one.
+@testset "dot and _dot disagree by the documented factor of two on a lift" begin
+    Random.seed!(321)
+    T = Float64
+    N, n = 6, 3
+    B1 = StiefelLieAlgHorMatrix(rand(SkewSymMatrix{T}, n), rand(T, N - n, n), N, n)
+    B2 = StiefelLieAlgHorMatrix(rand(SkewSymMatrix{T}, n), rand(T, N - n, n), N, n)
+
+    @test dot(B1, B2) ≈ 2 * _dot(B1, B2)
+end
+
+# A minimal `OptimizerCache` that exercises only what `ensure_descent!` needs -- `direction`, `rhs`,
+# and, on the non-descending branch, `_copyto!`. On a manifold both are `AbstractLieAlgHorMatrix`,
+# which is what makes the ambient `dot`'s scalar indexing reachable at all; a real (BFGS or DFP) cache
+# cannot be built on a device here, because its `GlobalSection` needs a `qr` `JLArray` does not have
+# (see `similar_backend.jl`).
+struct _LiftCache{T, GT} <: OptimizerCache{T}
+    δ::GT
+    r::GT
+end
+GeometricOptimizers.direction(cache::_LiftCache) = cache.δ
+GeometricOptimizers.rhs(cache::_LiftCache) = cache.r
+
+@testset "ensure_descent! does not take the ambient scalar-indexed dot product on a device" begin
+    Random.seed!(654)
+    T = Float32
+    N, n = 6, 3
+    # `allowscalar(false)` is what makes this a test rather than a description: outside a
+    # non-interactive session the default is `ScalarAllowed`, and a scalar index would merely warn.
+    # It is task-global and left set, as at `retractions/exponential_accuracy.jl`, which `runtests.jl`
+    # runs earlier and which therefore already puts every later test file under the same setting.
+    allowscalar(false)
+
+    r = StiefelLieAlgHorMatrix(
+        SkewSymMatrix(JLArray(rand(T, n, n))), JLArray(rand(T, N - n, n)), N, n)
+    # a copy of `r`, so `_dot(r, δ) = ‖r‖² > 0` and the direction already descends -- the
+    # `_copyto!` fallback has a device defect of its own and is not what this test is about
+    δ = copy(r)
+
+    cache = _LiftCache{T, typeof(δ)}(δ, r)
+
+    # The ambient `dot` scalar-indexes the lift, which the setting above turns into a
+    # `Scalar indexing is disallowed` error. Asserting that here gives the assertion below its teeth:
+    # were the setting ever lost, the call would complete whichever product it paired with.
+    @test_throws ErrorException dot(r, δ)
+
+    # `ensure_descent!` pairs with `_dot`, which reads the free parameters directly and never reaches
+    # the rejected path. That the call returns at all is the assertion this testset exists for.
+    @test (ensure_descent!(cache, BFGS(), Options(T)); true)
 end

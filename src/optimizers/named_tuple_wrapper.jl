@@ -254,9 +254,10 @@ formed there (see [`_flat_scratch`](@ref)), and the `α` of a line search parame
 so
 pairing a gradient with a direction has to happen there too.
 
-Used by [`trial_slope`](@ref) for ``\varphi'(\alpha)``, and by the quasi-Newton caches for
+Used by [`trial_slope`](@ref) for ``\varphi'(\alpha)``, by the quasi-Newton caches for
 ``\delta^T\gamma``, whose value has to be consistent with the flattened `T₁`, `T₂` and `γ^TQγ` it
-divides.
+divides, for the predicted decrease ``\widetilde{\Delta f}``, so that it is comparable with the
+measured ``\Delta f``, and by [`ensure_descent!`](@ref)'s descent test, for the same reason.
 
 !!! info "No flat vector is built"
     This is the *value* the flattened inner product has, not the flattening. `flatten` writes the

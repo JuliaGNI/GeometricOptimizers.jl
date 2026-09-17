@@ -27,6 +27,30 @@ breaking release).
 
 ### Fixed
 
+- `ensure_descent!` now uses `_dot(r, δ)` instead of `LinearAlgebra.dot(r, δ)` to test descent
+  for BFGS, DFP, and Newton steps. Wherever the iterate carries a horizontal lift, the ambient `dot`
+  computes the Frobenius product by scalar-indexing over the entire matrix: it throws `Scalar
+  indexing is disallowed` on any GPU array (confirmed on Metal), is approximately 1221 times slower
+  on the host (152.62 µs vs 0.125 µs at N=400), scales O(N²) instead of O(Nn), and disagrees with
+  the correct intrinsic metric value. The disagreement is exactly a factor of 2 when both `r` and
+  `δ` are `AbstractLieAlgHorMatrix` on a manifold, which cannot change the sign and is why the bug
+  went undetected; for a `NetworkParameters` container with a lift leaf beside Euclidean ones it is
+  a leaf-dependent factor strictly between 1 and 2 (measured between 1.28 and 1.71 over eight BFGS
+  steps), which can select the other branch. Regression tests added with `JLArrays` to catch the
+  scalar indexing, and a value assertion (`dot(B1, B2) ≈ 2 * _dot(B1, B2)`) to pin the documented
+  factor of 2.
+- `metric(::StiefelManifold{T}, Δ₁, Δ₂)` now preserves the element type `T` throughout its
+  computation instead of silently promoting to `Float64`. The expression `tr(Δ₁' * (I - 0.5 *
+  Y.A * Y.A') * Δ₂)` contained a bare `Float64` literal (`0.5`), so it returned `Float64` for a
+  `StiefelManifold{Float32}` (inconsistent with the Grassmann manifold's `metric`, which correctly
+  preserves `Float32`). On Metal hardware it failed with `Metal does not support Float64 values`.
+  The expression is rewritten to `tr(Δ₁'Δ₂) - (T(1)/2)*tr((Δ₁'Y.A)*(Y.A'Δ₂))` to match the intrinsic
+  geometry, and to avoid materializing an N×N matrix, reducing complexity from O(N²n) to
+  O(Nn² + n³): 168.2 µs and 2 599 296 B become 3.7 µs and 576 B at N=400, n=3.
+  `(T(1)/2)` and not `T(1//2)`: the latter throws `InexactError` for `T = Int`, a type the `rgrad`
+  doctest already constructs a `StiefelManifold` of. Regression tests added to assert
+  `metric(...) isa T` for `StiefelManifold`, and that an integer-eltype `StiefelManifold` does not
+  throw.
 - `rgrad(::GrassmannManifold, ∇L)` multiplies through the representative, `Y.A * (Y.A' * ∇L)`, as
   `rgrad(::StiefelManifold, ∇L)` already did. `Y'` is an `Adjoint{…, GrassmannManifold}` and this
   manifold defines no `*` that unwraps one, so the product reached

@@ -48,7 +48,11 @@ function ensure_descent!(cache::OptimizerCache, method::OptimizerMethod, config:
     δ = direction(cache)
     r = rhs(cache)
 
-    if !(dot(r, δ) > 0)
+    # `_dot`, not `⋅`: on a manifold both operands are horizontal lifts, and `⋅` on those is the
+    # ambient Frobenius product. That is twice the intrinsic one, which cannot flip the sign of the
+    # test on its own, but it is also taken by scalar-indexing the whole N×N matrix, which a device
+    # forbids outright and which costs O(N²) where the intrinsic pairing costs O(Nn). See `_dot`.
+    if !(_dot(r, δ) > 0)
         config.verbosity ≥ 2 &&
             @warn "the $(method) direction is not a descent direction, so the Hessian is not positive definite here; using the steepest-descent direction for this step." maxlog = 1
         _copyto!(δ, r)
