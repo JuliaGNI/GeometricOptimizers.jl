@@ -413,6 +413,11 @@ function Base.copyto!(dest::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
     dest
 end
 
+# `Manifold <: AbstractMatrix`, so this also accepts a manifold point as the source and copies its
+# entries into the section's plain array. That is the right answer for a section that has no lift to
+# update, and it is the only direction in which the two species meet: the reverse, a plain array
+# into a manifold-anchored section, goes to the method in `optimizers/named_tuple_wrapper.jl`, which
+# takes a `Manifold` source and so rejects it.
 function Base.copyto!(dest::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
         src::AbstractVecOrMat{T}) where {T}
     copyto!(dest.Y, src)

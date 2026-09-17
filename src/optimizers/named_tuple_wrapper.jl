@@ -151,11 +151,15 @@ function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple
     Λ₁
 end
 
-# `Test.detect_ambiguities` reports no pair in this family. The way to triage one, should a method
-# added here introduce it, is `typeintersect` on the two signatures and then an attempt to construct
-# a witness: a pair whose intersection this package's API cannot build is a wart rather than a bug,
-# and a method that exists only to satisfy a static checker is a method somebody later has to reason
-# about.
+# `Test.detect_ambiguities` reports no `copyto!` pair in the `GlobalSection` family. It does report
+# two on `global_rep` in `global_sections/global_sections.jl`: the `StiefelManifold` method and the
+# `GrassmannManifold` one, each against the `λ === nothing` one. Both intersect at a `StiefelManifold`-
+# or `GrassmannManifold`-anchored section whose lift is `nothing`, which this package's API cannot
+# build -- `GlobalSection(::Manifold)` always builds the lift, and `λ === nothing` is the plain
+# array case. They are left alone because a method that exists only to satisfy a static checker is a
+# method somebody later has to reason about. The way to triage a reported pair, here or in a method
+# added later, is `typeintersect` on the two signatures and then an attempt to construct a witness:
+# a pair whose intersection the API cannot build is a wart rather than a bug.
 
 # Two *nested* section trees, which is the shape a container's section takes and which
 # `GlobalSectionNamedTuple` cannot describe. Written on the bare `NamedTuple` because neither argument
