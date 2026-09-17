@@ -119,3 +119,6 @@ end
 begin
     @safetestset "rgrad matches the backend    " include("gradient_backend.jl")
 end
+begin
+    @safetestset "copyto! crosses backends     " include("device_copyto.jl")
+end

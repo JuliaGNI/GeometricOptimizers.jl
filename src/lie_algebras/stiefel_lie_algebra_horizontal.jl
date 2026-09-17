@@ -271,8 +271,12 @@ function Base.copy(B::StiefelLieAlgHorMatrix)
 end
 
 # fallback -> put this somewhere else!
+# `copyto!` accepts any destination at least as long as its source, so without this guard a
+# mismatched pair partially overwrites `A` and leaves the rest stale. The structured `assign!`
+# methods that reach this one through `foreach` check only their own `n`, not the block shapes.
 function assign!(A::AbstractArray, B::AbstractArray)
-    A .= B
+    @assert size(A) == size(B)
+    copyto!(A, B)
 
     nothing
 end

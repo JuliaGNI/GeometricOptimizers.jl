@@ -104,6 +104,37 @@ breaking release).
   generated from tracked sources and deliberately not committed, so the workflow now installs the
   TeX toolchain and builds them before Documenter checks links; two malformed cross-references, in
   `BFGSCache` and in the Cayley retraction docstring, are also fixed.
+- `copyto!` and `assign!` on structured matrices now transfer their storage arrays through `copyto!`
+  rather than through a broadcast (`.=`). A device array with no `BroadcastStyle` rule combining it
+  with a host `Array` accepts a direct `copyto!` from the host but rejects that broadcast. Host-to-device
+  transfers of this package's structured types therefore failed on real device hardware (confirmed on
+  Metal), while the same transfer of a plain host array worked — a backwards outcome for a package
+  whose whole point is those types. Fixed in `SkewSymMatrix`, `SymmetricMatrix`, `LowerTriangular`,
+  `UpperTriangular`, and `Manifold` instances; the generic `AbstractArray` fallback in
+  `StiefelLieAlgHorMatrix` and its forward to `copyto!` on the components transitively fixed the
+  horizontal-lift transfer too. A second, independent bug in `Manifold.copyto!` was found and fixed
+  in the same audit: its signature bound the *whole* concrete type including storage array type, so
+  host-to-device calls never dispatched to it at all but fell through to the broken `setindex!` path
+  regardless; the method now uses a runtime same-manifold-species check, so transfers between different
+  storage types (e.g. host `Array` and device `MtlMatrix`) now reach the correct path while still
+  rejecting transfers between incompatible manifold types. `assign!` was extended to the same fixes
+  by explicit decision. The regressions are covered by a new `test/device_copyto.jl`, which uses a
+  small CPU-only stand-in type that reproduces the device broadcast mechanism on the host.
+- `assign!` and `copyto!` now reject a mismatched pair instead of writing part of the destination.
+  A broadcast checks the shapes; `copyto!` writes any destination at least as long as its source, so
+  the swap above needed that check restored at each site. Every structured type asserts its `n` (or
+  its size, for `Manifold`), and so does the generic `AbstractArray` fallback, which the horizontal
+  lifts reach once per block: `assign!` between two `StiefelLieAlgHorMatrix` of different `N` used to
+  overwrite the leading entries of the `B` block and leave the rest stale, because `n` alone does not
+  fix the block shapes.
+- `assign!` on `LowerTriangular` and `UpperTriangular` carried the same whole-type-binding defect as
+  `Manifold.copyto!`: it bound one type parameter to both arguments, so a host and a device copy of
+  the same triangular type never reached it and fell through to the `AbstractArray` fallback. It now
+  takes two independent `AbstractTriangular` arguments and forwards to `copyto!`. That method in turn
+  rejects a source of the other species: it constrains both arguments only to `AbstractTriangular`,
+  which is what lets a host and a device copy meet there, and so it previously accepted an
+  `UpperTriangular` source for a `LowerTriangular` destination and copied its storage into the
+  opposite triangle without complaint.
 
 ### Changed
 

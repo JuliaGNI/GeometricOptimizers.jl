@@ -303,7 +303,8 @@ function KernelAbstractions.get_backend(A::SkewSymMatrix)
 end
 
 function assign!(B::SkewSymMatrix{T}, C::SkewSymMatrix{T}) where {T}
-    B.S .= C.S
+    @assert B.n == C.n
+    copyto!(B.S, C.S)
 end
 
 function Base.copy(A::SkewSymMatrix)
@@ -341,7 +342,8 @@ function map_to_Skew(A::AbstractMatrix{T}) where {T <: Integer}
 end
 
 function Base.copyto!(A::SkewSymMatrix, B::SkewSymMatrix)
-    A.S .= B.S
+    @assert A.n == B.n
+    copyto!(A.S, B.S)
     nothing
 end
 
