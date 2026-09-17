@@ -162,6 +162,17 @@ breaking release).
   closing a pre-existing ambiguity between two of them, and routing a manifold whose
   `global_section` falls through to the `AbstractVecOrMat` default to the method that copies only
   the anchor.
+- `Newton` rejects a `Manifold` solution and a parameter set with a message that names the method
+  and the restriction, instead of failing with whichever internal operation happened to give way
+  first. Both shapes already failed at `Optimizer` construction, but a bare manifold died inside
+  `similar` — "The function `similar` does not make sense in this context" — and a parameter set
+  raised a `MethodError` on `NewtonOptimizerCache`; neither message mentioned `Newton`, and
+  `Newton`'s docstring stated no restriction, so the omission read as generality. `Newton` builds
+  the exact Hessian and there is no Riemannian Hessian here, so the message says that and points at
+  `BFGS` and `DFP`, which take an `AbstractVector`, a parameter set and a bare `Manifold` alike.
+  The check is written on `OptimizerCache` rather than on `Hessian(::Newton, …)` because
+  `_optimizer` calls the former first; it dispatches on `Manifold` and not on the two concrete
+  manifolds, since what rules `Newton` out is a property of every manifold here.
 
 ### Changed
 

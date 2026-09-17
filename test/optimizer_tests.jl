@@ -7,6 +7,7 @@ using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
 using GeometricOptimizers: iteration_number, increase_iteration_number!, status
 using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection,
                      StrongWolfe, GradientAutodiff, GradientFunction
+using NeuralNetworkParameters: NetworkParameters
 using Test
 using Random
 Random.seed!(123)
@@ -429,4 +430,37 @@ end
     y = [1.0, 2.0]
     result_untraced = solve!(y, OptimizerState(Newton(), y), Optimizer(y, Fquad; algorithm = Newton()))
     @test isempty(GeometricOptimizers.trace(result_untraced))
+end
+
+# `Newton` optimizes an `AbstractVector` and nothing else: it builds the exact Hessian, and there is
+# no Riemannian Hessian here. Both unsupported shapes failed already, but neither message named
+# `Newton` or the restriction — a `Manifold` reached `similar`, which these types reject with a
+# message about `similar`, and a parameter set had no `NewtonOptimizerCache` method at all. The text
+# is the whole point of the change, so the text is what is asserted.
+#
+# This is also why the manifold and container sweeps elsewhere in the suite list every method but
+# `Newton`: it is out of scope there, not overlooked.
+@testset "Newton rejects a manifold and a parameter set, and says why" begin
+    f(x) = sum(abs2, x)
+
+    for x in (rand(StiefelManifold{Float64}, 6, 3),
+        rand(GrassmannManifold{Float64}, 6, 3),
+        NetworkParameters((W = rand(3, 3), b = zeros(3))))
+        @test_throws ArgumentError Optimizer(x, f; algorithm = Newton())
+
+        err = try
+            Optimizer(x, f; algorithm = Newton())
+        catch e
+            e
+        end
+        @test occursin("Newton optimizes an AbstractVector only", err.msg)
+        @test occursin("BFGS()", err.msg)
+
+        # the two methods the message sends the caller to do take all three shapes
+        @test Optimizer(x, f; algorithm = BFGS()) isa Optimizer
+        @test Optimizer(x, f; algorithm = DFP()) isa Optimizer
+    end
+
+    # and the supported shape is untouched
+    @test Optimizer(ones(3), f; algorithm = Newton()) isa Optimizer
 end

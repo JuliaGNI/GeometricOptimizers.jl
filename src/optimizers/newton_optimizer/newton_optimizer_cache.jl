@@ -62,6 +62,25 @@ function OptimizerCache(::Union{Newton, QuasiNewtonOptimizerMethod}, x::Optimize
     NewtonOptimizerCache(x)
 end
 
+const _NEWTON_SCOPE = "Newton optimizes an AbstractVector only. It builds the exact Hessian, and " *
+                      "there is no Riemannian Hessian here, so a Manifold solution and a parameter " *
+                      "set are both out of scope. Use `BFGS()` or `DFP()`, which take all three: " *
+                      "their approximate inverse Hessian is sized by the intrinsic dimension and " *
+                      "their secant pair is taken in the horizontal lift."
+
+# The scope check, as an error rather than as whatever the first unsupported operation happens to
+# raise. Written on `OptimizerCache` and not on `Hessian(::Newton, …)`: `_optimizer` calls this one
+# first, so a rejection there would never be reached. Both shapes died here already, but neither
+# message named `Newton` or the restriction — a `Manifold` reached `similar`, which these types
+# reject with "The function `similar` does not make sense in this context", and a parameter set had
+# no `NewtonOptimizerCache` method at all.
+#
+# `Manifold` and not the two concrete manifolds, unlike [`_is_decayable`](@ref): what rules `Newton`
+# out is the absence of a Riemannian Hessian, which is a property of every manifold here and not of
+# compactness, so a manifold added later inherits the right answer rather than a wrong one.
+OptimizerCache(::Newton, ::Manifold) = throw(ArgumentError(_NEWTON_SCOPE))
+OptimizerCache(::Newton, ::NetworkParameters) = throw(ArgumentError(_NEWTON_SCOPE))
+
 # This fallback used to be `OptimizerCache(::OptimizerMethod, x) = NewtonOptimizerCache(x)`, so a
 # method that *does* have a cache of its own but missed its `OptimizerCache(::Adam{T},
 # ::OptimizerSolution{T})` method on a `T` mismatch ended up building a `NewtonOptimizerCache`
