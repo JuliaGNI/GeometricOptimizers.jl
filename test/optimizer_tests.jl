@@ -432,11 +432,12 @@ end
     @test isempty(GeometricOptimizers.trace(result_untraced))
 end
 
-# `Newton` optimizes an `AbstractVector` and nothing else: it builds the exact Hessian, and there is
-# no Riemannian Hessian here. Both unsupported shapes failed already, but neither message named
-# `Newton` or the restriction — a `Manifold` reached `similar`, which these types reject with a
-# message about `similar`, and a parameter set had no `NewtonOptimizerCache` method at all. The text
-# is what a caller reads, so the text is what is asserted.
+# `Newton` optimizes an `AbstractVector` and nothing else: it builds the exact Hessian, for which a
+# `Manifold` offers no Riemannian counterpart and a parameter set offers no path over the flattening.
+# Without the scope methods neither shape reaches a sensible message: a `Manifold` reaches `similar`,
+# which these types reject with a message about `similar`, and a parameter set finds no matching
+# constructor at all. The text is what a caller reads, so the text is what is asserted, on both entry
+# points a caller has — `Optimizer` and the exported `OptimizerState`.
 #
 # This is also why the manifold and container sweeps elsewhere in the suite list every method but
 # `Newton`: it is out of scope there, not overlooked.
@@ -450,6 +451,11 @@ end
         @test_throws "Newton optimizes an AbstractVector only" Optimizer(
             x, f; algorithm = Newton())
         @test_throws "BFGS()" Optimizer(x, f; algorithm = Newton())
+
+        # `OptimizerState` is exported, and `solve!(x, OptimizerState(method, x), opt)` is the
+        # documented pattern, so it is the entry point a manifold user reaches first
+        @test_throws ArgumentError OptimizerState(Newton(), x)
+        @test_throws "Newton optimizes an AbstractVector only" OptimizerState(Newton(), x)
 
         # the two methods the message sends the caller to do take all three shapes
         @test Optimizer(x, f; algorithm = BFGS()) isa Optimizer

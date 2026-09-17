@@ -49,6 +49,15 @@ section(state::NewtonOptimizerState) = state.section
 
 OptimizerState(::Newton, x_args...) = NewtonOptimizerState(x_args...)
 
+# The same scope check as on `OptimizerCache`, repeated here because `OptimizerState` is exported and
+# `solve!(x, OptimizerState(method, x), opt)` is the documented pattern, so this is the entry point a
+# manifold user reaches first. Without these two methods a `Manifold` reaches a `convert` that cannot
+# turn a lift back into a point, and a parameter set finds no `NewtonOptimizerState` method at all.
+# `Tuple{Newton, Manifold, Vararg}` is strictly more specific than `Tuple{Newton, Vararg}`, so
+# neither method is ambiguous with the one above.
+OptimizerState(::Newton, ::Manifold, args...) = throw(ArgumentError(_NEWTON_SCOPE))
+OptimizerState(::Newton, ::NetworkParameters, args...) = throw(ArgumentError(_NEWTON_SCOPE))
+
 function initialize!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
     state.iterations = 0
     state.x .= x

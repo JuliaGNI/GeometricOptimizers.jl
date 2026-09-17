@@ -1,5 +1,5 @@
-# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`. Newton
-# is `AbstractArray`-only, so its bounds were never the expensive kind — it is unbounded so that
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`. This
+# cache holds `AbstractArray`s only, so its bounds were never the expensive kind — it is unbounded so that
 # every method's cache and state read the same way, and so that nobody has to work out per struct
 # whether a given bound happens to be one of the costly ones. The invariant is enforced by the inner
 # constructors' signatures, which is dispatch and therefore costs nothing.
@@ -62,11 +62,12 @@ function OptimizerCache(::Union{Newton, QuasiNewtonOptimizerMethod}, x::Optimize
     NewtonOptimizerCache(x)
 end
 
-const _NEWTON_SCOPE = "Newton optimizes an AbstractVector only. It builds the exact Hessian, and " *
-                      "there is no Riemannian Hessian here, so a Manifold solution and a parameter " *
-                      "set are both out of scope. Use `BFGS()` or `DFP()`, which take all three: " *
-                      "their approximate inverse Hessian is sized by the intrinsic dimension and " *
-                      "their secant pair is taken in the horizontal lift."
+const _NEWTON_SCOPE = "Newton optimizes an AbstractVector only. It builds the exact Hessian: for a " *
+                      "Manifold solution there is no Riemannian Hessian to build, and for a " *
+                      "parameter set the Hessian is not built over the flattening. Use `BFGS()` " *
+                      "or `DFP()`, which take all three: their approximate inverse Hessian is " *
+                      "sized by the intrinsic dimension and their secant pair is taken in the " *
+                      "horizontal lift."
 
 # The scope check, as an error rather than as whatever the first unsupported operation happens to
 # raise. Written on `OptimizerCache` and not on `Hessian(::Newton, …)`: `_optimizer` calls this one

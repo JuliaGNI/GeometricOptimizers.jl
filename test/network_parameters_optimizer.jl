@@ -214,8 +214,8 @@ end
 # The quasi-Newton methods are the ones that exercise `outer!`, `_mul!`, `alloc_h` and
 # `flatlength(_zero(x))` — every one of which is sized by the *intrinsic* dimension of the parameters
 # and not by `length`. `Newton` is not among them, and that is scope rather than an omission: it
-# builds the exact Hessian, which a parameter set has no vector to carry, so `Optimizer` rejects it
-# here with a message saying so. `test/optimizer_tests.jl` pins that.
+# builds the exact Hessian, and that Hessian is not built over the flattening, so `Optimizer` and
+# `OptimizerState` both reject it here with a message saying so. `test/optimizer_tests.jl` pins that.
 @testset "$(nameof(typeof(algorithm))) runs on a container" for algorithm in (BFGS(), DFP())
     T = Float64
     Random.seed!(1234)

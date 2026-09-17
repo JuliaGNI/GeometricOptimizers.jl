@@ -228,8 +228,8 @@ for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
     relative_errors = Float64[]
     mean_orbit_errors = Float64[]
 
-    # no `Newton`: `starting_point` returns a parameter set, which it is out of scope for and which
-    # `Optimizer` rejects it on — see `test/optimizer_tests.jl`
+    # no `Newton`: `starting_point` returns a parameter set, which `Newton` is out of scope for, and
+    # `Optimizer` rejects it there — see `test/optimizer_tests.jl`
     for algorithm in (GradientMethod(), MomentumMethod(), GeometricOptimizers.Adam())
         ps = starting_point(3)
         state = OptimizerState(algorithm, ps)
@@ -283,9 +283,9 @@ function svd_convergence_check(n, ps, state, result, max_iterations)
     end
 end
 
-# `DFP` needed the same lift to `OptimizerSolution` that `BFGS` already had; before it, its cache was
-# `AbstractVector`-only, so a `NamedTuple` fell through to a `NewtonOptimizerCache` and a `MethodError`.
-# Every combination of retraction, method and line search converges on this problem now, but the cost
+# `DFP` carries the same lift to `OptimizerSolution` that `BFGS` does; without it its cache is
+# `AbstractVector`-only, so a `NamedTuple` falls through to a `NewtonOptimizerCache` and a `MethodError`.
+# Every combination of retraction, method and line search converges on this problem, but the cost
 # is uneven, and the ordering by *iterations* is not the ordering by *work* -- a `Bisection` iteration
 # spends ≈580 objective evaluations against ≈25 for a `Backtracking` one. Iterations, then total
 # evaluations, Geodesic / Cayley:
