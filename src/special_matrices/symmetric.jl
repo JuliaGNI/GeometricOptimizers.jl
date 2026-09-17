@@ -109,9 +109,9 @@ function map_to_S(A::AbstractMatrix{T}) where {T <: Number}
     S
 end
 
+# see the comment on `map_to_Skew(::AbstractMatrix{<:Integer})`
 function map_to_S(A::AbstractMatrix{T}) where {T <: Integer}
-    Float = T == Int64 ? Float64 : Float32
-    map_to_S(Float.(A))
+    map_to_S(float.(A))
 end
 
 function LinearAlgebra.Adjoint(A::SymmetricMatrix)

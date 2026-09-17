@@ -339,9 +339,12 @@ function map_to_Skew(A::AbstractMatrix{T}) where {T}
     S
 end
 
+# The projection halves a difference, so an integer matrix has to become a float one first. `float`
+# and not a width chosen here: it is the function that answers "the float type this integer widens
+# to", it gives `Float64` for every fixed-width integer and `BigFloat` for a `BigInt`, and it is
+# what `zeros` and `rand` already follow.
 function map_to_Skew(A::AbstractMatrix{T}) where {T <: Integer}
-    Float = T == Int64 ? Float64 : Float32
-    map_to_Skew(Float.(A))
+    map_to_Skew(float.(A))
 end
 
 function Base.copyto!(A::SkewSymMatrix, B::SkewSymMatrix)

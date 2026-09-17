@@ -152,6 +152,19 @@ for T in (Float32, Float64)
     end
 end
 
+# The projection of an integer matrix lands on `float(T)`: `Float64` for every fixed-width integer
+# and `BigFloat` for a `BigInt`. The assertion is against `float(T)` and not against a list of
+# widths, so it states the rule rather than a table of results. `Int128` and `BigInt` are in the
+# loop because neither of them fits in a `Float32`.
+@testset "an integer matrix is projected into float(T)" begin
+    for T in (Int8, Int16, Int32, Int64, Int128, BigInt)
+        A = T[0 1 2; 3 0 4; 5 6 0]
+        @test eltype(map_to_Skew(A)) === float(T)
+        @test eltype(SkewSymMatrix(A)) === float(T)
+        @test SkewSymMatrix(A) ≈ float(T).(A - A') / 2
+    end
+end
+
 # The storage layout is public: `vec` returns it and the two-argument constructor takes it. Spelling
 # it out for one matrix pins the index arithmetic, which a change that kept `vec` and the constructor
 # consistent with *each other* would otherwise slip past. From
