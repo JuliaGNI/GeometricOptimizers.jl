@@ -86,11 +86,21 @@ export NetworkParameters
 # these types has to be able to extend them. `GeometricMachineLearning` reached all four through
 # `GeometricOptimizers.`-qualified names or through copies of its own until 0.5; see
 # GeometricMachineLearning#234.
-export Manifold, StiefelManifold, GrassmannManifold
+# The symplectic SR decomposition is here rather than in `SimpleSolvers`, where the other matrix
+# factorizations live, because its only consumer is the symplectic Stiefel manifold below: it needs
+# the canonical Poisson tensor, which is geometry rather than linear-algebra plumbing. Move it if
+# it ever grows a solver-side use.
+export sr, sr!
+export symplectic_gram_schmidt, symplectic_gram_schmidt!
+include("decompositions/symplectic_sr.jl")
+include("decompositions/symplectic_gram_schmidt.jl")
+
+export Manifold, StiefelManifold, GrassmannManifold, SymplecticStiefelManifold
 export rgrad, metric, check, Ω
 include("manifolds/abstract_manifold.jl")
 include("manifolds/stiefel_manifold.jl")
 include("manifolds/grassmann_manifold.jl")
+include("manifolds/symplectic_stiefel_manifold.jl")
 
 export SkewSymMatrix, SymmetricMatrix, LowerTriangular, UpperTriangular
 export AbstractTriangular, StiefelProjection

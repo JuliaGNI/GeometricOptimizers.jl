@@ -10,6 +10,50 @@ breaking release).
 
 ### Added
 
+- Added the **symplectic Stiefel manifold** `SymplecticStiefelManifold`, the set of ``2N\times2n``
+  matrices with ``U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}``, with `rand`, `rgrad`, `metric`, `check`
+  and `global_section` — the same five methods `StiefelManifold` implements. It joins the Stiefel
+  and Grassmann manifolds as a third case of the existing geometry, and needs no new interface.
+- Added the **symplectic SR decomposition** behind it: `sr`, `sr!` and the operator types `Sfac`,
+  `Rfac` and `SR`, plus `symplectic_gram_schmidt`/`symplectic_gram_schmidt!` and the two-vector
+  `symplectic_form`. `A = SR` with `S` symplectic and `R` symplectic-upper-triangular; the
+  algorithm is the one of https://doi.org/10.1016/j.laa.2008.02.029. `qr` cannot serve here,
+  because its `Q` preserves the Euclidean form rather than ``\mathbb{J}``.
+
+  **These have a numerical limitation that a user has to know before depending on them, and it is
+  not small.** `S` is symplectic, not orthogonal, so its condition number is unbounded, and this
+  implementation has no re-orthogonalization step. The residual therefore grows with the size of
+  the problem rather than staying at machine precision. Measured over 200 random draws per case, as
+  ``\|U^T\mathbb{J}U - \mathbb{J}\|`` on a point `rand` returned:
+
+  | | median | p95 | max | draws that threw |
+  |:--|--:|--:|--:|--:|
+  | `Float64` 4×2 | 4.5e-16 | 4.6e-14 | 2.2e-12 | 0 |
+  | `Float64` 6×4 | 9.1e-15 | 1.9e-11 | 8.7e-9 | 0 |
+  | `Float64` 10×6 | 2.3e-13 | 3.8e-11 | 9.3e-8 | 0 |
+  | `Float64` 20×10 | 4.6e-11 | 2.7e-8 | 1.0e-5 | 0 |
+  | `Float64` 40×20 | 5.4e-8 | 3.8e-4 | **54.0** | 0 |
+  | `Float32` 6×4 | 4.8e-6 | 3.6e-3 | 0.62 | 0 |
+  | `Float32` 20×10 | 0.016 | 18.0 | 2.0e6 | 0 |
+  | `Float32` 40×20 | 12.0 | 11000.0 | 2.1e5 | **3** |
+
+  So: usable in `Float64` at small sizes, degrading by roughly three orders of magnitude per
+  doubling, and **not usable in `Float32` at any size tested**. The three throws are a `DomainError`
+  from `sqrt` of a negative argument in `symplectic_householder!`, where
+  ``\sqrt{\|b\|^2 - b_1^2 - \nu^2}`` cancels. A point that is far off the manifold is returned
+  silently, without a warning, because checking each draw would cost a matrix product per draw.
+  Closing this means the stabilized variant the literature describes, which is a piece of numerical
+  work rather than a repair, and it is why the tests below stop at 10×6 and assert nothing in
+  `Float32`.
+- Added `test/manifolds/symplectic_stiefel_manifold.jl` and `test/decompositions/symplectic_sr.jl`.
+  The assertions are the properties rather than the absence of an error: `A = SR` reconstructs the
+  input, `S` is symplectic, `inv(S)` undoes it, `R` has the block-triangular shape that
+  distinguishes SR from QR *and* its lower-left block is not zero, `rgrad` lands in the tangent
+  space ``\{\Delta : \Delta^T\mathbb{J}U + U^T\mathbb{J}\Delta = 0\}``, the metric is symmetric and
+  bilinear, and `check` is the symplectic residual and not the inherited orthonormality one — which
+  the test states by asserting that ``\|U^TU - \mathbb{I}\|`` is *large*. Per-size tolerances come
+  from the sweep above with two orders of magnitude of headroom, and the test files say so.
+
 - Added opt-in optimizer phase observation through the exported `EventLog`, `PhaseTimer`,
   `NoStepObserver`, `observe_optimizer_phase`, and `step_observer` API. `EventLog()` records the
   event trace and `PhaseTimer()` accumulates exclusive nanoseconds without requiring callers to

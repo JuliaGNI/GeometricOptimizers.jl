@@ -1,7 +1,7 @@
 @doc raw"""
     Manifold <: AbstractMatrix
 
-A manifold in `GeometricOptimizers` is a sutype of `AbstractMatrix`. All manifolds are matrix manifolds and therefore stored as matrices. More details can be found in the docstrings for the [`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref).
+A manifold in `GeometricOptimizers` is a sutype of `AbstractMatrix`. All manifolds are matrix manifolds and therefore stored as matrices. More details can be found in the docstrings for the [`StiefelManifold`](@ref), the [`GrassmannManifold`](@ref) and the [`SymplecticStiefelManifold`](@ref).
 """
 abstract type Manifold{T} <: AbstractMatrix{T} end
 
@@ -142,11 +142,15 @@ end
 
 Measure how far `Y` is from the manifold, as ``\|Y^TY - \mathbb{I}\|``.
 
-Both manifolds this package provides store a representative whose columns are orthonormal — for
-[`StiefelManifold`](@ref) that is the point itself, for [`GrassmannManifold`](@ref) it is the
-representative of the equivalence class — so the same expression measures both. A retraction maps
-onto the manifold by construction, so in exact arithmetic this is zero and what it actually returns
-is accumulated round-off.
+Two of the three manifolds this package provides store a representative whose columns are
+orthonormal — for [`StiefelManifold`](@ref) that is the point itself, for
+[`GrassmannManifold`](@ref) it is the representative of the equivalence class — so the same
+expression measures both. A retraction maps onto the manifold by construction, so in exact
+arithmetic this is zero and what it actually returns is accumulated round-off.
+
+[`SymplecticStiefelManifold`](@ref) is the third, and its constraint is a different bilinear form,
+so it carries its own method. Anything defining a further manifold has to decide which of the two
+it is rather than inherit this one by default.
 
 This is the assertion the manifold tests rest on. It used to exist for [`StiefelManifold`](@ref)
 only, which is why the accuracy loss in [`GeometricOptimizers.𝔄`](@ref) went unnoticed for so long:

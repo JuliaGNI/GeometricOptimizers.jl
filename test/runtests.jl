@@ -18,6 +18,12 @@ begin
     @safetestset "Grassmann Manifold           " include("manifolds/grassmann_manifold.jl")
 end
 begin
+    @safetestset "Symplectic Stiefel Manifold  " include("manifolds/symplectic_stiefel_manifold.jl")
+end
+begin
+    @safetestset "Symplectic SR Decomposition  " include("decompositions/symplectic_sr.jl")
+end
+begin
     @safetestset "Stiefel Projection           " include("special_matrices/stiefel_projetion.jl")
 end
 begin
