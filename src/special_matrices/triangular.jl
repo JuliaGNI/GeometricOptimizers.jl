@@ -166,11 +166,13 @@ function Base.copyto!(A::AbstractTriangular, B::AbstractTriangular)
     AT === BT || throw(ArgumentError("cannot copyto! a $BT into a $AT"))
     @assert A.n == B.n
     copyto!(A.S, B.S)
-    nothing
+    A
 end
 
+# see the comment on `*(::SkewSymMatrix, ::AbstractVector)`: the vector goes through the
+# matrix--matrix path as a single column, and the `n × 1` result is reshaped back to a vector
 function Base.:*(A::AbstractTriangular, b::AbstractVector{T}) where {T}
-    A * reshape(b, length(b), 1)
+    vec(A * reshape(b, length(b), 1))
 end
 
 function Base.:*(B::AbstractMatrix{T}, A::AbstractTriangular{T}) where {T}

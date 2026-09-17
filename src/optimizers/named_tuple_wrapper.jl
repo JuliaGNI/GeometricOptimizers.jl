@@ -121,7 +121,10 @@ function _copyto!(Λ::NamedTuple, x::NetworkParameters)
     Λ
 end
 
-function Base.copyto!(Λ::GlobalSection{T, MT}, x::MT) where {T, MT <: Manifold}
+# the storage type is free in both arguments, for the reason given on the section-to-section
+# `copyto!` methods in `global_sections.jl`, and the lift is bound to an array for the reason given
+# there too
+function Base.copyto!(Λ::GlobalSection{T, <:Manifold, <:AbstractArray}, x::Manifold) where {T}
     # only the anchor moves; `Λ.λ` is deliberately left alone, since recomputing the lift would move
     # the frame the secant pair of a quasi-Newton method is expressed in
     copyto!(Λ.Y, x)
@@ -129,7 +132,9 @@ function Base.copyto!(Λ::GlobalSection{T, MT}, x::MT) where {T, MT <: Manifold}
 end
 
 # the bare-`Manifold` counterpart of the line above
-_copyto!(Λ::GlobalSection{T, MT}, x::MT) where {T, MT <: Manifold} = copyto!(Λ, x)
+function _copyto!(Λ::GlobalSection{T, <:Manifold, <:AbstractArray}, x::Manifold) where {T}
+    copyto!(Λ, x)
+end
 
 function _copyto!(x::NetworkParameters, Λ::GlobalSectionNamedTuple)
     mapparameters!(copyto!, x, Λ)
@@ -146,17 +151,15 @@ function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple
     Λ₁
 end
 
-# The one ambiguity `Test.detect_ambiguities` reports in this family, and why it is left alone. It is a
-# type intersection with no inhabitant this package's API can build:
-#
-#  - **`copyto!(::GlobalSection{T,MT,Nothing}, ::GlobalSection{T,MT,Nothing}) where {MT<:Manifold}`**
-#    (`global_sections/global_sections.jl:376` against `:382`) — a section anchored on a `Manifold`
-#    whose lift is `nothing`. `GlobalSection(::Manifold)` always builds the lift; `λ === nothing` is
-#    the *plain array* case, where `MT<:Manifold` does not hold.
-#
-# It is documented rather than closed because a method that exists only to satisfy a static checker is
-# a method somebody later has to reason about. The way to triage a reported pair is `typeintersect` on
-# the two signatures and then an attempt to construct a witness; this one has none.
+# `Test.detect_ambiguities` reports no `copyto!` pair in the `GlobalSection` family. It does report
+# two on `global_rep` in `global_sections/global_sections.jl`: the `StiefelManifold` method and the
+# `GrassmannManifold` one, each against the `λ === nothing` one. Both intersect at a `StiefelManifold`-
+# or `GrassmannManifold`-anchored section whose lift is `nothing`, which this package's API cannot
+# build -- `GlobalSection(::Manifold)` always builds the lift, and `λ === nothing` is the plain
+# array case. They are left alone because a method that exists only to satisfy a static checker is a
+# method somebody later has to reason about. The way to triage a reported pair, here or in a method
+# added later, is `typeintersect` on the two signatures and then an attempt to construct a witness:
+# a pair whose intersection the API cannot build is a wart rather than a bug.
 
 # Two *nested* section trees, which is the shape a container's section takes and which
 # `GlobalSectionNamedTuple` cannot describe. Written on the bare `NamedTuple` because neither argument
@@ -445,8 +448,9 @@ function _square(a)
     b
 end
 
-function Base.copyto!(dest::AT, src::GlobalSection{T, AT}) where {T, AT <: AbstractArray{T}}
+function Base.copyto!(dest::AbstractArray{T}, src::GlobalSection{T}) where {T}
     copyto!(dest, src.Y)
+    dest
 end
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)
 rgrad(ps::NetworkParameters, dx::NetworkParameters) = mapparameters(rgrad, ps, dx)

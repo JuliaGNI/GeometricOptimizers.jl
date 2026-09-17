@@ -48,6 +48,19 @@ function skew_mat_mul(n::Integer, T::DataType = Float64)
     @test isapprox(SA1, SA2)
 end
 
+# A matrix times a vector is a vector. `S * b` used to go through the matrix--matrix kernel and
+# return that kernel's `n × 1` result, so it came back as a `Matrix`. Comparing against the dense
+# product does not catch that: `promote_shape` accepts a trailing singleton dimension, so
+# `Matrix(S) * b - S * b` is well defined and zero.
+function skew_mat_vec_mul(n::Integer, T::DataType = Float64)
+    S = rand(SkewSymMatrix{T}, n)
+    b = rand(T, n)
+    Sb = S * b
+    @test Sb isa AbstractVector
+    @test size(Sb) == (n,)
+    @test isapprox(Sb, Matrix{T}(S) * b)
+end
+
 # tests if multiplication from the right also works correctly
 function skew_mat_mul_from_the_right(N::Integer, T::DataType = Float64)
     S = rand(SkewSymMatrix{T}, N)
@@ -127,6 +140,7 @@ for T in (Float32, Float64)
         skew_symmetrization_operation(N, T)
         skew_mat_add_sub(N, T)
         skew_mat_mul(N, T)
+        skew_mat_vec_mul(N, T)
         skew_mat_mul_from_the_right(N, T)
         # `check_map_to_Skew`, `scalar_multiplication` and `test_random_array_generation` were
         # defined above but never called, which is how the typo in the second one survived. Their

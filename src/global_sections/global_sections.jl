@@ -388,22 +388,38 @@ end
 # point". `λ === nothing` on Euclidean parameters, and `nothing == nothing` is `true`.
 Base.:(==)(Λ₁::GlobalSection, Λ₂::GlobalSection) = Λ₁.Y == Λ₂.Y && Λ₁.λ == Λ₂.λ
 
-function Base.copyto!(dest::GlobalSection{T, MT}, src::GlobalSection{
-        T, MT}) where {T, MT <: Manifold}
+# The storage type is left free in both arguments for the reason given on
+# `copyto!(::Manifold, ::Manifold)`: a type parameter shared by the two sections binds the whole
+# type, the array behind the frame included, so a host-backed and a device-backed section are
+# already different concrete types and a shared parameter excludes exactly the transfer these
+# methods exist for. `GlobalSection` is not an `AbstractArray` and so has no fallback either, which
+# makes that a `MethodError` rather than a silent wrong answer. No species check is needed here:
+# `copyto!(::Manifold, ::Manifold)` in `manifolds/abstract_manifold.jl` carries one, and the
+# anchors are what this forwards to.
+#
+# The lift is bound to an array rather than left free, which is what keeps this method and the
+# `λ === nothing` one below disjoint. A manifold whose `global_section` falls through to the
+# `AbstractVecOrMat` default has no lift to copy, and so belongs to the method below.
+function Base.copyto!(dest::GlobalSection{T, <:Manifold, <:AbstractArray},
+        src::GlobalSection{T, <:Manifold, <:AbstractArray}) where {T}
     copyto!(dest.Y, src.Y)
     copyto!(dest.λ, src.λ)
     dest
 end
 
-function Base.copyto!(dest::GlobalSection{T, AT, Nothing},
-        src::GlobalSection{T, AT, Nothing}) where {T, AT <: AbstractVecOrMat{T}}
+function Base.copyto!(dest::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
+        src::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing}) where {T}
     copyto!(dest.Y, src.Y)
     dest
 end
 
-function Base.copyto!(
-        dest::GlobalSection{
-            T, AT, Nothing}, src::AT) where {T, AT <: AbstractVecOrMat{T}}
+# `Manifold <: AbstractMatrix`, so this also accepts a manifold point as the source and copies its
+# entries into the section's plain array. That is the right answer for a section that has no lift to
+# update, and it is the only direction in which the two species meet: the reverse, a plain array
+# into a manifold-anchored section, goes to the method in `optimizers/named_tuple_wrapper.jl`, which
+# takes a `Manifold` source and so rejects it.
+function Base.copyto!(dest::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
+        src::AbstractVecOrMat{T}) where {T}
     copyto!(dest.Y, src)
     dest
 end

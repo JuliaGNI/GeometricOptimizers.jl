@@ -14,9 +14,16 @@
 # `copyto!(dest, src::AbstractArray)` but not `copyto!(dest, ::Broadcasted)`, so a direct `copyto!`
 # works and `.=` throws. What this file pins is that every site below spells the write as the
 # former.
+#
+# A second way a transfer fails reaching the same sites: a method that binds both of its arguments
+# to one type parameter binds the whole type, storage array included, so a host-backed and a
+# device-backed argument are already different concrete types and never reach it. The stand-ins
+# carry that too, since their storage type differs from the host's, and the `GlobalSection`
+# testsets below are where it is pinned.
 
 using GeometricOptimizers
 using GeometricOptimizers: assign!
+using KernelAbstractions
 using Random
 using Test
 
@@ -32,6 +39,10 @@ Base.copyto!(dest::_NoBroadcastVector, src::AbstractArray) = (copyto!(dest.data,
 function Base.copyto!(dest::_NoBroadcastVector, ::Base.Broadcast.Broadcasted)
     error("broadcast assignment is disallowed on _NoBroadcastVector")
 end
+# `GlobalSection`'s constructor copies its anchor, and the generic `copy` for an `AbstractArray`
+# goes through `similar`, which would land the copy back on a plain `Array` and lose the foreign
+# storage this stands in for
+Base.copy(A::_NoBroadcastVector) = _NoBroadcastVector(copy(A.data))
 
 struct _NoBroadcastMatrix{T} <: AbstractMatrix{T}
     data::Matrix{T}
@@ -43,6 +54,11 @@ Base.copyto!(dest::_NoBroadcastMatrix, src::AbstractArray) = (copyto!(dest.data,
 function Base.copyto!(dest::_NoBroadcastMatrix, ::Base.Broadcast.Broadcasted)
     error("broadcast assignment is disallowed on _NoBroadcastMatrix")
 end
+# see the comment on `copy(::_NoBroadcastVector)`
+Base.copy(A::_NoBroadcastMatrix) = _NoBroadcastMatrix(copy(A.data))
+# `global_section` asks its anchor for a backend before it allocates. A real device array answers
+# with its own; this one stands for the storage type and not for the backend, so it answers `CPU()`.
+KernelAbstractions.get_backend(::_NoBroadcastMatrix) = CPU()
 
 const T = Float64
 const N, n = 6, 3
@@ -101,6 +117,51 @@ const N, n = 6, 3
         @test dev.A.S.data ≈ host.A.S
         @test dev.B.data ≈ host.B
     end
+end
+
+# `GlobalSection` bound its two arguments to one type parameter, which is the defect PR #85 fixed
+# for `Manifold`: the parameter binds the whole type, storage array included, so a host-backed and
+# a device-backed section are already different concrete types and there was no method for the pair
+# at all. `GlobalSection` is not an `AbstractArray`, so there is no fallback either -- the failure
+# was a `MethodError` and not a silent wrong answer.
+@testset "copyto! moves a GlobalSection onto a foreign-storage destination" begin
+    host_Y = rand(StiefelManifold{T}, N, n)
+    # an independent point, so that the anchor assertion below is not true before the copy
+    dev_Y = StiefelManifold(_NoBroadcastMatrix(Matrix(rand(StiefelManifold{T}, N, n).A)))
+
+    Λhost = GlobalSection(host_Y)
+    Λdev = GlobalSection(dev_Y)
+
+    # section to section: both the anchor and the lift move
+    @test copyto!(Λdev, Λhost) === Λdev
+    @test Λdev.Y.A.data ≈ Λhost.Y.A
+    @test Λdev.λ.data ≈ Λhost.λ
+
+    # a bare point into a section: only the anchor moves, which is deliberate -- recomputing the
+    # lift would move the frame a quasi-Newton secant pair is expressed in
+    other = rand(StiefelManifold{T}, N, n)
+    λ_before = copy(Λdev.λ.data)
+    @test copyto!(Λdev, other) === Λdev
+    @test Λdev.Y.A.data ≈ other.A
+    @test Λdev.λ.data == λ_before
+
+    # a section into a bare array, the direction the flat parameter path takes
+    dest = _NoBroadcastMatrix(zeros(T, N, n))
+    @test copyto!(dest, Λhost) === dest
+    @test dest.data ≈ Λhost.Y.A
+end
+
+@testset "the Euclidean section, whose lift is nothing, crosses the same way" begin
+    x_host = rand(T, N)
+    Λhost = GlobalSection(x_host)
+    Λdev = GlobalSection(_NoBroadcastVector(zeros(T, N)))
+
+    @test copyto!(Λdev, Λhost) === Λdev
+    @test Λdev.Y.data ≈ x_host
+
+    y = rand(T, N)
+    @test copyto!(Λdev, y) === Λdev
+    @test Λdev.Y.data ≈ y
 end
 
 @testset "assign! is the same contract and moves with copyto!" begin

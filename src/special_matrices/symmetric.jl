@@ -238,6 +238,7 @@ function LinearAlgebra.mul!(C::AbstractMatrix, A::SymmetricMatrix, B::AbstractMa
     backend = KernelAbstractions.get_backend(A.S)
     symmetric_mat_mul! = symmetric_mat_mul_kernel!(backend)
     symmetric_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
+    C
 end
 
 @kernel function symmetric_vector_mul_kernel!(
@@ -259,6 +260,7 @@ function LinearAlgebra.mul!(c::AbstractVector, A::SymmetricMatrix, b::AbstractVe
     backend = KernelAbstractions.get_backend(A.S)
     symmetric_vector_mul! = symmetric_vector_mul_kernel!(backend)
     symmetric_vector_mul!(c, A.S, b, A.n, ndrange = size(c))
+    c
 end
 
 function Base.:*(A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
@@ -302,7 +304,7 @@ function Base.copyto!(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where {T}
     @assert A.n == B.n
     copyto!(A.S, B.S)
 
-    nothing
+    A
 end
 
 # define routines for generalizing ChainRulesCore to SymmetricMatrix 

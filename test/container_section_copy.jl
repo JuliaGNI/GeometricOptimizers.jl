@@ -56,11 +56,6 @@ const sec = (a = GlobalSection(rand(3)), b = GlobalSection(rand(2, 2)))
     @test dest_sec.b.Y == np.b
 end
 
-# The residue is recorded in `named_tuple_wrapper.jl` rather than tested: the one pair
-# `Test.detect_ambiguities` reports in this family intersects at a shape this package's API cannot
-# build -- a `Manifold`-anchored section with no lift. Asserting that something *is* ambiguous would
-# pin a wart rather than a guarantee.
-
 # The end-to-end version of the same corner: a *flat* `NetworkParameters` with a manifold leaf, driven
 # the way `GMLDatasets`' MNIST scripts drive an optimizer -- `solver_step!` on a changing objective
 # rather than `solve!` on a fixed one. The first step goes through

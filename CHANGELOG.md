@@ -135,6 +135,33 @@ breaking release).
   which is what lets a host and a device copy meet there, and so it previously accepted an
   `UpperTriangular` source for a `LowerTriangular` destination and copied its storage into the
   opposite triangle without complaint.
+- `mul!(C, ::SymmetricMatrix, B)` and `mul!(c, ::SymmetricMatrix, b)` return their destination.
+  Both ended on the kernel launch and so returned `nothing`, against `LinearAlgebra`'s contract.
+  They are the only three-argument `mul!` methods the package defines. This is the same class as
+  the scalar `mul!` bug of issue #17, whose regression file now covers the three-argument forms too:
+  there, a wrong return value stayed hidden until a caller used it, and a `StiefelLieAlgHorMatrix`
+  then degraded into a plain `Matrix`.
+- `copyto!` on `SkewSymMatrix`, `SymmetricMatrix`, `LowerTriangular` and `UpperTriangular` returns
+  its destination. All four returned `nothing`, against the same contract — the one the comment
+  above `copyto!(::Manifold, ::Manifold)` states outright, and which the `Manifold` and
+  horizontal-lift methods already kept.
+- `A * b` returns a vector for `SkewSymMatrix`, `LowerTriangular` and `UpperTriangular`. All three
+  passed the vector through the matrix–matrix path as a single column and returned that path's
+  `n × 1` `Matrix`. Comparing against the dense product does not catch this, which is why the
+  existing triangular test passed with the defect in place: `promote_shape` accepts a trailing
+  singleton dimension, so the difference against an `n`-vector is well defined and zero.
+  `SymmetricMatrix`, which has a vector kernel of its own, was already correct.
+- `copyto!` on a `GlobalSection` no longer binds both of its arguments to one type parameter. As
+  with `Manifold.copyto!` above, the parameter binds the whole type including the storage array, so
+  a host-backed and a device-backed section are already different concrete types and there was no
+  method for the pair at all — and because `GlobalSection` is not an `AbstractArray`, there was no
+  fallback either, making it a `MethodError` rather than a silent wrong answer. All five methods are
+  fixed: section to section, for a manifold anchor and for a Euclidean one; a bare point or
+  parameter array into a section; and a section into a bare array. The lift type is now bound to an
+  array in the manifold methods, which is what keeps them disjoint from the `λ === nothing` ones —
+  closing a pre-existing ambiguity between two of them, and routing a manifold whose
+  `global_section` falls through to the `AbstractVecOrMat` default to the method that copies only
+  the anchor.
 
 ### Changed
 
