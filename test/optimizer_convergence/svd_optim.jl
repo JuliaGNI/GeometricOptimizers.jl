@@ -228,7 +228,7 @@ for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
     relative_errors = Float64[]
     mean_orbit_errors = Float64[]
 
-    # no `Newton`: the parameters here are a manifold, which it is out of scope for and which
+    # no `Newton`: `starting_point` returns a parameter set, which it is out of scope for and which
     # `Optimizer` rejects it on — see `test/optimizer_tests.jl`
     for algorithm in (GradientMethod(), MomentumMethod(), GeometricOptimizers.Adam())
         ps = starting_point(3)
