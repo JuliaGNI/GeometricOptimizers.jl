@@ -48,6 +48,14 @@ mutable struct SymplecticStiefelManifold{T, AT <: AbstractMatrix{T}} <: Manifold
     end
 end
 
+# The inner constructor above suppresses the default `SymplecticStiefelManifold{T, AT}(A)`, which
+# the generic `Base.copy(::Manifold)` calls — and through it `_similar` and `GlobalSection`, which
+# every manifold optimizer goes through. `StiefelManifold` keeps the default because it declares no
+# inner constructor.
+function SymplecticStiefelManifold{T, AT}(A::AT) where {T, AT <: AbstractMatrix{T}}
+    SymplecticStiefelManifold(A)
+end
+
 Base.:*(U::SymplecticStiefelManifold, B::AbstractMatrix) = U.A * B
 Base.:*(B::AbstractMatrix, U::SymplecticStiefelManifold) = B * U.A
 
@@ -122,10 +130,11 @@ end
 The Riemannian metric of the symplectic Stiefel manifold, taken from
 [gao2021riemannian](@cite).
 """
-function metric(U::SymplecticStiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
-    J = _poisson_tensor(eltype(U), size(U, 1))
+function metric(U::SymplecticStiefelManifold{T}, Δ₁::AbstractMatrix,
+        Δ₂::AbstractMatrix) where {T}
+    J = _poisson_tensor(T, size(U, 1))
     LinearAlgebra.tr(inv(U' * U) * Δ₁' *
-                     (LinearAlgebra.I - 0.5 * J' * U * inv(U' * U) * U' * J) * Δ₂)
+                     (LinearAlgebra.I - (T(1) / 2) * J' * U * inv(U' * U) * U' * J) * Δ₂)
 end
 
 @doc raw"""
@@ -145,16 +154,22 @@ end
     global_section(U::SymplecticStiefelManifold)
 
 A symplectic completion of `U`: the remaining ``2N - 2n`` directions, drawn at random and made
-symplectic against `U`.
+symplectic against `U`. The result is ``2N\times(2N - 2n)``, as
+[`global_section(::StiefelManifold)`](@ref) is ``N\times(N - n)``, and it is what `GlobalSection`
+expects.
 
-The counterpart of [`global_section(::StiefelManifold)`](@ref), with the symplectic form in place
-of the Euclidean one.
+The counterpart of that method, with the symplectic form in place of the Euclidean one.
 """
 function global_section(U::SymplecticStiefelManifold)
     N2, n2 = size(U)
+    N, n = N2 ÷ 2, n2 ÷ 2
+    m = N - n
     A = randn(eltype(U), N2, N2 - n2)
     J₁ = _poisson_tensor(eltype(U), N2)
     J₂ = _poisson_tensor(eltype(U), n2)
     A -= U * J₂ * U' * J₁' * A
-    Matrix(sr!(A).S)
+    # `sr!` returns the full `2N x 2N` symplectic factor; the completion is `m` of its columns from
+    # each half, the same slice `_rand_symplectic_stiefel` takes. Returning the whole factor would
+    # not be a completion at all -- `‖UᵀJΛ‖` over it is `O(100)` rather than zero.
+    Matrix(sr!(A).S)[:, vcat(1:m, (N + 1):(N + m))]
 end

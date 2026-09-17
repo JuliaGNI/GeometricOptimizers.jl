@@ -1,15 +1,16 @@
 using Test
 using LinearAlgebra
 using GeometricOptimizers
-using GeometricOptimizers: _poisson_tensor
+using GeometricOptimizers: _poisson_tensor, _similar
 import Random
 
 Random.seed!(1234)
 
 # See the note on tolerances in `test/decompositions/symplectic_sr.jl`: the residual grows with the
-# size because the SR decomposition these points come from has no re-orthogonalization step, and
-# `Float32` is out of reach at every size. The figures are in `CHANGELOG.md` under *Open Issues*.
-tolerance(N2) = N2 ≤ 4 ? 1e-9 : N2 ≤ 6 ? 1e-6 : 1e-5
+# size because the SR decomposition these points come from has no re-orthogonalization step, the
+# thresholds clear the worst over eight seeds rather than one, and `Float32` is out of reach at
+# every size. The figures are in `CHANGELOG.md` under *Open Issues*.
+tolerance(N2) = N2 ≤ 4 ? 1e-6 : N2 ≤ 6 ? 1e-5 : 1e-4
 
 const SIZES = ((4, 2), (6, 4), (10, 6))
 
@@ -68,9 +69,41 @@ end
         J = _poisson_tensor(Float64, N2)
         U = rand(SymplecticStiefelManifold, N2, n2)
         Λ = global_section(U)
-        @test size(Λ) == (N2, N2)
-        @test norm(Λ' * J * Λ - J) < tolerance(N2)
+
+        # The shape is the completion's, matching `global_section(::StiefelManifold)` and what
+        # `GlobalSection` assumes — not the whole `2N x 2N` factor it is sliced from.
+        @test size(Λ) == (N2, N2 - n2)
+
+        # And it is a completion: symplectically orthogonal to the point. Asserting only the shape
+        # would pass for any matrix of the right size, which is how the wrong return got this far.
+        @test norm(U.A' * J * Λ) < tolerance(N2)
+
+        # Together they span the whole space symplectically.
+        N, n = N2 ÷ 2, n2 ÷ 2
+        m = N - n
+        full = hcat(U.A[:, 1:n], Λ[:, 1:m], U.A[:, (n + 1):(2 * n)], Λ[:, (m + 1):(2 * m)])
+        @test norm(full' * J * full - J) < tolerance(N2)
     end
+end
+
+# `Base.copy(::Manifold)` builds `typeof(U)(…)`, i.e. the two-parameter constructor, and `_similar`
+# and `GlobalSection` both go through it — which is the path every manifold optimizer takes. A type
+# that declares an inner constructor loses that one unless it declares it too, so it is asserted
+# here rather than left to the first optimizer that reaches for it.
+@testset "the generic Manifold methods reach this type" begin
+    U = rand(SymplecticStiefelManifold, 6, 4)
+    @test copy(U) isa SymplecticStiefelManifold
+    @test copy(U).A == U.A
+    @test _similar(U) isa SymplecticStiefelManifold
+    @test size(_similar(U)) == size(U)
+end
+
+# A `Float64` literal anywhere in the metric silently widens a `Float32` point's metric to
+# `Float64`, which no `Float64` test can see.
+@testset "the metric keeps the element type of the point" begin
+    U = rand(SymplecticStiefelManifold{Float32}, 6, 4)
+    Δ = ones(Float32, 6, 4)
+    @test metric(U, Δ, Δ) isa Float32
 end
 
 @testset "the canonical Poisson tensor" begin

@@ -110,8 +110,8 @@ end
 
 # The matrix and vector cases are separate methods on purpose. One method on `AbstractVecOrMat` is
 # ambiguous against `LinearAlgebra`'s `*(::AbstractMatrix, ::AbstractVector)`, because `Sfac` is an
-# `AbstractMatrix` itself: neither signature is more specific in both arguments. Aqua's
-# `ambiguities` check fails on it.
+# `AbstractMatrix` itself: neither signature is more specific in both arguments, so `S * x` for a
+# vector `x` is a `MethodError` at the call site.
 Base.:*(S::Sfac{false}, B::AbstractMatrix) = apply_S_left(S.Λ, B)
 Base.:*(S::Sfac{false}, b::AbstractVector) = apply_S_left(S.Λ, b)
 Base.:*(S::Sfac{true}, B::AbstractMatrix) = apply_S_inverse_left(S.Λ, B)
@@ -307,7 +307,7 @@ apply_S_right(B::AbstractArray, Λ::SymplecticHouseholderDecom) = apply_S_right!
 The canonical symplectic form ``a^TJb`` of two vectors of even length, evaluated without building
 ``J``.
 """
-function symplectic_form(a::AbstractVector, b::AbstractVector)
+@views function symplectic_form(a::AbstractVector, b::AbstractVector)
     N2 = length(a)
     @assert iseven(N2)
     @assert length(b) == N2
