@@ -146,16 +146,24 @@ function KernelAbstractions.get_backend(A::AbstractTriangular)
     KernelAbstractions.get_backend(A.S)
 end
 
-function assign!(B::AT, C::AT) where {AT <: AbstractTriangular}
-    @assert B.n == C.n
-    copyto!(B.S, C.S)
+function assign!(B::AbstractTriangular, C::AbstractTriangular)
+    copyto!(B, C)
+
+    nothing
 end
 
 function Base.copy(A::AT) where {AT <: AbstractTriangular}
     AT(copy(A.S), A.n)
 end
 
+# The species check is a runtime one for the reason given on `copyto!(::Manifold, ::Manifold)`: a
+# type parameter shared by both arguments binds the whole type, storage array included, and so
+# excludes exactly the host-to-device transfer this method exists for. Both arguments are only
+# constrained to `AbstractTriangular`, so without the check a `LowerTriangular` destination accepts
+# an `UpperTriangular` source and takes its storage into the opposite triangle.
 function Base.copyto!(A::AbstractTriangular, B::AbstractTriangular)
+    AT, BT = Base.typename(typeof(A)).wrapper, Base.typename(typeof(B)).wrapper
+    AT === BT || throw(ArgumentError("cannot copyto! a $BT into a $AT"))
     @assert A.n == B.n
     copyto!(A.S, B.S)
     nothing

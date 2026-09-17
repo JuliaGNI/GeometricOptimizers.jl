@@ -126,6 +126,33 @@ end
     @test dev_lift.B.data ≈ host_lift.B
 end
 
+@testset "a mismatched pair is rejected instead of partially written" begin
+    # `copyto!` takes any destination at least as long as its source, so each site that writes
+    # through it carries its own shape check. The fallback needs one too: the lift's `assign!`
+    # reaches it for each of the two blocks, and `n` alone does not fix their shapes.
+    @test_throws AssertionError copyto!(
+        SkewSymMatrix(rand(T, n + 1, n + 1)), SkewSymMatrix(rand(T, n, n)))
+    @test_throws AssertionError copyto!(
+        SymmetricMatrix(rand(T, n + 1, n + 1)), SymmetricMatrix(rand(T, n, n)))
+    @test_throws AssertionError copyto!(
+        LowerTriangular(rand(T, n + 1, n + 1)), LowerTriangular(rand(T, n, n)))
+    @test_throws AssertionError copyto!(
+        rand(StiefelManifold{T}, N + 1, n), rand(StiefelManifold{T}, N, n))
+    @test_throws AssertionError assign!(zeros(T, n + 1, n + 1), rand(T, n, n))
+    @test_throws AssertionError assign!(
+        StiefelLieAlgHorMatrix(SkewSymMatrix(rand(T, n, n)), rand(T, N + 1 - n, n), N + 1, n),
+        StiefelLieAlgHorMatrix(SkewSymMatrix(rand(T, n, n)), rand(T, N - n, n), N, n))
+
+    # both arguments carry only their abstract supertype, which is what lets a host and a device
+    # copy of one type meet here, so the species is a runtime check
+    @test_throws ArgumentError copyto!(
+        LowerTriangular(rand(T, n, n)), UpperTriangular(rand(T, n, n)))
+    @test_throws ArgumentError assign!(
+        LowerTriangular(rand(T, n, n)), UpperTriangular(rand(T, n, n)))
+    @test_throws ArgumentError copyto!(
+        rand(StiefelManifold{T}, N, n), rand(GrassmannManifold{T}, N, n))
+end
+
 # The "must keep throwing" half of §20 -- `hostA + devA` and `add!(devA, devA, hostA)` are
 # computations on mismatched memory, not transfers, and must not be widened into working. The
 # stand-ins here carry only half of what a real device needs for that. They have no
