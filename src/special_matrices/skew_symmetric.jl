@@ -255,7 +255,7 @@ end
 
 # The kernel this reaches is a matrix--matrix one, so the vector goes through it as a single column
 # -- and the `n × 1` result is reshaped back, because a matrix times a vector is a vector. `vec`
-# reshapes rather than copies, so the second step allocates nothing.
+# reshapes rather than copies, so the second step shares the kernel's buffer and copies no data.
 function Base.:*(A::SkewSymMatrix, b::AbstractVector{T}) where {T}
     vec(A * reshape(b, length(b), 1))
 end

@@ -151,17 +151,11 @@ function _copyto!(Λ₁::GlobalSectionNamedTuple, Λ₂::GlobalSectionNamedTuple
     Λ₁
 end
 
-# The one ambiguity `Test.detect_ambiguities` reports in this family, and why it is left alone. It is a
-# type intersection with no inhabitant this package's API can build:
-#
-#  - **`copyto!(::GlobalSection{T,MT,Nothing}, ::GlobalSection{T,MT,Nothing}) where {MT<:Manifold}`**
-#    (`global_sections/global_sections.jl:376` against `:382`) — a section anchored on a `Manifold`
-#    whose lift is `nothing`. `GlobalSection(::Manifold)` always builds the lift; `λ === nothing` is
-#    the *plain array* case, where `MT<:Manifold` does not hold.
-#
-# It is documented rather than closed because a method that exists only to satisfy a static checker is
-# a method somebody later has to reason about. The way to triage a reported pair is `typeintersect` on
-# the two signatures and then an attempt to construct a witness; this one has none.
+# `Test.detect_ambiguities` reports no pair in this family. The way to triage one, should a method
+# added here introduce it, is `typeintersect` on the two signatures and then an attempt to construct
+# a witness: a pair whose intersection this package's API cannot build is a wart rather than a bug,
+# and a method that exists only to satisfy a static checker is a method somebody later has to reason
+# about.
 
 # Two *nested* section trees, which is the shape a container's section takes and which
 # `GlobalSectionNamedTuple` cannot describe. Written on the bare `NamedTuple` because neither argument
@@ -452,6 +446,7 @@ end
 
 function Base.copyto!(dest::AbstractArray{T}, src::GlobalSection{T}) where {T}
     copyto!(dest, src.Y)
+    dest
 end
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)
 rgrad(ps::NetworkParameters, dx::NetworkParameters) = mapparameters(rgrad, ps, dx)

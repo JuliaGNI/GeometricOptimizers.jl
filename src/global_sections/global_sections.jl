@@ -394,7 +394,8 @@ Base.:(==)(Λ₁::GlobalSection, Λ₂::GlobalSection) = Λ₁.Y == Λ₂.Y && �
 # already different concrete types and a shared parameter excludes exactly the transfer these
 # methods exist for. `GlobalSection` is not an `AbstractArray` and so has no fallback either, which
 # makes that a `MethodError` rather than a silent wrong answer. No species check is needed here:
-# `copyto!(::Manifold, ::Manifold)` below carries one, and the anchors are what this forwards to.
+# `copyto!(::Manifold, ::Manifold)` in `manifolds/abstract_manifold.jl` carries one, and the
+# anchors are what this forwards to.
 #
 # The lift is bound to an array rather than left free, which is what keeps this method and the
 # `λ === nothing` one below disjoint. A manifold whose `global_section` falls through to the
