@@ -1,8 +1,9 @@
 # A broadcast over a manifold point returns a plain array, in both spellings.
 #
 # `Base.broadcast(operation, Y::Manifold)` used to rewrap the result in the manifold type, which
-# claims an invariant the result does not hold: adding 1 to every entry of a point of `St(4,2)` gave
-# a `StiefelManifold` whose `check` was `8.42`, against `~1e-16` for a point. Dot syntax never
+# claims an invariant the result does not hold: adding 1 to every entry of a point of `St(4,2)` gives
+# a `StiefelManifold` whose `check` is of order 10 — `11.07` at the seed below — against `~1e-16`
+# for a point. The figure depends on the draw, which is why the assertion is `> 1`. Dot syntax never
 # reached that method — `Y .+ 1` lowers through `broadcasted`/`materialize` — so the two spellings
 # of one operation returned different types and only the wrapped one lied.
 #
@@ -16,6 +17,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: _round, check, manifold_constructor
+using JLArrays: JLArray
 using Test
 import Random
 
@@ -55,4 +57,21 @@ end
         @test rounded isa MT
         @test rounded.A == round.(Y.A; digits = 3)
     end
+end
+
+# `_round` rounds `Y.A` and not `Y`, and on a device-backed point that is load-bearing rather than a
+# matter of taste. `Manifold` declares no `Broadcast.BroadcastStyle`, so `round.(Y)` falls through to
+# the manifold's scalar `getindex`, which a device array disallows. `JLArray` stands in for the
+# device here, as it does in `similar_backend.jl`. This pins the distinction so that a later
+# simplification of `_round` to `round.(Y)` fails here rather than on a GPU.
+@testset "_round stays on the device" begin
+    Y = StiefelManifold(JLArray(Matrix(rand(StiefelManifold{Float32}, N, n).A)))
+    @test _round(Y; digits = 3) isa StiefelManifold{Float32, <:JLArray}
+    @test_throws "Scalar indexing is disallowed" round.(Y; digits = 3)
+
+    # and the deletion this file is about is what makes the explicit spelling fail here too, which
+    # `Y .+ 1` already did before it
+    @test_throws "Scalar indexing is disallowed" broadcast(x -> x + 1, Y)
+    @test_throws "Scalar indexing is disallowed" Y .+ 1
+    @test broadcast(x -> x + 1, Y.A) isa JLArray
 end

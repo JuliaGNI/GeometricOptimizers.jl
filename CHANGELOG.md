@@ -171,8 +171,9 @@ breaking release).
 - **Breaking for a caller that relied on the wrapped return:** `broadcast(f, Y)` on a `Manifold`
   returns a plain array. `Base.broadcast(operation, Y::Manifold)` rewrapped the result in the
   manifold type, which claims an invariant the result does not hold —
-  `check(broadcast(x -> x + 1, Y))` was `8.42` for a point of `St(4,2)` whose own `check` is
-  `~1e-16`. Dot syntax never reached that method, because `Y .+ 1` lowers through
+  `check(broadcast(x -> x + 1, Y))` is `11.07` for a point of `St(4,2)` drawn at `Random.seed!(123)`,
+  whose own `check` is `~1e-16`. The figure is draw-dependent and of order 10; what the test asserts
+  is `> 1`. Dot syntax never reached that method, because `Y .+ 1` lowers through
   `broadcasted`/`materialize`, so the two spellings of one operation returned different types and
   only the wrapped one lied about the point being on the manifold. With the method gone both fall
   through to the `AbstractArray` machinery and agree. The method was neither exported nor
@@ -180,14 +181,16 @@ breaking release).
   other package in the same tree found no call site other than its own body. `_round(::Manifold)`
   is unaffected and still returns the manifold type: it is written in dot syntax, which never
   reached the deleted method, and it rewraps deliberately because rounding a point's entries for
-  display leaves it on the manifold.
+  display leaves it on the manifold. A caller that knows the result is on the manifold and wants the
+  wrapper back spells it `manifold_constructor(Y)(broadcast(f, Y.A))`, which also keeps a
+  device-backed point on the device.
 
   One consequence worth stating, which no current caller reaches: on a device-backed point the
-  explicit `broadcast(f, Y)` now materialises on the **host**, through scalar `getindex`, where the
-  deleted method delegated to `Y.A` and stayed on the device. That is because `Manifold` declares no
-  `Broadcast.BroadcastStyle`, so the style is `DefaultArrayStyle{2}` — which is equally true of
-  `Y .+ 1` today and is therefore a pre-existing property of the type rather than something this
-  change introduces.
+  explicit `broadcast(f, Y)` now **fails** with a scalar-indexing error, where the deleted method
+  delegated to `Y.A` and stayed on the device. `Manifold` declares no `Broadcast.BroadcastStyle`, so
+  the style is `DefaultArrayStyle{2}` and the fall-through reaches the manifold's scalar `getindex`,
+  which a device array disallows. `Y .+ 1` already fails the same way today, so the property is
+  pre-existing; only the explicit spelling changes. Measured with `JLArrays`.
 - `Optimizer` carries one further type parameter, for the observer. Code that spells the type out
   with all of its parameters has to add it; the constructors and every accessor are unaffected.
 - `solve!` no longer evaluates the objective a second time at an iterate it has just evaluated. With
