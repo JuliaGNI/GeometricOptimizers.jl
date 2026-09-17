@@ -57,7 +57,8 @@ params = (x = state.x, state = state)
 # never consulted, but `linesearch_problem` needs it for the manifold case
 ls_obj = linesearch_problem(obj, grad, _cache, Cayley())
 # `rhs` is `-∇f`, so this is the descent test `∇f⋅p < 0` that `ensure_descent!` applies inside a # hide
-# solve. Built by hand as it is here, the direction is not passed through that safeguard. # hide
+# solve (as `_dot`, which agrees with `dot` on an `AbstractVector`). Built by hand as it is here, # hide
+# the direction is not passed through that safeguard. # hide
 @assert dot(rhs(_cache), direction(_cache)) > 0 # hide
 
 fˡˢ(alpha) = ls_obj.F(alpha, params)
