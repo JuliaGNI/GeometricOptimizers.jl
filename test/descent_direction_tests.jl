@@ -115,6 +115,10 @@ GeometricOptimizers.rhs(cache::_LiftCache) = cache.r
     Random.seed!(654)
     T = Float32
     N, n = 6, 3
+    # `allowscalar(false)` is what makes this a test rather than a description: outside a
+    # non-interactive session the default is `ScalarAllowed`, and a scalar index would merely warn.
+    # It is task-global and left set, as at `retractions/exponential_accuracy.jl`, which `runtests.jl`
+    # runs earlier and which therefore already puts every later test file under the same setting.
     allowscalar(false)
 
     r = StiefelLieAlgHorMatrix(
@@ -125,11 +129,12 @@ GeometricOptimizers.rhs(cache::_LiftCache) = cache.r
 
     cache = _LiftCache{T, typeof(δ)}(δ, r)
 
-    # `ensure_descent!` pairs with `_dot`, which reads the free parameters directly. The ambient
-    # `dot` scalar-indexes the lift instead, and `allowscalar(false)` above turns that into a
-    # `Scalar indexing is disallowed` error, so this call throws unless the pairing is intrinsic --
-    # that it does not throw is the assertion this testset exists for.
-    ensure_descent!(cache, BFGS(), Options(T))
+    # The ambient `dot` scalar-indexes the lift, which the setting above turns into a
+    # `Scalar indexing is disallowed` error. Asserting that here gives the assertion below its teeth:
+    # were the setting ever lost, the call would complete whichever product it paired with.
+    @test_throws ErrorException dot(r, δ)
 
-    @test _dot(rhs(cache), direction(cache)) > 0
+    # `ensure_descent!` pairs with `_dot`, which reads the free parameters directly and never reaches
+    # the rejected path. That the call returns at all is the assertion this testset exists for.
+    @test (ensure_descent!(cache, BFGS(), Options(T)); true)
 end

@@ -45,8 +45,8 @@ for N in (20, 10)
     end
 end
 
-# `T(1//2)` in `metric` threw `InexactError` for `T = Int` -- a type the `rgrad` doctest above
-# already constructs a `StiefelManifold` of. `(T(1) / 2)` does not.
+# The `rgrad` doctest above constructs a `StiefelManifold` of integer element type, so `metric` has
+# to accept one. `(T(1) / 2)` does; `T(1//2)` would throw `InexactError` for `T = Int`.
 let Y = StiefelManifold([1 0; 0 1; 0 0; 0 0]), Δ₁ = [1 2; 3 4; 5 6; 7 8],
     Δ₂ = [8 7; 6 5; 4 3; 2 1]
 
