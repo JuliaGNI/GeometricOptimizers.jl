@@ -35,6 +35,15 @@ end
         @test B * Aᵤ ≈ B * Matrix{T}(Aᵤ)
         @test Aₗ * b ≈ Matrix{T}(Aₗ) * b
         @test Aᵤ * b ≈ Matrix{T}(Aᵤ) * b
+
+        # A matrix times a vector is a vector. Both products used to go through the
+        # matrix--matrix path and return its `n × 1` result, and the two assertions above pass
+        # either way: `promote_shape` accepts a trailing singleton dimension, so the difference
+        # against the dense product is well defined and zero.
+        @test Aₗ * b isa AbstractVector
+        @test Aᵤ * b isa AbstractVector
+        @test size(Aₗ * b) == (n,)
+        @test size(Aᵤ * b) == (n,)
     end
 end
 

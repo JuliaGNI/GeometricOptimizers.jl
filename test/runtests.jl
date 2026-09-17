@@ -30,7 +30,7 @@ begin
     @safetestset "Triangular Matrices          " include("special_matrices/triangular.jl")
 end
 begin
-    @safetestset "Scalar mul! Return Value     " include("special_matrices/scalar_mul_return_value.jl")
+    @safetestset "Mutating Return Values       " include("special_matrices/scalar_mul_return_value.jl")
 end
 begin
     @safetestset "Optimizer Primitives         " include("special_matrices/optimizer_primitives.jl")

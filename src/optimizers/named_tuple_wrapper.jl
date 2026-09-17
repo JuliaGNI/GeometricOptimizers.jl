@@ -121,7 +121,10 @@ function _copyto!(Λ::NamedTuple, x::NetworkParameters)
     Λ
 end
 
-function Base.copyto!(Λ::GlobalSection{T, MT}, x::MT) where {T, MT <: Manifold}
+# the storage type is free in both arguments, for the reason given on the section-to-section
+# `copyto!` methods in `global_sections.jl`, and the lift is bound to an array for the reason given
+# there too
+function Base.copyto!(Λ::GlobalSection{T, <:Manifold, <:AbstractArray}, x::Manifold) where {T}
     # only the anchor moves; `Λ.λ` is deliberately left alone, since recomputing the lift would move
     # the frame the secant pair of a quasi-Newton method is expressed in
     copyto!(Λ.Y, x)
@@ -129,7 +132,9 @@ function Base.copyto!(Λ::GlobalSection{T, MT}, x::MT) where {T, MT <: Manifold}
 end
 
 # the bare-`Manifold` counterpart of the line above
-_copyto!(Λ::GlobalSection{T, MT}, x::MT) where {T, MT <: Manifold} = copyto!(Λ, x)
+function _copyto!(Λ::GlobalSection{T, <:Manifold, <:AbstractArray}, x::Manifold) where {T}
+    copyto!(Λ, x)
+end
 
 function _copyto!(x::NetworkParameters, Λ::GlobalSectionNamedTuple)
     mapparameters!(copyto!, x, Λ)
@@ -445,7 +450,7 @@ function _square(a)
     b
 end
 
-function Base.copyto!(dest::AT, src::GlobalSection{T, AT}) where {T, AT <: AbstractArray{T}}
+function Base.copyto!(dest::AbstractArray{T}, src::GlobalSection{T}) where {T}
     copyto!(dest, src.Y)
 end
 _copyto!(dest, src::GlobalSection) = copyto!(dest, src)

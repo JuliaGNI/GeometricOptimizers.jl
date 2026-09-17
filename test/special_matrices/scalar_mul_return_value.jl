@@ -14,7 +14,9 @@ import Random
 # `CanonicalIndexError`.
 #
 # `LinearAlgebra`'s contract is that `mul!` and `rmul!` return their destination argument, so
-# what is asserted here is identity (`===`), not just equality.
+# what is asserted here is identity (`===`), not just equality. `copyto!` and the three-argument
+# `mul!` at the bottom of this file carry the same contract and broke it the same way, which is
+# why they are here rather than in a file of their own.
 
 Random.seed!(1234)
 
@@ -90,6 +92,47 @@ end
             # the copy is independent of the original
             rmul!(B, 2.0)
             @test Matrix(B) ≈ 2.0 .* Matrix(A)
+        end
+    end
+end
+
+# The three-argument `mul!` is the same contract and was broken the same way: both methods ended
+# on their kernel launch, which returns the launch's value and not the destination. They are the
+# only three-argument `mul!` methods the package defines -- every other multiplication of a
+# structured matrix goes through `*`.
+@testset "three-argument mul! returns its destination" begin
+    A = rand(SymmetricMatrix, n)
+    B = rand(n, n)
+    b = rand(n)
+
+    C = zeros(n, n)
+    @test mul!(C, A, B) === C
+    @test C ≈ Matrix(A) * B
+
+    c = zeros(n)
+    @test mul!(c, A, b) === c
+    @test c ≈ Matrix(A) * b
+end
+
+# `copyto!` returns its destination too. The four structured matrix types returned `nothing`
+# instead, against the contract the comment above `copyto!(::Manifold, ::Manifold)` states in so
+# many words. The `Manifold` and horizontal-lift methods already kept it; they are asserted here so
+# that what is pinned is the package-wide contract rather than the four methods that broke it.
+@testset "copyto! returns its destination" begin
+    for A in instances()
+        @testset "$(name(A))" begin
+            dest = zero(A)
+            @test copyto!(dest, A) === dest
+            @test Matrix(dest) ≈ Matrix(A)
+        end
+    end
+
+    for MT in (StiefelManifold{Float64}, GrassmannManifold{Float64})
+        dest = rand(MT, N, n)
+        src = rand(MT, N, n)
+        @testset "$(name(dest))" begin
+            @test copyto!(dest, src) === dest
+            @test dest.A ≈ src.A
         end
     end
 end

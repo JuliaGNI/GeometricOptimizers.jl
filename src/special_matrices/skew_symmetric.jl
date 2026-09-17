@@ -253,8 +253,11 @@ function Base.:*(B::AbstractMatrix{T}, A::SkewSymMatrix{T}) where {T}
     (-A * B')'
 end
 
+# The kernel this reaches is a matrix--matrix one, so the vector goes through it as a single column
+# -- and the `n × 1` result is reshaped back, because a matrix times a vector is a vector. `vec`
+# reshapes rather than copies, so the second step allocates nothing.
 function Base.:*(A::SkewSymMatrix, b::AbstractVector{T}) where {T}
-    A * reshape(b, length(b), 1)
+    vec(A * reshape(b, length(b), 1))
 end
 
 function Base.one(A::SkewSymMatrix{T}) where {T}
@@ -344,7 +347,7 @@ end
 function Base.copyto!(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
     copyto!(A.S, B.S)
-    nothing
+    A
 end
 
 # this fills the *storage*: `fill!(A, val)` gives a matrix whose strict lower triangle is `val`, whose
