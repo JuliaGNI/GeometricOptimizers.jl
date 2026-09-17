@@ -24,6 +24,9 @@ breaking release).
 - Added `test/gradient_backend.jl`, which pins the temporary `_match_backend` shim described below
   and the device path of `rgrad` for both manifolds, again with `JLArray` as the device stand-in.
   Delete it with the shim.
+- Added `test/manifolds/broadcast.jl`, which pins that a broadcast over a manifold point returns a
+  plain array in both spellings, and that `_round` still returns the manifold type. It is what stops
+  the deleted `broadcast(f, ::Manifold)` method described below coming back.
 
 ### Fixed
 
@@ -175,8 +178,16 @@ breaking release).
   through to the `AbstractArray` machinery and agree. The method was neither exported nor
   documented, and an exhaustive sweep of this package, of `GeometricMachineLearning` and of every
   other package in the same tree found no call site other than its own body. `_round(::Manifold)`
-  is unaffected and still returns the manifold type: it broadcasts over `Y.A` and rewraps
-  deliberately, because rounding a point's entries for display leaves it on the manifold.
+  is unaffected and still returns the manifold type: it is written in dot syntax, which never
+  reached the deleted method, and it rewraps deliberately because rounding a point's entries for
+  display leaves it on the manifold.
+
+  One consequence worth stating, which no current caller reaches: on a device-backed point the
+  explicit `broadcast(f, Y)` now materialises on the **host**, through scalar `getindex`, where the
+  deleted method delegated to `Y.A` and stayed on the device. That is because `Manifold` declares no
+  `Broadcast.BroadcastStyle`, so the style is `DefaultArrayStyle{2}` — which is equally true of
+  `Y .+ 1` today and is therefore a pre-existing property of the type rather than something this
+  change introduces.
 - `Optimizer` carries one further type parameter, for the observer. Code that spells the type out
   with all of its parameters has to add it; the constructors and every accessor are unaffected.
 - `solve!` no longer evaluates the objective a second time at an iterate it has just evaluated. With

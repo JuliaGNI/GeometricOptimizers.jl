@@ -12,7 +12,7 @@
 #
 # `_round` is asserted beside them for contrast. It rewraps deliberately — rounding a point's
 # entries for display leaves it on the manifold, and the docstrings that print one need the type
-# back — and it does so through `Y.A`, so it never went through `broadcast` and is unaffected.
+# back — and it never reached the deleted method, because it is written in dot syntax.
 
 using GeometricOptimizers
 using GeometricOptimizers: _round, check, manifold_constructor

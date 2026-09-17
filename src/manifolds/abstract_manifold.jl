@@ -69,17 +69,16 @@ function Base.rand(rng::Random.AbstractRNG, manifold_type::Type{MT},
     rand(CPU(), rng, manifold_type, N, n)
 end
 
-# `_round` rewraps because rounding a point's entries to a few decimals is a *display* operation on
-# a point that is already on the manifold, and the docstrings that print one need the type back. It
-# is not the shape `broadcast` had: it goes through `Y.A`, so it never reached the `Base.broadcast`
-# method that used to sit here, and it stays.
+# `_round` rewraps, and is the only thing here that may: rounding a point's entries to a few decimals
+# is a *display* operation on a point that is already on the manifold, and the docstrings that print
+# one need the type back. Nothing else is entitled to that — a general `broadcast(f, Y::Manifold)`
+# rewrapping its result claims an invariant the result does not hold, which is why there is no such
+# method below any more and why `broadcast(f, Y)` returns a plain array. `CHANGELOG.md` has the
+# measurement.
 #
-# That method — `broadcast(operation, Y::Manifold) = typeof(Y)(broadcast(operation, Y.A))` — is
-# deleted. It claimed an invariant it did not hold: `check(broadcast(x -> x + 1, Y))` was `8.42` on
-# a point of `St(4,2)` whose own `check` is `~1e-16`. Dot syntax never reached it — `Y .+ 1` lowers
-# through `broadcasted`/`materialize` and returns a plain array — so the two spellings of one
-# operation disagreed, and only the wrapped one lied. Without the method both fall through to the
-# `AbstractArray` machinery and agree on the honest answer.
+# `Y.A` and not `Y` is incidental to that: dot syntax lowers through `broadcasted`/`materialize` and
+# reaches no `broadcast` method of this package's either way, so `round.(Y)` would give the same
+# array. It reads as the storage operation it is.
 function _round(Y::Manifold; kwargs...)
     typeof(Y)(round.(Y.A; kwargs...))
 end
