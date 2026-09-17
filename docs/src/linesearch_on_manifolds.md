@@ -62,13 +62,15 @@ its outer product, and they are what the line search's ``\alpha`` parameterizes.
 check showed the consequence: paired ambiently, the slope came out as ``2\varphi'(\alpha)`` where
 ``\varphi'(\alpha)`` was wanted.
 
-[`_dot`](@ref) is the intrinsic pairing, and it is what three quantities need:
+[`_dot`](@ref) is the intrinsic pairing, and it is what four quantities need:
 
 1. [`trial_slope`](@ref), so that the line-search derivative has the right scale.
 2. The quasi-Newton denominator ``\delta^\mathsf{T}\gamma``, so that it agrees with the flattened
    ``T_1``, ``T_2`` and ``\gamma^\mathsf{T}Q\gamma`` it divides.
 3. The predicted decrease ``\widetilde{\Delta f}``, so that it is comparable with the measured
    ``\Delta f``.
+4. [`ensure_descent!`](@ref)'s descent test, for the same reason: the ambient product is twice the
+   intrinsic one, and on a manifold that is a scalar-indexed, device-incompatible computation besides.
 
 Getting that scale right improved [`BFGS`](@ref) on the SVD problem from 176 to 113 iterations on
 [`Geodesic`](@ref) with a shrink-only [`SimpleSolvers.Backtracking`](@extref), and from 197 to 93 on

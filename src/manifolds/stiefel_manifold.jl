@@ -83,8 +83,8 @@ This uses the canonical Riemannian metric for the Stiefel manifold:
 g_Y: (\Delta_1, \Delta_2) \mapsto \mathrm{Tr}(\Delta_1^T(\mathbb{I} - \frac{1}{2}YY^T)\Delta_2).
 ```
 """
-function metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
-    LinearAlgebra.tr(Δ₁' * (I - 0.5 * Y.A * Y.A') * Δ₂)
+function metric(Y::StiefelManifold{T}, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix) where {T}
+    LinearAlgebra.tr(Δ₁' * Δ₂) - (T(1) / 2) * LinearAlgebra.tr((Δ₁' * Y.A) * (Y.A' * Δ₂))
 end
 
 @doc raw"""

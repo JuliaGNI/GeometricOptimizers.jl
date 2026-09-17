@@ -48,7 +48,7 @@ function ensure_descent!(cache::OptimizerCache, method::OptimizerMethod, config:
     δ = direction(cache)
     r = rhs(cache)
 
-    if !(dot(r, δ) > 0)
+    if !(_dot(r, δ) > 0)
         config.verbosity ≥ 2 &&
             @warn "the $(method) direction is not a descent direction, so the Hessian is not positive definite here; using the steepest-descent direction for this step." maxlog = 1
         _copyto!(δ, r)

@@ -31,6 +31,9 @@ function metric_test(n::Integer, N::Integer, T::DataType)
     Δ₁ = rgrad(Y, rand(T, N, n))
     Δ₂ = rgrad(Y, rand(T, N, n))
     @test T(0.5) * tr(Ω(Y, Δ₁)' * Ω(Y, Δ₂)) ≈ metric(Y, Δ₁, Δ₂)
+    # A bare `Float64` literal anywhere in `metric` hands a `StiefelManifold{Float32}` a `Float64`
+    # back, and returns nothing at all on a backend that has no `Float64`, e.g. Metal.
+    @test metric(Y, Δ₁, Δ₂) isa T
 end
 
 for N in (20, 10)
@@ -40,4 +43,12 @@ for N in (20, 10)
             metric_test(n, N, T)
         end
     end
+end
+
+# `T(1//2)` in `metric` threw `InexactError` for `T = Int` -- a type the `rgrad` doctest above
+# already constructs a `StiefelManifold` of. `(T(1) / 2)` does not.
+let Y = StiefelManifold([1 0; 0 1; 0 0; 0 0]), Δ₁ = [1 2; 3 4; 5 6; 7 8],
+    Δ₂ = [8 7; 6 5; 4 3; 2 1]
+
+    @test metric(Y, Δ₁, Δ₂) isa Float64
 end
