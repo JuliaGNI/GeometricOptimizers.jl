@@ -165,6 +165,18 @@ breaking release).
 
 ### Changed
 
+- **Breaking for a caller that relied on the wrapped return:** `broadcast(f, Y)` on a `Manifold`
+  returns a plain array. `Base.broadcast(operation, Y::Manifold)` rewrapped the result in the
+  manifold type, which claims an invariant the result does not hold —
+  `check(broadcast(x -> x + 1, Y))` was `8.42` for a point of `St(4,2)` whose own `check` is
+  `~1e-16`. Dot syntax never reached that method, because `Y .+ 1` lowers through
+  `broadcasted`/`materialize`, so the two spellings of one operation returned different types and
+  only the wrapped one lied about the point being on the manifold. With the method gone both fall
+  through to the `AbstractArray` machinery and agree. The method was neither exported nor
+  documented, and an exhaustive sweep of this package, of `GeometricMachineLearning` and of every
+  other package in the same tree found no call site other than its own body. `_round(::Manifold)`
+  is unaffected and still returns the manifold type: it broadcasts over `Y.A` and rewraps
+  deliberately, because rounding a point's entries for display leaves it on the manifold.
 - `Optimizer` carries one further type parameter, for the observer. Code that spells the type out
   with all of its parameters has to add it; the constructors and every accessor are unaffected.
 - `solve!` no longer evaluates the objective a second time at an iterate it has just evaluated. With
