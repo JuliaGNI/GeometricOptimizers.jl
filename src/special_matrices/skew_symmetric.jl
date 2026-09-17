@@ -76,7 +76,7 @@ If the user wishes to allocate a matrix `SkewSymMatrix{<:Integer}` then call:
 SkewSymMatrix(::AbstractVector, n::Integer)
 ```
 
-Note that this is different from [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) as no porjection takes place there.
+Note that this is different from [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) as no projection takes place there.
 """
 function SkewSymMatrix(S::AbstractMatrix{T}) where {T}
     n = size(S, 1)

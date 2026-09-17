@@ -164,15 +164,19 @@ breaking release).
   the anchor.
 - `SkewSymMatrix` and `SymmetricMatrix` project an integer matrix into `float(T)` rather than into
   `Float64` for `Int64` and `Float32` for everything else. The old rule was
-  `Float = T == Int64 ? Float64 : Float32`, so `Int128` and `BigInt` — neither of which fits in a
-  `Float32` — landed there along with the narrow types. `float` is the function that answers "the
-  float type this integer widens to": `Float64` for every fixed-width integer and `BigFloat` for a
-  `BigInt`, which is what `zeros` and `rand` already follow. **This changes the result for every
-  integer type other than `Int64` — `Int8`, `Int16`, `Int32`, `Bool` and all six unsigned types go
-  from `Float32` to `Float64`, and `Int128` and `BigInt` from `Float32` to `Float64` and `BigFloat`
-  respectively.** That is the behaviour `float` defines; the two docstrings promise only
+  `Float = T == Int64 ? Float64 : Float32`, so `Int128` and `BigInt` landed in a `Float32` along
+  with the narrow types. `Float32` carries 24 mantissa bits, so it represents no integer type wider
+  than that exactly. `float` is the function that answers "the float type this integer widens to":
+  `Float64` for every fixed-width integer and `BigFloat` for a `BigInt`. **This changes the result
+  for every integer type other than `Int64` — `Int8`, `Int16`, `Int32`, `Bool` and the five
+  unsigned types go from `Float32` to `Float64`, `Int128` from `Float32` to `Float64`, and `BigInt`
+  from `Float32` to `BigFloat`.** The tests cover each of these types. That is the behaviour `float`
+  defines; the two docstrings promise only
   `SkewSymMatrix{<:AbstractFloat}`, so neither pinned the width, and nothing in this package or in
   `GeometricMachineLearning` constructs either type from an integer matrix that is not `Int64`.
+- The docstrings of `SkewSymMatrix(::AbstractMatrix)` and `SymmetricMatrix(::AbstractMatrix)` spell
+  "projection" correctly, and the code fence in the second one opens with three backticks, so the
+  example inside it renders as code rather than as prose.
 
 ### Changed
 
