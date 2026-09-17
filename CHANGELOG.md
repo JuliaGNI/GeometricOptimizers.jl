@@ -80,6 +80,22 @@ breaking release).
   generated from tracked sources and deliberately not committed, so the workflow now installs the
   TeX toolchain and builds them before Documenter checks links; two malformed cross-references, in
   `BFGSCache` and in the Cayley retraction docstring, are also fixed.
+- `copyto!` and `assign!` on structured matrices now transfer their storage arrays through `copyto!`
+  rather than through a broadcast (`.=`). A device array with no `BroadcastStyle` rule combining it
+  with a host `Array` accepts a direct `copyto!` from the host but rejects that broadcast. Host-to-device
+  transfers of this package's structured types therefore failed on real device hardware (confirmed on
+  Metal), while the same transfer of a plain host array worked — a backwards outcome for a package
+  whose whole point is those types. Fixed in `SkewSymMatrix`, `SymmetricMatrix`, `LowerTriangular`,
+  `UpperTriangular`, and `Manifold` instances; the generic `AbstractArray` fallback in
+  `StiefelLieAlgHorMatrix` and its forward to `copyto!` on the components transitively fixed the
+  horizontal-lift transfer too. A second, independent bug in `Manifold.copyto!` was found and fixed
+  in the same audit: its signature bound the *whole* concrete type including storage array type, so
+  host-to-device calls never dispatched to it at all but fell through to the broken `setindex!` path
+  regardless; the method now uses a runtime same-manifold-species check, so transfers between different
+  storage types (e.g. host `Array` and device `MtlMatrix`) now reach the correct path while still
+  rejecting transfers between incompatible manifold types. `assign!` was extended to the same fixes
+  by explicit decision. The regressions are covered by a new `test/device_copyto.jl`, which uses a
+  small CPU-only stand-in type that reproduces the device broadcast mechanism on the host.
 
 ### Changed
 

@@ -286,7 +286,8 @@ function Base.one(A::SymmetricMatrix{T}) where {T}
 end
 
 function assign!(B::SymmetricMatrix{T}, C::SymmetricMatrix{T}) where {T}
-    B.S .= C.S
+    @assert B.n == C.n
+    copyto!(B.S, C.S)
 
     nothing
 end
@@ -298,7 +299,8 @@ end
 Base.vec(A::SymmetricMatrix) = A.S
 
 function Base.copyto!(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where {T}
-    A.S .= B.S
+    @assert A.n == B.n
+    copyto!(A.S, B.S)
 
     nothing
 end

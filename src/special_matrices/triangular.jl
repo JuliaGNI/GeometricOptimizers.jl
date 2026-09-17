@@ -147,7 +147,8 @@ function KernelAbstractions.get_backend(A::AbstractTriangular)
 end
 
 function assign!(B::AT, C::AT) where {AT <: AbstractTriangular}
-    B.S .= C.S
+    @assert B.n == C.n
+    copyto!(B.S, C.S)
 end
 
 function Base.copy(A::AT) where {AT <: AbstractTriangular}
@@ -155,7 +156,8 @@ function Base.copy(A::AT) where {AT <: AbstractTriangular}
 end
 
 function Base.copyto!(A::AbstractTriangular, B::AbstractTriangular)
-    A.S .= B.S
+    @assert A.n == B.n
+    copyto!(A.S, B.S)
     nothing
 end
 

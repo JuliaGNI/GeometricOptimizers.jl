@@ -199,7 +199,19 @@ manifold_constructor(x::Manifold) = Base.typename(typeof(x)).wrapper
 # `update!(::BFGSCache, …)`; see issue A11. It returns `A` and not `nothing`: that is the `copyto!`
 # contract, and it is what `copyto!(::GrassmannLieAlgHorMatrix, …)` and
 # `copyto!(::GlobalSection, …)` next to it already do.
-Base.copyto!(A::MT, B::MT) where {MT <: Manifold} = (A.A .= B.A; A)
+#
+# The species check is a runtime one because a type parameter shared by both arguments cannot
+# express it: the parameter binds the whole type, storage array included, so a host `A` and a device
+# `B` are different concrete types and a shared parameter excludes exactly the host-to-device
+# transfer this method exists for. `manifold_constructor` right above carries the same "compare the
+# type name, not the type" idiom.
+function Base.copyto!(A::Manifold, B::Manifold)
+    manifold_constructor(A) === manifold_constructor(B) ||
+        throw(ArgumentError("cannot copyto! a $(manifold_constructor(B)) into a $(manifold_constructor(A))"))
+    @assert size(A) == size(B)
+    copyto!(A.A, B.A)
+    A
+end
 
 function Base.similar(::Manifold)
     error("The function `similar` does not make sense in this context. Consider using rand.")

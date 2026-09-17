@@ -272,7 +272,7 @@ end
 
 # fallback -> put this somewhere else!
 function assign!(A::AbstractArray, B::AbstractArray)
-    A .= B
+    copyto!(A, B)
 
     nothing
 end
