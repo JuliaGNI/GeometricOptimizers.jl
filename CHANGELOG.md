@@ -25,8 +25,10 @@ breaking release).
   and the device path of `rgrad` for both manifolds, again with `JLArray` as the device stand-in.
   Delete it with the shim.
 - Added `test/manifolds/broadcast.jl`, which pins that a broadcast over a manifold point returns a
-  plain array in both spellings, and that `_round` still returns the manifold type. It is what stops
-  the deleted `broadcast(f, ::Manifold)` method described below coming back.
+  plain array in both spellings, that `_round` still returns the manifold type, and that `_round`
+  keeps a device-backed point on the device while the two broadcast spellings do not — again with
+  `JLArray` as the device stand-in. It is what stops the deleted `broadcast(f, ::Manifold)` method
+  described below coming back, and what stops `_round` being simplified to `round.(Y)`.
 
 ### Fixed
 

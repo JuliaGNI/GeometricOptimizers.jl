@@ -17,6 +17,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: _round, check, manifold_constructor
+using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using Test
 import Random
@@ -65,6 +66,13 @@ end
 # device here, as it does in `similar_backend.jl`. This pins the distinction so that a later
 # simplification of `_round` to `round.(Y)` fails here rather than on a GPU.
 @testset "_round stays on the device" begin
+    # `allowscalar(false)` is not redundant, for the reason `retractions/exponential_accuracy.jl`
+    # gives: `GPUArraysCore`'s default is `ScalarDisallowed` only in a non-interactive session, so
+    # from a REPL a scalar index would merely warn and three of the assertions below would pass
+    # whatever the code did. The setting is task-global and left set, as it is there; the nine files
+    # included between this one and that one use no device array.
+    allowscalar(false)
+
     Y = StiefelManifold(JLArray(Matrix(rand(StiefelManifold{Float32}, N, n).A)))
     @test _round(Y; digits = 3) isa StiefelManifold{Float32, <:JLArray}
     @test_throws "Scalar indexing is disallowed" round.(Y; digits = 3)
