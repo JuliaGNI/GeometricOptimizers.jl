@@ -69,12 +69,19 @@ function Base.rand(rng::Random.AbstractRNG, manifold_type::Type{MT},
     rand(CPU(), rng, manifold_type, N, n)
 end
 
+# `_round` rewraps, and is the only thing here that may: rounding a point's entries to a few decimals
+# is a *display* operation on a point that is already on the manifold, and the docstrings that print
+# one need the type back. Nothing else is entitled to that — a general `broadcast(f, Y::Manifold)`
+# rewrapping its result claims an invariant the result does not hold, which is why this package
+# defines no `broadcast` method for `Manifold` at all and why `broadcast(f, Y)` returns a plain
+# array. `CHANGELOG.md` has the measurement.
+#
+# `Y.A` and not `Y` is load-bearing on a device-backed point: `Manifold` declares no
+# `Broadcast.BroadcastStyle`, so `round.(Y)` reaches the manifold's scalar `getindex`, which a
+# device array disallows, while `round.(Y.A)` runs on the device and keeps the result there. On the
+# host the two agree.
 function _round(Y::Manifold; kwargs...)
     typeof(Y)(round.(Y.A; kwargs...))
-end
-
-function Base.broadcast(operation, Y::Manifold)
-    typeof(Y)(broadcast(operation, Y.A))
 end
 
 @doc raw"""

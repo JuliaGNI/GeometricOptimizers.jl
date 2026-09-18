@@ -18,6 +18,9 @@ begin
     @safetestset "Grassmann Manifold           " include("manifolds/grassmann_manifold.jl")
 end
 begin
+    @safetestset "Manifold Broadcast           " include("manifolds/broadcast.jl")
+end
+begin
     @safetestset "Symplectic Stiefel Manifold  " include("manifolds/symplectic_stiefel_manifold.jl")
 end
 begin

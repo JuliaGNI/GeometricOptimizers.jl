@@ -7,6 +7,7 @@ using GeometricOptimizers: DEFAULT_LEARNING_RATE, default_linesearch
 using GeometricOptimizers: iteration_number, increase_iteration_number!, status
 using SimpleSolvers: Static, Backtracking, BierlaireQuadratic, Quadratic, Bisection,
                      StrongWolfe, GradientAutodiff, GradientFunction
+using NeuralNetworkParameters: NetworkParameters
 using Test
 using Random
 Random.seed!(123)
@@ -429,4 +430,38 @@ end
     y = [1.0, 2.0]
     result_untraced = solve!(y, OptimizerState(Newton(), y), Optimizer(y, Fquad; algorithm = Newton()))
     @test isempty(GeometricOptimizers.trace(result_untraced))
+end
+
+# `Newton` optimizes an `AbstractVector` and nothing else: it builds the exact Hessian, for which a
+# `Manifold` offers no Riemannian counterpart and a parameter set offers no path over the flattening.
+# Without the scope methods neither shape reaches a sensible message: a `Manifold` reaches `similar`,
+# which these types reject with a message about `similar`, and a parameter set finds no matching
+# constructor at all. The text is what a caller reads, so the text is what is asserted, on both entry
+# points a caller has — `Optimizer` and the exported `OptimizerState`.
+#
+# This is also why the manifold and container sweeps elsewhere in the suite list every method but
+# `Newton`: it is out of scope there, not overlooked.
+@testset "Newton rejects a manifold and a parameter set, and says why" begin
+    f(x) = sum(abs2, x)
+
+    for x in (rand(StiefelManifold{Float64}, 6, 3),
+        rand(GrassmannManifold{Float64}, 6, 3),
+        NetworkParameters((W = rand(3, 3), b = zeros(3))))
+        @test_throws ArgumentError Optimizer(x, f; algorithm = Newton())
+        @test_throws "Newton optimizes an AbstractVector only" Optimizer(
+            x, f; algorithm = Newton())
+        @test_throws "BFGS()" Optimizer(x, f; algorithm = Newton())
+
+        # `OptimizerState` is exported, and `solve!(x, OptimizerState(method, x), opt)` is the
+        # documented pattern, so it is the entry point a manifold user reaches first
+        @test_throws ArgumentError OptimizerState(Newton(), x)
+        @test_throws "Newton optimizes an AbstractVector only" OptimizerState(Newton(), x)
+
+        # the two methods the message sends the caller to do take all three shapes
+        @test Optimizer(x, f; algorithm = BFGS()) isa Optimizer
+        @test Optimizer(x, f; algorithm = DFP()) isa Optimizer
+    end
+
+    # and the supported shape is untouched
+    @test Optimizer(ones(3), f; algorithm = Newton()) isa Optimizer
 end

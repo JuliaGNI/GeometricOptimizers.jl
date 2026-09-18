@@ -99,6 +99,11 @@ breaking release).
 - Added `test/gradient_backend.jl`, which pins the temporary `_match_backend` shim described below
   and the device path of `rgrad` for both manifolds, again with `JLArray` as the device stand-in.
   Delete it with the shim.
+- Added `test/manifolds/broadcast.jl`, which pins that a broadcast over a manifold point returns a
+  plain array in both spellings, that `_round` still returns the manifold type, and that `_round`
+  keeps a device-backed point on the device while the two broadcast spellings do not — again with
+  `JLArray` as the device stand-in. It is what stops the deleted `broadcast(f, ::Manifold)` method
+  described below coming back, and what stops `_round` being simplified to `round.(Y)`.
 
 ### Fixed
 
@@ -237,9 +242,60 @@ breaking release).
   closing a pre-existing ambiguity between two of them, and routing a manifold whose
   `global_section` falls through to the `AbstractVecOrMat` default to the method that copies only
   the anchor.
+- `SkewSymMatrix` and `SymmetricMatrix` project an integer matrix into `float(T)` rather than into
+  `Float64` for `Int64` and `Float32` for everything else. The old rule was
+  `Float = T == Int64 ? Float64 : Float32`, so `Int128` and `BigInt` landed in a `Float32` along
+  with the narrow types. `Float32` carries 24 mantissa bits, so it represents no integer type wider
+  than that exactly. `float` is the function that answers "the float type this integer widens to":
+  `Float64` for every fixed-width integer and `BigFloat` for a `BigInt`. **This changes the result
+  for every integer type other than `Int64` — `Int8`, `Int16`, `Int32`, `Bool` and the five
+  unsigned types go from `Float32` to `Float64`, `Int128` from `Float32` to `Float64`, and `BigInt`
+  from `Float32` to `BigFloat`.** The tests cover each of these types. That is the behaviour `float`
+  defines; the two docstrings promise only
+  `SkewSymMatrix{<:AbstractFloat}`, so neither pinned the width, and nothing in this package or in
+  `GeometricMachineLearning` constructs either type from an integer matrix that is not `Int64`.
+- The docstrings of `SkewSymMatrix(::AbstractMatrix)` and `SymmetricMatrix(::AbstractMatrix)` spell
+  "projection" correctly, and the code fence in the second one opens with three backticks, so the
+  example inside it renders as code rather than as prose.
+- `Newton` rejects a `Manifold` solution and a parameter set with a message that names the method
+  and the restriction, instead of failing with whichever internal operation happened to give way
+  first. Both shapes already failed at `Optimizer` construction, but a bare manifold died inside
+  `similar` — "The function `similar` does not make sense in this context" — and a parameter set
+  raised a `MethodError` on `NewtonOptimizerCache`; neither message mentioned `Newton`, and
+  `Newton`'s docstring stated no restriction, so the omission read as generality. `Newton` builds
+  the exact Hessian: a `Manifold` has no Riemannian Hessian to build, and for a parameter set the
+  Hessian is not built over the flattening. The message says that and points at `BFGS` and `DFP`,
+  which take an `AbstractVector`, a parameter set and a bare `Manifold` alike. The check is written
+  on `OptimizerCache` rather than on `Hessian(::Newton, …)` because `_optimizer` calls the former
+  first, and repeated on `OptimizerState`, which is exported and is the first thing the documented
+  `solve!(x, OptimizerState(method, x), opt)` pattern evaluates. It dispatches on `Manifold` and not
+  on the two concrete manifolds, since what rules `Newton` out is a property of every manifold here.
 
 ### Changed
 
+- **Breaking for a caller that relied on the wrapped return:** `broadcast(f, Y)` on a `Manifold`
+  returns a plain array. `Base.broadcast(operation, Y::Manifold)` rewrapped the result in the
+  manifold type, which claims an invariant the result does not hold —
+  `check(broadcast(x -> x + 1, Y))` is `11.07` for a point of `St(4,2)` drawn at `Random.seed!(123)`,
+  whose own `check` is `~1e-16`. The figure is draw-dependent and of order 10; what the test asserts
+  is `> 1`. Dot syntax never reached that method, because `Y .+ 1` lowers through
+  `broadcasted`/`materialize`, so the two spellings of one operation returned different types and
+  only the wrapped one lied about the point being on the manifold. With the method gone both fall
+  through to the `AbstractArray` machinery and agree. The method was neither exported nor
+  documented, and an exhaustive sweep of this package, of `GeometricMachineLearning` and of every
+  other package in the same tree found no call site other than its own body. `_round(::Manifold)`
+  is unaffected and still returns the manifold type: it is written in dot syntax, which never
+  reached the deleted method, and it rewraps deliberately because rounding a point's entries for
+  display leaves it on the manifold. A caller that knows the result is on the manifold and wants the
+  wrapper back spells it `manifold_constructor(Y)(broadcast(f, Y.A))`, which also keeps a
+  device-backed point on the device.
+
+  One consequence worth stating, which no current caller reaches: on a device-backed point the
+  explicit `broadcast(f, Y)` now **fails** with a scalar-indexing error, where the deleted method
+  delegated to `Y.A` and stayed on the device. `Manifold` declares no `Broadcast.BroadcastStyle`, so
+  the style is `DefaultArrayStyle{2}` and the fall-through reaches the manifold's scalar `getindex`,
+  which a device array disallows. `Y .+ 1` already fails the same way today, so the property is
+  pre-existing; only the explicit spelling changes. Measured with `JLArrays`.
 - `Optimizer` carries one further type parameter, for the observer. Code that spells the type out
   with all of its parameters has to add it; the constructors and every accessor are unaffected.
 - `solve!` no longer evaluates the objective a second time at an iterate it has just evaluated. With
