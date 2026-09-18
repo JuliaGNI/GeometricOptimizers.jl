@@ -1,10 +1,14 @@
 # The symplectic SR decomposition, the symplectic counterpart of the QR decomposition: it writes
 # `A = S * R` with `S` symplectic (`SᵀJS = J`) and `R` of the block form below. The algorithm is
-# the one of https://doi.org/10.1016/j.laa.2008.02.029, adjusted: the reflectors are applied the
-# way this package's optimizers need them rather than the way a general-purpose factorization
-# would. The DOI is given rather than a `@cite` because the paper has no entry in this package's
-# bibliography; [gao2024optimization](@cite) is the entry that covers what the decomposition is
-# used for here.
+# the SROSH algorithm of [salam2008optimal](@cite), whose free parameters are taken at the optimal
+# values that paper derives: `ρ = sign(a₁)‖a‖₂` minimizes the 2-norm condition number of the first
+# reflector (its Lemma 4.3) and `μ = u₁ + ξ` that of the second (its Lemma 4.4). `symplectic_householder!`
+# returns exactly the `(c₁, c₂, ρ, ν, μ)` of its Theorem 4.5, and `scripts/verify_salam2008.jl`
+# checks the correspondence numerically. What is adjusted is the application rather than the
+# mathematics: the reflectors are applied in place, the way this package's optimizers need them,
+# rather than the way a general-purpose factorization would.
+#
+# [gao2024optimization](@cite) is what the decomposition is used for here.
 #
 # The one consumer here is `rand(SymplecticStiefelManifold, …)`, which takes `n` of `S`'s columns
 # from each half. The plain Householder QR that `rand(StiefelManifold, …)` uses will not do: its

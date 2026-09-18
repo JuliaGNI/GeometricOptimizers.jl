@@ -96,6 +96,23 @@ breaking release).
   The assertions still discriminate: a point that is genuinely off the manifold gives an ``O(1)``
   residual, measured as 7.6, 38 and 295 for the *wrong* constraint at those three sizes.
 
+  **The algorithm is checked against the paper it implements**, Salam, Al-Aidarous and El Farouk,
+  *Optimal symplectic Householder transformations for SR decomposition*, Linear Algebra and its
+  Applications 429 (2008) 1334–1353 — now a bibliography entry, `salam2008optimal`, rather than a
+  bare DOI in a comment. `scripts/verify_salam2008.jl` checks the correspondence numerically at
+  ``2n = 2, 4, 8, 16``: its equations (4.2), (4.3) and (3.4) hold to 3.4e-12 or better, both
+  transvections are symplectic, and both coefficients agree with the general expressions of its
+  Theorem 3.2 exactly. `symplectic_householder!` returns the ``(c_1, c_2, \rho, \nu, \mu)`` of its
+  Theorem 4.5, at the optimal free parameters that paper derives: a scan over ``\rho`` confirms
+  ``\rho = \mathrm{sign}(a_1)\|a\|_2`` is the minimizer of ``\kappa_2(T_1)`` in 200 of 200 draws at
+  every size, which is its Lemma 4.3. What is adjusted relative to the paper is the application of
+  the reflectors, not the mathematics.
+
+  Two presentation differences look like discrepancies and are not, which is why the script exists:
+  the reflector vectors are stored negated, and ``T = I + cvv^J`` is quadratic in ``v``; and the
+  code's ``c_2 = +s/(\xi\nu)`` appears to contradict Theorem 4.5's ``-1/(\pm\xi u_{n+1})`` until the
+  general form is expanded, ``u^J(\mu e_1 + \nu e_{n+1}) = \nu(u_1 - \mu) = -\nu s\xi``.
+
   The two doctests assert `< 1e-5` rather than `< 1e-10` for the same reason. At 6×4 a threshold of
   1e-10 is exceeded by 557 draws in 20000, so it sits in a fat part of the distribution rather than
   its tail, and the `sr!` doctest cleared it by a factor of only 1.66 — a `Random` or BLAS change
