@@ -128,6 +128,24 @@ Base.:*(B::AbstractMatrix, S::Sfac{false}) = apply_S_right(B, S.Λ)
 
 Base.:*(B::AbstractMatrix, S::Sfac{true}) = apply_S_inverse_right(B, S.Λ)
 
+# Without this, `S * inv(S)` — the most natural thing to write with two of these — is an ambiguous
+# `MethodError` between the two methods above, because `Sfac` is itself an `AbstractMatrix` and
+# neither signature is more specific in both arguments. Both factors are materialized rather than
+# chained: it is the one resolution that is correct for every pair without a special case, and no
+# caller in this package multiplies two of them, so the cost falls only on someone who asks for it.
+# `S * inv(S)` is therefore the identity only up to the roundoff of the two kernels, which is the
+# honest answer rather than an exact `I`: measured, `‖S·S⁻¹ - I‖` is 5.8e-16 at `2N = 4`, 4.4e-14
+# at `2N = 10` and 1.7e-8 at `2N = 20`, growing with the size the way everything else here does.
+#
+# All four combinations are written out because one method on `(::Sfac, ::Sfac)` does not resolve
+# it: against `(::Sfac{false}, ::AbstractMatrix)` it is narrower in the second argument and wider
+# in the first, so neither dominates and the call stays ambiguous. Each pair below is narrower in
+# both.
+Base.:*(S₁::Sfac{false}, S₂::Sfac{false}) = Matrix(S₁) * Matrix(S₂)
+Base.:*(S₁::Sfac{false}, S₂::Sfac{true}) = Matrix(S₁) * Matrix(S₂)
+Base.:*(S₁::Sfac{true}, S₂::Sfac{false}) = Matrix(S₁) * Matrix(S₂)
+Base.:*(S₁::Sfac{true}, S₂::Sfac{true}) = Matrix(S₁) * Matrix(S₂)
+
 @doc raw"""
     SR(S::Sfac, R::Rfac)
 

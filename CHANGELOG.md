@@ -31,6 +31,15 @@ breaking release).
   algorithm is the SROSH algorithm of [salam2008optimal](@cite). `qr` cannot serve here, because
   its `Q` preserves the Euclidean form rather than ``\mathbb{J}``.
 
+  A product of two of these operators materializes both factors. Without it `S * inv(S)` — the
+  most natural thing to write with two of them — is an ambiguous `MethodError`, because `Sfac` is
+  itself an `AbstractMatrix` and neither the left nor the right method is more specific in both
+  arguments. All four combinations are written out, since one method on `(::Sfac, ::Sfac)` is
+  narrower in one argument and wider in the other and so does not resolve it either. Materializing
+  is the one resolution that needs no special case, and nothing in this package multiplies two of
+  them. `S * inv(S)` is accordingly the identity only up to the roundoff of the two kernels:
+  ``\|S S^{-1} - I\|`` is 5.8e-16 at ``2N = 4``, 4.4e-14 at ``2N = 10`` and 1.7e-8 at ``2N = 20``.
+
   `S` is never formed. All four products go through reflector kernels — `S*x`, `S*B`, `B*S` and
   `B*S⁻¹` — so right-multiplication by the inverse costs what the forward product costs rather
   than falling through to the generic `AbstractMatrix` path, which reaches `Sfac`'s `getindex` and

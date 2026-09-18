@@ -79,6 +79,20 @@ end
         @test norm(B * inv(F.S) - B * inv(S)) < tolerance(N2)
         @test norm((B * F.S) * inv(F.S) - B) < tolerance(N2)
 
+        # A product of two operators materializes both, which is what keeps `S * inv(S)` from
+        # being an ambiguous `MethodError` — `Sfac` is an `AbstractMatrix`, so without these the
+        # left and right methods are equally specific. All four combinations are covered, because
+        # one method on `(::Sfac, ::Sfac)` does not resolve it.
+        # The assertion is against the product of the materialized factors, which is exact, and
+        # deliberately not against the identity: two ill-conditioned kernels multiplied put
+        # `S·S⁻¹ - I` at order 1e-8 on an unlucky draw, which is the conditioning of this
+        # decomposition and not a property of the dispatch these lines exist to pin.
+        Sinv = Matrix(inv(F.S))
+        @test F.S * inv(F.S) == S * Sinv
+        @test inv(F.S) * F.S == Sinv * S
+        @test F.S * F.S == S * S
+        @test inv(F.S) * inv(F.S) == Sinv * Sinv
+
         # Indexing agrees with the materialized matrix, entry for entry.
         @test all(F.S[i, j] == S[i, j] for i in 1:N2, j in 1:N2)
         @test size(F.S) == (N2, N2)
