@@ -2,6 +2,7 @@ using Test
 using LinearAlgebra
 using GeometricOptimizers
 using GeometricOptimizers: _poisson_tensor, _similar
+using KernelAbstractions: CPU, GPU
 import Random
 
 Random.seed!(1234)
@@ -133,4 +134,43 @@ end
     @test J * J == -Matrix{Float64}(I, 4, 4)
     @test eltype(_poisson_tensor(Float32, 6)) == Float32
     @test_throws AssertionError _poisson_tensor(Float64, 5)
+end
+
+# A stand-in device, because the refusal below is a property of `GPU` and not of any one vendor.
+struct _StandInGPU <: GPU end
+
+# The generic `Manifold{T}` draw in `abstract_manifold.jl` orthonormalises a Gaussian matrix with
+# `qr`, which preserves the Euclidean form and not ``\mathbb{J}``. It matches this type as well, and
+# the inner constructor asserts shape alone -- so a backend-taking draw that reached it would return
+# a point off this manifold and nothing downstream would say so. The second assertion in each group
+# is what discriminates the two draws: an orthonormal point puts `norm(U.A'U.A - I)` at machine
+# precision, and a symplectic one does not.
+@testset "a backend-taking draw is the symplectic draw" begin
+    Random.seed!(1234)
+    for MT in (SymplecticStiefelManifold,
+        SymplecticStiefelManifold{Float64},
+        SymplecticStiefelManifold{Float64, Matrix{Float64}})
+        U = rand(CPU(), MT, 6, 4)
+        @test U isa SymplecticStiefelManifold
+        @test eltype(U) == Float64
+        @test check(U) < tolerance(6)
+        @test norm(U.A' * U.A - I) > 1e-6
+    end
+
+    # the rng-taking spelling reaches the same draw
+    U = rand(CPU(), Random.default_rng(), SymplecticStiefelManifold{Float64}, 6, 4)
+    @test check(U) < tolerance(6)
+    @test norm(U.A' * U.A - I) > 1e-6
+end
+
+# `sr!` is a host factorization -- `_rand_symplectic_stiefel` calls `Matrix` on its factor -- so
+# there is no device draw to fall back to. Refusing is the point: without these methods the generic
+# `rand(::GPU, ...)` answers with an orthonormal point instead.
+@testset "a device draw is refused rather than answered orthonormally" begin
+    @test_throws ArgumentError rand(_StandInGPU(), SymplecticStiefelManifold{Float64}, 6, 4)
+    @test_throws ArgumentError rand(_StandInGPU(), SymplecticStiefelManifold{Float32}, 6, 4)
+    # the element type left open, which `default_eltype` fills in before dispatch arrives here
+    @test_throws ArgumentError rand(_StandInGPU(), SymplecticStiefelManifold, 6, 4)
+    @test_throws ArgumentError rand(
+        _StandInGPU(), Random.default_rng(), SymplecticStiefelManifold{Float64}, 6, 4)
 end

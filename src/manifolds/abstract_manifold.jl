@@ -54,23 +54,6 @@ function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
     (isconcretetype(MT) ? MT : MT{typeof(A)})(Q)
 end
 
-# A named element type a backend cannot hold is rejected and not narrowed. Narrowing would return a
-# point of a different type from the one the caller asked for, which is the one thing a call that
-# names its element type has ruled out; the caller would then carry `Float32` results through code
-# written for `Float64` with nothing to say so.
-#
-# `KernelAbstractions.supports_float64` is the backend's own declaration. It answers `true` for
-# every backend that does not override it, so this can only fire where a backend author has stated
-# that the width is unavailable -- `Metal.jl` sets it `false`, and `CUDA` is unaffected. Without
-# this the same call still fails, but further in and in the backend's words: allocating a `Float64`
-# `MtlArray` raises `Metal does not support Float64 values, try using Float32 instead`, which names
-# neither the manifold nor the call that asked for it.
-function _check_supported_eltype(backend::KernelAbstractions.Backend, ::Type{T}) where {T}
-    if T === Float64 && !KernelAbstractions.supports_float64(backend)
-        throw(ArgumentError("$(backend) does not support Float64; ask for Float32 explicitly, as in rand(backend, StiefelManifold{Float32}, N, n)"))
-    end
-end
-
 function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
@@ -169,6 +152,13 @@ point and take a step on one but cannot draw one and cannot carry an [`Optimizer
 `Cannot access the contents of a private buffer`, measured on real hardware, and so do
 `GlobalSection(Y)` and `Optimizer(Y, F)`. That is `Metal.jl`'s gap and not this package's, but
 nothing stated the requirement, which left a reader to find it by hitting it.
+
+# The manifolds this draws
+
+[`StiefelManifold`](@ref) and [`GrassmannManifold`](@ref). [`SymplecticStiefelManifold`](@ref) is
+drawn on the host alone: its draw is the symplectic SR decomposition [`sr!`](@ref), which is a host
+factorization, so a device spelling would be a host draw followed by a transfer rather than the
+device-native draw the other two get. Naming a device for it throws an `ArgumentError` saying so.
 """
 function Base.rand(backend::KernelAbstractions.Backend, manifold_type::Type{MT},
         N::Integer, n::Integer) where {MT <: Manifold}

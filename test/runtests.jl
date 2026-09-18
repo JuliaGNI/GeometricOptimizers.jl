@@ -33,6 +33,9 @@ begin
     @safetestset "Backend default eltype       " include("default_eltype.jl")
 end
 begin
+    @safetestset "Backend eltype check         " include("backend_eltype_check.jl")
+end
+begin
     @safetestset "Stiefel Projection           " include("special_matrices/stiefel_projetion.jl")
 end
 begin

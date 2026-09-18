@@ -13,7 +13,13 @@ struct StiefelProjection{T, AT} <: AbstractMatrix{T}
     N::Int
     n::Int
     A::AT
-    function StiefelProjection(backend, T::Type, N::Integer, n::Integer)
+    # `backend` is annotated rather than left open, and both of this type's own callers pass a
+    # `KernelAbstractions.Backend` through `get_backend`. Naming the type is what lets the element
+    # type be checked against it; anything else reaches `KernelAbstractions.zeros` on the next line
+    # and fails there regardless.
+    function StiefelProjection(
+            backend::KernelAbstractions.Backend, T::Type, N::Integer, n::Integer)
+        _check_supported_eltype(backend, T)
         A = KernelAbstractions.zeros(backend, T, N, n)
         assign_ones_for_stiefel_projection! = assign_ones_for_stiefel_projection_kernel!(backend)
         assign_ones_for_stiefel_projection!(A, ndrange = n)
@@ -21,9 +27,9 @@ struct StiefelProjection{T, AT} <: AbstractMatrix{T}
     end
 
     # The host constructor allocates and fills in one step, with no backend and no kernel launch:
-    # `Matrix{T}(I, N, n)` is exactly the matrix the docstring above describes. It used to route
-    # through `StiefelProjection(CPU(), T, N, n)`, which allocates through
-    # `KernelAbstractions.zeros` and then starts a kernel to write `n` ones. A host placement is
+    # `Matrix{T}(I, N, n)` is exactly the matrix the docstring above describes. Routing through
+    # `StiefelProjection(CPU(), T, N, n)` instead allocates through `KernelAbstractions.zeros` and
+    # then starts a kernel to write `n` ones. A host placement is
     # the common case here and must not pay for the device machinery: `KernelAbstractions.zeros` on
     # a `CPU` costs an overhead at every length, growing with it, and between about 1.9x and 25x
     # the time of `zeros` -- worst at the smallest lengths, where its fixed floor dominates. The

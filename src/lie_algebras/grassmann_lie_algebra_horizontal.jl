@@ -150,11 +150,27 @@ end
 
 function Base.zeros(backend::KernelAbstractions.Backend,
         ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
     GrassmannLieAlgHorMatrix(
         KernelAbstractions.zeros(backend, T, N-n, n),
         N,
         n
     )
+end
+
+# The backend-taking `rand` mirrors `StiefelLieAlgHorMatrix`'s, as the rest of the pair's methods
+# do: a Grassmann lift is drawn on a device by naming one exactly as it is zeroed on one.
+function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
+        ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
+    B = KernelAbstractions.allocate(backend, T, N - n, n)
+    rand!(rng, B)
+    GrassmannLieAlgHorMatrix(B, N, n)
+end
+
+function Base.rand(backend::KernelAbstractions.Backend,
+        type::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    rand(Random.default_rng(), backend, type, N, n)
 end
 
 # `typeof(A)` is the two-parameter `GrassmannLieAlgHorMatrix{T, AT}`, which `zeros` has no

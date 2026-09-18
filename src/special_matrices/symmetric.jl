@@ -168,6 +168,31 @@ end
 
 Base.:*(α::Real, A::SymmetricMatrix) = A*α
 
+# The backend-taking allocators mirror `SkewSymMatrix`'s method for method, as the rest of the two
+# types do: a symmetric matrix is an optimizer parameter in exactly the same way, and
+# `GeometricMachineLearning`'s SympNet and symplectic-attention layers are parametrized by both.
+#
+# No `n == 1` branch here, unlike `SkewSymMatrix`'s: this storage is `n(n+1)/2`, which is `1` at
+# `n = 1` rather than `0`, so the length-zero case that guard is about does not arise.
+function Base.zeros(backend::KernelAbstractions.Backend,
+        ::Type{SymmetricMatrix{T}}, n::Int) where {T}
+    _check_supported_eltype(backend, T)
+    SymmetricMatrix(KernelAbstractions.zeros(backend, T, n*(n+1)÷2), n)
+end
+
+function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
+        ::Type{SymmetricMatrix{T}}, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
+    S = KernelAbstractions.allocate(backend, T, n*(n+1)÷2)
+    Random.rand!(rng, S)
+    SymmetricMatrix(S, n)
+end
+
+function Base.rand(backend::KernelAbstractions.Backend,
+        type::Type{SymmetricMatrix{T}}, n::Integer) where {T}
+    rand(Random.default_rng(), backend, type, n)
+end
+
 function Base.zeros(::Type{SymmetricMatrix{T}}, n::Int) where {T}
     SymmetricMatrix(zeros(T, n*(n+1)÷2), n)
 end

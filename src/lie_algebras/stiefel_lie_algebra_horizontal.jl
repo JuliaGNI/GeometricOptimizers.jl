@@ -211,6 +211,7 @@ end
 
 function Base.zeros(backend::KernelAbstractions.Backend,
         ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
     StiefelLieAlgHorMatrix(
         zeros(backend, SkewSymMatrix{T}, n),
         KernelAbstractions.zeros(backend, T, N - n, n), N, n)
@@ -229,6 +230,7 @@ end
 
 function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
     B = KernelAbstractions.allocate(backend, T, N - n, n)
     rand!(rng, B)
     StiefelLieAlgHorMatrix(rand(rng, backend, SkewSymMatrix{T}, n), B, N, n)

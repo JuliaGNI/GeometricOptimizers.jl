@@ -157,6 +157,7 @@ Base.:*(α::Real, A::SkewSymMatrix) = A * α
 # Two backends' worth of evidence is not enough to remove a guard -- find the backend or the
 # version that failed first. `map_to_Skew` carries the same branch for the same reason.
 function Base.zeros(backend::KernelAbstractions.Backend, ::Type{SkewSymMatrix{T}}, n::Int) where {T}
+    _check_supported_eltype(backend, T)
     zero_vec = if n != 1
         KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
     else
@@ -195,6 +196,7 @@ end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
         type::Type{SkewSymMatrix{T}}, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
     S = KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
     Random.rand!(rng, S)
     SkewSymMatrix(S, n)

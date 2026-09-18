@@ -1,3 +1,27 @@
+# A named element type a backend cannot hold is rejected and not narrowed. Narrowing would return a
+# result of a different type from the one the caller asked for, which is the one thing a call that
+# names its element type has ruled out; the caller would then carry `Float32` results through code
+# written for `Float64` with nothing to say so.
+#
+# Every allocator a caller reaches by naming a backend *and* an element type calls this: the
+# manifold `rand`, `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal
+# lifts, `StiefelProjection` and `unit_matrix` below. The derived allocators -- `zero`, `similar`,
+# `_zero`, `_similar`, `+`, `map_to_S`, `global_section` -- must not call it and do not: they take
+# an instance, so their element type comes from an array that is already on that backend and the
+# case cannot arise. A check there would guard something that cannot happen.
+#
+# `KernelAbstractions.supports_float64` is the backend's own declaration. It answers `true` for
+# every backend that does not override it, so this can only fire where a backend author has stated
+# that the width is unavailable -- `Metal.jl` sets it `false`, and `CUDA` is unaffected. Without
+# this the same call still fails, but further in and in the backend's words: allocating a `Float64`
+# `MtlArray` raises `Metal does not support Float64 values, try using Float32 instead`, which names
+# neither the type being built nor the call that asked for it.
+function _check_supported_eltype(backend::KernelAbstractions.Backend, ::Type{T}) where {T}
+    if T === Float64 && !KernelAbstractions.supports_float64(backend)
+        throw(ArgumentError("$(backend) does not support Float64; name an element type it does support, such as Float32"))
+    end
+end
+
 # Writes the diagonal of an identity matrix. `unit_matrix` below is the only caller; a kernel is what
 # it takes to write a diagonal without scalar indexing, and that docstring says why that matters.
 @kernel function write_ones_kernel!(matrix::AbstractMatrix{T}) where {T}
@@ -29,7 +53,8 @@ a backend of its own is under no obligation to be one of them.
 The matrix form takes the backend and the element type from `A` and its size from
 `LinearAlgebra.checksquare`, so it throws on a non-square argument exactly as `Base.one` does.
 """
-function unit_matrix(backend, ::Type{T}, n::Integer) where {T}
+function unit_matrix(backend::KernelAbstractions.Backend, ::Type{T}, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
     matrix = KernelAbstractions.zeros(backend, T, n, n)
     write_ones! = write_ones_kernel!(backend)
     write_ones!(matrix; ndrange = n)

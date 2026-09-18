@@ -104,6 +104,27 @@ function Base.rand(::Type{SymplecticStiefelManifold}, N2::Integer, n2::Integer)
     rand(Random.default_rng(), SymplecticStiefelManifold, N2, n2)
 end
 
+# The backend-taking spellings belong to this type and not to the generic `Manifold{T}` draw in
+# `abstract_manifold.jl`. That draw orthonormalises with `qr`, which preserves the Euclidean form
+# and not ``\mathbb{J}``, and the inner constructor above asserts shape alone -- so the generic
+# method wraps a matrix that is not on this manifold and nothing downstream says so. Both methods
+# mirror the generic pair's signature, `MT <: SymplecticStiefelManifold{T}` rather than
+# `MT <: Manifold{T}`, so a bare `SymplecticStiefelManifold` still picks up `default_eltype` first
+# and arrives here parametrized.
+function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
+        N2::Integer, n2::Integer) where {T, MT <: SymplecticStiefelManifold{T}}
+    rand(rng, SymplecticStiefelManifold{T}, N2, n2)
+end
+
+# `sr!` is a host factorization: `_rand_symplectic_stiefel` calls `Matrix` on its factor. A device
+# draw is therefore a host draw and a transfer, which is a different operation from the device-native
+# one the other two manifolds offer. Refusing says so; returning a host-drawn point from a call that
+# named a device would not.
+function Base.rand(backend::GPU, ::Random.AbstractRNG, ::Type{MT},
+        N2::Integer, n2::Integer) where {T, MT <: SymplecticStiefelManifold{T}}
+    throw(ArgumentError("$(backend) cannot draw a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host. Draw on the host with rand(SymplecticStiefelManifold{$(T)}, $(N2), $(n2))."))
+end
+
 function _rand_symplectic_stiefel(A::AbstractMatrix, N2::Integer, n2::Integer)
     @assert N2 ≥ n2
     N, n = N2 ÷ 2, n2 ÷ 2

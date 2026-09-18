@@ -184,9 +184,35 @@ breaking release).
 - Added `scripts/host_allocation_cost.jl`, the archived check behind the byte and time figures
   quoted for host allocation below. An earlier round of those figures came from a measurement
   nobody had kept, and a re-run then disagreed with them; the script is what settles that.
+- Added `test/backend_eltype_check.jl`, which walks all sixteen backend-and-element-type entry
+  points against three stand-in devices: one that carries `Float64`, one that declares it does not,
+  and one that declares it does not *and* can allocate nothing at all — so that an `ArgumentError`
+  from the third is proof the call was refused before the backend was asked for memory.
+- Added backend-taking `zeros` and `rand` for `SymmetricMatrix`, which `SkewSymMatrix` already had.
+  A symmetric matrix could not be placed on a device by naming one, although the two types mirror
+  each other everywhere else and both are optimizer parameters — the SympNet and
+  symplectic-attention layers of `GeometricMachineLearning` are parametrized by both.
+- Added a backend-taking `rand` for `GrassmannLieAlgHorMatrix`, which `StiefelLieAlgHorMatrix`
+  already had. A Grassmann lift could be zeroed on a device by naming one and not drawn on it.
 
 ### Fixed
 
+- **A `rand` that names a backend no longer returns a `SymplecticStiefelManifold` point that is not
+  on the manifold.** `SymplecticStiefelManifold <: Manifold{T}`, so the backend-taking spellings
+  reached the generic draw in `src/manifolds/abstract_manifold.jl`, which orthonormalises a Gaussian
+  matrix with `qr` — the Euclidean form, and not ``\mathbb{J}``. The inner constructor asserts shape
+  alone, so the result was accepted and nothing downstream said otherwise. At seed `1234` and size
+  `(6, 4)` the symplectic residual `check(U)` was `1.4929600168627613`, against `6.32e-13` for the
+  host draw at the same seed, while the *orthonormality* residual sat at `7.0e-16` — the point was
+  on the Stiefel manifold instead. The host spellings were always correct, and no test covered a
+  backend-taking one.
+
+  This type now carries the backend-taking signatures itself. On a `CPU` they are the symplectic
+  draw, and give a point bit-identical to the host spelling at the same seed. On a `GPU` they throw
+  an `ArgumentError`: the draw is the symplectic SR decomposition `sr!`, a host factorization, so a
+  device spelling would be a host draw and a transfer rather than the device-native draw
+  `StiefelManifold` and `GrassmannManifold` get. Deciding that for the caller is what the refusal
+  avoids.
 - **A product or a sum of two of this package's own matrix types no longer raises an ambiguous
   `MethodError`.**
   `StiefelManifold`, `SymplecticStiefelManifold`, `StiefelProjection`, `SkewSymMatrix`,
@@ -409,11 +435,13 @@ breaking release).
 
 ### Changed
 
-- **A manifold `rand` that names a backend and an element type the backend cannot hold now refuses
+- **Every allocator that names a backend and an element type the backend cannot hold now refuses
   it**, with an `ArgumentError` naming the width and the way out, instead of narrowing it or
-  failing further in. The check is on the manifold draw and nowhere else: the structured matrices'
-  backend-taking allocators carry none, so `rand(MetalBackend(), SkewSymMatrix{Float64}, n)` still
-  fails in the backend's own allocation.
+  failing further in. All sixteen entry points: `zeros` and `rand` for `SkewSymMatrix`,
+  `SymmetricMatrix`, both `AbstractTriangular`s and both horizontal lifts,
+  `StiefelProjection(backend, T, N, n)`, `unit_matrix(backend, T, n)`, and `rand` for
+  `StiefelManifold` and `GrassmannManifold`. The package has a third manifold, and it takes no
+  backend at all — see the `SymplecticStiefelManifold` entry under *Fixed*.
   `rand(MetalBackend(), StiefelManifold{Float64}, N, n)` is the case:
   `KernelAbstractions.supports_float64` is `false` there, and the call used to reach the backend's
   own allocation and fail with `Metal does not support Float64 values, try using Float32 instead`,
@@ -423,7 +451,15 @@ breaking release).
 
   The check can only fire where a backend author has declared the limitation: `KernelAbstractions`
   answers `true` for every backend that does not override the trait, so `CUDA` and the `JLArrays`
-  backend are unaffected.
+  backend are unaffected. It is on every allocator a caller reaches by naming a backend and an
+  element type, and on no others — `zero`, `similar`, `_zero`, `_similar` and the arithmetic take
+  an *instance*, so their element type comes from an array that is already on the backend and the
+  case cannot arise.
+- `StiefelProjection`'s backend-taking constructor and `unit_matrix(backend, T, n)` declare
+  `backend::KernelAbstractions.Backend` rather than leaving the argument untyped. Every in-package
+  caller already passes one, through `get_backend`; naming it is what lets the element type be
+  checked against it, and anything else reached `KernelAbstractions.zeros` on the next line and
+  failed there regardless.
 - The element type a backend-taking `rand` picks when the caller names *none* is unchanged —
   `Float64` on a `CPU`, `Float32` on a `GPU` — but it is now one documented rule,
   `default_eltype(backend)`, rather than the same two values as bare literals in two `rand` methods
