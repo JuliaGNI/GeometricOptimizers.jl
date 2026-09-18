@@ -1,5 +1,5 @@
-# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`. Newton
-# is `AbstractArray`-only, so its bounds were never the expensive kind — it is unbounded so that
+# The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`. This
+# cache holds `AbstractArray`s only, so its bounds were never the expensive kind — it is unbounded so that
 # every method's cache and state read the same way, and so that nobody has to work out per struct
 # whether a given bound happens to be one of the costly ones. The invariant is enforced by the inner
 # constructors' signatures, which is dispatch and therefore costs nothing.
@@ -61,6 +61,26 @@ end
 function OptimizerCache(::Union{Newton, QuasiNewtonOptimizerMethod}, x::OptimizerSolution)
     NewtonOptimizerCache(x)
 end
+
+const _NEWTON_SCOPE = "Newton optimizes an AbstractVector only. It builds the exact Hessian: for a " *
+                      "Manifold solution there is no Riemannian Hessian to build, and for a " *
+                      "parameter set the Hessian is not built over the flattening. Use `BFGS()` " *
+                      "or `DFP()`, which take all three: their approximate inverse Hessian is " *
+                      "sized by the intrinsic dimension and their secant pair is taken in the " *
+                      "horizontal lift."
+
+# The scope check, as an error rather than as whatever the first unsupported operation happens to
+# raise. Written on `OptimizerCache` and not on `Hessian(::Newton, …)`: `_optimizer` calls this one
+# first, so a rejection there would never be reached. Without these two methods a `Manifold` reaches
+# `similar`, which these types answer with "The function `similar` does not make sense in this
+# context", and a parameter set finds no `NewtonOptimizerCache` method at all — both fail here
+# either way, and neither message names `Newton` or the restriction.
+#
+# `Manifold` and not the two concrete manifolds, unlike [`_is_decayable`](@ref): what rules `Newton`
+# out is the absence of a Riemannian Hessian, which is a property of every manifold here and not of
+# compactness, so a manifold added later inherits the right answer rather than a wrong one.
+OptimizerCache(::Newton, ::Manifold) = throw(ArgumentError(_NEWTON_SCOPE))
+OptimizerCache(::Newton, ::NetworkParameters) = throw(ArgumentError(_NEWTON_SCOPE))
 
 # This fallback used to be `OptimizerCache(::OptimizerMethod, x) = NewtonOptimizerCache(x)`, so a
 # method that *does* have a cache of its own but missed its `OptimizerCache(::Adam{T},

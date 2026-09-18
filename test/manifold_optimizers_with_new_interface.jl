@@ -99,6 +99,10 @@ convergence_tolerance(::Type{T}, ::MomentumMethod) where {T} = 10 * sqrt(eps(T))
 # minimizer goes from 1.6e-3 to 1.3e-8 -- and it then meets the same tolerance as the other two.
 convergence_tolerance(::Type{T}, ::Adam) where {T} = 10 * sqrt(eps(T))
 
+# The list below selects the stateful algorithms, which is why `BFGS` and `DFP` are absent although
+# both accept a bare manifold. `Newton` is absent for a second reason: it is out of scope on a
+# manifold, not overlooked. It builds the exact Hessian and there is no Riemannian one, so
+# `Optimizer` and `OptimizerState` both reject it there; `test/optimizer_tests.jl` pins that.
 @testset "the stateful algorithms accept a bare Manifold too" begin
     for T in (Float64, Float32), retraction in (Geodesic(), Cayley())
 

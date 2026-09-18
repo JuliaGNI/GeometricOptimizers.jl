@@ -32,6 +32,12 @@ Unlike [`BFGS`](@ref) and [`DFP`](@ref) this needs no approximation to build up,
 few iterations, but it also inherits the Hessian's indefiniteness: where ``\nabla^2f`` is not positive
 definite the direction ascends, and [`ensure_descent!`](@ref) substitutes the steepest-descent
 direction for it.
+
+Runs on an `AbstractVector` and on nothing else. The exact Hessian is what makes it Newton's method:
+a bare [`Manifold`](@ref) has no Riemannian Hessian to build, and for a
+[`NeuralNetworkParameters.NetworkParameters`](@extref) the Hessian is not built over the flattening.
+Both are rejected at [`Optimizer`](@ref) and [`OptimizerState`](@ref) construction with a message
+saying so. [`BFGS`](@ref) and [`DFP`](@ref) take all three.
 """
 struct Newton <: OptimizerMethod end
 

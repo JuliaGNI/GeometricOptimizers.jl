@@ -182,6 +182,19 @@ breaking release).
 - The docstrings of `SkewSymMatrix(::AbstractMatrix)` and `SymmetricMatrix(::AbstractMatrix)` spell
   "projection" correctly, and the code fence in the second one opens with three backticks, so the
   example inside it renders as code rather than as prose.
+- `Newton` rejects a `Manifold` solution and a parameter set with a message that names the method
+  and the restriction, instead of failing with whichever internal operation happened to give way
+  first. Both shapes already failed at `Optimizer` construction, but a bare manifold died inside
+  `similar` — "The function `similar` does not make sense in this context" — and a parameter set
+  raised a `MethodError` on `NewtonOptimizerCache`; neither message mentioned `Newton`, and
+  `Newton`'s docstring stated no restriction, so the omission read as generality. `Newton` builds
+  the exact Hessian: a `Manifold` has no Riemannian Hessian to build, and for a parameter set the
+  Hessian is not built over the flattening. The message says that and points at `BFGS` and `DFP`,
+  which take an `AbstractVector`, a parameter set and a bare `Manifold` alike. The check is written
+  on `OptimizerCache` rather than on `Hessian(::Newton, …)` because `_optimizer` calls the former
+  first, and repeated on `OptimizerState`, which is exported and is the first thing the documented
+  `solve!(x, OptimizerState(method, x), opt)` pattern evaluates. It dispatches on `Manifold` and not
+  on the two concrete manifolds, since what rules `Newton` out is a property of every manifold here.
 
 ### Changed
 
