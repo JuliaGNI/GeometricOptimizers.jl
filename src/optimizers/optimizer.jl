@@ -316,9 +316,6 @@ not supply the `observer` keyword to [`Optimizer`](@ref).
 """
 step_observer(opt::Optimizer) = opt.observer
 
-check_gradient(opt::Optimizer) = check_gradient(gradient(problem(opt)))
-print_gradient(opt::Optimizer) = print_gradient(gradient(problem(opt)))
-
 function meets_stopping_criteria(status::OptimizerStatus, opt::Optimizer, state::OptimizerState)
     meets_stopping_criteria(status, config(opt), iteration_number(state))
 end
