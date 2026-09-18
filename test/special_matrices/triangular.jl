@@ -73,6 +73,16 @@ end
     end
 end
 
+# `zeros` and `rand` recover the bare constructor from the type parameter without going through
+# the evaluator, so both infer to a concrete type rather than `Any`.
+@testset "zeros and rand infer concretely" begin
+    for T in (Float32, Float64), MT in (LowerTriangular, UpperTriangular)
+
+        @test (@inferred zeros(MT{T}, 4)) isa MT{T}
+        @test (@inferred rand(MT{T}, 4)) isa MT{T}
+    end
+end
+
 # The storage layout is public: `vec` returns it and the two-argument constructor takes it, so a
 # change to the index arithmetic that kept them consistent with each other would still be breaking.
 # Spelling the layout out for one matrix is what pins it.
