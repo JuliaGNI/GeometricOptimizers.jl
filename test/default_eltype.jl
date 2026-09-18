@@ -33,12 +33,12 @@ KernelAbstractions.supports_float64(::_NoFloat64GPU) = false
 struct _Float64GPU <: GPU end
 
 # `_Float64GPU` allocates host arrays, which makes it a device the whole device `rand` will actually
-# run on: the real method, its element-type check, `assign_columns` and the type application
-# included. That matters because the device draw otherwise needs a `qr` no backend reachable here
-# supplies -- the `rand(backend, ::Type{MT}, N, n)` docstring in `src/manifolds/abstract_manifold.jl`
-# states that requirement -- so without this the
-# `GPU` path could only be inspected, never run. `_NoFloat64GPU` deliberately gets no such method:
-# every call on it is meant to be refused before it allocates anything.
+# run on: the real method, its element-type check, the orthonormalization and the type application
+# included. It is here for the element type and not for the draw -- `JLArrays` is a real device
+# backend and runs the draw, in `device_orthonormalization.jl`, but it declares itself
+# `Float64`-capable and so cannot stand on both sides of the distinction the rule turns on.
+# `_NoFloat64GPU` deliberately gets no `allocate` method: every call on it is meant to be refused
+# before it allocates anything.
 function KernelAbstractions.allocate(::_Float64GPU, ::Type{T}, dims::Tuple; kwargs...) where {T}
     Array{T}(undef, dims)
 end

@@ -25,25 +25,107 @@ function _match_backend(Y::Manifold, ∇L::AbstractMatrix)
     copyto!(KernelAbstractions.allocate(backend, eltype(∇L), size(∇L)...), ∇L)
 end
 
-@kernel function assign_columns_kernel!(Y::AbstractMatrix{T}, A::AbstractMatrix{T}) where {T}
-    i, j = @index(Global, NTuple)
-    Y[i, j] = A[i, j]
+@doc raw"""
+    _cholesky_qr2(A)
+
+An ``N\times{}m`` matrix whose columns are an orthonormal basis of the columns of the
+``N\times{}m`` matrix `A`, or `nothing` when `A` is too ill-conditioned for its element type.
+
+CholeskyQR2: take ``R`` from `cholesky(AᵀA)`, set ``Q = AR^{-1}``, and do it again. Every step is a
+matrix product, a reduction or a triangular solve, so the whole factorization runs wherever `A`
+already is. `LinearAlgebra.qr!` does not: `Metal` implements no `qr` for an `MtlArray`, and a `qr`
+on a `JLArray` cannot rebuild its `Q`. Measured on an M4 Max with scalar indexing disallowed, this
+runs on Metal and its ``\|Q^TQ - \mathbb{I}\|`` is *smaller* than the host Householder QR's at every
+size tried.
+
+**The second pass is not a refinement.** Measured on Metal in `Float32` at the shape
+[`global_section`](@ref) uses, ``\|Q^TQ - \mathbb{I}\|`` after one pass is 9.7e-6 at ``N = 20`` and
+1.9e-3 at ``N = 400``, against 7.1e-7 and 7.7e-6 after the second — and the manifold tests assert
+`check(Y) < 1e-14` in `Float64`.
+
+**Forming ``A^TA`` squares the condition number**, which is what the `nothing` is for. `cholesky`
+with `check = false` reports a Gram matrix that is no longer positive definite rather than throwing,
+and at this shape in `Float32` an ordinary Gaussian draw reaches that about once in a hundred and
+twenty — see `scripts/orthonormalization_breakdown_rate.jl`.
+[`_orthonormal_columns`](@ref GeometricOptimizers._orthonormal_columns) is what answers it.
+
+**Squaring the entries is a second hazard, and the scaling below is what answers that one.** A
+Householder QR scales internally and this does not, so an argument whose entries are large enough
+gives an infinite Gram matrix and no answer at all. It is reachable: `optimizer_status_tests.jl`
+builds a point ``10^{100}`` off the manifold to test a convergence guard, the projection carries that
+magnitude into `A`, and ``A^TA`` is then `Inf` in `Float64`. Dividing `A` by
+``\max_{ij}|A_{ij}|`` — a reduction that cannot overflow, unlike a column norm — leaves ``Q``
+unchanged, since ``(A/s)^T(A/s) = A^TA/s^2`` has Cholesky factor ``R/s``.
+"""
+function _cholesky_qr2(A::AbstractMatrix)
+    # `n = N` is a legitimate shape whose complement is empty, so [`global_section`](@ref) asks for
+    # an `N × 0` factor. There is nothing to orthonormalize and it is already its own answer. The
+    # early return is not tidiness: `maximum(abs, ·)` over no entries is `abs(zero(T))`, so the
+    # scaling test below sees a zero scale and rejects such a matrix instead of accepting it.
+    isempty(A) && return A
+
+    scale = maximum(abs, A)
+    (scale > 0 && isfinite(scale)) || return nothing
+    B = A / scale
+
+    F₁ = cholesky(Symmetric(B' * B); check = false)
+    issuccess(F₁) || return nothing
+    Q = B / F₁.U
+    F₂ = cholesky(Symmetric(Q' * Q); check = false)
+    issuccess(F₂) || return nothing
+
+    Q / F₂.U
 end
 
-function assign_columns(Q::AbstractMatrix{T}, N::Integer, n::Integer) where {T}
-    backend = KernelAbstractions.get_backend(Q)
-    Y = KernelAbstractions.allocate(backend, T, N, n)
-    assign_columns! = assign_columns_kernel!(backend)
-    assign_columns!(Y, Q, ndrange = size(Y))
-    Y
+# How many Gaussian draws `_orthonormal_columns` takes before it gives up. At the rate measured in
+# its docstring -- about one draw in a hundred and twenty -- and at the higher rate that draw's own
+# replacement fails at, eight attempts put the chance of exhausting them near 1e-12. A caller that
+# does exhaust them is not looking at bad luck.
+const ORTHONORMALIZATION_ATTEMPTS = 8
+
+@doc raw"""
+    _orthonormal_columns(draw)
+
+Orthonormalize `draw()` with [`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2), drawing
+again while the draw is too ill-conditioned for it.
+
+Both callers — `rand(backend, manifold_type, N, n)` and [`global_section`](@ref) — draw their own
+Gaussian matrix, which is what makes redrawing the right answer rather than a retry. The draw
+carries no information, so one `CholeskyQR2` cannot orthonormalize is *replaced*; nothing is
+repaired and no result is kept that the algorithm did not produce cleanly.
+
+**The rate is not negligible.** [`global_section`](@ref) factorizes ``N\times(N-n)`` Gaussian
+columns with the span of `Y` projected out, so the matrix is square inside that complement and its
+condition number has the heavy tail a square Gaussian's does. Measured in `Float32` over 9000
+draws at ``N = 50, 100, 200`` and ``n = 3``, across three seeds: 77 break `CholeskyQR2` down, a
+rate between one in 107 and one in 125. Each is replaced, and **three of those 77 replacements
+fail as well** — a higher rate than the draws themselves, which is why the attempt bound is not
+derived from one failure probability raised to the eighth power. The script is
+`scripts/orthonormalization_breakdown_rate.jl`.
+
+**A redraw costs the caller determinism, not just time.** The number of Gaussian draws
+[`global_section`](@ref) consumes in `Float32` depends on the draws themselves, so a seeded
+`Float32` computation downstream of one is not reproducible across a change to this function or to
+the element type. Nothing in this package relies on that today.
+
+Shifted CholeskyQR3 measured on the same draws does not close it — one failure in 300 even with
+the exact ``\|A\|_2`` in the shift, because forming ``A^TA`` in `Float32` loses a singular value
+that small whatever the shift is.
+"""
+function _orthonormal_columns(draw)
+    for _ in 1:ORTHONORMALIZATION_ATTEMPTS
+        Q = _cholesky_qr2(draw())
+        Q === nothing || return Q
+    end
+
+    throw(ErrorException("orthonormalization failed on $(ORTHONORMALIZATION_ATTEMPTS) independent Gaussian draws, which at the measured rate is not bad luck; the element type is probably too narrow for this size"))
 end
 
 # TODO: check the distribution this is coming from - related to the Haar measure ???
 function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
-    A = randn(rng, T, N, n)
-    Q = assign_columns(typeof(A)(qr!(A).Q), N, n)
+    Q = _orthonormal_columns(() -> randn(rng, T, N, n))
     # `MT` may name the storage array type as well as the element type --
     # `StiefelManifold{Float64, Matrix{Float64}}` -- and is then already concrete, so applying a
     # further parameter to it is an error. `StiefelManifold{Float64}` still needs one. The branch
@@ -51,17 +133,20 @@ function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
     # `stiefel_manifold.jl`, written against `StiefelManifold{T, AT}` and so available to that one
     # manifold only; `Manifold{T}` has a single parameter and cannot name the storage type, which
     # is why this is a branch rather than a signature.
-    (isconcretetype(MT) ? MT : MT{typeof(A)})(Q)
+    (isconcretetype(MT) ? MT : MT{typeof(Q)})(Q)
 end
 
 function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
     _check_supported_eltype(backend, T)
-    A = KernelAbstractions.allocate(backend, T, N, n)
-    Random.randn!(rng, A)
+    Q = _orthonormal_columns() do
+        A = KernelAbstractions.allocate(backend, T, N, n)
+        Random.randn!(rng, A)
+        A
+    end
     # the branch on the host method above, for the same reason and with the same comment
-    (isconcretetype(MT) ? MT : MT{typeof(A)})(assign_columns(typeof(A)(qr!(A).Q), N, n))
+    (isconcretetype(MT) ? MT : MT{typeof(Q)})(Q)
 end
 
 @doc raw"""
@@ -144,14 +229,18 @@ and `Float32` on a device, for the reasons given there.
 
 # What the backend has to supply
 
-`qr`, for an array of its own type. The draw orthonormalises a Gaussian matrix with it, and
-[`global_section`](@ref) does the same for the complement, so a backend without `qr` can hold a
-point and take a step on one but cannot draw one and cannot carry an [`Optimizer`](@ref).
+A matrix product, a `cholesky` and a triangular solve, all for an array of its own type. The draw
+orthonormalizes a Gaussian matrix with
+[`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2) and [`global_section`](@ref) does the same
+for the complement, so those three are what a backend needs to carry a point, draw one and carry an
+[`Optimizer`](@ref).
 
-`CUDA` supplies `qr` through CUSOLVER. `Metal` does not: every call above fails there with
-`Cannot access the contents of a private buffer`, measured on real hardware, and so do
-`GlobalSection(Y)` and `Optimizer(Y, F)`. That is `Metal.jl`'s gap and not this package's, but
-nothing stated the requirement, which left a reader to find it by hitting it.
+**`qr` is deliberately not among them.** `Metal` implements no `qr` for an `MtlArray`: a call there
+raises `Cannot access the contents of a private buffer`, measured on real hardware. Any path through
+`qr` is host-only on such a device, and that path carries `GlobalSection(Y)` and `Optimizer(Y, F)`
+with it. `Metal` does implement `cholesky`, so CholeskyQR2 runs where Householder QR cannot, at
+*better* orthogonality than the host QR at every size measured — and a `CUDA` backend, which does
+supply `qr` through CUSOLVER, takes the same route as everything else rather than a second one.
 
 # The manifolds this draws
 
@@ -197,9 +286,12 @@ _round(Y; digits = 5) # hide
 
 ... the sampling is done by first allocating a random matrix of size ``N\times{}n`` via `Y = randn(Float32, N, n)`.
 
-We then perform a QR decomposition `Q, R = qr(Y)` with the `qr` function from the `LinearAlgebra` package (this is using Householder reflections internally).
-
-The final output are then the first `n` columns of the `Q` matrix.
+We then orthonormalize its columns with
+[`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2) and return those. CholeskyQR2 rather than
+`LinearAlgebra.qr` — which uses Householder reflections internally — because `qr` is a host
+factorization for several of the backends this package supports, and CholeskyQR2 is expressible in
+products, reductions and triangular solves alone. The two answers differ by the sign of each column,
+since CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
 """
 function Base.rand(manifold_type::Type{MT}, N::Integer, n::Integer) where {MT <: Manifold}
     rand(Random.default_rng(), manifold_type, N, n)

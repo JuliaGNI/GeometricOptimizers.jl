@@ -35,8 +35,8 @@ const device = KernelAbstractions.get_backend(JLArray(zeros(T, 1)))
 const host = KernelAbstractions.get_backend(zeros(T, 1))
 
 # Drawn on the host and moved over rather than through `rand(device, …)`, for the reason
-# `similar_backend.jl` gives: the device `rand` materializes its QR factor as `typeof(A)(qr!(A).Q)`,
-# which `JLArray` does not implement.
+# `similar_backend.jl` gives: one representative for every type below, so a failure names the type.
+# The device draw itself works — `device_orthonormalization.jl` is where that is asserted.
 const host_point = Matrix(qr!(randn(T, N, n)).Q)[:, 1:n]
 const host_gradient = randn(T, N, n)
 

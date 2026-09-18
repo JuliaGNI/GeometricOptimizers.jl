@@ -135,10 +135,16 @@ Internally `GlobalSection` calls the function [`GeometricOptimizers.global_secti
 ```julia
 A = randn(N, N - n) # or the gpu equivalent
 A = A - Y * (Y' * A)
-Y⟂ = qr(A).Q[1:N, 1:(N - n)]
+B = A / maximum(abs, A)                # so that the Gram matrix cannot overflow
+Q = B / cholesky(Symmetric(B'B)).U     # first pass
+Y⟂ = Q / cholesky(Symmetric(Q'Q)).U    # second pass; see below
 ```
 
-So we draw ``(N - n)`` new columns randomly, subtract the part that is spanned by the columns of ``Y`` and then perform a ``QR`` composition on the resulting matrix. The ``Q`` part of the decomposition is a matrix of ``(N - n)`` columns that is orthogonal to ``Y`` and is typically referred to as ``Y_\perp``  [absil2004riemannian, absil2008optimization, bendokat2020grassmann](@cite). We can easily check that this ``Y_\perp`` is indeed orthogonal to ``Y``.
+So we draw ``(N - n)`` new columns randomly, subtract the part that is spanned by the columns of ``Y`` and then orthonormalize the resulting matrix. The result is a matrix of ``(N - n)`` columns that is orthogonal to ``Y`` and is typically referred to as ``Y_\perp``  [absil2004riemannian, absil2008optimization, bendokat2020grassmann](@cite). We can easily check that this ``Y_\perp`` is indeed orthogonal to ``Y``.
+
+The orthonormalization is **CholeskyQR2** — the Cholesky step shown twice above — and not `LinearAlgebra.qr`. `qr` is the textbook answer, but it is a host factorization for several of the backends supported here: `Metal` implements no `qr` for its array type at all, so a `qr` here would put [`GlobalSection`](@ref) and therefore [`Optimizer`](@ref) out of reach on such a device. CholeskyQR2 is expressible in matrix products, reductions and triangular solves alone, so it runs wherever the point already is, and its ``\|Q^TQ - \mathbb{I}\|`` is measured *smaller* than the host Householder QR's at every size tried. What the two give differs by the sign of each column, because CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
+
+The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in a hundred and twenty. Such a draw is *replaced* rather than repaired — it is Gaussian noise and carries no information — which is what [`GeometricOptimizers._orthonormal_columns`](@ref) does. A replacement fails at a somewhat higher rate again, so the redraw is bounded and raises rather than returning a result it did not produce cleanly.
 
 ```@eval
 Main.theorem(raw"The matrix ``Y_\perp`` constructed with the algorithm above satisfies
@@ -153,11 +159,11 @@ Main.theorem(raw"The matrix ``Y_\perp`` constructed with the algorithm above sat
 ```
 
 ```@eval
-Main.proof(raw"The second property is trivially satisfied because the ``Q`` component of a ``QR`` decomposition is an orthogonal matrix. For the first property note that ``Y^TQR = \mathbb{O}`` is zero because we have subtracted the ``Y`` component from the matrix ``QR``. The matrix ``R\in\mathbb{R}^{N\times{}(N-n)}`` further has the property ``[R]_{ij} = 0`` for ``i > j`` and we have that 
+Main.proof(raw"The orthonormalization writes the drawn matrix as ``QR``, with ``Q`` orthonormal and ``R`` upper triangular — for CholeskyQR2 ``R`` is the product of the two Cholesky factors, and a product of upper triangular matrices is upper triangular. The second property is then trivially satisfied because ``Q`` is orthonormal. For the first property note that ``Y^TQR = \mathbb{O}`` is zero because we have subtracted the ``Y`` component from the matrix ``QR``. The matrix ``R\in\mathbb{R}^{(N-n)\times{}(N-n)}`` further has the property ``[R]_{ij} = 0`` for ``i > j`` and we have that 
 " * Main.indentation * raw"```math
 " * Main.indentation * raw"(Y^TQ)R = [r_{11}(Y^TQ)_{1\bullet}, r_{12}(Y^TQ)_{1\bullet} + r_{22}(Y^TQ)_{2\bullet}, \ldots, \sum_{i=1}^{N-n}r_{i(N-n)}(Y^TQ)_{i\bullet}].
 " * Main.indentation * raw"```
-" * Main.indentation * raw"Now all the coefficients ``r_{ii}`` are non-zero because the matrix we performed the ``QR`` decomposition on has full rank and we can see that if ``(Y^TQ)R`` is zero ``Y^TQ`` also has to be zero.")
+" * Main.indentation * raw"Now all the coefficients ``r_{ii}`` are non-zero because the matrix we factorized has full rank — and for CholeskyQR2 they are in addition positive, which is what makes ``Q`` unique where a Householder ``QR`` leaves the sign of each column free. We can see that if ``(Y^TQ)R`` is zero ``Y^TQ`` also has to be zero.")
 ```
 
 The function `global_rep` furthermore makes use of the following:
