@@ -189,12 +189,13 @@ why the choice is a stated rule rather than a literal: `Float64` on the host, `F
 device. See [`default_eltype`](@ref GeometricOptimizers.default_eltype) for why each value is what
 it is, and note that a backend being *able* to hold a `Float64` is not one of the reasons.
 
-The manifold draw adds a rule of its own to the first shape, in the other direction: an element type
-the caller names and the backend declares it cannot hold is **refused**, not narrowed, so
-`rand(MetalBackend(), StiefelManifold{Float64}, N, n)` is an `ArgumentError`. A narrowed draw would
-return a point of a different type from the one asked for, which is exactly what naming the element
-type rules out. The structured matrices carry no such check, and a width the backend cannot hold
-fails in the backend's own allocation instead.
+The first shape has a rule of its own, in the other direction: an element type the caller names and
+the backend declares it cannot hold is **refused**, not narrowed, so
+`rand(MetalBackend(), SkewSymMatrix{Float64}, n)` and
+`rand(MetalBackend(), StiefelManifold{Float64}, N, n)` are both an `ArgumentError`. A narrowed
+result would have a different type from the one asked for, which is exactly what naming the element
+type rules out. Every allocator of this shape carries the check; `KernelAbstractions.supports_float64`
+is what it asks, so it can only fire where a backend's own package has declared the limitation.
 
 None of this reaches an allocation the package makes for itself. `zero`, `similar`, `_zero` and
 `_similar` all take an *instance*, so the backend and the element type both come from the argument

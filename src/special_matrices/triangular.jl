@@ -35,6 +35,7 @@ Base.:*(α::Real, A::AT) where {AT <: AbstractTriangular} = A * α
 
 function Base.zeros(backend::KernelAbstractions.Backend, ::Type{AT},
         n::Int) where {T, AT <: AbstractTriangular{T}}
+    _check_supported_eltype(backend, T)
     # Base.typename(AT).wrapper strips the type parameters, giving the bare constructor
     # (UpperTriangular or LowerTriangular) as a constant the compiler can see, which is what makes
     # the return type inferrable: `Base.return_types` gives the concrete triangular type here and
@@ -66,6 +67,7 @@ end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{AT}, n::Integer) where {T, AT <: AbstractTriangular{T}}
+    _check_supported_eltype(backend, T)
     S = KernelAbstractions.allocate(backend, T, n*(n-1)÷2)
     Random.rand!(rng, S)
     Base.typename(AT).wrapper(S, n)

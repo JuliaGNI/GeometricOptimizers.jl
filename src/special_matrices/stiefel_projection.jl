@@ -13,7 +13,13 @@ struct StiefelProjection{T, AT} <: AbstractMatrix{T}
     N::Int
     n::Int
     A::AT
-    function StiefelProjection(backend, T::Type, N::Integer, n::Integer)
+    # `backend` was unconstrained, and is now the `KernelAbstractions.Backend` that both of this
+    # type's own callers already pass, through `get_backend`. Naming it is what lets the element
+    # type be checked against it; anything else reached `KernelAbstractions.zeros` on the next line
+    # and failed there regardless.
+    function StiefelProjection(
+            backend::KernelAbstractions.Backend, T::Type, N::Integer, n::Integer)
+        _check_supported_eltype(backend, T)
         A = KernelAbstractions.zeros(backend, T, N, n)
         assign_ones_for_stiefel_projection! = assign_ones_for_stiefel_projection_kernel!(backend)
         assign_ones_for_stiefel_projection!(A, ndrange = n)

@@ -184,6 +184,10 @@ breaking release).
 - Added `scripts/host_allocation_cost.jl`, the archived check behind the byte and time figures
   quoted for host allocation below. An earlier round of those figures came from a measurement
   nobody had kept, and a re-run then disagreed with them; the script is what settles that.
+- Added `test/backend_eltype_check.jl`, which walks all fifteen backend-and-element-type entry
+  points against three stand-in devices: one that carries `Float64`, one that declares it does not,
+  and one that declares it does not *and* can allocate nothing at all — so that an `ArgumentError`
+  from the third is proof the call was refused before the backend was asked for memory.
 
 ### Fixed
 
@@ -409,11 +413,11 @@ breaking release).
 
 ### Changed
 
-- **A manifold `rand` that names a backend and an element type the backend cannot hold now refuses
+- **Every allocator that names a backend and an element type the backend cannot hold now refuses
   it**, with an `ArgumentError` naming the width and the way out, instead of narrowing it or
-  failing further in. The check is on the manifold draw and nowhere else: the structured matrices'
-  backend-taking allocators carry none, so `rand(MetalBackend(), SkewSymMatrix{Float64}, n)` still
-  fails in the backend's own allocation.
+  failing further in. All fifteen entry points: `zeros` and `rand` for `SkewSymMatrix`,
+  `SymmetricMatrix`, both `AbstractTriangular`s and both horizontal lifts,
+  `StiefelProjection(backend, T, N, n)`, and `rand` for both manifolds.
   `rand(MetalBackend(), StiefelManifold{Float64}, N, n)` is the case:
   `KernelAbstractions.supports_float64` is `false` there, and the call used to reach the backend's
   own allocation and fail with `Metal does not support Float64 values, try using Float32 instead`,
@@ -423,7 +427,20 @@ breaking release).
 
   The check can only fire where a backend author has declared the limitation: `KernelAbstractions`
   answers `true` for every backend that does not override the trait, so `CUDA` and the `JLArrays`
-  backend are unaffected.
+  backend are unaffected. It is on the allocators that take a caller-named element type and on no
+  others — `zero`, `similar`, `_zero`, `_similar` and the arithmetic take an *instance*, so their
+  element type comes from an array that is already on the backend and the case cannot arise.
+- `SymmetricMatrix` has backend-taking `zeros` and `rand`, which it did not have and
+  `SkewSymMatrix` did. A symmetric matrix could not be placed on a device by naming one, although
+  the two types mirror each other everywhere else and both are optimizer parameters — the SympNet
+  and symplectic-attention layers of `GeometricMachineLearning` are parametrized by both.
+- `GrassmannLieAlgHorMatrix` has a backend-taking `rand`, which it did not have and
+  `StiefelLieAlgHorMatrix` did. A Grassmann lift could be zeroed on a device by naming one and not
+  drawn on it.
+- `StiefelProjection`'s backend-taking constructor declares `backend::KernelAbstractions.Backend`
+  rather than leaving the argument untyped. Both of its in-package callers already pass one,
+  through `get_backend`; naming it is what lets the element type be checked against it, and
+  anything else reached `KernelAbstractions.zeros` on the next line and failed there regardless.
 - The element type a backend-taking `rand` picks when the caller names *none* is unchanged —
   `Float64` on a `CPU`, `Float32` on a `GPU` — but it is now one documented rule,
   `default_eltype(backend)`, rather than the same two values as bare literals in two `rand` methods

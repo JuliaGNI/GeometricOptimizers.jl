@@ -150,11 +150,28 @@ end
 
 function Base.zeros(backend::KernelAbstractions.Backend,
         ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
     GrassmannLieAlgHorMatrix(
         KernelAbstractions.zeros(backend, T, N-n, n),
         N,
         n
     )
+end
+
+# The backend-taking `rand`, which this type did not have where `StiefelLieAlgHorMatrix` did. The
+# pair otherwise mirror each other method for method, so the gap was drift rather than a decision:
+# a Grassmann lift could be zeroed on a device by naming one and not drawn on it.
+function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
+        ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
+    B = KernelAbstractions.allocate(backend, T, N - n, n)
+    rand!(rng, B)
+    GrassmannLieAlgHorMatrix(B, N, n)
+end
+
+function Base.rand(backend::KernelAbstractions.Backend,
+        type::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    rand(Random.default_rng(), backend, type, N, n)
 end
 
 # `typeof(A)` is the two-parameter `GrassmannLieAlgHorMatrix{T, AT}`, which `zeros` has no
