@@ -246,17 +246,17 @@ breaking release).
   `zeros(SkewSymMatrix{<:Real}, n)` and threw `MethodError` for any actual call. Also deleted a
   duplicate `*(::Adjoint{T, ST}, ::ST)` in `stiefel_manifold.jl` that was never selected, and the
   non-exported `check_gradient` and `print_gradient` methods on `Optimizer` — each forwarded into a
-  name whose only method was the forward itself, so both always threw. They are a copy of
-  `SimpleSolvers`' own pair, but this package imports every `SimpleSolvers` name explicitly and
-  never imported those two, so each definition created a fresh local generic instead of extending
-  the function `SimpleSolvers` exports. Nothing here shadowed anything: neither name is exported by
-  this package, and a caller who wants them can reach `SimpleSolvers`' versions directly.
+  name whose only method was the forward itself, so both always threw. They mirror a pair of lines
+  in `SimpleSolvers`' own optimizer, but this package imports every `SimpleSolvers` name explicitly
+  and never imported either of these, so each definition created a fresh local generic rather than
+  extending anything. Nothing here shadowed anything: neither name is exported by this package.
+  `SimpleSolvers` exports `check_gradient` and a caller who wants it can reach that directly; it has
+  no `print_gradient` at all, which is the other half of why the forward could never resolve.
 - The `zeros` and `rand` constructors for triangular matrices now infer concretely. They previously
   used `eval(nameof(AT))` to recover the bare constructor from its type parameter, which returned
-  `Any` for both methods with every concrete input — these were the only two calls in the package
-  that inferred to `Any` from concrete arguments. Both now use `Base.typename(AT).wrapper`, which
-  unwraps the type parameters without entering the evaluator. The audit noted that `AT.name.wrapper`
-  (a simpler-looking alternative) does not work: these types carry two parameters, so at
+  `Any` for both methods with every concrete input. Both now use `Base.typename(AT).wrapper`, which
+  unwraps the type parameters without entering the evaluator. `AT.name.wrapper`, the obvious
+  alternative, does not work: these types carry two parameters, so at
   `zeros(LowerTriangular{Float64}, n)` the parameter binds to a `UnionAll`, which has no `.name`
   field. `Base.typename` unwraps both cases and is already the idiom used in the same file's
   `copyto!`. Pinned with `@inferred` test.

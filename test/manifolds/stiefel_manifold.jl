@@ -38,7 +38,7 @@ end
 
 # This multiplies the adjoint of a `StiefelManifold` by another `StiefelManifold` and checks the
 # result equals `Y.A' * Z.A`, i.e. that both operands are unwrapped and their underlying storage is
-# multiplied. It runs over the same `(N, n, T)` sweep as the other checks in this file.
+# multiplied. It runs over the same `(N, n, T)` sweep as `correct_format` and `metric_test`.
 function adjoint_mul_test(n::Integer, N::Integer, T::DataType)
     Y = rand(StiefelManifold{T}, N, n)
     Z = rand(StiefelManifold{T}, N, n)
