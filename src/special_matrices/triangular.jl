@@ -119,6 +119,39 @@ function Base.one(A::AbstractTriangular{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A.S), T, A.n)
 end
 
+@doc raw"""
+    *(A::AbstractTriangular, B::AbstractMatrix)
+
+The product, read off the packed storage vector by a kernel rather than through `getindex`.
+
+Without this method the product falls through to the generic `AbstractMatrix` path, which asks `A`
+for one entry at a time. That is scalar indexing, so it **cannot run on a device at all**. The
+packed vector holds ``n(n-1)/2`` entries and the generic path reads ``n^2`` of them, the other
+``n(n+1)/2`` being zeros that [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) manufacture —
+but **do not read a host speed-up into that**, which is what the arithmetic invites. Measured
+against the very path this method shadows, the ratio is between 1.0x and 1.6x, is not monotone in
+`n`, and is 0.75x for a lower-triangular product at `n = 6`: the kernel launch has a fixed cost that
+a small product cannot amortize. `scripts/triangular_multiply_cost.jl` is the check and
+`CHANGELOG.md` carries its table. The device is what this buys.
+
+The kernel is the one each subtype supplies, and it is where the two differ: a lower-triangular row
+`i` runs over `1:(i-1)` and an upper-triangular one over `(i+1):n`, reading the same packed vector
+through different index arithmetic.
+
+`*(::AbstractMatrix, ::AbstractTriangular)` is written as `(A' * B')'` and so goes through here as
+well, because `adjoint` on one of these is a type swap onto the same storage.
+"""
+function Base.:*(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
+    m1, m2 = size(B)
+    @assert m1 == A.n
+    backend = KernelAbstractions.get_backend(A)
+    C = KernelAbstractions.allocate(backend, T, A.n, m2)
+
+    triangular_mat_mul! = mat_mul_kernel(A, backend)
+    triangular_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
+    C
+end
+
 # the first matrix is multiplied onto A2 in order for it to not be SkewSymMatrix!
 function Base.:*(A1::AbstractTriangular{T}, A2::AbstractTriangular{T}) where {T}
     A1 * (A2 * one(A2))

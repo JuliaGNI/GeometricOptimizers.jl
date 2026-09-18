@@ -63,6 +63,25 @@ Base.size(E::StiefelProjection) = (E.N, E.n)
 Base.getindex(E::StiefelProjection, i, j) = getindex(E.A, i, j)
 Base.:+(E::StiefelProjection, A::AbstractMatrix) = E.A + A
 Base.:+(A::AbstractMatrix, E::StiefelProjection) = +(E, A)
+
+@doc raw"""
+    *(E::StiefelProjection, A::AbstractMatrix)
+    *(A::AbstractMatrix, E::StiefelProjection)
+    *(E::StiefelProjection, b::AbstractVector)
+
+The product, taken on the wrapped array.
+
+`StiefelProjection` holds its entries in an ordinary array, so unwrapping is all these do — the same
+thing `+` above does, and for the same reason. Without them the product falls through to the generic
+`AbstractMatrix` path, which reaches `getindex` one entry at a time. **That is scalar indexing, and
+it is what stops a retraction on a device**: [`geodesic`](@ref) and [`cayley`](@ref) each take one
+product against the projection — `expB * E` and `cayleyB * E` — with `E` built from the horizontal
+lift and so carrying the point's own backend. Both operands are on the device, and only the wrapper
+puts the product on the host path.
+"""
+Base.:*(E::StiefelProjection, A::AbstractMatrix) = E.A * A
+Base.:*(A::AbstractMatrix, E::StiefelProjection) = A * E.A
+Base.:*(E::StiefelProjection, b::AbstractVector) = E.A * b
 function Base.vcat(A::AbstractVecOrMat{T}, E::StiefelProjection{T}) where {T <: Number}
     vcat(A, E.A)
 end
