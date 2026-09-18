@@ -14,7 +14,7 @@
 # name and the backend cannot hold is rejected, not narrowed.
 
 using GeometricOptimizers
-using GeometricOptimizers: Manifold, default_eltype
+using GeometricOptimizers: default_eltype
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions, CPU, GPU, supports_float64
 using Random
@@ -32,12 +32,14 @@ KernelAbstractions.supports_float64(::_NoFloat64GPU) = false
 
 struct _Float64GPU <: GPU end
 
-# Intercept the element-type-bound method that the unbound one forwards to, and report the type it
-# was handed. That makes the choice observable without a device and without a `qr`, which is what
-# the real device draw needs and no backend reachable here supplies.
-function Base.rand(::_Float64GPU, ::Random.AbstractRNG, ::Type{MT},
-        N::Integer, n::Integer) where {T, MT <: Manifold{T}}
-    T
+# `_Float64GPU` allocates host arrays, which makes it a device the whole device `rand` will actually
+# run on: the real method, its element-type check, `assign_columns` and the type application
+# included. That matters because the device draw otherwise needs a `qr` no backend reachable here
+# supplies (`Close the GeometricOptimizers audit findings.md`, section 8), so without this the
+# `GPU` path could only be inspected, never run. `_NoFloat64GPU` deliberately gets no such method:
+# every call on it is meant to be refused before it allocates anything.
+function KernelAbstractions.allocate(::_Float64GPU, ::Type{T}, dims::Tuple; kwargs...) where {T}
+    Array{T}(undef, dims)
 end
 
 @testset "the default is the host's width on the host and single precision on a device" begin
@@ -55,13 +57,27 @@ end
     @test default_eltype(_Float64GPU()) === default_eltype(_NoFloat64GPU())
 
     # and the same holds through `rand` itself, which is where a caller meets it
-    @test rand(_Float64GPU(), Random.default_rng(), StiefelManifold, 5, 3) === Float32
-    @test rand(_Float64GPU(), Random.default_rng(), GrassmannManifold, 5, 3) === Float32
+    for MT in (StiefelManifold, GrassmannManifold)
+        @test eltype(rand(_Float64GPU(), Random.default_rng(), MT, 5, 3)) === Float32
+    end
+end
+
+@testset "the device draw honours a manifold type that names its storage array" begin
+    # the same case as on the host path, and the `GPU` arm used to write `MT{typeof(A)}`
+    # unconditionally, which is a `TypeError` for an already concrete `MT`
+    N, n = 5, 3
+    for MT in (StiefelManifold{Float32, Matrix{Float32}},
+        GrassmannManifold{Float32, Matrix{Float32}})
+        Y = rand(_Float64GPU(), Random.default_rng(), MT, N, n)
+        @test typeof(Y) === MT
+        @test GeometricOptimizers.check(Y) < 10 * eps(eltype(Y))
+    end
 end
 
 @testset "a named element type the backend cannot hold is refused, not narrowed" begin
-    # `_NoFloat64GPU` has no interception, so these reach the package's own device `rand` and are
-    # stopped by it before anything is allocated
+    # `_NoFloat64GPU` can allocate nothing at all, so a call that got past the check would be a
+    # `MethodError` on `allocate`. An `ArgumentError` is therefore proof that the check stopped it
+    # first, which is the property: refused before anything is allocated
     for MT in (StiefelManifold, GrassmannManifold)
         @test_throws ArgumentError rand(
             _NoFloat64GPU(), Random.default_rng(), MT{Float64}, 5, 3)
@@ -85,6 +101,11 @@ end
     for T in (Float32, Float64, Int32, Int64)
         @test check_eltype(_Float64GPU(), T) === nothing
         @test check_eltype(CPU(), T) === nothing
+    end
+    # and a device that carries `Float64` draws one when asked, through the whole device path
+    for T in (Float32, Float64)
+        @test eltype(rand(
+            _Float64GPU(), Random.default_rng(), StiefelManifold{T}, 5, 3)) === T
     end
     # and only `Float64` on the one backend that declares it cannot hold it
     @test check_eltype(_NoFloat64GPU(), Float32) === nothing

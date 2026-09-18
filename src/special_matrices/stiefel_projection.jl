@@ -24,9 +24,10 @@ struct StiefelProjection{T, AT} <: AbstractMatrix{T}
     # `Matrix{T}(I, N, n)` is exactly the matrix the docstring above describes. It used to route
     # through `StiefelProjection(CPU(), T, N, n)`, which allocates through
     # `KernelAbstractions.zeros` and then starts a kernel to write `n` ones. A host placement is
-    # the common case here and must not pay for the device machinery --
-    # `KernelAbstractions.zeros(CPU(), T, n)` costs a constant 176 B and 2.5x to 4.6x the time of
-    # `zeros(T, n)`, before the kernel.
+    # the common case here and must not pay for the device machinery: `KernelAbstractions.zeros` on
+    # a `CPU` costs an overhead at every length, growing with it, and 2x to 5x the time of `zeros`
+    # -- the comment on `zeros(::Type{AT}, n)` in `triangular.jl` has the measurement -- and that
+    # is before the kernel launch.
     function StiefelProjection(N::Integer, n::Integer, T::Type = Float64)
         A = Matrix{T}(I, N, n)
         new{T, typeof(A)}(N, n, A)

@@ -148,9 +148,10 @@ end
 
 Base.:*(α::Real, A::SkewSymMatrix) = A * α
 
-# The `n != 1` branch is kept although no backend reachable here needs it, and it is deliberately
-# not deleted. A `1x1` skew-symmetric matrix stores nothing, so the branch is about
-# `KernelAbstractions.zeros` at length zero. Measured: `CPU()` returns a `(0,)` array from both
+# The `n == 1` arm below -- `allocate` where every other length takes `zeros` -- is kept although no
+# backend reachable here needs it, and it is deliberately not deleted. A `1x1` skew-symmetric matrix
+# stores nothing, so what the arm avoids is `KernelAbstractions.zeros` at length zero. Measured:
+# `CPU()` returns a `(0,)` array from both
 # `zeros` and `allocate`, and `MetalBackend()` does too. Neither is therefore the case it guards.
 # Nobody here has a CUDA device, and an older `KernelAbstractions` is the likely reason it exists.
 # Two backends' worth of evidence is not enough to remove a guard -- find the backend or the

@@ -162,8 +162,11 @@ use one or more of them. That package also batches them over the third axis of a
 ## Where a sampled array lands, and what it holds
 
 `rand` and `zeros` here come in four shapes, by whether the call names a backend and whether it
-names an element type. The shape decides both answers, and it is the same rule for the structured
-matrices above, for the [manifolds](@ref "The Stiefel Manifold") and for the horizontal lifts:
+names an element type. The shape decides both answers, and it decides them the same way for the
+structured matrices above, for the [manifolds](@ref "The Stiefel Manifold") and for the horizontal
+lifts wherever a type offers the shape at all. Not every type offers all four — the second shape is
+the manifolds' alone, and a shape a type does not offer is a `MethodError` rather than a different
+answer:
 
 | a call of this shape | backend | element type | gives |
 |:--|:--|:--|:--|
@@ -176,17 +179,22 @@ The third and fourth shapes place on the host without saying so, and that is del
 mirror `Base`, where `zeros(Float32, 3)` is a host array and nothing about the call suggests
 otherwise; these types present as `AbstractMatrix`, so `zeros(SkewSymMatrix{Float32}, n)` should
 read as the `Array` case does. A host placement also cannot quietly corrupt a device computation:
-mixing one with a device array throws at the first operation — `+`, `add!` and `copyto!` all fail —
-so the loud failure already gives the guarantee that making these shapes take a backend would buy.
+mixing one with a device array throws at the first arithmetic — `+` and `add!` both reach the
+storage arrays and fail there — so the loud failure already gives the guarantee that making these
+shapes take a backend would buy. `copyto!` and `assign!` are the deliberate exception, because they
+*are* the transfer: moving a host-built structured matrix onto a device is what they exist for.
 
 The second shape is the only one where the package decides something the caller did not, which is
 why the choice is a stated rule rather than a literal: `Float64` on the host, `Float32` on a
 device. See [`default_eltype`](@ref GeometricOptimizers.default_eltype) for why each value is what
 it is, and note that a backend being *able* to hold a `Float64` is not one of the reasons.
 
-The first shape has a rule of its own, in the other direction: an element type the caller names and
-the backend cannot hold is **refused**, not narrowed. A narrowed draw would return a point of a
-different type from the one asked for, which is exactly what naming the element type rules out.
+The manifold draw adds a rule of its own to the first shape, in the other direction: an element type
+the caller names and the backend declares it cannot hold is **refused**, not narrowed, so
+`rand(MetalBackend(), StiefelManifold{Float64}, N, n)` is an `ArgumentError`. A narrowed draw would
+return a point of a different type from the one asked for, which is exactly what naming the element
+type rules out. The structured matrices carry no such check, and a width the backend cannot hold
+fails in the backend's own allocation instead.
 
 None of this reaches an allocation the package makes for itself. `zero`, `similar`, `_zero` and
 `_similar` all take an *instance*, so the backend and the element type both come from the argument

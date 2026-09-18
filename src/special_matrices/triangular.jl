@@ -43,8 +43,12 @@ function Base.zeros(backend::KernelAbstractions.Backend, ::Type{AT},
 end
 
 # The host spelling is `zeros(T, m)` and not `zeros(CPU(), AT, n)`: `KernelAbstractions.zeros` on a
-# `CPU` returns the same `Vector{T}` with the same values, at a constant 176 B of overhead and 2.5x
-# to 4.6x the time, because it fills rather than reaching `calloc` and so loses the zero page. The
+# `CPU` returns the same `Vector{T}` with the same values and charges for it. It fills rather than
+# reaching `calloc`, so it loses the zero page, and the gap therefore grows with the length rather
+# than being a constant. Measured on Julia 1.13 at `--check-bounds=auto`, one cold process per
+# variant: 128 B of overhead up to a few hundred elements and 12 384 B at 2^18, and 2x the time at
+# 1024 elements rising to 4.7x at 2^18. Treat the byte figures as this machine's -- what does not
+# move is that an overhead is paid at every length and that it grows. The
 # host path is the common one here and must not pay for the device machinery. Every other
 # host-placing allocator in this package -- `SkewSymMatrix`'s, `SymmetricMatrix`'s and both lie
 # algebras' -- already spells it this way.

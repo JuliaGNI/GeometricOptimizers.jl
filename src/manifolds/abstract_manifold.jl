@@ -77,7 +77,8 @@ function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
     _check_supported_eltype(backend, T)
     A = KernelAbstractions.allocate(backend, T, N, n)
     Random.randn!(rng, A)
-    MT{typeof(A)}(assign_columns(typeof(A)(qr!(A).Q), N, n))
+    # the branch on the host method above, for the same reason and with the same comment
+    (isconcretetype(MT) ? MT : MT{typeof(A)})(assign_columns(typeof(A)(qr!(A).Q), N, n))
 end
 
 @doc raw"""

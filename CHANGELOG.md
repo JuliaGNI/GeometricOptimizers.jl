@@ -168,7 +168,9 @@ breaking release).
   here come in four shapes, by whether the call names a backend and whether it names an element
   type, and the shape decides both the placement and the element type. Two of the four place on the
   host without saying so, which mirrors `Base` and cannot corrupt a device computation silently —
-  mixing a host array with a device one throws at the first operation. None of it is new
+  mixing a host array with a device one throws at the first *arithmetic*. `copyto!` and `assign!`
+  are the deliberate exception, because they are the transfer itself; that is what the `copyto!`
+  entry above and `test/device_copyto.jl` are for. None of it is new
   behaviour. Nothing stated it, and a method list does not show it.
 - The `rand(backend, manifold_type, N, n)` docstring now states what a backend has to supply:
   `qr`, for an array of its own type, which is what the draw and `global_section` orthonormalise
@@ -404,9 +406,12 @@ breaking release).
 
 ### Changed
 
-- **A `rand` that names a backend and an element type the backend cannot hold now refuses it**,
-  with an `ArgumentError` naming the width and the way out, instead of narrowing it or failing
-  further in. `rand(MetalBackend(), StiefelManifold{Float64}, N, n)` is the case:
+- **A manifold `rand` that names a backend and an element type the backend cannot hold now refuses
+  it**, with an `ArgumentError` naming the width and the way out, instead of narrowing it or
+  failing further in. The check is on the manifold draw and nowhere else: the structured matrices'
+  backend-taking allocators carry none, so `rand(MetalBackend(), SkewSymMatrix{Float64}, n)` still
+  fails in the backend's own allocation.
+  `rand(MetalBackend(), StiefelManifold{Float64}, N, n)` is the case:
   `KernelAbstractions.supports_float64` is `false` there, and the call used to reach the backend's
   own allocation and fail with `Metal does not support Float64 values, try using Float32 instead`,
   which names neither the manifold nor the call that asked for it. Narrowing silently to `Float32`
@@ -434,9 +439,11 @@ breaking release).
   `rand(rng, ::Type{<:AbstractTriangular}, n)` allocate on the host directly instead of routing
   through an explicit `CPU()`. They return the same arrays with the same values, and the suite pins
   that. The route made the host path pay for the device machinery:
-  `KernelAbstractions.zeros(CPU(), T, n)` costs a constant 176 bytes of overhead and 2.5x to 4.6x
-  the time of `zeros(T, n)` — worst on the large case, since it fills rather than reaching `calloc`
-  and so loses the zero page — and `StiefelProjection` also started a kernel to write `n` ones.
+  `KernelAbstractions.zeros(CPU(), T, n)` fills rather than reaching `calloc`, so it loses the zero
+  page and costs an overhead at every length that *grows* with the length — measured on Julia 1.13,
+  one cold process per variant, 128 bytes up to a few hundred elements and 12 384 bytes at 2¹⁸,
+  with 2x the time at 1024 elements rising to 4.7x at 2¹⁸. `StiefelProjection` also started a
+  kernel to write `n` ones.
   Host placement is the common case here. The rest of the package's host allocators already spelled
   it this way; this is what makes it one spelling rather than a split by file.
 - `rand(::CPU, rng, ::Type{MT}, N, n)` accepts a manifold type that names its storage array as well
