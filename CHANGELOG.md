@@ -10,6 +10,138 @@ breaking release).
 
 ### Added
 
+- Added the **symplectic Stiefel manifold** `SymplecticStiefelManifold`, the set of ``2N\times2n``
+  matrices with ``U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}``, with `rand`, `rgrad`, `metric`, `check`
+  and `global_section`. It joins the Stiefel and Grassmann manifolds as a third case of the
+  existing geometry: `Manifold` needs no new abstraction and the five names are the existing
+  generics.
+
+  **It is not yet usable with the optimizers, and that is worth stating rather than discovering.**
+  `StiefelManifold` also implements `Ω` and `zero`, and this type implements neither: `Ω(U, Δ)` is a
+  `MethodError`, and `zero(U)` falls through to `zero(::AbstractMatrix)` and returns a plain
+  `Matrix` where `zero(::StiefelManifold)` returns a `StiefelLieAlgHorMatrix`. Both need the
+  symplectic horizontal Lie algebra, which does not exist in this package. `check` differs the
+  other way: `StiefelManifold` inherits it from `check(::Manifold)` and this type needs its own,
+  because the constraint is a different bilinear form. So the manifold lands as a geometric object
+  with a metric, a gradient and a global section — not as an optimization target. See *Open Issues*.
+- Added the **symplectic SR decomposition** behind it: `sr` and `sr!`, with the unexported operator
+  types `Sfac`, `Rfac` and `SR`, plus the exported
+  `symplectic_gram_schmidt`/`symplectic_gram_schmidt!` and the unexported two-vector
+  `symplectic_form`. `A = SR` with `S` symplectic and `R` symplectic-upper-triangular; the
+  algorithm is the SROSH algorithm of [salam2008optimal](@cite). `qr` cannot serve here, because
+  its `Q` preserves the Euclidean form rather than ``\mathbb{J}``.
+
+  A product of two of these operators materializes both factors. Without it `S * inv(S)` — the
+  most natural thing to write with two of them — is an ambiguous `MethodError`, because `Sfac` is
+  itself an `AbstractMatrix` and neither the left nor the right method is more specific in both
+  arguments. All four combinations are written out, since one method on `(::Sfac, ::Sfac)` is
+  narrower in one argument and wider in the other and so does not resolve it either. Materializing
+  is the one resolution that needs no special case, and nothing in this package multiplies two of
+  them. `S * inv(S)` is accordingly the identity only up to the roundoff of the two kernels:
+  ``\|S S^{-1} - I\|`` is 5.8e-16 at ``2N = 4``, 4.4e-14 at ``2N = 10`` and 1.7e-8 at ``2N = 20``.
+
+  `S` is never formed. All four products go through reflector kernels — `S*x`, `S*B`, `B*S` and
+  `B*S⁻¹` — so right-multiplication by the inverse costs what the forward product costs rather
+  than falling through to the generic `AbstractMatrix` path, which reaches `Sfac`'s `getindex` and
+  rebuilds the whole matrix once per entry. Measured with a 3×2N `B`, minimum of 50 calls in a
+  warmed process: `B*S⁻¹` allocates 22 288 bytes at 10×10 and 164 320 at 40×40, matching `B*S`
+  byte for byte, against 57 184 and 1 781 424 for materializing the inverse once.
+
+  **These have a numerical limitation that a user has to know before depending on them, and it is
+  not small.** `S` is symplectic, not orthogonal, so its condition number is unbounded, and this
+  implementation has no re-orthogonalization step. The residual therefore grows with the size of
+  the problem rather than staying at machine precision. Measured as
+  ``\|U^T\mathbb{J}U - \mathbb{J}\|`` on a point `rand` returned, 200 draws per case, seed 1234,
+  counting a non-finite residual and a raised exception separately from a number:
+
+  | | median | max finite | non-finite | threw |
+  |:--|--:|--:|--:|--:|
+  | `Float64` 6×4 | 1.3e-14 | 3.3e-9 | 0 | 0 |
+  | `Float64` 10×6 | 1.5e-13 | 9.7e-7 | 0 | 0 |
+  | `Float64` 20×10 | 2.4e-11 | 5.1e-4 | 0 | 0 |
+  | `Float64` 40×20 | 6.2e-8 | 0.2 | 0 | 0 |
+  | `Float32` 6×4 | 4.2e-6 | 0.23 | 0 | 0 |
+  | `Float32` 10×6 | 7.4e-5 | 1.3 | 0 | 0 |
+  | `Float32` 20×10 | 0.014 | 8800.0 | 0 | **1** |
+  | `Float32` 40×20 | 32.0 | 7.6e5 | **2** | **6** |
+
+  **Only the medians reproduce.** Re-running the same sweep with a different draw order moves the
+  maxima by orders of magnitude — `Float64` 40×20 has been seen at 0.2 and at 54.0, and `Float32`
+  20×10 has thrown 0 times and 1 time — so the column to read is the median and the *class* of
+  failure, never a particular worst case. The medians grow by two to three orders of magnitude per
+  doubling of the size, not the three flat that an earlier draft of this entry claimed.
+
+  Three outcomes, and the second is the one that hides:
+
+  - a **large residual**, which a caller who checks will see;
+  - a **`NaN`**, which makes `check(U) < tol` silently *false* rather than large — a caller who
+    checks is told nothing is wrong;
+  - a **`DomainError`** from `sqrt` of a negative argument in `symplectic_householder!`, where
+    ``\sqrt{\|b\|^2 - b_1^2 - \nu^2}`` cancels.
+
+  The `sqrt` is the site that raises, but it is not the only one of its class in
+  `symplectic_householder!`: `c₁ = 1/(ρ·a[N+1])` and `c₂ = s/(ξ·ν)` divide by quantities that a
+  draw can bring arbitrarily close to zero, and those return a non-finite number rather than
+  throwing. That is the second outcome above, and it is why the `NaN` case exists at all.
+
+  Nothing warns in the first two cases, because checking each draw would cost a matrix product per
+  draw. So: usable in `Float64` at small sizes, and **not usable in `Float32` at any size tested**.
+  Closing this means the stabilized variant the literature describes, which is a piece of numerical
+  work rather than a repair, and it is why the tests below stop at 10×6 and assert nothing in
+  `Float32`.
+- Added `test/manifolds/symplectic_stiefel_manifold.jl` and `test/decompositions/symplectic_sr.jl`.
+  The assertions are the properties rather than the absence of an error: `A = SR` reconstructs the
+  input, `S` is symplectic, `inv(S)` undoes it, `R` has the block-triangular shape that
+  distinguishes SR from QR *and* its lower-left block is not zero, `rgrad` lands in the tangent
+  space ``\{\Delta : \Delta^T\mathbb{J}U + U^T\mathbb{J}\Delta = 0\}``, the metric is symmetric and
+  bilinear, `global_section` returns a completion that is symplectically orthogonal to the point
+  and spans the rest of the space with it, and `check` is the symplectic residual and not the
+  inherited orthonormality one — which the test states by asserting that ``\|U^TU - \mathbb{I}\|``
+  is *large*.
+
+  **No per-draw threshold both discriminates and never fails, so the property is asserted over a
+  sweep instead.** Eight seeds of 200 draws are not enough to see this tail: over 20000 draws per
+  size the residual ``\|S^T\mathbb{J}S - \mathbb{J}\|`` has median 1.8e-15, 3.2e-14 and 2.4e-12 at
+  4×2, 6×4 and 10×6, and maximum 3.8e-6, 1.0e-3 and 7.7e-2 — so the thresholds 1e-6, 1e-5 and 1e-4
+  are exceeded by 1, 6 and 21 draws in 20000. The per-draw assertions therefore run on a fixed seed
+  and are deterministic, but they are not bounds, and the test file says so. What is asserted as a
+  property is the `the residual distribution` sweep: the median over 500 draws against a bound
+  three orders above the measured median, and the exceedance rate against ten times the measured
+  rate. Both are stable across seeds where a single maximum is not.
+
+  The assertions still discriminate: a point that is genuinely off the manifold gives an ``O(1)``
+  residual, measured as 7.6, 38 and 295 for the *wrong* constraint at those three sizes.
+
+  **The algorithm is checked against the paper it implements**, Salam, Al-Aidarous and El Farouk,
+  *Optimal symplectic Householder transformations for SR decomposition*, Linear Algebra and its
+  Applications 429 (2008) 1334–1353 — now a bibliography entry, `salam2008optimal`, rather than a
+  bare DOI in a comment. `scripts/verify_salam2008.jl` checks the correspondence numerically at
+  ``2n = 2, 4, 8, 16``: its equations (4.2), (4.3) and (3.4) hold to 3.4e-12 or better, both
+  transvections are symplectic, and both coefficients agree with the general expressions of its
+  Theorem 3.2 exactly. `symplectic_householder!` returns the ``(c_1, c_2, \rho, \nu, \mu)`` of its
+  Theorem 4.5, at the optimal free parameters that paper derives: a scan over ``\rho`` confirms
+  ``\rho = \mathrm{sign}(a_1)\|a\|_2`` is the minimizer of ``\kappa_2(T_1)`` in 200 of 200 draws at
+  every size, which is its Lemma 4.3. What is adjusted relative to the paper is the application of
+  the reflectors, not the mathematics.
+
+  Two presentation differences look like discrepancies and are not, which is why the script exists:
+  the reflector vectors are stored negated, and ``T = I + cvv^J`` is quadratic in ``v``; and the
+  code's ``c_2 = +s/(\xi\nu)`` appears to contradict Theorem 4.5's ``-1/(\pm\xi u_{n+1})`` until the
+  general form is expanded, ``u^J(\mu e_1 + \nu e_{n+1}) = \nu(u_1 - \mu) = -\nu s\xi``.
+
+  The two doctests assert `< 1e-5` rather than `< 1e-10` for the same reason. At 6×4 a threshold of
+  1e-10 is exceeded by 557 draws in 20000, so it sits in a fat part of the distribution rather than
+  its tail, and the `sr!` doctest cleared it by a factor of only 1.66 — a `Random` or BLAS change
+  that moved the draw would turn a required CI job red. At 1e-5 the exceedance is 7 in 20000, and
+  the assertion still separates a good factorization from a broken one by six orders.
+
+  **Symmetry and bilinearity do not identify a metric** — every inner product has them, and
+  substituting the Frobenius product ``\mathrm{tr}(\Delta_1^T\Delta_2)`` leaves all nine of those
+  assertions passing. What pins Gao's form is the property that defines the Riemannian gradient
+  against it, ``g_U(\mathrm{rgrad}(U, \nabla L), \Delta) = \mathrm{tr}(\nabla L^T\Delta)``, which is
+  asserted separately: the relative residual has median 4.4e-16, 5.4e-15 and 8.7e-14 at the three
+  sizes over 200 draws, against 20, 430 and 5300 for the Frobenius substitution.
+
 - Added opt-in optimizer phase observation through the exported `EventLog`, `PhaseTimer`,
   `NoStepObserver`, `observe_optimizer_phase`, and `step_observer` API. `EventLog()` records the
   event trace and `PhaseTimer()` accumulates exclusive nanoseconds without requiring callers to
@@ -3732,6 +3864,62 @@ annotates its argument — the annotation is the part that matters, since withou
 is silent rather than loud. Worth doing together with the other half of [#27], `mode = :finitediff`
 (`:246`), which has no `Manifold` method either and no `NamedTuple` one ([#24]); the three are one
 subject, which is "every entry point that builds a gradient should agree about what a manifold is".
+
+---
+
+#### A22. The symplectic SR decomposition is not backward stable, and fails three ways
+
+**Severity: medium**, and it is a property of the algorithm rather than a defect in the port. Opened
+by the change that added `sr!` and `SymplecticStiefelManifold`; the two test files point here.
+
+``S`` is symplectic and therefore not orthogonal, so its condition number is unbounded, and this
+implementation has no re-orthogonalization step — the one the literature adds for exactly this
+reason. The residual of a drawn point,
+``\|U^T\mathbb{J}U - \mathbb{J}\|``, therefore grows with the size instead of staying at machine
+precision. The measured table is under *Added* in [Unreleased](#unreleased); the short form is a
+median of `1.3e-14` at `Float64` 6×4 and `6.2e-8` at 40×20, and `0.014` at `Float32` 20×10.
+
+**Three outcomes, and they are not equally visible:**
+
+- a large residual, which a caller who checks will see;
+- a `NaN`, which makes `check(U) < tol` silently **false** rather than large — 2 draws in 200 at
+  `Float32` 40×20;
+- a `DomainError` from `sqrt` of a negative argument at `src/decompositions/symplectic_sr.jl`, in
+  `symplectic_householder!`, where ``\sqrt{\|b\|^2 - b_1^2 - \nu^2}`` cancels — 1 draw in 200 at
+  `Float32` 20×10 and 6 at 40×20.
+
+**Only the medians reproduce.** The maxima and the throw counts move by orders of magnitude with
+the draw order: `Float64` 40×20 has been measured at 0.2 and at 54.0 in two runs of the same sweep.
+Any figure quoted from the tail of this distribution is a sample, not a bound.
+
+A related sharp edge, measure-zero for a random draw but part of the same class:
+`ρ = sign(a[1]) * norm(a)` gives `ρ = 0` and then `c₁ = Inf` silently when `a[1] == 0`. Standard
+Householder picks a sign that cannot vanish.
+
+Closing this means implementing the stabilized variant, which is numerical work rather than a
+repair. Until then the type is documented as `Float64`-only at small sizes, in both the
+`SymplecticStiefelManifold` and `sr!` docstrings, and nothing in the package depends on it.
+
+---
+
+#### A23. `SymplecticStiefelManifold` has no `Ω` and no `zero`, so it cannot be optimized over
+
+**Severity: medium.** Opened by the change that added the type.
+
+`StiefelManifold` implements `Ω` and `zero` in addition to `rand`, `rgrad`, `metric` and
+`global_section`; `SymplecticStiefelManifold` implements neither. `Ω(U, Δ)` is a `MethodError`, and
+`zero(U)` is worse than an error: it falls through to `zero(::AbstractMatrix)` and returns a plain
+`Matrix`, where `zero(::StiefelManifold)` returns a `StiefelLieAlgHorMatrix`. An optimizer reaching
+for either gets a wrong answer or a failure at its first step.
+
+Both need the **symplectic horizontal Lie algebra**, which this package does not have:
+`src/lie_algebras/` holds the Stiefel and Grassmann horizontal components and no symplectic one. A
+draft of the tangent-space projection `πₑ` exists in `GeometricMachineLearning`'s history at
+`6a8e19a7:legacy/arrays/sympl_st_E_ts.jl`, written against two Lie algebra types that were never
+committed anywhere; it is a starting point, not a solution.
+
+Until this closes, the type is a geometric object with a metric, a Riemannian gradient and a global
+section — not an optimization target.
 
 ---
 
