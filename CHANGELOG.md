@@ -181,6 +181,9 @@ breaking release).
 - Added `test/default_eltype.jl`, which pins the element-type rule rather than the two values it
   gives on this machine, and the refusal above, with two stand-in devices that differ only in
   whether they declare `Float64` support.
+- Added `scripts/host_allocation_cost.jl`, the archived check behind the byte and time figures
+  quoted for host allocation below. An earlier round of those figures came from a measurement
+  nobody had kept, and a re-run then disagreed with them; the script is what settles that.
 
 ### Fixed
 
@@ -440,20 +443,25 @@ breaking release).
   through an explicit `CPU()`. They return the same arrays with the same values, and the suite pins
   that. The route made the host path pay for the device machinery:
   `KernelAbstractions.zeros(CPU(), T, n)` fills rather than reaching `calloc`, so it loses the zero
-  page and costs an overhead at every length that *grows* with the length — measured on Julia 1.13,
-  one cold process per variant, 128 bytes up to a few hundred elements and 12 384 bytes at 2¹⁸,
-  with 2x the time at 1024 elements rising to 4.7x at 2¹⁸. `StiefelProjection` also started a
-  kernel to write `n` ones.
+  page and costs an overhead at every length that *grows* with the length — measured by
+  `scripts/host_allocation_cost.jl` on Julia 1.13, one cold process per run, 128 bytes up to 500
+  elements and 12 384 bytes at 2¹⁸. It also costs time at every length, but not monotonically in
+  the length: between about 1.9x and 25x, worst at the smallest matrices, where its fixed floor of
+  roughly 120 ns dominates. `StiefelProjection` also started a kernel to write `n` ones.
   Host placement is the common case here. The rest of the package's host allocators already spelled
   it this way; this is what makes it one spelling rather than a split by file.
 - `rand(::CPU, rng, ::Type{MT}, N, n)` accepts a manifold type that names its storage array as well
   as its element type — `StiefelManifold{Float64, Matrix{Float64}}` — for every manifold, from one
   method. It was a second method in `stiefel_manifold.jl`, written against `StiefelManifold{T, AT}`
   and so reachable for that one manifold; the same call on `GrassmannManifold{T, AT}` found
-  nothing.
+  nothing. The `GPU` arm took the same fix: it still applied `MT{typeof(A)}` unconditionally, so
+  `rand(backend, rng, GrassmannManifold{Float32, Matrix{Float32}}, N, n)` was a `TypeError` there
+  after the `CPU` arm had stopped being one. The two arms now agree.
 - `SkewSymMatrix`'s inner constructor takes `n::Integer`, which is what its docstring already
   claimed and what `SymmetricMatrix`'s takes. `GrassmannLieAlgHorMatrix`'s takes `N::Integer,
-  n::Integer`, as `StiefelLieAlgHorMatrix`'s does. Each pair differed for no stated reason.
+  n::Integer`, as `StiefelLieAlgHorMatrix`'s does. Each pair differed for no stated reason. Its
+  outer constructor `GrassmannLieAlgHorMatrix(D::AbstractMatrix, n)` takes `n::Integer` for the
+  same reason, which its own docstring already claimed as well.
 - **Breaking for a caller that relied on the wrapped return:** `broadcast(f, Y)` on a `Manifold`
   returns a plain array. `Base.broadcast(operation, Y::Manifold)` rewrapped the result in the
   manifold type, which claims an invariant the result does not hold —

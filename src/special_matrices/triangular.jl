@@ -45,10 +45,18 @@ end
 # The host spelling is `zeros(T, m)` and not `zeros(CPU(), AT, n)`: `KernelAbstractions.zeros` on a
 # `CPU` returns the same `Vector{T}` with the same values and charges for it. It fills rather than
 # reaching `calloc`, so it loses the zero page, and the gap therefore grows with the length rather
-# than being a constant. Measured on Julia 1.13 at `--check-bounds=auto`, one cold process per
-# variant: 128 B of overhead up to a few hundred elements and 12 384 B at 2^18, and 2x the time at
-# 1024 elements rising to 4.7x at 2^18. Treat the byte figures as this machine's -- what does not
-# move is that an overhead is paid at every length and that it grows. The
+# than being a constant. Measured by `scripts/host_allocation_cost.jl` on Julia 1.13 at
+# `--check-bounds=auto`, one cold process per run: 128 B of overhead up to 500 elements, 144 B at
+# 1024 and 12 384 B at 2^18.
+#
+# The time ratio is not monotone, and the worst case is the *small* matrix rather than the large
+# one. `KernelAbstractions.zeros` has a floor of about 120 ns whatever the length, so the ratio
+# starts near 25x at one element, falls to about 1.9x at 1024 to 2048 elements as the host path
+# grows into that floor, then rises again to about 5x at 2^18 as the fill outgrows `calloc`.
+#
+# Treat the figures as this machine's -- what does not move is that an overhead is paid at every
+# length, that the bytes grow with the length, and that the device spelling was never the faster of
+# the two at any length measured. The
 # host path is the common one here and must not pay for the device machinery. Every other
 # host-placing allocator in this package -- `SkewSymMatrix`'s, `SymmetricMatrix`'s and both lie
 # algebras' -- already spells it this way.

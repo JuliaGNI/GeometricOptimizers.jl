@@ -35,7 +35,8 @@ struct _Float64GPU <: GPU end
 # `_Float64GPU` allocates host arrays, which makes it a device the whole device `rand` will actually
 # run on: the real method, its element-type check, `assign_columns` and the type application
 # included. That matters because the device draw otherwise needs a `qr` no backend reachable here
-# supplies (`Close the GeometricOptimizers audit findings.md`, section 8), so without this the
+# supplies -- the `rand(backend, ::Type{MT}, N, n)` docstring in `src/manifolds/abstract_manifold.jl`
+# states that requirement -- so without this the
 # `GPU` path could only be inspected, never run. `_NoFloat64GPU` deliberately gets no such method:
 # every call on it is meant to be refused before it allocates anything.
 function KernelAbstractions.allocate(::_Float64GPU, ::Type{T}, dims::Tuple; kwargs...) where {T}

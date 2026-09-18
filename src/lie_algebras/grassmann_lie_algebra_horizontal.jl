@@ -70,7 +70,7 @@ D \mapsto \Omega(E, DE - EE^TDE),
 
 where ``\Omega`` is the horizontal lift [`GeometricOptimizers.Ω`](@ref).
 """
-function GrassmannLieAlgHorMatrix(D::AbstractMatrix, n::Int)
+function GrassmannLieAlgHorMatrix(D::AbstractMatrix, n::Integer)
     N = size(D, 1)
     @assert N ≥ n
 
