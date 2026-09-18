@@ -133,7 +133,15 @@ end
 function Base.:+(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
     @assert size(A) == size(B)
 
-    C = copy(A)
+    # The destination is a fresh plain array rather than `copy(A)`. A structured `A` keeps its type
+    # under `copy`, and its `setindex!` then constrains what the three blocks below can write: a
+    # `SymmetricMatrix` symmetrizes each of them, and a triangular or a manifold point rejects the
+    # half that falls outside its stored entries. The sum of a horizontal lift and an arbitrary
+    # matrix carries none of those structures. The element type is promoted across both operands for
+    # the same reason -- `copy(A)` gave the destination `A`'s element type alone.
+    backend = KernelAbstractions.get_backend(A)
+    C = KernelAbstractions.allocate(backend, promote_type(eltype(A), eltype(B)), size(A)...)
+    copyto!(C, A)
     @views C[1:B.n, 1:B.n] .= B.A + A[1:B.n, 1:B.n]
     @views C[(B.n + 1):B.N, 1:B.n] .= B.B + A[(B.n + 1):B.N, 1:B.n]
     @views C[1:B.n, (B.n + 1):B.N] .= A[1:B.n, (B.n + 1):B.N] - B.B'
@@ -175,6 +183,11 @@ function Base.:+(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
 end
 
 Base.:+(A::SkewSymMatrix{T}, C::StiefelLieAlgHorMatrix{T}) where {T} = C + A
+
+# `-` on the same mixed pair returns a dense matrix, although the difference of two skew-symmetric
+# matrices is skew-symmetric as well. The pair is not ambiguous under `-`, so there is nothing here
+# to separate, and a structured `-` would be a behaviour change rather than a tie-breaker. The
+# asymmetry against `+` above is therefore deliberate.
 
 Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
 

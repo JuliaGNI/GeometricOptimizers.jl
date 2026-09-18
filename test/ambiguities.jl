@@ -1,14 +1,13 @@
 # Ambiguities between two of this package's own methods, as a property rather than a list.
 #
 # Each such pair is a standoff between an `Owned ∘ AbstractMatrix` method and an
-# `AbstractMatrix ∘ Owned` one. For two owned operands neither is more specific, so an ordinary
-# product or sum of two of them raised a `MethodError`.
+# `AbstractMatrix ∘ Owned` one. For two owned operands neither is more specific, so without a
+# tie-breaker an ordinary product or sum of two of them raises a `MethodError`.
 # `src/ambiguities.jl` carries the tie-breakers and says what each one returns.
 #
 # The assertion below is that the set is empty rather than that it has some size. A count goes stale
-# the moment a method is added -- the one in this suite's own Aqua header read 139 where
-# `detect_ambiguities` reported 224 -- and it says nothing about which pairs are in it. An empty set
-# also catches the next pair somebody adds without anyone having to remember this file exists.
+# the moment a method is added, and it says nothing about which pairs are in it. An empty set also
+# catches the next pair somebody adds without anyone having to remember this file exists.
 
 using GeometricOptimizers
 using GeometricOptimizers: StiefelProjection, sr!
@@ -31,6 +30,10 @@ Random.seed!(1234)
     unresolved = filter(p -> first(p).name !== :global_rep, own)
 
     @test isempty(unresolved)
+
+    # How many pairs the exclusion above swallows, so that it cannot grow silently. A third
+    # `global_rep` pair is a new ambiguity and has to be looked at, not filtered away.
+    @test length(own) == 2
 
     # Printed rather than merely counted, so a failure names the pair instead of a number.
     for (m₁, m₂) in unresolved
@@ -76,10 +79,16 @@ end
     end
 end
 
-# The sum's three types. `StiefelProjection` is square here for the same reason as above: the other
-# two are `N × N` and `+` conforms only if all three are.
+# The sum's four types. `StiefelProjection` is square here for the same reason as above: the others
+# are `N × N` and `+` conforms only if all of them are.
+#
+# `SymmetricMatrix` takes part although no pair containing it is ambiguous. It is here because
+# `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` builds its destination from the right operand, so
+# a summand whose `setindex!` constrains what can be written is the case that separates a correct
+# destination from a structured one that silently discards half of the result.
 const SUMMANDS = ["StiefelLieAlgHor" => rand(StiefelLieAlgHorMatrix, N, N ÷ 2),
     "SkewSym" => rand(SkewSymMatrix, N),
+    "Sym" => rand(SymmetricMatrix, N),
     "StiefelProjection" => StiefelProjection(N, N)]
 
 @testset "a sum of two owned matrices agrees with the dense sum" begin

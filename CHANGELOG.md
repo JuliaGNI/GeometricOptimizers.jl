@@ -164,7 +164,8 @@ breaking release).
 
 ### Fixed
 
-- **A product or a sum of two of this package's own matrix types no longer raises a `MethodError`.**
+- **A product or a sum of two of this package's own matrix types no longer raises an ambiguous
+  `MethodError`.**
   `StiefelManifold`, `SymplecticStiefelManifold`, `StiefelProjection`, `SkewSymMatrix`,
   `SymmetricMatrix`, `AbstractTriangular`, `StiefelLieAlgHorMatrix` and the `Sfac` operator each
   carry a method that takes one of them beside an `AbstractMatrix`. Every pair of them is then a
@@ -200,6 +201,17 @@ breaking release).
   above against the dense answer. Of its 75 value assertions, 66 raise a `MethodError` on the
   pre-change source and 9 pass there — the 9 are the combinations that already had a method, and
   they pin behaviour rather than reproducing a defect.
+- `C + A` for a `StiefelLieAlgHorMatrix` and a structured `A` no longer discards part of the result.
+  `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` built its destination with `copy(A)`, which keeps
+  `A`'s type, and then wrote the lift's three blocks into it through `setindex!`. For
+  `A::SymmetricMatrix` that `setindex!` symmetrizes, so the skew part of the lift was folded away
+  and the sum came back **silently wrong** — as a `SymmetricMatrix`, differing from the dense sum by
+  order 1 for random operands, in both operand orders. For a triangular or a `StiefelManifold` on
+  the right the same writes raised a `CanonicalIndexError` instead. The destination is now allocated
+  on the operand's backend, as `+(::SkewSymMatrix, ::AbstractMatrix)` already does, and its element
+  type is promoted across both operands rather than taken from `A` alone. `SymmetricMatrix` joins
+  the summand grid in `test/ambiguities.jl`, which is what pins it: the grid held only the three
+  types whose pairs were ambiguous, and this pair is not one of them.
 - `Y' * B` for two `StiefelManifold`s now dispatches when their storage types differ. The method
   bound one type parameter to both operands, storage array included, so a point held in a `Matrix`
   times one held in a `SubArray` — or in a device array — missed it and was left to the two generic

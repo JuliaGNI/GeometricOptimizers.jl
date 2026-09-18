@@ -1,8 +1,9 @@
 # Tie-breakers for the pairs where one of this package's own matrix types meets another one.
 #
 # Every pair below is a standoff between an `Owned ∘ AbstractMatrix` method and an
-# `AbstractMatrix ∘ Owned` one. For two owned operands neither of the two is more specific, so the
-# call is ambiguous and an ordinary product or sum raises a `MethodError`.
+# `AbstractMatrix ∘ Owned` one. For two owned operands neither of the two is more specific, so
+# without a method here the call would be ambiguous and an ordinary product or sum would raise a
+# `MethodError`.
 # The comment above the four `Sfac`-`Sfac` methods in `decompositions/symplectic_sr.jl` gives the
 # mechanism for the case it is written about, and it generalizes: a signature that is narrower in
 # one argument and wider in the other does not win. That is also why a single method taking a
@@ -27,7 +28,8 @@
 # is the one case where both operands are skew-symmetric, so the sum is too and keeps that
 # structure; its two methods are in `lie_algebras/stiefel_lie_algebra_horizontal.jl`, next to the
 # packing they need. `*` on an adjoint `StiefelManifold` and a `StiefelManifold` is separated in
-# `manifolds/stiefel_manifold.jl` by the method that was already there.
+# `manifolds/stiefel_manifold.jl`, by the method for that pair which lives beside the rest of the
+# manifold's arithmetic.
 #
 # Each signature binds the element type wherever one of the two methods it separates binds it, so
 # that it is contained in both. Without that it separates only the part of the overlap where the
