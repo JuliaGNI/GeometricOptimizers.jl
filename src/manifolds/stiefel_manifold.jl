@@ -27,12 +27,6 @@ function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
     Y.parent.A' * B.A
 end
 
-function Base.:*(
-        Y::Adjoint{
-            T, ST}, B::ST) where {T, AT <: AbstractMatrix{T}, ST <: StiefelManifold{T, AT}}
-    Y.parent.A' * B.A
-end
-
 @doc raw"""
     rgrad(Y::StiefelManifold, ∇L::AbstractMatrix)
 

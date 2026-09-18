@@ -9,7 +9,9 @@ The data are stored in a vector ``S`` similarly to other matrices. See [`UpperTr
 
 The struct two fields: `S` and `n`. The first stores all the entries of the matrix in a sparse fashion (in a vector) and the second is the dimension ``n`` for ``A\in\mathbb{R}^{n\times{}n}``.
 
-# Examples 
+`adjoint` (`L'`) returns an [`UpperTriangular`](@ref) built around the *same* storage vector, not a copy: `parent(L') === parent(L)` holds, so writing into the adjoint also writes into `L`. Reusing the storage transposes without conjugating, so this method is defined for a real element type only; a complex one falls through to `LinearAlgebra`'s lazy `Adjoint`, which conjugates and does not alias.
+
+# Examples
 ```jldoctest
 using GeometricOptimizers
 S = [1, 2, 3, 4, 5, 6]
@@ -66,17 +68,6 @@ function Base.getindex(A::LowerTriangular{T}, i::Int, j::Int) where {T}
         return A.S[(i - 2) * (i - 1) ÷ 2 + j]
     end
     return zero(T)
-end
-
-@kernel function lo_mat_mul_kernel!(
-        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
-    i, j = @index(Global, NTuple)
-
-    tmp_sum = zero(T)
-    for k in 1:(i - 1)
-        tmp_sum += S[(i - 2) * (i - 1) ÷ 2 + k] * B[k, j]
-    end
-    C[i, j] = tmp_sum
 end
 
 function map_to_lo(A::AbstractMatrix{T}) where {T}

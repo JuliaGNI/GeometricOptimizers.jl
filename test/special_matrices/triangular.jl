@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: AbstractTriangular
-using LinearAlgebra: tr
+using LinearAlgebra: tr, transpose
 using Test
 import Random
 
@@ -63,6 +63,59 @@ end
     end
 end
 
+@testset "adjoint aliases the storage of its argument" begin
+    # `adjoint` is a type swap (`LowerTriangular` <-> `UpperTriangular`), built around the *same*
+    # storage vector rather than a copy. This is deliberate for performance, since the package's own
+    # right-multiply `*(::AbstractMatrix, ::AbstractTriangular) = (A' * B')'` is read-only and would
+    # otherwise pay for an allocation it never needs. But it means a write through the adjoint is a
+    # write through the original, so this pins the sharing: if `adjoint` is ever made to copy, this
+    # test is the one that catches it.
+    for T in (Float32, Float64), n in 2:5
+
+        L = rand(LowerTriangular{T}, n)
+        U = rand(UpperTriangular{T}, n)
+
+        @test parent(L') === parent(L)
+        @test parent(U') === parent(U)
+
+        Lt = L'
+        parent(Lt)[1] = zero(T)
+        @test parent(L)[1] == zero(T)
+
+        Ut = U'
+        parent(Ut)[1] = zero(T)
+        @test parent(U)[1] == zero(T)
+    end
+end
+
+# Sharing the storage is what bounds these methods to a real element type. Reusing the vector
+# transposes without conjugating, so an unbound method is `transpose` wearing the name `adjoint`,
+# and `*(B, A::AbstractTriangular) = (A' * B')'` then returns a silently wrong product — measured at
+# `‖B*C - B*Matrix(C)‖ = 16.2` on this 3x3 `ComplexF64` case before the bound.
+#
+# The bound does not reject a complex argument; it hands it to `LinearAlgebra`'s lazy `Adjoint`,
+# which conjugates. So the complex path becomes correct rather than becoming an error, and the real
+# path keeps the storage-sharing swap. This testset asserts both halves, because a later edit that
+# widened the methods again would restore the wrong answer with nothing else complaining.
+@testset "adjoint conjugates on a complex element type" begin
+    for MT in (LowerTriangular, UpperTriangular)
+        C = MT(ComplexF64[1 + 2im, 3 + 4im, 5 + 6im], 3)
+        M = Matrix(C)
+        B = randn(ComplexF64, 3, 3)
+
+        @test Matrix(C') == M'
+        @test Matrix(C') != transpose(M)
+        @test B * C ≈ B * M
+
+        # and the real path still takes the storage-sharing swap rather than the lazy wrapper
+        R = MT(randn(3), 3)
+        Br = randn(3, 3)
+        @test R' isa AbstractTriangular
+        @test parent(R') === parent(R)
+        @test Br * R ≈ Br * Matrix(R)
+    end
+end
+
 @testset "random generation" begin
     for T in (Float32, Float64), n in 2:5, MT in (LowerTriangular, UpperTriangular)
         A = rand(MT{T}, n)
@@ -70,6 +123,16 @@ end
         @test eltype(A) == T
         @test size(A) == (n, n)
         @test A isa AbstractTriangular
+    end
+end
+
+# `zeros` and `rand` recover the bare constructor from the type parameter without going through
+# the evaluator, so both infer to a concrete type rather than `Any`.
+@testset "zeros and rand infer concretely" begin
+    for T in (Float32, Float64), MT in (LowerTriangular, UpperTriangular)
+
+        @test (@inferred zeros(MT{T}, 4)) isa MT{T}
+        @test (@inferred rand(MT{T}, 4)) isa MT{T}
     end
 end
 

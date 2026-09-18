@@ -36,11 +36,21 @@ function metric_test(n::Integer, N::Integer, T::DataType)
     @test metric(Y, Δ₁, Δ₂) isa T
 end
 
+# This multiplies the adjoint of a `StiefelManifold` by another `StiefelManifold` and checks the
+# result equals `Y.A' * Z.A`, i.e. that both operands are unwrapped and their underlying storage is
+# multiplied. It runs over the same `(N, n, T)` sweep as `correct_format` and `metric_test`.
+function adjoint_mul_test(n::Integer, N::Integer, T::DataType)
+    Y = rand(StiefelManifold{T}, N, n)
+    Z = rand(StiefelManifold{T}, N, n)
+    @test Y' * Z ≈ Y.A' * Z.A
+end
+
 for N in (20, 10)
     for n in (5, 3)
         for T in (Float64, Float32)
             correct_format(n, N, T)
             metric_test(n, N, T)
+            adjoint_mul_test(n, N, T)
         end
     end
 end

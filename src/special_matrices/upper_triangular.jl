@@ -9,7 +9,9 @@ The data are stored in a vector ``S`` similarly to other matrices. See [`LowerTr
 
 The struct two fields: `S` and `n`. The first stores all the entries of the matrix in a sparse fashion (in a vector) and the second is the dimension ``n`` for ``A\in\mathbb{R}^{n\times{}n}``.
 
-# Examples 
+`adjoint` (`U'`) returns a [`LowerTriangular`](@ref) built around the *same* storage vector, not a copy: `parent(U') === parent(U)` holds, so writing into the adjoint also writes into `U`. Reusing the storage transposes without conjugating, so this method is defined for a real element type only; a complex one falls through to `LinearAlgebra`'s lazy `Adjoint`, which conjugates and does not alias.
+
+# Examples
 ```jldoctest
 using GeometricOptimizers
 S = [1, 2, 3, 4, 5, 6]
@@ -68,17 +70,6 @@ function Base.getindex(A::UpperTriangular{T}, i::Int, j::Int) where {T}
     return zero(T)
 end
 
-@kernel function up_mat_mul_kernel!(
-        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
-    i, j = @index(Global, NTuple)
-
-    tmp_sum = zero(T)
-    for k in (i + 1):n
-        tmp_sum += S[(k - 2) * (k - 1) ÷ 2 + i] * B[k, j]
-    end
-    C[i, j] = tmp_sum
-end
-
 function map_to_up(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
@@ -102,10 +93,20 @@ function (project::ProjectTo{<:UpperTriangular})(dA::UpperTriangular)
     UpperTriangular(project.triang(dA.S), dA.n)
 end
 
-function Base.adjoint(A::LowerTriangular)
+# A type swap, not a wrapper: the result is this package's own `UpperTriangular`, built around the
+# *same* storage vector `A.S` rather than a copy, so `parent(A') === parent(A)` holds and a write
+# through the adjoint writes `A` too.
+#
+# Bound to a real element type, because reusing the storage transposes without conjugating. On a
+# complex element type that is `transpose`, not `adjoint`, and `*(B, A::AbstractTriangular)` is
+# written as `(A' * B')'` — so an unbound method returned a silently wrong product. The bound does
+# not reject a complex argument: it falls through to `LinearAlgebra`'s lazy `Adjoint`, which
+# conjugates and is correct. Real element types keep the storage-sharing swap below.
+function Base.adjoint(A::LowerTriangular{<:Real})
     UpperTriangular(A.S, A.n)
 end
 
-function Base.adjoint(A::UpperTriangular)
+# As above, and bound to a real element type for the same reason.
+function Base.adjoint(A::UpperTriangular{<:Real})
     LowerTriangular(A.S, A.n)
 end
