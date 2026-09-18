@@ -46,6 +46,10 @@ end
 # every tie-breaker in `src/ambiguities.jl` is written to give.
 const N = 6
 
+# `StiefelProjection` appears on both sides and the two triangulars on the left, because both types
+# multiply against a bare `AbstractMatrix` and so take part in a standoff with every other type
+# here. A type that appears on one side only leaves its own tie-breakers unexercised: the sweep is
+# `LEFT × RIGHT`, so a pair is checked exactly when one of its operands is in each list.
 const LEFT = let
     Y = StiefelManifold(Matrix(qr!(randn(N, N)).Q))
     S = sr!(randn(N, N ÷ 2 + 1)).S
@@ -54,6 +58,9 @@ const LEFT = let
         "U" => rand(SymplecticStiefelManifold, N, N),
         "S" => S,
         "inv(S)" => inv(S),
+        "E" => StiefelProjection(N, N),
+        "LowerTriangular" => rand(LowerTriangular{Float64}, N),
+        "UpperTriangular" => rand(UpperTriangular{Float64}, N),
         "SkewSym" => rand(SkewSymMatrix, N),
         "Sym" => rand(SymmetricMatrix, N)]
 end
@@ -64,6 +71,7 @@ const RIGHT = let
         "U" => rand(SymplecticStiefelManifold, N, N),
         "S" => S,
         "inv(S)" => inv(S),
+        "E" => StiefelProjection(N, N),
         "LowerTriangular" => rand(LowerTriangular{Float64}, N),
         "UpperTriangular" => rand(UpperTriangular{Float64}, N),
         "SkewSym" => rand(SkewSymMatrix, N),

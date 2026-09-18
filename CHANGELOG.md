@@ -495,6 +495,12 @@ breaking release).
   rule: the projection unwraps under the file's rule 1, and a triangular materializes whatever is to
   its right under rule 2 unless that operand is itself a wrapper. `test/ambiguities.jl` asserts the
   own-vs-own set is empty, so the count is a consequence rather than something to remember.
+
+  That file's product sweep gains `StiefelProjection` on both sides and the two triangulars on the
+  left, which takes it from 56 products to 90 and is what asserts the 22 new methods return the
+  dense product rather than merely resolving. A type listed on one side only leaves its own
+  tie-breakers unexercised — the sweep is `LEFT × RIGHT`, so a pair is checked exactly when one of
+  its operands is in each list.
 - **A manifold point and its global section are orthonormalized with CholeskyQR2 rather than
   `LinearAlgebra.qr!`, on every backend.** `rand(backend, StiefelManifold, N, n)` and
   `global_section` are the four call sites. This is what makes a device draw work at all:
