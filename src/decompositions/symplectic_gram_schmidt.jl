@@ -8,7 +8,8 @@
 @doc raw"""
     symplectic_normalize(e, f, J)
 
-Scale a pair of vectors so that ``e^TJf = 1``, preserving the sign of the form.
+Scale a pair of vectors so that ``e^TJf = 1``, including the sign: the factor `sign(e^TJf)` goes
+into `e`, so a pair whose form is negative comes back with the form `+1` rather than `-1`.
 
 The pair is the unit the symplectic Gram-Schmidt process works in: a single vector cannot be
 normalized against a form that vanishes on it.

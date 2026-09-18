@@ -31,7 +31,8 @@ end
     U = rand(SymplecticStiefelManifold{Float64}, 6, 4)
     @test eltype(U) == Float64
     # `Float32` points are constructed, and deliberately not checked against the manifold: the
-    # residual at this size runs to 0.62 over 200 draws.
+    # median residual at this size is 4.2e-6, which no useful threshold clears. See the table in
+    # `CHANGELOG.md`, and read its medians — the maxima move with the draw order.
     @test eltype(rand(SymplecticStiefelManifold{Float32}, 6, 4)) == Float32
 end
 
@@ -64,6 +65,24 @@ end
     end
 end
 
+# Symmetry and bilinearity hold for *every* inner product, so the testset above pins nothing about
+# which one this is: substituting the Frobenius product `tr(Δ₁ᵀΔ₂)` leaves all nine of its
+# assertions passing. What identifies the metric is the property that defines the Riemannian
+# gradient against it — `g_U(rgrad(U, ∇L), Δ) = tr(∇LᵀΔ)` for every tangent `Δ`. The relative
+# residual has median 4.4e-16, 5.4e-15 and 8.7e-14 at the three sizes over 200 draws, against 20,
+# 430 and 5300 for the Frobenius substitution, so this assertion separates them by orders.
+@testset "the metric is the one rgrad is taken against" begin
+    for (N2, n2) in SIZES
+        U = rand(SymplecticStiefelManifold, N2, n2)
+        ∇L = randn(N2, n2)
+        Δ = rgrad(U, randn(N2, n2))
+        @test isapprox(metric(U, rgrad(U, ∇L), Δ), tr(∇L' * Δ); rtol = tolerance(N2))
+
+        # And it is positive definite on tangent directions, which a bilinear form need not be.
+        @test metric(U, Δ, Δ) > 0
+    end
+end
+
 @testset "global_section completes the point symplectically" begin
     for (N2, n2) in SIZES
         J = _poisson_tensor(Float64, N2)
@@ -75,7 +94,7 @@ end
         @test size(Λ) == (N2, N2 - n2)
 
         # And it is a completion: symplectically orthogonal to the point. Asserting only the shape
-        # would pass for any matrix of the right size, which is how the wrong return got this far.
+        # would pass for any matrix of the right size, so the shape alone pins nothing.
         @test norm(U.A' * J * Λ) < tolerance(N2)
 
         # Together they span the whole space symplectically.

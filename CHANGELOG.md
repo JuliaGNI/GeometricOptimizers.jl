@@ -63,6 +63,11 @@ breaking release).
   - a **`DomainError`** from `sqrt` of a negative argument in `symplectic_householder!`, where
     ``\sqrt{\|b\|^2 - b_1^2 - \nu^2}`` cancels.
 
+  The `sqrt` is the site that raises, but it is not the only one of its class in
+  `symplectic_householder!`: `c₁ = 1/(ρ·a[N+1])` and `c₂ = s/(ξ·ν)` divide by quantities that a
+  draw can bring arbitrarily close to zero, and those return a non-finite number rather than
+  throwing. That is the second outcome above, and it is why the `NaN` case exists at all.
+
   Nothing warns in the first two cases, because checking each draw would cost a matrix product per
   draw. So: usable in `Float64` at small sizes, and **not usable in `Float32` at any size tested**.
   Closing this means the stabilized variant the literature describes, which is a piece of numerical
@@ -78,12 +83,31 @@ breaking release).
   inherited orthonormality one — which the test states by asserting that ``\|U^TU - \mathbb{I}\|``
   is *large*.
 
-  **The tolerances clear the worst over eight seeds, not one.** A threshold read off a single
-  seed's 200 draws had a factor of **1.04** in hand at 4×2 — 9.6e-10 against a 1e-9 threshold — so
-  any edit that reordered a draw could have turned it red. The eight-seed worst is 9.6e-10 at 4×2,
-  3.8e-8 at 6×4 and 7.2e-7 at 10×6, and the thresholds are 1e-6, 1e-5 and 1e-4. They still
-  discriminate: a point that is genuinely off the manifold gives an ``O(1)`` residual, measured as
-  7.6, 38 and 295 for the *wrong* constraint at those three sizes.
+  **No per-draw threshold both discriminates and never fails, so the property is asserted over a
+  sweep instead.** Eight seeds of 200 draws are not enough to see this tail: over 20000 draws per
+  size the residual ``\|S^T\mathbb{J}S - \mathbb{J}\|`` has median 1.8e-15, 3.2e-14 and 2.4e-12 at
+  4×2, 6×4 and 10×6, and maximum 3.8e-6, 1.0e-3 and 7.7e-2 — so the thresholds 1e-6, 1e-5 and 1e-4
+  are exceeded by 1, 6 and 21 draws in 20000. The per-draw assertions therefore run on a fixed seed
+  and are deterministic, but they are not bounds, and the test file says so. What is asserted as a
+  property is the `the residual distribution` sweep: the median over 500 draws against a bound
+  three orders above the measured median, and the exceedance rate against ten times the measured
+  rate. Both are stable across seeds where a single maximum is not.
+
+  The assertions still discriminate: a point that is genuinely off the manifold gives an ``O(1)``
+  residual, measured as 7.6, 38 and 295 for the *wrong* constraint at those three sizes.
+
+  The two doctests assert `< 1e-5` rather than `< 1e-10` for the same reason. At 6×4 a threshold of
+  1e-10 is exceeded by 557 draws in 20000, so it sits in a fat part of the distribution rather than
+  its tail, and the `sr!` doctest cleared it by a factor of only 1.66 — a `Random` or BLAS change
+  that moved the draw would turn a required CI job red. At 1e-5 the exceedance is 7 in 20000, and
+  the assertion still separates a good factorization from a broken one by six orders.
+
+  **Symmetry and bilinearity do not identify a metric** — every inner product has them, and
+  substituting the Frobenius product ``\mathrm{tr}(\Delta_1^T\Delta_2)`` leaves all nine of those
+  assertions passing. What pins Gao's form is the property that defines the Riemannian gradient
+  against it, ``g_U(\mathrm{rgrad}(U, \nabla L), \Delta) = \mathrm{tr}(\nabla L^T\Delta)``, which is
+  asserted separately: the relative residual has median 4.4e-16, 5.4e-15 and 8.7e-14 at the three
+  sizes over 200 draws, against 20, 430 and 5300 for the Frobenius substitution.
 
 - Added opt-in optimizer phase observation through the exported `EventLog`, `PhaseTimer`,
   `NoStepObserver`, `observe_optimizer_phase`, and `step_observer` API. `EventLog()` records the

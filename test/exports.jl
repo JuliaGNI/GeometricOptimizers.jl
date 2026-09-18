@@ -41,8 +41,10 @@ end
 @testset "the manifold, section and retraction interface is exported" begin
     for name in (
     # the geometry
-        :Manifold, :StiefelManifold, :GrassmannManifold,
+        :Manifold, :StiefelManifold, :GrassmannManifold, :SymplecticStiefelManifold,
         :rgrad, :metric, :check, :Ω,
+    # the symplectic SR decomposition the symplectic point is built through
+        :sr, :sr!, :symplectic_gram_schmidt, :symplectic_gram_schmidt!,
     # the structured matrices and the lifts
         :SkewSymMatrix, :SymmetricMatrix, :LowerTriangular, :UpperTriangular,
         :AbstractTriangular, :StiefelProjection,

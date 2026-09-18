@@ -18,10 +18,12 @@ symplectic SR decomposition [`sr!`](@ref), which is the construction
 
 !!! warning "The accuracy degrades with the size, and `Float32` is out of reach"
     A point is only as good as the decomposition it came from, and that decomposition has no
-    re-orthogonalization step. The residual `check` reports has a median of `9.1e-15` at `6x4` in
-    `Float64` and `5.4e-8` at `40x20`, with a maximum over 200 draws of `54.0` at that size; in
-    `Float32` the median is already `0.016` at `20x10`. Nothing warns when a draw comes back far
-    from the manifold. `CHANGELOG.md` carries the full table and what closing it would take.
+    re-orthogonalization step. The residual `check` reports has a median of `1.3e-14` at `6x4` in
+    `Float64` and `6.2e-8` at `40x20`; in `Float32` the median is already `0.014` at `20x10`, and
+    at `40x20` some draws return a non-finite residual or throw. Only the medians reproduce: the
+    maxima move by orders of magnitude with the draw order, so no particular worst case is quoted
+    here. Nothing warns when a draw comes back far from the manifold. `CHANGELOG.md` carries the
+    full table and what closing it would take.
 
 # Examples
 
@@ -31,7 +33,7 @@ import Random
 
 Random.seed!(1234)
 
-check(rand(SymplecticStiefelManifold, 6, 4)) < 1e-10
+check(rand(SymplecticStiefelManifold, 6, 4)) < 1e-5
 
 # output
 
@@ -119,8 +121,8 @@ The Riemannian gradient of a point of the symplectic Stiefel manifold, for the m
 ``\nabla{}L`` is the Euclidean gradient, i.e. the derivative of the loss with respect to the
 entries of `U` read as an unconstrained matrix.
 """
-function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix,
-        J::AbstractMatrix = _poisson_tensor(eltype(U), size(U, 1)))
+function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
+    J = _poisson_tensor(eltype(U), size(U, 1))
     ∇L * (U' * U) + J * U * (∇L' * J * U)
 end
 

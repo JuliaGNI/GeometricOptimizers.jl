@@ -10,19 +10,26 @@ Random.seed!(1234)
 # is symplectic, not orthogonal, so its condition number is unbounded and the reflectors amplify
 # what they are given; there is no re-orthogonalization step here.
 #
-# The thresholds are set against the *tail* over eight seeds of 200 draws each, not one seed's: the
-# medians reproduce across seeds and the maxima do not. Worst residual of `check` seen that way is
-# 9.6e-10 at 4x2, 3.8e-8 at 6x4 and 7.2e-7 at 10x6 — so a threshold read off a single seed would
-# have had a factor of one in hand at 4x2, and any edit that reordered a draw could have turned it
-# red. Each threshold below clears its eight-seed worst by about three orders of magnitude.
+# The distribution has a heavy tail, and no per-draw threshold both discriminates and never fails.
+# Over 20000 draws per size the residual `‖SᵀJS - J‖` has median 1.8e-15, 3.2e-14 and 2.4e-12 at
+# 4x2, 6x4 and 10x6, but maximum 3.8e-6, 1.0e-3 and 7.7e-2 — so the thresholds below are exceeded
+# by 1, 6 and 21 draws in 20000. The medians are stable across seeds and the maxima are not, which
+# is the shape of the algorithm: `S` is symplectic rather than orthogonal, and a draw that brings a
+# reflector close to its breakdown amplifies without bound.
+#
+# The per-draw assertions below therefore run on the fixed seed above and are deterministic, but
+# they are not a bound. What is asserted as a property, rather than as one draw's luck, is the
+# sweep in `the residual distribution` at the end of this file: the median over many draws, and the
+# exceedance rate. An edit that reorders the draws can move a per-draw assertion into the tail; the
+# sweep is what will not move.
 #
 # They still discriminate. A point that is genuinely not on the manifold gives an O(1) residual:
 # the *wrong* constraint, `‖UᵀU - I‖`, measures 7.6, 38 and 295 at these three sizes, so 1e-4
 # rejects breakage by four orders and more.
 #
-# `Float32` is not tested at any size: its median residual at 10x6 is 9.1e-5 and it returns NaN
-# outright at 40x20, so there is no threshold that is both passing and meaningful. See
-# *Open Issues* in `CHANGELOG.md`.
+# `Float32` is not tested at any size. Its median residual at 10x6 is 7.5e-5, and at 40x20 the
+# median is of order 10 with a few draws in 200 returning a non-finite value or throwing, so there
+# is no threshold that is both passing and meaningful. See *Open Issues* in `CHANGELOG.md`.
 tolerance(N2) = N2 ≤ 4 ? 1e-6 : N2 ≤ 6 ? 1e-5 : 1e-4
 
 const SIZES = ((4, 2), (6, 4), (10, 6))
@@ -63,6 +70,10 @@ end
 
         # The inverse applies the same reflectors in the opposite order.
         @test norm(inv(F.S) * (F.S * x) - x) < tolerance(N2)
+
+        # Right-multiplication by the inverse has no reflector kernel and goes through the matrix.
+        # It still has to agree with the inverse of the materialized factor.
+        @test norm(B * inv(F.S) - B * inv(S)) < tolerance(N2)
 
         # Indexing agrees with the materialized matrix, entry for entry.
         @test all(F.S[i, j] == S[i, j] for i in 1:N2, j in 1:N2)
@@ -113,5 +124,27 @@ end
         # And the mutating one does not.
         symplectic_gram_schmidt!(A, J_N)
         @test norm(A' * J_N * A - J_n) < tolerance(N2)
+    end
+end
+
+# The per-draw assertions above are one draw each, and the header explains why that cannot be a
+# bound. This is the same property asserted as a property: over a sweep, the median residual and
+# the rate at which the per-draw threshold is exceeded. Both are stable across seeds where a single
+# maximum is not, so this is what a change to the algorithm would have to move.
+#
+# The bounds are three orders above the medians measured over 20000 draws (1.8e-15, 3.2e-14,
+# 2.4e-12) and the rate bound is ten times the measured exceedance (1, 6 and 21 draws in 20000).
+# They still discriminate: the *wrong* constraint `‖UᵀU - I‖` measures 7.6, 38 and 295 at these
+# sizes, so a broken factorization fails the median assertion by orders, not by a margin.
+@testset "the residual distribution" begin
+    Random.seed!(90_2026)
+    for ((N2, _), median_bound) in zip(SIZES, (1e-12, 1e-11, 1e-9))
+        J = _poisson_tensor(Float64, N2)
+        residuals = map(1:500) do _
+            S = Matrix(sr(randn(N2, N2)).S)
+            norm(S' * J * S - J)
+        end
+        @test sort(residuals)[250] < median_bound
+        @test count(>(tolerance(N2)), residuals) / 500 < 0.01
     end
 end

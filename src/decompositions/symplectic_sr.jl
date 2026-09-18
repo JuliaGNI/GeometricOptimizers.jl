@@ -92,6 +92,10 @@ end
 Base.size(R::Rfac) = size(R.Λ.A)
 
 function Base.getindex(R::Rfac{T}, i::Integer, j::Integer) where {T}
+    # Every branch below either reads a packed array or returns a structural zero, so an index past
+    # the end can reach a `zero(T)` and come back looking like a legitimate entry. The packed arrays
+    # cannot be relied on to raise it: they are smaller than `R` and indexed by shifted indices.
+    @boundscheck checkbounds(R, i, j)
     N, M = size(R.Λ.A) .÷ 2
     if j ≤ M
         i == j && return R.Λ.ρ[i]
@@ -118,6 +122,12 @@ Base.:*(S::Sfac{true}, B::AbstractMatrix) = apply_S_inverse_left(S.Λ, B)
 Base.:*(S::Sfac{true}, b::AbstractVector) = apply_S_inverse_left(S.Λ, b)
 Base.:*(B::AbstractMatrix, S::Sfac{false}) = apply_S_right(B, S.Λ)
 
+# There is no right-multiplication kernel for the inverse, so this case goes through the matrix.
+# Materializing once is the point: the generic `AbstractMatrix` fallback reaches `Sfac`'s
+# `getindex`, which rebuilds the whole matrix per entry, and at 10x6 that is 470816 bytes against
+# 8592 for the kernel path. Write the kernel if a caller ever needs `B * inv(S)` on a hot path.
+Base.:*(B::AbstractMatrix, S::Sfac{true}) = B * Matrix(S)
+
 @doc raw"""
     SR(S::Sfac, R::Rfac)
 
@@ -141,10 +151,11 @@ object in this package is. `A` is overwritten with the packed reflectors.
 
 !!! warning "Not backward stable"
     ``S`` is symplectic and therefore not orthogonal, its condition number is unbounded, and this
-    implementation has no re-orthogonalization step. The residual grows with the size — by roughly
-    three orders of magnitude per doubling — and `symplectic_householder!` can raise a
+    implementation has no re-orthogonalization step. The median residual grows with the size by two
+    to three orders of magnitude per doubling, and `symplectic_householder!` can raise a
     `DomainError` from a cancelled square root at large sizes in `Float32`. `CHANGELOG.md` has the
-    measured table. Use it in `Float64`, at small sizes, and check the result.
+    measured table; read its medians, because the maxima do not reproduce across draw orders. Use
+    it in `Float64`, at small sizes, and check the result.
 
 # Examples
 
@@ -159,7 +170,7 @@ F = sr!(randn(6, 4))
 S = Matrix(F.S)
 J = [zeros(3, 3) I(3); -I(3) zeros(3, 3)]
 
-norm(S' * J * S - J) < 1e-10
+norm(S' * J * S - J) < 1e-5
 
 # output
 
@@ -238,8 +249,9 @@ end
 @doc raw"""
     apply_S_inverse_left!(B, Λ::SymplecticHouseholderDecom)
 
-Overwrite `B` with ``S^{-1}B``. The reflectors run from the first step to the last, which is the
-only difference from [`apply_S_left!`](@ref).
+Overwrite `B` with ``S^{-1}B``. Three things invert [`apply_S_left!`](@ref) together: the steps run
+from the first to the last rather than the last to the first, the two reflectors within a step are
+applied in the opposite order, and each update adds where the forward one subtracts.
 """
 function apply_S_inverse_left!(b::AbstractVector, Λ::SymplecticHouseholderDecom)
     N, M = size(Λ.A) .÷ 2
