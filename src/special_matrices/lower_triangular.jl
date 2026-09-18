@@ -68,17 +68,6 @@ function Base.getindex(A::LowerTriangular{T}, i::Int, j::Int) where {T}
     return zero(T)
 end
 
-@kernel function lo_mat_mul_kernel!(
-        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
-    i, j = @index(Global, NTuple)
-
-    tmp_sum = zero(T)
-    for k in 1:(i - 1)
-        tmp_sum += S[(i - 2) * (i - 1) ÷ 2 + k] * B[k, j]
-    end
-    C[i, j] = tmp_sum
-end
-
 function map_to_lo(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n

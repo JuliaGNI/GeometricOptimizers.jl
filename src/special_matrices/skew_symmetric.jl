@@ -148,10 +148,6 @@ end
 
 Base.:*(α::Real, A::SkewSymMatrix) = A * α
 
-function Base.zeros(ST::Type{SkewSymMatrix{<:Real}}, n::Int)
-    zeros(CPU(), ST, n)
-end
-
 function Base.zeros(backend::KernelAbstractions.Backend, ::Type{SkewSymMatrix{T}}, n::Int) where {T}
     zero_vec = if n != 1
         KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)

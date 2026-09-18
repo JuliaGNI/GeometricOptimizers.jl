@@ -68,17 +68,6 @@ function Base.getindex(A::UpperTriangular{T}, i::Int, j::Int) where {T}
     return zero(T)
 end
 
-@kernel function up_mat_mul_kernel!(
-        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
-    i, j = @index(Global, NTuple)
-
-    tmp_sum = zero(T)
-    for k in (i + 1):n
-        tmp_sum += S[(k - 2) * (k - 1) ÷ 2 + i] * B[k, j]
-    end
-    C[i, j] = tmp_sum
-end
-
 function map_to_up(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
