@@ -142,14 +142,33 @@ for T in (Float32, Float64)
         skew_mat_mul(N, T)
         skew_mat_vec_mul(N, T)
         skew_mat_mul_from_the_right(N, T)
-        # `check_map_to_Skew`, `scalar_multiplication` and `test_random_array_generation` were
-        # defined above but never called, which is how the typo in the second one survived. Their
-        # properties were covered only by `GeometricMachineLearning`'s copies of these tests.
         check_map_to_Skew(N, T)
         scalar_multiplication(N, T)
         addition_is_linear(N, T)
         test_random_array_generation(N, N + 5, T)
     end
+end
+
+# The projection of an integer matrix lands on `float(T)`: `Float64` for every fixed-width integer
+# and `BigFloat` for a `BigInt`. The assertion is against `float(T)` and not against a list of
+# widths, so it states the rule rather than a table of results. The loop covers every width because
+# `Float32` carries 24 mantissa bits and therefore represents no wider integer type exactly. The
+# expected value is computed in `float(T)`, since the integer difference `A - A'` wraps for an
+# unsigned `T`.
+@testset "an integer matrix is projected into float(T)" begin
+    for T in (Int8, Int16, Int32, Int64, Int128, BigInt,
+        UInt8, UInt16, UInt32, UInt64, UInt128)
+        A = T[0 1 2; 3 0 4; 5 6 0]
+        @test eltype(map_to_Skew(A)) === float(T)
+        @test eltype(SkewSymMatrix(A)) === float(T)
+        @test SkewSymMatrix(A) ≈ (float(T).(A) .- float(T).(A)') ./ 2
+    end
+    # `Bool` is an `Integer` and `float(Bool)` is `Float64`, but it holds only 0 and 1, so it needs
+    # a matrix of its own.
+    A = Bool[0 1 1; 0 0 1; 1 0 0]
+    @test eltype(map_to_Skew(A)) === Float64
+    @test eltype(SkewSymMatrix(A)) === Float64
+    @test SkewSymMatrix(A) ≈ (Float64.(A) .- Float64.(A)') ./ 2
 end
 
 # The storage layout is public: `vec` returns it and the two-argument constructor takes it. Spelling
