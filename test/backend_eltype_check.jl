@@ -8,8 +8,9 @@
 #
 # Three stand-in devices. `_Float64GPU` and `_NoFloat64GPU` differ in one declaration and nothing
 # else, and both allocate host arrays, which makes them devices every one of these methods actually
-# runs on — no backend reachable here can do that otherwise, because a real device draw needs a
-# `qr` neither `Metal` nor `JLArrays` supplies.
+# runs on. `JLArrays` is a real device backend and does run the draw now — see
+# `device_orthonormalization.jl` — but it declares itself `Float64`-capable, so it cannot stand on
+# both sides of the distinction these methods turn on.
 #
 # `_UnallocatableGPU` is the third and has one job: it declares no `Float64` and can allocate
 # nothing at all, so an `ArgumentError` from it is proof that the check stopped the call *before*

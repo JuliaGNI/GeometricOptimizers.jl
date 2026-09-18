@@ -11,8 +11,8 @@
 # [gao2024optimization](@cite) is what the decomposition is used for here.
 #
 # The one consumer here is `rand(SymplecticStiefelManifold, …)`, which takes `n` of `S`'s columns
-# from each half. The plain Householder QR that `rand(StiefelManifold, …)` uses will not do: its
-# `Q` is orthogonal, and what a point of the symplectic Stiefel manifold has to satisfy is
+# from each half. The orthonormalization that `rand(StiefelManifold, …)` uses will not do: its
+# factor is orthogonal, and what a point of the symplectic Stiefel manifold has to satisfy is
 # `UᵀJ_{2N}U = J_{2n}`.
 
 @doc raw"""

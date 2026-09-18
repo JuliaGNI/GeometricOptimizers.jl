@@ -107,36 +107,56 @@ Random.seed!(123)
 
 Y = StiefelManifold([1. 0.; 0. 1.; 0. 0.; 0. 0.])
 
-round.(Matrix(global_section(Y)); digits = 3)
+round.(global_section(Y); digits = 3)
 
 # output
 
 4×2 Matrix{Float64}:
- 0.0    -0.0
- 0.0     0.0
- 0.936  -0.353
- 0.353   0.936
+  0.0     0.0
+  0.0     0.0
+ -0.936   0.353
+ -0.353  -0.936
 ```
-
-Further note that we convert the `QRCompactWYQ` object to a `Matrix` before we display it.
 
 # Implementation
 
-The implementation is done with a QR decomposition (`LinearAlgebra.qr!`). Internally we do:
+Internally we do:
 
 ```julia
-A = randn(N, N - n) # or the gpu equivalent
-A = A - Y.A * (Y.A' * A)
-qr!(A).Q
+_orthonormal_columns() do
+    A = randn(N, N - n) # or the gpu equivalent
+    A - Y.A * (Y.A' * A)
+end
 ```
+
+The orthonormalization is **CholeskyQR2 and not `LinearAlgebra.qr!`**, on every backend — see
+[`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2). `qr!` is a host factorization here:
+`Metal` implements no `qr` for its array type at all, so `GlobalSection(Y)` and `Optimizer(Y, F)`
+were unreachable on a device, and the whole point of this function is that it is on the path
+[`geodesic`](@ref) and [`cayley`](@ref) take on every step.
+
+`A` is square inside the complement of `Y`, so its condition number has a square Gaussian's heavy
+tail and CholeskyQR2 breaks down on it about once in two hundred in `Float32`. A draw it cannot
+orthonormalize is *replaced* — see
+[`_orthonormal_columns`](@ref GeometricOptimizers._orthonormal_columns) for the measurement and for
+why a redraw rather than a repair is the honest answer.
 """
 function global_section(Y::StiefelManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y)
-    A = KernelAbstractions.allocate(backend, T, N, N - n)
-    randn!(A)
-    A = A - Y.A * (Y.A' * A)
-    typeof(Y.A)(qr!(A).Q)
+    λ = _orthonormal_columns() do
+        A = KernelAbstractions.allocate(backend, T, N, N - n)
+        randn!(A)
+        A - Y.A * (Y.A' * A)
+    end
+
+    # The section's storage array has to be the *point's* array type, which `test/device_copyto.jl`
+    # relies on to move a section between two of them. It already is for every `KernelAbstractions`
+    # backend, and the branch folds away there; the projection above only loses the point's type for
+    # a wrapper `allocate` does not know how to produce. `qr!` used to force this with
+    # `typeof(Y.A)(…)` unconditionally, so it copied even where the two already agreed. `convert` is
+    # not the spelling: an `AbstractMatrix` outside `Base`'s hierarchy need define no method for it.
+    λ isa typeof(Y.A) ? λ : typeof(Y.A)(λ)
 end
 
 function Base.zero(Y::StiefelManifold{T}) where {T}

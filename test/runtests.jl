@@ -140,3 +140,6 @@ end
 begin
     @safetestset "copyto! crosses backends     " include("device_copyto.jl")
 end
+begin
+    @safetestset "device orthonormalization    " include("device_orthonormalization.jl")
+end

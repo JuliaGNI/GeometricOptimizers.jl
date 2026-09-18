@@ -435,6 +435,60 @@ breaking release).
 
 ### Changed
 
+- **A manifold point and its global section are orthonormalized with CholeskyQR2 rather than
+  `LinearAlgebra.qr!`, on every backend.** `rand(backend, StiefelManifold, N, n)` and
+  `global_section` are the four call sites. This is what makes a device draw work at all:
+  `Metal` implements no `qr` for an `MtlArray`, so every one of those calls failed there with
+  `Cannot access the contents of a private buffer`, and with them `GlobalSection(Y)` and
+  `Optimizer(Y, F)`. A `qr` on a `JLArray` gets one step further and then cannot rebuild its `Q` —
+  `JLArray{Float32,2}(::QRCompactWYQ{…})` is a `MethodError`. So the documented GPU sampling path
+  worked on neither device backend available, and nothing tested it.
+
+  CholeskyQR2 takes `R` from `cholesky(AᵀA)`, sets `Q = AR⁻¹`, and does it again — matrix products,
+  reductions and triangular solves only, which is what lets it run wherever the array already is.
+  Measured on an M4 Max through `Metal` in `Float32`, at the shape `global_section` uses, with
+  scalar indexing disallowed, against the host Householder QR as the baseline (`‖QᵀQ - I‖`,
+  `eps(Float32)` = 1.19e-7):
+
+  | `N` | `m = N-n` | host QR | one pass | CholeskyQR2 |
+  |--:|--:|--:|--:|--:|
+  | 20 | 18 | 1.47e-6 | 9.72e-6 | 7.15e-7 |
+  | 100 | 97 | 4.61e-6 | 1.14e-4 | 2.16e-6 |
+  | 200 | 197 | 8.91e-6 | 4.60e-4 | 4.10e-6 |
+  | 400 | 395 | 1.65e-5 | 1.94e-3 | 7.71e-6 |
+
+  **CholeskyQR2 beats the host QR at every size, and one pass does not come close.** The second
+  pass is not a refinement; `1.9e-3` would lose the manifold outright.
+
+  The two answers differ from `qr!`'s by the **sign of each column**, because CholeskyQR2's `R` has
+  a positive diagonal where Householder's need not. Nothing downstream depends on the sign — a
+  global section is any orthonormal complement — but the printed values in three doctests do, and
+  they are updated.
+
+  A `CUDA` backend does supply `qr`, through CUSOLVER, and now takes this route as well rather than
+  a second one. Nobody here has a CUDA device to measure that on.
+- **A draw CholeskyQR2 cannot orthonormalize is replaced, not repaired.** Forming `AᵀA` squares the
+  condition number, and `global_section` factorizes `N × (N-n)` Gaussian columns with the span of
+  `Y` projected out — square inside that complement, so its condition number has a square
+  Gaussian's heavy tail. Measured in `Float32` over 600 draws at `N = 50, 100, 200` and `n = 3`:
+  **three of them broke the factorization down**, which is not a rare guard but a function the
+  retractions call on every step. `GeometricOptimizers._orthonormal_columns` draws again — the draw
+  is noise and carries no information — and none of the 600 broke that. It is bounded at eight
+  attempts, and exhausting them raises rather than returning the last attempt's result.
+
+  Shifted CholeskyQR3 was measured on the same draws and does **not** close this: one failure in
+  300 even with the exact `‖A‖₂` in the shift, because forming `AᵀA` in `Float32` loses a singular
+  value that small whatever the shift is. The `opnorm₁`-based bound a device could actually compute
+  makes it worse, overestimating `‖A‖₂²` by 24× at `N = 100` and leaving the first pass's output
+  barely better conditioned than its input.
+- `GeometricOptimizers._cholesky_qr2` scales its argument by `maximum(abs, A)` before forming the
+  Gram matrix. A Householder QR scales internally and this does not, so without it an argument
+  whose entries are large enough gives an infinite `AᵀA` and no answer. This is reachable rather
+  than hypothetical: `test/optimizer_status_tests.jl` builds a point `1e100` off the manifold to
+  test a convergence guard, and the projection carries that magnitude into the factorization. The
+  scaling leaves `Q` unchanged, since `(A/s)ᵀ(A/s) = AᵀA/s²` has Cholesky factor `R/s`.
+- `assign_columns` and `assign_columns_kernel!` are deleted. They copied a `qr!` factor onto the
+  backend, and CholeskyQR2's result is already there.
 - **Every allocator that names a backend and an element type the backend cannot hold now refuses
   it**, with an `ArgumentError` naming the width and the way out, instead of narrowing it or
   failing further in. All sixteen entry points: `zeros` and `rand` for `SkewSymMatrix`,

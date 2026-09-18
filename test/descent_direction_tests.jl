@@ -102,8 +102,7 @@ end
 # A minimal `OptimizerCache` that exercises only what `ensure_descent!` needs -- `direction`, `rhs`,
 # and, on the non-descending branch, `_copyto!`. On a manifold both are `AbstractLieAlgHorMatrix`,
 # which is what makes the ambient `dot`'s scalar indexing reachable at all; a real (BFGS or DFP) cache
-# cannot be built on a device here, because its `GlobalSection` needs a `qr` `JLArray` does not have
-# (see `similar_backend.jl`).
+# would drag in a gradient, a problem and a section, none of which this test is about.
 struct _LiftCache{T, GT} <: OptimizerCache{T}
     δ::GT
     r::GT

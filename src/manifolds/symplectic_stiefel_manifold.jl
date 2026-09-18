@@ -82,9 +82,9 @@ end
 Draw a random point of the ``2N\times2n`` symplectic Stiefel manifold.
 
 The draw is a Gaussian matrix put through the symplectic SR decomposition [`sr!`](@ref); the point
-is `n` columns from each half of the symplectic factor. This is the symplectic counterpart of what
-`rand(::Type{StiefelManifold}, …)` does with `qr`, and `qr` will not serve here: its `Q` preserves
-the Euclidean form, not ``\mathbb{J}``.
+is `n` columns from each half of the symplectic factor. This is the symplectic counterpart of the
+orthonormalization `rand(::Type{StiefelManifold}, …)` does, and no orthonormalization will serve
+here: an orthonormal factor preserves the Euclidean form, not ``\mathbb{J}``.
 """
 function Base.rand(rng::Random.AbstractRNG, ::Type{SymplecticStiefelManifold{T}},
         N2::Integer, n2::Integer) where {T}
@@ -105,8 +105,8 @@ function Base.rand(::Type{SymplecticStiefelManifold}, N2::Integer, n2::Integer)
 end
 
 # The backend-taking spellings belong to this type and not to the generic `Manifold{T}` draw in
-# `abstract_manifold.jl`. That draw orthonormalises with `qr`, which preserves the Euclidean form
-# and not ``\mathbb{J}``, and the inner constructor above asserts shape alone -- so the generic
+# `abstract_manifold.jl`. That draw orthonormalizes, which preserves the Euclidean form and not
+# ``\mathbb{J}``, and the inner constructor above asserts shape alone -- so the generic
 # method wraps a matrix that is not on this manifold and nothing downstream says so. Both methods
 # mirror the generic pair's signature, `MT <: SymplecticStiefelManifold{T}` rather than
 # `MT <: Manifold{T}`, so a bare `SymplecticStiefelManifold` still picks up `default_eltype` first

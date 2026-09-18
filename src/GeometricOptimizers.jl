@@ -46,7 +46,8 @@ using Printf
 
 using KernelAbstractions
 using Random
-using LinearAlgebra: Adjoint, qr, qr!, norm, I, mul!, rmul!, dot
+using LinearAlgebra: Adjoint, qr, norm, I, mul!, rmul!, dot
+using LinearAlgebra: cholesky, issuccess, Symmetric
 using LinearAlgebra: Diagonal, Hermitian, eigen
 import LinearAlgebra
 import ChainRulesCore
