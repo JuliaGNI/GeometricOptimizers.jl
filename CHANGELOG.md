@@ -470,11 +470,18 @@ breaking release).
 - **A draw CholeskyQR2 cannot orthonormalize is replaced, not repaired.** Forming `AᵀA` squares the
   condition number, and `global_section` factorizes `N × (N-n)` Gaussian columns with the span of
   `Y` projected out — square inside that complement, so its condition number has a square
-  Gaussian's heavy tail. Measured in `Float32` over 600 draws at `N = 50, 100, 200` and `n = 3`:
-  **three of them broke the factorization down**, which is not a rare guard but a function the
-  retractions call on every step. `GeometricOptimizers._orthonormal_columns` draws again — the draw
-  is noise and carries no information — and none of the 600 broke that. It is bounded at eight
-  attempts, and exhausting them raises rather than returning the last attempt's result.
+  Gaussian's heavy tail. Measured in `Float32` over 9000 draws at `N = 50, 100, 200` and `n = 3`,
+  across three seeds: **77 of them broke the factorization down**, a rate between one in 107 and
+  one in 125. That is not a rare guard but a function the retractions call on every step.
+  `GeometricOptimizers._orthonormal_columns` draws again — the draw is noise and carries no
+  information — and **three of those 77 replacements broke as well**, a higher rate than the draws
+  themselves. It is bounded at eight attempts, and exhausting them raises rather than returning the
+  last attempt's result. The script is `scripts/orthonormalization_breakdown_rate.jl`.
+
+  A consequence worth stating: the number of Gaussian draws `global_section` consumes in `Float32`
+  now depends on the draws, so a seeded `Float32` computation downstream of one is not reproducible
+  across a change to the orthonormalization or to the element type. Nothing in this package relies
+  on that today.
 
   Shifted CholeskyQR3 was measured on the same draws and does **not** close this: one failure in
   300 even with the exact `‖A‖₂` in the shift, because forming `AᵀA` in `Float32` loses a singular
@@ -492,13 +499,22 @@ breaking release).
 - **CholeskyQR2 allocates more than the Householder QR it replaces**, and that is the price of the
   device support above rather than an oversight. Two Gram matrices, two triangular solves and one
   scaled copy, against LAPACK's in-place factorization. Measured cold at
-  `--check-bounds=auto`, warmed, on an `N × (N-3)` argument — the shape `global_section` uses:
+  `--check-bounds=auto`, warmed, minimum of 30, on an `N × (N-3)` argument — the shape
+  `global_section` uses — by `scripts/orthonormalization_allocation_cost.jl`:
 
-  | `N` | `_cholesky_qr2` | `typeof(A)(qr!(copy(A)).Q)` | ratio |
+  | `N` | `_cholesky_qr2` | `typeof(A)(qr!(A).Q)` | ratio |
   |--:|--:|--:|--:|
-  | 20 | 20 016 B | 14 128 B | 1.42 |
-  | 100 | 574 000 B | 303 408 B | 1.89 |
-  | 400 | 8 880 688 B | 4 047 152 B | 2.19 |
+  | 20 | 20 016 B | 10 976 B | 1.82 |
+  | 50 | 143 920 B | 69 856 B | 2.06 |
+  | 100 | 574 000 B | 221 408 B | 2.59 |
+  | 200 | 2 228 784 B | 770 272 B | 2.89 |
+  | 400 | 8 880 688 B | 2 769 120 B | 3.21 |
+
+  The baseline is the expression this change replaced, on the freshly drawn `A` and in place. An
+  earlier round of these figures measured `typeof(A)(qr!(copy(A)).Q)` instead, which charges the
+  baseline for a copy the production path never made and understated the ratios as 1.42 to 2.19.
+  The script refreshes its scratch matrix outside the measured expression for that reason, and
+  prints the `copy(A)` column so the difference stays visible.
 
   No existing allocation assertion covers this path — `test/flat_buffer_allocations.jl` is the only
   allocation file and covers `_dot`, `l2norm`, `outer!` and `_flat_mul!` — so nothing regressed.

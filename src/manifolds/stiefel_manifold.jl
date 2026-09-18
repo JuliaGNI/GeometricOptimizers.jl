@@ -136,8 +136,8 @@ The orthonormalization is **CholeskyQR2 and not `LinearAlgebra.qr!`**, on every 
 [`geodesic`](@ref) and [`cayley`](@ref) take on every step.
 
 `A` is square inside the complement of `Y`, so its condition number has a square Gaussian's heavy
-tail and CholeskyQR2 breaks down on it about once in two hundred in `Float32`. A draw it cannot
-orthonormalize is *replaced* — see
+tail and CholeskyQR2 breaks down on it about once in a hundred and twenty in `Float32`. A draw it
+cannot orthonormalize is *replaced* — see
 [`_orthonormal_columns`](@ref GeometricOptimizers._orthonormal_columns) for the measurement and for
 why a redraw rather than a repair is the honest answer.
 """

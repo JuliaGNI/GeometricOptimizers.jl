@@ -135,14 +135,16 @@ Internally `GlobalSection` calls the function [`GeometricOptimizers.global_secti
 ```julia
 A = randn(N, N - n) # or the gpu equivalent
 A = A - Y * (Y' * A)
-Y⟂ = A / cholesky(Symmetric(A'A)).U   # twice; see below
+B = A / maximum(abs, A)                # so that the Gram matrix cannot overflow
+Q = B / cholesky(Symmetric(B'B)).U     # first pass
+Y⟂ = Q / cholesky(Symmetric(Q'Q)).U    # second pass; see below
 ```
 
 So we draw ``(N - n)`` new columns randomly, subtract the part that is spanned by the columns of ``Y`` and then orthonormalize the resulting matrix. The result is a matrix of ``(N - n)`` columns that is orthogonal to ``Y`` and is typically referred to as ``Y_\perp``  [absil2004riemannian, absil2008optimization, bendokat2020grassmann](@cite). We can easily check that this ``Y_\perp`` is indeed orthogonal to ``Y``.
 
-The orthonormalization is **CholeskyQR2** — the step above, applied twice — and not `LinearAlgebra.qr`. `qr` is the textbook answer, but it is a host factorization for several of the backends supported here: `Metal` implements no `qr` for its array type at all, so a `qr` here would put [`GlobalSection`](@ref) and therefore [`Optimizer`](@ref) out of reach on such a device. CholeskyQR2 is expressible in matrix products, reductions and triangular solves alone, so it runs wherever the point already is, and its ``\|Q^TQ - \mathbb{I}\|`` is measured *smaller* than the host Householder QR's at every size tried. What the two give differs by the sign of each column, because CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
+The orthonormalization is **CholeskyQR2** — the Cholesky step shown twice above — and not `LinearAlgebra.qr`. `qr` is the textbook answer, but it is a host factorization for several of the backends supported here: `Metal` implements no `qr` for its array type at all, so a `qr` here would put [`GlobalSection`](@ref) and therefore [`Optimizer`](@ref) out of reach on such a device. CholeskyQR2 is expressible in matrix products, reductions and triangular solves alone, so it runs wherever the point already is, and its ``\|Q^TQ - \mathbb{I}\|`` is measured *smaller* than the host Householder QR's at every size tried. What the two give differs by the sign of each column, because CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
 
-The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in two hundred. Such a draw is *replaced* rather than repaired — it is Gaussian noise and carries no information — which is what [`GeometricOptimizers._orthonormal_columns`](@ref) does.
+The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in a hundred and twenty. Such a draw is *replaced* rather than repaired — it is Gaussian noise and carries no information — which is what [`GeometricOptimizers._orthonormal_columns`](@ref) does. A replacement fails at a somewhat higher rate again, so the redraw is bounded and raises rather than returning a result it did not produce cleanly.
 
 ```@eval
 Main.theorem(raw"The matrix ``Y_\perp`` constructed with the algorithm above satisfies

@@ -45,7 +45,8 @@ size tried.
 
 **Forming ``A^TA`` squares the condition number**, which is what the `nothing` is for. `cholesky`
 with `check = false` reports a Gram matrix that is no longer positive definite rather than throwing,
-and at this shape in `Float32` an ordinary Gaussian draw reaches that about once in two hundred.
+and at this shape in `Float32` an ordinary Gaussian draw reaches that about once in a hundred and
+twenty — see `scripts/orthonormalization_breakdown_rate.jl`.
 [`_orthonormal_columns`](@ref GeometricOptimizers._orthonormal_columns) is what answers it.
 
 **Squaring the entries is a second hazard, and the scaling below is what answers that one.** A
@@ -77,8 +78,9 @@ function _cholesky_qr2(A::AbstractMatrix)
 end
 
 # How many Gaussian draws `_orthonormal_columns` takes before it gives up. At the rate measured in
-# its docstring -- about one draw in two hundred -- eight independent draws put the chance of
-# exhausting them below 1e-18, and a caller that does exhaust them is not looking at bad luck.
+# its docstring -- about one draw in a hundred and twenty -- and at the higher rate that draw's own
+# replacement fails at, eight attempts put the chance of exhausting them near 1e-12. A caller that
+# does exhaust them is not looking at bad luck.
 const ORTHONORMALIZATION_ATTEMPTS = 8
 
 @doc raw"""
@@ -94,11 +96,21 @@ repaired and no result is kept that the algorithm did not produce cleanly.
 
 **The rate is not negligible.** [`global_section`](@ref) factorizes ``N\times(N-n)`` Gaussian
 columns with the span of `Y` projected out, so the matrix is square inside that complement and its
-condition number has the heavy tail a square Gaussian's does. Measured in `Float32` over 600
-draws at ``N = 50, 100, 200`` and ``n = 3``: three break `CholeskyQR2` down and none break the
-redraw. Shifted CholeskyQR3 measured on the same draws does not close it — one failure in
-300 even with the exact ``\|A\|_2`` in the shift, because forming ``A^TA`` in `Float32` loses a
-singular value that small whatever the shift is.
+condition number has the heavy tail a square Gaussian's does. Measured in `Float32` over 9000
+draws at ``N = 50, 100, 200`` and ``n = 3``, across three seeds: 77 break `CholeskyQR2` down, a
+rate between one in 107 and one in 125. Each is replaced, and **three of those 77 replacements
+fail as well** — a higher rate than the draws themselves, which is why the attempt bound is not
+derived from one failure probability raised to the eighth power. The script is
+`scripts/orthonormalization_breakdown_rate.jl`.
+
+**A redraw costs the caller determinism, not just time.** The number of Gaussian draws
+[`global_section`](@ref) consumes in `Float32` depends on the draws themselves, so a seeded
+`Float32` computation downstream of one is not reproducible across a change to this function or to
+the element type. Nothing in this package relies on that today.
+
+Shifted CholeskyQR3 measured on the same draws does not close it — one failure in 300 even with
+the exact ``\|A\|_2`` in the shift, because forming ``A^TA`` in `Float32` loses a singular value
+that small whatever the shift is.
 """
 function _orthonormal_columns(draw)
     for _ in 1:ORTHONORMALIZATION_ATTEMPTS
