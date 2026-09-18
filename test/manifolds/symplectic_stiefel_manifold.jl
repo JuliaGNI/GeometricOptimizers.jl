@@ -7,9 +7,10 @@ import Random
 Random.seed!(1234)
 
 # See the note on tolerances in `test/decompositions/symplectic_sr.jl`: the residual grows with the
-# size because the SR decomposition these points come from has no re-orthogonalization step, the
-# thresholds clear the worst over eight seeds rather than one, and `Float32` is out of reach at
-# every size. The figures are in `CHANGELOG.md` under *Open Issues*.
+# size because the SR decomposition these points come from has no re-orthogonalization step, no
+# per-draw threshold both discriminates and never fails, so the assertions below run on the fixed
+# seed above and are deterministic rather than bounds, and `Float32` is out of reach at every size.
+# The figures are in `CHANGELOG.md` under *Open Issues*.
 tolerance(N2) = N2 ≤ 4 ? 1e-6 : N2 ≤ 6 ? 1e-5 : 1e-4
 
 const SIZES = ((4, 2), (6, 4), (10, 6))

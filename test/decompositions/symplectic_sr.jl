@@ -82,6 +82,15 @@ end
         # Indexing agrees with the materialized matrix, entry for entry.
         @test all(F.S[i, j] == S[i, j] for i in 1:N2, j in 1:N2)
         @test size(F.S) == (N2, N2)
+
+        # `S` has `2N` columns, so an operand with more rows than that is not a product it can
+        # take. The reflector kernels address rows by index rather than by iterating the operand,
+        # so without the check the extra rows pass through untouched and the result is a plausible
+        # wrong answer rather than an error.
+        @test_throws AssertionError F.S * randn(N2 + 2, 3)
+        @test_throws AssertionError inv(F.S) * randn(N2 + 2, 3)
+        @test_throws AssertionError F.S * randn(N2 + 2)
+        @test_throws AssertionError inv(F.S) * randn(N2 + 2)
     end
 end
 

@@ -146,14 +146,11 @@ makedocs(;
         # them.
         #
         # `size_threshold` is an *error*, not a warning, so the page failing the build is how a
-        # documented addition announces itself. The number has been raised twice for that reason:
-        # `ScalarMomentAdam` took the page to 411.84 KiB past `400 * 2^10`, and the symplectic
-        # Stiefel manifold and SR decomposition take it to 466.44 KiB past `450 * 2^10`. Raising it
-        # is the smaller half of the fix and not the fix: the page grows with every documented
-        # addition, and what actually bounds it is continuing the migration that moved the manifold,
-        # matrix, global-section and retraction docstrings onto the chapters that explain them.
-        # Until that is done this number will need raising again, and the warning above says so on
-        # every build.
+        # documented addition announces itself. Raising the number is the smaller half of the fix
+        # and not the fix: the page grows with every documented addition, and what actually bounds
+        # it is continuing the migration that moved the manifold, matrix, global-section and
+        # retraction docstrings onto the chapters that explain them. Until that is done this number
+        # will need raising again, and the warning above says so on every build.
         size_threshold = 500 * 2^10
     ),
     pages = [

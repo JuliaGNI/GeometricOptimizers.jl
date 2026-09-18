@@ -222,6 +222,7 @@ Overwrite `B` with ``SB``, applying the reflectors of `Λ` from the last step to
 """
 function apply_S_left!(b::AbstractVector, Λ::SymplecticHouseholderDecom)
     N, M = size(Λ.A) .÷ 2
+    @assert length(b) == 2 * N
     for j in M:-1:1
         row_ind = vcat(j:N, (N + j):(2 * N))
         @views v₁ = Λ.A[row_ind, j]
@@ -234,6 +235,7 @@ end
 
 function apply_S_left!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom)
     N, M = size(Λ.A) .÷ 2
+    @assert size(B, 1) == 2 * N
     for j in M:-1:1
         row_ind = vcat(j:N, (N + j):(2 * N))
         @views v₁ = Λ.A[row_ind, j]
@@ -255,6 +257,7 @@ applied in the opposite order, and each update adds where the forward one subtra
 """
 function apply_S_inverse_left!(b::AbstractVector, Λ::SymplecticHouseholderDecom)
     N, M = size(Λ.A) .÷ 2
+    @assert length(b) == 2 * N
     for j in 1:M
         row_ind = vcat(j:N, (N + j):(2 * N))
         @views v₁ = Λ.A[row_ind, j]
@@ -267,6 +270,7 @@ end
 
 function apply_S_inverse_left!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom)
     N, M = size(Λ.A) .÷ 2
+    @assert size(B, 1) == 2 * N
     for j in 1:M
         row_ind = vcat(j:N, (N + j):(2 * N))
         @views v₁ = Λ.A[row_ind, j]
