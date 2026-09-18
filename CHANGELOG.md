@@ -239,6 +239,34 @@ breaking release).
 
   `B̄` in the same block, and `B̂` further down the page, are untouched, and correctly so: neither a
   macron nor a circumflex over `B` has a precomposed codepoint, so NFC leaves them decomposed.
+- Deleted three dead kernels (`lo_mat_mul_kernel!`, `up_mat_mul_kernel!`, and an unreachable
+  `Base.zeros` overload for `SkewSymMatrix`) that nothing called. The two triangular kernels were
+  unused because the package's own `*` for triangular matrices uses the generic `AbstractMatrix`
+  path via `getindex`. The `zeros` overload matched only the literal spelling
+  `zeros(SkewSymMatrix{<:Real}, n)` and threw `MethodError` for any actual call. Also deleted a
+  duplicate `*(::Adjoint{T, ST}, ::ST)` in `stiefel_manifold.jl` that was never selected, and the
+  non-exported `check_gradient` and `print_gradient` methods on `Optimizer` — each forwarded into a
+  name whose only method was the forward itself, so both always threw. They are a copy of
+  `SimpleSolvers`' own pair, but this package imports every `SimpleSolvers` name explicitly and
+  never imported those two, so each definition created a fresh local generic instead of extending
+  the function `SimpleSolvers` exports. Nothing here shadowed anything: neither name is exported by
+  this package, and a caller who wants them can reach `SimpleSolvers`' versions directly.
+- The `zeros` and `rand` constructors for triangular matrices now infer concretely. They previously
+  used `eval(nameof(AT))` to recover the bare constructor from its type parameter, which returned
+  `Any` for both methods with every concrete input — these were the only two calls in the package
+  that inferred to `Any` from concrete arguments. Both now use `Base.typename(AT).wrapper`, which
+  unwraps the type parameters without entering the evaluator. The audit noted that `AT.name.wrapper`
+  (a simpler-looking alternative) does not work: these types carry two parameters, so at
+  `zeros(LowerTriangular{Float64}, n)` the parameter binds to a `UnionAll`, which has no `.name`
+  field. `Base.typename` unwraps both cases and is already the idiom used in the same file's
+  `copyto!`. Pinned with `@inferred` test.
+- `adjoint` on a triangular matrix now documents that it shares its argument's storage. It is a
+  type swap (`LowerTriangular` ↔ `UpperTriangular`), not a wrapper — built around the *same*
+  storage vector, so `parent(L') === parent(L)` and writing into the adjoint writes the original.
+  This is deliberate: the package's own right-multiply `*(::AbstractMatrix, ::AbstractTriangular)`
+  is `(A' * B')'`, which is read-only and would incur an allocation if `adjoint` copied. Documented
+  in the docstrings of `LowerTriangular` and `UpperTriangular`, in `docs/src/special_matrices.md`,
+  and pinned by regression tests.
 
 ### Temporary
 
