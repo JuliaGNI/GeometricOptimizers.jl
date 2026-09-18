@@ -33,7 +33,7 @@ mutable struct GrassmannLieAlgHorMatrix{T, ST <: AbstractMatrix{T}} <:
     n::Int
 
     #maybe modify this - you don't need N & n as inputs!
-    function GrassmannLieAlgHorMatrix(B::AbstractMatrix{T}, N::Int, n::Int) where {T}
+    function GrassmannLieAlgHorMatrix(B::AbstractMatrix{T}, N::Integer, n::Integer) where {T}
         @assert n == size(B, 2)
         @assert N == size(B, 1) + n
 
@@ -70,7 +70,7 @@ D \mapsto \Omega(E, DE - EE^TDE),
 
 where ``\Omega`` is the horizontal lift [`GeometricOptimizers.Ω`](@ref).
 """
-function GrassmannLieAlgHorMatrix(D::AbstractMatrix, n::Int)
+function GrassmannLieAlgHorMatrix(D::AbstractMatrix, n::Integer)
     N = size(D, 1)
     @assert N ≥ n
 

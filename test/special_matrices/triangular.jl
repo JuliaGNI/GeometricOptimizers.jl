@@ -1,5 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: AbstractTriangular
+using KernelAbstractions: CPU
 using LinearAlgebra: tr, transpose
 using Test
 import Random
@@ -133,6 +134,22 @@ end
 
         @test (@inferred zeros(MT{T}, 4)) isa MT{T}
         @test (@inferred rand(MT{T}, 4)) isa MT{T}
+    end
+end
+
+# The backendless `zeros` and `rand` place on the host, and now say so in one spelling: `zeros(T,
+# m)` and `rand(rng, T, m)` rather than a route through `KernelAbstractions` with an explicit
+# `CPU()`. The two give the same array at less cost, and this pins the placement and the values.
+@testset "the backendless allocators place on the host" begin
+    for T in (Float32, Float64), MT in (LowerTriangular, UpperTriangular), n in 2:5
+        @test vec(zeros(MT{T}, n)) isa Vector{T}
+        @test all(iszero, vec(zeros(MT{T}, n)))
+        @test vec(zeros(MT{T}, n)) == vec(zeros(CPU(), MT{T}, n))
+
+        # the same rng state has to give the same draw through either spelling
+        @test vec(rand(Random.MersenneTwister(7), MT{T}, n)) isa Vector{T}
+        @test vec(rand(Random.MersenneTwister(7), MT{T}, n)) ==
+              vec(rand(Random.MersenneTwister(7), CPU(), MT{T}, n))
     end
 end
 

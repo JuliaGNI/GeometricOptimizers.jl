@@ -35,7 +35,7 @@ mutable struct SkewSymMatrix{T, AT <: AbstractVector{T}} <: AbstractMatrix{T}
     S::AT
     n::Int
 
-    function SkewSymMatrix(S::AbstractVector{T}, n::Int) where {T}
+    function SkewSymMatrix(S::AbstractVector{T}, n::Integer) where {T}
         @assert length(S) == n * (n - 1) ÷ 2
         new{T, typeof(S)}(S, n)
     end
@@ -148,6 +148,14 @@ end
 
 Base.:*(α::Real, A::SkewSymMatrix) = A * α
 
+# The `n == 1` arm below -- `allocate` where every other length takes `zeros` -- is kept although no
+# backend reachable here needs it, and it is deliberately not deleted. A `1x1` skew-symmetric matrix
+# stores nothing, so what the arm avoids is `KernelAbstractions.zeros` at length zero. Measured:
+# `CPU()` returns a `(0,)` array from both
+# `zeros` and `allocate`, and `MetalBackend()` does too. Neither is therefore the case it guards.
+# Nobody here has a CUDA device, and an older `KernelAbstractions` is the likely reason it exists.
+# Two backends' worth of evidence is not enough to remove a guard -- find the backend or the
+# version that failed first. `map_to_Skew` carries the same branch for the same reason.
 function Base.zeros(backend::KernelAbstractions.Backend, ::Type{SkewSymMatrix{T}}, n::Int) where {T}
     zero_vec = if n != 1
         KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
@@ -323,6 +331,8 @@ function map_to_Skew(A::AbstractMatrix{T}) where {T}
     @assert size(A, 2) == n
     A_skew = T(0.5) * (A - A')
     backend = KernelAbstractions.get_backend(A)
+    # the `n != 1` branch of `zeros(::Backend, ::Type{SkewSymMatrix{T}}, n)` above, and the comment
+    # there says why it stays
     S = if n != 1
         KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
     else

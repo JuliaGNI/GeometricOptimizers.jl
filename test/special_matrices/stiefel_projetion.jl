@@ -1,6 +1,36 @@
 using GeometricOptimizers: StiefelProjection
+using KernelAbstractions: CPU, KernelAbstractions
 using LinearAlgebra: I
 using Test
+
+# `N` and `n` were declared `::Integer`, which are the package's only abstract fields. Nothing
+# downstream of them lost its concrete return type -- `lift_factors`, `geodesic`, `cayley` and
+# `hcat` against a `StiefelProjection` were all concrete already -- but `size` was not, so every
+# caller of it paid a dynamic dispatch.
+@testset "the fields are concrete" begin
+    for field in (:N, :n)
+        @test isconcretetype(fieldtype(StiefelProjection, field))
+    end
+    @test Base.return_types(size, (StiefelProjection{Float64, Matrix{Float64}},)) ==
+          [Tuple{Int, Int}]
+end
+
+# The host constructor builds `[I; O]` directly rather than routing through
+# `StiefelProjection(CPU(), T, N, n)`, which allocates through `KernelAbstractions.zeros` and then
+# starts a kernel to write `n` ones. What is pinned here is that the two agree, entry for entry and
+# in type, so that the cheaper spelling is the same matrix.
+@testset "the host and the `CPU()` constructor agree" begin
+    for T in (Float32, Float64), N in 3:5, n in 1:N
+        E = StiefelProjection(N, n, T)
+        E_backend = StiefelProjection(CPU(), T, N, n)
+        @test typeof(E) === typeof(E_backend)
+        @test E.A == E_backend.A
+        @test E.A isa Matrix{T}
+        @test KernelAbstractions.get_backend(E) == CPU()
+    end
+    # the element type still defaults to `Float64`, as `zeros(N, n)` does
+    @test eltype(StiefelProjection(5, 3)) === Float64
+end
 
 # `Flaot32` was the default here. Harmless, because every call passes `T` — but a default nothing
 # reaches is a default nothing checks, so it is gone rather than spelled correctly.
