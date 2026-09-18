@@ -1,20 +1,18 @@
 # Drawing a manifold point, and taking its global section, on a device backend.
 #
-# Neither was possible before, and neither was tested. `rand(<backend>, <Manifold>, …)` and
-# `global_section` both orthonormalized with `LinearAlgebra.qr!`, which is a host factorization for
-# the backends this package supports: `Metal` implements no `qr` for an `MtlArray` at all, and a
-# `qr` on a `JLArray` cannot rebuild its `Q` -- `JLArray{Float32,2}(::QRCompactWYQ{…})` is a
-# `MethodError`. So the documented device draw worked on neither device backend reachable here, and
-# with it `GlobalSection(Y)` and `Optimizer(Y, F)` were out of reach too.
+# `rand(<backend>, <Manifold>, …)` and `global_section` orthonormalize with CholeskyQR2 on every
+# backend, which is expressible in matrix products, reductions and triangular solves alone.
+# `LinearAlgebra.qr!` is not available to them: `Metal` implements no `qr` for an `MtlArray` at all,
+# and a `qr` on a `JLArray` cannot rebuild its `Q` -- `JLArray{Float32,2}(::QRCompactWYQ{…})` is a
+# `MethodError` -- so a `qr!` here puts the device draw, `GlobalSection(Y)` and `Optimizer(Y, F)`
+# out of reach on both device backends reachable from this suite.
 #
-# CholeskyQR2 replaces `qr!` on every backend, and is expressible in matrix products, reductions and
-# triangular solves alone. `allowscalar(false)` is what makes this file a test rather than a
-# description: without it a scalar index on a `JLArray` merely warns, and the whole point is that
-# nothing here reaches one.
+# `allowscalar(false)` is what makes this file a test rather than a description: without it a scalar
+# index on a `JLArray` merely warns, and the whole point is that nothing here reaches one.
 #
 # `JLArrays` stands in for the device, as it does in `similar_backend.jl` and
-# `gradient_backend.jl`. The same assertions were run on real `Metal` hardware -- see the pull
-# request -- which is what this file cannot do, since `Metal` is Apple-only and CI runs a matrix.
+# `gradient_backend.jl`. `Metal` is Apple-only and CI runs a matrix, so real device hardware is
+# what this file cannot assert on.
 
 using GeometricOptimizers
 using GeometricOptimizers: check, global_section, _cholesky_qr2, _orthonormal_columns
@@ -90,8 +88,7 @@ end
     # far as this file goes. `geodesic(Y, Δ)` and `cayley(Y, Δ)` do not complete on a device yet, for
     # a reason that is not this file's: they form `Y * E` with `E::StiefelProjection`, and
     # `StiefelProjection` defines `getindex` and no `*`, so the product falls through to the generic
-    # `AbstractMatrix` path and scalar-indexes. That gap was unreachable until a point could be drawn
-    # on a device at all, which is how it was found.
+    # `AbstractMatrix` path and scalar-indexes.
     N, n = 6, 3
     Y = rand(device, StiefelManifold, N, n)
     Δ = rgrad(Y, JLArray(rand(T, N, n)))
@@ -148,9 +145,9 @@ end
 end
 
 @testset "an empty complement is an answer, not a failure" begin
-    # `n = N` is in the retraction tests' sweep, and its complement is `N × 0`. `maximum` over no
-    # entries is `typemin` rather than an error, so an `N × 0` argument would otherwise be rejected
-    # as badly scaled and redrawn until `_orthonormal_columns` gave up.
+    # `n = N` is in the retraction tests' sweep, and its complement is `N × 0`. `maximum(abs, ·)`
+    # over no entries is `abs(zero(T))`, so without the early return an `N × 0` argument is rejected
+    # as badly scaled and redrawn until `_orthonormal_columns` gives up.
     for T in (Float32, Float64), N in 1:4
 
         A = zeros(T, N, 0)

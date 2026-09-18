@@ -131,8 +131,8 @@ end
 
 The orthonormalization is **CholeskyQR2 and not `LinearAlgebra.qr!`**, on every backend — see
 [`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2). `qr!` is a host factorization here:
-`Metal` implements no `qr` for its array type at all, so `GlobalSection(Y)` and `Optimizer(Y, F)`
-were unreachable on a device, and the whole point of this function is that it is on the path
+`Metal` implements no `qr` for its array type at all, so a `qr!` in this function puts
+`GlobalSection(Y)` and `Optimizer(Y, F)` out of reach on a device — and this function is on the path
 [`geodesic`](@ref) and [`cayley`](@ref) take on every step.
 
 `A` is square inside the complement of `Y`, so its condition number has a square Gaussian's heavy
@@ -153,9 +153,9 @@ function global_section(Y::StiefelManifold{T}) where {T}
     # The section's storage array has to be the *point's* array type, which `test/device_copyto.jl`
     # relies on to move a section between two of them. It already is for every `KernelAbstractions`
     # backend, and the branch folds away there; the projection above only loses the point's type for
-    # a wrapper `allocate` does not know how to produce. `qr!` used to force this with
-    # `typeof(Y.A)(…)` unconditionally, so it copied even where the two already agreed. `convert` is
-    # not the spelling: an `AbstractMatrix` outside `Base`'s hierarchy need define no method for it.
+    # a wrapper `allocate` does not know how to produce. An unconditional `typeof(Y.A)(…)` would copy
+    # even where the two already agree, which is why the branch is here. `convert` is not the
+    # spelling: an `AbstractMatrix` outside `Base`'s hierarchy need define no method for it.
     λ isa typeof(Y.A) ? λ : typeof(Y.A)(λ)
 end
 

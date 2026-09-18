@@ -489,6 +489,21 @@ breaking release).
   scaling leaves `Q` unchanged, since `(A/s)ᵀ(A/s) = AᵀA/s²` has Cholesky factor `R/s`.
 - `assign_columns` and `assign_columns_kernel!` are deleted. They copied a `qr!` factor onto the
   backend, and CholeskyQR2's result is already there.
+- **CholeskyQR2 allocates more than the Householder QR it replaces**, and that is the price of the
+  device support above rather than an oversight. Two Gram matrices, two triangular solves and one
+  scaled copy, against LAPACK's in-place factorization. Measured cold at
+  `--check-bounds=auto`, warmed, on an `N × (N-3)` argument — the shape `global_section` uses:
+
+  | `N` | `_cholesky_qr2` | `typeof(A)(qr!(copy(A)).Q)` | ratio |
+  |--:|--:|--:|--:|
+  | 20 | 20 016 B | 14 128 B | 1.42 |
+  | 100 | 574 000 B | 303 408 B | 1.89 |
+  | 400 | 8 880 688 B | 4 047 152 B | 2.19 |
+
+  No existing allocation assertion covers this path — `test/flat_buffer_allocations.jl` is the only
+  allocation file and covers `_dot`, `l2norm`, `outer!` and `_flat_mul!` — so nothing regressed.
+  The figure is recorded because `global_section` is on the retraction path, which is where this
+  package's per-iteration allocations already sit.
 - **Every allocator that names a backend and an element type the backend cannot hold now refuses
   it**, with an `ArgumentError` naming the width and the way out, instead of narrowing it or
   failing further in. All sixteen entry points: `zeros` and `rand` for `SkewSymMatrix`,

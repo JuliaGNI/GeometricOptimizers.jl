@@ -59,8 +59,8 @@ unchanged, since ``(A/s)^T(A/s) = A^TA/s^2`` has Cholesky factor ``R/s``.
 function _cholesky_qr2(A::AbstractMatrix)
     # `n = N` is a legitimate shape whose complement is empty, so [`global_section`](@ref) asks for
     # an `N × 0` factor. There is nothing to orthonormalize and it is already its own answer. The
-    # early return is not tidiness: `maximum` over no entries is `typemin` rather than an error, so
-    # the scaling test below would reject such a matrix instead of accepting it.
+    # early return is not tidiness: `maximum(abs, ·)` over no entries is `abs(zero(T))`, so the
+    # scaling test below sees a zero scale and rejects such a matrix instead of accepting it.
     isempty(A) && return A
 
     scale = maximum(abs, A)
@@ -94,9 +94,9 @@ repaired and no result is kept that the algorithm did not produce cleanly.
 
 **The rate is not negligible.** [`global_section`](@ref) factorizes ``N\times(N-n)`` Gaussian
 columns with the span of `Y` projected out, so the matrix is square inside that complement and its
-condition number has the heavy tail a square Gaussian's does. Measured 2026-09-18 in `Float32`, 600
-draws over ``N = 50, 100, 200`` at ``n = 3``: three broke `CholeskyQR2` down and none broke the
-redraw. Shifted CholeskyQR3 was measured on the same draws and does not close it — one failure in
+condition number has the heavy tail a square Gaussian's does. Measured in `Float32` over 600
+draws at ``N = 50, 100, 200`` and ``n = 3``: three break `CholeskyQR2` down and none break the
+redraw. Shifted CholeskyQR3 measured on the same draws does not close it — one failure in
 300 even with the exact ``\|A\|_2`` in the shift, because forming ``A^TA`` in `Float32` loses a
 singular value that small whatever the shift is.
 """
@@ -223,13 +223,12 @@ orthonormalizes a Gaussian matrix with
 for the complement, so those three are what a backend needs to carry a point, draw one and carry an
 [`Optimizer`](@ref).
 
-**`qr` is deliberately not among them.** It was, and that made this whole path host-only in
-practice: `Metal` implements no `qr` for an `MtlArray`, so every call above failed there with
-`Cannot access the contents of a private buffer`, measured on real hardware, and so did
-`GlobalSection(Y)` and `Optimizer(Y, F)`. `Metal` does implement `cholesky`. CholeskyQR2 therefore
-runs where Householder QR cannot, at *better* orthogonality than the host QR at every size measured
-— and a `CUDA` backend, which does supply `qr` through CUSOLVER, takes the same route as everything
-else rather than a second one.
+**`qr` is deliberately not among them.** `Metal` implements no `qr` for an `MtlArray`: a call there
+raises `Cannot access the contents of a private buffer`, measured on real hardware. Any path through
+`qr` is host-only on such a device, and that path carries `GlobalSection(Y)` and `Optimizer(Y, F)`
+with it. `Metal` does implement `cholesky`, so CholeskyQR2 runs where Householder QR cannot, at
+*better* orthogonality than the host QR at every size measured — and a `CUDA` backend, which does
+supply `qr` through CUSOLVER, takes the same route as everything else rather than a second one.
 
 # The manifolds this draws
 

@@ -39,10 +39,9 @@ const N, n = 6, 3
 const device = KernelAbstractions.get_backend(JLArray(zeros(T, 1)))
 
 # An orthonormal representative drawn on the host and moved over, rather than
-# `rand(device, StiefelManifold{T}, N, n)`. The device draw does work now -- see
-# `device_orthonormalization.jl`, which is where that is the point -- and the host draw is kept
-# because it fixes *one* representative for every type below, so a failure names the type rather
-# than the draw.
+# `rand(device, StiefelManifold{T}, N, n)`. The device draw works -- `device_orthonormalization.jl`
+# is where that is the point -- and the host draw is here because it fixes *one* representative for
+# every type below, so a failure names the type rather than the draw.
 const host_point = Matrix(qr!(randn(T, N, n)).Q)[:, 1:n]
 
 point(MT) = MT(JLArray(host_point))
