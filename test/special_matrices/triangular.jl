@@ -63,6 +63,31 @@ end
     end
 end
 
+@testset "adjoint aliases the storage of its argument" begin
+    # `adjoint` is a type swap (`LowerTriangular` <-> `UpperTriangular`), built around the *same*
+    # storage vector rather than a copy. This is deliberate for performance, since the package's own
+    # right-multiply `*(::AbstractMatrix, ::AbstractTriangular) = (A' * B')'` is read-only and would
+    # otherwise pay for an allocation it never needs. But it means a write through the adjoint is a
+    # write through the original, so this pins the sharing: if `adjoint` is ever made to copy, this
+    # test is the one that catches it.
+    for T in (Float32, Float64), n in 2:5
+
+        L = rand(LowerTriangular{T}, n)
+        U = rand(UpperTriangular{T}, n)
+
+        @test parent(L') === parent(L)
+        @test parent(U') === parent(U)
+
+        Lt = L'
+        parent(Lt)[1] = zero(T)
+        @test parent(L)[1] == zero(T)
+
+        Ut = U'
+        parent(Ut)[1] = zero(T)
+        @test parent(U)[1] == zero(T)
+    end
+end
+
 @testset "random generation" begin
     for T in (Float32, Float64), n in 2:5, MT in (LowerTriangular, UpperTriangular)
         A = rand(MT{T}, n)

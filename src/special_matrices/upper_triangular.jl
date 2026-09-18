@@ -9,7 +9,9 @@ The data are stored in a vector ``S`` similarly to other matrices. See [`LowerTr
 
 The struct two fields: `S` and `n`. The first stores all the entries of the matrix in a sparse fashion (in a vector) and the second is the dimension ``n`` for ``A\in\mathbb{R}^{n\times{}n}``.
 
-# Examples 
+`adjoint` (`U'`) returns a [`LowerTriangular`](@ref) built around the *same* storage vector, not a copy: `parent(U') === parent(U)` holds, so writing into the adjoint also writes into `U`.
+
+# Examples
 ```jldoctest
 using GeometricOptimizers
 S = [1, 2, 3, 4, 5, 6]
@@ -91,10 +93,16 @@ function (project::ProjectTo{<:UpperTriangular})(dA::UpperTriangular)
     UpperTriangular(project.triang(dA.S), dA.n)
 end
 
+# A type swap, not a wrapper: the result is this package's own `UpperTriangular`, built around the
+# *same* storage vector `A.S` rather than a copy, so `parent(A') === parent(A)` holds and a write
+# through the adjoint writes `A` too.
 function Base.adjoint(A::LowerTriangular)
     UpperTriangular(A.S, A.n)
 end
 
+# A type swap, not a wrapper: the result is this package's own `LowerTriangular`, built around the
+# *same* storage vector `A.S` rather than a copy, so `parent(A') === parent(A)` holds and a write
+# through the adjoint writes `A` too.
 function Base.adjoint(A::UpperTriangular)
     LowerTriangular(A.S, A.n)
 end

@@ -30,6 +30,10 @@ L = \begin{pmatrix}
 \end{pmatrix}.
 ```
 
+`adjoint` swaps between the two: `L'` is an `UpperTriangular` and `U'` is a `LowerTriangular`.
+That swap is built around the *same* storage vector rather than a copy, so `parent(L') === parent(L)`
+holds and writing into `L'` also writes into `L`.
+
 An instance of [`SkewSymMatrix`](@ref) can be written as ``A = L - L^T`` or ``A = U^T - U``:
 
 ```math 
