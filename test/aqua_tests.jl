@@ -14,10 +14,13 @@
 # been fixed. A test does not go stale. Anything added here that pirates a method fails this, whether
 # or not anybody remembers to update a table.
 #
-# Only the piracy check. `Aqua.test_all` would also run `test_ambiguities`, which reports 139 -- almost
-# all of them between this package's structured matrices and `LinearAlgebra`/`ArrayLayouts` methods on
-# `AbstractMatrix`, and none of them touched by the piracy work. That is its own piece of work and not
-# this one; turning it on before then would only mean a test that is expected to fail.
+# Only the piracy check. `Aqua.test_all` would also run `test_ambiguities`, which still reports the
+# pairs between this package's own matrix types -- the `Sfac` operator and the two manifolds as much
+# as the structured matrices -- and the `AbstractMatrix` methods of `ArrayLayouts`, `FillArrays`,
+# `LinearAlgebra` and `StaticArrays`. Those are their own piece of work, so turning it on here would
+# only mean a test that is expected to fail. The pairs between two of this package's own methods are
+# asserted separately, as a property and without a count, in `test/ambiguities.jl`, which also names
+# the one function it excludes and says why.
 
 using Aqua
 using GeometricOptimizers

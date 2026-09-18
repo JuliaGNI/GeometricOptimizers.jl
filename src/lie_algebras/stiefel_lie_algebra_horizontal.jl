@@ -143,6 +143,39 @@ end
 
 Base.:+(A::AbstractMatrix, B::StiefelLieAlgHorMatrix) = B + A
 
+# `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` and `+(::AbstractMatrix, ::StiefelLieAlgHorMatrix)`
+# are ambiguous against the two `SkewSymMatrix` methods when both operands are owned. The
+# tie-breakers in `src/ambiguities.jl` all return dense; this pair is the exception, because a
+# `StiefelLieAlgHorMatrix` is skew-symmetric by construction and so the sum of the two is as well.
+# The result is built in the packed representation rather than dense and re-projected, which keeps
+# an integer element type integer.
+#
+# Both blocks below land inside the destination's strict lower triangle, where the entry `(i, j)`
+# with `i > j` sits at `S[(i - 2) * (i - 1) ÷ 2 + j]`. For a row `i ≤ n` that index is the one the
+# inner `n × n` block uses for the same entry, so the first `n * (n - 1) ÷ 2` entries take `C.A.S`
+# as one slice. Row `i > n` holds `C.B[i - n, :]` in its first `n` columns and zero in the rest,
+# which is the loop.
+#
+# The element type is not bound across the two arguments, because the ambiguity is not bound either
+# -- see the head of `src/ambiguities.jl`. So this is the method that does the work and the
+# `SkewSymMatrix`-first spelling below defers to it; the other way round recurses for a mismatched
+# pair.
+function Base.:+(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
+    @assert size(A) == size(C)
+
+    S = similar(A.S, promote_type(eltype(A), eltype(C)))
+    copyto!(S, A.S)
+    @views S[1:(C.n * (C.n - 1) ÷ 2)] .+= C.A.S
+    for i in (C.n + 1):(C.N)
+        offset = (i - 2) * (i - 1) ÷ 2
+        @views S[(offset + 1):(offset + C.n)] .+= C.B[i - C.n, :]
+    end
+
+    SkewSymMatrix(S, C.N)
+end
+
+Base.:+(A::SkewSymMatrix{T}, C::StiefelLieAlgHorMatrix{T}) where {T} = C + A
+
 Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
 
 function Base.zeros(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}

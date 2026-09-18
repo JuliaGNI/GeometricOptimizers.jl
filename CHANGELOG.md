@@ -164,6 +164,50 @@ breaking release).
 
 ### Fixed
 
+- **A product or a sum of two of this package's own matrix types no longer raises a `MethodError`.**
+  `StiefelManifold`, `SymplecticStiefelManifold`, `StiefelProjection`, `SkewSymMatrix`,
+  `SymmetricMatrix`, `AbstractTriangular`, `StiefelLieAlgHorMatrix` and the `Sfac` operator each
+  carry a method that takes one of them beside an `AbstractMatrix`. Every pair of them is then a
+  standoff between an `Owned ∘ AbstractMatrix` method and an `AbstractMatrix ∘ Owned` one, and for
+  two owned operands neither of the two is more specific, so the call was ambiguous.
+  `A * S`, `S * A`, `A * L`, `Y * S`, `S * Y`, `Y' * A` and `E + A` are the shortest witnesses, for
+  `A::SkewSymMatrix`, `S::SymmetricMatrix`, `L::LowerTriangular`, `Y::StiefelManifold` and
+  `E::StiefelProjection`; there were 52 such pairs across `*`, `+`, `hcat` and `vcat`, and all 52
+  now have a method. `Test.detect_ambiguities(GeometricOptimizers)` reported 224 pairs in total and
+  54 between two of this package's own methods at `a959d4b`, and reports 172 and 2 with this
+  change. The two that remain are the `global_rep` pair recorded in
+  `src/optimizers/named_tuple_wrapper.jl`: they intersect at a `GlobalSection` anchored on a
+  manifold and carrying no lift, which the constructors cannot build.
+
+  `src/ambiguities.jl` holds the new methods and states what each of them returns. Two rules cover
+  all of them. Where an operand is one of the three types that wrap a dense array — the two
+  manifolds and `StiefelProjection` — it is unwrapped and the other operand's method runs, so the
+  answer is what that method gives for a plain array and nothing is materialized on its account.
+  Where both operands compute, the right-hand one is materialized with `B * one(B)` or, for an
+  `Sfac`, with `Matrix(B)`, and the result is dense — which is what `*` on two `SkewSymMatrix`,
+  two `SymmetricMatrix`, two `AbstractTriangular` or two `Sfac` operands already returned.
+
+  **`+` on a `SkewSymMatrix` and a `StiefelLieAlgHorMatrix` is the one pair that keeps a
+  structure.** Both operands are skew-symmetric, so the sum is, and it comes back as a
+  `SkewSymMatrix` rather than dense — consistent with the two existing methods for a pair of either
+  type. It is built in the packed representation instead of going through
+  `SkewSymMatrix(::AbstractMatrix)`, which halves a difference and so would widen an integer
+  element type to a float one.
+
+  `test/ambiguities.jl` asserts that the set of pairs between two of this package's own methods is
+  empty, rather than that it has some size: a count goes stale the moment a method is added, and an
+  empty set also catches the next pair somebody adds. It covers every product and sum of the types
+  above against the dense answer. Of its 75 value assertions, 66 raise a `MethodError` on the
+  pre-change source and 9 pass there — the 9 are the combinations that already had a method, and
+  they pin behaviour rather than reproducing a defect.
+- `Y' * B` for two `StiefelManifold`s now dispatches when their storage types differ. The method
+  bound one type parameter to both operands, storage array included, so a point held in a `Matrix`
+  times one held in a `SubArray` — or in a device array — missed it and was left to the two generic
+  methods, which both apply and neither of which is more specific: an ambiguous `MethodError`. This
+  is the same whole-type-binding shape
+  that `copyto!(::Manifold, ::Manifold)`, `copyto!(::GlobalSection, …)` and `assign!` on the
+  triangulars are fixed for below in this section.
+  The element type is not bound across the two operands either, for the same reason.
 - `ensure_descent!` now uses `_dot(r, δ)` instead of `LinearAlgebra.dot(r, δ)` to test descent
   for BFGS, DFP, and Newton steps. Wherever the iterate carries a horizontal lift, the ambient `dot`
   computes the Frobenius product by scalar-indexing over the entire matrix: it throws `Scalar

@@ -22,8 +22,16 @@ function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where
     Y.parent.A' * B
 end
 
+# `B` carries no type parameter, and that is what separates the method directly above from the
+# `AbstractMatrix * StiefelManifold` one. Binding the storage array type to the adjoint's would
+# leave those two ambiguous for every pair of points whose storage types differ -- one held in a
+# `Matrix` against one held in a `SubArray` or in a device array -- since neither of them is more
+# specific than the other there. Binding only the element type moves the same hole to a pair that
+# differs in that instead. Either way it is an ordinary product that raises nothing a caller can act
+# on. This is the same whole-type-binding shape as `copyto!(::Manifold, ::Manifold)` in
+# `manifolds/abstract_manifold.jl`, whose comment spells the mechanism out.
 function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
-        B::StiefelManifold{T, AT}) where {T, AT <: AbstractMatrix{T}}
+        B::StiefelManifold) where {T, AT <: AbstractMatrix{T}}
     Y.parent.A' * B.A
 end
 

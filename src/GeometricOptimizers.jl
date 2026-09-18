@@ -118,6 +118,10 @@ include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
 include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
 include("lie_algebras/stiefel_projection.jl")
 
+# The tie-breakers between two of the types above, once all of them and `Sfac` exist. They define no
+# type and export nothing; the file's head says what each of them returns and why.
+include("ambiguities.jl")
+
 # The leaf protocol, once `Manifold`, `VectorStorageMatrix` and `AbstractLieAlgHorMatrix` all exist.
 include("parameter_protocol.jl")
 
