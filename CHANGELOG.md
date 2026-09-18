@@ -28,8 +28,15 @@ breaking release).
   types `Sfac`, `Rfac` and `SR`, plus the exported
   `symplectic_gram_schmidt`/`symplectic_gram_schmidt!` and the unexported two-vector
   `symplectic_form`. `A = SR` with `S` symplectic and `R` symplectic-upper-triangular; the
-  algorithm is the one of https://doi.org/10.1016/j.laa.2008.02.029. `qr` cannot serve here,
-  because its `Q` preserves the Euclidean form rather than ``\mathbb{J}``.
+  algorithm is the SROSH algorithm of [salam2008optimal](@cite). `qr` cannot serve here, because
+  its `Q` preserves the Euclidean form rather than ``\mathbb{J}``.
+
+  `S` is never formed. All four products go through reflector kernels — `S*x`, `S*B`, `B*S` and
+  `B*S⁻¹` — so right-multiplication by the inverse costs what the forward product costs rather
+  than falling through to the generic `AbstractMatrix` path, which reaches `Sfac`'s `getindex` and
+  rebuilds the whole matrix once per entry. Measured with a 3×2N `B`, minimum of 50 calls in a
+  warmed process: `B*S⁻¹` allocates 22 288 bytes at 10×10 and 164 320 at 40×40, matching `B*S`
+  byte for byte, against 57 184 and 1 781 424 for materializing the inverse once.
 
   **These have a numerical limitation that a user has to know before depending on them, and it is
   not small.** `S` is symplectic, not orthogonal, so its condition number is unbounded, and this

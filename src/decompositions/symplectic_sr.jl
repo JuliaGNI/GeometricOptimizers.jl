@@ -126,11 +126,7 @@ Base.:*(S::Sfac{true}, B::AbstractMatrix) = apply_S_inverse_left(S.Λ, B)
 Base.:*(S::Sfac{true}, b::AbstractVector) = apply_S_inverse_left(S.Λ, b)
 Base.:*(B::AbstractMatrix, S::Sfac{false}) = apply_S_right(B, S.Λ)
 
-# There is no right-multiplication kernel for the inverse, so this case goes through the matrix.
-# Materializing once is the point: the generic `AbstractMatrix` fallback reaches `Sfac`'s
-# `getindex`, which rebuilds the whole matrix per entry, and at 10x6 that is 470816 bytes against
-# 8592 for the kernel path. Write the kernel if a caller ever needs `B * inv(S)` on a hot path.
-Base.:*(B::AbstractMatrix, S::Sfac{true}) = B * Matrix(S)
+Base.:*(B::AbstractMatrix, S::Sfac{true}) = apply_S_inverse_right(B, S.Λ)
 
 @doc raw"""
     SR(S::Sfac, R::Rfac)
@@ -309,6 +305,34 @@ function apply_S_right!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom)
     B
 end
 
+@doc raw"""
+    apply_S_inverse_right!(B, Λ::SymplecticHouseholderDecom)
+
+Overwrite `B` with ``BS^{-1}``. Three things invert [`apply_S_right!`](@ref) together, for the
+reason given at [`apply_S_inverse_left!`](@ref): the steps run from the last to the first, the two
+reflectors within a step are applied in the opposite order, and each factor is inverted, which for
+``I + cvv^J`` means negating ``c`` because ``v^Jv = 0``.
+"""
+function apply_S_inverse_right!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom)
+    N, M = size(Λ.A) .÷ 2
+    @assert size(B, 2) == 2 * N
+    for j in M:-1:1
+        row_ind = vcat(j:N, (N + j):(2 * N))
+        @views v₁ = Λ.A[row_ind, j]
+        @views v₂ = Λ.A[row_ind, j + M]
+        for i in axes(B, 1)
+            @views b = B[i, row_ind]
+            fac₂ = Λ.c₂[j] * b' * v₂
+            b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
+            b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
+            fac₁ = Λ.c₁[j] * b' * v₁
+            b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
+            b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
+        end
+    end
+    B
+end
+
 apply_S_left(Λ::SymplecticHouseholderDecom, B::AbstractArray) = apply_S_left!(copy(B), Λ)
 
 function apply_S_inverse_left(Λ::SymplecticHouseholderDecom, B::AbstractArray)
@@ -316,6 +340,10 @@ function apply_S_inverse_left(Λ::SymplecticHouseholderDecom, B::AbstractArray)
 end
 
 apply_S_right(B::AbstractArray, Λ::SymplecticHouseholderDecom) = apply_S_right!(copy(B), Λ)
+
+function apply_S_inverse_right(B::AbstractArray, Λ::SymplecticHouseholderDecom)
+    apply_S_inverse_right!(copy(B), Λ)
+end
 
 @doc raw"""
     symplectic_form(a, b)

@@ -71,9 +71,13 @@ end
         # The inverse applies the same reflectors in the opposite order.
         @test norm(inv(F.S) * (F.S * x) - x) < tolerance(N2)
 
-        # Right-multiplication by the inverse has no reflector kernel and goes through the matrix.
-        # It still has to agree with the inverse of the materialized factor.
+        # Right-multiplication by the inverse has its own reflector kernel, which applies the steps
+        # from the last to the first with the two reflectors of a step swapped and each factor
+        # negated. That is three things reversed at once, and getting any one of them wrong still
+        # produces a plausible matrix, so it is checked against the inverse of the materialized
+        # factor and by a round trip rather than against itself.
         @test norm(B * inv(F.S) - B * inv(S)) < tolerance(N2)
+        @test norm((B * F.S) * inv(F.S) - B) < tolerance(N2)
 
         # Indexing agrees with the materialized matrix, entry for entry.
         @test all(F.S[i, j] == S[i, j] for i in 1:N2, j in 1:N2)
