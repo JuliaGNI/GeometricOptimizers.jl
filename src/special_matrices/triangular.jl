@@ -36,7 +36,9 @@ Base.:*(α::Real, A::AT) where {AT <: AbstractTriangular} = A * α
 function Base.zeros(backend::KernelAbstractions.Backend, ::Type{AT},
         n::Int) where {T, AT <: AbstractTriangular{T}}
     # Base.typename(AT).wrapper strips the type parameters, giving the bare constructor
-    # (UpperTriangular or LowerTriangular) without a call into the evaluator.
+    # (UpperTriangular or LowerTriangular) as a constant the compiler can see, which is what makes
+    # the return type inferrable: `Base.return_types` gives the concrete triangular type here and
+    # `Any` for a name resolved through the evaluator at run time.
     Base.typename(AT).wrapper(KernelAbstractions.zeros(backend, T, n*(n-1)÷2), n)
 end
 

@@ -32,7 +32,9 @@ L = \begin{pmatrix}
 
 `adjoint` swaps between the two: `L'` is an `UpperTriangular` and `U'` is a `LowerTriangular`.
 That swap is built around the *same* storage vector rather than a copy, so `parent(L') === parent(L)`
-holds and writing into `L'` also writes into `L`.
+holds and writing into `L'` also writes into `L`. Reusing the storage transposes without
+conjugating, so that swap is bound to a real element type; a complex one falls through to
+`LinearAlgebra`'s lazy `Adjoint`, which conjugates and does not alias.
 
 An instance of [`SkewSymMatrix`](@ref) can be written as ``A = L - L^T`` or ``A = U^T - U``:
 

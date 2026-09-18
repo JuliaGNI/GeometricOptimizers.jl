@@ -371,10 +371,14 @@ breaking release).
 
   `B̄` in the same block, and `B̂` further down the page, are untouched, and correctly so: neither a
   macron nor a circumflex over `B` has a precomposed codepoint, so NFC leaves them decomposed.
-- Deleted three dead kernels (`lo_mat_mul_kernel!`, `up_mat_mul_kernel!`, and an unreachable
-  `Base.zeros` overload for `SkewSymMatrix`) that nothing called. The two triangular kernels were
-  unused because the package's own `*` for triangular matrices uses the generic `AbstractMatrix`
-  path via `getindex`. The `zeros` overload matched only the literal spelling
+- Deleted two dead kernels (`lo_mat_mul_kernel!` and `up_mat_mul_kernel!`) and an unreachable
+  `Base.zeros` overload for `SkewSymMatrix`, none of which anything called. The two triangular
+  kernels were unused because the package's own `*` for triangular matrices uses the generic
+  `AbstractMatrix` path via `getindex`. **That generic path is host-only**: a device-backed
+  triangular multiply raises a scalar-indexing error in either order, where `SkewSymMatrix` and
+  `SymmetricMatrix` go through live kernels. The deleted kernels were never wired to `*`, so
+  nothing changes; the gap they would have closed stays open. The `zeros` overload matched only the
+  literal spelling
   `zeros(SkewSymMatrix{<:Real}, n)` and threw `MethodError` for any actual call. Also deleted a
   duplicate `*(::Adjoint{T, ST}, ::ST)` in `stiefel_manifold.jl` that was never selected, and the
   non-exported `check_gradient` and `print_gradient` methods on `Optimizer` — each forwarded into a
@@ -392,6 +396,17 @@ breaking release).
   `zeros(LowerTriangular{Float64}, n)` the parameter binds to a `UnionAll`, which has no `.name`
   field. `Base.typename` unwraps both cases and is already the idiom used in the same file's
   `copyto!`. Pinned with `@inferred` test.
+- **A complex triangular multiply gave the wrong answer, and now gives the right one.** `adjoint`
+  on a triangular returns the other triangular type built around the *same* storage vector, which
+  transposes without conjugating — so on a complex element type it was `transpose` wearing the name
+  `adjoint`. That is not a near miss: `*(B::AbstractMatrix, A::AbstractTriangular)` is written as
+  `(A' * B')'`, so the product was silently wrong. Measured on a 3×3 `ComplexF64` case,
+  `‖B*C - B*Matrix(C)‖` was 16.2, and `Matrix(C')` equalled `transpose(Matrix(C))` rather than
+  `Matrix(C)'`. Both methods are now bound to `{<:Real}`. A complex argument is not rejected: it
+  falls through to `LinearAlgebra`'s lazy `Adjoint`, which conjugates, so `Matrix(C') == Matrix(C)'`
+  and `B * C ≈ B * Matrix(C)` both hold now and neither did before. The real path is unchanged and
+  keeps the storage-sharing swap, which is the property the rest of this entry documents. Nothing
+  in this package uses a complex element type, so no in-package caller changes.
 - `adjoint` on a triangular matrix now documents that it shares its argument's storage. It is a
   type swap (`LowerTriangular` ↔ `UpperTriangular`), not a wrapper — built around the *same*
   storage vector, so `parent(L') === parent(L)` and writing into the adjoint writes the original.
