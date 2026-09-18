@@ -61,10 +61,74 @@ end
 Base.:*(U::SymplecticStiefelManifold, B::AbstractMatrix) = U.A * B
 Base.:*(B::AbstractMatrix, U::SymplecticStiefelManifold) = B * U.A
 
+# `U'` is where this type's own operations go: `rgrad` and `metric` form `U'U`, and `check` is
+# `U'JU`. Without a method for the adjoint it keeps its wrapper into `LinearAlgebra`'s generic
+# product, which reads the point one entry at a time — scalar indexing, which a device array does
+# not serve. `manifolds/stiefel_manifold.jl` carries the counterpart for `StiefelManifold`.
+#
+# `LinearAlgebra` rewrites an `Adjoint` of a real matrix to a `Transpose` on its way into `mul!`, so
+# the failure reports a `Transpose` and this method has to catch the `Adjoint` before that happens.
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        B::AbstractMatrix) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * B
+end
+
+# The mirror, which [`metric`](@ref) needs: it forms `J'·U·inv(U'U)·U'·J`, so the adjoint appears on
+# the right of a product as well as on the left.
+function Base.:*(B::AbstractMatrix,
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    B * U.parent.A'
+end
+
+# `B` carries no type parameter, for the reason the counterpart in `manifolds/stiefel_manifold.jl`
+# spells out: binding the storage array type to both operands would leave the pair ambiguous
+# whenever the two storage types differ.
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        V::SymplecticStiefelManifold) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * V.A
+end
+
+# and the pair the two `::AbstractMatrix` methods above are ambiguous on.
+#
+# **Both type parameters are free, and that is not tidiness.** Those two bind `T` from
+# *different* arguments — one from the left operand, one from the right — so nothing makes the two
+# element types equal in their overlap, and a signature written with one shared `T` separates only
+# the part of it where they happen to agree. `src/ambiguities.jl` states the rule at its head; this
+# is the case that shows why it is about which method binds what, not about the pair.
+function Base.:*(U::Adjoint{T₁, SymplecticStiefelManifold{T₁, AT₁}},
+        V::Adjoint{T₂, SymplecticStiefelManifold{T₂, AT₂}}) where {
+        T₁, AT₁ <: AbstractMatrix{T₁}, T₂, AT₂ <: AbstractMatrix{T₂}}
+    U.parent.A' * V.parent.A'
+end
+
+# Writes the two off-diagonal blocks of the Poisson tensor. A kernel is what it takes to write them
+# without scalar indexing, for the reason `write_ones_kernel!` and `unit_matrix` give one level up.
+@kernel function write_poisson_blocks_kernel!(J::AbstractMatrix{T}, n) where {T}
+    i = @index(Global)
+    J[i, i + n] = one(T)
+    J[i + n, i] = -one(T)
+end
+
 # The canonical Poisson tensor, as a dense matrix and nothing more. `GeometricMachineLearning`
 # exports a `PoissonTensor` type that carries phase-space `(q, p)` methods on top of this; that
 # type belongs with the phase-space machinery it serves, so the plain form is rebuilt here rather
 # than depended upon. Unifying the two is a separate change, and it is a breaking one downstream.
+#
+# Every caller here passes the point it is building the tensor for, because the tensor has to land
+# where the point already is: it is multiplied straight into `U`, and a host matrix against a device
+# one reaches the generic product and scalar-indexes. The size is a separate argument because
+# [`check`](@ref) needs both `2N` and `2n` for the same point.
+function _poisson_tensor(U::AbstractMatrix{T}, n2::Integer) where {T}
+    _poisson_tensor(KernelAbstractions.get_backend(U), T, n2)
+end
+
+# The host spelling is a loop over a `zeros(T, n2, n2)`, with no backend and no kernel launch.
+# Routing it through `KernelAbstractions.zeros` and a kernel launch would make the common case pay
+# for the device machinery, and the measurement behind that is the comment on
+# `zeros(::Type{AT}, n)` in `special_matrices/triangular.jl`. `StiefelProjection` splits its
+# constructor the same way, and this is the same split: the backendless form names the element type
+# and places on the host, which is the third of the four call shapes in
+# `docs/src/special_matrices.md`.
 function _poisson_tensor(::Type{T}, n2::Integer) where {T}
     @assert iseven(n2)
     n = n2 ÷ 2
@@ -73,6 +137,20 @@ function _poisson_tensor(::Type{T}, n2::Integer) where {T}
         J[i, i + n] = one(T)
         J[i + n, i] = -one(T)
     end
+    J
+end
+
+_poisson_tensor(::CPU, ::Type{T}, n2::Integer) where {T} = _poisson_tensor(T, n2)
+
+function _poisson_tensor(
+        backend::KernelAbstractions.Backend, ::Type{T}, n2::Integer) where {T}
+    @assert iseven(n2)
+    n = n2 ÷ 2
+    _check_supported_eltype(backend, T)
+    J = KernelAbstractions.zeros(backend, T, n2, n2)
+    write_poisson_blocks! = write_poisson_blocks_kernel!(backend)
+    write_poisson_blocks!(J, n; ndrange = n)
+
     J
 end
 
@@ -143,7 +221,7 @@ The Riemannian gradient of a point of the symplectic Stiefel manifold, for the m
 entries of `U` read as an unconstrained matrix.
 """
 function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
-    J = _poisson_tensor(eltype(U), size(U, 1))
+    J = _poisson_tensor(U, size(U, 1))
     ∇L * (U' * U) + J * U * (∇L' * J * U)
 end
 
@@ -153,11 +231,16 @@ end
 The Riemannian metric of the symplectic Stiefel manifold, taken from
 [gao2021riemannian](@cite).
 """
+# `unit_matrix(J)` and not `LinearAlgebra.I`: `X - I` reaches a kernel-backed method only on the
+# array types `GPUArrays` covers, and the docstring on [`unit_matrix`](@ref) says outright that a
+# `KernelAbstractions` backend is under no obligation to be one of them. Every identity this package
+# builds goes through there. `inv` below is a separate matter and needs an `lu` from the backend
+# whatever this line says.
 function metric(U::SymplecticStiefelManifold{T}, Δ₁::AbstractMatrix,
         Δ₂::AbstractMatrix) where {T}
-    J = _poisson_tensor(T, size(U, 1))
+    J = _poisson_tensor(U, size(U, 1))
     LinearAlgebra.tr(inv(U' * U) * Δ₁' *
-                     (LinearAlgebra.I - (T(1) / 2) * J' * U * inv(U' * U) * U' * J) * Δ₂)
+                     (unit_matrix(J) - (T(1) / 2) * J' * U * inv(U' * U) * U' * J) * Δ₂)
 end
 
 @doc raw"""
@@ -168,9 +251,8 @@ How far `U` is from the manifold, as ``\|U^T\mathbb{J}_{2N}U - \mathbb{J}_{2n}\|
 This replaces the generic [`check(::Manifold)`](@ref), whose residual is the orthonormality one.
 """
 function check(U::SymplecticStiefelManifold)
-    T = eltype(U)
-    LinearAlgebra.norm(U' * _poisson_tensor(T, size(U, 1)) * U -
-                       _poisson_tensor(T, size(U, 2)))
+    LinearAlgebra.norm(U' * _poisson_tensor(U, size(U, 1)) * U -
+                       _poisson_tensor(U, size(U, 2)))
 end
 
 @doc raw"""
@@ -182,14 +264,32 @@ symplectic against `U`. The result is ``2N\times(2N - 2n)``, as
 expects.
 
 The counterpart of that method, with the symplectic form in place of the Euclidean one.
+
+# This one is host-only, and the other three of this type's operations are not
+
+[`rgrad`](@ref), [`metric`](@ref) and [`check`](@ref) run wherever the point is — [`metric`](@ref)
+as far as the backend supplies an `lu`, since it forms ``\mathrm{inv}(U^TU)``. This does not, and
+the reason is the same one that makes `rand(::GPU, ::Type{<:SymplecticStiefelManifold}, …)` refuse:
+the completion is orthogonalized by the symplectic SR decomposition [`sr!`](@ref), which is a host
+factorization — `_rand_symplectic_stiefel` calls `Matrix` on its factor. A device spelling would be
+a host computation with two transfers around it, which is a different operation from the
+device-native section [`global_section(::StiefelManifold)`](@ref) gives.
+
+A device-backed point is therefore refused with an `ArgumentError` that says so, rather than left
+to fail inside `sr!` with `Cannot access the contents of a private buffer`, which names neither the
+manifold nor the call.
 """
 function global_section(U::SymplecticStiefelManifold)
+    backend = KernelAbstractions.get_backend(U)
+    backend isa GPU &&
+        throw(ArgumentError("global_section is host-only for a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host, so a section of a $(backend) point would be a host computation with transfers around it. Move the point to the host first. rgrad, metric and check do run on $(backend)."))
+
     N2, n2 = size(U)
     N, n = N2 ÷ 2, n2 ÷ 2
     m = N - n
     A = randn(eltype(U), N2, N2 - n2)
-    J₁ = _poisson_tensor(eltype(U), N2)
-    J₂ = _poisson_tensor(eltype(U), n2)
+    J₁ = _poisson_tensor(U, N2)
+    J₂ = _poisson_tensor(U, n2)
     A -= U * J₂ * U' * J₁' * A
     # `sr!` returns the full `2N x 2N` symplectic factor; the completion is `m` of its columns from
     # each half, the same slice `_rand_symplectic_stiefel` takes. Returning the whole factor would

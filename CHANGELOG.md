@@ -435,6 +435,58 @@ breaking release).
 
 ### Changed
 
+- **`check` and `rgrad` of a `SymplecticStiefelManifold` run wherever the point is, and `metric`
+  does too wherever the backend supplies an `lu`.** All three were host-only, each failing
+  differently and none of them saying so — `Scalar indexing is disallowed` from two frames down,
+  which names neither the manifold nor the call. Two causes, both of them accidents rather than
+  anything about the geometry:
+
+  - **The Poisson tensor was built on the host** by `_poisson_tensor(T, n2)`, then multiplied
+    straight into a device-backed point. A host matrix against a device one reaches the generic
+    product, which scalar-indexes. It now takes the point and builds the tensor for the point's own
+    backend, with a kernel that writes the two off-diagonal blocks — the same shape `unit_matrix`
+    and `write_ones_kernel!` already have, and for the same reason. The host spelling is unchanged
+    and still a plain loop, because the common case must not pay for the device machinery.
+  - **The adjoint of a point had no `*` of its own**, so `U'` carried its wrapper into
+    `LinearAlgebra`'s generic product. This is where all three operations go: `rgrad` and `metric`
+    form `U'U`, `metric` also forms `J'U·inv(U'U)·U'J`, and `check` *is* `U'JU`.
+    `StiefelManifold` has had the counterpart since it was written; this type never did, and that
+    is what made its whole surface host-only. Both sides are now covered, since `metric` puts the
+    adjoint on the right of a product as well as on the left.
+  - A third, smaller one, in the same function: `metric` built its identity with `LinearAlgebra.I`,
+    and `X - I` reaches a kernel-backed method only on the array types `GPUArrays` covers. It now
+    goes through `unit_matrix`, as every other identity in this package does. The difference is
+    invisible on `Metal` and `CUDA` and is the whole answer on a `KernelAbstractions` backend that
+    is neither.
+
+  Measured on an M4 Max through `Metal` in `Float32` under `allowscalar(false)`, on a `6 × 4` point
+  moved from the host: `check` gives 1.219e-6 against the host's 1.205e-6, `rgrad` returns an
+  `MtlMatrix` agreeing with the host to 1.5e-6, and `metric` returns 9.57047 — the host value to
+  every digit printed.
+
+  **`global_section` stays host-only, and now says so instead of failing inside `sr!`.** Its
+  completion is orthogonalized by the symplectic SR decomposition, which is a host factorization:
+  `_rand_symplectic_stiefel` calls `Matrix` on its factor. A device spelling would be a host
+  computation with two transfers around it, which is a different operation from the device-native
+  section `global_section(::StiefelManifold)` gives. A device-backed point is refused with an
+  `ArgumentError` naming the reason and the way out — the same answer
+  `rand(::GPU, ::Type{<:SymplecticStiefelManifold}, …)` already gave, and for the same reason.
+- Fifteen tie-breakers join `src/ambiguities.jl` and `manifolds/symplectic_stiefel_manifold.jl`,
+  because an adjoint that multiplies against a bare `AbstractMatrix` on either side meets every
+  other owned type twice over. Rule 1 throughout: the adjoint of a point is an ordinary array
+  transposed, so it unwraps.
+
+  **Two of them carry two independent type-parameter sets, which is the case the file's own binding
+  rule is about.** `*(::Adjoint{Symplectic}, ::AbstractMatrix)` binds its element type from the
+  *left* operand and `*(::AbstractMatrix, ::Adjoint{Symplectic})` from the *right*, so nothing in
+  their overlap makes the two element types equal. A tie-breaker with one shared `T` separates only
+  the part where they happen to agree, and leaves a product of two symplectic adjoints of differing
+  element type ambiguous.
+
+  `test/ambiguities.jl` gains `U'` in both of its operand lists, so the sweep that checks every
+  tie-breaker against the dense product covers these fifteen. `detect_ambiguities` shows a pair is
+  separated; only the sweep shows the right answer comes back, and a tie-breaker that dropped a
+  `.parent` would compile and resolve.
 - **The two `AbstractTriangular`s and `StiefelProjection` multiply without scalar indexing, so a
   geodesic retraction of a device-backed point now runs end to end.** Both families reached the
   generic `AbstractMatrix` product, which asks its argument for one entry at a time — and a device

@@ -27,6 +27,9 @@ begin
     @safetestset "Symplectic Stiefel Manifold  " include("manifolds/symplectic_stiefel_manifold.jl")
 end
 begin
+    @safetestset "Symplectic on a backend      " include("manifolds/symplectic_backend.jl")
+end
+begin
     @safetestset "Symplectic SR Decomposition  " include("decompositions/symplectic_sr.jl")
 end
 begin
