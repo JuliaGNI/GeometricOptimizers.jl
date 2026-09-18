@@ -188,9 +188,31 @@ breaking release).
   points against three stand-in devices: one that carries `Float64`, one that declares it does not,
   and one that declares it does not *and* can allocate nothing at all — so that an `ArgumentError`
   from the third is proof the call was refused before the backend was asked for memory.
+- Added backend-taking `zeros` and `rand` for `SymmetricMatrix`, which `SkewSymMatrix` already had.
+  A symmetric matrix could not be placed on a device by naming one, although the two types mirror
+  each other everywhere else and both are optimizer parameters — the SympNet and
+  symplectic-attention layers of `GeometricMachineLearning` are parametrized by both.
+- Added a backend-taking `rand` for `GrassmannLieAlgHorMatrix`, which `StiefelLieAlgHorMatrix`
+  already had. A Grassmann lift could be zeroed on a device by naming one and not drawn on it.
 
 ### Fixed
 
+- **A `rand` that names a backend no longer returns a `SymplecticStiefelManifold` point that is not
+  on the manifold.** `SymplecticStiefelManifold <: Manifold{T}`, so the backend-taking spellings
+  reached the generic draw in `src/manifolds/abstract_manifold.jl`, which orthonormalises a Gaussian
+  matrix with `qr` — the Euclidean form, and not ``\mathbb{J}``. The inner constructor asserts shape
+  alone, so the result was accepted and nothing downstream said otherwise. At seed `1234` and size
+  `(6, 4)` the symplectic residual `check(U)` was `1.4929600168627613`, against `6.32e-13` for the
+  host draw at the same seed, while the *orthonormality* residual sat at `7.0e-16` — the point was
+  on the Stiefel manifold instead. The host spellings were always correct, and no test covered a
+  backend-taking one.
+
+  This type now carries the backend-taking signatures itself. On a `CPU` they are the symplectic
+  draw, and give a point bit-identical to the host spelling at the same seed. On a `GPU` they throw
+  an `ArgumentError`: the draw is the symplectic SR decomposition `sr!`, a host factorization, so a
+  device spelling would be a host draw and a transfer rather than the device-native draw
+  `StiefelManifold` and `GrassmannManifold` get. Deciding that for the caller is what the refusal
+  avoids.
 - **A product or a sum of two of this package's own matrix types no longer raises an ambiguous
   `MethodError`.**
   `StiefelManifold`, `SymplecticStiefelManifold`, `StiefelProjection`, `SkewSymMatrix`,
@@ -417,8 +439,9 @@ breaking release).
   it**, with an `ArgumentError` naming the width and the way out, instead of narrowing it or
   failing further in. All sixteen entry points: `zeros` and `rand` for `SkewSymMatrix`,
   `SymmetricMatrix`, both `AbstractTriangular`s and both horizontal lifts,
-  `StiefelProjection(backend, T, N, n)`, `unit_matrix(backend, T, n)`, and `rand` for both
-  manifolds.
+  `StiefelProjection(backend, T, N, n)`, `unit_matrix(backend, T, n)`, and `rand` for
+  `StiefelManifold` and `GrassmannManifold`. The package has a third manifold, and it takes no
+  backend at all — see the `SymplecticStiefelManifold` entry under *Fixed*.
   `rand(MetalBackend(), StiefelManifold{Float64}, N, n)` is the case:
   `KernelAbstractions.supports_float64` is `false` there, and the call used to reach the backend's
   own allocation and fail with `Metal does not support Float64 values, try using Float32 instead`,
@@ -432,13 +455,6 @@ breaking release).
   element type, and on no others — `zero`, `similar`, `_zero`, `_similar` and the arithmetic take
   an *instance*, so their element type comes from an array that is already on the backend and the
   case cannot arise.
-- `SymmetricMatrix` has backend-taking `zeros` and `rand`, which it did not have and
-  `SkewSymMatrix` did. A symmetric matrix could not be placed on a device by naming one, although
-  the two types mirror each other everywhere else and both are optimizer parameters — the SympNet
-  and symplectic-attention layers of `GeometricMachineLearning` are parametrized by both.
-- `GrassmannLieAlgHorMatrix` has a backend-taking `rand`, which it did not have and
-  `StiefelLieAlgHorMatrix` did. A Grassmann lift could be zeroed on a device by naming one and not
-  drawn on it.
 - `StiefelProjection`'s backend-taking constructor and `unit_matrix(backend, T, n)` declare
   `backend::KernelAbstractions.Backend` rather than leaving the argument untyped. Every in-package
   caller already passes one, through `get_backend`; naming it is what lets the element type be

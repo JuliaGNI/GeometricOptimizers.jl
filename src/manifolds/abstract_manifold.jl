@@ -152,6 +152,13 @@ point and take a step on one but cannot draw one and cannot carry an [`Optimizer
 `Cannot access the contents of a private buffer`, measured on real hardware, and so do
 `GlobalSection(Y)` and `Optimizer(Y, F)`. That is `Metal.jl`'s gap and not this package's, but
 nothing stated the requirement, which left a reader to find it by hitting it.
+
+# The manifolds this draws
+
+[`StiefelManifold`](@ref) and [`GrassmannManifold`](@ref). [`SymplecticStiefelManifold`](@ref) is
+drawn on the host alone: its draw is the symplectic SR decomposition [`sr!`](@ref), which is a host
+factorization, so a device spelling would be a host draw followed by a transfer rather than the
+device-native draw the other two get. Naming a device for it throws an `ArgumentError` saying so.
 """
 function Base.rand(backend::KernelAbstractions.Backend, manifold_type::Type{MT},
         N::Integer, n::Integer) where {MT <: Manifold}
