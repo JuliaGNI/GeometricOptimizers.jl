@@ -1,4 +1,5 @@
 using GeometricOptimizers
+using GeometricOptimizers: map_to_S
 using Test
 import Random
 
@@ -69,6 +70,22 @@ for T in (Float32, Float64)
         scalar_multiplication(n, T)
     end
 end
+
+# see the note on the same testset in `skew_symmetric.jl`
+@testset "an integer matrix is projected into float(T)" begin
+    for T in (Int8, Int16, Int32, Int64, Int128, BigInt,
+        UInt8, UInt16, UInt32, UInt64, UInt128)
+        A = T[0 1 2; 3 0 4; 5 6 0]
+        @test eltype(map_to_S(A)) === float(T)
+        @test eltype(SymmetricMatrix(A)) === float(T)
+        @test SymmetricMatrix(A) ≈ (float(T).(A) .+ float(T).(A)') ./ 2
+    end
+    A = Bool[0 1 1; 0 0 1; 1 0 0]
+    @test eltype(map_to_S(A)) === Float64
+    @test eltype(SymmetricMatrix(A)) === Float64
+    @test SymmetricMatrix(A) ≈ (Float64.(A) .+ Float64.(A)') ./ 2
+end
+
 # see the note on `storage layout` in `skew_symmetric.jl`
 @testset "storage layout" begin
     M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
