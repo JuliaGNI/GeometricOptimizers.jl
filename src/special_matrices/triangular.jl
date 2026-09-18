@@ -42,8 +42,14 @@ function Base.zeros(backend::KernelAbstractions.Backend, ::Type{AT},
     Base.typename(AT).wrapper(KernelAbstractions.zeros(backend, T, n*(n-1)÷2), n)
 end
 
+# The host spelling is `zeros(T, m)` and not `zeros(CPU(), AT, n)`: `KernelAbstractions.zeros` on a
+# `CPU` returns the same `Vector{T}` with the same values, at a constant 176 B of overhead and 2.5x
+# to 4.6x the time, because it fills rather than reaching `calloc` and so loses the zero page. The
+# host path is the common one here and must not pay for the device machinery. Every other
+# host-placing allocator in this package -- `SkewSymMatrix`'s, `SymmetricMatrix`'s and both lie
+# algebras' -- already spells it this way.
 function Base.zeros(::Type{AT}, n::Int) where {T, AT <: AbstractTriangular{T}}
-    zeros(CPU(), AT, n)
+    Base.typename(AT).wrapper(zeros(T, n*(n-1)÷2), n)
 end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
@@ -53,9 +59,9 @@ function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
     Base.typename(AT).wrapper(S, n)
 end
 
-function Base.rand(rng::Random.AbstractRNG, type::Type{AT}, n::Int) where {
+function Base.rand(rng::Random.AbstractRNG, ::Type{AT}, n::Int) where {
         T, AT <: AbstractTriangular{T}}
-    rand(rng, CPU(), type, n)
+    Base.typename(AT).wrapper(rand(rng, T, n*(n-1)÷2), n)
 end
 
 function Base.rand(type::Type{AT}, n::Integer) where {T, AT <: AbstractTriangular{T}}

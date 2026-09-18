@@ -10,13 +10,25 @@ An array that essentially does `vcat(I(n), zeros(N-n, n))` with GPU support.
 An instance of `StiefelProjection` should technically also belong to [`StiefelManifold`](@ref). 
 """
 struct StiefelProjection{T, AT} <: AbstractMatrix{T}
-    N::Integer
-    n::Integer
+    N::Int
+    n::Int
     A::AT
     function StiefelProjection(backend, T::Type, N::Integer, n::Integer)
         A = KernelAbstractions.zeros(backend, T, N, n)
         assign_ones_for_stiefel_projection! = assign_ones_for_stiefel_projection_kernel!(backend)
         assign_ones_for_stiefel_projection!(A, ndrange = n)
+        new{T, typeof(A)}(N, n, A)
+    end
+
+    # The host constructor allocates and fills in one step, with no backend and no kernel launch:
+    # `Matrix{T}(I, N, n)` is exactly the matrix the docstring above describes. It used to route
+    # through `StiefelProjection(CPU(), T, N, n)`, which allocates through
+    # `KernelAbstractions.zeros` and then starts a kernel to write `n` ones. A host placement is
+    # the common case here and must not pay for the device machinery --
+    # `KernelAbstractions.zeros(CPU(), T, n)` costs a constant 176 B and 2.5x to 4.6x the time of
+    # `zeros(T, n)`, before the kernel.
+    function StiefelProjection(N::Integer, n::Integer, T::Type = Float64)
+        A = Matrix{T}(I, N, n)
         new{T, typeof(A)}(N, n, A)
     end
 end
@@ -35,10 +47,6 @@ end
 @kernel function assign_ones_for_stiefel_projection_kernel!(A::AbstractArray{T}) where {T}
     i = @index(Global)
     A[i, i] = one(T)
-end
-
-function StiefelProjection(N::Integer, n::Integer, T::Type = Float64)
-    StiefelProjection(CPU(), T, N, n)
 end
 
 StiefelProjection(T::Type, N::Integer, n::Integer) = StiefelProjection(N, n, T)

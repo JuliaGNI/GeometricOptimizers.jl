@@ -43,25 +43,73 @@ function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
     A = randn(rng, T, N, n)
-    MT{typeof(A)}(assign_columns(typeof(A)(qr!(A).Q), N, n))
+    Q = assign_columns(typeof(A)(qr!(A).Q), N, n)
+    # `MT` may name the storage array type as well as the element type --
+    # `StiefelManifold{Float64, Matrix{Float64}}` -- and is then already concrete, so applying a
+    # further parameter to it is an error. `StiefelManifold{Float64}` still needs one. The branch
+    # is on a type parameter and folds away. This used to be a second method in
+    # `stiefel_manifold.jl`, written against `StiefelManifold{T, AT}` and so available to that one
+    # manifold only; `Manifold{T}` has a single parameter and cannot name the storage type, which
+    # is why this is a branch rather than a signature.
+    (isconcretetype(MT) ? MT : MT{typeof(A)})(Q)
+end
+
+# A named element type a backend cannot hold is rejected and not narrowed. Narrowing would return a
+# point of a different type from the one the caller asked for, which is the one thing a call that
+# names its element type has ruled out; the caller would then carry `Float32` results through code
+# written for `Float64` with nothing to say so.
+#
+# `KernelAbstractions.supports_float64` is the backend's own declaration. It answers `true` for
+# every backend that does not override it, so this can only fire where a backend author has stated
+# that the width is unavailable -- `Metal.jl` sets it `false`, and `CUDA` is unaffected. Without
+# this the same call still fails, but further in and in the backend's words: allocating a `Float64`
+# `MtlArray` raises `Metal does not support Float64 values, try using Float32 instead`, which names
+# neither the manifold nor the call that asked for it.
+function _check_supported_eltype(backend::KernelAbstractions.Backend, ::Type{T}) where {T}
+    if T === Float64 && !KernelAbstractions.supports_float64(backend)
+        throw(ArgumentError("$(backend) does not support Float64; ask for Float32 explicitly, as in rand(backend, StiefelManifold{Float32}, N, n)"))
+    end
 end
 
 function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
+    _check_supported_eltype(backend, T)
     A = KernelAbstractions.allocate(backend, T, N, n)
     Random.randn!(rng, A)
     MT{typeof(A)}(assign_columns(typeof(A)(qr!(A).Q), N, n))
 end
 
-function Base.rand(backend::CPU, rng::Random.AbstractRNG, ::Type{MT},
-        N::Integer, n::Integer) where {MT <: Manifold}
-    rand(backend, rng, MT{Float64}, N, n)
-end
+@doc raw"""
+    default_eltype(backend)
 
-function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
+The element type a `rand` that names a backend but no element type draws in: `Float64` on the host
+and `Float32` on a device.
+
+Neither value is arbitrary, which is the whole reason this is a function rather than a literal in
+each of two methods. `Float64` on the host is what `zeros(n)` and `rand(n)` already give, so a
+manifold drawn without an element type matches every other array drawn without one. `Float32` on a
+device is the width an accelerator is built for, and a device that carries `Float64` at all
+normally carries it at a fraction of the `Float32` rate.
+
+**The rule deliberately does not ask `KernelAbstractions.supports_float64`.** A backend being
+*able* to hold a `Float64` is not a reason to hand it one: a caller who has not said which width it
+wants is better served by the width the device is fast at. That trait answers the other half of the
+question instead — an element type the caller *does* name and the backend cannot hold is rejected
+rather than narrowed, which the `rand(backend, manifold_type, N, n)` docstring states.
+
+A caller who wants a fixed width names it, in the parametric form
+`rand(backend, StiefelManifold{Float64}, N, n)`.
+"""
+function default_eltype end
+
+default_eltype(::CPU) = Float64
+default_eltype(::GPU) = Float32
+
+function Base.rand(
+        backend::KernelAbstractions.Backend, rng::Random.AbstractRNG, ::Type{MT},
         N::Integer, n::Integer) where {MT <: Manifold}
-    rand(backend, rng, MT{Float32}, N, n)
+    rand(backend, rng, MT{default_eltype(backend)}, N, n)
 end
 
 function Base.rand(rng::Random.AbstractRNG, manifold_type::Type{MT},
@@ -98,6 +146,28 @@ rand(CUDABackend(), StiefelManifold{Float32}, N, n)
 ```
 
 ... for drawing elements on a `CUDA` device.
+
+# The element type
+
+Naming it, as above, is what fixes it, and a named element type is honoured or refused — never
+narrowed. `rand(MetalBackend(), StiefelManifold{Float64}, N, n)` throws an `ArgumentError` saying
+the backend has no `Float64`, rather than quietly returning a `Float32` point of a type the caller
+did not ask for.
+
+A call that leaves the element type open — `rand(CUDABackend(), StiefelManifold, N, n)` — gets
+[`default_eltype`](@ref GeometricOptimizers.default_eltype) of the backend: `Float64` on the host
+and `Float32` on a device, for the reasons given there.
+
+# What the backend has to supply
+
+`qr`, for an array of its own type. The draw orthonormalises a Gaussian matrix with it, and
+[`global_section`](@ref) does the same for the complement, so a backend without `qr` can hold a
+point and take a step on one but cannot draw one and cannot carry an [`Optimizer`](@ref).
+
+`CUDA` supplies `qr` through CUSOLVER. `Metal` does not: every call above fails there with
+`Cannot access the contents of a private buffer`, measured on real hardware, and so do
+`GlobalSection(Y)` and `Optimizer(Y, F)`. That is `Metal.jl`'s gap and not this package's, but
+nothing stated the requirement, which left a reader to find it by hitting it.
 """
 function Base.rand(backend::KernelAbstractions.Backend, manifold_type::Type{MT},
         N::Integer, n::Integer) where {MT <: Manifold}

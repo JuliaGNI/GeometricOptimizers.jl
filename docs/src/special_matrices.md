@@ -159,6 +159,40 @@ use one or more of them. That package also batches them over the third axis of a
 `mat_tensor_mul` and `tensor_mat_mul`; see
 [Tensors](@extref GeometricMachineLearning Tensors-in-GeometricMachineLearning) there.
 
+## Where a sampled array lands, and what it holds
+
+`rand` and `zeros` here come in four shapes, by whether the call names a backend and whether it
+names an element type. The shape decides both answers, and it is the same rule for the structured
+matrices above, for the [manifolds](@ref "The Stiefel Manifold") and for the horizontal lifts:
+
+| a call of this shape | backend | element type | gives |
+|:--|:--|:--|:--|
+| `rand(backend, SkewSymMatrix{Float32}, n)` | named | named | exactly what was asked for |
+| `rand(backend, StiefelManifold, N, n)` | named | **chosen** | the backend's array, element type from [`default_eltype`](@ref GeometricOptimizers.default_eltype) |
+| `rand(SkewSymMatrix{Float32}, n)` | — | named | the named element type, **on the host** |
+| `rand(SkewSymMatrix, n)` | — | — | the host, and `Float64` |
+
+The third and fourth shapes place on the host without saying so, and that is deliberate. They
+mirror `Base`, where `zeros(Float32, 3)` is a host array and nothing about the call suggests
+otherwise; these types present as `AbstractMatrix`, so `zeros(SkewSymMatrix{Float32}, n)` should
+read as the `Array` case does. A host placement also cannot quietly corrupt a device computation:
+mixing one with a device array throws at the first operation — `+`, `add!` and `copyto!` all fail —
+so the loud failure already gives the guarantee that making these shapes take a backend would buy.
+
+The second shape is the only one where the package decides something the caller did not, which is
+why the choice is a stated rule rather than a literal: `Float64` on the host, `Float32` on a
+device. See [`default_eltype`](@ref GeometricOptimizers.default_eltype) for why each value is what
+it is, and note that a backend being *able* to hold a `Float64` is not one of the reasons.
+
+The first shape has a rule of its own, in the other direction: an element type the caller names and
+the backend cannot hold is **refused**, not narrowed. A narrowed draw would return a point of a
+different type from the one asked for, which is exactly what naming the element type rules out.
+
+None of this reaches an allocation the package makes for itself. `zero`, `similar`, `_zero` and
+`_similar` all take an *instance*, so the backend and the element type both come from the argument
+and there is nothing to default — which is what every optimizer cache and every state allocates
+through. A parameter set on a device stays there.
+
 ## Why the storage matters here
 
 Because these types keep only their free parameters, they are also what an optimizer has to be able

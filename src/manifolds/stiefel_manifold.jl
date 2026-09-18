@@ -139,13 +139,6 @@ function global_section(Y::StiefelManifold{T}) where {T}
     typeof(Y.A)(qr!(A).Q)
 end
 
-function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT}, N::Integer,
-        n::Integer) where {T, AT <: AbstractMatrix{T}, MT <: StiefelManifold{T, AT}}
-    @assert N ≥ n
-    A = randn(rng, T, N, n)
-    MT(assign_columns(typeof(A)(qr!(A).Q), N, n))
-end
-
 function Base.zero(Y::StiefelManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y.A)

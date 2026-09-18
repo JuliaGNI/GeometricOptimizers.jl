@@ -30,6 +30,9 @@ begin
     @safetestset "Symplectic SR Decomposition  " include("decompositions/symplectic_sr.jl")
 end
 begin
+    @safetestset "Backend default eltype       " include("default_eltype.jl")
+end
+begin
     @safetestset "Stiefel Projection           " include("special_matrices/stiefel_projetion.jl")
 end
 begin
