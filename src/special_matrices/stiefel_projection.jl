@@ -13,10 +13,10 @@ struct StiefelProjection{T, AT} <: AbstractMatrix{T}
     N::Int
     n::Int
     A::AT
-    # `backend` was unconstrained, and is now the `KernelAbstractions.Backend` that both of this
-    # type's own callers already pass, through `get_backend`. Naming it is what lets the element
-    # type be checked against it; anything else reached `KernelAbstractions.zeros` on the next line
-    # and failed there regardless.
+    # `backend` is annotated rather than left open, and both of this type's own callers pass a
+    # `KernelAbstractions.Backend` through `get_backend`. Naming the type is what lets the element
+    # type be checked against it; anything else reaches `KernelAbstractions.zeros` on the next line
+    # and fails there regardless.
     function StiefelProjection(
             backend::KernelAbstractions.Backend, T::Type, N::Integer, n::Integer)
         _check_supported_eltype(backend, T)

@@ -158,9 +158,8 @@ function Base.zeros(backend::KernelAbstractions.Backend,
     )
 end
 
-# The backend-taking `rand`, which this type did not have where `StiefelLieAlgHorMatrix` did. The
-# pair otherwise mirror each other method for method, so the gap was drift rather than a decision:
-# a Grassmann lift could be zeroed on a device by naming one and not drawn on it.
+# The backend-taking `rand` mirrors `StiefelLieAlgHorMatrix`'s, as the rest of the pair's methods
+# do: a Grassmann lift is drawn on a device by naming one exactly as it is zeroed on one.
 function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     _check_supported_eltype(backend, T)

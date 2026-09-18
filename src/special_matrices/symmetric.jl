@@ -168,11 +168,9 @@ end
 
 Base.:*(α::Real, A::SymmetricMatrix) = A*α
 
-# The backend-taking allocators, which this type did not have where `SkewSymMatrix` did. The two
-# mirror each other everywhere else, so the gap was drift rather than a decision: a symmetric
-# matrix could not be placed on a device by naming one, although it is an optimizer parameter in
-# exactly the same way -- `GeometricMachineLearning`'s SympNet and symplectic-attention layers are
-# parametrized by both.
+# The backend-taking allocators mirror `SkewSymMatrix`'s method for method, as the rest of the two
+# types do: a symmetric matrix is an optimizer parameter in exactly the same way, and
+# `GeometricMachineLearning`'s SympNet and symplectic-attention layers are parametrized by both.
 #
 # No `n == 1` branch here, unlike `SkewSymMatrix`'s: this storage is `n(n+1)/2`, which is `1` at
 # `n = 1` rather than `0`, so the length-zero case that guard is about does not arise.

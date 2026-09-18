@@ -3,11 +3,12 @@
 # names its element type has ruled out; the caller would then carry `Float32` results through code
 # written for `Float64` with nothing to say so.
 #
-# Every allocator that takes a backend *and* a caller-named element type calls this: the manifold
-# `rand`, `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal lifts and
-# `StiefelProjection`. The derived allocators -- `zero`, `similar`, `_zero`, `_similar`, `+`,
-# `map_to_S`, `global_section`, `unit_matrix` -- must not call it and do not: their element type
-# comes from an array that is already on that backend, so the case cannot arise.
+# Every allocator a caller reaches by naming a backend *and* an element type calls this: the
+# manifold `rand`, `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal
+# lifts, `StiefelProjection` and `unit_matrix` below. The derived allocators -- `zero`, `similar`,
+# `_zero`, `_similar`, `+`, `map_to_S`, `global_section` -- must not call it and do not: they take
+# an instance, so their element type comes from an array that is already on that backend and the
+# case cannot arise. A check there would guard something that cannot happen.
 #
 # `KernelAbstractions.supports_float64` is the backend's own declaration. It answers `true` for
 # every backend that does not override it, so this can only fire where a backend author has stated
@@ -52,7 +53,8 @@ a backend of its own is under no obligation to be one of them.
 The matrix form takes the backend and the element type from `A` and its size from
 `LinearAlgebra.checksquare`, so it throws on a non-square argument exactly as `Base.one` does.
 """
-function unit_matrix(backend, ::Type{T}, n::Integer) where {T}
+function unit_matrix(backend::KernelAbstractions.Backend, ::Type{T}, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
     matrix = KernelAbstractions.zeros(backend, T, n, n)
     write_ones! = write_ones_kernel!(backend)
     write_ones!(matrix; ndrange = n)

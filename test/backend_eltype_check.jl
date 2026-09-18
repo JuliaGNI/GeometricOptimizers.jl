@@ -3,8 +3,8 @@
 #
 # Without the check the same call still fails, but inside the backend and in its words: on Metal,
 # `Metal does not support Float64 values, try using Float32 instead`, which names neither the type
-# being built nor the call that asked for it. The width was never silently narrowed, so what this
-# adds is the message and one place to read the rule.
+# being built nor the call that asked for it. The width is never silently narrowed either way; what
+# the check supplies is the message and one place to read the rule.
 #
 # Three stand-in devices. `_Float64GPU` and `_NoFloat64GPU` differ in one declaration and nothing
 # else, and both allocate host arrays, which makes them devices every one of these methods actually
@@ -22,7 +22,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular,
-                           _check_supported_eltype
+                           _check_supported_eltype, unit_matrix
 using KernelAbstractions: KernelAbstractions, CPU, GPU
 using Random
 using Test
@@ -63,16 +63,18 @@ function allocators(T)
         "rand GrassmannLieAlgHorMatrix" => b -> rand(b, GrassmannLieAlgHorMatrix{T}, N, n),
         "StiefelProjection" => b -> StiefelProjection(b, T, N, n),
         "rand StiefelManifold" => b -> rand(b, StiefelManifold{T}, N, n),
-        "rand GrassmannManifold" => b -> rand(b, GrassmannManifold{T}, N, n)
+        "rand GrassmannManifold" => b -> rand(b, GrassmannManifold{T}, N, n),
+        "unit_matrix" => b -> unit_matrix(b, T, n)
     )
 end
 
-# `StiefelProjection` is the one entry point that launches a kernel, and a stand-in device can
-# allocate but not run one. It stays in the refusal testset — the check fires before the kernel, so
-# the refusal is exactly what is observable there — and drops out of the ones that have to complete
-# a call. Its successful path is covered on a real backend by
-# `test/special_matrices/stiefel_projetion.jl`.
-runnable(as) = filter(p -> first(p) != "StiefelProjection", collect(as))
+# `StiefelProjection` and `unit_matrix` are the two entry points that launch a kernel, and a
+# stand-in device can allocate but not run one. They stay in the refusal testset — the check fires
+# before the kernel, so the refusal is exactly what is observable there — and drop out of the ones
+# that have to complete a call. Their successful paths are covered on a real backend by
+# `test/special_matrices/stiefel_projetion.jl` and `test/retractions/exponential_accuracy.jl`.
+const KERNEL_LAUNCHING = ("StiefelProjection", "unit_matrix")
+runnable(as) = filter(p -> first(p) ∉ KERNEL_LAUNCHING, collect(as))
 
 @testset "a width the backend declares it cannot hold is refused" begin
     for (name, allocate) in allocators(Float64)
@@ -90,7 +92,13 @@ runnable(as) = filter(p -> first(p) != "StiefelProjection", collect(as))
             @test occursin("Float32", err.msg)
 
             # and it is refused *before* the backend is asked for memory: this one can allocate
-            # nothing, so anything that got past the check would be a `MethodError` instead
+            # nothing, so anything that got past the check would be a `MethodError` instead.
+            #
+            # `zeros StiefelLieAlgHorMatrix` is the one case this does not witness on its own: its
+            # first argument is `zeros(backend, SkewSymMatrix{T}, n)`, which carries its own check
+            # and raises the same error first, so deleting the guard from the lift's method would
+            # leave every assertion here green. It stays because the delegation is not a property
+            # of the signature and a later edit could drop it.
             @test_throws ArgumentError allocate(_UnallocatableGPU())
         end
     end
@@ -127,8 +135,8 @@ end
     end
 end
 
-# `SymmetricMatrix`'s backend-taking allocators are new: it had none where `SkewSymMatrix` had
-# three, although the two mirror each other everywhere else and both are optimizer parameters.
+# `SymmetricMatrix`'s three backend-taking allocators mirror `SkewSymMatrix`'s, which is what these
+# assert: the two types are optimizer parameters in the same way and are placed on a device alike.
 @testset "SymmetricMatrix allocates on a backend as SkewSymMatrix does" begin
     for T in (Float32, Float64)
         Z = zeros(_Float64GPU(), SymmetricMatrix{T}, n)
@@ -145,8 +153,8 @@ end
     end
 end
 
-# `GrassmannLieAlgHorMatrix` had the backend-taking `zeros` and not the `rand`, where
-# `StiefelLieAlgHorMatrix` had both.
+# `GrassmannLieAlgHorMatrix`'s backend-taking `rand` mirrors `StiefelLieAlgHorMatrix`'s, as its
+# backend-taking `zeros` does.
 @testset "GrassmannLieAlgHorMatrix draws on a backend as StiefelLieAlgHorMatrix does" begin
     for T in (Float32, Float64)
         B = rand(
