@@ -6,7 +6,7 @@ begin
     @safetestset "Exports                      " include("exports.jl")
 end
 begin
-    @safetestset "Aqua: no type piracy         " include("aqua_tests.jl")
+    @safetestset "Aqua: piracy and compat      " include("aqua_tests.jl")
 end
 begin
     @safetestset "Own-vs-own ambiguities       " include("ambiguities.jl")

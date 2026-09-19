@@ -29,8 +29,8 @@ export AdamOptimizerWithDecay
 export Options
 
 import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache
-# `l2norm` is `GeometricBase.Utils`', re-exported by `SimpleSolvers`. Extended here through its
-# owner, so the binding is the same one whatever `SimpleSolvers` re-exports.
+# `l2norm` is `GeometricBase.Utils`', which `SimpleSolvers` imports and does not export. Extended
+# here through its owner, so it is the same binding and does not reach through `SimpleSolvers`.
 import GeometricBase.Utils: l2norm
 import SimpleSolvers: change_precision, solve_with_status
 using SimpleSolvers: method, LinesearchStatus, LINESEARCH_UNKNOWN

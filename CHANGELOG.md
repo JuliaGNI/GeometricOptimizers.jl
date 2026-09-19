@@ -545,27 +545,39 @@ breaking release).
 - **Every import in the module file is explicit, and each name comes from the module that owns
   it.** Three `using` statements brought a whole package in where every other import beside them
   named what it took: `KernelAbstractions` for `@index`, `@kernel`, `CPU` and `GPU`, `Printf` for
-  `@printf`, and `Random` for `AbstractRNG`, `rand!` and `randn!` — eleven names in all, from
-  `ExplicitImports.print_explicit_imports`. Each of the three keeps the package name in its own
-  import list, because the qualified spellings elsewhere in `src/` (`KernelAbstractions.allocate`,
-  `KernelAbstractions.Backend`, `Random.default_rng`) read the module through that binding.
+  `@printf`, and `Random` for `AbstractRNG`, `rand!` and `randn!`. That is eight names, and
+  `ExplicitImports.print_explicit_imports` counts **eleven**: the three module names themselves are
+  in the list too, because the module reads them as bindings and not only as namespaces. All three
+  are kept for that reason, and two of them earn it twice over — `KernelAbstractions.allocate` and
+  `Random.default_rng` are among 107 and 54 qualified uses elsewhere under `src/`, where `Printf`
+  is never once used qualified.
 
-  Two names were taken from a re-exporter rather than from their owner. `AbstractSolverState` is
+  Two names were taken from a package that does not own them. `AbstractSolverState` is
   `GeometricBase`' and was imported from `SimpleSolvers`; it joins the `using GeometricBase` line
   two above, which already took three of its neighbours. `l2norm` is `GeometricBase.Utils`' and was
   `import`ed from `SimpleSolvers` in order to be extended here. It is `import`ed from
-  `GeometricBase.Utils` now. Both bindings are the same object either way —
+  `GeometricBase.Utils` now.
+
+  **`SimpleSolvers` does not re-export either name — it imports both, and exports neither.**
+  Measured: `:AbstractSolverState in names(SimpleSolvers)` and `:l2norm in names(SimpleSolvers)`
+  are both `false`, `Base.ispublic(SimpleSolvers, :l2norm)` is `false`, and `SimpleSolvers.jl`
+  writes `import GeometricBase.Utils: L2norm, l2norm`. So the old spelling reached a binding that
+  package had not published at all, and Julia says so itself:
+  `AbstractSolverState is defined in GeometricBase and is not public in SimpleSolvers`. That makes
+  the case for this change stronger than a re-export would have.
+
+  Both bindings are the same object either way —
   `GeometricBase.AbstractSolverState === SimpleSolvers.AbstractSolverState`, and likewise for
-  `l2norm` — so no method this package defines or calls moves. What changes is that neither name
-  now depends on `SimpleSolvers` continuing to re-export something it does not own. `l2norm` has no
-  binding in `GeometricBase` itself, only in the `Utils` submodule, which is why that one is
-  spelled with the submodule.
+  `l2norm` — so no method this package defines or calls moves. `l2norm` has no binding in
+  `GeometricBase` itself, only in the `Utils` submodule, so `import GeometricBase: l2norm` would
+  fail; the submodule is not a stylistic choice but the only spelling that resolves.
 
   No explicit import in the module file is stale: every name taken is used. `fatou lint`'s
   `unused-import` findings there remain the known false positive.
 
-- **A comment pass over `src/` and `test/`, with nothing behavioural in it.** The `[compat]` bound
-  above is the only line in this change that alters what the package resolves or runs.
+- **A comment pass over `src/` and `test/`, with nothing behavioural in it.** Two lines in this
+  change alter what the package resolves or runs, and both are recorded above: the `[compat] Test`
+  bound, and the `Aqua.test_deps_compat` call that gates it. Nothing below changes a result.
 
   - Two `TODO`s asked for `rand` to default its rng when none is given. The method directly below
     each one does exactly that — `rand(Random.default_rng(), type, n)` — so both are done, and both
@@ -581,10 +593,12 @@ breaking release).
     survived. The lesson is kept in the present tense, where it applies to the next helper as well;
     the account of the one it came from belongs here.
   - `test/runtests.jl`'s `Manifold Optimizers` label was one space short of the 29 every other
-    label uses, so its column did not line up.
+    label uses, so its column did not line up. The `Aqua` label moved for a different reason: it
+    read `Aqua: no type piracy`, which this change made false by adding a second check to the file
+    it includes. It reads `Aqua: piracy and compat` now, in the same 29 columns.
   - `test/lie_algebras/stiefel_lie_algebra_horizontal.jl` never did `using Test`. It runs under
     `@safetestset`, which supplies it, so the suite passed; run on its own the file raised
-    `UndefVarError: @test not defined`.
+    ``UndefVarError: `@test` not defined in `Main` ``.
 
 - **`check` and `rgrad` of a `SymplecticStiefelManifold` run wherever the point is, and `metric`
   does too wherever the backend supplies an `lu`.** All three were host-only, each failing
