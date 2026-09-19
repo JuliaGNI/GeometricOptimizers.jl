@@ -185,7 +185,6 @@ function Base.rand(rng::Random.AbstractRNG, ::Type{SkewSymMatrix}, n::Int)
     SkewSymMatrix(rand(rng, n * (n - 1) ÷ 2), n)
 end
 
-# TODO: make defaults when no rng is specified!!! (prbabaly rng ← Random.default_rng())
 function Base.rand(type::Type{SkewSymMatrix{T}}, n::Integer) where {T}
     rand(Random.default_rng(), type, n)
 end

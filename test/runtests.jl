@@ -6,7 +6,7 @@ begin
     @safetestset "Exports                      " include("exports.jl")
 end
 begin
-    @safetestset "Aqua: no type piracy         " include("aqua_tests.jl")
+    @safetestset "Aqua: piracy and compat      " include("aqua_tests.jl")
 end
 begin
     @safetestset "Own-vs-own ambiguities       " include("ambiguities.jl")
@@ -99,7 +99,7 @@ begin
     @safetestset "Manifold Line Search         " include("manifold_linesearch_tests.jl")
 end
 begin
-    @safetestset "Manifold Optimizers         " include("manifold_optimizers_with_new_interface.jl")
+    @safetestset "Manifold Optimizers          " include("manifold_optimizers_with_new_interface.jl")
 end
 begin
     @safetestset "Grassmann Optimizers         " include("grassmann_optimizer_tests.jl")
