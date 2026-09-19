@@ -60,8 +60,16 @@ end
 # factors rather than through the `2N × 2N` middle matrix. Symmetry and bilinearity below survive
 # almost any slip in that regrouping; *the metric is the one `rgrad` is taken against* does catch
 # one, but at a tolerance that grows to `1e-4` with the size. This writes the `2N × 2N` form out
-# and asserts the two agree at machine precision, so the regrouping is pinned independently of how
-# far the point at that size is from the manifold.
+# and asserts the two agree at `isapprox`'s default `rtol`, which is `1.49e-8`.
+#
+# **Not at machine precision, and the difference matters for anyone re-rolling the draws.** The
+# relative residual tracks the conditioning of `UᵀU`, which the SR decomposition leaves unbounded:
+# over 2000 draws at `10 × 6` the median is 9.1e-15 but the tail reaches 6.1e-7, `cond(UᵀU)`
+# reaches 3.1e18, and the correlation between the two in `log₁₀` is 0.74. **Four of those 2000
+# draws exceed the tolerance.** What keeps this green is the fixed seed at the head of the file,
+# exactly as that header says for its neighbours — so a change that re-rolls these draws can turn
+# this red without anything being wrong with the regrouping. Widen the tolerance in that case, or
+# condition the draw; do not conclude the arithmetic broke.
 @testset "the metric is the 2N × 2N expression it is a regrouping of" begin
     for (N2, n2) in SIZES
         U = rand(SymplecticStiefelManifold, N2, n2)

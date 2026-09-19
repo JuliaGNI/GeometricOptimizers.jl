@@ -28,8 +28,10 @@
 #     `2n × 2n` matrix that leaves, `𝕀_2n + ½𝔠B̄ᵀB̂`, is `𝔠` itself. Nothing larger than `N × 2n`
 #     enters a product, and the result is still the `N × N` retraction.
 #
-# `old` is what the package evaluated before; it is written out here rather than reached through
-# `invoke`, because the new method does not shadow it — it replaced it.
+# `new` is the shipped `cayley` itself, so the two cannot drift. `old` is what the package
+# evaluated before, written out here rather than reached through `invoke`, because nothing shadows
+# it any more — it was replaced. It wraps its result in the same manifold type the method does, so
+# that the byte columns compare like with like.
 #
 # ## What the result cannot be
 #
@@ -45,12 +47,18 @@
 #     arguments exist for anyone who would rather not rely on that.
 #   * **A single sample.** The time column is a median over many samples, and the point is the
 #     shape of the column across `N` rather than any one entry.
-#   * **BLAS threading.** The products here are large enough to be threaded, and the thread count
-#     is printed with the table because the ratio moves by a factor of two with it.
+#   * **BLAS threading, which is the trap that matters here.** `main` pins BLAS to one thread, and
+#     the ratio is meaningless without that. The `O(N³)` product the old grouping makes is a square
+#     `gemm`, which parallelizes almost perfectly; the `O(N²n)` products that replace it are skinny
+#     and do not. Multithreaded BLAS therefore hides most of the difference, by an amount that
+#     depends on what else the machine is doing. Measured on one host at `N = 200`, twelve threads:
+#     3.3 on one occasion, 2.1 on another, and **756** with twelve other Julia processes running.
+#     Single-threaded the same column reproduces to about 10% under all three conditions. One
+#     thread measures the arithmetic, which is what the grouping changed.
 #   * **Dead code.** No result escapes, so all of them are folded into a checksum that is printed.
 
 using GeometricOptimizers: GrassmannLieAlgHorMatrix, SkewSymMatrix, StiefelLieAlgHorMatrix,
-                           geodesic, lift_factors
+                           cayley, geodesic, lift_factors, manifold_type
 using LinearAlgebra
 using Printf
 using Random
@@ -72,19 +80,16 @@ function pieces(B)
     (hcat(vcat(𝕀_small, 𝕆), vcat(𝕆, 𝕀_small)), one(B))
 end
 
-"`(𝕀 + ½B̂𝔠B̄ᵀ)(𝕀 + ½B̄)` — the grouping this package evaluated before."
+"`(𝕀 + ½B̂𝔠B̄ᵀ)(𝕀 + ½B̄)` — the grouping this package evaluated before, wrapped as the method wraps it."
 function old_cayley(B)
     𝕀_small2, 𝕀_big = pieces(B)
     B̂, B̄ = lift_factors(B)
-    (𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') * (𝕀_big + T(0.5) * B)
+    manifold_type(B)((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') *
+                     (𝕀_big + T(0.5) * B))
 end
 
-"`𝕀 + B̂𝔠B̄ᵀ` — the grouping it evaluates now."
-function new_cayley(B)
-    𝕀_small2, 𝕀_big = pieces(B)
-    B̂, B̄ = lift_factors(B)
-    𝕀_big + (B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂)) * B̄'
-end
+"`𝕀 + B̂𝔠B̄ᵀ` — the shipped method itself, so the two cannot drift."
+new_cayley(B) = cayley(B)
 
 "Calls to fold into one timing sample, so that `SAMPLE_FLOOR` is reached. One pilot call sizes it."
 function calls_per_sample(f, B)
@@ -118,6 +123,7 @@ end
 
 function main(variants)
     Random.seed!(20260919)
+    BLAS.set_num_threads(1)                       # see the note on BLAS threading in the header
     checksum = zero(T)
 
     @printf("%-26s %5s %7s %12s %12s %8s %12s %12s %12s\n",

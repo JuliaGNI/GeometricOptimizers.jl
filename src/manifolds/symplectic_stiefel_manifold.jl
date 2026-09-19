@@ -267,18 +267,23 @@ g_U(\Delta_1, \Delta_2) = \mathrm{tr}\left( P \left( \Delta_1^T\Delta_2 - \frac{
 
 Written as the definition reads, the middle factor is a ``2N\times{}2N`` matrix, and forming it
 costs ``O(N^3)`` — a matrix of the ambient dimension to reach a number, on every step the optimizer
-takes. Grouped this way no product has two factors of the ambient dimension, the largest being
-``\mathbb{J}_{2N}^TU``; the ``2N\times{}2N`` identity is not built at all; and ``P`` is inverted
-once rather than twice. ``\mathbb{J}_{2N}`` is still assembled dense by `_poisson_tensor`, and it
-is what a call allocates most of at the larger sizes.
+takes. Grouped this way no product has two factors of the ambient dimension; the largest is
+``\mathbb{J}_{2N}^TU``, and it is formed once, because ``U^T\mathbb{J}_{2N}`` is its adjoint. The
+``2N\times{}2N`` identity is not built at all, and ``P`` is inverted once rather than twice.
+``\mathbb{J}_{2N}`` is still assembled dense by `_poisson_tensor`, and it is what a call allocates
+most of at the larger sizes.
 `scripts/symplectic_metric_cost.jl` carries the measurement.
 """
 function metric(U::SymplecticStiefelManifold{T}, Δ₁::AbstractMatrix,
         Δ₂::AbstractMatrix) where {T}
     J = _poisson_tensor(U, size(U, 1))
     P = inv(U' * U)
-    LinearAlgebra.tr(P * (Δ₁' * Δ₂ -
-                          (T(1) / 2) * (Δ₁' * (J' * U)) * P * ((U' * J) * Δ₂)))
+
+    # `X'` and not a second product: `U'J` is `(J'U)'` entry for entry, conjugation included, so
+    # forming both spends one of the two `O(N^2n)` products this expression has left on a matrix
+    # already in hand. Measured bitwise equal on `Float64` and on `ComplexF64`.
+    X = J' * U
+    LinearAlgebra.tr(P * (Δ₁' * Δ₂ - (T(1) / 2) * (Δ₁' * X) * P * (X' * Δ₂)))
 end
 
 @doc raw"""

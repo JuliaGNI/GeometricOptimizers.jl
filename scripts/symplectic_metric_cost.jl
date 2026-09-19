@@ -26,11 +26,16 @@
 #     matrices of the ambient dimension. The `2N × 2N` identity is built to subtract from it, and
 #     `P` is inverted twice, once in the trace and once inside the middle factor.
 #   * `new` — `tr(P(Δ₁ᵀΔ₂ - ½(Δ₁ᵀ𝕁ᵀU)P(Uᵀ𝕁Δ₂)))`. Multiplying the middle factor out first leaves
-#     three `2n × 2n` matrices under one trace. Nothing larger than `𝕁Δ₂` is formed, the identity
-#     is not built at all, and `P` is inverted once.
+#     three `2n × 2n` matrices under one trace. No product has two factors of the ambient
+#     dimension; the largest is `𝕁ᵀU`, formed once because `Uᵀ𝕁` is its adjoint. The identity is
+#     not built at all, and `P` is inverted once. `𝕁` itself is still a dense `2N × 2N` matrix that
+#     `_poisson_tensor` assembles on every call, and at `2N = 160` that is 93% of what `new`
+#     allocates — so read the byte column as the cost of `𝕁`, not of the arithmetic around it.
 #
-# `old` is written out here rather than reached through `invoke`, because the new method does not
-# shadow it — it replaced it.
+# `new` is the shipped `metric` itself, so the two cannot drift: an earlier version of this script
+# carried a copy, the method gained the `𝕁ᵀU` hoist, and the copy did not — which put four stale
+# byte figures into `CHANGELOG.md`. `old` has to be written out, because nothing shadows it any
+# more; it was replaced.
 #
 # ## Why the accuracy of the points does not matter here
 #
@@ -47,11 +52,17 @@
 #     arguments exist for anyone who would rather not rely on that.
 #   * **A single sample.** The time column is a median over many samples, and the point is the
 #     shape of the column across `2N` rather than any one entry.
-#   * **BLAS threading.** The `2N × 2N` products in `old` are large enough to be threaded, and the
-#     thread count is printed with the table because the ratio moves with it.
+#   * **BLAS threading, which is the trap that matters here.** `main` pins BLAS to one thread, and
+#     the ratio is meaningless without that. The `O(N³)` product `old` makes is a square `gemm`,
+#     which parallelizes almost perfectly; the `2n × 2n` products that replace it do not.
+#     Multithreaded BLAS therefore hides most of the difference, by an amount that depends on what
+#     else the machine is doing — the `2N = 160` ratio has come back as 3.4, as 2.0 and as 2.6 on
+#     one host. Single-threaded it holds between 11.5 and 14.2 over five runs.
+#     `scripts/cayley_regrouping_cost.jl` carries the same note and the wider evidence for it.
 #   * **Dead code.** Neither result escapes, so both are folded into a checksum that is printed.
 
-using GeometricOptimizers: SymplecticStiefelManifold, _poisson_tensor, rgrad, unit_matrix
+using GeometricOptimizers: SymplecticStiefelManifold, _poisson_tensor, metric, rgrad,
+                           unit_matrix
 using LinearAlgebra
 using Printf
 using Random
@@ -73,12 +84,8 @@ function old_metric(U::SymplecticStiefelManifold{T}, Δ₁, Δ₂) where {T}
        (unit_matrix(J) - (T(1) / 2) * J' * U * inv(U' * U) * U' * J) * Δ₂)
 end
 
-"The metric as this package evaluates it, in the `2n × 2n` factors."
-function new_metric(U::SymplecticStiefelManifold{T}, Δ₁, Δ₂) where {T}
-    J = _poisson_tensor(U, size(U, 1))
-    P = inv(U' * U)
-    tr(P * (Δ₁' * Δ₂ - (T(1) / 2) * (Δ₁' * (J' * U)) * P * ((U' * J) * Δ₂)))
-end
+"The metric as this package evaluates it — the shipped method itself, so the two cannot drift."
+new_metric(U::SymplecticStiefelManifold, Δ₁, Δ₂) = metric(U, Δ₁, Δ₂)
 
 "Calls to fold into one timing sample, so that `SAMPLE_FLOOR` is reached. One pilot call sizes it."
 function calls_per_sample(f, args)
@@ -104,6 +111,7 @@ end
 
 function main(variants)
     Random.seed!(20260919)
+    BLAS.set_num_threads(1)                       # see the note on BLAS threading in the header
     checksum = zero(T)
 
     @printf("%6s %6s %7s %12s %12s %8s %12s %12s\n",
