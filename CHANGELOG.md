@@ -539,6 +539,13 @@ breaking release).
   first, and repeated on `OptimizerState`, which is exported and is the first thing the documented
   `solve!(x, OptimizerState(method, x), opt)` pattern evaluates. It dispatches on `Manifold` and not
   on the two concrete manifolds, since what rules `Newton` out is a property of every manifold here.
+- The comment on the lift testset in `test/device_orthonormalization.jl` names where a retraction of
+  a device-backed point is covered. It said `StiefelProjection` "defines `getindex` and no `*`", and
+  that `geodesic(Y, Δ)` and `cayley(Y, Δ)` "do not complete on a device yet". Both stopped holding
+  with the five `*` methods on `StiefelProjection`: `test/device_multiply.jl` runs `geodesic` end to
+  end on a device-backed point, and pins where `cayley` stops on `JLArrays`, which supplies no `lu`.
+  The comment points there instead. On `Metal`, which supplies one, both complete — measured at
+  `check = 1.8e-7` for each.
 
 ### Changed
 
