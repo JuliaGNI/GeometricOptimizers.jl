@@ -184,6 +184,12 @@ breaking release).
 - Added `scripts/host_allocation_cost.jl`, the archived check behind the byte and time figures
   quoted for host allocation below. An earlier round of those figures came from a measurement
   nobody had kept, and a re-run then disagreed with them; the script is what settles that.
+- Added `scripts/row_vector_ambiguity_count.jl`, the archived check behind the ambiguity figures
+  quoted for the row-vector tie-breakers below. It deletes the fourteen methods from a running
+  session rather than comparing two sessions, because `detect_ambiguities` sees every loaded method
+  of `*` and a different dependency set moves the number for reasons that have nothing to do with
+  this package. It also lists every tie-breaker the package owns, so the table in
+  `src/ambiguities.jl` can be checked against the method table rather than trusted.
 - Added `test/backend_eltype_check.jl`, which walks all sixteen backend-and-element-type entry
   points against three stand-in devices: one that carries `Float64`, one that declares it does not,
   and one that declares it does not *and* can allocate nothing at all — so that an `ArgumentError`
@@ -219,7 +225,7 @@ breaking release).
 
   All nine are settled, and each carries a testset over a complex element type beside the real ones,
   because an edit that put `'` back would restore the wrong answer with nothing else complaining.
-  Seven are now `transpose`. The last is bound to `SymmetricMatrix{<:Real}` instead: that is how
+  Eight are now `transpose`. The last is bound to `SymmetricMatrix{<:Real}` instead: that is how
   `adjoint(::LowerTriangular{<:Real})` already settles the same question, and the bound does not
   reject a complex argument — it hands it to `LinearAlgebra`'s lazy `Adjoint`, which conjugates and
   is correct.
@@ -230,6 +236,16 @@ breaking release).
   `*(::AbstractMatrix, ::SymmetricMatrix)` return a `Transpose` where they returned an `Adjoint`.
   Both are an `AbstractMatrix` holding the same entries, but code that dispatches on `Adjoint` sees
   the difference.
+
+  **Nine is the count of the sites this fixes, not of every `'` in the package.** Three more feed a
+  `SkewSymMatrix` from an adjoint expression and are deliberately left alone: `Ω` for a Stiefel and
+  for a Grassmann point in `src/global_sections/omega_functions.jl`, and `global_rep` for a Stiefel
+  point in `src/global_sections/global_sections.jl`. They belong to the Riemannian geometry, which
+  rests on the sesquilinear inner product, so `adjoint` is the right operator there — and the
+  horizontal lift of a complex point would be skew-*Hermitian*, which `SkewSymMatrix` cannot hold at
+  all. Spelling those three `transpose` would not make the path complex-correct; it would only
+  change which answer it gets wrong. The same reasoning leaves `rgrad`, `metric`, `check` and the
+  symplectic Householder applications untouched.
 
   `*(::AbstractMatrix, ::SkewSymMatrix)` also stopped negating its owned operand before the
   product. `-A` builds a second packed vector of ``n(n-1)/2`` entries; the minus is outside the

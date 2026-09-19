@@ -58,8 +58,22 @@ function is_new_tie_breaker(m::Method)
     !(right <: StiefelProjection) && !(right <: ROWVEC)
 end
 
-function count_ambiguities()
-    length(Test.detect_ambiguities(GeometricOptimizers; recursive = false))
+function ambiguous_pairs()
+    Set(Test.detect_ambiguities(GeometricOptimizers; recursive = false))
+end
+
+"The module of whichever method of the pair is not this package's."
+function opposing_module(pair)
+    a, b = pair
+    parentmodule(a) === GeometricOptimizers ? parentmodule(b) : parentmodule(a)
+end
+
+function tally_by_module(pairs)
+    counts = Dict{Module, Int}()
+    for pair in pairs
+        counts[opposing_module(pair)] = get(counts, opposing_module(pair), 0) + 1
+    end
+    sort(collect(counts); by = last, rev = true)
 end
 
 tie_breakers = sort(filter(is_tie_breaker, collect(methods(*)));
@@ -73,11 +87,24 @@ end
 
 added = filter(is_new_tie_breaker, tie_breakers)
 
-with = count_ambiguities()
-println("\ndetect_ambiguities with the ", length(added), " this change adds:    ", with)
+with = ambiguous_pairs()
+println("\ndetect_ambiguities with the ", length(added), " this change adds:    ", length(with))
 
 foreach(Base.delete_method, added)
 
-without = count_ambiguities()
-println("detect_ambiguities without them: ", without)
-println("difference: ", with - without)
+without = ambiguous_pairs()
+println("detect_ambiguities without them: ", length(without))
+println("difference: ", length(with) - length(without))
+
+# The net is not the whole story, and the CHANGELOG says so: the tie-breakers remove a pair against
+# `LinearAlgebra` and one each against `FillArrays` and `ArrayLayouts`, then stand in the removed
+# methods' place against the latter two. Printing both directions is what makes that checkable
+# rather than inferred from one subtraction.
+println("\nremoved by the ", length(added), " methods: ", length(setdiff(without, with)))
+for (m, n) in tally_by_module(setdiff(without, with))
+    println("  ", n, "\t", m)
+end
+println("created by them: ", length(setdiff(with, without)))
+for (m, n) in tally_by_module(setdiff(with, without))
+    println("  ", n, "\t", m)
+end

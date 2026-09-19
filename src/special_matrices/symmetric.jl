@@ -312,9 +312,11 @@ Base.:*(B::AbstractMatrix{T}, A::SymmetricMatrix{T}) where {T} = transpose(A * t
 # `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
 # `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
 # vector gets the answer that method gives every other matrix, including its `transpose`, and gets
-# it the same cheap way: `transpose(x)` is a vector, which reaches the vector kernel instead of
-# materializing `A`. `T` is bound in both slots because the method above binds it there; free, these
-# would not be contained in it and would separate nothing.
+# it the same cheap way: `transpose(x)` is one column, which reaches the kernel as a single column
+# instead of materializing `A`. It is a `Vector` for a real element type and an `n×1` wrapper for a
+# complex one -- either way one column, so the two return the same values on different backings.
+# `T` is bound in both slots because the method above binds it there; free, these would not be
+# contained in it and would separate nothing.
 function Base.:*(x::Adjoint{T, <:AbstractVector}, A::SymmetricMatrix{T}) where {T}
     transpose(A * transpose(x))
 end
