@@ -1,7 +1,7 @@
 @doc raw"""
     Manifold <: AbstractMatrix
 
-A manifold in `GeometricOptimizers` is a sutype of `AbstractMatrix`. All manifolds are matrix manifolds and therefore stored as matrices. More details can be found in the docstrings for the [`StiefelManifold`](@ref), the [`GrassmannManifold`](@ref) and the [`SymplecticStiefelManifold`](@ref).
+A manifold in `GeometricOptimizers` is a subtype of `AbstractMatrix`. All manifolds are matrix manifolds and therefore stored as matrices. More details can be found in the docstrings for the [`StiefelManifold`](@ref), the [`GrassmannManifold`](@ref) and the [`SymplecticStiefelManifold`](@ref).
 """
 abstract type Manifold{T} <: AbstractMatrix{T} end
 

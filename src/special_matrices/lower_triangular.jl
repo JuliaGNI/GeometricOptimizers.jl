@@ -7,7 +7,7 @@ A lower-triangular matrix is an ``n\times{}n`` matrix that has zeros on the diag
 
 The data are stored in a vector ``S`` similarly to other matrices. See [`UpperTriangular`](@ref), [`SkewSymMatrix`](@ref) and [`SymmetricMatrix`](@ref).
 
-The struct two fields: `S` and `n`. The first stores all the entries of the matrix in a sparse fashion (in a vector) and the second is the dimension ``n`` for ``A\in\mathbb{R}^{n\times{}n}``.
+The struct has two fields: `S` and `n`. The first stores all the entries of the matrix in a sparse fashion (in a vector) and the second is the dimension ``n`` for ``A\in\mathbb{R}^{n\times{}n}``.
 
 `adjoint` (`L'`) returns an [`UpperTriangular`](@ref) built around the *same* storage vector, not a copy: `parent(L') === parent(L)` holds, so writing into the adjoint also writes into `L`. Reusing the storage transposes without conjugating, so this method is defined for a real element type only; a complex one falls through to `LinearAlgebra`'s lazy `Adjoint`, which conjugates and does not alias.
 
