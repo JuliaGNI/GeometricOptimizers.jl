@@ -62,6 +62,28 @@ struct UnimplementedRetraction <: AbstractRetraction end
     @test retraction(GeometricOptimizers.Geodesic(), x) == geodesic(x)
 end
 
+# `lift_factors` writes the lift as `B̂ * B̄'`, and its upper-right block is the one `getindex` builds
+# as `-B.B[j, i]` — entrywise, without conjugating. Spelt `-B.B'` the block conjugates, so the
+# factorisation reproduced a different matrix from the lift it came from. The two are one expression
+# on a real element type, which is why this testset is here: it is what the real path cannot see.
+# `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` rebuilds the same block and is pinned the same way
+# in `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`.
+@testset "the lift factorisation reproduces the lift on a complex element type" begin
+    for C in (StiefelLieAlgHorMatrix(
+        SkewSymMatrix(randn(ComplexF64, 2, 2)), randn(ComplexF64, 2, 2), 4, 2),
+        GrassmannLieAlgHorMatrix(randn(ComplexF64, 2, 2), 4, 2))
+        B̂, B̄ = GeometricOptimizers.lift_factors(C)
+        @test B̂ * B̄' ≈ Matrix(C)
+    end
+
+    # and the real path, where the two spellings are one expression
+    for C in (StiefelLieAlgHorMatrix(SkewSymMatrix(randn(2, 2)), randn(2, 2), 4, 2),
+        GrassmannLieAlgHorMatrix(randn(2, 2), 4, 2))
+        B̂, B̄ = GeometricOptimizers.lift_factors(C)
+        @test B̂ * B̄' ≈ Matrix(C)
+    end
+end
+
 T = Float32
 
 for N in 3:5

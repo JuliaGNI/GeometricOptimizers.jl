@@ -117,7 +117,12 @@ function map_to_S(A::AbstractMatrix{T}) where {T <: Integer}
     map_to_S(float.(A))
 end
 
-function LinearAlgebra.Adjoint(A::SymmetricMatrix)
+# A symmetric matrix is its own *transpose*, and only a real one is its own adjoint. Bound to `Real`
+# for the same reason `adjoint(::LowerTriangular{<:Real})` in `upper_triangular.jl` is: the bound
+# does not reject a complex argument, it hands it to `LinearAlgebra`'s lazy `Adjoint`, which
+# conjugates and is correct. Returning `A` unconditionally answered `A' == A` for a complex `A`,
+# which is false.
+function LinearAlgebra.Adjoint(A::SymmetricMatrix{<:Real})
     A
 end
 

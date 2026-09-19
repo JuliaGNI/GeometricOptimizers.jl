@@ -43,8 +43,12 @@ function lift_factors(B::StiefelLieAlgHorMatrix)
     unit = one(B.A)
     A_mat = B.A * unit
 
+    # `transpose` and not `adjoint`: this is the upper-right block of the lift, which `getindex`
+    # builds as `-B.B[j, i]` — entrywise, without conjugating. `+(::StiefelLieAlgHorMatrix,
+    # ::AbstractMatrix)` rebuilds the same block and spells it the same way. The outer `'` stays,
+    # because every caller consumes this as `B̄'` and the two cancel exactly.
     B̂ = hcat(vcat(T(0.5) * A_mat, B.B), E)
-    B̄ = hcat(vcat(unit, T(0.5) * A_mat), vcat(zero(B.B'), -B.B'))'
+    B̄ = hcat(vcat(unit, T(0.5) * A_mat), vcat(zero(transpose(B.B)), -transpose(B.B)))'
 
     (B̂, B̄)
 end
@@ -55,8 +59,9 @@ function lift_factors(B::GrassmannLieAlgHorMatrix)
     backend = KernelAbstractions.get_backend(B)
     zero_mat = KernelAbstractions.zeros(backend, T, B.n, B.n)
 
+    # `transpose` for the reason the Stiefel method above gives
     B̂ = hcat(vcat(zero_mat, B.B), E)
-    B̄ = hcat(vcat(one(zero_mat), zero_mat), vcat(zero(B.B'), -B.B'))'
+    B̄ = hcat(vcat(one(zero_mat), zero_mat), vcat(zero(transpose(B.B)), -transpose(B.B)))'
 
     (B̂, B̄)
 end

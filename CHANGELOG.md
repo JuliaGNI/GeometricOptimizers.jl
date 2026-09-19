@@ -197,28 +197,44 @@ breaking release).
 
 ### Fixed
 
-- **`SkewSymMatrix` and `SymmetricMatrix` are transposes, and five places said `adjoint`.** Both
-  types are defined by a transpose identity — `Mᵀ = -M` and `Mᵀ = M` — and that is what `getindex`
-  reconstructs from the packed storage. Five expressions used `A'` instead, which is the same
-  expression for a real element type and a different one for a complex element type. Nothing here
-  is complex, so every one of them was invisible to the whole suite:
+- **Nine expressions wrote `adjoint` where the identity they rest on is a transpose.**
+  `SkewSymMatrix` is the set ``\{M : M^T = -M\}``, `SymmetricMatrix` is ``\{M : M^T = M\}``, a
+  horizontal lift's upper-right block is ``-B^T``, and neither triangular constructor projects at
+  all — each reads the strict triangle that is there. Every one of those is a statement about the
+  transpose, and `A'` is the same expression on a real element type and a different one on a
+  complex element type. Nothing in this package is complex, so the whole suite was blind to all
+  nine:
 
-  | | was | gave, for a complex `A` |
+  | | was | what it gave, for a complex argument |
   |:--|:--|:--|
-  | `SkewSymMatrix(A)` | `(A - A')/2` | neither `(A - Aᵀ)/2` nor `(A - Aᴴ)/2`: the strict lower triangle of the skew-**Hermitian** part, mirrored transpose-wise |
-  | `SymmetricMatrix(A)` | `(A + A')/2` | likewise, against `(A + Aᵀ)/2` |
-  | `*(::AbstractMatrix, ::SkewSymMatrix)` | `(-A * B')'` | `B·conj(A)`, off by `‖B*A - B*Matrix(A)‖ = 136.7` at `4×4` |
-  | `*(::AbstractMatrix, ::SymmetricMatrix)` | `(A * B')'` | `B·conj(A)`, off by `60.3` |
-  | `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` | `- B.B'` | a sum disagreeing with the dense sum by `3.6`, because `getindex` builds that block as `-B.B[j, i]` |
+  | `SkewSymMatrix(A)` | `(A - A')/2` | neither ``\frac{1}{2}(A - A^T)`` nor ``\frac{1}{2}(A - A^H)``: the strict lower triangle of the skew-**Hermitian** part, mirrored transpose-wise |
+  | `SymmetricMatrix(A)` | `(A + A')/2` | likewise, against ``\frac{1}{2}(A + A^T)`` |
+  | `*(::AbstractMatrix, ::SkewSymMatrix)` | `(-A * B')'` | ``B \cdot \mathrm{conj}(A)`` |
+  | `*(::AbstractMatrix, ::SymmetricMatrix)` | `(A * B')'` | ``B \cdot \mathrm{conj}(A)`` |
+  | `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` | `- B.B'` | a sum disagreeing with the dense sum, because `getindex` builds that block as `-B.B[j, i]` |
+  | `lift_factors(::StiefelLieAlgHorMatrix)` | `-B.B'` | `B̂ * B̄'` reproducing a different matrix from the lift it factorises |
+  | `lift_factors(::GrassmannLieAlgHorMatrix)` | `-B.B'` | likewise |
+  | `map_to_up` | reads `A'` | `UpperTriangular(A)` storing the **conjugated** strict upper triangle, while `LowerTriangular(A)` is exact — so the two constructors disagreed with each other |
+  | `LinearAlgebra.Adjoint(::SymmetricMatrix)` | returns `A` | ``A' = A``, which is true of the transpose and false of the adjoint |
 
-  All five are `transpose` now, and each carries a testset over a complex element type beside the
-  real ones. The triangulars had the same defect and it was fixed the other way round — by binding
-  `adjoint` to `Real` so a complex argument falls through to `LinearAlgebra` — because their
-  `adjoint` shares storage. These types have no such method, so the fix belongs in the expression.
+  All nine are settled, and each carries a testset over a complex element type beside the real ones,
+  because an edit that put `'` back would restore the wrong answer with nothing else complaining.
+  Seven are now `transpose`. The last is bound to `SymmetricMatrix{<:Real}` instead: that is how
+  `adjoint(::LowerTriangular{<:Real})` already settles the same question, and the bound does not
+  reject a complex argument — it hands it to `LinearAlgebra`'s lazy `Adjoint`, which conjugates and
+  is correct.
 
-  **Nothing changes for a real element type**, where the two spellings are one expression. The
-  documented projections were already `\frac{1}{2}(A \pm A^T)`; it is the code that disagreed with
-  them.
+  **The value is unchanged for a real element type**, where the two spellings are one expression,
+  and the documented projections were already ``\frac{1}{2}(A \pm A^T)`` — it is the code that
+  disagreed with them. **Two return types do change**: `*(::AbstractMatrix, ::SkewSymMatrix)` and
+  `*(::AbstractMatrix, ::SymmetricMatrix)` return a `Transpose` where they returned an `Adjoint`.
+  Both are an `AbstractMatrix` holding the same entries, but code that dispatches on `Adjoint` sees
+  the difference.
+
+  `*(::AbstractMatrix, ::SkewSymMatrix)` also stopped negating its owned operand before the
+  product. `-A` builds a second packed vector of ``n(n-1)/2`` entries; the minus is outside the
+  product now, which is the same arithmetic. Against one column at ``n = 400``, measured in a fresh
+  process: **7 520 bytes, against 642 944**.
 
 - **A row vector times one of this package's matrix types is an ordinary product again, rather than
   an ambiguous `MethodError`.** `v' * Y` and `transpose(v) * Y` raised

@@ -1,7 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: AbstractTriangular
 using KernelAbstractions: CPU
-using LinearAlgebra: tr, transpose
+using LinearAlgebra: tr, transpose, tril, triu
 using Test
 import Random
 
@@ -188,4 +188,20 @@ end
         @test transpose(v) * A ≈ transpose(v) * Matrix(A)
         @test size(v' * A) == (1, N)
     end
+end
+
+# Neither constructor projects: each reads the strict triangle that is there. `map_to_low` reads it
+# directly and `map_to_up` reaches it by swapping the indices, which is a transpose. Spelt `A'` the
+# swap conjugates on the way, so `UpperTriangular` stored a triangle nobody asked for — while
+# `LowerTriangular` was exact, so the two constructors disagreed with each other. The real path
+# cannot see it, which is why this testset is here.
+@testset "neither constructor conjugates on a complex element type" begin
+    M = randn(ComplexF64, 4, 4)
+
+    @test Matrix(LowerTriangular(M)) == tril(M, -1)
+    @test Matrix(UpperTriangular(M)) == triu(M, 1)
+
+    Mr = randn(4, 4)
+    @test Matrix(LowerTriangular(Mr)) == tril(Mr, -1)
+    @test Matrix(UpperTriangular(Mr)) == triu(Mr, 1)
 end

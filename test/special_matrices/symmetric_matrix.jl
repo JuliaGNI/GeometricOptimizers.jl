@@ -96,9 +96,9 @@ end
 end
 
 # see `the projection and the product are transposes on a complex element type` in
-# `skew_symmetric.jl`: `SymmetricMatrix` is the set `{M : Mᵀ = M}`, and the projection and
-# `*(::AbstractMatrix, ::SymmetricMatrix)` were both written with `adjoint`. Measured at
-# `‖B*A - B*Matrix(A)‖ = 60.3` on a 3x3 `ComplexF64` case before the fix.
+# `skew_symmetric.jl`: `SymmetricMatrix` is the set `{M : Mᵀ = M}`, so the projection and
+# `*(::AbstractMatrix, ::SymmetricMatrix)` both spell it `transpose`. With `adjoint` the product
+# returns `B·conj(A)`, which the real path cannot tell from `B·A`.
 @testset "the projection and the product are transposes on a complex element type" begin
     A = randn(ComplexF64, 4, 4)
     S = SymmetricMatrix(A)
@@ -111,12 +111,19 @@ end
     @test v' * S ≈ v' * Matrix(S)
     @test transpose(v) * S ≈ transpose(v) * Matrix(S)
 
+    # A symmetric matrix is its own transpose; only a real one is its own adjoint. `S'` returned `S`
+    # for every element type, which answers `S' == S` for a complex `S` — false.
+    @test Matrix(S') ≈ Matrix(S)'
+    @test Matrix(S') ≉ transpose(Matrix(S))
+
     Ar = randn(4, 4)
     Sr = SymmetricMatrix(Ar)
     Br = randn(3, 4)
     @test Matrix(Sr) ≈ (Ar + transpose(Ar)) / 2
     @test Matrix(Sr) ≈ (Ar + Ar') / 2
     @test Br * Sr ≈ Br * Matrix(Sr)
+    # and the real path keeps the method that returns the matrix itself, rather than a wrapper
+    @test Sr' === Sr
 end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::SymmetricMatrix)` does not settle
