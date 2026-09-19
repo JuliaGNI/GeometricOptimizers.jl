@@ -85,10 +85,8 @@ end
 
 @testset "the lift of a device-backed point is taken on the device" begin
     # `global_rep` is the first thing a retraction of a point does after the section, and it is as
-    # far as this file goes. `geodesic(Y, Δ)` and `cayley(Y, Δ)` do not complete on a device yet, for
-    # a reason that is not this file's: they form `Y * E` with `E::StiefelProjection`, and
-    # `StiefelProjection` defines `getindex` and no `*`, so the product falls through to the generic
-    # `AbstractMatrix` path and scalar-indexes.
+    # far as this file goes. The retractions themselves are `device_multiply.jl`'s: `geodesic` runs
+    # end to end there, and `cayley` is pinned where it stops on `JLArrays`, which supplies no `lu`.
     N, n = 6, 3
     Y = rand(device, StiefelManifold, N, n)
     Δ = rgrad(Y, JLArray(rand(T, N, n)))
