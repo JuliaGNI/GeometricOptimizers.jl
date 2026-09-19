@@ -78,9 +78,8 @@ end
 
 # `SkewSymMatrix(α * A) == α * SkewSymMatrix(A)`, i.e. skew-symmetrization is linear.
 #
-# The loop at the bottom of the file calls this, and that is the part to keep: a helper nothing
-# invokes can carry a typo in its own name while the suite still passes. The same property is
-# tested in `GeometricMachineLearning`
+# The loop at the bottom of the file calls this: a helper nothing invokes can carry a typo in its
+# own name while the suite still passes. The same property is tested in `GeometricMachineLearning`
 # (`test/arrays/scalar_multiplication_for_custom_arrays.jl`).
 function scalar_multiplication(n::Integer, T::DataType)
     A = rand(T, n, n)
