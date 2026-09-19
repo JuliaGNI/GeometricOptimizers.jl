@@ -63,6 +63,39 @@ Base.size(E::StiefelProjection) = (E.N, E.n)
 Base.getindex(E::StiefelProjection, i, j) = getindex(E.A, i, j)
 Base.:+(E::StiefelProjection, A::AbstractMatrix) = E.A + A
 Base.:+(A::AbstractMatrix, E::StiefelProjection) = +(E, A)
+
+@doc raw"""
+    *(E::StiefelProjection, A::AbstractMatrix)
+    *(A::AbstractMatrix, E::StiefelProjection)
+    *(E::StiefelProjection, b::AbstractVector)
+
+The product, taken on the wrapped array.
+
+`StiefelProjection` holds its entries in an ordinary array, so unwrapping is all these do — the same
+thing `+` above does, and for the same reason. Without them the product falls through to the generic
+`AbstractMatrix` path, which reaches `getindex` one entry at a time. **That is scalar indexing, and
+it is what stops a retraction on a device**: [`geodesic`](@ref) and [`cayley`](@ref) each take one
+product against the projection — `expB * E` and `cayleyB * E` — with `E` built from the horizontal
+lift and so carrying the point's own backend. Both operands are on the device, and only the wrapper
+puts the product on the host path.
+"""
+Base.:*(E::StiefelProjection, A::AbstractMatrix) = E.A * A
+Base.:*(A::AbstractMatrix, E::StiefelProjection) = A * E.A
+Base.:*(E::StiefelProjection, b::AbstractVector) = E.A * b
+
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::StiefelProjection)` above leaves
+# unsettled. `LinearAlgebra` carries its own `*(::Adjoint{<:Any, <:AbstractVector},
+# ::AbstractMatrix)` and `*(::Transpose{<:Any, <:AbstractVector}, ::AbstractMatrix)`, each narrower
+# in the left argument and wider in the right, so neither it nor the method above wins and the call
+# raises an ambiguity. These two settle it the way rule 1 of `ambiguities.jl` settles the rest:
+# unwrap and hand the row vector the ordinary array.
+#
+# The same standoff is open for every other owned matrix type here -- `v' * Y`, `v' * A` for a
+# skew-symmetric or symmetric `A`, a triangular or an `Sfac` all raise it, and did so before
+# `StiefelProjection` gained a `*` at all.
+Base.:*(x::Adjoint{<:Any, <:AbstractVector}, E::StiefelProjection) = x * E.A
+Base.:*(x::Transpose{<:Any, <:AbstractVector}, E::StiefelProjection) = x * E.A
+
 function Base.vcat(A::AbstractVecOrMat{T}, E::StiefelProjection{T}) where {T <: Number}
     vcat(A, E.A)
 end

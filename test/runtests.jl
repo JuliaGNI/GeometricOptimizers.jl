@@ -143,3 +143,6 @@ end
 begin
     @safetestset "device orthonormalization    " include("device_orthonormalization.jl")
 end
+begin
+    @safetestset "device multiply              " include("device_multiply.jl")
+end

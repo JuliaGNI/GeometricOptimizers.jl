@@ -46,6 +46,10 @@ end
 # every tie-breaker in `src/ambiguities.jl` is written to give.
 const N = 6
 
+# `StiefelProjection` appears on both sides and the two triangulars on the left, because both types
+# multiply against a bare `AbstractMatrix` and so take part in a standoff with every other type
+# here. A type that appears on one side only leaves its own tie-breakers unexercised: the sweep is
+# `LEFT × RIGHT`, so a pair is checked exactly when one of its operands is in each list.
 const LEFT = let
     Y = StiefelManifold(Matrix(qr!(randn(N, N)).Q))
     S = sr!(randn(N, N ÷ 2 + 1)).S
@@ -54,6 +58,9 @@ const LEFT = let
         "U" => rand(SymplecticStiefelManifold, N, N),
         "S" => S,
         "inv(S)" => inv(S),
+        "E" => StiefelProjection(N, N),
+        "LowerTriangular" => rand(LowerTriangular{Float64}, N),
+        "UpperTriangular" => rand(UpperTriangular{Float64}, N),
         "SkewSym" => rand(SkewSymMatrix, N),
         "Sym" => rand(SymmetricMatrix, N)]
 end
@@ -64,10 +71,63 @@ const RIGHT = let
         "U" => rand(SymplecticStiefelManifold, N, N),
         "S" => S,
         "inv(S)" => inv(S),
+        "E" => StiefelProjection(N, N),
         "LowerTriangular" => rand(LowerTriangular{Float64}, N),
         "UpperTriangular" => rand(UpperTriangular{Float64}, N),
         "SkewSym" => rand(SkewSymMatrix, N),
         "Sym" => rand(SymmetricMatrix, N)]
+end
+
+# The sweep is `LEFT × RIGHT`, so every operand in it has to be square — and a square
+# `StiefelProjection` *is* the identity. A tie-breaker for it that dropped an operand or took the
+# product the other way round would still agree with the dense product there, so the sweep cannot
+# see the difference. A rectangular `E` can: only one order and one operand conform at all.
+#
+# `n = 2` rather than `3`, because `sr!` asserts an even number of columns and so needs `n ÷ 2 + 1`
+# to be even on the right-hand side as well.
+const SHORT = 2
+
+const RECT_LEFT = let
+    Y = StiefelManifold(Matrix(qr!(randn(N, N)).Q))
+    S = sr!(randn(N, N ÷ 2 + 1)).S
+    ["Y'" => Y',
+        "Y" => Y,
+        "U" => rand(SymplecticStiefelManifold, N, N),
+        "S" => S,
+        "inv(S)" => inv(S),
+        "LowerTriangular" => rand(LowerTriangular{Float64}, N),
+        "UpperTriangular" => rand(UpperTriangular{Float64}, N),
+        "SkewSym" => rand(SkewSymMatrix, N),
+        "Sym" => rand(SymmetricMatrix, N)]
+end
+
+const RECT_RIGHT = let
+    S = sr!(randn(SHORT, SHORT ÷ 2 + 1)).S
+    ["Y" => StiefelManifold(Matrix(qr!(randn(SHORT, SHORT)).Q)[:, 1:1]),
+        "U" => rand(SymplecticStiefelManifold, SHORT, SHORT),
+        "S" => S,
+        "inv(S)" => inv(S),
+        "E" => StiefelProjection(SHORT, 1),
+        "LowerTriangular" => rand(LowerTriangular{Float64}, SHORT),
+        "UpperTriangular" => rand(UpperTriangular{Float64}, SHORT),
+        "SkewSym" => rand(SkewSymMatrix, SHORT),
+        "Sym" => rand(SymmetricMatrix, SHORT)]
+end
+
+@testset "a rectangular StiefelProjection keeps its operands in order" begin
+    E = StiefelProjection(N, SHORT)
+
+    for (lname, L) in RECT_LEFT
+        @testset "$lname * E" begin
+            @test L * E ≈ Matrix(L) * Matrix(E)
+        end
+    end
+
+    for (rname, R) in RECT_RIGHT
+        @testset "E * $rname" begin
+            @test E * R ≈ Matrix(E) * Matrix(R)
+        end
+    end
 end
 
 @testset "a product of two owned matrices agrees with the dense product" begin

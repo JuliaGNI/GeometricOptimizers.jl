@@ -70,6 +70,22 @@ function Base.getindex(A::UpperTriangular{T}, i::Int, j::Int) where {T}
     return zero(T)
 end
 
+# Row `i` of a strictly upper-triangular matrix has its entries in columns `(i+1):n`, and the entry
+# at `(i, k)` is packed at `(k-2)(k-1)/2 + i` -- the column indexes the block, which is what makes
+# this kernel different from the lower-triangular one rather than a mirror of it.
+@kernel function up_mat_mul_kernel!(
+        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
+    i, j = @index(Global, NTuple)
+
+    tmp_sum = zero(T)
+    for k in (i + 1):n
+        tmp_sum += S[(k - 2) * (k - 1) ÷ 2 + i] * B[k, j]
+    end
+    C[i, j] = tmp_sum
+end
+
+mat_mul_kernel(::UpperTriangular, backend) = up_mat_mul_kernel!(backend)
+
 function map_to_up(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n

@@ -105,6 +105,39 @@ Base.:*(A::SymmetricMatrix{T}, S::Sfac{true, T}) where {T} = A * Matrix(S)
 Base.:*(A::SymmetricMatrix{T}, B::AbstractTriangular{T}) where {T} = A * (B * one(B))
 Base.:*(A::SymmetricMatrix{T}, B::SkewSymMatrix{T}) where {T} = A * (B * one(B))
 
+# `StiefelProjection` and `AbstractTriangular` each have a `*` against a bare `AbstractMatrix`, so
+# each of them meets every other owned type in the same standoff as the types above. The two rules
+# at the head of this file decide all of it: the projection unwraps under rule 1, since it holds its
+# entries in an ordinary array; a triangular computes, so under rule 2 it materializes whatever is
+# to its right unless that operand is itself a wrapper.
+Base.:*(E::StiefelProjection, Y::StiefelManifold) = E.A * Y
+Base.:*(E::StiefelProjection, U::SymplecticStiefelManifold) = E.A * U
+Base.:*(E::StiefelProjection, F::StiefelProjection) = E.A * F
+Base.:*(E::StiefelProjection, S::Sfac{false}) = E.A * S
+Base.:*(E::StiefelProjection, S::Sfac{true}) = E.A * S
+Base.:*(E::StiefelProjection{T}, B::AbstractTriangular{T}) where {T} = E.A * B
+Base.:*(E::StiefelProjection{T}, A::SkewSymMatrix{T}) where {T} = E.A * A
+Base.:*(E::StiefelProjection{T}, A::SymmetricMatrix{T}) where {T} = E.A * A
+
+function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, E::StiefelProjection) where {
+        T, AT <: AbstractMatrix{T}}
+    Y.parent.A' * E
+end
+Base.:*(Y::StiefelManifold, E::StiefelProjection) = Y.A * E
+Base.:*(U::SymplecticStiefelManifold, E::StiefelProjection) = U.A * E
+Base.:*(S::Sfac{false}, E::StiefelProjection) = S * E.A
+Base.:*(S::Sfac{true}, E::StiefelProjection) = S * E.A
+Base.:*(A::SkewSymMatrix{T}, E::StiefelProjection{T}) where {T} = A * E.A
+Base.:*(A::SymmetricMatrix{T}, E::StiefelProjection{T}) where {T} = A * E.A
+
+Base.:*(A::AbstractTriangular{T}, Y::StiefelManifold{T}) where {T} = A * Y.A
+Base.:*(A::AbstractTriangular{T}, U::SymplecticStiefelManifold{T}) where {T} = A * U.A
+Base.:*(A::AbstractTriangular{T}, E::StiefelProjection{T}) where {T} = A * E.A
+Base.:*(A::AbstractTriangular{T}, S::Sfac{false, T}) where {T} = A * Matrix(S)
+Base.:*(A::AbstractTriangular{T}, S::Sfac{true, T}) where {T} = A * Matrix(S)
+Base.:*(A::AbstractTriangular{T}, B::SkewSymMatrix{T}) where {T} = A * (B * one(B))
+Base.:*(A::AbstractTriangular{T}, B::SymmetricMatrix{T}) where {T} = A * (B * one(B))
+
 Base.:+(E::StiefelProjection, A::SkewSymMatrix) = E.A + A
 Base.:+(E::StiefelProjection, C::StiefelLieAlgHorMatrix) = E.A + C
 Base.:+(E::StiefelProjection, F::StiefelProjection) = E.A + F

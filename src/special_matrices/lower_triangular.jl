@@ -70,6 +70,25 @@ function Base.getindex(A::LowerTriangular{T}, i::Int, j::Int) where {T}
     return zero(T)
 end
 
+# Row `i` of a strictly lower-triangular matrix has its entries in columns `1:(i-1)`, packed at
+# `(i-2)(i-1)/2 + k`, which is the same arithmetic `getindex` above uses. See the docstring on
+# `*(::AbstractTriangular, ::AbstractMatrix)` for why the product needs a kernel at all.
+#
+# `n` goes unused here. It is taken so that this kernel and `up_mat_mul_kernel!`, which does need it,
+# share one launch signature — that is what lets `mat_mul_kernel` pick between them.
+@kernel function lo_mat_mul_kernel!(
+        C::AbstractMatrix{T}, S::AbstractVector{T}, B::AbstractMatrix{T}, n) where {T}
+    i, j = @index(Global, NTuple)
+
+    tmp_sum = zero(T)
+    for k in 1:(i - 1)
+        tmp_sum += S[(i - 2) * (i - 1) ÷ 2 + k] * B[k, j]
+    end
+    C[i, j] = tmp_sum
+end
+
+mat_mul_kernel(::LowerTriangular, backend) = lo_mat_mul_kernel!(backend)
+
 function map_to_lo(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n

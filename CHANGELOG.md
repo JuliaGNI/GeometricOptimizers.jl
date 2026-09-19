@@ -435,6 +435,95 @@ breaking release).
 
 ### Changed
 
+- **The two `AbstractTriangular`s and `StiefelProjection` multiply without scalar indexing, so a
+  geodesic retraction of a device-backed point now runs end to end.** Both families reached the
+  generic `AbstractMatrix` product, which asks its argument for one entry at a time — and a device
+  array serves no such request. `geodesic(Y, Δ)` and `cayley(Y, Δ)` finish with `expB * E` and
+  `cayleyB * E`: `E` is `StiefelProjection(B)` of the horizontal lift, and the exponential and the
+  Cayley transform of a lift are themselves `Manifold`s. So both operands are already on the point's
+  backend, and only the wrapper put the product on the host path.
+
+  `StiefelProjection` holds an ordinary array, so its three new `*` methods unwrap it and nothing
+  more — the same thing its `+` has always done. Two further methods take a row vector on the left.
+  `LinearAlgebra` carries its own `*(::Adjoint{<:Any, <:AbstractVector}, ::AbstractMatrix)` and the
+  `Transpose` counterpart, each narrower in the left argument than `*(::AbstractMatrix,
+  ::StiefelProjection)` and wider in the right, so neither wins and `v' * E` would otherwise raise
+  an ambiguity — a shape that worked before the projection had a `*` at all.
+
+  The triangulars compute, so they get kernels: `lo_mat_mul_kernel!` and `up_mat_mul_kernel!` read
+  the packed storage vector directly. Those two were **deleted as dead code in #91**, which was
+  correct at the time — nothing called them — and is what made this a standing gap rather than a
+  latent one. They are back with the caller they were always missing.
+
+  **The host neither gains nor loses much, and the arithmetic that suggests it should is
+  misleading.** The packed vector holds `n(n-1)/2` entries where the generic path reads `n²`, the
+  other `n(n+1)/2` being zeros `getindex` manufactures — which predicts roughly a factor of two and
+  is not what happens. Measured against the exact path the new method shadows, reached with
+  `invoke(*, Tuple{AbstractMatrix, AbstractMatrix}, A, B)` so that the baseline is that method and
+  not a reimplementation of it, in a cold process, median of 201 samples up to `n = 32` and 31
+  above it. A sample is not one call: `time_ns` ticks at about 42 ns here and an `n = 6` product is
+  three of those ticks, so the script folds enough calls into each sample to put the clock below
+  the noise. Below are the medians of three cold runs, and the script is
+  `scripts/triangular_multiply_cost.jl`:
+
+  | | `n = 6` | `n = 32` | `n = 128` | `n = 512` |
+  |:--|--:|--:|--:|--:|
+  | `LowerTriangular`, kernel ÷ generic | **0.76x** | 1.72x | 1.55x | 1.25x |
+  | `UpperTriangular`, kernel ÷ generic | **0.88x** | 1.18x | 1.30x | 1.02x |
+
+  Non-monotone, and at `n = 6` — the size the retraction tests use — both products are *slower*
+  than the path they shadow, because the kernel launch costs a fixed overhead that a six-by-six
+  product cannot amortize. Read the two small-`n` columns as ranges: across those three runs
+  `n = 6` spans 0.74–0.82 and 0.85–0.94, and `n = 32` spans 1.56–1.73 and 1.18–1.20. The large
+  sizes are stable to the second digit. The device support is what this change buys; the host is
+  a wash.
+
+  The launch also costs 128 B at `n = 6`, 32 and 128, and 144 B at `n = 512` — the kernel column
+  minus the generic one, reproducible across all three runs.
+
+  `*(::AbstractMatrix, ::AbstractTriangular)` is `(A' * B')'`. For a **real** element type that
+  goes through the same kernels, because `adjoint` on one of these is then a type swap onto the
+  same storage; the swap is bound to `Real`, so a complex element type falls through to
+  `LinearAlgebra`'s lazy `Adjoint` and that product stays on the generic path. The real result is
+  an `Adjoint` around the device array rather than a bare one, which is what
+  `*(::AbstractMatrix, ::SkewSymMatrix)` has always returned.
+
+  **On real hardware both retractions complete.** Measured on an M4 Max through `Metal` in
+  `Float32` under `allowscalar(false)`: `check(geodesic(Y, Δ/100))` = 1.6e-7 and
+  `check(cayley(Y, Δ/100))` = 2.3e-7, on a point drawn with `rand(MetalBackend(), StiefelManifold,
+  6, 3)`; both triangular products agree with their dense counterparts to 3.6e-7 or better.
+
+  `cayley` does **not** complete on `JLArrays`, and that is the reference backend's gap rather than
+  this package's: `cayley` inverts a `2n × 2n` matrix, `JLArrays` supplies no `lu`, and the generic
+  fallback scalar-indexes. `geodesic` needs no inverse and completes on either. The distinction is
+  pinned in `test/device_multiply.jl` instead of described, so that the day `JLArrays` gains an `lu`
+  the assertion fails and says so. That assertion and the one below it match on the message
+  `"Scalar indexing is disallowed"` rather than on `ErrorException`, which any `error()` on either
+  path would also satisfy.
+
+  **One gap on the same path stays open and is pinned too.** `B * E` with `B` a horizontal lift is
+  the same class one type over — `AbstractLieAlgHorMatrix` has `getindex` and no kernel-backed `*`
+  either — so unwrapping the projection moves the scalar index one frame in rather than removing it.
+  Nothing under `src/` takes that product; the retractions form `expB * E` with a dense `expB`.
+- Twenty-two tie-breakers join `src/ambiguities.jl`. Giving `StiefelProjection` and
+  `AbstractTriangular` a `*` against a bare `AbstractMatrix` puts each of them in a standoff with
+  every other owned type, exactly as the types already there are. No new kind of pair and no new
+  rule: the projection unwraps under the file's rule 1, and a triangular materializes whatever is to
+  its right under rule 2 unless that operand is itself a wrapper. `test/ambiguities.jl` asserts the
+  own-vs-own set is empty, so the count is a consequence rather than something to remember.
+
+  That file's product sweep gains `StiefelProjection` on both sides and the two triangulars on the
+  left, which takes it from 56 products to 90 and is what asserts the 22 new methods return the
+  dense product rather than merely resolving. A type listed on one side only leaves its own
+  tie-breakers unexercised — the sweep is `LEFT × RIGHT`, so a pair is checked exactly when one of
+  its operands is in each list.
+
+  That sweep alone is not enough for the projection. `LEFT × RIGHT` forces every operand square,
+  and a square `StiefelProjection` *is* the identity — so a tie-breaker that dropped an operand or
+  took the product the other way round would agree with the dense product anyway. A second testset
+  beside it takes eighteen products against a rectangular `E`, where only one order and one operand
+  conform at all, and covers all fifteen of the projection's own tie-breakers plus the
+  triangular-times-projection one that the triangular block carries.
 - **A manifold point and its global section are orthonormalized with CholeskyQR2 rather than
   `LinearAlgebra.qr!`, on every backend.** `rand(backend, StiefelManifold, N, n)` and
   `global_section` are the four call sites. This is what makes a device draw work at all:
