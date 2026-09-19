@@ -83,6 +83,22 @@ function zeros_array_generation(n::Integer, N::Integer, T::DataType)
     @test all(iszero, A₆₄)
 end
 
+# `getindex` builds the upper-right block as `-B.B[j, i]`, entrywise and without conjugating, so the
+# lift is skew-*symmetric* rather than skew-Hermitian. `+(::StiefelLieAlgHorMatrix,
+# ::AbstractMatrix)` rebuilds that block and spelt it `-B.B'`, which is the same expression on a real
+# element type and a different one on a complex element type: the sum then disagreed with the dense
+# sum by 3.6 on the 4x4 case below. The real path cannot see the difference, which is why this
+# testset is here — see the matching one in `test/special_matrices/skew_symmetric.jl`.
+@testset "the sum rebuilds the block as a transpose on a complex element type" begin
+    C = StiefelLieAlgHorMatrix(
+        SkewSymMatrix(randn(ComplexF64, 2, 2)), randn(ComplexF64, 2, 2), 4, 2)
+    D = randn(ComplexF64, 4, 4)
+
+    @test transpose(Matrix(C)) == -Matrix(C)
+    @test C + D ≈ Matrix(C) + D
+    @test D + C ≈ D + Matrix(C)
+end
+
 for T in (Float32, Float64)
     for N in 3:5
         for n in 1:N

@@ -197,6 +197,29 @@ breaking release).
 
 ### Fixed
 
+- **`SkewSymMatrix` and `SymmetricMatrix` are transposes, and five places said `adjoint`.** Both
+  types are defined by a transpose identity — `Mᵀ = -M` and `Mᵀ = M` — and that is what `getindex`
+  reconstructs from the packed storage. Five expressions used `A'` instead, which is the same
+  expression for a real element type and a different one for a complex element type. Nothing here
+  is complex, so every one of them was invisible to the whole suite:
+
+  | | was | gave, for a complex `A` |
+  |:--|:--|:--|
+  | `SkewSymMatrix(A)` | `(A - A')/2` | neither `(A - Aᵀ)/2` nor `(A - Aᴴ)/2`: the strict lower triangle of the skew-**Hermitian** part, mirrored transpose-wise |
+  | `SymmetricMatrix(A)` | `(A + A')/2` | likewise, against `(A + Aᵀ)/2` |
+  | `*(::AbstractMatrix, ::SkewSymMatrix)` | `(-A * B')'` | `B·conj(A)`, off by `‖B*A - B*Matrix(A)‖ = 136.7` at `4×4` |
+  | `*(::AbstractMatrix, ::SymmetricMatrix)` | `(A * B')'` | `B·conj(A)`, off by `60.3` |
+  | `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` | `- B.B'` | a sum disagreeing with the dense sum by `3.6`, because `getindex` builds that block as `-B.B[j, i]` |
+
+  All five are `transpose` now, and each carries a testset over a complex element type beside the
+  real ones. The triangulars had the same defect and it was fixed the other way round — by binding
+  `adjoint` to `Real` so a complex argument falls through to `LinearAlgebra` — because their
+  `adjoint` shares storage. These types have no such method, so the fix belongs in the expression.
+
+  **Nothing changes for a real element type**, where the two spellings are one expression. The
+  documented projections were already `\frac{1}{2}(A \pm A^T)`; it is the code that disagreed with
+  them.
+
 - **A row vector times one of this package's matrix types is an ordinary product again, rather than
   an ambiguous `MethodError`.** `v' * Y` and `transpose(v) * Y` raised
 
@@ -224,8 +247,11 @@ breaking release).
   **The package's own ambiguity test cannot see this class, and that is why it lasted.**
   `test/ambiguities.jl` filters `Test.detect_ambiguities` to pairs whose two methods both belong to
   this package, and one method of each pair here is `LinearAlgebra`'s. Each type's own testset
-  covers its pair instead. Over the whole loaded set `detect_ambiguities` drops from 220 to 206:
-  one pair removed per method added, and no new one created.
+  covers its pair instead. Over the whole loaded set `detect_ambiguities` drops from 220 to 206,
+  one pair per method added. It is a net figure and not a clean sweep: 28 of the 206 that remain
+  name one of these methods, all of them against `FillArrays` or `ArrayLayouts`, which carry
+  row-vector products narrower still in the left argument. Those pairs are not new — they stood
+  against the `*(::AbstractMatrix, ::Owned)` method before and have moved onto the tie-breaker.
   `scripts/row_vector_ambiguity_count.jl` is that measurement, and it lists every site so that the
   account in `src/ambiguities.jl` can be checked against the method table rather than trusted.
 

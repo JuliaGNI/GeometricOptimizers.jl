@@ -144,7 +144,10 @@ function Base.:+(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
     copyto!(C, A)
     @views C[1:B.n, 1:B.n] .= B.A + A[1:B.n, 1:B.n]
     @views C[(B.n + 1):B.N, 1:B.n] .= B.B + A[(B.n + 1):B.N, 1:B.n]
-    @views C[1:B.n, (B.n + 1):B.N] .= A[1:B.n, (B.n + 1):B.N] - B.B'
+    # `transpose` and not `adjoint`: `getindex` above builds this block as `-B.B[j, i]`, entrywise
+    # and without conjugating, so the sum has to spell it the same way or the two disagree on a
+    # complex element type. They agree on a real one.
+    @views C[1:B.n, (B.n + 1):B.N] .= A[1:B.n, (B.n + 1):B.N] - transpose(B.B)
 
     C
 end

@@ -184,6 +184,39 @@ end
     @test SkewSymMatrix(vec(SkewSymMatrix(M)), 4) ≈ SkewSymMatrix(M)
 end
 
+# `SkewSymMatrix` is the set `{M : Mᵀ = -M}` -- a transpose identity, which is what `getindex`
+# reconstructs and what the constructor's docstring states. Both the projection and
+# `*(::AbstractMatrix, ::SkewSymMatrix)` were written with `adjoint`, which is the same expression
+# for a real element type and a different one for a complex element type: the projection then landed
+# on neither `(A - Aᵀ)/2` nor `(A - Aᴴ)/2`, and the product returned `B·conj(A)` -- measured at
+# `‖B*A - B*Matrix(A)‖ = 136.7` on a 3x3 `ComplexF64` case before the fix.
+#
+# This testset is here because the real path cannot see the difference, so an edit that put `'` back
+# would restore the wrong answer with nothing else complaining. The triangulars keep the same
+# testset for the same reason -- see `adjoint conjugates on a complex element type` in
+# `triangular.jl`, where the fix went the other way round.
+@testset "the projection and the product are transposes on a complex element type" begin
+    A = randn(ComplexF64, 4, 4)
+    S = SkewSymMatrix(A)
+    B = randn(ComplexF64, 3, 4)
+    v = randn(ComplexF64, 4)
+
+    @test Matrix(S) ≈ (A - transpose(A)) / 2
+    @test transpose(Matrix(S)) == -Matrix(S)
+    @test B * S ≈ B * Matrix(S)
+    @test v' * S ≈ v' * Matrix(S)
+    @test transpose(v) * S ≈ transpose(v) * Matrix(S)
+
+    # On a real element type the two spellings are one expression, which is why the defect was
+    # invisible for as long as it was.
+    Ar = randn(4, 4)
+    Sr = SkewSymMatrix(Ar)
+    Br = randn(3, 4)
+    @test Matrix(Sr) ≈ (Ar - transpose(Ar)) / 2
+    @test Matrix(Sr) ≈ (Ar - Ar') / 2
+    @test Br * Sr ≈ Br * Matrix(Sr)
+end
+
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::SkewSymMatrix)` does not settle on
 # its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on the
 # right, so neither wins. The two tie-breakers beside that product in

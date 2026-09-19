@@ -95,6 +95,30 @@ end
     @test SymmetricMatrix(vec(SymmetricMatrix(M)), 4) ≈ SymmetricMatrix(M)
 end
 
+# see `the projection and the product are transposes on a complex element type` in
+# `skew_symmetric.jl`: `SymmetricMatrix` is the set `{M : Mᵀ = M}`, and the projection and
+# `*(::AbstractMatrix, ::SymmetricMatrix)` were both written with `adjoint`. Measured at
+# `‖B*A - B*Matrix(A)‖ = 60.3` on a 3x3 `ComplexF64` case before the fix.
+@testset "the projection and the product are transposes on a complex element type" begin
+    A = randn(ComplexF64, 4, 4)
+    S = SymmetricMatrix(A)
+    B = randn(ComplexF64, 3, 4)
+    v = randn(ComplexF64, 4)
+
+    @test Matrix(S) ≈ (A + transpose(A)) / 2
+    @test transpose(Matrix(S)) == Matrix(S)
+    @test B * S ≈ B * Matrix(S)
+    @test v' * S ≈ v' * Matrix(S)
+    @test transpose(v) * S ≈ transpose(v) * Matrix(S)
+
+    Ar = randn(4, 4)
+    Sr = SymmetricMatrix(Ar)
+    Br = randn(3, 4)
+    @test Matrix(Sr) ≈ (Ar + transpose(Ar)) / 2
+    @test Matrix(Sr) ≈ (Ar + Ar') / 2
+    @test Br * Sr ≈ Br * Matrix(Sr)
+end
+
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::SymmetricMatrix)` does not settle
 # on its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on
 # the right, so neither wins. The two tie-breakers beside that product in
