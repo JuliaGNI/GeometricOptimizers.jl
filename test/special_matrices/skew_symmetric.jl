@@ -1,5 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: map_to_Skew
+using LinearAlgebra: transpose
 using Test
 import Random
 
@@ -181,4 +182,21 @@ end
 
     @test SkewSymMatrix([1, 2, 3, 4, 5, 6], 4) == [0 -1 -2 -4; 1 0 -3 -5; 2 3 0 -6; 4 5 6 0]
     @test SkewSymMatrix(vec(SkewSymMatrix(M)), 4) ≈ SkewSymMatrix(M)
+end
+
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::SkewSymMatrix)` does not settle on
+# its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on the
+# right, so neither wins. The two tie-breakers beside that product in
+# `src/special_matrices/skew_symmetric.jl` settle it. `test/ambiguities.jl` cannot cover this pair,
+# because one of its two methods is not this package's.
+@testset "a row vector times a SkewSymMatrix" begin
+    for T in (Float32, Float64), N in 2:5
+
+        A = rand(SkewSymMatrix{T}, N)
+        v = rand(T, N)
+
+        @test v' * A ≈ v' * Matrix(A)
+        @test transpose(v) * A ≈ transpose(v) * Matrix(A)
+        @test size(v' * A) == (1, N)
+    end
 end

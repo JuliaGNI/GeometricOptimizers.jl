@@ -34,6 +34,41 @@
 # Each signature binds the element type wherever one of the two methods it separates binds it, so
 # that it is contained in both. Without that it separates only the part of the overlap where the
 # element types agree.
+#
+# ## A row vector meets an owned matrix
+#
+# A second class of standoff. It is not in this file because the other method is not this
+# package's: `LinearAlgebra` carries
+# `*(::Adjoint{T, <:AbstractVector} where T, ::AbstractMatrix)` and a `Transpose` counterpart, each
+# narrower in the left argument than an `AbstractMatrix ∘ Owned` method and wider in the right. So
+# `v' * X` and `transpose(v) * X` are ambiguous for every owned type that has such a method, and
+# `Test.detect_ambiguities` in `test/ambiguities.jl` cannot report them: that sweep keeps only pairs
+# whose two methods both belong here. Each type's own testset covers its pair instead.
+#
+# Two methods per `AbstractMatrix ∘ Owned` method, beside the method they separate:
+#
+#   | type                                    | file                                       |
+#   |:----------------------------------------|:-------------------------------------------|
+#   | `StiefelManifold`                       | `manifolds/stiefel_manifold.jl`            |
+#   | `SymplecticStiefelManifold`             | `manifolds/symplectic_stiefel_manifold.jl` |
+#   | `Adjoint{<:SymplecticStiefelManifold}`  | `manifolds/symplectic_stiefel_manifold.jl` |
+#   | `Sfac{false}`, `Sfac{true}`             | `decompositions/symplectic_sr.jl`          |
+#   | `StiefelProjection`                     | `special_matrices/stiefel_projection.jl`   |
+#   | `SkewSymMatrix`                         | `special_matrices/skew_symmetric.jl`       |
+#   | `SymmetricMatrix`                       | `special_matrices/symmetric.jl`            |
+#   | `AbstractTriangular`                    | `special_matrices/triangular.jl`           |
+#
+# Everything else here is absent because it defines no `*(::AbstractMatrix, ::Owned)`, so a row
+# vector against it reaches `LinearAlgebra` unopposed: `GrassmannManifold` and the two horizontal
+# lifts define no `*` against a matrix at all, and `Adjoint{<:StiefelManifold}` has only the method
+# that takes it on the *left*. `Adjoint{<:SymplecticStiefelManifold}` is in the table because
+# [`metric`](@ref) needs the mirror as well.
+#
+# The element-type rule is the same: bound where the method being separated binds it, free where it
+# does not. What each returns is decided once rather than by the two rules above, because here the
+# bypassed method already takes an arbitrary matrix on the left. Every one of them repeats that
+# method's body verbatim, so a row vector gets exactly the answer any other matrix gets -- and gets
+# it the cheap way, since none of those bodies materializes its owned operand.
 
 function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
         B::SymplecticStiefelManifold) where {

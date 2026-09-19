@@ -128,6 +128,21 @@ Base.:*(B::AbstractMatrix, S::Sfac{false}) = apply_S_right(B, S.Λ)
 
 Base.:*(B::AbstractMatrix, S::Sfac{true}) = apply_S_inverse_right(B, S.Λ)
 
+# A row vector on the left is the one shape the two methods above leave unsettled: each stands off
+# against `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned
+# matrix* in `src/ambiguities.jl` gives the mechanism and lists every site. Each body is the one
+# above it, so a row vector gets the answer that method gives every other matrix, and gets it the
+# same cheap way: the reflectors are applied to the one row rather than assembled into a matrix.
+#
+# Four methods and not two, for the reason the `Sfac`-`Sfac` comment below gives: one method on
+# `Sfac` is wider than `Sfac{false}` in that slot and so separates neither pair.
+Base.:*(x::Adjoint{<:Any, <:AbstractVector}, S::Sfac{false}) = apply_S_right(x, S.Λ)
+Base.:*(x::Transpose{<:Any, <:AbstractVector}, S::Sfac{false}) = apply_S_right(x, S.Λ)
+Base.:*(x::Adjoint{<:Any, <:AbstractVector}, S::Sfac{true}) = apply_S_inverse_right(x, S.Λ)
+function Base.:*(x::Transpose{<:Any, <:AbstractVector}, S::Sfac{true})
+    apply_S_inverse_right(x, S.Λ)
+end
+
 # Without this, `S * inv(S)` — the most natural thing to write with two of these — is an ambiguous
 # `MethodError` between the two methods above, because `Sfac` is itself an `AbstractMatrix` and
 # neither signature is more specific in both arguments. Both factors are materialized rather than

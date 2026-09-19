@@ -84,15 +84,11 @@ Base.:*(A::AbstractMatrix, E::StiefelProjection) = A * E.A
 Base.:*(E::StiefelProjection, b::AbstractVector) = E.A * b
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::StiefelProjection)` above leaves
-# unsettled. `LinearAlgebra` carries its own `*(::Adjoint{<:Any, <:AbstractVector},
-# ::AbstractMatrix)` and `*(::Transpose{<:Any, <:AbstractVector}, ::AbstractMatrix)`, each narrower
-# in the left argument and wider in the right, so neither it nor the method above wins and the call
-# raises an ambiguity. These two settle it the way rule 1 of `ambiguities.jl` settles the rest:
-# unwrap and hand the row vector the ordinary array.
-#
-# The same standoff is open for every other owned matrix type here -- `v' * Y`, `v' * A` for a
-# skew-symmetric or symmetric `A`, a triangular or an `Sfac` all raise it, and did so before
-# `StiefelProjection` gained a `*` at all.
+# unsettled: it stands off against `LinearAlgebra`'s own row-vector product, and neither wins.
+# *A row vector meets an owned matrix* in `src/ambiguities.jl` gives the mechanism and lists every
+# site. The body is the one above, so a row vector gets the answer that method gives every other
+# matrix: a `StiefelProjection` holds its entries in an ordinary array, so unwrap it and let the row
+# vector have the array.
 Base.:*(x::Adjoint{<:Any, <:AbstractVector}, E::StiefelProjection) = x * E.A
 Base.:*(x::Transpose{<:Any, <:AbstractVector}, E::StiefelProjection) = x * E.A
 

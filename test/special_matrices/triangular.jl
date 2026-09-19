@@ -172,3 +172,20 @@ end
     @test LowerTriangular([1, 2, 3, 4, 5, 6], 4) == [0 0 0 0; 1 0 0 0; 2 3 0 0; 4 5 6 0]
     @test UpperTriangular([1, 2, 3, 4, 5, 6], 4) == [0 1 2 4; 0 0 3 5; 0 0 0 6; 0 0 0 0]
 end
+
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::AbstractTriangular)` does not
+# settle on its own: `LinearAlgebra` has its own method for that left operand, narrower there and
+# wider on the right, so neither wins. The two tie-breakers beside that product in
+# `src/special_matrices/triangular.jl` settle it. `test/ambiguities.jl` cannot cover this pair,
+# because one of its two methods is not this package's. Both triangles run, because one pair of
+# methods covers them and neither is symmetric, so each pins which triangle the body reaches for.
+@testset "a row vector times a triangular matrix" begin
+    for T in (Float32, Float64), N in 2:5, AT in (LowerTriangular, UpperTriangular)
+        A = rand(AT{T}, N)
+        v = rand(T, N)
+
+        @test v' * A ≈ v' * Matrix(A)
+        @test transpose(v) * A ≈ transpose(v) * Matrix(A)
+        @test size(v' * A) == (1, N)
+    end
+end

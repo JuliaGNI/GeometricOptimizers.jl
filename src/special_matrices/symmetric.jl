@@ -297,6 +297,16 @@ end
 
 Base.:*(B::AbstractMatrix{T}, A::SymmetricMatrix{T}) where {T} = (A * B')'
 
+# A row vector on the left is the one shape the method above leaves unsettled: it stands off against
+# `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
+# `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
+# vector gets the answer that method gives every other matrix, and gets it the same cheap way: `x'`
+# is a vector, which reaches the vector kernel instead of materializing `A`. `T` is bound in both
+# slots because the method above binds it there; free, these would not be contained in it and would
+# separate nothing.
+Base.:*(x::Adjoint{T, <:AbstractVector}, A::SymmetricMatrix{T}) where {T} = (A * x')'
+Base.:*(x::Transpose{T, <:AbstractVector}, A::SymmetricMatrix{T}) where {T} = (A * x')'
+
 function Base.:*(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where {T}
     A * (B * one(B))
 end

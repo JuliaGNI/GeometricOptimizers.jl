@@ -61,6 +61,14 @@ end
 Base.:*(U::SymplecticStiefelManifold, B::AbstractMatrix) = U.A * B
 Base.:*(B::AbstractMatrix, U::SymplecticStiefelManifold) = B * U.A
 
+# A row vector on the left is the one shape the second method above leaves unsettled: it stands off
+# against `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned
+# matrix* in `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one
+# above, so a row vector gets the answer that method gives every other matrix: a point is an
+# ordinary array in a wrapper, so unwrap it and let the row vector have the array.
+Base.:*(x::Adjoint{<:Any, <:AbstractVector}, U::SymplecticStiefelManifold) = x * U.A
+Base.:*(x::Transpose{<:Any, <:AbstractVector}, U::SymplecticStiefelManifold) = x * U.A
+
 # `U'` is where this type's own operations go: `rgrad` and `metric` form `U'U`, and `check` is
 # `U'JU`. Without a method for the adjoint it keeps its wrapper into `LinearAlgebra`'s generic
 # product, which reads the point one entry at a time — scalar indexing, which a device array does
@@ -80,15 +88,11 @@ function Base.:*(B::AbstractMatrix,
     B * U.parent.A'
 end
 
-# A row vector on the left is the one shape the mirror above leaves unsettled, and it is the same
-# standoff `special_matrices/stiefel_projection.jl` settles for `StiefelProjection`:
-# `LinearAlgebra`'s own `*(::Adjoint{<:Any, <:AbstractVector}, ::AbstractMatrix)` and its
-# `Transpose` counterpart are each narrower in the left argument and wider in the right, so neither
-# they nor the mirror win and `v' * U'` raises an ambiguity. These two settle it under rule 1 of
-# `ambiguities.jl`: unwrap and hand the row vector the ordinary array.
-#
-# `v' * U` against a bare point raises the same ambiguity and has since this type was written, as
-# `v' * Y` does for `StiefelManifold`. That is one type over and is not settled here.
+# The same standoff one wrapper in: a row vector against the mirror above, where `v' * U'` would
+# otherwise raise the ambiguity that the pair above the adjoint methods settles for `v' * U`.
+# *A row vector meets an owned matrix* in `src/ambiguities.jl` gives the mechanism and lists every
+# site. The body is the mirror's, so a row vector gets the answer that method gives every other
+# matrix: unwrap the point and hand the row vector the ordinary array transposed.
 function Base.:*(x::Adjoint{<:Any, <:AbstractVector},
         U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
     x * U.parent.A'

@@ -197,6 +197,46 @@ breaking release).
 
 ### Fixed
 
+- **A row vector times one of this package's matrix types is an ordinary product again, rather than
+  an ambiguous `MethodError`.** `v' * Y` and `transpose(v) * Y` raised
+
+  ```
+  MethodError: *(::Adjoint{Float64, Vector{Float64}}, ::StiefelManifold{Float64, Matrix{Float64}}) is ambiguous.
+  ```
+
+  and so did the same two shapes against a `SymplecticStiefelManifold`, an `Sfac` or its inverse, a
+  `SkewSymMatrix`, a `SymmetricMatrix` and either triangular. Each of those types carries a
+  `*(::AbstractMatrix, ::Owned)`, and `LinearAlgebra` carries
+  `*(::Adjoint{T, <:AbstractVector} where T, ::AbstractMatrix)` and a `Transpose` counterpart. Each
+  of those two is narrower in the left argument and wider in the right, so neither wins. The
+  standoff is as old as each type's own `*`.
+
+  Fourteen methods separate them, two per product and written beside the product they separate.
+  Two pairs of this class were already settled one at a time — `StiefelProjection`'s with the
+  device-multiply change under *Changed* below, and `Adjoint{<:SymplecticStiefelManifold}`'s with
+  the symplectic-backend fix below — and they are the precedent the rest follow. The class is now
+  closed at eighteen methods over nine products, and `src/ambiguities.jl` carries the account of it
+  and the list of every site.
+  Every one of them repeats the body of the method it separates, so a row vector gets the answer
+  any other matrix gets, and gets it the same cheap way — none of those bodies materializes its
+  owned operand.
+
+  **The package's own ambiguity test cannot see this class, and that is why it lasted.**
+  `test/ambiguities.jl` filters `Test.detect_ambiguities` to pairs whose two methods both belong to
+  this package, and one method of each pair here is `LinearAlgebra`'s. Each type's own testset
+  covers its pair instead. Over the whole loaded set `detect_ambiguities` drops from 220 to 206:
+  one pair removed per method added, and no new one created.
+  `scripts/row_vector_ambiguity_count.jl` is that measurement, and it lists every site so that the
+  account in `src/ambiguities.jl` can be checked against the method table rather than trusted.
+
+  `GrassmannManifold` and the two horizontal lifts were never affected. They define no
+  `*(::AbstractMatrix, ::Owned)`, so a row vector against one of them reaches `LinearAlgebra`
+  unopposed. What is *not* closed is the same standoff one level in: `FillArrays` and
+  `ArrayLayouts` each carry a row-vector product of their own, narrower still in the left argument,
+  so `Zeros(n)' * Y` stays ambiguous. It was ambiguous before this change as well, against the
+  `*(::AbstractMatrix, ::Owned)` method, and separating it would mean depending on those two
+  packages to name their types.
+
 - **A `rand` that names a backend no longer returns a `SymplecticStiefelManifold` point that is not
   on the manifold.** `SymplecticStiefelManifold <: Manifold{T}`, so the backend-taking spellings
   reached the generic draw in `src/manifolds/abstract_manifold.jl`, which orthonormalises a Gaussian
