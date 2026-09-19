@@ -14,7 +14,7 @@
 # been fixed. A test does not go stale. Anything added here that pirates a method fails this, whether
 # or not anybody remembers to update a table.
 #
-# Only the piracy check. `Aqua.test_all` would also run `test_ambiguities`, which still reports the
+# Not `Aqua.test_all`. It would also run `test_ambiguities`, which still reports the
 # pairs between this package's own matrix types -- the `Sfac` operator and the two manifolds as much
 # as the structured matrices -- and the `AbstractMatrix` methods of `ArrayLayouts`, `FillArrays`,
 # `LinearAlgebra` and `StaticArrays`. Those are their own piece of work, so turning it on here would
@@ -28,6 +28,11 @@ using Test
 
 # `test_piracies`, plural: `Aqua.test_piracy` was renamed in 0.8 and no longer exists.
 Aqua.test_piracies(GeometricOptimizers)
+
+# Every dependency, weak dependency and test extra carries a `[compat]` bound. The same argument as
+# for piracy above: a missing bound is invisible until a resolve picks a version the package was
+# never built against, and a list of the entries goes stale where a check does not.
+Aqua.test_deps_compat(GeometricOptimizers)
 
 # Where each of the eight went, asserted at the seam. `Aqua.test_piracies` above says that this package
 # defines no pirated method; these say that the methods still *exist*, and in a package that owns one

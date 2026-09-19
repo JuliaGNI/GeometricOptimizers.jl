@@ -1,10 +1,9 @@
 module GeometricOptimizers
 
 using Base: Callable
-using GeometricBase: AbstractProblem, SolverMethod, AbstractSolver
+using GeometricBase: AbstractProblem, SolverMethod, AbstractSolver, AbstractSolverState
 using SimpleSolvers: Options
-using SimpleSolvers: AbstractSolverState, Linesearch, LinesearchMethod, LinesearchProblem,
-                     LU
+using SimpleSolvers: Linesearch, LinesearchMethod, LinesearchProblem, LU
 import SimpleSolvers: outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_suctol, f_mindec
 import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
@@ -29,8 +28,10 @@ export AdamOptimizerWithDecay
 
 export Options
 
-import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache,
-                      l2norm
+import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterate!, cache
+# `l2norm` is `GeometricBase.Utils`', re-exported by `SimpleSolvers`. Extended here through its
+# owner, so the binding is the same one whatever `SimpleSolvers` re-exports.
+import GeometricBase.Utils: l2norm
 import SimpleSolvers: change_precision, solve_with_status
 using SimpleSolvers: method, LinesearchStatus, LINESEARCH_UNKNOWN
 # The ceiling on the step a line search may return, SimpleSolvers 0.12's half of issue A1b. Read by
@@ -42,10 +43,10 @@ using SimpleSolvers: outcome, steplength
 using SimpleSolvers: LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED, LINESEARCH_NO_DESCENT
 export update!
 
-using Printf
+using Printf: Printf, @printf
 
-using KernelAbstractions
-using Random
+using KernelAbstractions: KernelAbstractions, @index, @kernel, CPU, GPU
+using Random: Random, AbstractRNG, rand!, randn!
 using LinearAlgebra: Adjoint, Transpose, qr, norm, I, mul!, rmul!, dot
 using LinearAlgebra: cholesky, issuccess, Symmetric
 using LinearAlgebra: Diagonal, Hermitian, eigen
@@ -189,7 +190,6 @@ include("optimizers/iterative_hessians/dfp/dfp_state.jl")
 include("optimizers/iterative_hessians/bfgs/bfgs_cache.jl")
 include("optimizers/iterative_hessians/dfp/dfp_cache.jl")
 
-# OptimizerSolution is defined in here for example. This should probably be moved to a separate file.
 include("utils.jl")
 
 include("optimizers/optimizer.jl")
