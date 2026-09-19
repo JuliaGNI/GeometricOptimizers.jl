@@ -204,7 +204,7 @@ Compute the Cayley retraction of `B`.
 Internally this is using
 
 ```math
-\mathrm{Cayley}(\bar{B}) = \mathbb{I} + \frac{1}{2} B' (\mathbb{I}_{2n} - \frac{1}{2} (B'')^T B')^{-1} (B'')^T (\mathbb{I} + \frac{1}{2} B),
+\mathrm{Cayley}(\bar{B}) = \mathbb{I} + B' \left(\mathbb{I}_{2n} - \frac{1}{2} (B'')^T B'\right)^{-1} (B'')^T,
 ```
 with
 ```math
@@ -214,6 +214,23 @@ with
 \end{bmatrix} = \begin{bmatrix}  \frac{1}{2}A & \mathbb{I} \\ B & \mathbb{O} \end{bmatrix} \begin{bmatrix}  \mathbb{I} & \mathbb{O} \\ \frac{1}{2}A & -B^T  \end{bmatrix} =: B'(B'')^T,
 ```
 i.e. ``\bar{B}`` is expressed as a product of two ``N\times{}2n`` matrices.
+
+This is the same shape [`geodesic(::AbstractLieAlgHorMatrix)`](@ref) has, and for the same reason:
+the only matrix function either evaluates is on the ``2n\times{}2n`` product ``(B'')^TB'``. Getting
+there from the definition ``\mathrm{Cayley}(\bar{B}) = (\mathbb{I} - \frac{1}{2}\bar{B})^{-1}(\mathbb{I} + \frac{1}{2}\bar{B})``
+takes two steps. Write ``C`` for the ``2n\times{}2n`` inverse above. Splitting
+``\mathbb{I} + \frac{1}{2}\bar{B} = (\mathbb{I} - \frac{1}{2}\bar{B}) + \bar{B}`` gives
+``\mathrm{Cayley}(\bar{B}) = \mathbb{I} + (\mathbb{I} - \frac{1}{2}\bar{B})^{-1}\bar{B}``, and the
+Woodbury identity turns the remaining inverse into
+``(\mathbb{I} - \frac{1}{2}\bar{B})^{-1} = \mathbb{I} + \frac{1}{2}B'C(B'')^T``. The factor that
+leaves on the ``2n\times{}2n`` side is then ``\mathbb{I}_{2n} + \frac{1}{2}C(B'')^TB'``, which is
+``C`` itself, because ``C`` inverts ``\mathbb{I}_{2n} - \frac{1}{2}(B'')^TB'``.
+
+The result is the ``N\times{}N`` retraction of the lift either way, so the cost cannot fall below
+``O(N^2n)``. What the grouping removes is the product of two dense ``N\times{}N`` matrices the
+factored form on the left and ``\mathbb{I} + \frac{1}{2}\bar{B}`` on the right used to make, which
+was ``O(N^3)`` and is why this retraction scaled worse than [`geodesic`](@ref). `scripts/cayley_regrouping_cost.jl`
+carries the measurement.
 """
 function cayley(B::StiefelLieAlgHorMatrix)
     T = eltype(B)
@@ -223,8 +240,7 @@ function cayley(B::StiefelLieAlgHorMatrix)
     𝕀_big = one(B)
     B̂, B̄ = lift_factors(B)
 
-    StiefelManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') *
-                    (𝕀_big + T(0.5) * B))
+    StiefelManifold(𝕀_big + (B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂)) * B̄')
 end
 
 @doc raw"""
@@ -245,8 +261,7 @@ function cayley(B::GrassmannLieAlgHorMatrix)
     𝕀_big = one(B)
     B̂, B̄ = lift_factors(B)
 
-    GrassmannManifold((𝕀_big + T(0.5) * B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂) * B̄') *
-                      (𝕀_big + T(0.5) * B))
+    GrassmannManifold(𝕀_big + (B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂)) * B̄')
 end
 
 @doc raw"""

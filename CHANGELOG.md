@@ -549,6 +549,91 @@ breaking release).
 
 ### Changed
 
+- **`cayley(::AbstractLieAlgHorMatrix)` no longer multiplies two dense ``N\times{}N`` matrices.**
+  It evaluated ``(\mathbb{I} + \frac{1}{2}B'C(B'')^T)(\mathbb{I} + \frac{1}{2}\bar{B})``, with
+  ``C = (\mathbb{I}_{2n} - \frac{1}{2}(B'')^TB')^{-1}`` and ``B'``, ``B''`` the ``N\times{}2n``
+  factors of `lift_factors`: both factors of that product are of the ambient dimension, so the
+  multiplication alone was ``O(N^3)``. It evaluates ``\mathbb{I} + B'C(B'')^T`` now, which is the
+  same matrix.
+
+  Two steps get there from the definition
+  ``\mathrm{Cayley}(\bar{B}) = (\mathbb{I} - \frac{1}{2}\bar{B})^{-1}(\mathbb{I} + \frac{1}{2}\bar{B})``.
+  Splitting ``\mathbb{I} + \frac{1}{2}\bar{B} = (\mathbb{I} - \frac{1}{2}\bar{B}) + \bar{B}``
+  cancels the right factor, and the ``2n\times{}2n`` matrix the Woodbury form then leaves,
+  ``\mathbb{I}_{2n} + \frac{1}{2}C(B'')^TB'``, is ``C`` itself — because ``C`` inverts
+  ``\mathbb{I}_{2n} - \frac{1}{2}(B'')^TB'``. Nothing larger than ``N\times{}2n`` enters a product
+  afterwards.
+
+  Medians per call, `Float64`, ``n = 3``, from `scripts/cayley_regrouping_cost.jl` on a cold
+  process, with `geodesic` beside them because it is the same retraction family at the same sizes:
+
+  | ``N`` | before | after | ratio | `geodesic` | before [B] | after [B] |
+  |--:|--:|--:|--:|--:|--:|--:|
+  | 50 | 1.34e-5 s | 5.92e-6 s | 2.3 | 8.04e-6 s | 129 744 | 84 448 |
+  | 100 | 3.55e-5 s | 1.43e-5 s | 2.5 | 1.66e-5 s | 457 328 | 284 880 |
+  | 200 | 1.59e-4 s | 4.88e-5 s | 3.3 | 5.27e-5 s | 1 725 984 | 1 054 336 |
+  | 400 | 8.19e-4 s | 1.94e-4 s | 4.2 | 1.92e-4 s | 6 641 728 | 4 021 408 |
+
+  The ratio column is what to read, and it is the `StiefelLieAlgHorMatrix` one: the Grassmann rows
+  agree with it at ``N \ge 100`` and their ``N = 50`` entry moved between 1.6 and 3.2 over three
+  runs, which is the size at which a single product is a handful of clock ticks. **It grows
+  monotonically with ``N``, which is the ``O(N^3)`` term being left behind**, and the `geodesic`
+  column says the same thing in absolute terms: at ``N = 400`` `cayley` cost 4.3 times the geodesic
+  and now costs the same to within 10%, which is the run-to-run spread of these medians.
+
+  **No exponent is fitted to that column, and none should be.** All three costs are still below
+  their asymptotic slope at ``N \le 400``: over ``50 \to 400`` the old grouping grew by 61, the new
+  one by 33 and `geodesic` by 24, where ``O(N^2n)`` alone would give 64. Allocation and kernel
+  launch dominate the small sizes and multithreaded `gemm` runs the ``N\times{}N`` product at the
+  large ones, so the exponent a two-point fit returns here is a property of this host and not of
+  the algorithm. The ratio is the measurement; the ``O(N^3)`` is read off the expression.
+
+  **The result is still the ``N\times{}N`` retraction of the lift, so ``O(N^2n)`` is the floor and
+  the regrouping reaches it.** The cost does not stop depending on ``N``; the ``O(N^3)`` term goes.
+
+  `test/retractions/retractions.jl` gains *the Cayley retraction of a lift is the Cayley transform
+  of the lift*, which asserts the returned matrix against
+  ``(\mathbb{I} - \frac{1}{2}\bar{B})^{-1}(\mathbb{I} + \frac{1}{2}\bar{B})`` on the dense lift, for
+  both lift types and on a complex element type as well. **It passes on the source before this
+  change, because the regrouping is an identity** — it guards the change rather than reproducing a
+  defect. It is not redundant, though: of three plausible slips in the regrouping, a sign in
+  ``\mathfrak{C}`` passes every retraction assertion the suite already had — those take a step of
+  ``\Delta/1000``, at which a wrong grouping still lands on the manifold and still follows the
+  gradient to 1% — and is caught only by this one.
+
+- **The symplectic Stiefel `metric` evaluates in the ``2n\times{}2n`` factors, and inverts
+  ``U^TU`` once.** It wrote the expression as its definition reads it, around the dense
+  ``2N\times{}2N`` middle factor ``\mathbb{J}^TUPU^T\mathbb{J}`` with ``P = (U^TU)^{-1}``. Forming
+  that factor is ``O(N^3)`` — the last of its four products multiplies two matrices of the ambient
+  dimension — to reach a single number, on every step the optimizer takes. Multiplying it out first
+  gives
+
+  ``g_U(\Delta_1,\Delta_2) = \mathrm{tr}(P(\Delta_1^T\Delta_2 - \frac{1}{2}(\Delta_1^T\mathbb{J}^TU)P(U^T\mathbb{J}\Delta_2)))``,
+
+  three ``2n\times{}2n`` matrices under one trace. Nothing larger than ``\mathbb{J}\Delta_2`` is
+  formed, ``P`` is inverted once rather than twice, and **the ``2N\times{}2N`` identity is not
+  built at all** — so the `unit_matrix(J)` call that replaced `LinearAlgebra.I` here has no
+  subtraction left to serve and is gone with it. The rule it stood for is unchanged and still
+  documented on `unit_matrix`; nothing else in this file built an identity.
+
+  Medians per call, `Float64`, ``2n = 6``, from `scripts/symplectic_metric_cost.jl` on a cold
+  process:
+
+  | ``2N`` | before | after | ratio | before [B] | after [B] |
+  |--:|--:|--:|--:|--:|--:|
+  | 20 | 5.17e-6 s | 2.08e-6 s | 2.5 | 34 144 | 12 512 |
+  | 40 | 9.45e-6 s | 3.58e-6 s | 2.6 | 101 792 | 25 312 |
+  | 80 | 3.87e-5 s | 9.50e-6 s | 4.1 | 415 520 | 80 704 |
+  | 160 | 1.12e-4 s | 3.32e-5 s | 3.4 | 1 313 408 | 236 352 |
+
+  `test/manifolds/symplectic_stiefel_manifold.jl` gains *the metric is the ``2N \times 2N``
+  expression it is a regrouping of*, which writes that expression out and asserts the two agree.
+  **It also passes before this change, for the same reason as above.** Unlike the `cayley` one it
+  is a tightening and not the only guard: three plausible slips in the regrouping — a dropped
+  ``\frac{1}{2}``, ``\mathbb{J}`` for ``\mathbb{J}^T``, and a dropped ``P`` — are each caught by
+  *the metric is the one `rgrad` is taken against* as well. That testset runs at a tolerance which
+  grows to `1e-4` with the size; this one runs at machine precision.
+
 - **Every import in the module file is explicit, and each name comes from the module that owns
   it.** Three `using` statements brought a whole package in where every other import beside them
   named what it took: `KernelAbstractions` for `@index`, `@kernel`, `CPU` and `GPU`, `Printf` for

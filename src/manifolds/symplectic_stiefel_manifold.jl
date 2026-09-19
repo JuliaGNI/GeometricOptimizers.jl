@@ -247,22 +247,36 @@ function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
     ∇L * (U' * U) + J * U * (∇L' * J * U)
 end
 
-# `unit_matrix(J)` and not `LinearAlgebra.I` below: `X - I` reaches a kernel-backed method only on
-# the array types `GPUArrays` covers, and the docstring on [`unit_matrix`](@ref) says outright that
-# a `KernelAbstractions` backend is under no obligation to be one of them. Every identity this
-# package builds goes through there. `inv` is a separate matter and needs an `lu` from the backend
-# whatever that line says.
 @doc raw"""
     metric(U::SymplecticStiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
 
 The Riemannian metric of the symplectic Stiefel manifold, taken from
-[gao2021riemannian](@cite).
+[gao2021riemannian](@cite):
+
+```math
+g_U(\Delta_1, \Delta_2) = \mathrm{tr}\left( P \Delta_1^T \left(\mathbb{I}_{2N} - \frac{1}{2}\mathbb{J}_{2N}^TUPU^T\mathbb{J}_{2N}\right)\Delta_2 \right), \qquad P = (U^TU)^{-1}.
+```
+
+# Implementation
+
+Every factor the trace needs is ``2n\times{}2n``, and the expression is evaluated that way:
+
+```math
+g_U(\Delta_1, \Delta_2) = \mathrm{tr}\left( P \left( \Delta_1^T\Delta_2 - \frac{1}{2} \left(\Delta_1^T\mathbb{J}_{2N}^TU\right) P \left(U^T\mathbb{J}_{2N}\Delta_2\right) \right) \right).
+```
+
+Written as the definition reads, the middle factor is a ``2N\times{}2N`` matrix, and forming it
+costs ``O(N^3)`` — a matrix of the ambient dimension to reach a number, on every step the optimizer
+takes. Grouped this way nothing larger than ``\mathbb{J}_{2N}\Delta_2`` is formed, the ``2N\times{}2N``
+identity is not built at all, and ``P`` is inverted once rather than twice.
+`scripts/symplectic_metric_cost.jl` carries the measurement.
 """
 function metric(U::SymplecticStiefelManifold{T}, Δ₁::AbstractMatrix,
         Δ₂::AbstractMatrix) where {T}
     J = _poisson_tensor(U, size(U, 1))
-    LinearAlgebra.tr(inv(U' * U) * Δ₁' *
-                     (unit_matrix(J) - (T(1) / 2) * J' * U * inv(U' * U) * U' * J) * Δ₂)
+    P = inv(U' * U)
+    LinearAlgebra.tr(P * (Δ₁' * Δ₂ -
+                          (T(1) / 2) * (Δ₁' * (J' * U)) * P * ((U' * J) * Δ₂)))
 end
 
 @doc raw"""

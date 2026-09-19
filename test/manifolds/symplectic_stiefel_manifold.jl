@@ -56,6 +56,23 @@ end
     end
 end
 
+# `metric` evaluates a regrouping of the expression its docstring writes first, in the `2n × 2n`
+# factors rather than through the `2N × 2N` middle matrix. The two testsets below do not separate a
+# wrong regrouping from the right one on their own — symmetry and bilinearity survive almost any
+# slip, and the `rgrad` property is checked at a tolerance that grows with the size. This writes
+# the `2N × 2N` form out and asserts the two agree.
+@testset "the metric is the 2N × 2N expression it is a regrouping of" begin
+    for (N2, n2) in SIZES
+        U = rand(SymplecticStiefelManifold, N2, n2)
+        Δ₁, Δ₂ = randn(N2, n2), randn(N2, n2)
+        J = _poisson_tensor(Float64, N2)
+        P = inv(U.A' * U.A)
+
+        @test metric(U, Δ₁, Δ₂) ≈
+              tr(P * Δ₁' * (Matrix(1.0I, N2, N2) - J' * U.A * P * U.A' * J / 2) * Δ₂)
+    end
+end
+
 @testset "the metric is symmetric and bilinear" begin
     for (N2, n2) in SIZES
         U = rand(SymplecticStiefelManifold, N2, n2)
