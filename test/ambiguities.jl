@@ -46,15 +46,18 @@ end
 # every tie-breaker in `src/ambiguities.jl` is written to give.
 const N = 6
 
-# `StiefelProjection` appears on both sides and the two triangulars on the left, because both types
-# multiply against a bare `AbstractMatrix` and so take part in a standoff with every other type
-# here. A type that appears on one side only leaves its own tie-breakers unexercised: the sweep is
-# `LEFT × RIGHT`, so a pair is checked exactly when one of its operands is in each list.
+# `StiefelProjection` and `U'` appear on both sides, and the two triangulars on the left, because
+# each of them multiplies against a bare `AbstractMatrix` and so takes part in a standoff with every
+# other type here. A type that appears on one side only leaves its own tie-breakers unexercised: the
+# sweep is `LEFT × RIGHT`, so a pair is checked exactly when one of its operands is in each list.
+# `detect_ambiguities` above shows those pairs are *separated*; only this sweep shows the right
+# answer comes back, and a tie-breaker that dropped a `.parent` would compile and resolve.
 const LEFT = let
     Y = StiefelManifold(Matrix(qr!(randn(N, N)).Q))
     S = sr!(randn(N, N ÷ 2 + 1)).S
     ["Y'" => Y',
         "Y" => Y,
+        "U'" => rand(SymplecticStiefelManifold, N, N)',
         "U" => rand(SymplecticStiefelManifold, N, N),
         "S" => S,
         "inv(S)" => inv(S),
@@ -68,6 +71,7 @@ end
 const RIGHT = let
     S = sr!(randn(N, N ÷ 2 + 1)).S
     ["Y" => StiefelManifold(Matrix(qr!(randn(N, N)).Q)),
+        "U'" => rand(SymplecticStiefelManifold, N, N)',
         "U" => rand(SymplecticStiefelManifold, N, N),
         "S" => S,
         "inv(S)" => inv(S),

@@ -63,6 +63,82 @@ function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
     Y.parent.A' * B
 end
 
+# `Adjoint{SymplecticStiefelManifold}` multiplies on both sides of a bare `AbstractMatrix`, so it
+# meets every other owned type twice over. Rule 1 throughout: the adjoint of a point is an ordinary
+# array transposed, so it unwraps and the other operand's method answers.
+# Both element types are free on the first method below, for the reason spelled out on
+# `*(::Adjoint{<:SymplecticStiefelManifold}, ::Adjoint{<:SymplecticStiefelManifold})`: the two
+# methods this separates bind `T` from different arguments, so their overlap does not require the
+# two to agree.
+function Base.:*(Y::Adjoint{T₁, StiefelManifold{T₁, AT₁}},
+        U::Adjoint{T₂, SymplecticStiefelManifold{T₂, AT₂}}) where {
+        T₁, AT₁ <: AbstractMatrix{T₁}, T₂, AT₂ <: AbstractMatrix{T₂}}
+    Y.parent.A' * U
+end
+function Base.:*(Y::StiefelManifold,
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    Y.A * U
+end
+function Base.:*(V::SymplecticStiefelManifold,
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    V.A * U
+end
+function Base.:*(E::StiefelProjection,
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    E.A * U
+end
+function Base.:*(S::Sfac{false},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    S * U.parent.A'
+end
+function Base.:*(S::Sfac{true},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    S * U.parent.A'
+end
+function Base.:*(A::AbstractTriangular{T},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    A * U.parent.A'
+end
+function Base.:*(A::SkewSymMatrix{T},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    A * U.parent.A'
+end
+function Base.:*(A::SymmetricMatrix{T},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    A * U.parent.A'
+end
+
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        Y::StiefelManifold) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * Y
+end
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        E::StiefelProjection) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * E
+end
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        B::Sfac{false}) where {
+        T, AT <: AbstractMatrix{T}}
+    U.parent.A' * B
+end
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        B::Sfac{true}) where {
+        T, AT <: AbstractMatrix{T}}
+    U.parent.A' * B
+end
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        B::AbstractTriangular{T}) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * B
+end
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        B::SkewSymMatrix{T}) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * B
+end
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        B::SymmetricMatrix{T}) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * B
+end
+
 Base.:*(Y::StiefelManifold, B::StiefelManifold) = Y.A * B
 Base.:*(Y::StiefelManifold, B::SymplecticStiefelManifold) = Y.A * B
 Base.:*(Y::StiefelManifold, B::Sfac{false}) = Y.A * B

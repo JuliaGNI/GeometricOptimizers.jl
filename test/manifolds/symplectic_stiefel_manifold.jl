@@ -119,6 +119,25 @@ end
     @test size(_similar(U)) == size(U)
 end
 
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::Adjoint{<:Symplectic…})` does not
+# settle on its own, the same standoff `test/special_matrices/stiefel_projetion.jl` pins for
+# `StiefelProjection`: `LinearAlgebra` has its own method for that left operand, narrower there and
+# wider on the right, so neither wins. The two tie-breakers beside the adjoint products in
+# `src/manifolds/symplectic_stiefel_manifold.jl` settle it, and `test/ambiguities.jl` cannot see
+# this pair because one of its two methods is not this package's. `U'` is rectangular here, so a
+# tie-breaker that swapped or dropped an operand would not conform.
+@testset "a row vector times the adjoint of a point" begin
+    for (N2, n2) in SIZES, T in (Float32, Float64)
+
+        U = rand(SymplecticStiefelManifold{T}, N2, n2)
+        v = rand(T, n2)
+
+        @test v' * U' ≈ v' * Matrix(U.A')
+        @test transpose(v) * U' ≈ transpose(v) * Matrix(transpose(U.A))
+        @test size(v' * U') == (1, N2)
+    end
+end
+
 # A `Float64` literal anywhere in the metric silently widens a `Float32` point's metric to
 # `Float64`, which no `Float64` test can see.
 @testset "the metric keeps the element type of the point" begin
