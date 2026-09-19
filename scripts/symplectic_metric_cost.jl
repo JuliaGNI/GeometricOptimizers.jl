@@ -5,12 +5,13 @@
 #
 #     julia --startup-file=no --project=. scripts/symplectic_metric_cost.jl
 #
-# With no argument both groupings are measured in one process, each warmed at every size before
-# anything is recorded. Pass `old` or `new` to measure one of them alone, which is the
-# one-process-per-variant form:
+# Both groupings are measured in one process, each warmed at every size before anything is
+# recorded. `old` or `new` as an argument suppresses the *timing loop* of the other one and prints
+# a `NaN` in its column — it does not keep the other grouping out of the process, because the
+# warm-up and `calls_per_sample` call both either way, and taking those out would remove the
+# warming that makes one process valid in the first place:
 #
 #     julia --startup-file=no --project=. scripts/symplectic_metric_cost.jl old
-#     julia --startup-file=no --project=. scripts/symplectic_metric_cost.jl new
 #
 # This is the check behind the *Implementation* paragraph in the docstring of `metric` and behind
 # the `CHANGELOG.md` entry. Both quote figures from this script and from nothing else.

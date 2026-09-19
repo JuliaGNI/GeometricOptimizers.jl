@@ -226,11 +226,12 @@ Woodbury identity turns the remaining inverse into
 leaves on the ``2n\times{}2n`` side is then ``\mathbb{I}_{2n} + \frac{1}{2}C(B'')^TB'``, which is
 ``C`` itself, because ``C`` inverts ``\mathbb{I}_{2n} - \frac{1}{2}(B'')^TB'``.
 
-The result is the ``N\times{}N`` retraction of the lift either way, so the cost cannot fall below
-``O(N^2n)``. What the grouping removes is the product of two dense ``N\times{}N`` matrices the
-factored form on the left and ``\mathbb{I} + \frac{1}{2}\bar{B}`` on the right used to make, which
-was ``O(N^3)`` and is why this retraction scaled worse than [`geodesic`](@ref). `scripts/cayley_regrouping_cost.jl`
-carries the measurement.
+The result is the ``N\times{}N`` retraction of the lift, so the cost cannot fall below ``O(N^2n)``,
+and this grouping reaches that floor: nothing larger than ``N\times{}2n`` enters a product.
+Multiplying the factored left-hand side by an unfactored ``\mathbb{I} + \frac{1}{2}\bar{B}``
+instead multiplies two dense ``N\times{}N`` matrices, which is ``O(N^3)`` on its own and puts the
+retraction above [`geodesic`](@ref) at every size. `scripts/cayley_regrouping_cost.jl` carries the
+measurement.
 """
 function cayley(B::StiefelLieAlgHorMatrix)
     T = eltype(B)

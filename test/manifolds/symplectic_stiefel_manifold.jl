@@ -57,10 +57,11 @@ end
 end
 
 # `metric` evaluates a regrouping of the expression its docstring writes first, in the `2n × 2n`
-# factors rather than through the `2N × 2N` middle matrix. The two testsets below do not separate a
-# wrong regrouping from the right one on their own — symmetry and bilinearity survive almost any
-# slip, and the `rgrad` property is checked at a tolerance that grows with the size. This writes
-# the `2N × 2N` form out and asserts the two agree.
+# factors rather than through the `2N × 2N` middle matrix. Symmetry and bilinearity below survive
+# almost any slip in that regrouping; *the metric is the one `rgrad` is taken against* does catch
+# one, but at a tolerance that grows to `1e-4` with the size. This writes the `2N × 2N` form out
+# and asserts the two agree at machine precision, so the regrouping is pinned independently of how
+# far the point at that size is from the manifold.
 @testset "the metric is the 2N × 2N expression it is a regrouping of" begin
     for (N2, n2) in SIZES
         U = rand(SymplecticStiefelManifold, N2, n2)

@@ -567,19 +567,25 @@ breaking release).
   Medians per call, `Float64`, ``n = 3``, from `scripts/cayley_regrouping_cost.jl` on a cold
   process, with `geodesic` beside them because it is the same retraction family at the same sizes:
 
-  | ``N`` | before | after | ratio | `geodesic` | before [B] | after [B] |
-  |--:|--:|--:|--:|--:|--:|--:|
-  | 50 | 1.34e-5 s | 5.92e-6 s | 2.3 | 8.04e-6 s | 129 744 | 84 448 |
-  | 100 | 3.55e-5 s | 1.43e-5 s | 2.5 | 1.66e-5 s | 457 328 | 284 880 |
-  | 200 | 1.59e-4 s | 4.88e-5 s | 3.3 | 5.27e-5 s | 1 725 984 | 1 054 336 |
-  | 400 | 8.19e-4 s | 1.94e-4 s | 4.2 | 1.92e-4 s | 6 641 728 | 4 021 408 |
+  | ``N`` | before | after | ratio | ratio, nine runs | `geodesic` | before [B] | after [B] |
+  |--:|--:|--:|--:|--:|--:|--:|--:|
+  | 50 | 1.34e-5 s | 5.92e-6 s | 2.3 | 2.3–2.4 | 8.04e-6 s | 129 744 | 84 448 |
+  | 100 | 3.55e-5 s | 1.43e-5 s | 2.5 | 2.3–2.7 | 1.66e-5 s | 457 328 | 284 880 |
+  | 200 | 1.59e-4 s | 4.88e-5 s | 3.3 | 3.1–3.5 | 5.27e-5 s | 1 725 984 | 1 054 336 |
+  | 400 | 8.19e-4 s | 1.94e-4 s | 4.2 | 3.7–4.8 | 1.92e-4 s | 6 641 728 | 4 021 408 |
 
-  The ratio column is what to read, and it is the `StiefelLieAlgHorMatrix` one: the Grassmann rows
-  agree with it at ``N \ge 100`` and their ``N = 50`` entry moved between 1.6 and 3.2 over three
-  runs, which is the size at which a single product is a handful of clock ticks. **It grows
-  monotonically with ``N``, which is the ``O(N^3)`` term being left behind**, and the `geodesic`
-  column says the same thing in absolute terms: at ``N = 400`` `cayley` cost 4.3 times the geodesic
-  and now costs the same to within 10%, which is the run-to-run spread of these medians.
+  **The byte columns reproduce exactly; the time columns do not, so the fifth column is there.**
+  The rows are `StiefelLieAlgHorMatrix`'s. The `GrassmannLieAlgHorMatrix` ones grow the same way
+  and are not the same numbers: over the same nine runs they sit above the Stiefel ratios at
+  ``N = 100`` and below them at ``N = 400``, by up to 30% either way, and at ``N = 50`` and
+  ``N = 100`` they have returned single values as far apart as 1.3 and 3.8 — those are the sizes
+  at which one call is a few microseconds.
+
+  **The ratio grows with ``N``, which is the ``O(N^3)`` term being left behind**, and the
+  `geodesic` column says the same in absolute terms: at ``N = 400`` `cayley` cost about 4.4 times
+  the geodesic and now costs the same to within 10% on the Stiefel row. The Grassmann row lands
+  between 0.98 and 1.30 of the geodesic over the same runs, so *the same to within 10%* is the
+  Stiefel claim and not both.
 
   **No exponent is fitted to that column, and none should be.** All three costs are still below
   their asymptotic slope at ``N \le 400``: over ``50 \to 400`` the old grouping grew by 61, the new
@@ -596,10 +602,17 @@ breaking release).
   ``(\mathbb{I} - \frac{1}{2}\bar{B})^{-1}(\mathbb{I} + \frac{1}{2}\bar{B})`` on the dense lift, for
   both lift types and on a complex element type as well. **It passes on the source before this
   change, because the regrouping is an identity** — it guards the change rather than reproducing a
-  defect. It is not redundant, though: of three plausible slips in the regrouping, a sign in
-  ``\mathfrak{C}`` passes every retraction assertion the suite already had — those take a step of
-  ``\Delta/1000``, at which a wrong grouping still lands on the manifold and still follows the
-  gradient to 1% — and is caught only by this one.
+  defect.
+
+  It is not redundant either, and the slip that shows why is not the one an earlier draft of this
+  entry named. **A sign slip in ``C`` does reach the retraction assertions**, on 190 of the 1260
+  shape-and-seed combinations those assertions cover — barely, at a `check` residual of 2e-5
+  against a `MANIFOLD_TOLERANCE` of 1e-5 where the correct grouping sits at 4e-7, but reliably
+  enough that the suite goes red. **``(B'')^T`` spelt `transpose` instead of `adjoint` reaches them
+  on none of the 1260**: the two are one expression on the real `Float32` points the suite runs,
+  and only the new testset's complex rows separate them. That slip is the live one — `lift_factors`
+  carries a comment about exactly this distinction, and PR #98 was the nine sites where it had gone
+  the other way.
 
 - **The symplectic Stiefel `metric` evaluates in the ``2n\times{}2n`` factors, and inverts
   ``U^TU`` once.** It wrote the expression as its definition reads it, around the dense
@@ -610,21 +623,33 @@ breaking release).
 
   ``g_U(\Delta_1,\Delta_2) = \mathrm{tr}(P(\Delta_1^T\Delta_2 - \frac{1}{2}(\Delta_1^T\mathbb{J}^TU)P(U^T\mathbb{J}\Delta_2)))``,
 
-  three ``2n\times{}2n`` matrices under one trace. Nothing larger than ``\mathbb{J}\Delta_2`` is
-  formed, ``P`` is inverted once rather than twice, and **the ``2N\times{}2N`` identity is not
-  built at all** — so the `unit_matrix(J)` call that replaced `LinearAlgebra.I` here has no
-  subtraction left to serve and is gone with it. The rule it stood for is unchanged and still
-  documented on `unit_matrix`; nothing else in this file built an identity.
+  three ``2n\times{}2n`` matrices under one trace. No product has two factors of the ambient
+  dimension any more, the largest being ``\mathbb{J}^TU``; ``P`` is inverted once rather than
+  twice; and **the ``2N\times{}2N`` identity is not built at all** — so the `unit_matrix(J)` call
+  that replaced `LinearAlgebra.I` here has no subtraction left to serve and is gone with it. The
+  rule it stood for is unchanged and still documented on `unit_matrix`; nothing else in this file
+  built an identity.
+
+  **``\mathbb{J}`` itself is still assembled dense, and it is now most of what a call allocates.**
+  `_poisson_tensor` builds a ``2N\times{}2N`` matrix on every call, which is 29% of the bytes at
+  ``2N = 20`` and 90% at ``2N = 160`` — 213 072 B of 236 352 B. That was true before this change
+  too and was invisible behind the middle factor. It is the obvious next step and is out of scope
+  here; nothing else in the expression is now larger than ``2N\times{}2n``.
 
   Medians per call, `Float64`, ``2n = 6``, from `scripts/symplectic_metric_cost.jl` on a cold
   process:
 
-  | ``2N`` | before | after | ratio | before [B] | after [B] |
-  |--:|--:|--:|--:|--:|--:|
-  | 20 | 5.17e-6 s | 2.08e-6 s | 2.5 | 34 144 | 12 512 |
-  | 40 | 9.45e-6 s | 3.58e-6 s | 2.6 | 101 792 | 25 312 |
-  | 80 | 3.87e-5 s | 9.50e-6 s | 4.1 | 415 520 | 80 704 |
-  | 160 | 1.12e-4 s | 3.32e-5 s | 3.4 | 1 313 408 | 236 352 |
+  | ``2N`` | before | after | ratio | ratio, nine runs | before [B] | after [B] |
+  |--:|--:|--:|--:|--:|--:|--:|
+  | 20 | 5.17e-6 s | 2.08e-6 s | 2.5 | 2.2–2.6 | 34 144 | 12 512 |
+  | 40 | 9.45e-6 s | 3.58e-6 s | 2.6 | 2.6–2.8 | 101 792 | 25 312 |
+  | 80 | 3.87e-5 s | 9.50e-6 s | 4.1 | 4.1–4.3 | 415 520 | 80 704 |
+  | 160 | 1.12e-4 s | 3.32e-5 s | 3.4 | 2.6–3.5 | 1 313 408 | 236 352 |
+
+  The byte columns reproduce exactly. The ``2N = 160`` ratio is the one that moves, and it moves
+  between two values rather than around one — 2.6 on four of the nine runs and 3.4 on the other
+  five — which is the size at which the ``2N\times{}2N`` products in the old grouping become worth
+  threading.
 
   `test/manifolds/symplectic_stiefel_manifold.jl` gains *the metric is the ``2N \times 2N``
   expression it is a regrouping of*, which writes that expression out and asserts the two agree.
