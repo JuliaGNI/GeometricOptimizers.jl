@@ -80,6 +80,24 @@ function Base.:*(B::AbstractMatrix,
     B * U.parent.A'
 end
 
+# A row vector on the left is the one shape the mirror above leaves unsettled, and it is the same
+# standoff `special_matrices/stiefel_projection.jl` settles for `StiefelProjection`:
+# `LinearAlgebra`'s own `*(::Adjoint{<:Any, <:AbstractVector}, ::AbstractMatrix)` and its
+# `Transpose` counterpart are each narrower in the left argument and wider in the right, so neither
+# they nor the mirror win and `v' * U'` raises an ambiguity. These two settle it under rule 1 of
+# `ambiguities.jl`: unwrap and hand the row vector the ordinary array.
+#
+# `v' * U` against a bare point raises the same ambiguity and has since this type was written, as
+# `v' * Y` does for `StiefelManifold`. That is one type over and is not settled here.
+function Base.:*(x::Adjoint{<:Any, <:AbstractVector},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    x * U.parent.A'
+end
+function Base.:*(x::Transpose{<:Any, <:AbstractVector},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    x * U.parent.A'
+end
+
 # `B` carries no type parameter, for the reason the counterpart in `manifolds/stiefel_manifold.jl`
 # spells out: binding the storage array type to both operands would leave the pair ambiguous
 # whenever the two storage types differ.
@@ -225,17 +243,17 @@ function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
     ∇L * (U' * U) + J * U * (∇L' * J * U)
 end
 
+# `unit_matrix(J)` and not `LinearAlgebra.I` below: `X - I` reaches a kernel-backed method only on
+# the array types `GPUArrays` covers, and the docstring on [`unit_matrix`](@ref) says outright that
+# a `KernelAbstractions` backend is under no obligation to be one of them. Every identity this
+# package builds goes through there. `inv` is a separate matter and needs an `lu` from the backend
+# whatever that line says.
 @doc raw"""
     metric(U::SymplecticStiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
 
 The Riemannian metric of the symplectic Stiefel manifold, taken from
 [gao2021riemannian](@cite).
 """
-# `unit_matrix(J)` and not `LinearAlgebra.I`: `X - I` reaches a kernel-backed method only on the
-# array types `GPUArrays` covers, and the docstring on [`unit_matrix`](@ref) says outright that a
-# `KernelAbstractions` backend is under no obligation to be one of them. Every identity this package
-# builds goes through there. `inv` below is a separate matter and needs an `lu` from the backend
-# whatever this line says.
 function metric(U::SymplecticStiefelManifold{T}, Δ₁::AbstractMatrix,
         Δ₂::AbstractMatrix) where {T}
     J = _poisson_tensor(U, size(U, 1))
@@ -282,7 +300,7 @@ manifold nor the call.
 function global_section(U::SymplecticStiefelManifold)
     backend = KernelAbstractions.get_backend(U)
     backend isa GPU &&
-        throw(ArgumentError("global_section is host-only for a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host, so a section of a $(backend) point would be a host computation with transfers around it. Move the point to the host first. rgrad, metric and check do run on $(backend)."))
+        throw(ArgumentError("global_section is host-only for a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host, so a section of a $(backend) point would be a host computation with transfers around it. Move the point to the host first. rgrad and check do run on $(backend), and metric does wherever the backend supplies an lu."))
 
     N2, n2 = size(U)
     N, n = N2 ÷ 2, n2 ÷ 2

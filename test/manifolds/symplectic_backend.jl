@@ -20,14 +20,13 @@ using GeometricOptimizers
 using GeometricOptimizers: check, global_section, metric, _poisson_tensor
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
-using KernelAbstractions: KernelAbstractions, CPU
+using KernelAbstractions: CPU
 using Random
 using Test
 
 Random.seed!(1618)
 
 const T = Float32
-const device = KernelAbstractions.get_backend(JLArray(zeros(T, 1)))
 const N2, n2 = 6, 4
 
 allowscalar(false)
@@ -89,10 +88,14 @@ end
     # **`Metal` does supply it and `metric` runs there**: measured on an M4 Max under
     # `Metal.allowscalar(false)`, see the pull request. Pinned here so that the day `JLArrays` gains
     # an `lu` this assertion fails and says so.
+    #
+    # The match is on the message and not on `ErrorException`, for the reason the two `@test_throws`
+    # in `device_multiply.jl` give: any `error()` on either path satisfies the type, so the type
+    # alone would pin nothing about where this stops.
     U = device_point()
     Δ = JLArray(rgrad(host_point, rand(T, N2, n2)))
 
-    @test_throws ErrorException metric(U, Δ, Δ)
+    @test_throws "Scalar indexing is disallowed" metric(U, Δ, Δ)
 end
 
 @testset "global_section refuses a device point, and says why" begin

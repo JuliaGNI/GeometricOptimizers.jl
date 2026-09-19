@@ -452,7 +452,13 @@ breaking release).
     form `U'U`, `metric` also forms `J'U·inv(U'U)·U'J`, and `check` *is* `U'JU`.
     `StiefelManifold` has had the counterpart since it was written; this type never did, and that
     is what made its whole surface host-only. Both sides are now covered, since `metric` puts the
-    adjoint on the right of a product as well as on the left.
+    adjoint on the right of a product as well as on the left. Two further methods take a row vector
+    on the left, exactly as `StiefelProjection` needed: `LinearAlgebra` carries its own
+    `*(::Adjoint{<:Any, <:AbstractVector}, ::AbstractMatrix)` and the `Transpose` counterpart, each
+    narrower in the left argument than the mirror and wider in the right, so neither wins and
+    `v' * U'` would otherwise raise an ambiguity. `v' * U` against a bare point raises the same one
+    and has since this type was written, as `v' * Y` does for `StiefelManifold`; that is one type
+    over and is not settled here.
   - A third, smaller one, in the same function: `metric` built its identity with `LinearAlgebra.I`,
     and `X - I` reaches a kernel-backed method only on the array types `GPUArrays` covers. It now
     goes through `unit_matrix`, as every other identity in this package does. The difference is
@@ -471,10 +477,12 @@ breaking release).
   section `global_section(::StiefelManifold)` gives. A device-backed point is refused with an
   `ArgumentError` naming the reason and the way out — the same answer
   `rand(::GPU, ::Type{<:SymplecticStiefelManifold}, …)` already gave, and for the same reason.
-- Fifteen tie-breakers join `src/ambiguities.jl` and `manifolds/symplectic_stiefel_manifold.jl`,
+- Eighteen tie-breakers join `src/ambiguities.jl` and `manifolds/symplectic_stiefel_manifold.jl`,
   because an adjoint that multiplies against a bare `AbstractMatrix` on either side meets every
   other owned type twice over. Rule 1 throughout: the adjoint of a point is an ordinary array
-  transposed, so it unwraps.
+  transposed, so it unwraps. Three of the eighteen pair the adjoint with `StiefelProjection` and the
+  two triangulars, which is the entry above meeting this one: both types gained a `*` against a bare
+  `AbstractMatrix` there, so each of them is the other operand of a standoff here.
 
   **Two of them carry two independent type-parameter sets, which is the case the file's own binding
   rule is about.** `*(::Adjoint{Symplectic}, ::AbstractMatrix)` binds its element type from the
@@ -484,7 +492,7 @@ breaking release).
   element type ambiguous.
 
   `test/ambiguities.jl` gains `U'` in both of its operand lists, so the sweep that checks every
-  tie-breaker against the dense product covers these fifteen. `detect_ambiguities` shows a pair is
+  tie-breaker against the dense product covers these eighteen. `detect_ambiguities` shows a pair is
   separated; only the sweep shows the right answer comes back, and a tie-breaker that dropped a
   `.parent` would compile and resolve.
 - **The two `AbstractTriangular`s and `StiefelProjection` multiply without scalar indexing, so a

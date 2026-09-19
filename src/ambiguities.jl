@@ -83,6 +83,10 @@ function Base.:*(V::SymplecticStiefelManifold,
         U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
     V.A * U
 end
+function Base.:*(E::StiefelProjection,
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    E.A * U
+end
 function Base.:*(S::Sfac{false},
         U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
     S * U.parent.A'
@@ -90,6 +94,10 @@ end
 function Base.:*(S::Sfac{true},
         U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
     S * U.parent.A'
+end
+function Base.:*(A::AbstractTriangular{T},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    A * U.parent.A'
 end
 function Base.:*(A::SkewSymMatrix{T},
         U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
@@ -103,6 +111,10 @@ end
 function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
         Y::StiefelManifold) where {T, AT <: AbstractMatrix{T}}
     U.parent.A' * Y
+end
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        E::StiefelProjection) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * E
 end
 function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
         B::Sfac{false}) where {
