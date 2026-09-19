@@ -44,7 +44,7 @@ end
 @doc raw"""
     SkewSymMatrix(A::AbstractMatrix)
 
-Perform `0.5 * (A - A')` and store the matrix in an efficient way (as a vector with ``n(n-1)/2`` entries).
+Perform `0.5 * (A - transpose(A))` and store the matrix in an efficient way (as a vector with ``n(n-1)/2`` entries).
 
 If the constructor is called with a matrix as input it returns a skew-symmetric matrix via the projection:
 ```math
@@ -255,8 +255,38 @@ end
     C[i, j] = tmp_sum
 end
 
+# `transpose` and not `adjoint`, on both operands. What makes this identity work is `Aᵀ = -A`,
+# which is a statement about the transpose, so the two wrappers that undo each other around it have
+# to be transposes as well: `(-A·Bᵀ)ᵀ = B·(-A)ᵀ = B·A`. Written `(-A * B')'` it reads
+# `B·(-A)ᴴ = B·conj(A)`, which agrees only where `A` is real. The two are the same expression for a
+# real element type, so nothing on the real path can tell them apart.
+#
+# The triangulars settle the same question the other way round, by binding `adjoint` to `Real` so
+# that a complex argument falls through to `LinearAlgebra`. That works because their `adjoint`
+# shares storage; this type has no such method, so the transpose belongs in the product.
+#
+# The minus sits outside the product rather than on `A`, which is arithmetically the same and much
+# cheaper: `-A` builds a whole second packed vector before the kernel runs. Measured at `n = 400`
+# against one column, `-transpose(A * transpose(x))` allocates 7 520 B where
+# `transpose(-A * transpose(x))` allocates 642 944 B, for the same values.
 function Base.:*(B::AbstractMatrix{T}, A::SkewSymMatrix{T}) where {T}
-    (-A * B')'
+    -transpose(A * transpose(B))
+end
+
+# A row vector on the left is the one shape the method above leaves unsettled: it stands off against
+# `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
+# `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
+# vector gets the answer that method gives every other matrix, including its `transpose`, and gets
+# it the same cheap way: `transpose(x)` is one column, which reaches the kernel as a single column
+# instead of materializing `A`. It is a `Vector` for a real element type and an `n×1` wrapper for a
+# complex one -- either way one column, so the two return the same values on different backings.
+# `T` is bound in both slots because the method above binds it there; free, these would not be
+# contained in it and would separate nothing.
+function Base.:*(x::Adjoint{T, <:AbstractVector}, A::SkewSymMatrix{T}) where {T}
+    -transpose(A * transpose(x))
+end
+function Base.:*(x::Transpose{T, <:AbstractVector}, A::SkewSymMatrix{T}) where {T}
+    -transpose(A * transpose(x))
 end
 
 # The kernel this reaches is a matrix--matrix one, so the vector goes through it as a single column
@@ -328,10 +358,14 @@ Base.similar(A::SkewSymMatrix) = SkewSymMatrix(similar(A.S), A.n)
     S[((i - 2) * (i - 1) ÷ 2 + j)] = A_skew[i, j]
 end
 
+# `transpose` and not `adjoint`, because the set being projected onto is `{M : Mᵀ = -M}` — which is
+# what `getindex` reconstructs, and what the docstring above states. `(A - Aᴴ)/2` is the projection
+# onto the skew-*Hermitian* matrices, and its strict lower triangle stored here gives a matrix that
+# is neither that projection nor `(A - Aᵀ)/2`. The two agree for a real element type.
 function map_to_Skew(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
-    A_skew = T(0.5) * (A - A')
+    A_skew = T(0.5) * (A - transpose(A))
     backend = KernelAbstractions.get_backend(A)
     # the `n != 1` branch of `zeros(::Backend, ::Type{SkewSymMatrix{T}}, n)` above, and the comment
     # there says why it stays

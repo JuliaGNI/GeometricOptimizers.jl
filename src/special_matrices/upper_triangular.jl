@@ -92,8 +92,13 @@ function map_to_up(A::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(A)
     S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
     assign_Skew_val! = assign_Skew_val_kernel!(backend)
+    # `transpose` and not `adjoint`. The kernel is the one `map_to_low` uses, which reads the strict
+    # *lower* triangle, so the upper triangle is reached by swapping the indices — a transpose, and
+    # nothing more. `adjoint` conjugates on the way, which stores a triangle the docstring does not
+    # promise: this constructor performs no projection, it reads the entries that are there. The two
+    # are the same operation on a real element type.
     for i in 2:n
-        assign_Skew_val!(S, A', i, ndrange = (i - 1))
+        assign_Skew_val!(S, transpose(A), i, ndrange = (i - 1))
     end
     S
 end

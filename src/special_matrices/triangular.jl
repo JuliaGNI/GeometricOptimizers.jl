@@ -238,3 +238,16 @@ end
 function Base.:*(B::AbstractMatrix{T}, A::AbstractTriangular{T}) where {T}
     (A' * B')'
 end
+
+# A row vector on the left is the one shape the method above leaves unsettled: it stands off against
+# `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
+# `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
+# vector gets the answer that method gives every other matrix, and gets it the same cheap way: `x'`
+# is one column, which reaches the kernel as a single column instead of materializing `A`. It is a
+# `Vector` for a real element type and an `n×1` wrapper for a complex one -- either way one column,
+# so the two return the same values on different backings. `T` is bound in both slots because the
+# method above binds it there; free, these would not be contained in it and would separate nothing.
+#
+# One pair covers both triangulars, because the method above is written on `AbstractTriangular` too.
+Base.:*(x::Adjoint{T, <:AbstractVector}, A::AbstractTriangular{T}) where {T} = (A' * x')'
+Base.:*(x::Transpose{T, <:AbstractVector}, A::AbstractTriangular{T}) where {T} = (A' * x')'

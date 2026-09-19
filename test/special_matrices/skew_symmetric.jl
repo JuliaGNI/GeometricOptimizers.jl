@@ -1,5 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: map_to_Skew
+using LinearAlgebra: transpose
 using Test
 import Random
 
@@ -181,4 +182,53 @@ end
 
     @test SkewSymMatrix([1, 2, 3, 4, 5, 6], 4) == [0 -1 -2 -4; 1 0 -3 -5; 2 3 0 -6; 4 5 6 0]
     @test SkewSymMatrix(vec(SkewSymMatrix(M)), 4) ≈ SkewSymMatrix(M)
+end
+
+# `SkewSymMatrix` is the set `{M : Mᵀ = -M}` -- a transpose identity, which is what `getindex`
+# reconstructs and what the constructor's docstring states. Both the projection and
+# `*(::AbstractMatrix, ::SkewSymMatrix)` therefore spell it `transpose`. With `adjoint` the
+# projection lands on neither `(A - Aᵀ)/2` nor `(A - Aᴴ)/2`, and the product returns `B·conj(A)`.
+#
+# The real path cannot see the difference between the two spellings, so an edit that puts `'` back
+# gives a wrong answer on a complex element type with nothing else complaining. This testset is what
+# complains. The triangulars keep the same testset for the same reason -- see
+# `adjoint conjugates on a complex element type` in `triangular.jl`, which settles it the other way
+# round.
+@testset "the projection and the product are transposes on a complex element type" begin
+    A = randn(ComplexF64, 4, 4)
+    S = SkewSymMatrix(A)
+    B = randn(ComplexF64, 3, 4)
+    v = randn(ComplexF64, 4)
+
+    @test Matrix(S) ≈ (A - transpose(A)) / 2
+    @test transpose(Matrix(S)) == -Matrix(S)
+    @test B * S ≈ B * Matrix(S)
+    @test v' * S ≈ v' * Matrix(S)
+    @test transpose(v) * S ≈ transpose(v) * Matrix(S)
+
+    # On a real element type the two spellings are one expression, so these assertions hold for
+    # either one. That is why the complex block above carries the check.
+    Ar = randn(4, 4)
+    Sr = SkewSymMatrix(Ar)
+    Br = randn(3, 4)
+    @test Matrix(Sr) ≈ (Ar - transpose(Ar)) / 2
+    @test Matrix(Sr) ≈ (Ar - Ar') / 2
+    @test Br * Sr ≈ Br * Matrix(Sr)
+end
+
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::SkewSymMatrix)` does not settle on
+# its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on the
+# right, so neither wins. The two tie-breakers beside that product in
+# `src/special_matrices/skew_symmetric.jl` settle it. `test/ambiguities.jl` cannot cover this pair,
+# because one of its two methods is not this package's.
+@testset "a row vector times a SkewSymMatrix" begin
+    for T in (Float32, Float64), N in 2:5
+
+        A = rand(SkewSymMatrix{T}, N)
+        v = rand(T, N)
+
+        @test v' * A ≈ v' * Matrix(A)
+        @test transpose(v) * A ≈ transpose(v) * Matrix(A)
+        @test size(v' * A) == (1, N)
+    end
 end

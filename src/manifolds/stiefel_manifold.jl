@@ -17,6 +17,14 @@ end
 Base.:*(Y::StiefelManifold, B::AbstractMatrix) = Y.A * B
 Base.:*(B::AbstractMatrix, Y::StiefelManifold) = B * Y.A
 
+# A row vector on the left is the one shape the second method above leaves unsettled: it stands off
+# against `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned
+# matrix* in `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one
+# above, so a row vector gets the answer that method gives every other matrix: a point is an
+# ordinary array in a wrapper, so unwrap it and let the row vector have the array.
+Base.:*(x::Adjoint{<:Any, <:AbstractVector}, Y::StiefelManifold) = x * Y.A
+Base.:*(x::Transpose{<:Any, <:AbstractVector}, Y::StiefelManifold) = x * Y.A
+
 function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where {
         T, AT <: AbstractMatrix{T}}
     Y.parent.A' * B

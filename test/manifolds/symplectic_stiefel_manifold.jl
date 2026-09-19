@@ -119,9 +119,29 @@ end
     @test size(_similar(U)) == size(U)
 end
 
-# A row vector on the left is the one shape `*(::AbstractMatrix, ::Adjoint{<:Symplectic…})` does not
-# settle on its own, the same standoff `test/special_matrices/stiefel_projetion.jl` pins for
-# `StiefelProjection`: `LinearAlgebra` has its own method for that left operand, narrower there and
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::SymplecticStiefelManifold)` does
+# not settle on its own: `LinearAlgebra` has its own method for that left operand, narrower there
+# and wider on the right, so neither wins. The two tie-breakers beside the products in
+# `src/manifolds/symplectic_stiefel_manifold.jl` settle it, and `test/ambiguities.jl` cannot see
+# this pair because one of its two methods is not this package's.
+#
+# How far the point is from the manifold does not enter: both sides of each assertion are the same
+# point, one wrapped and one dense. So `Float32` runs here although it is out of reach above, and
+# `U` is rectangular, so a tie-breaker that swapped or dropped an operand would not conform.
+@testset "a row vector times a SymplecticStiefelManifold" begin
+    for T in (Float32, Float64), (N2, n2) in SIZES
+
+        U = rand(SymplecticStiefelManifold{T}, N2, n2)
+        v = rand(T, N2)
+
+        @test v' * U ≈ v' * Matrix(U)
+        @test transpose(v) * U ≈ transpose(v) * Matrix(U)
+        @test size(v' * U) == (1, n2)
+    end
+end
+
+# The same standoff one wrapper in: `*(::AbstractMatrix, ::Adjoint{<:Symplectic…})` does not settle
+# it either. `LinearAlgebra` has its own method for that left operand, narrower there and
 # wider on the right, so neither wins. The two tie-breakers beside the adjoint products in
 # `src/manifolds/symplectic_stiefel_manifold.jl` settle it, and `test/ambiguities.jl` cannot see
 # this pair because one of its two methods is not this package's. `U'` is rectangular here, so a

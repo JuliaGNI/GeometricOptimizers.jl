@@ -1,7 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: AbstractTriangular
 using KernelAbstractions: CPU
-using LinearAlgebra: tr, transpose
+using LinearAlgebra: tr, transpose, tril, triu
 using Test
 import Random
 
@@ -171,4 +171,37 @@ end
 
     @test LowerTriangular([1, 2, 3, 4, 5, 6], 4) == [0 0 0 0; 1 0 0 0; 2 3 0 0; 4 5 6 0]
     @test UpperTriangular([1, 2, 3, 4, 5, 6], 4) == [0 1 2 4; 0 0 3 5; 0 0 0 6; 0 0 0 0]
+end
+
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::AbstractTriangular)` does not
+# settle on its own: `LinearAlgebra` has its own method for that left operand, narrower there and
+# wider on the right, so neither wins. The two tie-breakers beside that product in
+# `src/special_matrices/triangular.jl` settle it. `test/ambiguities.jl` cannot cover this pair,
+# because one of its two methods is not this package's. Both triangles run, because one pair of
+# methods covers them and neither is symmetric, so each pins which triangle the body reaches for.
+@testset "a row vector times a triangular matrix" begin
+    for T in (Float32, Float64), N in 2:5, AT in (LowerTriangular, UpperTriangular)
+        A = rand(AT{T}, N)
+        v = rand(T, N)
+
+        @test v' * A ≈ v' * Matrix(A)
+        @test transpose(v) * A ≈ transpose(v) * Matrix(A)
+        @test size(v' * A) == (1, N)
+    end
+end
+
+# Neither constructor projects: each reads the strict triangle that is there. `map_to_low` reads it
+# directly and `map_to_up` reaches it by swapping the indices, which is a transpose. Spelt `A'` the
+# swap conjugates on the way, so `UpperTriangular` stored a triangle nobody asked for — while
+# `LowerTriangular` was exact, so the two constructors disagreed with each other. The real path
+# cannot see it, which is why this testset is here.
+@testset "neither constructor conjugates on a complex element type" begin
+    M = randn(ComplexF64, 4, 4)
+
+    @test Matrix(LowerTriangular(M)) == tril(M, -1)
+    @test Matrix(UpperTriangular(M)) == triu(M, 1)
+
+    Mr = randn(4, 4)
+    @test Matrix(LowerTriangular(Mr)) == tril(Mr, -1)
+    @test Matrix(UpperTriangular(Mr)) == triu(Mr, 1)
 end

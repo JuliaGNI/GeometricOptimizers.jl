@@ -184,6 +184,12 @@ breaking release).
 - Added `scripts/host_allocation_cost.jl`, the archived check behind the byte and time figures
   quoted for host allocation below. An earlier round of those figures came from a measurement
   nobody had kept, and a re-run then disagreed with them; the script is what settles that.
+- Added `scripts/row_vector_ambiguity_count.jl`, the archived check behind the ambiguity figures
+  quoted for the row-vector tie-breakers below. It deletes the fourteen methods from a running
+  session rather than comparing two sessions, because `detect_ambiguities` sees every loaded method
+  of `*` and a different dependency set moves the number for reasons that have nothing to do with
+  this package. It also lists every tie-breaker the package owns, so the table in
+  `src/ambiguities.jl` can be checked against the method table rather than trusted.
 - Added `test/backend_eltype_check.jl`, which walks all sixteen backend-and-element-type entry
   points against three stand-in devices: one that carries `Float64`, one that declares it does not,
   and one that declares it does not *and* can allocate nothing at all — so that an `ArgumentError`
@@ -196,6 +202,98 @@ breaking release).
   already had. A Grassmann lift could be zeroed on a device by naming one and not drawn on it.
 
 ### Fixed
+
+- **Nine expressions wrote `adjoint` where the identity they rest on is a transpose.**
+  `SkewSymMatrix` is the set ``\{M : M^T = -M\}``, `SymmetricMatrix` is ``\{M : M^T = M\}``, a
+  horizontal lift's upper-right block is ``-B^T``, and neither triangular constructor projects at
+  all — each reads the strict triangle that is there. Every one of those is a statement about the
+  transpose, and `A'` is the same expression on a real element type and a different one on a
+  complex element type. Nothing in this package is complex, so the whole suite was blind to all
+  nine:
+
+  | | was | what it gave, for a complex argument |
+  |:--|:--|:--|
+  | `SkewSymMatrix(A)` | `(A - A')/2` | neither ``\frac{1}{2}(A - A^T)`` nor ``\frac{1}{2}(A - A^H)``: the strict lower triangle of the skew-**Hermitian** part, mirrored transpose-wise |
+  | `SymmetricMatrix(A)` | `(A + A')/2` | likewise, against ``\frac{1}{2}(A + A^T)`` |
+  | `*(::AbstractMatrix, ::SkewSymMatrix)` | `(-A * B')'` | ``B \cdot \mathrm{conj}(A)`` |
+  | `*(::AbstractMatrix, ::SymmetricMatrix)` | `(A * B')'` | ``B \cdot \mathrm{conj}(A)`` |
+  | `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` | `- B.B'` | a sum disagreeing with the dense sum, because `getindex` builds that block as `-B.B[j, i]` |
+  | `lift_factors(::StiefelLieAlgHorMatrix)` | `-B.B'` | `B̂ * B̄'` reproducing a different matrix from the lift it factorises |
+  | `lift_factors(::GrassmannLieAlgHorMatrix)` | `-B.B'` | likewise |
+  | `map_to_up` | reads `A'` | `UpperTriangular(A)` storing the **conjugated** strict upper triangle, while `LowerTriangular(A)` is exact — so the two constructors disagreed with each other |
+  | `LinearAlgebra.Adjoint(::SymmetricMatrix)` | returns `A` | ``A' = A``, which is true of the transpose and false of the adjoint |
+
+  All nine are settled, and each carries a testset over a complex element type beside the real ones,
+  because an edit that put `'` back would restore the wrong answer with nothing else complaining.
+  Eight are now `transpose`. The last is bound to `SymmetricMatrix{<:Real}` instead: that is how
+  `adjoint(::LowerTriangular{<:Real})` already settles the same question, and the bound does not
+  reject a complex argument — it hands it to `LinearAlgebra`'s lazy `Adjoint`, which conjugates and
+  is correct.
+
+  **The value is unchanged for a real element type**, where the two spellings are one expression,
+  and the documented projections were already ``\frac{1}{2}(A \pm A^T)`` — it is the code that
+  disagreed with them. **Two return types do change**: `*(::AbstractMatrix, ::SkewSymMatrix)` and
+  `*(::AbstractMatrix, ::SymmetricMatrix)` return a `Transpose` where they returned an `Adjoint`.
+  Both are an `AbstractMatrix` holding the same entries, but code that dispatches on `Adjoint` sees
+  the difference.
+
+  **Nine is the count of the sites this fixes, not of every `'` in the package.** Three more feed a
+  `SkewSymMatrix` from an adjoint expression and are deliberately left alone: `Ω` for a Stiefel and
+  for a Grassmann point in `src/global_sections/omega_functions.jl`, and `global_rep` for a Stiefel
+  point in `src/global_sections/global_sections.jl`. They belong to the Riemannian geometry, which
+  rests on the sesquilinear inner product, so `adjoint` is the right operator there — and the
+  horizontal lift of a complex point would be skew-*Hermitian*, which `SkewSymMatrix` cannot hold at
+  all. Spelling those three `transpose` would not make the path complex-correct; it would only
+  change which answer it gets wrong. The same reasoning leaves `rgrad`, `metric`, `check` and the
+  symplectic Householder applications untouched.
+
+  `*(::AbstractMatrix, ::SkewSymMatrix)` also stopped negating its owned operand before the
+  product. `-A` builds a second packed vector of ``n(n-1)/2`` entries; the minus is outside the
+  product now, which is the same arithmetic. Against one column at ``n = 400``, measured in a fresh
+  process: **7 520 bytes, against 642 944**.
+
+- **A row vector times one of this package's matrix types is an ordinary product again, rather than
+  an ambiguous `MethodError`.** `v' * Y` and `transpose(v) * Y` raised
+
+  ```
+  MethodError: *(::Adjoint{Float64, Vector{Float64}}, ::StiefelManifold{Float64, Matrix{Float64}}) is ambiguous.
+  ```
+
+  and so did the same two shapes against a `SymplecticStiefelManifold`, an `Sfac` or its inverse, a
+  `SkewSymMatrix`, a `SymmetricMatrix` and either triangular. Each of those types carries a
+  `*(::AbstractMatrix, ::Owned)`, and `LinearAlgebra` carries
+  `*(::Adjoint{T, <:AbstractVector} where T, ::AbstractMatrix)` and a `Transpose` counterpart. Each
+  of those two is narrower in the left argument and wider in the right, so neither wins. The
+  standoff is as old as each type's own `*`.
+
+  Fourteen methods separate them, two per product and written beside the product they separate.
+  Two pairs of this class were already settled one at a time — `StiefelProjection`'s with the
+  device-multiply change under *Changed* below, and `Adjoint{<:SymplecticStiefelManifold}`'s with
+  the symplectic-backend fix below — and they are the precedent the rest follow. The class is now
+  closed at eighteen methods over nine products, and `src/ambiguities.jl` carries the account of it
+  and the list of every site.
+  Every one of them repeats the body of the method it separates, so a row vector gets the answer
+  any other matrix gets, and gets it the same cheap way — none of those bodies materializes its
+  owned operand.
+
+  **The package's own ambiguity test cannot see this class, and that is why it lasted.**
+  `test/ambiguities.jl` filters `Test.detect_ambiguities` to pairs whose two methods both belong to
+  this package, and one method of each pair here is `LinearAlgebra`'s. Each type's own testset
+  covers its pair instead. Over the whole loaded set `detect_ambiguities` drops from 220 to 206,
+  one pair per method added. It is a net figure and not a clean sweep: 28 of the 206 that remain
+  name one of these methods, all of them against `FillArrays` or `ArrayLayouts`, which carry
+  row-vector products narrower still in the left argument. Those pairs are not new — they stood
+  against the `*(::AbstractMatrix, ::Owned)` method before and have moved onto the tie-breaker.
+  `scripts/row_vector_ambiguity_count.jl` is that measurement, and it lists every site so that the
+  account in `src/ambiguities.jl` can be checked against the method table rather than trusted.
+
+  `GrassmannManifold` and the two horizontal lifts were never affected. They define no
+  `*(::AbstractMatrix, ::Owned)`, so a row vector against one of them reaches `LinearAlgebra`
+  unopposed. What is *not* closed is the same standoff one level in: `FillArrays` and
+  `ArrayLayouts` each carry a row-vector product of their own, narrower still in the left argument,
+  so `Zeros(n)' * Y` stays ambiguous. It was ambiguous before this change as well, against the
+  `*(::AbstractMatrix, ::Owned)` method, and separating it would mean depending on those two
+  packages to name their types.
 
 - **A `rand` that names a backend no longer returns a `SymplecticStiefelManifold` point that is not
   on the manifold.** `SymplecticStiefelManifold <: Manifold{T}`, so the backend-taking spellings

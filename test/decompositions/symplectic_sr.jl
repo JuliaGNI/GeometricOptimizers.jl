@@ -175,3 +175,26 @@ end
         @test count(>(tolerance(N2)), residuals) / 500 < 0.01
     end
 end
+
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::Sfac)` does not settle on its own:
+# `LinearAlgebra` has its own method for that left operand, narrower there and wider on the right,
+# so neither wins. The four tie-breakers beside those products in
+# `src/decompositions/symplectic_sr.jl` settle it. `test/ambiguities.jl` cannot cover these pairs,
+# because one method of each is not this package's.
+#
+# Both `S` and `inv(S)` run: they are separate types and so need, and have, separate methods. This
+# compares the operator against its own dense form rather than against the manifold, so the
+# factorization's residual does not enter and the tolerance above is not needed.
+@testset "a row vector times an Sfac" begin
+    for T in (Float32, Float64), (N2, n2) in SIZES
+
+        S = sr!(randn(T, N2, n2)).S
+        v = rand(T, N2)
+
+        for X in (S, inv(S))
+            @test v' * X ≈ v' * Matrix(X)
+            @test transpose(v) * X ≈ transpose(v) * Matrix(X)
+            @test size(v' * X) == (1, N2)
+        end
+    end
+end
