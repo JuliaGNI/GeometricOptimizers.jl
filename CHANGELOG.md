@@ -203,6 +203,15 @@ breaking release).
 
 ### Fixed
 
+- **The `Test` extra had no `[compat]` bound.** Every other dependency, weak dependency and test
+  extra carried one; `Test` did not, so `Aqua.test_deps_compat` failed on that and on nothing else.
+  `Test = "1"` is the entry, the same form the three stdlibs among the dependencies already use
+  (`LinearAlgebra`, `Printf`, `Random`). A bound that is
+  missing is invisible until a resolve picks a version the package was never built against, which
+  is why the suite now runs `Aqua.test_deps_compat` beside `Aqua.test_piracies` rather than leaving
+  the check to a reader who thinks to run it. The same argument `test/aqua_tests.jl` already makes
+  for piracy: a list of the entries goes stale where a check does not.
+
 - **Nine expressions wrote `adjoint` where the identity they rest on is a transpose.**
   `SkewSymMatrix` is the set ``\{M : M^T = -M\}``, `SymmetricMatrix` is ``\{M : M^T = M\}``, a
   horizontal lift's upper-right block is ``-B^T``, and neither triangular constructor projects at
@@ -532,6 +541,50 @@ breaking release).
   on the two concrete manifolds, since what rules `Newton` out is a property of every manifold here.
 
 ### Changed
+
+- **Every import in the module file is explicit, and each name comes from the module that owns
+  it.** Three `using` statements brought a whole package in where every other import beside them
+  named what it took: `KernelAbstractions` for `@index`, `@kernel`, `CPU` and `GPU`, `Printf` for
+  `@printf`, and `Random` for `AbstractRNG`, `rand!` and `randn!` — eleven names in all, from
+  `ExplicitImports.print_explicit_imports`. Each of the three keeps the package name in its own
+  import list, because the qualified spellings elsewhere in `src/` (`KernelAbstractions.allocate`,
+  `KernelAbstractions.Backend`, `Random.default_rng`) read the module through that binding.
+
+  Two names were taken from a re-exporter rather than from their owner. `AbstractSolverState` is
+  `GeometricBase`' and was imported from `SimpleSolvers`; it joins the `using GeometricBase` line
+  two above, which already took three of its neighbours. `l2norm` is `GeometricBase.Utils`' and was
+  `import`ed from `SimpleSolvers` in order to be extended here. It is `import`ed from
+  `GeometricBase.Utils` now. Both bindings are the same object either way —
+  `GeometricBase.AbstractSolverState === SimpleSolvers.AbstractSolverState`, and likewise for
+  `l2norm` — so no method this package defines or calls moves. What changes is that neither name
+  now depends on `SimpleSolvers` continuing to re-export something it does not own. `l2norm` has no
+  binding in `GeometricBase` itself, only in the `Utils` submodule, which is why that one is
+  spelled with the submodule.
+
+  No explicit import in the module file is stale: every name taken is used. `fatou lint`'s
+  `unused-import` findings there remain the known false positive.
+
+- **A comment pass over `src/` and `test/`, with nothing behavioural in it.** The `[compat]` bound
+  above is the only line in this change that alters what the package resolves or runs.
+
+  - Two `TODO`s asked for `rand` to default its rng when none is given. The method directly below
+    each one does exactly that — `rand(Random.default_rng(), type, n)` — so both are done, and both
+    are deleted along with the `prbabaly` in them (`skew_symmetric.jl`, `symmetric.jl`).
+  - The comment above `include("utils.jl")` said `OptimizerSolution` is defined there and should
+    probably move to a file of its own. It is in `optimizer_solution.jl`, in a file of its own.
+    Deleted rather than corrected: what it asked for has happened.
+  - Typos: `referes` in both `stiefel_projection.jl` docstrings, `sutype` in `abstract_manifold.jl`,
+    and `The struct two fields` in both triangulars.
+  - Three `T(0.0)` in the lifts' `getindex` are `zero(T)`. The value is unchanged — they were
+    already converted through `T` — and `zero(T)` is the idiom the rest of the package uses.
+  - `test/special_matrices/skew_symmetric.jl` narrated how a typo in an uncalled helper had
+    survived. The lesson is kept in the present tense, where it applies to the next helper as well;
+    the account of the one it came from belongs here.
+  - `test/runtests.jl`'s `Manifold Optimizers` label was one space short of the 29 every other
+    label uses, so its column did not line up.
+  - `test/lie_algebras/stiefel_lie_algebra_horizontal.jl` never did `using Test`. It runs under
+    `@safetestset`, which supplies it, so the suite passed; run on its own the file raised
+    `UndefVarError: @test not defined`.
 
 - **`check` and `rgrad` of a `SymplecticStiefelManifold` run wherever the point is, and `metric`
   does too wherever the backend supplies an `lu`.** All three were host-only, each failing

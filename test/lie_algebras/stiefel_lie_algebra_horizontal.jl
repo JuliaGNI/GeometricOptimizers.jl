@@ -1,6 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: StiefelProjection
 using LinearAlgebra: I
+using Test
 import Random
 
 Random.seed!(123)

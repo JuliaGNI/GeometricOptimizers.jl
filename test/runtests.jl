@@ -99,7 +99,7 @@ begin
     @safetestset "Manifold Line Search         " include("manifold_linesearch_tests.jl")
 end
 begin
-    @safetestset "Manifold Optimizers         " include("manifold_optimizers_with_new_interface.jl")
+    @safetestset "Manifold Optimizers          " include("manifold_optimizers_with_new_interface.jl")
 end
 begin
     @safetestset "Grassmann Optimizers         " include("grassmann_optimizer_tests.jl")

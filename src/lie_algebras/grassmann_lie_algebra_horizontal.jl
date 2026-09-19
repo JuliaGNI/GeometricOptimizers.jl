@@ -90,14 +90,14 @@ end
 function Base.getindex(A::GrassmannLieAlgHorMatrix{T}, i::Integer, j::Integer) where {T}
     if i ≤ A.n
         if j ≤ A.n
-            return T(0.0)
+            return zero(T)
         end
         return -A.B[j - A.n, i]
     end
     if j ≤ A.n
         return A.B[i - A.n, j]
     end
-    return T(0.0)
+    return zero(T)
 end
 
 function Base.:+(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)

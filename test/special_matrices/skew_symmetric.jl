@@ -78,10 +78,10 @@ end
 
 # `SkewSymMatrix(α * A) == α * SkewSymMatrix(A)`, i.e. skew-symmetrization is linear.
 #
-# This was `SkeySymMatrix(A)` until the loop at the bottom of the file started calling it: a typo in
-# a function nothing invoked, so the suite passed and the property went untested. It is tested in
-# `GeometricMachineLearning` (`test/arrays/scalar_multiplication_for_custom_arrays.jl`), which is
-# where it was found when those tests were folded into this suite.
+# The loop at the bottom of the file calls this, and that is the part to keep: a helper nothing
+# invokes can carry a typo in its own name while the suite still passes. The same property is
+# tested in `GeometricMachineLearning`
+# (`test/arrays/scalar_multiplication_for_custom_arrays.jl`).
 function scalar_multiplication(n::Integer, T::DataType)
     A = rand(T, n, n)
     α = rand(T)

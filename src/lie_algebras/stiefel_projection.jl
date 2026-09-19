@@ -3,7 +3,7 @@
 
 Extract necessary information from `B` and build an instance of `StiefelProjection`. 
 
-Necessary information here referes to the backend, the data type and the size of the matrix.
+Necessary information here refers to the backend, the data type and the size of the matrix.
 
 The size is queried through `B.N` and `B.n`.
 

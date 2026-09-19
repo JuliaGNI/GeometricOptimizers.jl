@@ -94,7 +94,7 @@ function Base.getindex(A::StiefelLieAlgHorMatrix{T}, i, j) where {T}
     if j ≤ A.n
         return A.B[i - A.n, j]
     end
-    return T(0.0)
+    return zero(T)
 end
 
 function Base.:+(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
