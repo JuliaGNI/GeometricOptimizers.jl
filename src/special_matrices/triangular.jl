@@ -129,17 +129,21 @@ for one entry at a time. That is scalar indexing, so it **cannot run on a device
 packed vector holds ``n(n-1)/2`` entries and the generic path reads ``n^2`` of them, the other
 ``n(n+1)/2`` being zeros that [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) manufacture —
 but **do not read a host speed-up into that**, which is what the arithmetic invites. Measured
-against the very path this method shadows, the ratio is between 1.0x and 1.6x, is not monotone in
-`n`, and is 0.75x for a lower-triangular product at `n = 6`: the kernel launch has a fixed cost that
-a small product cannot amortize. `scripts/triangular_multiply_cost.jl` is the check and
-`CHANGELOG.md` carries its table. The device is what this buys.
+against the very path this method shadows, the ratio runs from 0.76x to 1.72x and is not monotone
+in `n`. At `n = 6` — the size the retraction tests use — both products are *slower* than the path
+they shadow, because the kernel launch has a fixed cost that a small product cannot amortize.
+`scripts/triangular_multiply_cost.jl` is the check and `CHANGELOG.md` carries its table. The device
+is what this buys.
 
 The kernel is the one each subtype supplies, and it is where the two differ: a lower-triangular row
 `i` runs over `1:(i-1)` and an upper-triangular one over `(i+1):n`, reading the same packed vector
 through different index arithmetic.
 
-`*(::AbstractMatrix, ::AbstractTriangular)` is written as `(A' * B')'` and so goes through here as
-well, because `adjoint` on one of these is a type swap onto the same storage.
+`*(::AbstractMatrix, ::AbstractTriangular)` is written as `(A' * B')'`. For a **real** element type
+that goes through here as well, because `adjoint` on one of these is then a type swap onto the same
+storage. A complex one does not: the swap is bound to `Real`, for the reason the comment on
+`adjoint(::LowerTriangular)` in `upper_triangular.jl` gives, and the lazy `Adjoint` it falls through
+to is not an `AbstractTriangular`. So that product stays on the generic path and stays host-only.
 """
 function Base.:*(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
     m1, m2 = size(B)

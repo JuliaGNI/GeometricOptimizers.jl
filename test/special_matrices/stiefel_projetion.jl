@@ -1,6 +1,6 @@
 using GeometricOptimizers: StiefelProjection
 using KernelAbstractions: CPU, KernelAbstractions
-using LinearAlgebra: I
+using LinearAlgebra: I, transpose
 using Test
 
 # `N` and `n` were declared `::Integer`, which are the package's only abstract fields. Nothing
@@ -30,6 +30,23 @@ end
     end
     # the element type still defaults to `Float64`, as `zeros(N, n)` does
     @test eltype(StiefelProjection(5, 3)) === Float64
+end
+
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::StiefelProjection)` does not
+# settle on its own: `LinearAlgebra` has its own method for that left operand, narrower there and
+# wider on the right, so neither wins. The two tie-breakers beside the products in
+# `src/special_matrices/stiefel_projection.jl` settle it. This shape worked before
+# `StiefelProjection` had a `*` at all, so what is pinned here is that adding one did not take it
+# away. `E` is rectangular, so a tie-breaker that swapped or dropped an operand would not conform.
+@testset "a row vector times a StiefelProjection" begin
+    for T in (Float32, Float64), N in 3:5, n in 1:N
+        E = StiefelProjection(N, n, T)
+        v = rand(T, N)
+
+        @test v' * E ≈ v' * Matrix{T}(E)
+        @test transpose(v) * E ≈ transpose(v) * Matrix{T}(E)
+        @test size(v' * E) == (1, n)
+    end
 end
 
 # `Flaot32` was the default here. Harmless, because every call passes `T` — but a default nothing

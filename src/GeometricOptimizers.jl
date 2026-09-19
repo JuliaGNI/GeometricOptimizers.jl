@@ -46,7 +46,7 @@ using Printf
 
 using KernelAbstractions
 using Random
-using LinearAlgebra: Adjoint, qr, norm, I, mul!, rmul!, dot
+using LinearAlgebra: Adjoint, Transpose, qr, norm, I, mul!, rmul!, dot
 using LinearAlgebra: cholesky, issuccess, Symmetric
 using LinearAlgebra: Diagonal, Hermitian, eigen
 import LinearAlgebra

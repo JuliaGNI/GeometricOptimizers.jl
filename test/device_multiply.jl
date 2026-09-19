@@ -139,7 +139,9 @@ end
     Y = rand(device, StiefelManifold, N, n)
     Δ = rgrad(Y, JLArray(rand(T, N, n)))
 
-    @test_throws ErrorException cayley(Y, Δ / 100)
+    # matched on the message, not on `ErrorException`: the point of the assertion is *where* the
+    # path stops, and every `error()` anywhere in `cayley` is an `ErrorException` too
+    @test_throws "Scalar indexing is disallowed" cayley(Y, Δ / 100)
 end
 
 @testset "a lift times a StiefelProjection is still host-only, for a reason of its own" begin
@@ -152,5 +154,5 @@ end
     B = global_rep(GlobalSection(Y), rgrad(Y, JLArray(rand(T, N, n))))
     E = StiefelProjection(B)
 
-    @test_throws ErrorException B * E
+    @test_throws "Scalar indexing is disallowed" B * E
 end
