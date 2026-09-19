@@ -46,7 +46,7 @@ end
 
 Extract necessary information from `A` and build an instance of `StiefelProjection`. 
 
-Necessary information here referes to the backend, the data type and the size of the matrix.
+Necessary information here refers to the backend, the data type and the size of the matrix.
 """
 function StiefelProjection(A::AbstractMatrix{T}) where {T}
     StiefelProjection(KernelAbstractions.get_backend(A), T, size(A)...)
