@@ -229,14 +229,26 @@ end
 LinearAlgebra.mul!(C::SkewSymMatrix, α::Real, A::SkewSymMatrix) = mul!(C, A, α)
 LinearAlgebra.rmul!(C::SkewSymMatrix, α::Real) = mul!(C, C, α)
 
-function Base.:*(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
-    m1, m2 = size(B)
-    @assert m1 == A.n
-    backend = KernelAbstractions.get_backend(A)
-    C = KernelAbstractions.allocate(backend, T, A.n, m2)
+# The in-place form, and the one `*` below is written on — the shape `mul!(C, ::SymmetricMatrix,
+# ::AbstractMatrix)` already has in `symmetric.jl`. It exists because the retraction workspace needs
+# the dense form of a lift's `A` block written into a buffer it owns rather than returned in a fresh
+# one, and because a structured matrix that has a `*` and no `mul!` makes a caller who has a
+# destination allocate anyway.
+function LinearAlgebra.mul!(C::AbstractMatrix, A::SkewSymMatrix, B::AbstractMatrix)
+    @assert A.n == size(B, 1)
+    @assert size(B, 2) == size(C, 2)
+    @assert A.n == size(C, 1)
+    backend = KernelAbstractions.get_backend(A.S)
 
     skew_mat_mul! = skew_mat_mul_kernel!(backend)
     skew_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
+    C
+end
+
+function Base.:*(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
+    backend = KernelAbstractions.get_backend(A)
+    C = KernelAbstractions.allocate(backend, T, A.n, size(B, 2))
+    LinearAlgebra.mul!(C, A, B)
     C
 end
 

@@ -36,34 +36,63 @@ with ``n`` rather than with ``N``, since the only matrix function either of them
 manifolds.
 
 For a [`GrassmannLieAlgHorMatrix`](@ref) this is the same expression with ``A \equiv \mathbb{O}``.
+
+# Implementation
+
+Both factors are allocated once, zeroed, and written block by block, rather than assembled out of
+nested `vcat`s and `hcat`s. The blocks are the same ones the formula above names; what goes is the
+chain of intermediate matrices each nesting level materialised — a `vcat` of two blocks, then an
+`hcat` of two of those, per factor, per call. The two zero blocks are then never written at all.
+This is on the per-iteration path: an optimizer step applies a retraction once per line-search trial
+and three times besides, and each of those calls this.
+
+``(B'')^T`` is the matrix that is built, and ``B''`` is returned as its adjoint, because every
+caller — [`cayley`](@ref), [`geodesic`](@ref), [`retraction_differential`](@ref) — consumes it as
+``(B'')^T`` and the two cancel exactly.
 """
 function lift_factors(B::StiefelLieAlgHorMatrix)
     T = eltype(B)
-    E = StiefelProjection(B)
+    N, n = B.N, B.n
+    backend = KernelAbstractions.get_backend(B)
     unit = one(B.A)
     A_mat = B.A * unit
 
+    B̂ = KernelAbstractions.zeros(backend, T, N, 2n)
+    B̄ᵗ = KernelAbstractions.zeros(backend, T, 2n, N)
+
     # `transpose` and not `adjoint`: this is the upper-right block of the lift, which `getindex`
     # builds as `-B.B[j, i]` — entrywise, without conjugating. `+(::StiefelLieAlgHorMatrix,
-    # ::AbstractMatrix)` rebuilds the same block and spells it the same way. The outer `'` stays,
-    # because every caller consumes this as `B̄'` and the two cancel exactly.
-    B̂ = hcat(vcat(T(0.5) * A_mat, B.B), E)
-    B̄ = hcat(vcat(unit, T(0.5) * A_mat), vcat(zero(transpose(B.B)), -transpose(B.B)))'
+    # ::AbstractMatrix)` rebuilds the same block and spells it the same way.
+    @views begin
+        B̂[1:n, 1:n] .= T(0.5) .* A_mat
+        B̂[(n + 1):N, 1:n] .= B.B
+        B̂[1:n, (n + 1):(2n)] .= unit
+        B̄ᵗ[1:n, 1:n] .= unit
+        B̄ᵗ[(n + 1):(2n), 1:n] .= T(0.5) .* A_mat
+        B̄ᵗ[(n + 1):(2n), (n + 1):N] .= .-transpose(B.B)
+    end
 
-    (B̂, B̄)
+    (B̂, B̄ᵗ')
 end
 
 function lift_factors(B::GrassmannLieAlgHorMatrix)
     T = eltype(B)
-    E = StiefelProjection(B)
+    N, n = B.N, B.n
     backend = KernelAbstractions.get_backend(B)
-    zero_mat = KernelAbstractions.zeros(backend, T, B.n, B.n)
+    unit = unit_matrix(backend, T, n)
+
+    B̂ = KernelAbstractions.zeros(backend, T, N, 2n)
+    B̄ᵗ = KernelAbstractions.zeros(backend, T, 2n, N)
 
     # `transpose` for the reason the Stiefel method above gives
-    B̂ = hcat(vcat(zero_mat, B.B), E)
-    B̄ = hcat(vcat(one(zero_mat), zero_mat), vcat(zero(transpose(B.B)), -transpose(B.B)))'
+    @views begin
+        B̂[(n + 1):N, 1:n] .= B.B
+        B̂[1:n, (n + 1):(2n)] .= unit
+        B̄ᵗ[1:n, 1:n] .= unit
+        B̄ᵗ[(n + 1):(2n), (n + 1):N] .= .-transpose(B.B)
+    end
 
-    (B̂, B̄)
+    (B̂, B̄ᵗ')
 end
 
 @doc raw"""
@@ -135,9 +164,16 @@ the choice of `algorithm` and [`GeometricOptimizers.𝔄`](@ref) for the impleme
     every lift norm and faster.
 """
 function geodesic(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgorithm = ScaledSquaring())
+    T = eltype(B)
     B̂, B̄ = lift_factors(B)
 
-    manifold_type(B)(one(B) + B̂ * 𝔄(B̂, B̄, algorithm) * B̄')
+    # `mul!` into the identity rather than `one(B) + …`, for the reason
+    # [`cayley(::StiefelLieAlgHorMatrix)`](@ref) gives: the identity is built either way, and adding
+    # into it makes the product's destination the answer instead of one more `N × N` temporary.
+    retracted = unit_matrix(KernelAbstractions.get_backend(B), T, B.N)
+    mul!(retracted, B̂ * 𝔄(B̂, B̄, algorithm), B̄', one(T), one(T))
+
+    manifold_type(B)(retracted)
 end
 
 function geodesic(B::AbstractLieAlgHorMatrix, ::ProjectedSkew)
@@ -232,16 +268,33 @@ Multiplying the factored left-hand side by an unfactored ``\mathbb{I} + \frac{1}
 instead multiplies two dense ``N\times{}N`` matrices, which is ``O(N^3)`` on its own and puts the
 retraction above [`geodesic`](@ref) at every size. `scripts/cayley_regrouping_cost.jl` carries the
 measurement.
+
+Both sums are written as the five-argument `mul!` into an identity rather than as `𝕀 + X`: the
+identity has to be built either way, and adding into it is what makes the product's own destination
+the answer instead of a temporary. `scripts/retraction_step_allocations.jl` carries that
+measurement. The ``2n\times{}2n`` inverse stays an `inv` and is the allocation this cannot remove —
+`lu!` and `rdiv!` would take it in place on the host, and neither is something a
+`KernelAbstractions` backend is obliged to supply, where `inv` is what `cayley` already runs on
+Metal through.
 """
 function cayley(B::StiefelLieAlgHorMatrix)
+    StiefelManifold(_cayley_matrix(B))
+end
+
+# The body both `cayley` methods share; they differ only in the manifold the result is wrapped in,
+# and `manifold_type` is not used for that because each of the two carries its own docstring and the
+# manual links to both by signature.
+function _cayley_matrix(B::AbstractLieAlgHorMatrix)
     T = eltype(B)
-    𝕀_small = one(B.A)
-    𝕆 = zero(𝕀_small)
-    𝕀_small2 = hcat(vcat(𝕀_small, 𝕆), vcat(𝕆, 𝕀_small))
-    𝕀_big = one(B)
+    backend = KernelAbstractions.get_backend(B)
     B̂, B̄ = lift_factors(B)
 
-    StiefelManifold(𝕀_big + (B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂)) * B̄')
+    M = unit_matrix(backend, T, 2 * B.n)
+    mul!(M, B̄', B̂, -T(0.5), one(T))
+    retracted = unit_matrix(backend, T, B.N)
+    mul!(retracted, B̂ * inv(M), B̄', one(T), one(T))
+
+    retracted
 end
 
 @doc raw"""
@@ -254,15 +307,7 @@ This is equivalent to the method of [`cayley`](@ref) for [`StiefelLieAlgHorMatri
 See [`cayley(::StiefelLieAlgHorMatrix)`](@ref).
 """
 function cayley(B::GrassmannLieAlgHorMatrix)
-    T = eltype(B)
-    backend = KernelAbstractions.get_backend(B)
-    𝕆 = KernelAbstractions.zeros(backend, T, B.n, B.n)
-    𝕀_small = one(𝕆)
-    𝕀_small2 = hcat(vcat(𝕀_small, 𝕆), vcat(𝕆, 𝕀_small))
-    𝕀_big = one(B)
-    B̂, B̄ = lift_factors(B)
-
-    GrassmannManifold(𝕀_big + (B̂ * inv(𝕀_small2 - T(0.5) * B̄' * B̂)) * B̄')
+    GrassmannManifold(_cayley_matrix(B))
 end
 
 @doc raw"""

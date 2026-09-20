@@ -62,6 +62,25 @@ function unit_matrix(backend::KernelAbstractions.Backend, ::Type{T}, n::Integer)
     matrix
 end
 
+# The host arm allocates and fills in one step, with no kernel launch, and returns the same
+# `Matrix{T}` the generic arm above returns on a `CPU`. This is the argument
+# `StiefelProjection(N, n, T)` already makes in `src/special_matrices/stiefel_projection.jl`, and the
+# retraction path is where it is worth making: `KernelAbstractions.zeros` on a `CPU` writes the zeros
+# itself rather than taking a page the operating system has already zeroed
+# (`scripts/host_allocation_cost.jl`), and the launch then costs three allocations of
+# `KernelAbstractions.CompilerMetadata` per call regardless of `n`. A `cayley` of a horizontal lift
+# builds two of these identities and is called once per line-search trial.
+#
+# `_check_supported_eltype` is called here too, although `supports_float64(CPU())` is `true` and so it
+# can never fire: the invariant the header of this file states is that *every* allocator a caller
+# reaches by naming a backend and an element type calls it, and `test/backend_eltype_check.jl` asserts
+# that list. A method that quietly leaves the check out is how that list stops being true.
+function unit_matrix(backend::KernelAbstractions.CPU, ::Type{T}, n::Integer) where {T}
+    _check_supported_eltype(backend, T)
+
+    Matrix{T}(I, n, n)
+end
+
 function unit_matrix(A::AbstractMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A), T, LinearAlgebra.checksquare(A))
 end

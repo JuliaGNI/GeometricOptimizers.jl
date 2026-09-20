@@ -134,6 +134,7 @@ struct Optimizer{T,
     OCT <: Union{OptimizerCache, NamedTuple},
     LST <: Linesearch,
     RT <: AbstractRetraction,
+    WT,
     OT} <: AbstractSolver
     algorithm::ALG
     problem::OBJ
@@ -143,6 +144,12 @@ struct Optimizer{T,
     cache::OCT
     linesearch::LST
     retraction::RT
+    # The buffers every retraction on the step path is taken in, `nothing` where the parameters carry
+    # no manifold. Held here and not on the cache because seven cache types would each need the field
+    # and the retraction is this type's to own -- and because both call sites that apply one,
+    # `solver_step!` and `trial_iterate!` through the closures `linesearch_problem` builds, are
+    # reached from here. See `GeometricOptimizers.retraction_workspace`.
+    retraction_workspace::WT
     step_ceiling::T
     observer::OT
 
@@ -154,13 +161,15 @@ struct Optimizer{T,
             step_ceiling::Real = DEFAULT_STEP_CEILING,
             observer = NoStepObserver()) where {T}
         observed_gradient = _observed_gradient(gradient, observer)
+        workspace = retraction_workspace(cache.x)
         ls_problem = linesearch_problem(
-            problem, observed_gradient, cache, retraction, observer)
+            problem, observed_gradient, cache, retraction, observer, workspace)
         ls = Linesearch(ls_problem, linesearch)
         new{T, typeof(algorithm), typeof(problem), typeof(observed_gradient),
-            typeof(hessian), typeof(cache), typeof(ls), typeof(retraction), typeof(observer)}(
+            typeof(hessian), typeof(cache), typeof(ls), typeof(retraction), typeof(workspace),
+            typeof(observer)}(
             algorithm, problem, observed_gradient, hessian, config,
-            cache, ls, retraction, T(step_ceiling), observer)
+            cache, ls, retraction, workspace, T(step_ceiling), observer)
     end
 end
 
@@ -307,6 +316,7 @@ gradient(opt::Optimizer) = opt.gradient
 # The step ceiling in multiples of 2π, not the `αmax` derived from it: that one depends on `‖δ‖` and
 # so changes at every step. See `DEFAULT_STEP_CEILING` and `step_αmax`.
 step_ceiling(opt::Optimizer) = opt.step_ceiling
+retraction_workspace(opt::Optimizer) = opt.retraction_workspace
 
 """
     step_observer(opt::Optimizer)
@@ -422,8 +432,8 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
 
     for _ in 1:config(opt).nan_max_iterations
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
-            update_section!(
-                section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+            update_section!(section(cache(opt)), section(state), direction(cache(opt)),
+                opt.retraction, retraction_workspace(opt))
             _copyto!(solution(cache(opt)), section(cache(opt)))
         end
         # compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)), cache(opt), opt.retraction)
@@ -481,8 +491,8 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
         restart!(state)
         steepest_descent!(cache(opt))
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
-            update_section!(
-                section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+            update_section!(section(cache(opt)), section(state), direction(cache(opt)),
+                opt.retraction, retraction_workspace(opt))
             _copyto!(solution(cache(opt)), section(cache(opt)))
         end
         # rebuilt rather than reused: `steepest_descent!` has just replaced the direction, so `‖δ‖`
@@ -501,8 +511,8 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Op
 
     # compute new minimizer
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
-        update_section!(
-            section(cache(opt)), section(state), direction(cache(opt)), opt.retraction)
+        update_section!(section(cache(opt)), section(state), direction(cache(opt)),
+            opt.retraction, retraction_workspace(opt))
         _copyto!(solution(cache(opt)), section(cache(opt)))
         _copyto!(x, solution(cache(opt)))
     end
