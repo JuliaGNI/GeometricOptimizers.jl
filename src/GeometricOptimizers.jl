@@ -99,6 +99,12 @@ include("decompositions/symplectic_gram_schmidt.jl")
 # GeometricMachineLearning#234.
 export Manifold, StiefelManifold, GrassmannManifold, SymplecticStiefelManifold
 export rgrad, metric, check, Ω
+# `orthonormal_columns` is public for the same reason, and for one more: a downstream layer that
+# initialises a manifold weight has to orthonormalise it, and `LinearAlgebra.qr!` cannot do that
+# on a device. This is the only entry point here that can. `_cholesky_qr2` behind it stays
+# private — it answers `nothing` on a breakdown, which is a contract for the redraw above it and
+# not one to hand a caller.
+export orthonormal_columns
 include("manifolds/abstract_manifold.jl")
 include("manifolds/stiefel_manifold.jl")
 include("manifolds/grassmann_manifold.jl")

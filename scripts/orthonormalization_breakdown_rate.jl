@@ -6,7 +6,7 @@
 #     julia --startup-file=no --project=. scripts/orthonormalization_breakdown_rate.jl
 #
 # This is the check behind the rate quoted in the docstrings of
-# `GeometricOptimizers._cholesky_qr2` and `GeometricOptimizers._orthonormal_columns`, and behind the
+# `GeometricOptimizers._cholesky_qr2` and `GeometricOptimizers.orthonormal_columns`, and behind the
 # `ORTHONORMALIZATION_ATTEMPTS` bound. Those three quote figures from this script and from nothing
 # else.
 #
@@ -16,7 +16,7 @@
 # comment can leave the Gram matrix numerically indefinite. `global_section` factorizes `N × (N-n)`
 # Gaussian columns with the span of the point projected out — square inside that complement — and a
 # square Gaussian's condition number has a heavy tail. In `Float32` that tail reaches the failure
-# threshold often enough to matter, which is what `_orthonormal_columns` exists for.
+# threshold often enough to matter, which is what `orthonormal_columns` exists for.
 #
 # ## Why three seeds and not one
 #
@@ -26,7 +26,7 @@
 #
 # ## What the redraw column establishes
 #
-# `_orthonormal_columns` replaces a failed draw rather than repairing it, so the relevant question
+# `orthonormal_columns` replaces a failed draw rather than repairing it, so the relevant question
 # is not the failure rate alone but whether *consecutive* draws fail. The second column counts the
 # draws whose immediate replacement also failed. It has been zero in every run so far, which is
 # what makes the `ORTHONORMALIZATION_ATTEMPTS = 8` bound comfortable rather than lucky.
@@ -64,7 +64,7 @@ function count_breakdowns(seed::Int)
         total += 1
         if _cholesky_qr2(complement_draw(T, N, n)) === nothing
             breakdowns += 1
-            # The redraw is what `_orthonormal_columns` would do next. Count it failing too.
+            # The redraw is what `orthonormal_columns` would do next. Count it failing too.
             _cholesky_qr2(complement_draw(T, N, n)) === nothing && (consecutive += 1)
         end
     end

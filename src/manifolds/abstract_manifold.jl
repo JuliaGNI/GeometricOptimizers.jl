@@ -47,7 +47,7 @@ size tried.
 with `check = false` reports a Gram matrix that is no longer positive definite rather than throwing,
 and at this shape in `Float32` an ordinary Gaussian draw reaches that about once in a hundred and
 twenty — see `scripts/orthonormalization_breakdown_rate.jl`.
-[`_orthonormal_columns`](@ref GeometricOptimizers._orthonormal_columns) is what answers it.
+[`orthonormal_columns`](@ref GeometricOptimizers.orthonormal_columns) is what answers it.
 
 **Squaring the entries is a second hazard, and the scaling below is what answers that one.** A
 Householder QR scales internally and this does not, so an argument whose entries are large enough
@@ -77,22 +77,29 @@ function _cholesky_qr2(A::AbstractMatrix)
     Q / F₂.U
 end
 
-# How many Gaussian draws `_orthonormal_columns` takes before it gives up. At the rate measured in
+# How many Gaussian draws `orthonormal_columns` takes before it gives up. At the rate measured in
 # its docstring -- about one draw in a hundred and twenty -- and at the higher rate that draw's own
 # replacement fails at, eight attempts put the chance of exhausting them near 1e-12. A caller that
 # does exhaust them is not looking at bad luck.
 const ORTHONORMALIZATION_ATTEMPTS = 8
 
 @doc raw"""
-    _orthonormal_columns(draw)
+    orthonormal_columns(draw)
 
 Orthonormalize `draw()` with [`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2), drawing
 again while the draw is too ill-conditioned for it.
 
-Both callers — `rand(backend, manifold_type, N, n)` and [`global_section`](@ref) — draw their own
-Gaussian matrix, which is what makes redrawing the right answer rather than a retry. The draw
-carries no information, so one `CholeskyQR2` cannot orthonormalize is *replaced*; nothing is
-repaired and no result is kept that the algorithm did not produce cleanly.
+`draw` takes no argument and returns a fresh ``N\times{}m`` matrix each time it is called. The
+result has orthonormal columns and is on whatever backend `draw` allocated on, so this is the
+entry point for orthonormalizing on a device: `LinearAlgebra.qr!` is a host factorization, and
+`Metal` implements no `qr` for its arrays at all. Exhausting the attempts raises.
+
+**`draw` is called again rather than its result repaired, so it must return a fresh draw and not
+a cached one.** This package's own callers — `rand(backend, manifold_type, N, n)` and
+[`global_section`](@ref) — each draw a Gaussian matrix, which carries no information, so one
+`CholeskyQR2` cannot orthonormalize is *replaced*; nothing is repaired and no result is kept that
+the algorithm did not produce cleanly. A `draw` that ignores this and returns the same matrix
+every time turns a breakdown into the error below instead of an answer.
 
 **The rate is not negligible.** [`global_section`](@ref) factorizes ``N\times(N-n)`` Gaussian
 columns with the span of `Y` projected out, so the matrix is square inside that complement and its
@@ -112,7 +119,7 @@ Shifted CholeskyQR3 measured on the same draws does not close it — one failure
 the exact ``\|A\|_2`` in the shift, because forming ``A^TA`` in `Float32` loses a singular value
 that small whatever the shift is.
 """
-function _orthonormal_columns(draw)
+function orthonormal_columns(draw)
     for _ in 1:ORTHONORMALIZATION_ATTEMPTS
         Q = _cholesky_qr2(draw())
         Q === nothing || return Q
@@ -125,7 +132,7 @@ end
 function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
-    Q = _orthonormal_columns(() -> randn(rng, T, N, n))
+    Q = orthonormal_columns(() -> randn(rng, T, N, n))
     # `MT` may name the storage array type as well as the element type --
     # `StiefelManifold{Float64, Matrix{Float64}}` -- and is then already concrete, so applying a
     # further parameter to it is an error. `StiefelManifold{Float64}` still needs one. The branch
@@ -140,7 +147,7 @@ function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
     _check_supported_eltype(backend, T)
-    Q = _orthonormal_columns() do
+    Q = orthonormal_columns() do
         A = KernelAbstractions.allocate(backend, T, N, n)
         Random.randn!(rng, A)
         A

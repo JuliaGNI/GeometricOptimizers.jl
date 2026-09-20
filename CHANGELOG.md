@@ -200,6 +200,23 @@ breaking release).
   symplectic-attention layers of `GeometricMachineLearning` are parametrized by both.
 - Added a backend-taking `rand` for `GrassmannLieAlgHorMatrix`, which `StiefelLieAlgHorMatrix`
   already had. A Grassmann lift could be zeroed on a device by naming one and not drawn on it.
+- **`orthonormal_columns(draw)` is exported.** It is the `_orthonormal_columns` added earlier in
+  this release, renamed and made public; the underscore name is not in any release, so nothing
+  downstream can be holding it.
+
+  The reason it is public is a caller outside this package. A downstream manifold layer has to
+  orthonormalize the weight it initialises, and `LinearAlgebra.qr!` cannot do that on a device —
+  `Metal` implements no `qr` for its arrays. `GeometricMachineLearning`'s `StiefelLayer`,
+  `GrassmannLayer` and `PSDLayer` each write `assign_columns(typeof(weight)(qr!(weight).Q), …)`
+  and so throw at construction on a device, which takes `SymplecticAutoencoder`, `PSDArch` and
+  `MultiHeadAttention(…; Stiefel = true)` with them; `assign_columns` is the name this release
+  deletes, so those three call sites have to be rewritten against this release whatever else
+  happens. That is GeometricMachineLearning **B13**, and this export is what it closes against.
+
+  Reaching for an underscore name across a package boundary is what `assign_columns` already was,
+  and it is why this one is not left private. `_cholesky_qr2` behind it stays private: it answers
+  `nothing` on a breakdown, which is a contract for the redraw above it and not one to hand a
+  caller.
 
 ### Fixed
 

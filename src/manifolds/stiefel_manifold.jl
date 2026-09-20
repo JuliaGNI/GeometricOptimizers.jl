@@ -131,7 +131,7 @@ round.(global_section(Y); digits = 3)
 Internally we do:
 
 ```julia
-_orthonormal_columns() do
+orthonormal_columns() do
     A = randn(N, N - n) # or the gpu equivalent
     A - Y.A * (Y.A' * A)
 end
@@ -146,13 +146,13 @@ The orthonormalization is **CholeskyQR2 and not `LinearAlgebra.qr!`**, on every 
 `A` is square inside the complement of `Y`, so its condition number has a square Gaussian's heavy
 tail and CholeskyQR2 breaks down on it about once in a hundred and twenty in `Float32`. A draw it
 cannot orthonormalize is *replaced* — see
-[`_orthonormal_columns`](@ref GeometricOptimizers._orthonormal_columns) for the measurement and for
+[`orthonormal_columns`](@ref GeometricOptimizers.orthonormal_columns) for the measurement and for
 why a redraw rather than a repair is the honest answer.
 """
 function global_section(Y::StiefelManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y)
-    λ = _orthonormal_columns() do
+    λ = orthonormal_columns() do
         A = KernelAbstractions.allocate(backend, T, N, N - n)
         randn!(A)
         A - Y.A * (Y.A' * A)

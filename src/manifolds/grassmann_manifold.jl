@@ -84,7 +84,7 @@ See the documentation for [`global_section(Y::StiefelManifold{T}) where T`](@ref
 function global_section(Y::GrassmannManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y)
-    λ = _orthonormal_columns() do
+    λ = orthonormal_columns() do
         A = KernelAbstractions.allocate(backend, T, N, N - n)
         randn!(A)
         A - Y.A * (Y.A' * A)
