@@ -33,7 +33,7 @@ using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update
                            increase_iteration_number!, gradient, inverse_hessian, cache,
                            direction, rhs,
                            OptimizerCache, _flat_δ!, _flat_γ!, _flat_mul!, outer!,
-                           GlobalSection, global_rep, update_section!, lift_factors!,
+                           GlobalSection, update_section!, lift_factors!,
                            retraction_matrix!, retraction_workspace, initialize_state!,
                            OptimizerStatus, config, problem, value, 𝔄
 using NeuralNetworkParameters: NetworkParameters, flatten
