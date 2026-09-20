@@ -8,18 +8,56 @@ abstract type AbstractTriangular{T} <: AbstractMatrix{T} end
 Base.parent(A::AbstractTriangular) = A.S
 Base.size(A::AbstractTriangular) = (A.n, A.n)
 
-function Base.:+(A::AT, B::AT) where {AT <: AbstractTriangular}
+# Each argument carries its own type, and the species is compared at run time. Bound as
+# `(A::AT, B::AT) where {AT <: AbstractTriangular}` these three do not dispatch for a pair whose
+# storage arrays differ -- a host `LowerTriangular{T, Vector{T}}` and a device
+# `LowerTriangular{T, JLArray{T, 1}}` are different concrete types, so `AT` cannot bind both and the
+# call reaches `Base`'s generic array `+` at `arraymath.jl:8` instead.
+# `copyto!(::AbstractTriangular, …)` below carries this same idiom against the same whole-type
+# binding, as does `Manifold`'s `copyto!`.
+#
+# `Base.typename(…).wrapper` and not `typeof`: the question is whether both are lower or both upper,
+# not whether their storage agrees. With two independent arguments and no species check at all, an
+# `UpperTriangular` added to a `LowerTriangular` reads the upper storage into the lower triangle and
+# returns a `LowerTriangular`, which is not the sum of the two.
+#
+# The sum of a lower and an upper triangular *is* well defined — it is a general matrix, which is
+# what `Base`'s generic `+` returns for the pair and what `*` between the two species already
+# returns. So `+` and `-` hand a mixed species to that path rather than refusing it. Only the
+# packed-storage shortcut needs the two to agree.
+#
+# That path broadcasts through `getindex`, so it is host-only: a mixed-species pair whose storage is
+# on a device raises `Scalar indexing is disallowed` rather than returning the dense sum. The `*`
+# above is not the same in that respect -- it runs a kernel and answers on a device. A device
+# mixed-species sum therefore needs a kernel of its own, which nothing asks for yet.
+_triangular_species(A::AbstractTriangular) = Base.typename(typeof(A)).wrapper
+
+function Base.:+(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
+    _check_same_backend(A, B)
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) ||
+        return invoke(+, Tuple{AbstractArray, AbstractArray}, A, B)
     AT(A.S + B.S, A.n)
 end
 
-function add!(C::AT, A::AT, B::AT) where {AT <: AbstractTriangular}
+# `add!` is the one that refuses, and not by choice: it writes the sum into a triangular destination,
+# and a destination of one species cannot hold the sum of the two. There is no dense path to fall
+# back to, because the caller owns the destination.
+function add!(C::AbstractTriangular, A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n == C.n
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) === _triangular_species(C) ||
+        throw(ArgumentError("add! needs all three arguments to be the same triangular species"))
     add!(C.S, A.S, B.S)
 end
 
-function Base.:-(A::AT, B::AT) where {AT <: AbstractTriangular}
+function Base.:-(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
+    _check_same_backend(A, B)
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) ||
+        return invoke(-, Tuple{AbstractArray, AbstractArray}, A, B)
     AT(A.S - B.S, A.n)
 end
 
@@ -108,11 +146,20 @@ function /ᵉˡᵉ(A::AT, B::AT) where {AT <: AbstractTriangular}
     AT(A.S ./ B.S, A.n)
 end
 
-function LinearAlgebra.mul!(C::AT, A::AT, α::Real) where {AT <: AbstractTriangular}
+# Two independent arguments, for the reason `+` above gives: bound as `(C::AT, A::AT)` a destination
+# and a source whose storage arrays differ are already different concrete types, so `AT` cannot bind
+# both and the call reaches `LinearAlgebra`'s generic `mul!`, which reaches `setindex!` on a type
+# that has none.
+function LinearAlgebra.mul!(C::AbstractTriangular, A::AbstractTriangular, α::Real)
+    _triangular_species(C) === _triangular_species(A) ||
+        throw(ArgumentError("mul! needs the destination and the source to be the same triangular species"))
+    _check_same_backend(C, A)
     mul!(C.S, A.S, α)
     C
 end
-LinearAlgebra.mul!(C::AT, α::Real, A::AT) where {AT <: AbstractTriangular} = mul!(C, A, α)
+function LinearAlgebra.mul!(C::AbstractTriangular, α::Real, A::AbstractTriangular)
+    mul!(C, A, α)
+end
 LinearAlgebra.rmul!(C::AT, α::Real) where {AT <: AbstractTriangular} = mul!(C, C, α)
 
 function Base.one(A::AbstractTriangular{T}) where {T}
@@ -148,6 +195,7 @@ to is not an `AbstractTriangular`. So that product stays on the generic path and
 function Base.:*(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
     m1, m2 = size(B)
     @assert m1 == A.n
+    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A)
     C = KernelAbstractions.allocate(backend, T, A.n, m2)
 

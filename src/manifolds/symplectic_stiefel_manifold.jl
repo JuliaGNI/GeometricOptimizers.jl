@@ -58,16 +58,28 @@ function SymplecticStiefelManifold{T, AT}(A::AT) where {T, AT <: AbstractMatrix{
     SymplecticStiefelManifold(A)
 end
 
-Base.:*(U::SymplecticStiefelManifold, B::AbstractMatrix) = U.A * B
-Base.:*(B::AbstractMatrix, U::SymplecticStiefelManifold) = B * U.A
+function Base.:*(U::SymplecticStiefelManifold, B::AbstractMatrix)
+    _check_same_backend(U, B)
+    U.A * B
+end
+function Base.:*(B::AbstractMatrix, U::SymplecticStiefelManifold)
+    _check_same_backend(U, B)
+    B * U.A
+end
 
 # A row vector on the left is the one shape the second method above leaves unsettled: it stands off
 # against `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned
 # matrix* in `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one
 # above, so a row vector gets the answer that method gives every other matrix: a point is an
 # ordinary array in a wrapper, so unwrap it and let the row vector have the array.
-Base.:*(x::Adjoint{<:Any, <:AbstractVector}, U::SymplecticStiefelManifold) = x * U.A
-Base.:*(x::Transpose{<:Any, <:AbstractVector}, U::SymplecticStiefelManifold) = x * U.A
+function Base.:*(x::Adjoint{<:Any, <:AbstractVector}, U::SymplecticStiefelManifold)
+    _check_same_backend(U, x)
+    x * U.A
+end
+function Base.:*(x::Transpose{<:Any, <:AbstractVector}, U::SymplecticStiefelManifold)
+    _check_same_backend(U, x)
+    x * U.A
+end
 
 # `U'` is where this type's own operations go: `rgrad` and `metric` form `U'U`, and `check` is
 # `U'JU`. Without a method for the adjoint it keeps its wrapper into `LinearAlgebra`'s generic
@@ -78,6 +90,7 @@ Base.:*(x::Transpose{<:Any, <:AbstractVector}, U::SymplecticStiefelManifold) = x
 # the failure reports a `Transpose` and this method has to catch the `Adjoint` before that happens.
 function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
         B::AbstractMatrix) where {T, AT <: AbstractMatrix{T}}
+    _check_same_backend(parent(U), B)
     U.parent.A' * B
 end
 
@@ -85,6 +98,7 @@ end
 # the right of a product as well as on the left.
 function Base.:*(B::AbstractMatrix,
         U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    _check_same_backend(parent(U), B)
     B * U.parent.A'
 end
 
@@ -95,10 +109,12 @@ end
 # matrix: unwrap the point and hand the row vector the ordinary array transposed.
 function Base.:*(x::Adjoint{<:Any, <:AbstractVector},
         U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    _check_same_backend(parent(U), x)
     x * U.parent.A'
 end
 function Base.:*(x::Transpose{<:Any, <:AbstractVector},
         U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    _check_same_backend(parent(U), x)
     x * U.parent.A'
 end
 
@@ -107,6 +123,7 @@ end
 # whenever the two storage types differ.
 function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
         V::SymplecticStiefelManifold) where {T, AT <: AbstractMatrix{T}}
+    _check_same_backend(parent(U), V)
     U.parent.A' * V.A
 end
 
@@ -120,6 +137,7 @@ end
 function Base.:*(U::Adjoint{T₁, SymplecticStiefelManifold{T₁, AT₁}},
         V::Adjoint{T₂, SymplecticStiefelManifold{T₂, AT₂}}) where {
         T₁, AT₁ <: AbstractMatrix{T₁}, T₂, AT₂ <: AbstractMatrix{T₂}}
+    _check_same_backend(parent(U), parent(V))
     U.parent.A' * V.parent.A'
 end
 

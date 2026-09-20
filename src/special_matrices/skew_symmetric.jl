@@ -110,6 +110,7 @@ end
 
 function Base.:+(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     @assert size(A) == size(B)
+    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(B)
     addition! = addition_kernel!(backend)
     C = KernelAbstractions.allocate(backend, T, size(A)...)
@@ -122,6 +123,7 @@ Base.:+(B::AbstractMatrix, A::SkewSymMatrix) = A + B
 
 function Base.:+(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
+    _check_same_backend(A, B)
     SkewSymMatrix(A.S + B.S, A.n)
 end
 
@@ -135,6 +137,7 @@ end
 
 function Base.:-(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
+    _check_same_backend(A, B)
     SkewSymMatrix(A.S - B.S, A.n)
 end
 
@@ -238,6 +241,8 @@ function LinearAlgebra.mul!(C::AbstractMatrix, A::SkewSymMatrix, B::AbstractMatr
     @assert A.n == size(B, 1)
     @assert size(B, 2) == size(C, 2)
     @assert A.n == size(C, 1)
+    _check_same_backend(A, C)
+    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A.S)
 
     skew_mat_mul! = skew_mat_mul_kernel!(backend)
@@ -246,6 +251,7 @@ function LinearAlgebra.mul!(C::AbstractMatrix, A::SkewSymMatrix, B::AbstractMatr
 end
 
 function Base.:*(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
+    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A)
     C = KernelAbstractions.allocate(backend, T, A.n, size(B, 2))
     LinearAlgebra.mul!(C, A, B)

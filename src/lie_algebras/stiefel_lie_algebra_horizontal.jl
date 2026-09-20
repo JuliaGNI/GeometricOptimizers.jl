@@ -100,6 +100,7 @@ end
 function Base.:+(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
+    _check_same_backend(A, B)
     StiefelLieAlgHorMatrix(A.A + B.A,
         A.B + B.B,
         A.N,
@@ -109,6 +110,7 @@ end
 function Base.:-(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
+    _check_same_backend(A, B)
     StiefelLieAlgHorMatrix(A.A - B.A,
         A.B - B.B,
         A.N,
@@ -139,6 +141,7 @@ function Base.:+(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
     # half that falls outside its stored entries. The sum of a horizontal lift and an arbitrary
     # matrix carries none of those structures. The element type is promoted across both operands for
     # the same reason -- `copy(A)` gave the destination `A`'s element type alone.
+    _check_same_backend(B, A)
     backend = KernelAbstractions.get_backend(A)
     C = KernelAbstractions.allocate(backend, promote_type(eltype(A), eltype(B)), size(A)...)
     copyto!(C, A)
@@ -173,6 +176,7 @@ Base.:+(A::AbstractMatrix, B::StiefelLieAlgHorMatrix) = B + A
 # pair.
 function Base.:+(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
     @assert size(A) == size(C)
+    _check_same_backend(C, A)
 
     S = similar(A.S, promote_type(eltype(A), eltype(C)))
     copyto!(S, A.S)
