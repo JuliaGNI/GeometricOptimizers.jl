@@ -363,10 +363,14 @@ breaking release).
 
   `test/optimizer_state_accessors.jl` is the first test of either accessor: nothing under `test/`
   called `value(::OptimizerState)` or `previous_value` before, which is why the suite was green with
-  two of the six states unable to answer. Four of its thirteen assertions raise a `MethodError` on
-  the pre-change source — the two Newton methods and the two `BFGSState`/`DFPState` ones — and the
-  other nine pin behaviour that already held, including `!applicable(value, ::BFGSState)`, which is
-  what keeps the missing method deliberate rather than a gap that grows back.
+  two of the six states unable to answer. **Eight of its seventeen assertions fail on the pre-change
+  source and nine pin behaviour that already held**, each checked individually rather than as a
+  batch. Six of the eight raise a `MethodError`; the two that do not are the sharper pair — see the
+  `solution`/`gradient` entry under *Fixed*, where the old methods returned a wrong vector rather
+  than no vector. Among the nine is `isempty(methods(value, Tuple{BFGSState}))`, which keeps the
+  missing `value` method deliberate rather than a gap that grows back. It is the method table and
+  not `applicable`, because a narrower `value(::BFGSState{Float32})` leaves `!applicable` passing on
+  a `Float64` state.
 - Added `scripts/optimizer_status_delta_f.jl`, the archived check behind the paragraph above and
   behind the `BFGSState` docstring. It asks, per optimizer method, whether the `Δf` the status
   reports is `f[end] - f[end-1]` or `f[end] - f[end-2]`, taking the objective values from a stored
@@ -389,11 +393,39 @@ breaking release).
   `symplectic_householder!` reflectors; the file's head comment now says
   that this is intended and that they are the standalone entry point to the process.
 
-  The `NewtonOptimizerState` docstring listed `f̄` twice in its `# Keys` block and never listed `f`.
-  Corrected with the accessors, because the list is what a reader checks to know the fields the two
-  new methods read.
+  The `NewtonOptimizerState` docstring listed `f̄` twice in its `# Keys` block and never listed `f`,
+  and said the type "is also used for the `BFGS` and the `DFP` optimizer", which the code
+  contradicts: `OptimizerState(::Newton, …)` returns a `NewtonOptimizerState`, `BFGS() isa Newton`
+  is `false`, and the `<: Newton` guard in `solver_step!` never fires for either. Both corrected
+  with the accessors, because that block is what a reader checks to know the fields the new methods
+  read — and the false sentence is where this entry's own first draft got the scope of `BFGSState`
+  wrong.
 
 ### Fixed
+
+- **`solution` and `gradient` on a `NewtonOptimizerState` returned the previous iterate's
+  quantities.** `update!` shifts the barred fields and then writes the unbarred ones, so `x`, `g`
+  and `f` are the current iterate's and `x̄`, `ḡ` and `f̄` the previous one's. The two accessors read
+  `x̄` and `ḡ`, where the same names on all five other states read the unbarred fields, and the type
+  had no `previous_solution` or `previous_gradient` at all — so the previous quantities were
+  reachable under the current-quantity name and the current ones were not reachable at all.
+
+  **This is a change to what an exported accessor returns**, so it is stated plainly rather than
+  buried: code that called `solution(::NewtonOptimizerState)` for the previous iterate now gets the
+  current one and wants `previous_solution`. Nothing under `src/` called either method — every
+  `solution(state)` and `gradient(state)` call site is inside a first-order manifold optimizer's own
+  `update!`, dispatching on its own concrete state type — so the in-tree blast radius was zero, and
+  the whole family is set at once rather than left half right.
+
+  The likely origin is a copy across a type boundary: both methods took a parameter named `cache`,
+  and `solution(::NewtonOptimizerCache)` is `cache.x`, which is correct there because a cache's `x`
+  means something else. Discussion of the public contract is in
+  [issue #106](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/106).
+
+  The two regression assertions are the sharpest in the new test file, because on the pre-change
+  source they returned a **wrong vector** rather than raising a `MethodError`: `solution(state)`
+  gave the previous iterate's vector and compared `false`. A missing method announces itself; a
+  wrong answer does not, which is why nothing caught this.
 
 - **The `Test` extra had no `[compat]` bound.** Every other dependency, weak dependency and test
   extra carried one; `Test` did not, so `Aqua.test_deps_compat` failed on that and on nothing else.
