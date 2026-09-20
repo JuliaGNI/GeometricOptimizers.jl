@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: value, previous_value
-using GeometricOptimizers: AdamState, GradientState, MomentumState, ScalarMomentAdamState
+using GeometricOptimizers: AdamState, GradientState, MomentumState
 using Test
 import Random
 
