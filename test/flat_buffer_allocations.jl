@@ -378,6 +378,13 @@ const N_INDEPENDENCE_TOLERANCE = 1024
 
 n_independent(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
 
+# The same tolerance, for an identity between readings taken at one shape rather than across two
+# `N`. It carries the tolerance for the same reason: a byte count is not bit-reproducible across
+# platforms, so an exact equality between three separate `@allocated` readings claims more than the
+# identity it is there to assert. It costs nothing for the same reason too -- the smallest term
+# that could break the identity is an `N × 2n` temporary, 9 600 bytes at `N = 200`.
+agrees_within_quantisation(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
+
 @testset "the retraction of a $LT does not grow with N" for LT in LIFT_TYPES
     small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 200, 3)
 
@@ -402,8 +409,8 @@ n_independent(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
     algorithm = Geodesic().algorithm
     for f in (small, large)
         lift_factors!(f.ws, f.B)
-        @test _measured_retraction(f.ws, Geodesic(), f.B) ==
-              _measured_lift_factors(f.ws, f.B) + _measured_𝔄(f.ws, algorithm)
+        @test agrees_within_quantisation(_measured_retraction(f.ws, Geodesic(), f.B),
+            _measured_lift_factors(f.ws, f.B) + _measured_𝔄(f.ws, algorithm))
     end
 end
 
@@ -418,6 +425,30 @@ end
             @test retraction_matrix!(f.ws, R, f.B) == retraction(R, f.B).A
         end
     end
+end
+
+# A retraction this package does not ship, which is what the generic `retraction_matrix!` arm exists
+# for: `Cayley` and `Geodesic` each have their own in-place method, so nothing in the package reaches
+# that arm and nothing else in the suite covers it. It is a documented extension point, so it is
+# pinned here rather than left to a downstream caller to discover.
+struct _DownstreamRetraction <: AbstractRetraction end
+GeometricOptimizers.retraction(::_DownstreamRetraction, x::AbstractArray) = cayley(x)
+
+# The shape assertion is what makes the fallback safe, and it cannot be left implicit: the arm
+# reaches `ws.retracted` through `copyto!`, which copies linearly into an oversized destination
+# instead of throwing. A workspace built for another `N` would therefore return a scrambled layout
+# rather than an error, so the rejection is asserted and not only the agreement.
+@testset "a retraction this package does not ship reaches the fallback, for a $LT" for LT in LIFT_TYPES
+    f = retraction_fixture(LT, 6, 3)
+    R = _DownstreamRetraction()
+
+    # Agreement with the allocating form is close to true by construction here -- this arm *is* the
+    # allocating form plus a copy, unlike the `Cayley` and `Geodesic` arms the testset above
+    # compares. What it pins that construction does not is the rest of the contract: the arm
+    # dispatches at all, and the answer lands in the workspace buffer rather than in a fresh array.
+    @test retraction_matrix!(f.ws, R, f.B) == retraction(R, f.B).A
+    @test retraction_matrix!(f.ws, R, f.B) === f.ws.retracted
+    @test_throws AssertionError retraction_matrix!(retraction_fixture(LT, 20, 3).ws, R, f.B)
 end
 
 # One fixture and one destination written twice, not two fixtures: `global_section` draws a random
@@ -440,11 +471,10 @@ end
     end
 end
 
-# The body of `solve!`'s loop. This is the figure that `Close the GeometricOptimizers audit
-# findings.md`, section 10, calls "the standard the manifold path does not meet". It was already
-# zero for an ordinary vector and nothing asserted it, so this pins behaviour rather than
-# reproducing a defect -- and it is the assertion that would catch a new allocation on the part of
-# the step path both kinds of parameter share.
+# The body of `solve!`'s loop, and the standard the manifold path is measured against. It is
+# already zero for an ordinary vector and nothing else asserts it, so this pins behaviour rather
+# than reproducing a defect -- and it is the assertion that would catch a new allocation on the
+# part of the step path both kinds of parameter share.
 function _step!(x, state, opt)
     increase_iteration_number!(state)
     solver_step!(x, state, opt)
@@ -457,11 +487,10 @@ end
 
 # The measurement is a one-line function whose arguments are all parameters, and the optimizer is
 # built by the caller below -- the same separation the head of this file insists on, for the same
-# reason and with the same number. With the construction and the `@allocated` in one function this
-# read **16 bytes** on Julia 1.11 and 0 on 1.13, measured: one `Core.Box` the older compiler does
-# not elide. `solver_step!` itself allocates nothing on either, and neither does `trial_iterate!`
-# with a workspace, so there was nothing in `src/` to fix. The three CI jobs that caught it were
-# `min` on Linux and macOS and `1` on Windows.
+# reason and with the same number. A construction inside the measuring function captures into a
+# `Core.Box` that Julia 1.11 does not elide and 1.13 does, which reads as **16 bytes** on the older
+# version and 0 on the newer -- a property of the measurement and not of `src/`. `solver_step!`
+# itself allocates nothing on either version, and neither does `trial_iterate!` with a workspace.
 _measured_step(x, state, opt) = (_step!(x, state, opt); @allocated _step!(x, state, opt))
 
 function _euclidean_step(x, F, algorithm)

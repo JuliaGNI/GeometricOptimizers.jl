@@ -101,14 +101,19 @@ struct NoWorkspace end
 
 @doc raw"""
     retraction_workspace(x)
+    retraction_workspace(opt::Optimizer)
 
 The [`RetractionWorkspace`](@ref) a solve over `x` needs, or [`NoWorkspace`](@ref) where `x` carries
-no manifold.
+no manifold. On an [`Optimizer`](@ref) it is the accessor instead, returning the workspace that
+optimizer was built with.
 
 [`Optimizer`](@ref) builds one of these at construction and hands it to every
 [`update_section!`](@ref) on the step path. A parameter set gets a tree of them in the shape its
 section tree has, a `NoWorkspace` at every leaf that is an ordinary array — the extended retraction
 on a vector space is addition, which allocates nothing to begin with.
+
+The two meanings share a name and cannot collide: `Optimizer` is not a member of
+`OptimizerSolution`, which is what the building methods dispatch on.
 """
 retraction_workspace(::AbstractVecOrMat) = NoWorkspace()
 retraction_workspace(Y::Manifold) = RetractionWorkspace(Y)
@@ -171,9 +176,15 @@ what a retraction means. A bare callable is *not* covered — [`update_section!`
 its `retraction`, and `src/utils.jl` passes one, but only ever together with no workspace, so there
 is no retraction type left here to dispatch on and a caller who pairs the two gets a `MethodError`
 rather than a silent fallback.
+
+`ws` has to have been built for `B`'s shape, as for [`lift_factors!`](@ref), and every arm asserts
+it. The assertion is not decoration: the fallback arms reach `ws.retracted` through `copyto!`, and
+`copyto!` into an oversized destination copies linearly rather than throwing, so a workspace of the
+wrong shape would scramble the layout of the answer instead of rejecting it.
 """
 function retraction_matrix!(ws::RetractionWorkspace{T}, R::AbstractRetraction,
         B::AbstractLieAlgHorMatrix{T}) where {T}
+    @assert (ws.N, ws.n) == (B.N, B.n)
     copyto!(ws.retracted, retraction(R, B).A)
 end
 
@@ -210,6 +221,7 @@ end
 # method and copies the answer in — `update_section!` reads `ws.retracted` either way.
 function _geodesic_matrix!(ws::RetractionWorkspace{T}, B::AbstractLieAlgHorMatrix{T},
         algorithm::ProjectedSkew) where {T}
+    @assert (ws.N, ws.n) == (B.N, B.n)
     copyto!(ws.retracted, geodesic(B, algorithm).A)
 end
 

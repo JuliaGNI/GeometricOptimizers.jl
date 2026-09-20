@@ -59,10 +59,10 @@ end
 
 StiefelProjection(T::Type, N::Integer, n::Integer) = StiefelProjection(N, n, T)
 
-# The host constructor is what a `CPU` backend should reach, and until this method existed it never
-# did: every caller in the package names a backend, through `get_backend` on an array or on a
-# horizontal lift, so the argument the inner constructor's own comment makes for the host form was
-# never applied on the host. `Matrix{T}(I, N, n)` is the same `Matrix{T}` the backend arm returns
+# The host constructor is what a `CPU` backend reaches. Every caller in the package names a backend,
+# through `get_backend` on an array or on a horizontal lift, so without this method the argument the
+# inner constructor's own comment makes for the host form never applies on the host — the backend
+# arm answers every call. `Matrix{T}(I, N, n)` is the same `Matrix{T}` the backend arm returns
 # there, so nothing about the returned object changes -- only that it is built in one allocation
 # rather than in a `KernelAbstractions.zeros` plus a kernel launch.
 #

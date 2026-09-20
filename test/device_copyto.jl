@@ -5,8 +5,7 @@
 # `copyto!` from one and refuses that broadcast. So a write spelled as a broadcast makes a
 # host-to-device transfer of a structured type fail while the same transfer of the bare storage
 # array succeeds -- the backwards outcome for a package whose point is those types. A real device
-# shows it on `SkewSymMatrix`'s storage and on `StiefelLieAlgHorMatrix` (`Close the
-# GeometricOptimizers audit findings.md`, section 20).
+# shows it on `SkewSymMatrix`'s storage and on `StiefelLieAlgHorMatrix`.
 #
 # `JLArrays` cannot stand in for the device here: a `JLArray` accepts `.=` from a host `Array`.
 # `_NoBroadcastVector` and `_NoBroadcastMatrix` below carry the restriction on the CPU instead,
