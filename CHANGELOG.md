@@ -340,6 +340,11 @@ breaking release).
   allocates for `geodesic`. Both are ``O(n^2)``. `inv` stays an `inv`: `lu!` and `rdiv!` would take
   it in place on the host, and neither is something a `KernelAbstractions` backend is obliged to
   supply, where `inv` is what `cayley` already runs on Metal through.
+- Added `scripts/retraction_differential_allocations.jl`, the archived check behind the
+  `retraction_differential` figures quoted under *Changed*. It reuses the sizes and the fixture of
+  `scripts/retraction_step_allocations.jl`, so the part of the step path the workspace reaches and
+  the part it does not can be read side by side. The ``\alpha = 0`` column is load-bearing and not
+  decoration: it is what says the default `Backtracking` pays none of this.
 
 ### Fixed
 
@@ -1322,6 +1327,36 @@ breaking release).
   is `(A' * B')'`, which is read-only and would incur an allocation if `adjoint` copied. Documented
   in the docstrings of `LowerTriangular` and `UpperTriangular`, in `docs/src/special_matrices.md`,
   and pinned by regression tests.
+- **`Optimizer` carries a second further type parameter, `WT`, for the retraction workspace, and it
+  sits *before* the observer's.** The observer's own entry earlier in this section says one further
+  parameter; over this release as a whole there are two, and the observer's is no longer last. The
+  order is
+  `Optimizer{T, ALG, OBJ, GT, HT, OCT, LST, RT, WT, OT}` — ten parameters, against eight in 0.7.0.
+  Code that spells the type out with all of its parameters has to add `WT` in that position and not
+  at the end; the constructors and every accessor are unaffected, and `retraction_workspace(opt)`
+  is the accessor for the field.
+- **`docs/make.jl`'s `size_threshold` goes from 500 KiB to 600 KiB**, for the reason the 400-to-450
+  bump recorded under 0.4.2 gives. `RetractionWorkspace` and the four names beside it took `api.md`
+  — the one catch-all `@autodocs` over the whole package — to 509.07 KiB against the 500 then
+  allowed, 1.8% over, and `size_threshold` is an error rather than a warning, so the build failed as
+  it should. This is again the smaller half of the fix and not the fix: what bounds the page is
+  continuing the migration that moves docstrings onto the chapters that explain them.
+  `size_threshold_warn` stays at its default, so the warning names the page on every build.
+- **The workspace does not reach `retraction_differential`, which under `Cayley` is the largest
+  per-trial manifold allocation left.** Under `Geodesic` there is nothing to reach:
+  `retraction_differential(::Geodesic, B, α)` returns `B` and allocates nothing at any ``\alpha``.
+  `retraction_differential(::Cayley, ::AbstractLieAlgHorMatrix, α)` still calls
+  `lift_factors(B)` and `StiefelProjection(B)` fresh on the line-search path, and allocates
+  8 672, 12 576, 59 536 and 194 992 bytes at ``(N, n)`` = (6, 3), (20, 3), (100, 5) and (400, 5) —
+  cold, with BLAS pinned to one thread, from `scripts/retraction_differential_allocations.jl`. It
+  allocates **nothing at ``\alpha = 0``**, which is the only point the default `Backtracking`
+  evaluates ``\varphi'`` at, so the default line search pays none of it. `Static` and
+  `DecayingStatic` pay nothing either, evaluating neither ``\varphi`` nor ``\varphi'``. The four
+  remaining line searches of the seven this package exports each pay it once per trial: `Bisection`
+  bisects ``\varphi'``, `StrongWolfe`'s curvature condition is stated in terms of it, and
+  `Quadratic` and `BierlaireQuadratic` each evaluate it at the trial point and at a bracket
+  endpoint. Giving it a workspace is a separate change: it needs buffers of shapes the retraction's
+  own workspace does not hold.
 
 ### Temporary
 

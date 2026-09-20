@@ -25,8 +25,8 @@
 # All three stand-ins are `<: GPU`, and `KernelAbstractions.CPU` is concrete, so no stand-in can
 # declare itself a host that cannot hold `Float64`. Those two arms call `_check_supported_eltype`
 # for the invariant `src/utils.jl`'s header states rather than for anything that can fire, and
-# nothing below can tell whether they do. One of them shipped without the call and the pre-PR gate,
-# not this file, is what caught it.
+# nothing below can tell whether they do. A missing call in either arm is therefore invisible to
+# this file; reading the two arms against that invariant is what catches it.
 
 using GeometricOptimizers
 using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular,

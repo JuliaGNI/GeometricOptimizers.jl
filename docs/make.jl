@@ -152,10 +152,9 @@ makedocs(;
         # retraction docstrings onto the chapters that explain them. Until that is done this number
         # will need raising again, and the warning above says so on every build.
         #
-        # It needed raising the first time for `RetractionWorkspace` and the four names beside it,
-        # which took `api.md` to 509.07 KiB against the 500 it then allowed — 1.8% over, and the
-        # build failed exactly as the paragraph above says it should. 600 leaves room for a few more
-        # additions to announce themselves one at a time rather than in a batch.
+        # The number sits a little above `api.md`'s size, so that a few more additions announce
+        # themselves one at a time rather than in a batch. `CHANGELOG.md` carries the size that
+        # forced the current value.
         size_threshold = 600 * 2^10
     ),
     pages = [
