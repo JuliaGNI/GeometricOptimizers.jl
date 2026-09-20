@@ -15,7 +15,7 @@
 # what this file cannot assert on.
 
 using GeometricOptimizers
-using GeometricOptimizers: check, global_section, _cholesky_qr2, _orthonormal_columns
+using GeometricOptimizers: check, global_section, _cholesky_qr2, orthonormal_columns
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
@@ -117,7 +117,7 @@ end
 
 @testset "a draw CholeskyQR2 cannot orthonormalize is reported, not returned" begin
     # `_cholesky_qr2` answers `nothing` rather than throwing a `PosDefException`, which is what lets
-    # `_orthonormal_columns` redraw without an exception handler.
+    # `orthonormal_columns` redraw without an exception handler.
     #
     # The rank deficiency is a *zero column* and not a duplicated one, which is the difference
     # between a test and a coin toss: a duplicated column leaves the Gram matrix singular only in
@@ -134,7 +134,7 @@ end
     # and the redraw is what turns that into an answer: a `draw` that returns the singular matrix
     # once and a good one afterwards has to come back with the good one
     drawn = Ref(0)
-    Q = _orthonormal_columns() do
+    Q = orthonormal_columns() do
         drawn[] += 1
         drawn[] == 1 ? A : randn(T, 12, 9)
     end
@@ -145,7 +145,7 @@ end
 @testset "an empty complement is an answer, not a failure" begin
     # `n = N` is in the retraction tests' sweep, and its complement is `N × 0`. `maximum(abs, ·)`
     # over no entries is `abs(zero(T))`, so without the early return an `N × 0` argument is rejected
-    # as badly scaled and redrawn until `_orthonormal_columns` gives up.
+    # as badly scaled and redrawn until `orthonormal_columns` gives up.
     for T in (Float32, Float64), N in 1:4
 
         A = zeros(T, N, 0)
@@ -181,11 +181,19 @@ end
 end
 
 @testset "a draw that never succeeds is an error and not a silent answer" begin
-    # `_orthonormal_columns` is bounded. Exhausting it means the element type is too narrow for the
+    # `orthonormal_columns` is bounded. Exhausting it means the element type is too narrow for the
     # problem, which is a fact about the call and not bad luck, so it is raised rather than papered
     # over with the last attempt's result.
     A = randn(T, 12, 9)
     A[:, 9] .= 0
 
-    @test_throws ErrorException _orthonormal_columns(() -> A)
+    @test_throws OrthonormalizationFailure orthonormal_columns(() -> A)
+    # The attempt count reaches the caller, and the message says which knob to turn.
+    e = try
+        orthonormal_columns(() -> A)
+    catch err
+        err
+    end
+    @test e.attempts == GeometricOptimizers.ORTHONORMALIZATION_ATTEMPTS
+    @test occursin("element type", sprint(showerror, e))
 end
