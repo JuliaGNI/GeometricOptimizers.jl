@@ -357,8 +357,9 @@ breaking release).
   objective at the current iterate belongs to the solve loop, which hands it to `OptimizerStatus`
   directly and never reads it back off the state. Giving the type an `f` field would not be
   additive — `OptimizerStatus` computes `Δf = f - state.f̄` and reads the field, not the accessor, so
-  a second slot changes what `f̄` means for `BFGS`, `DFP` and `Newton` at once. The `BFGSState`
-  docstring now says this.
+  a second slot changes what `f̄` holds when the status reads it, and with it the `Δf` that
+  `f_converged` and `f_increased` rest on. That reaches `BFGS` and `DFP`, which are one type and not
+  two; `Newton` has its own state and is untouched by it. The `BFGSState` docstring now says this.
 
   `test/optimizer_state_accessors.jl` is the first test of either accessor: nothing under `test/`
   called `value(::OptimizerState)` or `previous_value` before, which is why the suite was green with
