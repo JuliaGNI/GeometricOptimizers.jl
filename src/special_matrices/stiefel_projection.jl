@@ -100,6 +100,9 @@ it is what stops a retraction on a device**: [`geodesic`](@ref) and [`cayley`](@
 product against the projection — `expB * E` and `cayleyB * E` — with `E` built from the horizontal
 lift and so carrying the point's own backend. Both operands are on the device, and only the wrapper
 puts the product on the host path.
+
+Both operands have to be on one backend: a pair on two backends raises an `ArgumentError` naming
+both, rather than answering on whichever backend the argument order picks.
 """
 function Base.:*(E::StiefelProjection, A::AbstractMatrix)
     _check_same_backend(E, A)
@@ -120,8 +123,14 @@ end
 # site. The body is the one above, so a row vector gets the answer that method gives every other
 # matrix: a `StiefelProjection` holds its entries in an ordinary array, so unwrap it and let the row
 # vector have the array.
-Base.:*(x::Adjoint{<:Any, <:AbstractVector}, E::StiefelProjection) = x * E.A
-Base.:*(x::Transpose{<:Any, <:AbstractVector}, E::StiefelProjection) = x * E.A
+function Base.:*(x::Adjoint{<:Any, <:AbstractVector}, E::StiefelProjection)
+    _check_same_backend(E, x)
+    x * E.A
+end
+function Base.:*(x::Transpose{<:Any, <:AbstractVector}, E::StiefelProjection)
+    _check_same_backend(E, x)
+    x * E.A
+end
 
 function Base.vcat(A::AbstractVecOrMat{T}, E::StiefelProjection{T}) where {T <: Number}
     vcat(A, E.A)

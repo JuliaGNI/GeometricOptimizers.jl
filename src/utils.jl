@@ -22,18 +22,20 @@ function _check_supported_eltype(backend::KernelAbstractions.Backend, ::Type{T})
     end
 end
 
-# A computation needs both of its operands on one backend. This says so, and returns the backend the
-# caller was going to ask for anyway, so a site that already read one replaces the read rather than
-# adding a line.
+# A computation needs both of its operands on one backend. This says so, and names both operand
+# types and both backends. Its return value is the shared backend, or `nothing` where either operand
+# is unplaceable; no call site reads it, because a site launches on the backend of one named operand
+# and that operand is not always this function's first argument.
 #
-# The alternative is not a clean failure. Measured on `JLArrays` under `allowscalar(false)`, seven of
-# twelve mixed-backend operations did not throw at all: `SkewSymMatrix(host) + SkewSymMatrix(device)`
-# returned a device matrix, `SkewSymMatrix(device) * host` returned a `JLArray`, and
-# `StiefelManifold(device) * host` returned a **host** `Matrix` — the device operand was pulled off
-# the device and nothing said so. Which backend the answer landed on depended on the argument order.
-# The five that did throw said `Scalar indexing is disallowed`, which names neither operand. On real
-# Metal the whole set fails instead, inside `GPU compilation of MethodInstance for
-# …broadcast_linear…`, which names neither backend nor the mismatch.
+# Without the guard a mismatch is not a clean failure. On a backend that can fall back to the host —
+# `JLArrays` under `allowscalar(false)` is the one reachable from the test suite — a host/device pair
+# silently picks a side: `SkewSymMatrix(host) + SkewSymMatrix(device)` gives a device matrix,
+# `SkewSymMatrix(device) * host` a `JLArray`, and `StiefelManifold(device) * host` a **host**
+# `Matrix` — the device operand comes off the device and nothing says so. Which backend the answer
+# lands on follows the argument order. Where such a pair does raise instead, it says
+# `Scalar indexing is disallowed`, which names neither operand; on Metal it fails inside
+# `GPU compilation of MethodInstance for …broadcast_linear…`, which names neither backend nor the
+# mismatch.
 #
 # So this is not only a better message: on a backend that can fall back to the host it is the
 # difference between an answer computed somewhere the caller did not choose and no answer.
@@ -51,8 +53,13 @@ end
 # buffer, and a `ForwardDiff.Dual` matrix, which `_match_backend` names for the same reason. Both
 # operands there are on the host and the operation is fine. So an unanswerable backend returns
 # `nothing` and the pair is let through: this guard's job is to catch a mismatch, not to require that
-# every array be placeable. Turning "I cannot tell" into a refusal broke 24 assertions in
-# `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`, all of them host-only subtractions.
+# every array be placeable. Turning "I cannot tell" into a refusal rejects the host-only sums and
+# subtractions in `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`.
+#
+# The raise is what has to be caught, because the fallback is a *method* that throws rather than a
+# missing method: `hasmethod(KernelAbstractions.get_backend, Tuple{T})` is true for every
+# `T <: AbstractArray`, so nothing short of calling it tells the two apart. Only `ArgumentError` is
+# caught, which is what that fallback raises; anything else is rethrown.
 function _backend_or_nothing(A)
     try
         KernelAbstractions.get_backend(A)

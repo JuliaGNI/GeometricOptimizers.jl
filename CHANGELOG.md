@@ -345,26 +345,45 @@ breaking release).
   `scripts/retraction_step_allocations.jl`, so the part of the step path the workspace reaches and
   the part it does not can be read side by side. The ``\alpha = 0`` column is load-bearing and not
   decoration: it is what says the default `Backtracking` pays none of this.
+- Added `scripts/mixed_backend_seam.jl`, the archived check behind the `_check_same_backend` entry
+  under *Fixed*. It enumerates 28 mixed-backend operations across the owned matrix types and reports
+  what each one does, and it runs on either side of that change: without the guard it counts how
+  many answer anyway, with it how many are refused by name. **The enumeration is the point** — a
+  ratio quoted without it cannot be re-measured, because the denominator is entirely a function of
+  which operations are listed.
 
 ### Fixed
 
 - **A computation across two backends is refused by name, and most of them were not refused at
-  all.** `_check_same_backend` guards the binary arithmetic on every owned matrix type — 33 call
-  sites across nine files, covering `+`, `-`, `add!` and `*` on `SkewSymMatrix`, `SymmetricMatrix`,
-  both `AbstractTriangular`s, both horizontal lifts, `StiefelProjection`, `StiefelManifold` and
-  `SymplecticStiefelManifold`, plus the generic `add!` in `src/utils.jl` that every structured
-  `add!` unwraps to. The message names both operand types and both backends.
+  all.** `_check_same_backend` guards the binary arithmetic on every owned matrix type — 48 call
+  sites across nine files, covering `+`, `-`, `add!`, `*` and `LinearAlgebra.mul!` on
+  `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal lifts,
+  `StiefelProjection`, `StiefelManifold` and `SymplecticStiefelManifold` — including the row-vector
+  and adjoint product forms — plus the generic `add!` in `src/utils.jl` that every structured `add!`
+  unwraps to. The message names both operand types and both backends.
 
-  **The record this closes called it a message problem. It was not only that.** Measured before the
-  change with `JLArrays` standing in for the device and `allowscalar(false)` set, **seven of twelve
-  mixed-backend operations did not throw at all**: `SkewSymMatrix(host) + SkewSymMatrix(device)`
-  returned a device matrix, `SkewSymMatrix(device) * host` returned a `JLArray`, and
-  `StiefelManifold(device) * host` returned a **host** `Matrix` — the device operand was pulled off
-  the device and nothing said so. Which backend the answer landed on depended on the argument
-  order. The five that did throw said `Scalar indexing is disallowed`, which names neither operand.
+  **The record this closes called it a message problem. It was not only that.**
+  `scripts/mixed_backend_seam.jl` enumerates 28 mixed-backend operations and reports what each one
+  does, on either side of this change. With `JLArrays` standing in for the device and
+  `allowscalar(false)` set:
+
+  | | refused by name | answered anyway | unhelpful error |
+  |:--|--:|--:|--:|
+  | before | 0 | **21** | 7 |
+  | after | **28** | 0 | 0 |
+
+  **Five of the 21 answered on the *host*** — `StiefelManifold(device) * host`,
+  `rowvec(host) * StiefelManifold(device)`, `StiefelManifold(device)' * host`,
+  `device * StiefelProjection(host)` and `rowvec(host) * StiefelProjection(device)` all pulled the
+  device operand off the device and said nothing. The other sixteen pushed the host operand onto the
+  device. Which side the answer landed on followed the argument order, not the types. The seven that
+  did raise said `Scalar indexing is disallowed`, which names neither operand.
+
   On real Metal the whole set fails instead, inside `GPU compilation of MethodInstance for
-  …broadcast_linear…`. So on a backend that can fall back to the host, this is the difference
-  between an answer computed somewhere the caller did not choose and no answer.
+  …broadcast_linear…`, which names neither backend nor the mismatch. **That is the failure the
+  record quotes, and it is the better of the two behaviours**: on a backend that can fall back to
+  the host there was no error at all. The Metal half is not re-measured here — this machine has no
+  device, and every figure above is `JLArrays`'.
 
   **The guard refuses only what it can prove.** `KernelAbstractions.get_backend` *raises* rather
   than answering for an array type it has no method for, and a `StiefelLieAlgHorMatrix` built over
@@ -389,10 +408,25 @@ breaking release).
   whole-type binding defect `Manifold`'s `copyto!` had**, and `copyto!(::AbstractTriangular, …)` in
   the same file already carried the fix idiom.
 
-  Each argument now carries its own type, and `_triangular_species` compares
-  `Base.typename(typeof(·)).wrapper` at run time. That check is not optional once the arguments are
-  independent: without it an `UpperTriangular` could be added to a `LowerTriangular` and silently
-  return one of them, so the two species now refuse each other explicitly.
+  Each argument now carries its own type, and `_triangular_species` reads
+  `Base.typename(typeof(·)).wrapper` so the two can be compared at run time. Without that, an
+  `UpperTriangular` added to a `LowerTriangular` would read the upper storage into the lower
+  triangle and return a `LowerTriangular`, which is not the sum. **A mixed species goes to the dense
+  path rather than being refused**: the sum of a lower and an upper triangular is a general matrix,
+  which is what `Base`'s generic `+` returns for the pair and what `*` between the two species
+  already returned. `add!` is the exception, and not by choice — it writes into a triangular
+  destination that cannot hold the sum of the two species, and there is no dense path to fall back
+  to because the caller owns the destination.
+
+  `LinearAlgebra.mul!(C::AbstractTriangular, A::AbstractTriangular, α::Real)` had the same shared
+  type variable and is unbound with it. That is the fourth site of this defect in the package:
+  `Manifold`'s `copyto!`, `assign!` on the triangulars, these three, and now this one.
+
+  **Two same-backend answers change with it, which the dispatch fix makes unavoidable.** A pair of
+  one species whose storage types differ — a `Vector` against a `SubArray` — or whose element types
+  differ now returns a triangular where it previously returned a dense `Matrix`, because the method
+  it could not reach before is the one that keeps the packed form. Nothing under `src/`, `test/`,
+  `docs/` or `scripts/` depended on the dense result.
 
   **Found by writing the mixed-backend test, not by reading the source** — the guard above was dead
   code for these three methods and nothing said so. A same-backend *device* pair is what tells the

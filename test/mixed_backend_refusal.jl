@@ -1,16 +1,16 @@
 # A computation whose two operands are on different backends is refused, by name.
 #
-# This is not only about the message. Measured on `origin/main` with `JLArrays` standing in for the
-# device and `allowscalar(false)` set, **seven of twelve mixed-backend operations did not throw at
-# all**: `SkewSymMatrix(host) + SkewSymMatrix(device)` returned a device matrix,
-# `SkewSymMatrix(device) * host` returned a `JLArray`, and `StiefelManifold(device) * host` returned
-# a **host** `Matrix` — the device operand was pulled off the device and nothing said so. Which
-# backend the answer landed on depended on the argument order. The five that did throw said
+# This is not only about the message. Unguarded, a mixed pair does not fail cleanly on a backend
+# that can fall back to the host — `JLArrays` with `allowscalar(false)` set is the one reachable from
+# here. Such a pair silently picks a side: `SkewSymMatrix(host) + SkewSymMatrix(device)` gives a
+# device matrix, `SkewSymMatrix(device) * host` a `JLArray`, and `StiefelManifold(device) * host` a
+# **host** `Matrix` — the device operand comes off the device and nothing says so, and which backend
+# the answer lands on follows the argument order. Where such a pair does raise instead, it says
 # `Scalar indexing is disallowed`, which names neither operand.
 #
-# So the assertions below are regressions in both directions: the seven pin an answer that used to
-# come back wrong, and the five pin an error that used to name nothing. On real Metal the whole set
-# fails instead, inside `GPU compilation of MethodInstance for …broadcast_linear…`, which is the
+# So the assertions below pin both halves: an answer that otherwise comes back on a backend the
+# caller did not choose, and an error that otherwise names nothing. On real Metal the whole set fails
+# differently, inside `GPU compilation of MethodInstance for …broadcast_linear…`, which is the
 # failure `CHANGELOG.md` records for §20 — that one is not reachable from here, and the host/device
 # pair `JLArrays` gives is.
 #
@@ -24,6 +24,7 @@ using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular, 
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
+using LinearAlgebra: Adjoint, transpose
 using Random
 using Test
 
@@ -53,10 +54,10 @@ dev_mat = JLArray(rand(T, N, N))
 
     @test_throws ArgumentError add!(SkewSymMatrix(rand(T, N, N)), host_skew, dev_skew)
 
-    # These three reach the guard only because their signatures were unbound from one shared type
-    # variable in this change: as `(A::AT, B::AT) where {AT <: AbstractTriangular}` a host and a
-    # device triangular are already different concrete types, so `AT` could not bind both and the
-    # call fell through to `Base`'s generic array `+`. See the comment on `_triangular_species`.
+    # These three reach the guard only because their signatures bind a type variable per argument: as
+    # `(A::AT, B::AT) where {AT <: AbstractTriangular}` a host and a device triangular are different
+    # concrete types, so `AT` cannot bind both and the call reaches `Base`'s generic array `+`
+    # instead. See the comment on `_triangular_species`.
     host_lo = LowerTriangular(rand(T, N, N))
     dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
     @test_throws ArgumentError host_lo + dev_lo
@@ -89,6 +90,33 @@ end
     @test_throws ArgumentError dev_mat * host_E
 end
 
+# The row-vector and adjoint forms are the ones that answered on the *host* from a device operand,
+# which is the quietest way to get a wrong answer here: nothing about a host `Adjoint` says the
+# matrix it came from was on a device. `parent(·)` is what the guard reads for an `Adjoint`-wrapped
+# point, because the owned type is inside the wrapper there.
+@testset "the row-vector and adjoint products refuse a mixed-backend pair" begin
+    host_Y = rand(StiefelManifold{T}, N, n)
+    dev_Y = StiefelManifold(JLArray(Matrix(host_Y.A)))
+    host_row = rand(T, N)'
+    dev_row = JLArray(rand(T, N))'
+
+    @test_throws ArgumentError host_row * dev_Y
+    @test_throws ArgumentError transpose(rand(T, N)) * dev_Y
+    @test_throws ArgumentError dev_row * host_Y
+    @test_throws ArgumentError host_Y' * dev_mat
+    @test_throws ArgumentError dev_Y' * host_mat
+    @test_throws ArgumentError host_Y' * dev_Y
+
+    host_E = StiefelProjection(T, N, n)
+    dev_E = StiefelProjection(KernelAbstractions.get_backend(dev_mat), T, N, n)
+    @test_throws ArgumentError host_row * dev_E
+    @test_throws ArgumentError dev_row * host_E
+
+    # and the same pairs on one backend still answer
+    @test host_row * host_Y isa Adjoint
+    @test host_Y' * host_mat isa AbstractMatrix
+end
+
 # The message is the whole point of the change, so it is asserted rather than assumed: a bare
 # `ArgumentError` would satisfy every `@test_throws` above and still tell a caller nothing.
 @testset "the refusal names both operands and both backends" begin
@@ -114,9 +142,9 @@ end
     @test dev_sym + dev_sym isa SymmetricMatrix
 
     # The triangular sum keeps its own species and its own storage. The device arm is what says the
-    # unbinding above did not cost the type its own method: on one shared type variable this pair
-    # dispatched correctly and a mixed one did not, so only a same-backend device pair distinguishes
-    # "reaches the right method" from "reaches `Base`'s".
+    # per-argument binding above does not cost the type its own method: on one shared type variable
+    # this pair dispatches correctly and a mixed one does not, so only a same-backend device pair
+    # distinguishes "reaches the right method" from "reaches `Base`'s".
     @test LowerTriangular(rand(T, N, N)) + LowerTriangular(rand(T, N, N)) isa
           LowerTriangular
     dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
@@ -124,19 +152,29 @@ end
     @test parent(dev_lo + dev_lo) isa JLArray
 end
 
-# Two independent arguments would otherwise let the two species be added and silently return one of
-# them, so the species is compared at run time. `copyto!` on these types already did this.
-@testset "a triangular refuses the other species" begin
-    @test_throws ArgumentError LowerTriangular(rand(T, N, N)) +
-                               UpperTriangular(rand(T, N, N))
-    @test_throws ArgumentError LowerTriangular(rand(T, N, N)) -
-                               UpperTriangular(rand(T, N, N))
+# Two independent arguments and no species check would read one species' storage into the other's
+# triangle. The sum of a lower and an upper triangular is a general matrix, though, so the pair goes
+# to the dense path rather than being refused — the answer `Base`'s generic `+` gives, and the one
+# `*` between the two species already gives.
+@testset "the two triangular species sum to a dense matrix" begin
+    lo = LowerTriangular(rand(T, N, N))
+    up = UpperTriangular(rand(T, N, N))
+
+    @test lo + up ≈ Matrix(lo) + Matrix(up)
+    @test lo - up ≈ Matrix(lo) - Matrix(up)
+    @test lo + up isa Matrix
+    @test lo * up isa Matrix
+
+    # `add!` is the exception, and not by choice: its destination is one species and cannot hold the
+    # sum of the two
+    @test_throws ArgumentError add!(
+        LowerTriangular(rand(T, N, N)), lo, UpperTriangular(rand(T, N, N)))
 end
 
 # `KernelAbstractions.get_backend` *raises* for an array type it has no method for, rather than
 # answering. `StiefelLieAlgHorMatrix(vec(B), N, n)` is such a case: the blocks are views into a
 # `LazyArrays.Vcat`, both operands are on the host, and the operation is fine. A guard that turned
-# that raise into a refusal broke 24 host-only assertions in
+# that raise into a refusal would reject the host-only assertions in
 # `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`, so the rule is that the guard refuses only
 # what it can prove.
 @testset "an unplaceable array is let through rather than refused" begin
@@ -151,7 +189,7 @@ end
 end
 
 # The three transfer operations keep crossing backends. `copyto!` is the one with a contract in
-# `Base`, and PR #85 is what made it work for these types in the first place.
+# `Base`; PR #85 is the reference for how these types meet it.
 @testset "`copyto!` still crosses backends" begin
     destination = SkewSymMatrix(JLArray(zeros(T, N, N)))
     copyto!(destination, host_skew)

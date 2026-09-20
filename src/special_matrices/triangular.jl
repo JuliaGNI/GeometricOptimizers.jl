@@ -9,40 +9,50 @@ Base.parent(A::AbstractTriangular) = A.S
 Base.size(A::AbstractTriangular) = (A.n, A.n)
 
 # Each argument carries its own type, and the species is compared at run time. Bound as
-# `(A::AT, B::AT) where {AT <: AbstractTriangular}` these three never dispatched for a pair whose
+# `(A::AT, B::AT) where {AT <: AbstractTriangular}` these three do not dispatch for a pair whose
 # storage arrays differ -- a host `LowerTriangular{T, Vector{T}}` and a device
-# `LowerTriangular{T, JLArray{T, 1}}` are already different concrete types, so `AT` cannot bind both
-# and the call fell through to `Base`'s generic array `+` at `arraymath.jl:8`. That is the same
-# whole-type binding defect `Manifold`'s `copyto!` had, and `copyto!(::AbstractTriangular, …)` below
-# already uses this idiom for it.
+# `LowerTriangular{T, JLArray{T, 1}}` are different concrete types, so `AT` cannot bind both and the
+# call reaches `Base`'s generic array `+` at `arraymath.jl:8` instead.
+# `copyto!(::AbstractTriangular, …)` below carries this same idiom against the same whole-type
+# binding, as does `Manifold`'s `copyto!`.
 #
 # `Base.typename(…).wrapper` and not `typeof`: the question is whether both are lower or both upper,
-# not whether their storage agrees. Without the check two independent arguments would let an
-# `UpperTriangular` be added to a `LowerTriangular` and silently return one of them.
-function _triangular_species(A::AbstractTriangular, B::AbstractTriangular)
-    AT, BT = Base.typename(typeof(A)).wrapper, Base.typename(typeof(B)).wrapper
-    AT === BT || throw(ArgumentError("cannot combine $BT with $AT"))
-    AT
-end
+# not whether their storage agrees. With two independent arguments and no species check at all, an
+# `UpperTriangular` added to a `LowerTriangular` reads the upper storage into the lower triangle and
+# returns a `LowerTriangular`, which is not the sum of the two.
+#
+# The sum of a lower and an upper triangular *is* well defined — it is a general matrix, which is
+# what `Base`'s generic `+` returns for the pair and what `*` between the two species already
+# returns. So `+` and `-` hand a mixed species to that path rather than refusing it. Only the
+# packed-storage shortcut needs the two to agree.
+_triangular_species(A::AbstractTriangular) = Base.typename(typeof(A)).wrapper
 
 function Base.:+(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
-    AT = _triangular_species(A, B)
     _check_same_backend(A, B)
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) ||
+        return invoke(+, Tuple{AbstractArray, AbstractArray}, A, B)
     AT(A.S + B.S, A.n)
 end
 
+# `add!` is the one that refuses, and not by choice: it writes the sum into a triangular destination,
+# and a destination of one species cannot hold the sum of the two. There is no dense path to fall
+# back to, because the caller owns the destination.
 function add!(C::AbstractTriangular, A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n == C.n
-    _triangular_species(A, B)
-    _triangular_species(A, C)
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) === _triangular_species(C) ||
+        throw(ArgumentError("add! needs all three arguments to be the same triangular species"))
     add!(C.S, A.S, B.S)
 end
 
 function Base.:-(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
-    AT = _triangular_species(A, B)
     _check_same_backend(A, B)
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) ||
+        return invoke(-, Tuple{AbstractArray, AbstractArray}, A, B)
     AT(A.S - B.S, A.n)
 end
 
@@ -131,11 +141,20 @@ function /ᵉˡᵉ(A::AT, B::AT) where {AT <: AbstractTriangular}
     AT(A.S ./ B.S, A.n)
 end
 
-function LinearAlgebra.mul!(C::AT, A::AT, α::Real) where {AT <: AbstractTriangular}
+# Two independent arguments, for the reason `+` above gives: bound as `(C::AT, A::AT)` a destination
+# and a source whose storage arrays differ are already different concrete types, so `AT` cannot bind
+# both and the call reaches `LinearAlgebra`'s generic `mul!`, which reaches `setindex!` on a type
+# that has none.
+function LinearAlgebra.mul!(C::AbstractTriangular, A::AbstractTriangular, α::Real)
+    _triangular_species(C) === _triangular_species(A) ||
+        throw(ArgumentError("mul! needs the destination and the source to be the same triangular species"))
+    _check_same_backend(C, A)
     mul!(C.S, A.S, α)
     C
 end
-LinearAlgebra.mul!(C::AT, α::Real, A::AT) where {AT <: AbstractTriangular} = mul!(C, A, α)
+function LinearAlgebra.mul!(C::AbstractTriangular, α::Real, A::AbstractTriangular)
+    mul!(C, A, α)
+end
 LinearAlgebra.rmul!(C::AT, α::Real) where {AT <: AbstractTriangular} = mul!(C, C, α)
 
 function Base.one(A::AbstractTriangular{T}) where {T}
