@@ -363,7 +363,7 @@ breaking release).
 
   `test/optimizer_state_accessors.jl` is the first test of either accessor: nothing under `test/`
   called `value(::OptimizerState)` or `previous_value` before, which is why the suite was green with
-  four of the six states unable to answer. Four of its thirteen assertions raise a `MethodError` on
+  two of the six states unable to answer. Four of its thirteen assertions raise a `MethodError` on
   the pre-change source — the two Newton methods and the two `BFGSState`/`DFPState` ones — and the
   other nine pin behaviour that already held, including `!applicable(value, ::BFGSState)`, which is
   what keeps the missing method deliberate rather than a gap that grows back.
@@ -384,8 +384,9 @@ breaking release).
   `Base.minimum(result)` is the objective, `solution(result)` the point, and why the name is
   `minimum` and not `value` — `value` evaluates an `OptimizerProblem` at a point, which is a
   different question from reading a number a finished solve already holds. `symplectic_gram_schmidt`
-  and `symplectic_gram_schmidt!` are exported and have no caller under `src/`, because `sr!` builds
-  its symplectic factor from `symplectic_householder!` reflectors; the file's head comment now says
+  and `symplectic_gram_schmidt!` are exported; nothing under `src/` calls either except where the
+  copying version calls the in-place form, because `sr!` builds its symplectic factor from
+  `symplectic_householder!` reflectors; the file's head comment now says
   that this is intended and that they are the standalone entry point to the process.
 
   The `NewtonOptimizerState` docstring listed `f̄` twice in its `# Keys` block and never listed `f`.

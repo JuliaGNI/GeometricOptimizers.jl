@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: value, previous_value
-using GeometricOptimizers: AdamState, GradientState, MomentumState
+using GeometricOptimizers: AdamState, GradientState, MomentumState, ScalarMomentAdamState
 using Test
 import Random
 
@@ -18,7 +18,7 @@ Random.seed!(1234)
     Y = rand(StiefelManifold{Float64}, 5, 3)
 
     for state in (GradientState(Y), MomentumState(Y), AdamState(Y),
-        OptimizerState(ScalarMomentAdam(), Y))
+        ScalarMomentAdamState(Y))
         state.f = 3.5
         state.f̄ = 7.25
 
