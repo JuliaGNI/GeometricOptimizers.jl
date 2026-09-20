@@ -82,11 +82,8 @@ function update!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::Abstra
 end
 
 # The unbarred field is the current iterate's, which is what the unbarred accessor name means on
-# every other `OptimizerState`. `solution` and `gradient` here returned `x̄` and `ḡ` — the *previous*
-# iterate's — and took a parameter named `cache`, which is where they came from:
-# `solution(::NewtonOptimizerCache)` is `cache.x`, and the two were copied across a type whose
-# `x` means something else. Nothing under `src/` called either, so the whole family is set here at
-# once rather than left half right.
+# every other `OptimizerState`. `NewtonOptimizerCache` is a separate type whose `x` means something
+# else, so `solution(::NewtonOptimizerCache)` is `cache.x` and does not carry over to the state.
 solution(state::NewtonOptimizerState) = state.x
 previous_solution(state::NewtonOptimizerState) = state.x̄
 gradient(state::NewtonOptimizerState) = state.g
