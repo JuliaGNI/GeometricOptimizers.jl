@@ -149,3 +149,6 @@ end
 begin
     @safetestset "device multiply              " include("device_multiply.jl")
 end
+begin
+    @safetestset "mixed-backend refusal        " include("mixed_backend_refusal.jl")
+end

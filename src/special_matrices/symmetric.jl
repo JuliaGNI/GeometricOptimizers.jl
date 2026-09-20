@@ -153,6 +153,7 @@ Base.size(A::SymmetricMatrix) = (A.n, A.n)
 
 function Base.:+(A::SymmetricMatrix, B::SymmetricMatrix)
     @assert A.n == B.n
+    _check_same_backend(A, B)
     SymmetricMatrix(A.S + B.S, A.n)
 end
 
@@ -163,6 +164,7 @@ end
 
 function Base.:-(A::SymmetricMatrix, B::SymmetricMatrix)
     @assert A.n == B.n
+    _check_same_backend(A, B)
     SymmetricMatrix(A.S - B.S, A.n)
 end
 
@@ -267,6 +269,8 @@ function LinearAlgebra.mul!(C::AbstractMatrix, A::SymmetricMatrix, B::AbstractMa
     @assert A.n == size(B, 1)
     @assert size(B, 2) == size(C, 2)
     @assert A.n == size(C, 1)
+    _check_same_backend(A, C)
+    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A.S)
     symmetric_mat_mul! = symmetric_mat_mul_kernel!(backend)
     symmetric_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
@@ -289,6 +293,8 @@ end
 
 function LinearAlgebra.mul!(c::AbstractVector, A::SymmetricMatrix, b::AbstractVector)
     @assert A.n == length(c) == length(b)
+    _check_same_backend(A, c)
+    _check_same_backend(A, b)
     backend = KernelAbstractions.get_backend(A.S)
     symmetric_vector_mul! = symmetric_vector_mul_kernel!(backend)
     symmetric_vector_mul!(c, A.S, b, A.n, ndrange = size(c))
@@ -296,6 +302,7 @@ function LinearAlgebra.mul!(c::AbstractVector, A::SymmetricMatrix, b::AbstractVe
 end
 
 function Base.:*(A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
+    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A.S)
     C = KernelAbstractions.allocate(backend, T, A.n, size(B, 2))
     LinearAlgebra.mul!(C, A, B)
@@ -328,6 +335,7 @@ function Base.:*(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where {T}
 end
 
 function Base.:*(A::SymmetricMatrix{T}, b::AbstractVector{T}) where {T}
+    _check_same_backend(A, b)
     backend = KernelAbstractions.get_backend(A.S)
     c = KernelAbstractions.allocate(backend, T, A.n)
     LinearAlgebra.mul!(c, A, b)

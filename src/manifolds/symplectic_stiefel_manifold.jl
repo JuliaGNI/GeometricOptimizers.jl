@@ -58,8 +58,14 @@ function SymplecticStiefelManifold{T, AT}(A::AT) where {T, AT <: AbstractMatrix{
     SymplecticStiefelManifold(A)
 end
 
-Base.:*(U::SymplecticStiefelManifold, B::AbstractMatrix) = U.A * B
-Base.:*(B::AbstractMatrix, U::SymplecticStiefelManifold) = B * U.A
+function Base.:*(U::SymplecticStiefelManifold, B::AbstractMatrix)
+    _check_same_backend(U, B)
+    U.A * B
+end
+function Base.:*(B::AbstractMatrix, U::SymplecticStiefelManifold)
+    _check_same_backend(U, B)
+    B * U.A
+end
 
 # A row vector on the left is the one shape the second method above leaves unsettled: it stands off
 # against `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned

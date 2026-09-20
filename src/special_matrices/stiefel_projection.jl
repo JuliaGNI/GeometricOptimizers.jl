@@ -80,7 +80,10 @@ end
 
 Base.size(E::StiefelProjection) = (E.N, E.n)
 Base.getindex(E::StiefelProjection, i, j) = getindex(E.A, i, j)
-Base.:+(E::StiefelProjection, A::AbstractMatrix) = E.A + A
+function Base.:+(E::StiefelProjection, A::AbstractMatrix)
+    _check_same_backend(E, A)
+    E.A + A
+end
 Base.:+(A::AbstractMatrix, E::StiefelProjection) = +(E, A)
 
 @doc raw"""
@@ -98,9 +101,18 @@ product against the projection — `expB * E` and `cayleyB * E` — with `E` bui
 lift and so carrying the point's own backend. Both operands are on the device, and only the wrapper
 puts the product on the host path.
 """
-Base.:*(E::StiefelProjection, A::AbstractMatrix) = E.A * A
-Base.:*(A::AbstractMatrix, E::StiefelProjection) = A * E.A
-Base.:*(E::StiefelProjection, b::AbstractVector) = E.A * b
+function Base.:*(E::StiefelProjection, A::AbstractMatrix)
+    _check_same_backend(E, A)
+    E.A * A
+end
+function Base.:*(A::AbstractMatrix, E::StiefelProjection)
+    _check_same_backend(E, A)
+    A * E.A
+end
+function Base.:*(E::StiefelProjection, b::AbstractVector)
+    _check_same_backend(E, b)
+    E.A * b
+end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::StiefelProjection)` above leaves
 # unsettled: it stands off against `LinearAlgebra`'s own row-vector product, and neither wins.

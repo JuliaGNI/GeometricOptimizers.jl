@@ -8,18 +8,41 @@ abstract type AbstractTriangular{T} <: AbstractMatrix{T} end
 Base.parent(A::AbstractTriangular) = A.S
 Base.size(A::AbstractTriangular) = (A.n, A.n)
 
-function Base.:+(A::AT, B::AT) where {AT <: AbstractTriangular}
+# Each argument carries its own type, and the species is compared at run time. Bound as
+# `(A::AT, B::AT) where {AT <: AbstractTriangular}` these three never dispatched for a pair whose
+# storage arrays differ -- a host `LowerTriangular{T, Vector{T}}` and a device
+# `LowerTriangular{T, JLArray{T, 1}}` are already different concrete types, so `AT` cannot bind both
+# and the call fell through to `Base`'s generic array `+` at `arraymath.jl:8`. That is the same
+# whole-type binding defect `Manifold`'s `copyto!` had, and `copyto!(::AbstractTriangular, …)` below
+# already uses this idiom for it.
+#
+# `Base.typename(…).wrapper` and not `typeof`: the question is whether both are lower or both upper,
+# not whether their storage agrees. Without the check two independent arguments would let an
+# `UpperTriangular` be added to a `LowerTriangular` and silently return one of them.
+function _triangular_species(A::AbstractTriangular, B::AbstractTriangular)
+    AT, BT = Base.typename(typeof(A)).wrapper, Base.typename(typeof(B)).wrapper
+    AT === BT || throw(ArgumentError("cannot combine $BT with $AT"))
+    AT
+end
+
+function Base.:+(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
+    AT = _triangular_species(A, B)
+    _check_same_backend(A, B)
     AT(A.S + B.S, A.n)
 end
 
-function add!(C::AT, A::AT, B::AT) where {AT <: AbstractTriangular}
+function add!(C::AbstractTriangular, A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n == C.n
+    _triangular_species(A, B)
+    _triangular_species(A, C)
     add!(C.S, A.S, B.S)
 end
 
-function Base.:-(A::AT, B::AT) where {AT <: AbstractTriangular}
+function Base.:-(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
+    AT = _triangular_species(A, B)
+    _check_same_backend(A, B)
     AT(A.S - B.S, A.n)
 end
 
@@ -148,6 +171,7 @@ to is not an `AbstractTriangular`. So that product stays on the generic path and
 function Base.:*(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
     m1, m2 = size(B)
     @assert m1 == A.n
+    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A)
     C = KernelAbstractions.allocate(backend, T, A.n, m2)
 

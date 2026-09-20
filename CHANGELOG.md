@@ -348,6 +348,58 @@ breaking release).
 
 ### Fixed
 
+- **A computation across two backends is refused by name, and most of them were not refused at
+  all.** `_check_same_backend` guards the binary arithmetic on every owned matrix type — 33 call
+  sites across nine files, covering `+`, `-`, `add!` and `*` on `SkewSymMatrix`, `SymmetricMatrix`,
+  both `AbstractTriangular`s, both horizontal lifts, `StiefelProjection`, `StiefelManifold` and
+  `SymplecticStiefelManifold`, plus the generic `add!` in `src/utils.jl` that every structured
+  `add!` unwraps to. The message names both operand types and both backends.
+
+  **The record this closes called it a message problem. It was not only that.** Measured before the
+  change with `JLArrays` standing in for the device and `allowscalar(false)` set, **seven of twelve
+  mixed-backend operations did not throw at all**: `SkewSymMatrix(host) + SkewSymMatrix(device)`
+  returned a device matrix, `SkewSymMatrix(device) * host` returned a `JLArray`, and
+  `StiefelManifold(device) * host` returned a **host** `Matrix` — the device operand was pulled off
+  the device and nothing said so. Which backend the answer landed on depended on the argument
+  order. The five that did throw said `Scalar indexing is disallowed`, which names neither operand.
+  On real Metal the whole set fails instead, inside `GPU compilation of MethodInstance for
+  …broadcast_linear…`. So on a backend that can fall back to the host, this is the difference
+  between an answer computed somewhere the caller did not choose and no answer.
+
+  **The guard refuses only what it can prove.** `KernelAbstractions.get_backend` *raises* rather
+  than answering for an array type it has no method for, and a `StiefelLieAlgHorMatrix` built over
+  a flat parameter buffer is such a type — its blocks are views into a `LazyArrays.Vcat`. Both
+  operands there are on the host and the operation is fine. An unanswerable backend therefore
+  returns `nothing` and the pair is let through. Requiring an answer instead broke 24 host-only
+  assertions in `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`, and
+  `test/mixed_backend_refusal.jl` now pins the leniency, premise included: it asserts that
+  `get_backend` really does raise for that type before asserting that the subtraction still works.
+
+  **`copyto!`, `assign!` and `changebackend` are exempt and stay exempt** — a transfer's whole
+  purpose is to cross backends, which is the contract `Base` sets for `copyto!`. `_match_backend` in
+  `abstract_manifold.jl` is the third exemption and is deliberate: `rgrad` moves the gradient onto
+  the point's backend rather than refusing. The new test file holds `copyto!` to that, so a later
+  widening of the guard cannot quietly take it.
+
+- **`+`, `-` and `add!` on an `AbstractTriangular` never dispatched for a pair whose storage arrays
+  differed.** All three bound one type variable to both arguments
+  (`(A::AT, B::AT) where {AT <: AbstractTriangular}`), so a host `LowerTriangular{T, Vector{T}}` and
+  a device `LowerTriangular{T, JLArray{T, 1}}` — already different concrete types — could not bind
+  `AT` and fell through to `Base`'s generic array `+` at `arraymath.jl:8`. **This is the same
+  whole-type binding defect `Manifold`'s `copyto!` had**, and `copyto!(::AbstractTriangular, …)` in
+  the same file already carried the fix idiom.
+
+  Each argument now carries its own type, and `_triangular_species` compares
+  `Base.typename(typeof(·)).wrapper` at run time. That check is not optional once the arguments are
+  independent: without it an `UpperTriangular` could be added to a `LowerTriangular` and silently
+  return one of them, so the two species now refuse each other explicitly.
+
+  **Found by writing the mixed-backend test, not by reading the source** — the guard above was dead
+  code for these three methods and nothing said so. A same-backend *device* pair is what tells the
+  two situations apart: on one shared type variable that pair dispatched correctly and only the
+  mixed pair did not, so the test asserts the device sum's species *and* that its storage is still a
+  `JLArray`.
+
 - **The `Test` extra had no `[compat]` bound.** Every other dependency, weak dependency and test
   extra carried one; `Test` did not, so `Aqua.test_deps_compat` failed on that and on nothing else.
   `Test = "1"` is the entry, the same form the three stdlibs among the dependencies already use

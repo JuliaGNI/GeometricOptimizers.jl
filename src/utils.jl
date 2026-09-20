@@ -22,6 +22,56 @@ function _check_supported_eltype(backend::KernelAbstractions.Backend, ::Type{T})
     end
 end
 
+# A computation needs both of its operands on one backend. This says so, and returns the backend the
+# caller was going to ask for anyway, so a site that already read one replaces the read rather than
+# adding a line.
+#
+# The alternative is not a clean failure. Measured on `JLArrays` under `allowscalar(false)`, seven of
+# twelve mixed-backend operations did not throw at all: `SkewSymMatrix(host) + SkewSymMatrix(device)`
+# returned a device matrix, `SkewSymMatrix(device) * host` returned a `JLArray`, and
+# `StiefelManifold(device) * host` returned a **host** `Matrix` — the device operand was pulled off
+# the device and nothing said so. Which backend the answer landed on depended on the argument order.
+# The five that did throw said `Scalar indexing is disallowed`, which names neither operand. On real
+# Metal the whole set fails instead, inside `GPU compilation of MethodInstance for
+# …broadcast_linear…`, which names neither backend nor the mismatch.
+#
+# So this is not only a better message: on a backend that can fall back to the host it is the
+# difference between an answer computed somewhere the caller did not choose and no answer.
+#
+# `copyto!`, `assign!` and `changebackend` are exempt and must stay exempt — a transfer's whole
+# purpose is to cross backends, which is the rule `Base` already sets for `copyto!`. `_match_backend`
+# in `abstract_manifold.jl` is the third exemption and is deliberate: `rgrad` moves the gradient onto
+# the point's backend rather than refusing, because the point is the parameter.
+#
+# Both reads fold away for concrete array types, so a same-backend call pays nothing.
+#
+# **It refuses only what it can prove.** `KernelAbstractions.get_backend` has no method for every
+# array type and *raises* rather than answering for the ones it does not cover -- a
+# `LazyArrays.ApplyArray`, which is what backs a `StiefelLieAlgHorMatrix` built over a flat parameter
+# buffer, and a `ForwardDiff.Dual` matrix, which `_match_backend` names for the same reason. Both
+# operands there are on the host and the operation is fine. So an unanswerable backend returns
+# `nothing` and the pair is let through: this guard's job is to catch a mismatch, not to require that
+# every array be placeable. Turning "I cannot tell" into a refusal broke 24 assertions in
+# `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`, all of them host-only subtractions.
+function _backend_or_nothing(A)
+    try
+        KernelAbstractions.get_backend(A)
+    catch err
+        err isa ArgumentError || rethrow()
+        nothing
+    end
+end
+
+function _check_same_backend(A, B)
+    backend_a = _backend_or_nothing(A)
+    backend_a === nothing && return nothing
+    backend_b = _backend_or_nothing(B)
+    backend_b === nothing && return nothing
+    backend_a == backend_b && return backend_a
+
+    throw(ArgumentError("mixed backends: $(nameof(typeof(A))) is on $(backend_a) and $(nameof(typeof(B))) is on $(backend_b). A computation needs both operands on one backend; move one with `copyto!` or `changebackend` first."))
+end
+
 # Writes the diagonal of an identity matrix. `unit_matrix` below is the only caller; a kernel is what
 # it takes to write a diagonal without scalar indexing, and that docstring says why that matters.
 @kernel function write_ones_kernel!(matrix::AbstractMatrix{T}) where {T}
@@ -94,6 +144,9 @@ end
 # of equal `size` can have different indices, and it is the indices this broadcast pairs.
 function add!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat)
     @assert axes(A) == axes(B) == axes(C)
+    # every structured `add!` unwraps to this one, so the three-way check is written once here
+    _check_same_backend(A, B)
+    _check_same_backend(A, C)
     C .= A .+ B
 end
 
