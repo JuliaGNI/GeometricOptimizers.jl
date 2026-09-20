@@ -43,8 +43,9 @@ end
     # the geometry
         :Manifold, :StiefelManifold, :GrassmannManifold, :SymplecticStiefelManifold,
         :rgrad, :metric, :check, :Ω,
-    # the orthonormalizer a downstream manifold layer initialises its weight with
-        :orthonormal_columns,
+    # the orthonormalizer a downstream manifold layer initialises its weight with, and the
+    # failure it documents
+        :orthonormal_columns, :OrthonormalizationFailure,
     # the symplectic SR decomposition the symplectic point is built through
         :sr, :sr!, :symplectic_gram_schmidt, :symplectic_gram_schmidt!,
     # the structured matrices and the lifts
@@ -62,4 +63,9 @@ end
         :EventLog, :PhaseTimer, :NoStepObserver, :observe_optimizer_phase, :step_observer)
         @test name in names(GeometricOptimizers)
     end
+
+    # The breakdown path behind `orthonormal_columns` is the half that stays internal: it answers
+    # `nothing`, which is a contract for the redraw above it and not one to hand a caller.
+    @test isdefined(GeometricOptimizers, :_cholesky_qr2)
+    @test !(:_cholesky_qr2 in names(GeometricOptimizers))
 end

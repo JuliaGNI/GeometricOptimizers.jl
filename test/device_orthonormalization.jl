@@ -187,5 +187,13 @@ end
     A = randn(T, 12, 9)
     A[:, 9] .= 0
 
-    @test_throws ErrorException orthonormal_columns(() -> A)
+    @test_throws OrthonormalizationFailure orthonormal_columns(() -> A)
+    # The attempt count reaches the caller, and the message says which knob to turn.
+    e = try
+        orthonormal_columns(() -> A)
+    catch err
+        err
+    end
+    @test e.attempts == GeometricOptimizers.ORTHONORMALIZATION_ATTEMPTS
+    @test occursin("element type", sprint(showerror, e))
 end

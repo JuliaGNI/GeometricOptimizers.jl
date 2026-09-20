@@ -83,22 +83,44 @@ end
 # does exhaust them is not looking at bad luck.
 const ORTHONORMALIZATION_ATTEMPTS = 8
 
+"""
+    OrthonormalizationFailure(attempts)
+
+Thrown by [`orthonormal_columns`](@ref) when `attempts` independent draws each break `CholeskyQR2`
+down. At the rate measured in that function's docstring this is not bad luck, so what a caller
+changes in response is the element type and not the seed. The type is distinct so that catching it
+does not also catch an unrelated `ErrorException`.
+"""
+struct OrthonormalizationFailure <: Exception
+    attempts::Int
+end
+
+function Base.showerror(io::IO, e::OrthonormalizationFailure)
+    print(io,
+        "OrthonormalizationFailure: orthonormalization failed on $(e.attempts) independent ",
+        "Gaussian draws, which at the measured rate is not bad luck; the element type is ",
+        "probably too narrow for this size")
+end
+
 @doc raw"""
     orthonormal_columns(draw)
 
 Orthonormalize `draw()` with [`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2), drawing
 again while the draw is too ill-conditioned for it.
 
-`draw` takes no argument and returns a fresh ``N\times{}m`` matrix each time it is called. The
-result has orthonormal columns and is on whatever backend `draw` allocated on, so this is the
-entry point for orthonormalizing on a device: `LinearAlgebra.qr!` is a host factorization, and
-`Metal` implements no `qr` for its arrays at all. Exhausting the attempts raises.
+`draw` takes no argument and returns an ``N\times{}m`` matrix whose entries are a fresh draw each
+time it is called. Only the entries have to be fresh: nothing here writes into the matrix, so a
+`draw` that fills one buffer in place and returns it every time is correct. The result has
+orthonormal columns and is on whatever backend `draw` allocated on, so this is the entry point for
+orthonormalizing on a device: `LinearAlgebra.qr!` is a host factorization, and `Metal` implements
+no `qr` for its arrays at all. Exhausting the attempts throws
+[`OrthonormalizationFailure`](@ref).
 
-**`draw` is called again rather than its result repaired, so it must return a fresh draw and not
-a cached one.** This package's own callers — `rand(backend, manifold_type, N, n)` and
-[`global_section`](@ref) — each draw a Gaussian matrix, which carries no information, so one
-`CholeskyQR2` cannot orthonormalize is *replaced*; nothing is repaired and no result is kept that
-the algorithm did not produce cleanly. A `draw` that ignores this and returns the same matrix
+**`draw` is called again rather than its result repaired, so each call must produce new entries
+and not hand back the previous draw.** This package's own callers — `rand(backend, manifold_type,
+N, n)` and [`global_section`](@ref) — each draw a Gaussian matrix, which carries no information, so
+one `CholeskyQR2` cannot orthonormalize is *replaced*; nothing is repaired and no result is kept
+that the algorithm did not produce cleanly. A `draw` that ignores this and returns the same entries
 every time turns a breakdown into the error below instead of an answer.
 
 **The rate is not negligible.** [`global_section`](@ref) factorizes ``N\times(N-n)`` Gaussian
@@ -125,7 +147,7 @@ function orthonormal_columns(draw)
         Q === nothing || return Q
     end
 
-    throw(ErrorException("orthonormalization failed on $(ORTHONORMALIZATION_ATTEMPTS) independent Gaussian draws, which at the measured rate is not bad luck; the element type is probably too narrow for this size"))
+    throw(OrthonormalizationFailure(ORTHONORMALIZATION_ATTEMPTS))
 end
 
 # TODO: check the distribution this is coming from - related to the Haar measure ???

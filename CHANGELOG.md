@@ -213,7 +213,7 @@ breaking release).
   deletes, so those three call sites have to be rewritten against this release whatever else
   happens. That is
   [GeometricMachineLearning#303](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/303),
-  which records it as **B13** in that package's own open issues, and this export is what it closes
+  which will record it as **B13** in that package's open issues, and this export is what it closes
   against.
 
   Reaching across a package boundary for a name its owner never made public is what

@@ -105,6 +105,9 @@ export rgrad, metric, check, Ω
 # private — it answers `nothing` on a breakdown, which is a contract for the redraw above it and
 # not one to hand a caller.
 export orthonormal_columns
+# Its documented failure is public with it: a caller that catches this widens the element type,
+# and a bare `ErrorException` cannot be caught without also catching everything else.
+export OrthonormalizationFailure
 include("manifolds/abstract_manifold.jl")
 include("manifolds/stiefel_manifold.jl")
 include("manifolds/grassmann_manifold.jl")
