@@ -103,6 +103,7 @@ end
 function Base.:+(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
+    _check_same_backend(A, B)
     GrassmannLieAlgHorMatrix(A.B + B.B,
         A.N,
         A.n)
@@ -111,6 +112,7 @@ end
 function Base.:-(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
+    _check_same_backend(A, B)
     GrassmannLieAlgHorMatrix(A.B - B.B,
         A.N,
         A.n)
