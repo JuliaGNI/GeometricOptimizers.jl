@@ -4,6 +4,11 @@
 # The ordinary process is deliberately absent. `LinearAlgebra.qr` does it, faster and more stably,
 # and `rand(::Manifold, …)` already calls it; a second copy here would be a second thing to keep
 # right.
+#
+# Both names are exported and neither has a caller under `src/`: `sr!` builds its symplectic factor
+# by its own reflections and does not route through here. That is intended. They are the standalone
+# entry point to the process for a caller who has a matrix and a form, the doctest below is the
+# documented use, and `test/decompositions/symplectic_sr.jl` is what holds them to it.
 
 @doc raw"""
     symplectic_normalize(e, f, J)

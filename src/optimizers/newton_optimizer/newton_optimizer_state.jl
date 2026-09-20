@@ -13,8 +13,10 @@ We note that this is also used for the [`BFGS`](@ref) and the [`DFP`](@ref) opti
 - `x̄`
 - `g`
 - `ḡ`
+- `f`
 - `f̄`
-- `f̄`
+
+The objective values are read with `value` and `previous_value`.
 """
 mutable struct NewtonOptimizerState{T, AT, GT, GS} <: OptimizerState{T}
     iterations::Int
@@ -46,6 +48,9 @@ mutable struct NewtonOptimizerState{T, AT, GT, GS} <: OptimizerState{T}
 end
 
 section(state::NewtonOptimizerState) = state.section
+
+value(state::NewtonOptimizerState) = state.f
+previous_value(state::NewtonOptimizerState) = state.f̄
 
 OptimizerState(::Newton, x_args...) = NewtonOptimizerState(x_args...)
 

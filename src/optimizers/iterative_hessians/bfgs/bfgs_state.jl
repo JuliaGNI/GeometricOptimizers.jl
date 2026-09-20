@@ -12,6 +12,11 @@ The [`OptimizerState`](@ref) corresponding to the [`BFGS`](@ref) method.
 - `ḡ`
 - `f̄`
 - `Q`
+
+`f̄` is read with `previous_value`. There is no counterpart to `value`: this type
+holds one iterate and one objective rather than a pair, because [`update!`](@ref) writes `x̄` and `f̄`
+at the end of the iteration and the next iteration reads them as the previous ones. The objective at
+the current iterate belongs to the solve loop, which passes it to [`OptimizerStatus`](@ref) directly.
 """
 mutable struct BFGSState{T, AT, GT, MT, GS} <: OptimizerState{T}
     x̄::AT
@@ -36,6 +41,8 @@ mutable struct BFGSState{T, AT, GT, MT, GS} <: OptimizerState{T}
 end
 
 section(state::BFGSState) = state.section
+
+previous_value(state::BFGSState) = state.f̄
 
 function BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientStorage{T}, f̄::T) where {T}
     BFGSState(_copy(x̄), _copy(ḡ), f̄, alloc_h(x̄))

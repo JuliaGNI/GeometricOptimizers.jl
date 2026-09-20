@@ -345,6 +345,51 @@ breaking release).
   `scripts/retraction_step_allocations.jl`, so the part of the step path the workspace reaches and
   the part it does not can be read side by side. The ``\alpha = 0`` column is load-bearing and not
   decoration: it is what says the default `Backtracking` pays none of this.
+- **`value` and `previous_value` now answer for every optimizer state that holds the number.**
+  They existed for `AdamState`, `GradientState`, `MomentumState` and `ScalarMomentAdamState` and
+  raised a `MethodError` for the other two. `NewtonOptimizerState` gains both, because it carries an
+  `f` and an `f̄` field and both are already maintained. `BFGSState` — and therefore `DFPState`,
+  which is an alias for it — gains `previous_value` only.
+
+  **The asymmetry is the type's shape and not an oversight, so it is written down rather than
+  papered over.** `BFGSState` holds one iterate and one objective, not a pair: `update!` writes `x̄`
+  and `f̄` at the end of the iteration, and the next iteration reads them as the previous ones. The
+  objective at the current iterate belongs to the solve loop, which hands it to `OptimizerStatus`
+  directly and never reads it back off the state. Giving the type an `f` field would not be
+  additive — `OptimizerStatus` computes `Δf = f - state.f̄` and reads the field, not the accessor, so
+  a second slot changes what `f̄` means for `BFGS`, `DFP` and `Newton` at once. The `BFGSState`
+  docstring now says this.
+
+  `test/optimizer_state_accessors.jl` is the first test of either accessor: nothing under `test/`
+  called `value(::OptimizerState)` or `previous_value` before, which is why the suite was green with
+  four of the six states unable to answer. Four of its thirteen assertions raise a `MethodError` on
+  the pre-change source — the two Newton methods and the two `BFGSState`/`DFPState` ones — and the
+  other nine pin behaviour that already held, including `!applicable(value, ::BFGSState)`, which is
+  what keeps the missing method deliberate rather than a gap that grows back.
+- Added `scripts/optimizer_status_delta_f.jl`, the archived check behind the paragraph above and
+  behind the `BFGSState` docstring. It asks, per optimizer method, whether the `Δf` the status
+  reports is `f[end] - f[end-1]` or `f[end] - f[end-2]`, taking the objective values from a stored
+  trace. Exact equality, so it needs no tolerance, no warm-up and no cold process.
+
+  **It reports that `Δf` spans two iterations for `GradientMethod`, `MomentumMethod` and `Adam`,
+  and one for `BFGS`, `DFP` and `Newton`.** That is a defect and it is *not* fixed here — it is
+  recorded because it is the reason `BFGSState` gains no `f` field. During monotone descent a
+  two-step `Δf` overstates the decrease, so `f_converged` fires late rather than early;
+  `f_increased`, which is one of the two `x_converged` guards, compares against a value two
+  iterations old. Newton's one step is an accident of the second `update!` at `optimizer.jl:431`,
+  whose own comment proposes removing it — this script is what would catch that.
+- **Two docstrings now state an answer that had to be read off the source.** `OptimizerResult`
+  listed `f` as a field and named no accessor: it gains an *Accessors* section saying that
+  `Base.minimum(result)` is the objective, `solution(result)` the point, and why the name is
+  `minimum` and not `value` — `value` evaluates an `OptimizerProblem` at a point, which is a
+  different question from reading a number a finished solve already holds. `symplectic_gram_schmidt`
+  and `symplectic_gram_schmidt!` are exported and have no caller under `src/`, because `sr!` builds
+  its symplectic factor from `symplectic_householder!` reflectors; the file's head comment now says
+  that this is intended and that they are the standalone entry point to the process.
+
+  The `NewtonOptimizerState` docstring listed `f̄` twice in its `# Keys` block and never listed `f`.
+  Corrected with the accessors, because the list is what a reader checks to know the fields the two
+  new methods read.
 
 ### Fixed
 
