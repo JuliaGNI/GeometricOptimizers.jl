@@ -200,6 +200,37 @@ breaking release).
   symplectic-attention layers of `GeometricMachineLearning` are parametrized by both.
 - Added a backend-taking `rand` for `GrassmannLieAlgHorMatrix`, which `StiefelLieAlgHorMatrix`
   already had. A Grassmann lift could be zeroed on a device by naming one and not drawn on it.
+- **`orthonormal_columns(draw)` is exported.** It is the `_orthonormal_columns` added earlier in
+  this release, renamed and made public; the underscore name is not in any release, so nothing
+  downstream can be holding it.
+
+  The reason it is public is a caller outside this package. A downstream manifold layer has to
+  orthonormalize the weight it initialises, and `LinearAlgebra.qr!` cannot do that on a device —
+  `Metal` implements no `qr` for its arrays. `GeometricMachineLearning`'s `StiefelLayer`,
+  `GrassmannLayer` and `PSDLayer` each write `assign_columns(typeof(weight)(qr!(weight).Q), …)`
+  and so throw at construction on a device, which takes `SymplecticAutoencoder`, `PSDArch` and
+  `MultiHeadAttention(…; Stiefel = true)` with them; `assign_columns` is the name this release
+  deletes, so those three call sites have to be rewritten against this release whatever else
+  happens. That is
+  [GeometricMachineLearning#303](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/303),
+  which will record it as **B13** in that package's open issues, and this export is what it closes
+  against.
+
+  Reaching across a package boundary for a name its owner never made public is what
+  `assign_columns` already was — private but unprefixed, imported as
+  `import GeometricOptimizers: assign_columns` — and it is why this one is not left
+  private. `_cholesky_qr2` behind it stays private: it answers `nothing` on a
+  breakdown, which is a contract for the redraw above it and not one to hand a
+  caller.
+- **`OrthonormalizationFailure` is exported.** It is the exception type thrown by
+  `orthonormal_columns` when it exhausts its draws, replacing a bare `ErrorException`.
+  The message text is unchanged, now delivered through a `Base.showerror` method. The
+  type carries one field, `attempts::Int`, the number of draws attempted before failure.
+  It is public because the failure is documented behaviour of a public function, and a
+  caller that needs to respond to it specifically — for example, by widening the element
+  type — must catch it by its own type rather than by catching all `ErrorException`s.
+  Swapping the thrown type for a new one would break a caller that catches `ErrorException`,
+  but this breaks nobody, because `orthonormal_columns` itself is not in any release.
 
 ### Fixed
 
