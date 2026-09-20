@@ -1,5 +1,5 @@
 using Test
-using LinearAlgebra: norm
+using LinearAlgebra: I, norm
 using GeometricOptimizers
 using GeometricOptimizers: AbstractRetraction, geodesic, cayley, retraction, check
 import Random
@@ -81,6 +81,25 @@ end
         GrassmannLieAlgHorMatrix(randn(2, 2), 4, 2))
         B̂, B̄ = GeometricOptimizers.lift_factors(C)
         @test B̂ * B̄' ≈ Matrix(C)
+    end
+end
+
+# `cayley(::AbstractLieAlgHorMatrix)` evaluates a regrouping of the Cayley transform in the
+# `N × 2n` factors of `lift_factors`, so nothing in it is read off the definition and every step of
+# the regrouping is a place to lose a factor or a transpose. The retraction assertions below catch
+# only part of that. A sign slip in the `2n × 2n` inverse reaches them, but barely: it lands at a
+# `check` residual of 2e-5 against a `MANIFOLD_TOLERANCE` of 1e-5, where the correct grouping sits
+# at 4e-7. `B̄'` spelt `transpose(B̄)` does not reach them at all, because the two are one expression
+# on the real `Float32` points they run on. This pins the value against the definition, on the
+# dense lift where there is nothing to group, and on a complex element type as well.
+@testset "the Cayley retraction of a lift is the Cayley transform of the lift" begin
+    for C in (StiefelLieAlgHorMatrix(SkewSymMatrix(randn(3, 3)), randn(5, 3), 8, 3),
+        GrassmannLieAlgHorMatrix(randn(5, 3), 8, 3),
+        StiefelLieAlgHorMatrix(
+        SkewSymMatrix(randn(ComplexF64, 2, 2)), randn(ComplexF64, 2, 2), 4, 2),
+        GrassmannLieAlgHorMatrix(randn(ComplexF64, 2, 2), 4, 2))
+        B̄ = Matrix(C)
+        @test cayley(C) ≈ (I - B̄ / 2) \ (I + B̄ / 2)
     end
 end
 
