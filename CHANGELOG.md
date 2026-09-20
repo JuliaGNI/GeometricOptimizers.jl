@@ -222,6 +222,15 @@ breaking release).
   private. `_cholesky_qr2` behind it stays private: it answers `nothing` on a
   breakdown, which is a contract for the redraw above it and not one to hand a
   caller.
+- **`OrthonormalizationFailure` is exported.** It is the exception type thrown by
+  `orthonormal_columns` when it exhausts its draws, replacing a bare `ErrorException`.
+  The message text is unchanged, now delivered through a `Base.showerror` method. The
+  type carries one field, `attempts::Int`, the number of draws attempted before failure.
+  It is public because the failure is documented behaviour of a public function, and a
+  caller that needs to respond to it specifically — for example, by widening the element
+  type — must catch it by its own type rather than by catching all `ErrorException`s.
+  Swapping the thrown type for a new one would break a caller that catches `ErrorException`,
+  but this breaks nobody, because `orthonormal_columns` itself is not in any release.
 
 ### Fixed
 
