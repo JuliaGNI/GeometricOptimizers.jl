@@ -211,10 +211,14 @@ breaking release).
   and so throw at construction on a device, which takes `SymplecticAutoencoder`, `PSDArch` and
   `MultiHeadAttention(…; Stiefel = true)` with them; `assign_columns` is the name this release
   deletes, so those three call sites have to be rewritten against this release whatever else
-  happens. That is GeometricMachineLearning **B13**, and this export is what it closes against.
+  happens. That is
+  [GeometricMachineLearning#303](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/303),
+  which records it as **B13** in that package's own open issues, and this export is what it closes
+  against.
 
-  Reaching for an underscore name across a package boundary is what `assign_columns` already was,
-  and it is why this one is not left private. `_cholesky_qr2` behind it stays private: it answers
+  Reaching across a package boundary for a name its owner never made public is what
+  `assign_columns` already was — private but unprefixed, imported as
+  `import GeometricOptimizers: assign_columns` — and it is why this one is not left private. `_cholesky_qr2` behind it stays private: it answers
   `nothing` on a breakdown, which is a contract for the redraw above it and not one to hand a
   caller.
 
