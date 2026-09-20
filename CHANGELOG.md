@@ -1328,8 +1328,9 @@ breaking release).
   in the docstrings of `LowerTriangular` and `UpperTriangular`, in `docs/src/special_matrices.md`,
   and pinned by regression tests.
 - **`Optimizer` carries a second further type parameter, `WT`, for the retraction workspace, and it
-  sits *before* the observer's.** The entry above says one further parameter; over this release as a
-  whole there are two, and the observer's is no longer last. The order is
+  sits *before* the observer's.** The observer's own entry earlier in this section says one further
+  parameter; over this release as a whole there are two, and the observer's is no longer last. The
+  order is
   `Optimizer{T, ALG, OBJ, GT, HT, OCT, LST, RT, WT, OT}` — ten parameters, against eight in 0.7.0.
   Code that spells the type out with all of its parameters has to add `WT` in that position and not
   at the end; the constructors and every accessor are unaffected, and `retraction_workspace(opt)`
@@ -1341,16 +1342,20 @@ breaking release).
   it should. This is again the smaller half of the fix and not the fix: what bounds the page is
   continuing the migration that moves docstrings onto the chapters that explain them.
   `size_threshold_warn` stays at its default, so the warning names the page on every build.
-- **The workspace does not reach `retraction_differential`, which is the largest per-trial manifold
-  allocation left.** `retraction_differential(::Cayley, ::AbstractLieAlgHorMatrix, α)` still calls
+- **The workspace does not reach `retraction_differential`, which under `Cayley` is the largest
+  per-trial manifold allocation left.** Under `Geodesic` there is nothing to reach:
+  `retraction_differential(::Geodesic, B, α)` returns `B` and allocates nothing at any ``\alpha``.
+  `retraction_differential(::Cayley, ::AbstractLieAlgHorMatrix, α)` still calls
   `lift_factors(B)` and `StiefelProjection(B)` fresh on the line-search path, and allocates
   8 672, 12 576, 59 536 and 194 992 bytes at ``(N, n)`` = (6, 3), (20, 3), (100, 5) and (400, 5) —
   cold, with BLAS pinned to one thread, from `scripts/retraction_differential_allocations.jl`. It
   allocates **nothing at ``\alpha = 0``**, which is the only point the default `Backtracking`
-  evaluates ``\varphi'`` at, so the default line search pays none of it. A line search that
-  evaluates ``\varphi'`` away from zero pays it once per trial — `Bisection` bisects ``\varphi'``,
-  and `StrongWolfe`'s curvature condition is stated in terms of it. Giving it a workspace is a
-  separate change: it needs buffers of shapes the retraction's own workspace does not hold.
+  evaluates ``\varphi'`` at, so the default line search pays none of it. `Static` pays nothing
+  either, evaluating neither ``\varphi`` nor ``\varphi'``. The four remaining line searches this
+  package exports each pay it once per trial: `Bisection` bisects ``\varphi'``, `StrongWolfe`'s
+  curvature condition is stated in terms of it, and `Quadratic` and `BierlaireQuadratic` each
+  evaluate it at the trial point and at a bracket endpoint. Giving it a workspace is a separate
+  change: it needs buffers of shapes the retraction's own workspace does not hold.
 
 ### Temporary
 

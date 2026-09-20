@@ -24,8 +24,9 @@
 #     `@allocated` sits inside a function with its arguments passed in, for the reason
 #     `test/flat_buffer_allocations.jl` documents: a `@allocated` written at top level boxes its
 #     variables and reports the box.
-#   * **BLAS threads.** Pinned to one, as every other script here pins them. They do not move a byte
-#     count, but a figure produced without the pin invites comparison with one produced with it.
+#   * **BLAS threads.** Pinned to one, as `scripts/retraction_step_allocations.jl` pins them. They
+#     do not move a byte count, but a figure produced without the pin invites comparison with one
+#     produced with it.
 
 using GeometricOptimizers
 using GeometricOptimizers: GlobalSection, global_rep, retraction_differential
@@ -64,4 +65,8 @@ function differential_table()
     end
 end
 
-differential_table()
+function main()
+    differential_table()
+end
+
+main()
