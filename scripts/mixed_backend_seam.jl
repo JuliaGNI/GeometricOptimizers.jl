@@ -19,7 +19,7 @@
 # scalar index on a `JLArray` merely warns and more cases come back with an answer.
 
 using GeometricOptimizers
-using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular, add!
+using GeometricOptimizers: LowerTriangular, StiefelProjection, add!
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
