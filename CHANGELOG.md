@@ -1350,12 +1350,13 @@ breaking release).
   8 672, 12 576, 59 536 and 194 992 bytes at ``(N, n)`` = (6, 3), (20, 3), (100, 5) and (400, 5) —
   cold, with BLAS pinned to one thread, from `scripts/retraction_differential_allocations.jl`. It
   allocates **nothing at ``\alpha = 0``**, which is the only point the default `Backtracking`
-  evaluates ``\varphi'`` at, so the default line search pays none of it. `Static` pays nothing
-  either, evaluating neither ``\varphi`` nor ``\varphi'``. The four remaining line searches this
-  package exports each pay it once per trial: `Bisection` bisects ``\varphi'``, `StrongWolfe`'s
-  curvature condition is stated in terms of it, and `Quadratic` and `BierlaireQuadratic` each
-  evaluate it at the trial point and at a bracket endpoint. Giving it a workspace is a separate
-  change: it needs buffers of shapes the retraction's own workspace does not hold.
+  evaluates ``\varphi'`` at, so the default line search pays none of it. `Static` and
+  `DecayingStatic` pay nothing either, evaluating neither ``\varphi`` nor ``\varphi'``. The four
+  remaining line searches of the seven this package exports each pay it once per trial: `Bisection`
+  bisects ``\varphi'``, `StrongWolfe`'s curvature condition is stated in terms of it, and
+  `Quadratic` and `BierlaireQuadratic` each evaluate it at the trial point and at a bracket
+  endpoint. Giving it a workspace is a separate change: it needs buffers of shapes the retraction's
+  own workspace does not hold.
 
 ### Temporary
 
