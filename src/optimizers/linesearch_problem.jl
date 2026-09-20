@@ -1,5 +1,5 @@
 @doc raw"""
-    trial_iterate!(cache, params, α, retraction)
+    trial_iterate!(cache, params, α, retraction, workspace = nothing)
 
 Write the iterate a step of length `α` along the current direction would produce into
 `solution(cache)`, and return it. This is what the merit function of the line search evaluates.
@@ -24,11 +24,12 @@ retraction into the cache's section, and read the point back out.
     its `NaN` loop and for the accepted step, so the line search leaves nothing behind that it does
     not overwrite itself.
 """
-trial_iterate!(cache::OptimizerCache, params, α, retraction) = _trial_iterate!(
-    solution(cache), cache, params, α, retraction)
+trial_iterate!(
+    cache::OptimizerCache, params, α, retraction, workspace = nothing) = _trial_iterate!(
+    solution(cache), cache, params, α, retraction, workspace)
 
 function _trial_iterate!(
-        ::AbstractVector, cache::OptimizerCache, params, α, ::AbstractRetraction)
+        ::AbstractVector, cache::OptimizerCache, params, α, ::AbstractRetraction, _)
     compute_new_iterate!(solution(cache), params.x, α, direction(cache))
 end
 
@@ -36,14 +37,17 @@ end
                                     "parameters have to carry the `state`; `solver_step!` passes it, a bare `(x = x,)` does not.")
 
 function _trial_iterate!(
-        ::Union{Manifold, NetworkParameters}, cache::OptimizerCache, params, α, retraction)
+        ::Union{Manifold, NetworkParameters}, cache::OptimizerCache, params, α, retraction,
+        workspace)
     # `params` is a concrete `NamedTuple` here, so this is constant-folded away rather than checked on
     # every merit evaluation. Without it a missing `state` surfaces as `has no field state`.
     hasproperty(params, :state) || _no_state_error()
     # `_mul` allocates a scaled copy because `direction(cache)` has to stay intact for the next trial
     # step; `solver_step!` can afford the in-place `_rmul!` only because it scales exactly once, by
     # the `α` the line search has already settled on.
-    update_section!(section(cache), section(params.state), _mul(α, direction(cache)), retraction)
+    update_section!(
+        section(cache), section(params.state), _mul(α, direction(cache)), retraction,
+        workspace)
     _copyto!(solution(cache), section(cache))
 end
 
@@ -272,7 +276,7 @@ function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::G
 end
 
 @doc raw"""
-    linesearch_problem(problem, gradient, cache, retraction, observer)
+    linesearch_problem(problem, gradient, cache, retraction, observer, workspace)
 
 Create a [`SimpleSolvers.LinesearchProblem`](@extref) for the linesearch algorithm.
 
@@ -320,10 +324,10 @@ julia> ls_obj.D(0., params)
 """
 function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gradient,
         cache::OptimizerCache{T}, retraction::AbstractRetraction,
-        observer = NoStepObserver()) where {T}
+        observer = NoStepObserver(), workspace = nothing) where {T}
     function f(α, params)
         observe_optimizer_phase(observer, :retraction_application) do
-            trial_iterate!(cache, params, α, retraction)
+            trial_iterate!(cache, params, α, retraction, workspace)
         end
         observe_optimizer_phase(observer, :objective) do
             value(problem, solution(cache))
@@ -332,7 +336,7 @@ function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gra
 
     function d(α, params)
         observe_optimizer_phase(observer, :retraction_application) do
-            trial_iterate!(cache, params, α, retraction)
+            trial_iterate!(cache, params, α, retraction, workspace)
         end
         observe_optimizer_phase(observer, :retraction_application) do
             trial_slope(gradient_instance, cache, retraction, α)

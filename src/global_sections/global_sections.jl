@@ -306,8 +306,8 @@ end
 # end
 
 @doc raw"""
-    update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
-    update_section!(Λ, B, retraction)
+    update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction, workspace = nothing)
+    update_section!(Λ, B, retraction, workspace = nothing)
 
 Transport the [`GlobalSection`](@ref) `Λ⁽ᵗ⁻¹⁾` along the step `B⁽ᵗ⁻¹⁾` and write the result into `Λᵗ`:
 
@@ -327,20 +327,22 @@ a vector space is addition, so `retraction` is then ignored.
 
 The three-argument form is the two-argument section written in place, `Λᵗ === Λ⁽ᵗ⁻¹⁾`. A `NamedTuple`
 of parameters is walked leaf by leaf.
-"""
-function update_section!(Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T},
-        retraction) where {T, MT <: Manifold{T}}
-    N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
-    expB = retraction(B⁽ᵗ⁻¹⁾)
-    apply_section!(expB, Λ⁽ᵗ⁻¹⁾, expB)
-    Λ⁽ᵗ⁻¹⁾.Y.A .= @view expB.A[:, 1:n]
-    Λ⁽ᵗ⁻¹⁾.λ .= @view expB.A[:, (n + 1):N]
 
-    nothing
+`workspace` is the [`RetractionWorkspace`](@ref) the retraction is taken in, or `nothing` to take it
+in fresh arrays. [`Optimizer`](@ref) passes one at every call site on the step path; `nothing` is the
+default so that a caller who has no optimizer, and every leaf of a parameter set that is not on a
+manifold, need not build one.
+"""
+function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT},
+        B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction,
+        workspace = nothing) where {T, MT <: Manifold{T}}
+    _update_section!(workspace, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
 end
 
-function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT},
-        B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold{T}}
+# The `RetractionWorkspace` counterpart of this is in `src/retractions/retraction_workspace.jl`,
+# because that type is defined after this file is included and a signature cannot name it here.
+function _update_section!(::Nothing, Λᵗ::GlobalSection, Λ⁽ᵗ⁻¹⁾::GlobalSection,
+        B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix, retraction)
     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
     expB = retraction(B⁽ᵗ⁻¹⁾)
     apply_section!(expB, Λ⁽ᵗ⁻¹⁾, expB)
@@ -351,7 +353,7 @@ function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSe
 end
 
 function update_section!(Λᵗ::GlobalSection{T, AT, Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, AT},
-        B⁽ᵗ⁻¹⁾::AT, retraction) where {T, AT <: AbstractVecOrMat{T}}
+        B⁽ᵗ⁻¹⁾::AT, retraction, workspace = nothing) where {T, AT <: AbstractVecOrMat{T}}
     Λᵗ.Y .= Λ⁽ᵗ⁻¹⁾.Y .+ B⁽ᵗ⁻¹⁾
 
     Λᵗ
@@ -362,7 +364,7 @@ end
 # [`VectorStorageMatrix`](@ref) keeps them. Three of the four have no `setindex!` for the broadcast
 # above to write through, and for the fourth (`SymmetricMatrix`) it would visit each entry twice.
 function update_section!(Λᵗ::GlobalSection{T, AT, Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, AT},
-        B⁽ᵗ⁻¹⁾::AT, retraction) where {T, AT <: VectorStorageMatrix{T}}
+        B⁽ᵗ⁻¹⁾::AT, retraction, workspace = nothing) where {T, AT <: VectorStorageMatrix{T}}
     parent(Λᵗ.Y) .= parent(Λ⁽ᵗ⁻¹⁾.Y) .+ parent(B⁽ᵗ⁻¹⁾)
 
     Λᵗ
@@ -378,8 +380,29 @@ function update_section!(Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽�
     Λᵗ
 end
 
-function update_section!(Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
-    update_section!(Λ⁽ᵗ⁻¹⁾, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
+# A parameter set's workspace is a tree of the section tree's shape, so it is walked with the rest
+# rather than handed whole to each leaf: `retraction_workspace` puts a `RetractionWorkspace` at every
+# leaf that is on a manifold and `nothing` at every leaf that is not. The `::Nothing` method below is
+# for a caller who passes the default explicitly.
+function update_section!(
+        Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::NetworkParameters, retraction,
+        workspace::NamedTuple)
+    function update_section_closure!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, workspace)
+        update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction, workspace)
+    end
+    mapparameters!(update_section_closure!, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, workspace)
+
+    Λᵗ
+end
+
+function update_section!(
+        Λᵗ::NamedTuple, Λ⁽ᵗ⁻¹⁾::NamedTuple, B⁽ᵗ⁻¹⁾::NetworkParameters, retraction,
+        ::Nothing)
+    update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
+end
+
+function update_section!(Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction, workspace = nothing)
+    update_section!(Λ⁽ᵗ⁻¹⁾, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction, workspace)
 end
 
 # The default for a `struct` is `===`, which is `false` for two sections that hold equal frames in

@@ -200,6 +200,84 @@ breaking release).
   symplectic-attention layers of `GeometricMachineLearning` are parametrized by both.
 - Added a backend-taking `rand` for `GrassmannLieAlgHorMatrix`, which `StiefelLieAlgHorMatrix`
   already had. A Grassmann lift could be zeroed on a device by naming one and not drawn on it.
+- **Added `RetractionWorkspace`, the buffers a retraction on a manifold is taken in.** An
+  [`Optimizer`](@ref) builds one at construction from the shape of its solution, holds it beside its
+  `retraction`, and passes it to every `update_section!` on the step path.
+  `GeometricOptimizers.retraction_workspace` is what builds it: a `RetractionWorkspace` for a
+  `Manifold`, a `NoWorkspace` where the parameters carry no manifold, and a tree of the two for a
+  parameter set, in the shape of its section tree.
+
+  **Why there is a workspace at all.** A step applies a retraction once per line-search trial and
+  three times besides — six to fifteen times an iteration, measured on the ``6\times{}3`` Stiefel
+  problem — and every one of those calls used to rebuild every matrix it needs. All of them are a
+  fixed shape once ``N`` and ``n`` are known. The workspace holds them, and writes the four blocks
+  of the factorisation that do not depend on the lift — the two ``n\times{}n`` identity blocks and
+  the zero blocks beside them — exactly once, when it is built.
+
+  `update_section!` gains an optional trailing `workspace` argument, defaulting to `nothing`, and so
+  do `trial_iterate!` and `linesearch_problem`. Passing nothing is the old behaviour byte for byte,
+  so a caller who builds neither is unaffected.
+
+  Bytes per `update_section!` of a `StiefelManifold`, from
+  `scripts/retraction_step_allocations.jl` on a cold process with BLAS pinned to one thread. The
+  first column is `origin/main` before this release's retraction work, the second is the same
+  function on this branch with `workspace = nothing`, the third with a workspace:
+
+  | retraction | ``N`` | ``n`` | 0.7.0 | regrouped | in a workspace | ratio |
+  |:--|--:|--:|--:|--:|--:|--:|
+  | `Cayley` | 6 | 3 | 11 120 | 7 040 | 3 792 | 2.9 |
+  | `Cayley` | 20 | 3 | 31 696 | 18 896 | 3 792 | 8.4 |
+  | `Cayley` | 100 | 5 | 473 232 | 279 040 | 6 432 | 73.6 |
+  | `Cayley` | 400 | 5 | 6 689 888 | 3 990 304 | 6 432 | 1040 |
+  | `Geodesic` | 6 | 3 | 11 072 | 8 496 | 5 632 | 2.0 |
+  | `Geodesic` | 20 | 3 | 31 648 | 20 352 | 5 632 | 5.6 |
+  | `Geodesic` | 100 | 5 | 475 936 | 285 168 | 13 504 | 35.2 |
+  | `Geodesic` | 400 | 5 | 6 692 592 | 3 996 432 | 13 504 | 496 |
+
+  **The `Cayley` column does not depend on ``N`` at all**, and that is the property rather than the
+  ratio. Everything it allocates is the ``2n\times{}2n`` `inv`, so the figure moves when ``n``
+  moves and not when ``N`` does — 3 792 bytes at ``n = 3`` and 6 432 at ``n = 5``, at every
+  ambient dimension. `test/flat_buffer_allocations.jl` asserts that equality rather than either
+  number, for the reason `test/aqua_tests.jl` gives for piracy: a reintroduced ``N\times{}N``
+  temporary makes the two sizes diverge whatever its size, where a ceiling on one of them would
+  have to be loose enough to hide it.
+
+  **`Geodesic` is not ``N``-independent and cannot be made so here.** Its residue is
+  `GeometricOptimizers.𝔄`'s: `ScaledSquaring` takes its number of squarings from the norm of the
+  lift, and a lift's norm grows with the ambient dimension, so `𝔄` allocated 7 040, 13 184 and
+  16 256 bytes at ``N = 6``, 60 and 200. That is `log`-like rather than ``N``-like, it is the
+  exponential's business and not the workspace's, and the test asserts the identity *the geodesic
+  in a workspace costs `lift_factors!` plus `𝔄` and nothing else* instead.
+
+  Per iteration of the `solve!` loop body, medians over 21 repeats from the same script. The spread
+  is wide because the number of line-search trials is a property of the problem; the min and max
+  columns are in the script's output:
+
+  | solution | algorithm | 0.7.0 | this release | ratio |
+  |:--|:--|--:|--:|--:|
+  | `Vector` | `BFGS`, `GradientMethod` | 0 | 0 | — |
+  | `StiefelManifold` | `BFGS` | 162 544 | 77 856 | 2.1 |
+  | `StiefelManifold` | `GradientMethod` | 110 304 | 54 928 | 2.0 |
+  | `NetworkParameters` | `BFGS` | 139 728 | 91 680 | 1.5 |
+  | `NetworkParameters` | `GradientMethod` | 139 664 | 91 616 | 1.5 |
+
+  The parameter-set rows gain least because the retraction is no longer what leads there: with the
+  workspace in place the largest attributable site is the `flatten`/`unflatten` round trip per
+  gradient at `src/optimizers/named_tuple_wrapper.jl:19`, 40 528 bytes of the step. That is
+  untouched by this change.
+
+  **`NoWorkspace` is a singleton and not `nothing`, and the reason is worth keeping.** A parameter
+  set's workspace is a tree walked in lockstep with its section tree, and
+  `NeuralNetworkParameters.mapparameters!` reads a `nothing` in that position as *skip this leaf* —
+  so a `nothing` at a Euclidean leaf made the walk skip the leaf, the section was never transported,
+  and the iterate never moved. The solve then ran to its iteration limit and reported the point it
+  started from, with no error anywhere. `test/optimizer_observer.jl`'s *parameter-set gradients
+  retain the Riemannian wrapper* is what caught it, on its last assertion.
+
+  **What the workspace does not remove.** The ``2n\times{}2n`` `inv` in `cayley`, and whatever `𝔄`
+  allocates for `geodesic`. Both are ``O(n^2)``. `inv` stays an `inv`: `lu!` and `rdiv!` would take
+  it in place on the host, and neither is something a `KernelAbstractions` backend is obliged to
+  supply, where `inv` is what `cayley` already runs on Metal through.
 
 ### Fixed
 
@@ -612,6 +690,67 @@ breaking release).
   and only the new testset's complex rows separate them. That slip is the live one — `lift_factors`
   carries a comment about exactly this distinction, and PR #98 was the nine sites where it had gone
   the other way.
+
+- **`lift_factors` builds its two factors block by block instead of out of nested `vcat`s and
+  `hcat`s, and both retractions add into an identity instead of forming `𝕀 + X`.** Four changes,
+  all to the same expression and all in the same direction — the numbers they are worth are in the
+  `RetractionWorkspace` entry under *Added*, whose second column is this change alone.
+
+  `lift_factors` assembled ``B'`` as `hcat(vcat(½A, B), E)` and ``(B'')^T`` as an `hcat` of two
+  `vcat`s, so each factor cost a chain of intermediate matrices — two blocks into a `vcat`, two of
+  those into an `hcat` — before the factor itself existed. It allocates the two factors once now,
+  zeroed, and writes the blocks the formula names into them; the two zero blocks are never written
+  at all, and `StiefelProjection` is no longer built, because the block it supplied is the
+  ``n\times{}n`` identity that is already in hand. ``(B'')^T`` is the matrix that is built and
+  ``B''`` is returned as its adjoint, exactly as before: every caller consumes it as ``(B'')^T`` and
+  the two cancel.
+
+  `cayley` and `geodesic` both ended in ``\mathbb{I} + X`` with ``X`` the product of the factors.
+  The identity has to be built either way, so they write ``X`` into it with the five-argument
+  `mul!` — which makes the product's own destination the answer instead of one more ``N\times{}N``
+  temporary. `cayley` forms ``\mathbb{I}_{2n} - \frac{1}{2}(B'')^TB'`` the same way, in place of a
+  product, a scaling and a subtraction; and the ``2n\times{}2n`` identity it needs for that was
+  assembled as `hcat(vcat(𝕀, 𝕆), vcat(𝕆, 𝕀))` from an ``n\times{}n`` identity and an
+  ``n\times{}n`` zero block, where `unit_matrix(backend, T, 2n)` is the same matrix in one call.
+
+  The two `cayley` methods now share one body, `GeometricOptimizers._cayley_matrix`. They differ
+  only in the manifold type the result is wrapped in, and `manifold_type` is deliberately not used
+  for that: each method carries its own docstring and the manual links to both by signature.
+
+  **Nothing about the arithmetic changed, and the tests say so bitwise.** Every product is the same
+  product in the same order, so `test/flat_buffer_allocations.jl` asserts `==` and not `≈` between
+  the workspace path and the allocating one — `≈` would pass on a swapped block.
+
+  **The one thing a block-by-block rewrite of `lift_factors` could get wrong was already pinned.**
+  Its upper-right block is ``-B^T`` spelt `transpose` and not `adjoint`, which is one expression on
+  a real element type and two on a complex one — and
+  `test/retractions/retractions.jl`'s *the lift factorisation reproduces the lift on a complex
+  element type* asserts ``B'(B'')^T = \bar{B}`` on `ComplexF64` lifts of both kinds. It passes. The
+  Cayley retraction is pinned against its definition on complex lifts in the same file; the geodesic
+  is pinned through `check` on the retracted point rather than against `exp`, at every
+  ``3 \le N \le 5`` and ``1 \le n \le N``.
+
+- **`unit_matrix` and `StiefelProjection` have host arms, so a `CPU` no longer pays for the device
+  machinery.** Both went through `KernelAbstractions.zeros` and then started a kernel to write a
+  diagonal, on every backend. `unit_matrix(::CPU, T, n)` is `Matrix{T}(I, n, n)` and
+  `StiefelProjection(::CPU, T, N, n)` forwards to the existing host constructor, which returns the
+  same `Matrix{T}` the backend arm returns there — so nothing about either result changes.
+
+  `StiefelProjection`'s host constructor and the comment arguing for it have been in
+  `src/special_matrices/stiefel_projection.jl` since the type was written, and **no caller in the
+  package ever reached it**: every one names a backend, through `get_backend` on an array or on a
+  horizontal lift. The measurement behind both arms is `scripts/host_allocation_cost.jl` —
+  `KernelAbstractions.zeros` on a `CPU` writes the zeros itself rather than taking a page the
+  operating system has already zeroed — and the launch then costs three
+  `KernelAbstractions.CompilerMetadata` allocations per call whatever `n` is. Confirmed on Metal
+  that neither arm is taken there: `unit_matrix(MetalBackend(), Float32, 4)` and
+  `StiefelProjection(MetalBackend(), Float32, 6, 2)` both still return `MtlMatrix`.
+
+- **`SkewSymMatrix` has a `mul!`**, the shape `mul!(C, ::SymmetricMatrix, ::AbstractMatrix)` already
+  had, and `*` is written on it. The kernel was reachable only through `*`, which allocates its own
+  destination, so a caller who already had one allocated anyway — which is what the retraction
+  workspace needs for the dense form of a lift's ``A`` block. Confirmed on Metal: the device result
+  matches the host's entry for entry.
 
 - **The symplectic Stiefel `metric` evaluates in the ``2n\times{}2n`` factors, and inverts
   ``U^TU`` once.** It wrote the expression as its definition reads it, around the dense

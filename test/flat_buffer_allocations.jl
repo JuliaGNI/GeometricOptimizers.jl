@@ -1,4 +1,8 @@
-# The flat buffers, and what is left after them.
+# The flat buffers, the retraction workspace, and what is left after them.
+#
+# Two groups of assertions, in that order. The first is about the *flat* coordinates a quasi-Newton
+# method works in; the second is about the retraction, which is where a step on a manifold spends
+# about two thirds of what it allocates. See the header above the second group.
 #
 # Every quantity a quasi-Newton method forms lives in the *flattened* coordinates -- `Q` is sized by
 # the length of the flattening, `outer!` forms its outer products there, `_dot` pairs there -- while
@@ -28,7 +32,10 @@ using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update
                            solver_step!,
                            increase_iteration_number!, gradient, inverse_hessian, cache,
                            direction, rhs,
-                           OptimizerCache, _flat_δ!, _flat_γ!, _flat_mul!, outer!
+                           OptimizerCache, _flat_δ!, _flat_γ!, _flat_mul!, outer!,
+                           GlobalSection, global_rep, update_section!, lift_factors!,
+                           retraction_matrix!, retraction_workspace, initialize_state!,
+                           OptimizerStatus, config, problem, value, 𝔄
 using NeuralNetworkParameters: NetworkParameters, flatten
 using SimpleSolvers: Static
 using LinearAlgebra: dot
@@ -294,4 +301,152 @@ end
         # `ParameterLayout` besides
         @test _measured_mul!(direction(c), Q, rhs(c), c.flat) == 0
     end
+end
+
+# The retraction, which is the other two thirds.
+#
+# A step on a manifold applies a retraction once per line-search trial and three times besides --
+# six to fifteen times an iteration, measured -- and every one of them used to rebuild every matrix
+# it needs. `RetractionWorkspace` holds them instead, and `scripts/retraction_step_allocations.jl`
+# carries the end-to-end figures.
+#
+# **What is asserted is N-independence, not a byte count.** That is the property the workspace
+# exists to establish and the one a byte count cannot state: everything a `Cayley` retraction of an
+# `N × n` point allocates now comes from the `2n × 2n` `inv`, so the same lift shape at two very
+# different ambient dimensions has to cost the same. A reintroduced `N × N` or `N × 2n` temporary
+# makes the two diverge whatever its size, where a ceiling on either would have to be loose enough
+# to hide it. This is the argument `test/aqua_tests.jl` makes for piracy and `test/ambiguities.jl`
+# for ambiguities, one file over.
+#
+# `Geodesic` is asserted the other way round, as an identity, because `𝔄` allocates a
+# `N`-dependent amount that no workspace reaches. See the comment at that assertion.
+#
+# No assertion is made on the bytes of a whole `solver_step!`. The figure is a function of how many
+# trials the line search takes, which is a property of the problem and not of this package: the same
+# step measured over 21 repeats ran from 50 112 to 95 824 bytes. The script has the medians.
+
+const RETRACTIONS = (Cayley(), Geodesic())
+const LIFT_TYPES = (StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix)
+
+# One lift and one section per shape, at a fixed `n` and two ambient dimensions an order of
+# magnitude apart.
+function retraction_fixture(LT, N, n)
+    B = rand(Random.Xoshiro(N * 100 + n), LT{Float64}, N, n)
+    MT = LT == StiefelLieAlgHorMatrix ? StiefelManifold : GrassmannManifold
+    Y = rand(Random.Xoshiro(N + n), MT{Float64}, N, n)
+
+    (B = B, Λ = GlobalSection(Y), Λ₂ = GlobalSection(Y), ws = retraction_workspace(Y))
+end
+
+# `@allocated` inside the function and the call warmed first, for the reason the head of this file
+# gives.
+function _measured_retraction(ws, R, B)
+    retraction_matrix!(ws, R, B)
+    @allocated retraction_matrix!(ws, R, B)
+end
+
+function _measured_lift_factors(ws, B)
+    lift_factors!(ws, B)
+    @allocated lift_factors!(ws, B)
+end
+
+function _measured_update_section(Λ₂, Λ, B, R, ws)
+    update_section!(Λ₂, Λ, B, R, ws)
+    @allocated update_section!(Λ₂, Λ, B, R, ws)
+end
+
+function _measured_𝔄(ws, algorithm)
+    𝔄(ws.B̂, ws.B̄ᵗ', algorithm)
+    @allocated 𝔄(ws.B̂, ws.B̄ᵗ', algorithm)
+end
+
+@testset "the retraction of a $LT allocates the same at N = 6 and N = 60" for LT in LIFT_TYPES
+    small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 60, 3)
+
+    # `lift_factors!` writes into buffers it was handed, so what it costs is the kernel launch that
+    # densifies the lift's `A` block and nothing else -- zero for a Grassmann lift, which has none.
+    @test _measured_lift_factors(small.ws, small.B) ==
+          _measured_lift_factors(large.ws, large.B)
+
+    # Cayley, where everything left is the `2n × 2n` `inv`.
+    @test _measured_retraction(small.ws, Cayley(), small.B) ==
+          _measured_retraction(large.ws, Cayley(), large.B)
+    @test _measured_update_section(small.Λ₂, small.Λ, small.B, Cayley(), small.ws) ==
+          _measured_update_section(large.Λ₂, large.Λ, large.B, Cayley(), large.ws)
+
+    # The geodesic is asserted as an identity and not as N-independence, and the difference is the
+    # point: `𝔄`'s own cost *does* grow with N, because `ScaledSquaring` takes its number of
+    # squarings from the norm of the lift and a random lift's norm grows with the ambient dimension.
+    # Measured at N = 6, 60 and 200: 7 040, 13 184 and 16 256 bytes, which is `log`-like rather than
+    # `N`-like and is the same at both retractions. That is the exponential's business and not the
+    # workspace's, so what is asserted is that the workspace adds nothing to it.
+    algorithm = Geodesic().algorithm
+    for f in (small, large)
+        lift_factors!(f.ws, f.B)
+        @test _measured_retraction(f.ws, Geodesic(), f.B) ==
+              _measured_lift_factors(f.ws, f.B) + _measured_𝔄(f.ws, algorithm)
+    end
+end
+
+# The workspace may not change the answer, and nothing else in the suite compares the two paths --
+# every other retraction test goes through whichever one the `Optimizer` chose. `==` and not `≈`:
+# the two write the same products in the same order into different arrays, so they agree bit for bit,
+# and `≈` would pass on a swapped block.
+@testset "the workspace retraction is the allocating one, for a $LT" for LT in LIFT_TYPES
+    for (N, n) in ((6, 3), (6, 1), (6, 6), (20, 4))
+        f = retraction_fixture(LT, N, n)
+        for R in RETRACTIONS
+            @test retraction_matrix!(f.ws, R, f.B) == retraction(R, f.B).A
+        end
+    end
+end
+
+# One fixture and one destination written twice, not two fixtures: `global_section` draws a random
+# complement from the global RNG, so two `GlobalSection`s of the same point hold different frames and
+# comparing across them would compare two different transports.
+@testset "update_section! writes the same section with and without a workspace" begin
+    for LT in LIFT_TYPES, (N, n) in ((6, 3), (20, 4))
+
+        f = retraction_fixture(LT, N, n)
+        for R in RETRACTIONS
+            update_section!(f.Λ₂, f.Λ, f.B, R, nothing)
+            reference_Y, reference_λ = copy(f.Λ₂.Y.A), copy(f.Λ₂.λ)
+            fill!(f.Λ₂.Y.A, zero(Float64))
+            fill!(f.Λ₂.λ, zero(Float64))
+
+            update_section!(f.Λ₂, f.Λ, f.B, R, f.ws)
+            @test f.Λ₂.Y.A == reference_Y
+            @test f.Λ₂.λ == reference_λ
+        end
+    end
+end
+
+# The body of `solve!`'s loop, which is the figure §10 of the audit calls "the standard the manifold
+# path does not meet". It was already zero for an ordinary vector and nothing asserted it, so this
+# pins behaviour rather than reproducing a defect -- and it is the assertion that would catch a new
+# allocation on the part of the step path both kinds of parameter share.
+function _step!(x, state, opt)
+    increase_iteration_number!(state)
+    solver_step!(x, state, opt)
+    f = value(problem(opt), x)
+    OptimizerStatus(state, cache(opt), f; config = config(opt))
+    update!(state, opt, x)
+
+    f
+end
+
+function _measured_step(x, F, algorithm)
+    Random.seed!(1234)
+    opt = Optimizer(x, F; algorithm = algorithm, max_iterations = 10_000)
+    state = OptimizerState(algorithm, x)
+    initialize_state!(state)
+    _step!(x, state, opt)
+
+    @allocated _step!(x, state, opt)
+end
+
+@testset "a Euclidean iteration of $(nameof(typeof(algorithm))) allocates nothing" for algorithm in (
+    BFGS(), DFP(), GradientMethod())
+    x, F = vector_problem()
+    @test _measured_step(x, F, algorithm) == 0
 end

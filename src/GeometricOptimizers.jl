@@ -144,6 +144,7 @@ include("retractions/exponential_algorithms.jl")
 include("retractions/modified_exponential.jl")
 include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")
+include("retractions/retraction_workspace.jl")
 
 export Optimizer,
        OptimizerProblem,

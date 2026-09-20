@@ -59,6 +59,16 @@ end
 
 StiefelProjection(T::Type, N::Integer, n::Integer) = StiefelProjection(N, n, T)
 
+# The host constructor is what a `CPU` backend should reach, and until this method existed it never
+# did: every caller in the package names a backend, through `get_backend` on an array or on a
+# horizontal lift, so the argument the inner constructor's own comment makes for the host form was
+# never applied on the host. `Matrix{T}(I, N, n)` is the same `Matrix{T}` the backend arm returns
+# there, so nothing about the returned object changes -- only that it is built in one allocation
+# rather than in a `KernelAbstractions.zeros` plus a kernel launch.
+function StiefelProjection(::KernelAbstractions.CPU, T::Type, N::Integer, n::Integer)
+    StiefelProjection(N, n, T)
+end
+
 Base.size(E::StiefelProjection) = (E.N, E.n)
 Base.getindex(E::StiefelProjection, i, j) = getindex(E.A, i, j)
 Base.:+(E::StiefelProjection, A::AbstractMatrix) = E.A + A
