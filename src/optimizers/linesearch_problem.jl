@@ -276,7 +276,8 @@ function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::G
 end
 
 @doc raw"""
-    linesearch_problem(problem, gradient, cache, retraction, observer, workspace)
+    linesearch_problem(problem, gradient, cache, retraction, observer = NoStepObserver(),
+        workspace = nothing)
 
 Create a [`SimpleSolvers.LinesearchProblem`](@extref) for the linesearch algorithm.
 

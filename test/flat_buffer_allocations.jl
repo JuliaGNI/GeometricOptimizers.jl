@@ -378,7 +378,7 @@ end
     # point: `𝔄`'s own cost *does* grow with N, because `ScaledSquaring` takes its number of
     # squarings from the norm of the lift and a random lift's norm grows with the ambient dimension.
     # Measured at N = 6, 60 and 200: 7 040, 13 184 and 16 256 bytes, which is `log`-like rather than
-    # `N`-like and is the same at both retractions. That is the exponential's business and not the
+    # `N`-like and is the same at both lift types. That is the exponential's business and not the
     # workspace's, so what is asserted is that the workspace adds nothing to it.
     algorithm = Geodesic().algorithm
     for f in (small, large)
@@ -421,10 +421,11 @@ end
     end
 end
 
-# The body of `solve!`'s loop, which is the figure §10 of the audit calls "the standard the manifold
-# path does not meet". It was already zero for an ordinary vector and nothing asserted it, so this
-# pins behaviour rather than reproducing a defect -- and it is the assertion that would catch a new
-# allocation on the part of the step path both kinds of parameter share.
+# The body of `solve!`'s loop. This is the figure that `Close the GeometricOptimizers audit
+# findings.md`, section 10, calls "the standard the manifold path does not meet". It was already
+# zero for an ordinary vector and nothing asserted it, so this pins behaviour rather than
+# reproducing a defect -- and it is the assertion that would catch a new allocation on the part of
+# the step path both kinds of parameter share.
 function _step!(x, state, opt)
     increase_iteration_number!(state)
     solver_step!(x, state, opt)

@@ -210,20 +210,26 @@ breaking release).
   **Why there is a workspace at all.** A step applies a retraction once per line-search trial and
   three times besides — six to fifteen times an iteration, measured on the ``6\times{}3`` Stiefel
   problem — and every one of those calls used to rebuild every matrix it needs. All of them are a
-  fixed shape once ``N`` and ``n`` are known. The workspace holds them, and writes the four blocks
-  of the factorisation that do not depend on the lift — the two ``n\times{}n`` identity blocks and
-  the zero blocks beside them — exactly once, when it is built.
+  fixed shape once ``N`` and ``n`` are known. The workspace holds them, and the parts of the
+  factorisation that do not depend on the lift are settled once, when it is built: its two
+  ``n\times{}n`` identity blocks are written there, and the zero blocks beside them are never
+  written at all, `KernelAbstractions.zeros` having already left them zero.
 
   `update_section!` gains an optional trailing `workspace` argument, defaulting to `nothing`, and so
   do `trial_iterate!` and `linesearch_problem`. Passing nothing is the old behaviour byte for byte,
   so a caller who builds neither is unaffected.
 
-  Bytes per `update_section!` of a `StiefelManifold`, from
-  `scripts/retraction_step_allocations.jl` on a cold process with BLAS pinned to one thread. The
-  first column is `origin/main` before this release's retraction work, the second is the same
-  function on this branch with `workspace = nothing`, the third with a workspace:
+  Bytes per `update_section!` of a `StiefelManifold`, on cold processes with BLAS pinned to one
+  thread. **`before` is the commit this change is based on and not the 0.7.0 release**: the `cayley`
+  regrouping recorded under *Changed* in this same `[Unreleased]` section had already landed, and
+  the figures behind it are its own entry's. The two right-hand columns are the same
+  `update_section!` call on this branch, with and without a workspace, from
+  `scripts/retraction_step_allocations.jl`. **That script cannot produce the `before` column** —
+  it calls `update_section!` with five arguments and `retraction_workspace`, and neither exists on
+  the base — so `before` was taken by running the script's own `retraction_table` with the
+  workspace column removed, in a second worktree detached at the base commit:
 
-  | retraction | ``N`` | ``n`` | 0.7.0 | regrouped | in a workspace | ratio |
+  | retraction | ``N`` | ``n`` | before | regrouped | in a workspace | ratio |
   |:--|--:|--:|--:|--:|--:|--:|
   | `Cayley` | 6 | 3 | 11 120 | 7 040 | 3 792 | 2.9 |
   | `Cayley` | 20 | 3 | 31 696 | 18 896 | 3 792 | 8.4 |
@@ -235,9 +241,12 @@ breaking release).
   | `Geodesic` | 400 | 5 | 6 692 592 | 3 996 432 | 13 504 | 496 |
 
   **The `Cayley` column does not depend on ``N`` at all**, and that is the property rather than the
-  ratio. Everything it allocates is the ``2n\times{}2n`` `inv`, so the figure moves when ``n``
-  moves and not when ``N`` does — 3 792 bytes at ``n = 3`` and 6 432 at ``n = 5``, at every
-  ambient dimension. `test/flat_buffer_allocations.jl` asserts that equality rather than either
+  ratio. What it allocates is the ``2n\times{}2n`` `inv` plus the kernel launch that densifies the
+  lift's ``A`` block, so the figure moves when ``n`` moves and not when ``N`` does: 3 792 bytes at
+  ``n = 3`` at each of ``N = 6``, 20, 60 and 200, and 6 432 at ``n = 5`` at both ``N = 100`` and
+  ``N = 400``. A Grassmann lift is 3 664 at ``n = 3``, having no ``A`` block and so no launch to
+  pay for.
+  `test/flat_buffer_allocations.jl` asserts that equality rather than either
   number, for the reason `test/aqua_tests.jl` gives for piracy: a reintroduced ``N\times{}N``
   temporary makes the two sizes diverge whatever its size, where a ceiling on one of them would
   have to be loose enough to hide it.
@@ -249,11 +258,13 @@ breaking release).
   exponential's business and not the workspace's, and the test asserts the identity *the geodesic
   in a workspace costs `lift_factors!` plus `𝔄` and nothing else* instead.
 
-  Per iteration of the `solve!` loop body, medians over 21 repeats from the same script. The spread
-  is wide because the number of line-search trials is a property of the problem; the min and max
-  columns are in the script's output:
+  Per iteration of the `solve!` loop body, medians over 21 repeats. The spread is wide because the
+  number of line-search trials is a property of the problem; the min and max columns are in the
+  script's output. `before` is again the base commit and not 0.7.0, and here the script's own
+  `step_table` produces both columns unchanged — it names no workspace — so this one was taken by
+  running that half of the shipped script in the same detached worktree:
 
-  | solution | algorithm | 0.7.0 | this release | ratio |
+  | solution | algorithm | before | this change | ratio |
   |:--|:--|--:|--:|--:|
   | `Vector` | `BFGS`, `GradientMethod` | 0 | 0 | — |
   | `StiefelManifold` | `BFGS` | 162 544 | 77 856 | 2.1 |
@@ -263,8 +274,11 @@ breaking release).
 
   The parameter-set rows gain least because the retraction is no longer what leads there: with the
   workspace in place the largest attributable site is the `flatten`/`unflatten` round trip per
-  gradient at `src/optimizers/named_tuple_wrapper.jl:19`, 40 528 bytes of the step. That is
-  untouched by this change.
+  gradient at `src/optimizers/named_tuple_wrapper.jl:16` and `:19`. **That is a
+  `Profile.Allocs` attribution and no byte figure is quoted for it**, because that instrument's
+  *counts* are reliable here and its sizes are not — it reported 176 bytes for a ``6\times{}6``
+  `Float64` identity, which holds 288 bytes of data, and its total for a step came out 8% below
+  `@allocated`'s. The round trip is untouched by this change either way.
 
   **`NoWorkspace` is a singleton and not `nothing`, and the reason is worth keeping.** A parameter
   set's workspace is a tree walked in lockstep with its section tree, and
@@ -717,6 +731,12 @@ breaking release).
   only in the manifold type the result is wrapped in, and `manifold_type` is deliberately not used
   for that: each method carries its own docstring and the manual links to both by signature.
 
+  **There is a compile-time cost and it is worth naming.** The four `@views` broadcasts inline
+  fully, so `lift_factors` grows from 102 optimised IR statements to 3 050. Nothing about inference
+  regressed — the return type is still
+  `Tuple{Matrix{Float64}, Adjoint{Float64, Matrix{Float64}}}`, `lift_factors!` measures 128 bytes,
+  and `cayley` went the other way, from 33 `Any`-typed SSA values to one.
+
   **Nothing about the arithmetic changed, and the tests say so bitwise.** Every product is the same
   product in the same order, so `test/flat_buffer_allocations.jl` asserts `==` and not `≈` between
   the workspace path and the allocating one — `≈` would pass on a swapped block.
@@ -748,9 +768,15 @@ breaking release).
 
 - **`SkewSymMatrix` has a `mul!`**, the shape `mul!(C, ::SymmetricMatrix, ::AbstractMatrix)` already
   had, and `*` is written on it. The kernel was reachable only through `*`, which allocates its own
-  destination, so a caller who already had one allocated anyway — which is what the retraction
-  workspace needs for the dense form of a lift's ``A`` block. Confirmed on Metal: the device result
-  matches the host's entry for entry.
+  destination, so a caller who already had a destination allocated a second one and copied into it.
+  That caller is the retraction workspace, which needs the dense form of a lift's ``A`` block
+  written into a buffer it owns. Confirmed on Metal: the device result matches the host's entry for
+  entry.
+
+  One new external ambiguity comes with it, against
+  `ArrayLayouts.mul!(dest, A, B::LayoutMatrix)`. The `SymmetricMatrix` counterpart has that exact
+  pair and nothing else, a witness needs an `ArrayLayouts.LayoutMatrix` right operand, and nothing
+  in this ecosystem supplies one. The own-vs-own set `test/ambiguities.jl` asserts on is unchanged.
 
 - **The symplectic Stiefel `metric` evaluates in the ``2n\times{}2n`` factors, and inverts
   ``U^TU`` once.** It wrote the expression as its definition reads it, around the dense

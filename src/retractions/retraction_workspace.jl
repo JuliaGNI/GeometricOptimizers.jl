@@ -77,7 +77,12 @@ end
     NoWorkspace()
 
 What [`GeometricOptimizers.retraction_workspace`](@ref) returns where there is no manifold to
-retract on, so that [`update_section!`](@ref) takes its retraction in fresh arrays.
+retract on.
+
+The vector-space methods of [`update_section!`](@ref) take a `workspace` argument and ignore it —
+the extended retraction on a vector space is addition, which allocates nothing to begin with — so
+this type is a *marker* and has no method of its own. It exists only because `nothing` cannot serve
+as that marker.
 
 # Implementation
 
@@ -116,8 +121,9 @@ end
 
 [`lift_factors`](@ref) written into `ws`, returning nothing.
 
-Only the four lift-dependent blocks are written; the identity and zero blocks were written when the
-workspace was built. `ws` has to have been built for `B`'s shape.
+Only the lift-dependent blocks are written — four for a Stiefel lift and two for a Grassmann one,
+whose ``A`` block is identically zero. The identity and zero blocks were written when the workspace
+was built. `ws` has to have been built for `B`'s shape.
 """
 function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T}) where {T}
     N, n = B.N, B.n
@@ -159,9 +165,12 @@ The matrix and not the manifold: [`update_section!`](@ref) reads the blocks of t
 discards the wrapper, so wrapping it would be one allocation per line-search trial for a value
 nothing keeps.
 
-A retraction type this package does not ship has no in-place form here and falls through to the
-allocating [`retraction`](@ref), with the answer copied in. A workspace never changes what a
-retraction means.
+An [`AbstractRetraction`](@ref) this package does not ship has no in-place form here and falls
+through to the allocating [`retraction`](@ref), with the answer copied in. A workspace never changes
+what a retraction means. A bare callable is *not* covered — [`update_section!`](@ref) accepts one as
+its `retraction`, and `src/utils.jl` passes one, but only ever together with no workspace, so there
+is no retraction type left here to dispatch on and a caller who pairs the two gets a `MethodError`
+rather than a silent fallback.
 """
 function retraction_matrix!(ws::RetractionWorkspace{T}, R::AbstractRetraction,
         B::AbstractLieAlgHorMatrix{T}) where {T}
@@ -202,12 +211,6 @@ end
 function _geodesic_matrix!(ws::RetractionWorkspace{T}, B::AbstractLieAlgHorMatrix{T},
         algorithm::ProjectedSkew) where {T}
     copyto!(ws.retracted, geodesic(B, algorithm).A)
-end
-
-function _update_section!(::NoWorkspace, Λᵗ::GlobalSection, Λ⁽ᵗ⁻¹⁾::GlobalSection,
-        B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix,
-        retraction)
-    _update_section!(nothing, Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction)
 end
 
 # The workspace arm of `update_section!`; the `::Nothing` arm is in

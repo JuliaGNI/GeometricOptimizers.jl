@@ -20,6 +20,13 @@
 # `_zero`, `_similar` and the arithmetic take an instance, so their element type comes from an
 # array already on the backend and the case cannot arise. A check there would be error handling for
 # something that cannot happen.
+#
+# **The `CPU` arms of `unit_matrix` and `StiefelProjection` are unwitnessed here, by construction.**
+# All three stand-ins are `<: GPU`, and `KernelAbstractions.CPU` is concrete, so no stand-in can
+# declare itself a host that cannot hold `Float64`. Those two arms call `_check_supported_eltype`
+# for the invariant `src/utils.jl`'s header states rather than for anything that can fire, and
+# nothing below can tell whether they do. One of them shipped without the call and the pre-PR gate,
+# not this file, is what caught it.
 
 using GeometricOptimizers
 using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular,
