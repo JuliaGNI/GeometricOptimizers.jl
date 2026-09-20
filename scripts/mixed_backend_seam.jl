@@ -23,6 +23,7 @@ using GeometricOptimizers: LowerTriangular, StiefelProjection, add!
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
+using LinearAlgebra: transpose
 using Printf
 import Random
 
@@ -49,6 +50,10 @@ dev_E = StiefelProjection(KernelAbstractions.get_backend(dev_mat), T, N, n)
 host_lift = rand(StiefelLieAlgHorMatrix{T}, N, n)
 dev_lift = StiefelLieAlgHorMatrix(
     SkewSymMatrix(JLArray(Matrix(host_lift.A))), JLArray(Matrix(host_lift.B)), N, n)
+host_U = rand(SymplecticStiefelManifold{T}, N, 4)
+dev_U = SymplecticStiefelManifold(JLArray(Matrix(host_U.A)))
+host_small = rand(T, 4, 4)
+dev_small = JLArray(rand(T, 4, 4))
 
 # Every pair below has one operand on the host and one on the device. The enumeration is the point:
 # a count quoted without it cannot be re-measured, and the denominator depends entirely on which
@@ -82,7 +87,30 @@ const CASES = (
     ("E(host) * Matrix(dev)", () -> host_E * JLArray(rand(T, n, n))),
     ("Matrix(dev) * E(host)", () -> dev_mat * host_E),
     ("rowvec(host) * E(dev)", () -> rand(T, N)' * dev_E),
-    ("rowvec(dev) * E(host)", () -> JLArray(rand(T, N))' * host_E))
+    ("rowvec(dev) * E(host)", () -> JLArray(rand(T, N))' * host_E),
+    # `SymplecticStiefelManifold` carries ten of the guard sites, more than any other file, so its
+    # twenty pairs are the largest block here. Two of them — the adjoint against an adjoint — no
+    # point satisfies dimensionally, and a `DimensionMismatch` is what they raised before.
+    ("U(host) * Matrix(dev)", () -> host_U * dev_small),
+    ("U(dev) * Matrix(host)", () -> dev_U * host_small),
+    ("Matrix(host) * U(dev)", () -> host_mat * dev_U),
+    ("Matrix(dev) * U(host)", () -> dev_mat * host_U),
+    ("rowvec(host) * U(dev)", () -> rand(T, N)' * dev_U),
+    ("rowvec(dev) * U(host)", () -> JLArray(rand(T, N))' * host_U),
+    ("transpose(host) * U(dev)", () -> transpose(rand(T, N)) * dev_U),
+    ("U(host)' * Matrix(dev)", () -> host_U' * dev_mat),
+    ("U(dev)' * Matrix(host)", () -> dev_U' * host_mat),
+    ("Matrix(host) * U(dev)'", () -> host_small * dev_U'),
+    ("Matrix(dev) * U(host)'", () -> dev_small * host_U'),
+    ("rowvec(host) * U(dev)'", () -> rand(T, 4)' * dev_U'),
+    ("rowvec(dev) * U(host)'", () -> JLArray(rand(T, 4))' * host_U'),
+    ("transpose(host) * U(dev)'", () -> transpose(rand(T, 4)) * dev_U'),
+    ("U(host)' * U(dev)", () -> host_U' * dev_U),
+    ("U(dev)' * U(host)", () -> dev_U' * host_U),
+    ("U(host)' * U(dev)'", () -> host_U' * dev_U'),
+    ("U(dev)' * U(host)'", () -> dev_U' * host_U'),
+    ("U(host) * U(dev)", () -> host_U * dev_U),
+    ("U(dev) * U(host)", () -> dev_U * host_U))
 
 function report(cases)
     named = 0

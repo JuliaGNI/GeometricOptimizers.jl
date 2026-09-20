@@ -117,6 +117,52 @@ end
     @test host_Y' * host_mat isa AbstractMatrix
 end
 
+# `SymplecticStiefelManifold` carries ten of the guard sites, more than any other file, and
+# `scripts/mixed_backend_seam.jl` does not reach it: its enumeration stops at `StiefelManifold` and
+# `StiefelProjection`. So the ten are pinned here, in both argument orders, and every one of them
+# reads the point through `parent(·)` where it sits inside an `Adjoint`. A guard that read the
+# wrapper instead of the point would let a mixed pair through, and the seam script would not say so.
+#
+# The last pair is the adjoint against another adjoint, which no point satisfies dimensionally —
+# `U'` is `2n × 2N` in both slots. The guard is what it raises now, in place of the
+# `DimensionMismatch` that told a caller nothing about the backends.
+@testset "the symplectic products refuse a mixed-backend pair" begin
+    host_U = rand(SymplecticStiefelManifold{T}, N, 4)
+    dev_U = SymplecticStiefelManifold(JLArray(Matrix(host_U.A)))
+    host_small = rand(T, 4, 4)
+    dev_small = JLArray(rand(T, 4, 4))
+    host_row = rand(T, N)'
+    dev_row = JLArray(rand(T, N))'
+    host_row_small = rand(T, 4)'
+    dev_row_small = JLArray(rand(T, 4))'
+
+    @test_throws ArgumentError host_U * dev_small
+    @test_throws ArgumentError dev_U * host_small
+    @test_throws ArgumentError host_mat * dev_U
+    @test_throws ArgumentError dev_mat * host_U
+    @test_throws ArgumentError host_row * dev_U
+    @test_throws ArgumentError dev_row * host_U
+    @test_throws ArgumentError transpose(rand(T, N)) * dev_U
+    @test_throws ArgumentError host_U' * dev_mat
+    @test_throws ArgumentError dev_U' * host_mat
+    @test_throws ArgumentError host_small * dev_U'
+    @test_throws ArgumentError dev_small * host_U'
+    @test_throws ArgumentError host_row_small * dev_U'
+    @test_throws ArgumentError dev_row_small * host_U'
+    @test_throws ArgumentError transpose(rand(T, 4)) * dev_U'
+    @test_throws ArgumentError host_U' * dev_U
+    @test_throws ArgumentError host_U' * dev_U'
+
+    # and the same pairs on one backend still answer
+    @test host_U * host_small isa AbstractMatrix
+    @test host_mat * host_U isa AbstractMatrix
+    @test host_row * host_U isa Adjoint
+    @test host_U' * host_mat isa AbstractMatrix
+    @test host_small * host_U' isa AbstractMatrix
+    @test host_row_small * host_U' isa Adjoint
+    @test host_U' * host_U isa AbstractMatrix
+end
+
 # The message is the whole point of the change, so it is asserted rather than assumed: a bare
 # `ArgumentError` would satisfy every `@test_throws` above and still tell a caller nothing.
 @testset "the refusal names both operands and both backends" begin

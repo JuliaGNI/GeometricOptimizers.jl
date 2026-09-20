@@ -25,6 +25,11 @@ Base.size(A::AbstractTriangular) = (A.n, A.n)
 # what `Base`'s generic `+` returns for the pair and what `*` between the two species already
 # returns. So `+` and `-` hand a mixed species to that path rather than refusing it. Only the
 # packed-storage shortcut needs the two to agree.
+#
+# That path broadcasts through `getindex`, so it is host-only: a mixed-species pair whose storage is
+# on a device raises `Scalar indexing is disallowed` rather than returning the dense sum. The `*`
+# above is not the same in that respect -- it runs a kernel and answers on a device. A device
+# mixed-species sum therefore needs a kernel of its own, which nothing asks for yet.
 _triangular_species(A::AbstractTriangular) = Base.typename(typeof(A)).wrapper
 
 function Base.:+(A::AbstractTriangular, B::AbstractTriangular)
