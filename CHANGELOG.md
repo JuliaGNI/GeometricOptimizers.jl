@@ -218,8 +218,9 @@ breaking release).
 
   Reaching across a package boundary for a name its owner never made public is what
   `assign_columns` already was — private but unprefixed, imported as
-  `import GeometricOptimizers: assign_columns` — and it is why this one is not left private. `_cholesky_qr2` behind it stays private: it answers
-  `nothing` on a breakdown, which is a contract for the redraw above it and not one to hand a
+  `import GeometricOptimizers: assign_columns` — and it is why this one is not left
+  private. `_cholesky_qr2` behind it stays private: it answers `nothing` on a
+  breakdown, which is a contract for the redraw above it and not one to hand a
   caller.
 
 ### Fixed
