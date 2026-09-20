@@ -360,19 +360,38 @@ function _measured_𝔄(ws, algorithm)
     @allocated 𝔄(ws.B̂, ws.B̄ᵗ', algorithm)
 end
 
-@testset "the retraction of a $LT allocates the same at N = 6 and N = 60" for LT in LIFT_TYPES
-    small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 60, 3)
+# The difference across `N` and not an equality, and the tolerance is the part to read.
+#
+# The figure is not bit-reproducible on every platform. On Windows the same `Cayley` call at the two
+# sizes came back 3 671 and 3 719 bytes, and `update_section!` 3 831 and 3 815 -- 48 and 16 apart,
+# in *both* directions, so it is quantisation inside `inv`'s own allocation and not a term that
+# grows with `N`. Linux and macOS give the two sizes byte for byte. An exact equality is therefore
+# a platform lottery, which is the same lesson bit equality of generated code teaches one domain
+# over.
+#
+# **The tolerance does not weaken what is asserted**, because of the size the `large` fixture is:
+# one reintroduced `N × N` `Float64` temporary at `N = 200` is 320 000 bytes, and one `N × 2n` is
+# 9 600. The gap between those and 1 024 is what makes this a property and not a ceiling -- a
+# ceiling on the absolute figure would have to sit above 3 792 and so could hide an `N × 2n`
+# temporary entirely.
+const N_INDEPENDENCE_TOLERANCE = 1024
+
+n_independent(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
+
+@testset "the retraction of a $LT does not grow with N" for LT in LIFT_TYPES
+    small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 200, 3)
 
     # `lift_factors!` writes into buffers it was handed, so what it costs is the kernel launch that
     # densifies the lift's `A` block and nothing else -- zero for a Grassmann lift, which has none.
-    @test _measured_lift_factors(small.ws, small.B) ==
-          _measured_lift_factors(large.ws, large.B)
+    @test n_independent(_measured_lift_factors(small.ws, small.B),
+        _measured_lift_factors(large.ws, large.B))
 
     # Cayley, where everything left is the `2n × 2n` `inv`.
-    @test _measured_retraction(small.ws, Cayley(), small.B) ==
-          _measured_retraction(large.ws, Cayley(), large.B)
-    @test _measured_update_section(small.Λ₂, small.Λ, small.B, Cayley(), small.ws) ==
-          _measured_update_section(large.Λ₂, large.Λ, large.B, Cayley(), large.ws)
+    @test n_independent(_measured_retraction(small.ws, Cayley(), small.B),
+        _measured_retraction(large.ws, Cayley(), large.B))
+    @test n_independent(
+        _measured_update_section(small.Λ₂, small.Λ, small.B, Cayley(), small.ws),
+        _measured_update_section(large.Λ₂, large.Λ, large.B, Cayley(), large.ws))
 
     # The geodesic is asserted as an identity and not as N-independence, and the difference is the
     # point: `𝔄`'s own cost *does* grow with N, because `ScaledSquaring` takes its number of
@@ -436,18 +455,26 @@ function _step!(x, state, opt)
     f
 end
 
-function _measured_step(x, F, algorithm)
+# The measurement is a one-line function whose arguments are all parameters, and the optimizer is
+# built by the caller below -- the same separation the head of this file insists on, for the same
+# reason and with the same number. With the construction and the `@allocated` in one function this
+# read **16 bytes** on Julia 1.11 and 0 on 1.13, measured: one `Core.Box` the older compiler does
+# not elide. `solver_step!` itself allocates nothing on either, and neither does `trial_iterate!`
+# with a workspace, so there was nothing in `src/` to fix. The three CI jobs that caught it were
+# `min` on Linux and macOS and `1` on Windows.
+_measured_step(x, state, opt) = (_step!(x, state, opt); @allocated _step!(x, state, opt))
+
+function _euclidean_step(x, F, algorithm)
     Random.seed!(1234)
     opt = Optimizer(x, F; algorithm = algorithm, max_iterations = 10_000)
     state = OptimizerState(algorithm, x)
     initialize_state!(state)
-    _step!(x, state, opt)
 
-    @allocated _step!(x, state, opt)
+    _measured_step(x, state, opt)
 end
 
 @testset "a Euclidean iteration of $(nameof(typeof(algorithm))) allocates nothing" for algorithm in (
     BFGS(), DFP(), GradientMethod())
     x, F = vector_problem()
-    @test _measured_step(x, F, algorithm) == 0
+    @test _euclidean_step(x, F, algorithm) == 0
 end

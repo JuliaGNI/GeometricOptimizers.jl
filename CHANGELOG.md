@@ -240,16 +240,23 @@ breaking release).
   | `Geodesic` | 100 | 5 | 475 936 | 285 168 | 13 504 | 35.2 |
   | `Geodesic` | 400 | 5 | 6 692 592 | 3 996 432 | 13 504 | 496 |
 
-  **The `Cayley` column does not depend on ``N`` at all**, and that is the property rather than the
-  ratio. What it allocates is the ``2n\times{}2n`` `inv` plus the kernel launch that densifies the
-  lift's ``A`` block, so the figure moves when ``n`` moves and not when ``N`` does: 3 792 bytes at
+  **The `Cayley` column does not grow with ``N``**, and that is the property rather than the ratio.
+  What it allocates is the ``2n\times{}2n`` `inv` plus the kernel launch that densifies the lift's
+  ``A`` block, so the figure moves when ``n`` moves and not when ``N`` does: 3 792 bytes at
   ``n = 3`` at each of ``N = 6``, 20, 60 and 200, and 6 432 at ``n = 5`` at both ``N = 100`` and
   ``N = 400``. A Grassmann lift is 3 664 at ``n = 3``, having no ``A`` block and so no launch to
   pay for.
-  `test/flat_buffer_allocations.jl` asserts that equality rather than either
-  number, for the reason `test/aqua_tests.jl` gives for piracy: a reintroduced ``N\times{}N``
-  temporary makes the two sizes diverge whatever its size, where a ceiling on one of them would
-  have to be loose enough to hide it.
+
+  `test/flat_buffer_allocations.jl` asserts that property rather than any of those numbers, for the
+  reason `test/aqua_tests.jl` gives for piracy: a reintroduced ``N\times{}N`` temporary makes the
+  two sizes diverge whatever its size, where a ceiling on one of them would have to be loose enough
+  to hide it. **It asserts the difference across ``N`` under a 1 024-byte tolerance and not an
+  equality**, because the figure is bit-reproducible on Linux and macOS and not on Windows: there
+  the same `Cayley` call at ``N = 6`` and ``N = 200`` came back 3 671 and 3 719 bytes, and
+  `update_section!` 3 831 and 3 815 — 48 and 16 apart, in *both* directions, so it is quantisation
+  inside `inv`'s own allocation rather than a term that grows. The tolerance costs nothing, because
+  one reintroduced ``N\times{}N`` `Float64` temporary at ``N = 200`` is 320 000 bytes and one
+  ``N\times{}2n`` is 9 600.
 
   **`Geodesic` is not ``N``-independent and cannot be made so here.** Its residue is
   `GeometricOptimizers.𝔄`'s: `ScaledSquaring` takes its number of squarings from the norm of the
@@ -279,6 +286,16 @@ breaking release).
   *counts* are reliable here and its sizes are not — it reported 176 bytes for a ``6\times{}6``
   `Float64` identity, which holds 288 bytes of data, and its total for a step came out 8% below
   `@allocated`'s. The round trip is untouched by this change either way.
+
+  **Two things the gate itself got wrong first, and CI is what said so.** The Euclidean assertion
+  read 16 bytes on Julia 1.11 and 0 on 1.13, because its measuring function both built the optimizer
+  and held the `@allocated`: one `Core.Box` the older compiler does not elide. That is the trap the
+  head of `test/flat_buffer_allocations.jl` already documents, with the same number, and the fix is
+  its documented idiom — a one-line measuring function whose arguments are all parameters.
+  `solver_step!` allocates nothing on either version, and neither does `trial_iterate!` with a
+  workspace, so there was nothing in `src/` to change. And the cross-``N`` assertion was written as
+  an equality, which Windows falsified as described above. Three of the six matrix entries were red
+  for those two reasons and nothing else.
 
   **`NoWorkspace` is a singleton and not `nothing`, and the reason is worth keeping.** A parameter
   set's workspace is a tree walked in lockstep with its section tree, and
