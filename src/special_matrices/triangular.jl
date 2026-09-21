@@ -12,7 +12,7 @@ Base.size(A::AbstractTriangular) = (A.n, A.n)
 # `(A::AT, B::AT) where {AT <: AbstractTriangular}` these three do not dispatch for a pair whose
 # storage arrays differ -- a host `LowerTriangular{T, Vector{T}}` and a device
 # `LowerTriangular{T, JLArray{T, 1}}` are different concrete types, so `AT` cannot bind both and the
-# call reaches `Base`'s generic array `+` at `arraymath.jl:8` instead.
+# call reaches `Base`'s generic array `+` at `arraymath.jl:6` instead.
 # `copyto!(::AbstractTriangular, …)` below carries this same idiom against the same whole-type
 # binding, as does `Manifold`'s `copyto!`.
 #
@@ -141,8 +141,16 @@ end
 function racᵉˡᵉ(A::AT) where {AT <: AbstractTriangular}
     AT(sqrt.(A.S), A.n)
 end
-function /ᵉˡᵉ(A::AT, B::AT) where {AT <: AbstractTriangular}
+# Two independent arguments, for the reason `+` above gives. This one refuses a mixed species rather
+# than falling back to a dense path, as `add!` does and for the same reason: an element-wise quotient
+# of a lower by an upper divides by the zeros each keeps outside its own triangle, so there is no
+# dense answer to fall back to.
+function /ᵉˡᵉ(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) ||
+        throw(ArgumentError("/ᵉˡᵉ needs both arguments to be the same triangular species"))
+    _check_same_backend(A, B)
     AT(A.S ./ B.S, A.n)
 end
 

@@ -70,6 +70,14 @@
 # method's body verbatim, so a row vector gets exactly the answer any other matrix gets -- and gets
 # it the cheap way, since none of those bodies materializes its owned operand.
 
+# The matrix types this package owns and defines arithmetic for. It is written out rather than taken
+# from `subtypes`, because it is the list the backend guard at the foot of this file is measured
+# against and a silent change to it would change what that guard covers. `Manifold` covers the
+# Stiefel, Grassmann and symplectic Stiefel points at once; `AbstractLieAlgHorMatrix` covers both
+# horizontal lifts.
+const OwnedMatrix = Union{SkewSymMatrix, SymmetricMatrix, AbstractTriangular,
+    AbstractLieAlgHorMatrix, StiefelProjection, Manifold}
+
 function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
         B::SymplecticStiefelManifold) where {
         T, AT <: AbstractMatrix{T}}
@@ -254,6 +262,41 @@ Base.:+(E::StiefelProjection, C::StiefelLieAlgHorMatrix) = E.A + C
 Base.:+(E::StiefelProjection, F::StiefelProjection) = E.A + F
 Base.:+(A::SkewSymMatrix{T}, E::StiefelProjection{T}) where {T} = A + E.A
 Base.:+(C::StiefelLieAlgHorMatrix, E::StiefelProjection) = C + E.A
+
+# ## A difference against a plain `AbstractMatrix`
+#
+# `_check_same_backend` guards a pair only where this package owns the method. Without the three
+# below, **no owned matrix type has a `-` against a plain `AbstractMatrix` at all**, so every such
+# pair falls to `Base`'s generic `-` at `arraymath.jl:6`, which broadcasts and takes its backend from
+# the argument order: `SkewSymMatrix(host) - JLArray` answers on the device, the reversed order
+# answers on the device too, and with the structured operand on the device the pair raises
+# `Scalar indexing is disallowed`, which names neither operand.
+#
+# The three methods below close that. Each checks, then hands the pair to the same `Base` method it
+# would otherwise reach, so no same-backend call changes its value, its type or its backend. `invoke`
+# and not a plain `-`, which would re-enter them.
+#
+# Three methods and not two. `(Owned, AbstractMatrix)` and `(AbstractMatrix, Owned)` are each
+# narrower in one argument and wider in the other, so for two owned operands neither wins — the
+# standoff the head of this file describes. `(Owned, Owned)` is contained in both and separates them.
+# It is wider than every concrete same-type method above it, so `SkewSymMatrix - SkewSymMatrix`,
+# `AbstractTriangular - AbstractTriangular` and the rest keep their structure-preserving results.
+#
+# **`+` is not done the same way and is still open.** `SkewSymMatrix`, `StiefelLieAlgHorMatrix` and
+# `StiefelProjection` each already own a kernel-backed `+(X, ::AbstractMatrix)`, which is narrower in
+# the left argument than an `(AbstractMatrix, Owned)` method and wider in the right. A `Union` method
+# is wider in the slot that standoff is about, exactly as the head of this file says, so adding the
+# `+` triple makes sixteen owned pairs ambiguous — measured. Closing `+` needs a tie-breaker per pair
+# and a decision per pair about which of the two kernels answers. That is open issue A25 in
+# `CHANGELOG.md`.
+function _guarded_dense(op, A, B)
+    _check_same_backend(A, B)
+    invoke(op, Tuple{AbstractArray, AbstractArray}, A, B)
+end
+
+Base.:-(A::OwnedMatrix, B::AbstractMatrix) = _guarded_dense(-, A, B)
+Base.:-(A::AbstractMatrix, B::OwnedMatrix) = _guarded_dense(-, A, B)
+Base.:-(A::OwnedMatrix, B::OwnedMatrix) = _guarded_dense(-, A, B)
 
 function Base.vcat(E::StiefelProjection{T}, F::StiefelProjection{T}) where {T <: Number}
     vcat(E.A, F.A)

@@ -50,7 +50,9 @@ end
 # **It refuses only what it can prove.** `KernelAbstractions.get_backend` has no method for every
 # array type and *raises* rather than answering for the ones it does not cover -- a
 # `LazyArrays.ApplyArray`, which is what backs a `StiefelLieAlgHorMatrix` built over a flat parameter
-# buffer, and a `ForwardDiff.Dual` matrix, which `_match_backend` names for the same reason. Both
+# buffer, is the one this package meets. A `ForwardDiff.Dual` matrix is *not* an example: it is a
+# plain `Array`, `get_backend(::Array) = CPU()` has no element-type restriction, and
+# `get_backend(zeros(ForwardDiff.Dual{Nothing, Float64, 2}, 2, 2))` answers `CPU(false)`. Both
 # operands there are on the host and the operation is fine. So an unanswerable backend returns
 # `nothing` and the pair is let through: this guard's job is to catch a mismatch, not to require that
 # every array be placeable. Turning "I cannot tell" into a refusal rejects the host-only sums and
