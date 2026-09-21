@@ -108,6 +108,9 @@ begin
     @safetestset "Optimizer State Init         " include("optimizer_state_initialization.jl")
 end
 begin
+    @safetestset "Optimizer State Accessors    " include("optimizer_state_accessors.jl")
+end
+begin
     @safetestset "Optimizer Step Formulas      " include("optimizer_step_formulas.jl")
 end
 begin
