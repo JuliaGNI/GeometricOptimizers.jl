@@ -13,7 +13,9 @@ The [`OptimizerState`](@ref) corresponding to the [`BFGS`](@ref) method.
 - `f̄`
 - `Q`
 
-`f̄` is read with `previous_value`. There is no counterpart to `value`: this type
+`f̄` is read with `GeometricOptimizers.previous_value`, which is internal: it is neither exported nor
+`Base.ispublic`, so it resolves only under that qualified name. There is no counterpart to `value`,
+which *is* exported — this type
 holds one iterate and one objective rather than a pair, because [`update!`](@ref) writes `x̄` and `f̄`
 at the end of the iteration and the next iteration reads them as the previous ones. The objective at
 the current iterate belongs to the solve loop, which passes it to [`OptimizerStatus`](@ref) directly.

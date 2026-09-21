@@ -15,8 +15,12 @@ The optimizer state is needed to update the [`Optimizer`](@ref). This is differe
 - `f̄`
 
 The unbarred fields are the current iterate's and the barred ones the previous iterate's, as
-[`update!`](@ref) maintains them. They are read with `solution`, `gradient` and `value`, and with
-`previous_solution`, `previous_gradient` and `previous_value`.
+[`update!`](@ref) maintains them.
+
+`gradient` and `value` read `g` and `f` and are exported. The other four accessors are internal:
+they are neither exported nor `Base.ispublic`, so they resolve only under a qualified name —
+`GeometricOptimizers.solution` for `x`, `GeometricOptimizers.previous_solution` for `x̄`,
+`GeometricOptimizers.previous_gradient` for `ḡ` and `GeometricOptimizers.previous_value` for `f̄`.
 """
 mutable struct NewtonOptimizerState{T, AT, GT, GS} <: OptimizerState{T}
     iterations::Int

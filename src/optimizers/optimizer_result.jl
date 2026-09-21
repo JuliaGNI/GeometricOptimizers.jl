@@ -42,6 +42,9 @@ Serves as a diagnostic tool for the [`Optimizer`](@ref) and is the return argume
 - `solution(result)` is the point,
 - `status(result)` is the [`OptimizerStatus`](@ref), and [`trace`](@ref)`(result)` the record.
 
+`minimum` is `Base`'s. The other three are internal: `solution`, `status` and `trace` are neither
+exported nor `Base.ispublic`, so a caller writes `GeometricOptimizers.solution(result)` and so on.
+
 `minimum` and not `value`: `value` evaluates an [`OptimizerProblem`](@ref) at a point, which is a
 different question from reading a number a finished solve already holds.
 """
