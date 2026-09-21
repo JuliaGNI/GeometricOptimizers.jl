@@ -6,7 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased]
+## [0.8.0]
+
+**This release makes the host/device seam and the `LinearAlgebra` contract explicit.** An
+operation that mixes two backends is refused by name rather than answering on whichever backend
+argument order happens to pick, and the structured matrices keep the return-value contract that
+`mul!`, `copyto!` and a matrix-vector product carry everywhere else. Each item below points at its
+own entry further down, where the evidence is.
+
+### Breaking Changes
+
+- **A computation across two backends is refused by name.** Most were not refused at all before:
+  seven of twelve mixed operations returned an answer, and which backend it landed on depended on
+  the argument order. Move one operand first, with `copyto!` or `changebackend`. See *A
+  computation across two backends is refused by name* under **Fixed**.
+- **`broadcast(f, Y)` on a `Manifold` returns a plain array.** The method that rewrapped the
+  result is deleted, because the wrapper claimed an invariant the result does not hold. A caller
+  who knows the result is on the manifold writes
+  `manifold_constructor(Y)(broadcast(f, Y.A))`, which also keeps a device-backed point on the
+  device. Dot syntax never reached the deleted method and is unaffected.
+- **An allocator that names a backend refuses an element type that backend cannot hold**, rather
+  than failing later inside a kernel. Name a supported element type.
+- **`Optimizer` carries ten type parameters, against eight in 0.7.0** — one for the observer and
+  one, `WT`, for the retraction workspace, in the order
+  `Optimizer{T, ALG, OBJ, GT, HT, OCT, LST, RT, WT, OT}`. Code that spells the type out has to add
+  both, and `WT` is not last. The constructors and every accessor are unaffected.
+- **`mul!` returns its destination, `copyto!` returns its destination, and `A * b` returns a
+  vector**, for `SkewSymMatrix`, `SymmetricMatrix` and both triangulars. The first two returned
+  `nothing` and the third returned an ``n\times1`` matrix.
+- **`assign!` and `copyto!` reject a mismatched pair** instead of writing part of the destination.
+- **`SkewSymMatrix` and `SymmetricMatrix` project an integer matrix into `float(T)`**, not into
+  `Float32`. An `Int64` matrix now yields `Float64`.
+- **A point and its global section are orthonormalized with CholeskyQR2, not `LinearAlgebra.qr!`.**
+  This is what makes a draw on a device work at all, and the factor it returns differs from the
+  Householder one in the last digits. A result that depends on the exact section moves with it.
+- **`StiefelProjection`'s `N` and `n` are `Int`, not `Integer`.** They were the package's only
+  size parameters that were not.
+- **A triangular product whose operands differ in storage or element type returns a triangular**
+  where it returned a dense `Matrix`, because the method it could not reach before is the one that
+  keeps the packed form.
+- **`Newton` rejects a `Manifold` solution and a parameter set**, with a message that names the
+  method, rather than failing further in.
+- **`solve!` does not evaluate the objective a second time** at an iterate it has just evaluated.
+  An objective with side effects, or a call counter, sees one call where it saw two.
 
 ### Added
 
