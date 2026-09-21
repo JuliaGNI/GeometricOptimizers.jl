@@ -352,16 +352,111 @@ breaking release).
   ratio quoted without it cannot be re-measured, because the denominator is entirely a function of
   which operations are listed. The twenty `SymplecticStiefelManifold` pairs are the largest block,
   because that type carries ten of the guard sites, more than any other file.
+- Added `scripts/mixed_backend_plain_matrix.jl`, the second enumeration, for the case
+  `scripts/mixed_backend_seam.jl` does not reach: an owned matrix paired with a **plain**
+  `AbstractMatrix`. Its 80 cases are the ten owned types × `+` and `-` × both argument orders ×
+  the structured operand on each side, and the sweep is closed rather than hand-picked, which is
+  what lets the count be re-measured. It runs on either side of the `-` guard.
+- Added `scripts/metal_backend_refusal.jl`, the same question against a **real** Metal device rather
+  than the `JLArrays` stand-in every other figure here uses. `Float32` throughout, because Metal has
+  no `Float64`. It skips itself with a message where `Metal.functional()` is `false`, so it is
+  runnable anywhere and measures only where there is a device.
+- Added three testsets to `test/mixed_backend_refusal.jl`, which goes from 77 assertions to 118: the
+  `-` refusal against a plain matrix in both argument orders for all ten owned types, the
+  `LinearAlgebra.mul!` species and backend checks on `AbstractTriangular` — which the change that
+  added them left with no assertion at all — and `/ᵉˡᵉ`'s species, backend and differing-storage
+  cases.
 
 ### Fixed
 
+- **A structured matrix minus a plain `AbstractMatrix` crossed backends unguarded, and no owned type
+  had such a `-` at all.** The entry below states that the guard covers `-`; it covered `-` between
+  two owned operands. Against a plain `AbstractMatrix` there was no owned `-` method anywhere, so
+  every such pair fell to `Base`'s generic `-` at `arraymath.jl:6`, which broadcasts and takes its
+  backend from the argument order. `SkewSymMatrix(host) + JLArray` was refused; `SkewSymMatrix(host)
+  - JLArray` answered on the device.
+
+  Three methods in `src/ambiguities.jl` close it — `(Owned, AbstractMatrix)`,
+  `(AbstractMatrix, Owned)` and the `(Owned, Owned)` tie-breaker the first two need, over a new
+  `OwnedMatrix` union of the ten types. Each checks and then hands the pair to the same `Base`
+  method it would have reached, through `invoke`, so **no same-backend call changes its value, its
+  type or its backend**: all 98 ordered `±` pairs over the seven square owned types return the same
+  type and the same value as on `origin/main`, and the structure-preserving results
+  (`SkewSymMatrix - SkewSymMatrix`, `LowerTriangular - LowerTriangular`, `StiefelLieAlgHorMatrix -
+  StiefelLieAlgHorMatrix`) are kept by the concrete same-type methods, which stay more specific than
+  the tie-breaker.
+
+  `scripts/mixed_backend_plain_matrix.jl` is the archived check. It enumerates the 80 mixed-backend
+  pairings of the ten owned types with a plain `AbstractMatrix` — both operators, both argument
+  orders, the structured operand on each side — and runs on either tree:
+
+  | | refused by name | answered anyway | `Scalar indexing is disallowed` |
+  |:--|--:|--:|--:|
+  | before | 12 | **34** | 34 |
+  | after | **52** | 14 | 14 |
+
+  All 40 `-` cases are now refused. **The 28 that remain are `+`, and they are open issue A25**:
+  `SkewSymMatrix`, `StiefelLieAlgHorMatrix` and `StiefelProjection` each already own a kernel-backed
+  `+(X, ::AbstractMatrix)`, which is narrower in the left argument than an `(AbstractMatrix, Owned)`
+  method and wider in the right, so a `Union` method is wider in the slot that standoff is about —
+  exactly what the head of `src/ambiguities.jl` says. Adding the `+` triple makes **sixteen** owned
+  pairs ambiguous, measured, so `+` needs a tie-breaker per pair and a decision per pair about which
+  kernel answers. That is a design change and is not taken here.
+
+  `Test.detect_ambiguities(GeometricOptimizers; recursive = true)` goes from **207 to 209**. The two
+  it adds are named below. The comparison is made **inside one process**, by measuring, deleting the
+  three methods with `Base.delete_method` and measuring again — that count is a function of which
+  packages the process has loaded, so two separate `julia` runs are not comparable and a figure
+  quoted without its process is not re-measurable. The package's own gate is unmoved:
+  `test/ambiguities.jl` keeps only own-against-own pairs and still reports the two `global_rep`
+  ones it asserts.
+
+  **The two are against `StaticArrays`, and they make `-` match `+`.** `StaticArraysCore` carries
+  `-(::StaticArray, ::AbstractArray)` and its mirror, each narrower in one argument than the two
+  mixed methods above and wider in the other, so `SkewSymMatrix - SMatrix` now raises a
+  `MethodError` where it answered. `SkewSymMatrix + SMatrix` already raised it on `main`, for the
+  same standoff against the kernel-backed `+` — six methods here are of that shape — so this makes
+  the two operators agree rather than introducing an anomaly. `StaticArrays` is not a dependency of
+  this package, and `test/aqua_tests.jl:18-22` already excludes this whole class from
+  `Aqua.test_ambiguities`.
+
+  **This names a mismatch; it does not make `-` work on a device.** There is no subtraction kernel,
+  so a *same-backend* device pair still reaches the same broadcast it always did and still raises
+  `Scalar indexing is disallowed` where one operand is a structured type. Each of the three methods
+  was checked against `invoke(-, Tuple{AbstractArray, AbstractArray}, …)` directly and gives the
+  identical outcome, which is what "pass-through" means here.
+- **`/ᵉˡᵉ` on an `AbstractTriangular` kept the whole-type binding the entry below removed from `+`,
+  `-`, `add!` and `mul!`.** `/ᵉˡᵉ(A::AT, B::AT) where {AT <: AbstractTriangular}` raised a
+  `MethodError` for a same-species pair whose storage arrays were different concrete types — a
+  `LowerTriangular{T, Vector{T}}` and a `LowerTriangular{T, SubArray{…}}`. It is the fifth site of
+  that defect and takes the same fix: an independent type variable per argument, plus
+  `_triangular_species`. It **refuses** a mixed species rather than falling back to a dense path, as
+  `add!` does and for a reason of its own: an element-wise quotient of a lower by an upper divides by
+  the zeros each keeps outside its own triangle, so there is no dense answer to fall back to. It
+  carries `_check_same_backend` with it.
+- **Two source comments named a type that disproves the sentence they are in.** `src/utils.jl:53`
+  and `src/manifolds/abstract_manifold.jl:18` both cited a `ForwardDiff.Dual` matrix as a type
+  `KernelAbstractions.get_backend` cannot place. It is a plain `Array`, `get_backend(::Array)` has no
+  element-type restriction, and `get_backend(zeros(ForwardDiff.Dual{Nothing, Float64, 2}, 2, 2))`
+  answers `CPU(false)`. The `LazyArrays.ApplyArray` half of both sentences is right and is what the
+  guard's leniency actually rests on; the `Dual` half is removed from both. Nothing about the
+  behaviour of either function changes — only the justification was wrong.
+- **The `arraymath.jl` citation was off by two** and now reads `:6` in both places it appears —
+  `src/special_matrices/triangular.jl:15` and the `AbstractTriangular` entry below.
+  `-(::AbstractArray, ::AbstractArray)` is at `arraymath.jl:6` on the running 1.13 and on the 1.11
+  compat floor; `:8` is the `broadcast_preserving_zero_d` line inside its body.
 - **A computation across two backends is refused by name, and most of them were not refused at
-  all.** `_check_same_backend` guards the binary arithmetic on every owned matrix type — 48 call
-  sites across nine files, covering `+`, `-`, `add!`, `*` and `LinearAlgebra.mul!` on
+  all.** `_check_same_backend` guards the binary arithmetic wherever this package owns the method —
+  48 call sites across nine files, covering `+`, `-`, `add!`, `*` and `LinearAlgebra.mul!` on
   `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal lifts,
   `StiefelProjection`, `StiefelManifold` and `SymplecticStiefelManifold` — including the row-vector
   and adjoint product forms — plus the generic `add!` in `src/utils.jl` that every structured `add!`
   unwraps to. The message names both operand types and both backends.
+
+  **"Wherever this package owns the method" is the whole of the claim, and it is narrower than every
+  owned type.** A structured matrix paired with a *plain* `AbstractMatrix` reaches an owned method
+  only where one was written for that pair. The `-` half of that gap is closed in the entry above;
+  the `+` half is open issue A25.
 
   **The record this closes called it a message problem. It was not only that.**
   `scripts/mixed_backend_seam.jl` enumerates 48 mixed-backend operations across every guarded type
@@ -409,7 +504,7 @@ breaking release).
   differed.** All three bound one type variable to both arguments
   (`(A::AT, B::AT) where {AT <: AbstractTriangular}`), so a host `LowerTriangular{T, Vector{T}}` and
   a device `LowerTriangular{T, JLArray{T, 1}}` — already different concrete types — could not bind
-  `AT` and fell through to `Base`'s generic array `+` at `arraymath.jl:8`. **This is the same
+  `AT` and fell through to `Base`'s generic array `+` at `arraymath.jl:6`. **This is the same
   whole-type binding defect `Manifold`'s `copyto!` had**, and `copyto!(::AbstractTriangular, …)` in
   the same file already carried the fix idiom.
 
@@ -4971,6 +5066,75 @@ committed anywhere; it is a starting point, not a solution.
 
 Until this closes, the type is a geometric object with a metric, a Riemannian gradient and a global
 section — not an optimization target.
+
+---
+
+#### A25. `+` against a plain `AbstractMatrix` still crosses backends for seven of the ten owned types
+
+**Severity: medium** — it returns a value computed on a backend the caller did not choose, which is
+the class of defect `_check_same_backend` exists for. Found in the review of the PR that added that
+guard, and the `-` half of the same gap is closed in [Unreleased](#unreleased) above. **Pre-existing
+on `main`.**
+
+`scripts/mixed_backend_plain_matrix.jl` enumerates the 80 mixed-backend pairings of an owned matrix
+with a plain `AbstractMatrix`: ten types, `+` and `-`, both argument orders, the structured operand
+on each side. After the `-` fix, 52 are refused by name and 28 are not. All 28 are `+`:
+
+| type | `+` guarded | why |
+|:--|:--|:--|
+| `SkewSymMatrix` | yes | owns a kernel-backed `+(X, ::AbstractMatrix)` and its mirror |
+| `StiefelLieAlgHorMatrix` | yes | same |
+| `StiefelProjection` | yes | same |
+| `SymmetricMatrix` | **no** | no owned `+` against a plain matrix |
+| `LowerTriangular`, `UpperTriangular` | **no** | same |
+| `GrassmannLieAlgHorMatrix` | **no** | same |
+| `StiefelManifold`, `GrassmannManifold`, `SymplecticStiefelManifold` | **no** | same |
+
+Half of the 28 answer on the device and half raise `Scalar indexing is disallowed`, which names
+neither operand. Which half a pair falls in follows the argument order: with the structured operand
+on the host and the plain one on the device, `Base`'s broadcast picks the device and answers; with
+the structured operand on the device it reaches `getindex` and raises.
+
+**Why the `-` fix does not carry over.** `-` had no owned method against a plain matrix anywhere, so
+the three-method `(Owned, AbstractMatrix)` / `(AbstractMatrix, Owned)` / `(Owned, Owned)` pattern
+covers it without meeting anything. `+` has three such methods already, each kernel-backed and each
+narrower in the left argument than an `(AbstractMatrix, Owned)` method and wider in the right. A
+`Union` method is then wider in the slot the standoff is about, which is the mechanism the head of
+`src/ambiguities.jl` describes. Adding the `+` triple was measured: **sixteen** owned pairs become
+ambiguous — `SkewSym + Sym`, `SkewSym + Lower`, `Lift + Grass` and the rest — where on `main` all 98
+ordered `±` pairs answer cleanly.
+
+**What to do.** Two decisions, and the second is the substance:
+
+1. A tie-breaker per pair, in `src/ambiguities.jl`, in the shape that file already uses for `*`. The
+   count is bounded by the three types that own a `+`: one `+(X, ::OwnedMatrix)` and one
+   `+(::OwnedMatrix, X)` per type separates a whole row at a time, so it is six methods and not
+   thirty-six — but each of the three cross-pairs among `SkewSymMatrix`, `StiefelLieAlgHorMatrix`
+   and `StiefelProjection` then needs its own, and two of those exist only for matching element
+   types.
+2. **What each tie-breaker returns**, which is the same choice rules 1 and 2 at the head of
+   `src/ambiguities.jl` make for `*`. `addition_kernel!` reads its right operand through `getindex`,
+   so it runs on a device only where that operand is a plain device array: `SkewSymMatrix(dev) +
+   JLArray(dev)` answers on the device, and `SkewSymMatrix(dev) + SymmetricMatrix(dev)` raises
+   `Scalar indexing is disallowed` — measured. So a kernel path and a broadcast path are host-only in
+   the same places for an owned right operand, and the choice between them is about which type the
+   result carries rather than about device support.
+
+**Two types are outside the union and outside the sweep, and both still answer on the device.**
+Neither is fixed by adding it to `OwnedMatrix`, so each is its own small piece of work:
+
+- `Sfac`, the symplectic factor. `Sfac - JLArray` answers on the device in both argument orders.
+  Union membership alone would not guard it, because `KernelAbstractions.get_backend(::Sfac)`
+  raises, so `_check_same_backend` returns `nothing` and lets the pair through by design. It needs a
+  `get_backend` method first, and that is a statement about where an `Sfac`'s reflectors live.
+- `Adjoint{<:Manifold}`. `Y' - JLArray` answers on the device where `Y - JLArray` is refused. The
+  head of `src/ambiguities.jl` already treats `Adjoint{<:SymplecticStiefelManifold}` as a
+  participating type for `*`, so the shape is known; an `Adjoint` arm on these three methods brings
+  its own ambiguity surface and is a design decision rather than a widening.
+
+Until this closes, the accurate statement is the one the [Unreleased](#unreleased) entry now makes:
+the guard covers the binary arithmetic **wherever this package owns the method**, which for a plain
+`AbstractMatrix` on the other side is `-` on the ten union members and `+` on three of them.
 
 ---
 

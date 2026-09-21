@@ -24,7 +24,7 @@ using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular, 
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
-using LinearAlgebra: Adjoint, transpose
+using LinearAlgebra: LinearAlgebra, Adjoint, transpose
 using Random
 using Test
 
@@ -196,6 +196,100 @@ end
     dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
     @test dev_lo + dev_lo isa LowerTriangular
     @test parent(dev_lo + dev_lo) isa JLArray
+end
+
+# Without the three `-` methods in `ambiguities.jl` no owned matrix type has a `-` against a plain
+# `AbstractMatrix` at all, so every pair here falls to `Base`'s generic `-` at `arraymath.jl:6` and
+# takes its backend from the argument order. Both orders are asserted, because the unguarded answer
+# lands on whichever side comes first.
+#
+# All ten members of `OwnedMatrix` appear below, and the count is the point: a type added to that
+# union and not to this testset is a widening of the guard that nothing checks.
+#
+# `+` is **not** in this testset for seven of the ten types, and that is not an oversight: it is open
+# issue A25. The two types below that do refuse a `+` against a plain matrix are the ones whose
+# kernel-backed `+(X, ::AbstractMatrix)` carries the guard already.
+@testset "`-` against a plain matrix refuses a mixed-backend pair" begin
+    host_lo = LowerTriangular(rand(T, N, N))
+    dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
+    host_up = UpperTriangular(rand(T, N, N))
+    host_lift = rand(StiefelLieAlgHorMatrix{T}, N, n)
+    host_grass = rand(GrassmannLieAlgHorMatrix{T}, N, n)
+    host_Y = rand(StiefelManifold{T}, N, n)
+    host_G = rand(GrassmannManifold{T}, N, n)
+    host_U = rand(SymplecticStiefelManifold{T}, N, 4)
+    dev_En = JLArray(rand(T, N, n))
+    dev_wide = JLArray(rand(T, N, 4))
+    host_E = StiefelProjection(T, N, n)
+
+    for owned in (host_skew, host_sym, host_lo, host_up, host_lift, host_grass)
+        @test_throws ArgumentError owned - dev_mat
+        @test_throws ArgumentError dev_mat - owned
+    end
+    for owned in (host_Y, host_G, host_E)
+        @test_throws ArgumentError owned - dev_En
+        @test_throws ArgumentError dev_En - owned
+    end
+    @test_throws ArgumentError host_U - dev_wide
+    @test_throws ArgumentError dev_wide - host_U
+
+    # the device operand on the left is the arm that raised `Scalar indexing is disallowed` before,
+    # which named neither operand
+    @test_throws ArgumentError dev_lo - host_mat
+    @test_throws ArgumentError host_mat - dev_lo
+
+    # and the guard fires for two owned operands of different types, which is the pair the
+    # `(Owned, Owned)` tie-breaker exists for
+    @test_throws ArgumentError host_skew - SymmetricMatrix(JLArray(rand(T, N, N)))
+
+    # A same-backend difference is untouched: same value, same type, same backend. The structured
+    # results are what say the tie-breaker did not swallow the concrete same-type methods.
+    @test host_skew - host_skew isa SkewSymMatrix
+    @test host_lo - host_lo isa LowerTriangular
+    @test dev_lo - dev_lo isa LowerTriangular
+    @test parent(dev_lo - dev_lo) isa JLArray
+    @test host_skew - host_mat ≈ Matrix(host_skew) - host_mat
+    @test host_mat - host_skew ≈ host_mat - Matrix(host_skew)
+    @test host_lo - host_up ≈ Matrix(host_lo) - Matrix(host_up)
+end
+
+# `mul!(::AbstractTriangular, ::AbstractTriangular, ::Real)` and its mirror carry both a species
+# check and a backend check, and this testset is the only thing that asserts either. The third case
+# is the one the per-argument binding exists for: a destination and a source of the same species
+# whose storage arrays are different concrete types.
+@testset "the triangular `mul!` checks species, backend and storage" begin
+    host_lo = LowerTriangular(rand(T, N, N))
+    host_up = UpperTriangular(rand(T, N, N))
+    dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
+
+    @test_throws ArgumentError LinearAlgebra.mul!(host_up, host_lo, T(2))
+    @test_throws ArgumentError LinearAlgebra.mul!(host_up, T(2), host_lo)
+    @test_throws ArgumentError LinearAlgebra.mul!(dev_lo, host_lo, T(2))
+    @test_throws ArgumentError LinearAlgebra.mul!(host_lo, dev_lo, T(2))
+
+    source = LowerTriangular(rand(T, N, N))
+    destination = LowerTriangular(view(collect(source.S), :), N)
+    @test parent(destination) isa SubArray
+    @test LinearAlgebra.mul!(destination, source, T(2)) isa LowerTriangular
+    @test parent(destination) ≈ 2 .* parent(source)
+end
+
+# `/ᵉˡᵉ` binds a type variable per argument, as `+`, `-`, `add!` and `mul!` do, so a same-species
+# pair whose storage types differ reaches it rather than a `MethodError`. It refuses a mixed species
+# rather than falling back to a dense path, because an element-wise quotient of a lower by an upper
+# divides by the zeros each keeps outside its own triangle.
+@testset "`/ᵉˡᵉ` checks species, backend and storage" begin
+    host_lo = LowerTriangular(rand(T, N, N) .+ one(T))
+    host_up = UpperTriangular(rand(T, N, N) .+ one(T))
+    dev_lo = LowerTriangular(JLArray(rand(T, N, N) .+ one(T)))
+
+    @test_throws ArgumentError GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, host_up)
+    @test_throws ArgumentError GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, dev_lo)
+
+    other = LowerTriangular(view(collect(host_lo.S), :), N)
+    quotient = GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, other)
+    @test quotient isa LowerTriangular
+    @test parent(quotient) ≈ parent(host_lo) ./ parent(other)
 end
 
 # Two independent arguments and no species check would read one species' storage into the other's

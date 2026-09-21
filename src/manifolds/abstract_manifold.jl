@@ -15,8 +15,10 @@ abstract type Manifold{T} <: AbstractMatrix{T} end
 # The point's backend and not the gradient's, because the point is the parameter: it is what the
 # caller chose to put on a device and what the retraction has to write back to. A point that is not
 # on a device returns `∇L` untouched, without asking it for a backend — which is what keeps a
-# gradient `KernelAbstractions` cannot place, a `ForwardDiff.Dual` matrix among them, on the host
-# path it was always on.
+# gradient `KernelAbstractions` cannot place on the host path it was always on. A
+# `ForwardDiff.Dual` matrix is not such a gradient: it is a plain `Array` and
+# `KernelAbstractions.get_backend` answers `CPU(false)` for it. What it does keep off that path is a
+# lazy wrapper, a `LazyArrays.ApplyArray` among them, for which `get_backend` raises.
 function _match_backend(Y::Manifold, ∇L::AbstractMatrix)
     backend = KernelAbstractions.get_backend(Y)
     backend isa GPU || return ∇L
