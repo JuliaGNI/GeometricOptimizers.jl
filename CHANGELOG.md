@@ -345,6 +345,62 @@ breaking release).
   `scripts/retraction_step_allocations.jl`, so the part of the step path the workspace reaches and
   the part it does not can be read side by side. The ``\alpha = 0`` column is load-bearing and not
   decoration: it is what says the default `Backtracking` pays none of this.
+- **`value` and `previous_value` now answer for every optimizer state that holds the number.**
+  They existed for `AdamState`, `GradientState`, `MomentumState` and `ScalarMomentAdamState` and
+  raised a `MethodError` for the other two. `NewtonOptimizerState` gains both, because it carries an
+  `f` and an `f̄` field and both are already maintained. `BFGSState` — and therefore `DFPState`,
+  which is an alias for it — gains `previous_value` only.
+
+  **The asymmetry is the type's shape and not an oversight, so it is written down rather than
+  papered over.** `BFGSState` holds one iterate and one objective, not a pair: `update!` writes `x̄`
+  and `f̄` at the end of the iteration, and the next iteration reads them as the previous ones. The
+  objective at the current iterate belongs to the solve loop, which hands it to `OptimizerStatus`
+  directly and never reads it back off the state. Giving the type an `f` field would not be
+  additive — `OptimizerStatus` computes `Δf = f - state.f̄` and reads the field, not the accessor, so
+  a second slot changes what `f̄` holds when the status reads it, and with it the `Δf` that
+  `f_converged` and `f_increased` rest on. That reaches `BFGS` and `DFP`, which are one type and not
+  two; `Newton` has its own state and is untouched by it. The `BFGSState` docstring now says this.
+
+  `test/optimizer_state_accessors.jl` is the first test of either accessor: nothing under `test/`
+  called `value(::OptimizerState)` or `previous_value` before, which is why the suite was green with
+  two of the six states unable to answer. **Eight of its seventeen assertions fail on the pre-change
+  source and nine pin behaviour that already held**, each checked individually rather than as a
+  batch. Six of the eight raise a `MethodError`; the two that do not are the sharper pair — see the
+  `solution`/`gradient` entry under *Fixed*, where the old methods returned a wrong vector rather
+  than no vector. Among the nine is `isempty(methods(value, Tuple{BFGSState}))`, which keeps the
+  missing `value` method deliberate rather than a gap that grows back. It is the method table and
+  not `applicable`, because a narrower `value(::BFGSState{Float32})` leaves `!applicable` passing on
+  a `Float64` state.
+- Added `scripts/optimizer_status_delta_f.jl`, the archived check behind the paragraph above and
+  behind the `BFGSState` docstring. It asks, per optimizer method, whether the `Δf` the status
+  reports is `f[end] - f[end-1]` or `f[end] - f[end-2]`, taking the objective values from a stored
+  trace. Exact equality, so it needs no tolerance, no warm-up and no cold process.
+
+  **It reports that `Δf` spans two iterations for `GradientMethod`, `MomentumMethod` and `Adam`,
+  and one for `BFGS`, `DFP` and `Newton`.** That is a defect and it is *not* fixed here — it is
+  open issue A24 below, beside A10, which is the `ḡ` half of the same ordering. It is recorded here
+  as well because it is the reason `BFGSState` gains no `f` field. During monotone descent a
+  two-step `Δf` overstates the decrease, so `f_converged` fires late rather than early;
+  `f_increased`, which is one of the two `x_converged` guards, compares against a value two
+  iterations old. Newton's one step is an accident of the second `update!` at `optimizer.jl:431`,
+  whose own comment proposes removing it — this script is what would catch that.
+- **Two docstrings now state an answer that had to be read off the source.** `OptimizerResult`
+  listed `f` as a field and named no accessor: it gains an *Accessors* section saying that
+  `Base.minimum(result)` is the objective, `solution(result)` the point, and why the name is
+  `minimum` and not `value` — `value` evaluates an `OptimizerProblem` at a point, which is a
+  different question from reading a number a finished solve already holds. `symplectic_gram_schmidt`
+  and `symplectic_gram_schmidt!` are exported; nothing under `src/` calls either except where the
+  copying version calls the in-place form, because `sr!` builds its symplectic factor from
+  `symplectic_householder!` reflectors; the file's head comment now says
+  that this is intended and that they are the standalone entry point to the process.
+
+  The `NewtonOptimizerState` docstring listed `f̄` twice in its `# Keys` block and never listed `f`,
+  and said the type "is also used for the `BFGS` and the `DFP` optimizer", which the code
+  contradicts: `OptimizerState(::Newton, …)` returns a `NewtonOptimizerState`, `BFGS() isa Newton`
+  is `false`, and the `<: Newton` guard in `solver_step!` never fires for either. Both corrected
+  with the accessors, because that block is what a reader checks to know the fields the new methods
+  read — and the false sentence is where this entry's own first draft got the scope of `BFGSState`
+  wrong.
 - Added `scripts/mixed_backend_seam.jl`, the archived check behind the `_check_same_backend` entry
   under *Fixed*. It enumerates 48 mixed-backend operations across the owned matrix types and reports
   what each one does, and it runs on either side of that change: without the guard it counts how
@@ -355,6 +411,34 @@ breaking release).
 
 ### Fixed
 
+- **`solution` and `gradient` on a `NewtonOptimizerState` returned the previous iterate's
+  quantities.** `update!` shifts the barred fields and then writes the unbarred ones, so `x`, `g`
+  and `f` are the current iterate's and `x̄`, `ḡ` and `f̄` the previous one's. The two accessors read
+  `x̄` and `ḡ`, where the same names on all five other states read the unbarred fields, and the type
+  had no `previous_solution` or `previous_gradient` at all — so the previous quantities were
+  reachable under the current-quantity name and the current ones were not reachable at all.
+
+  **This change is public through `gradient` and qualified-name-only through `solution`**, so the
+  reach is stated plainly rather than buried. `gradient` is exported and `Base.ispublic`, so
+  `gradient(::NewtonOptimizerState)` moves a public surface and a caller reaches it after a bare
+  `using GeometricOptimizers`. `solution` is neither exported nor `Base.ispublic`, so it is reachable
+  only as `GeometricOptimizers.solution`; the same holds for the three `previous_*` names the entry
+  above adds. The direction is the same either way: code that called one of the two for the previous
+  iterate now gets the current one and wants `previous_solution` or `previous_gradient`. Nothing
+  under `src/` called either method — every
+  `solution(state)` and `gradient(state)` call site is inside a first-order manifold optimizer's own
+  `update!`, dispatching on its own concrete state type — so the in-tree blast radius was zero, and
+  the whole family is set at once rather than left half right.
+
+  The likely origin is a copy across a type boundary: both methods took a parameter named `cache`,
+  and `solution(::NewtonOptimizerCache)` is `cache.x`, which is correct there because a cache's `x`
+  means something else. Discussion of the public contract is in
+  [issue #106](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/106).
+
+  The two regression assertions are the sharpest in the new test file, because on the pre-change
+  source they returned a **wrong vector** rather than raising a `MethodError`: `solution(state)`
+  gave the previous iterate's vector and compared `false`. A missing method announces itself; a
+  wrong answer does not, which is why nothing caught this.
 - **A computation across two backends is refused by name, and most of them were not refused at
   all.** `_check_same_backend` guards the binary arithmetic on every owned matrix type — 48 call
   sites across nine files, covering `+`, `-`, `add!`, `*` and `LinearAlgebra.mul!` on
@@ -4618,6 +4702,53 @@ to the `x` it is storing. `latest_gradient` is exactly that gradient and is alre
 obstacle is that the same call site feeds the momentum recursion `p ← αp + ∇f(xₖ)`, which needs the
 *pre*-step gradient and must keep getting `gradient_array(cache)` — so the two uses have to be
 separated first, and `update!(::MomentumState, …)`'s argument list says they currently are not.
+
+---
+
+#### A24. `Δf` spans two iterations for the three first-order states
+
+**Severity: low** — it moves when convergence fires, not whether a solve is correct. Found in the
+review of the `value`/`previous_value` work in 0.6.0, and it is the `f̄` half of A10: same states,
+same root cause, `update!(state, opt, x)` running after the step. **Pre-existing on `main`.**
+
+`OptimizerStatus` computes `Δf = f - state.f̄` (`optimizer_status.jl:103`), reading the field and not
+the accessor. `scripts/optimizer_status_delta_f.jl` asks, per optimizer method, whether that `Δf`
+equals the one-step difference `f[end] - f[end-1]` or the two-step difference `f[end] - f[end-2]`,
+taking the objective values from a stored trace. Exact equality, so there is no tolerance to tune.
+On `f(x) = Σ(x⁴ + x²)` from `[1.0, 2.0, 3.0]`, six iterations:
+
+| method | `Δf` spans |
+|:--|:--|
+| `GradientMethod` | **two steps** |
+| `MomentumMethod` | **two steps** |
+| `Adam` | **two steps** |
+| `BFGS` | one step |
+| `DFP` | one step |
+| `Newton` | one step |
+
+Two consumers, both stale for the first three:
+
+- `rfₐ = norm(Δf)` and `rfᵣ = rfₐ / norm(f)` (`optimizer_status.jl:109-110`), which are what
+  `f_converged` tests (`:397`). During monotone descent a two-step `Δf` overstates the decrease, so
+  `f_converged` fires late rather than early — the safe direction, which is why this is low and not
+  medium.
+- `f_increased = f > state.f̄` (`:130`), which reads the same stale field and is one of the two
+  guards on `x_converged` (`:391`). Here the comparison is against an objective two iterations old,
+  so an iterate that rose against its immediate predecessor can still read as a decrease.
+
+`BFGSState` holds one iterate and one objective rather than a pair, which is why it spans one step
+and why it gains `previous_value` and no `value` in 0.6.0. `NewtonOptimizerState` holds a pair and
+shifts like the first-order states, and still spans one step only because `optimizer.jl:431` calls
+`update!` a second time inside `solver_step!` and re-synchronises `f̄` before the status reads it.
+That line carries the comment `# this will have to be removed later`; removing it moves `Newton`
+into the two-step column, and the script is what would catch that.
+
+**What to do.** The fix is the one A10 names, one level up: `update!(state, opt, x)` should store the
+objective and the gradient that belong to the `x` it is storing. It cannot be taken for `f̄` alone,
+because `f_increased` and `Δf` read the same field and would move together, and because
+`INITIAL_BFGS_F` — the first-iteration sentinel `optimizer_status.jl:124-129` describes — is
+calibrated against the present ordering. Settle it with A10 and with issue #108, which is the third
+face of the same ordering: a state read after `solve!` returns lags the returned iterate by one.
 
 ---
 

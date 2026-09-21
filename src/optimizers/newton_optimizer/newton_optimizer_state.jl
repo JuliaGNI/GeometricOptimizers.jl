@@ -5,16 +5,22 @@
 
 The optimizer state is needed to update the [`Optimizer`](@ref). This is different from [`OptimizerStatus`](@ref) and [`OptimizerResult`](@ref) which serve as diagnostic tools.
 
-We note that this is also used for the [`BFGS`](@ref) and the [`DFP`](@ref) optimizer.
-
 # Keys
 
 - `x`
 - `x̄`
 - `g`
 - `ḡ`
+- `f`
 - `f̄`
-- `f̄`
+
+The unbarred fields are the current iterate's and the barred ones the previous iterate's, as
+[`update!`](@ref) maintains them.
+
+`gradient` and `value` read `g` and `f` and are exported. The other four accessors are internal:
+they are neither exported nor `Base.ispublic`, so they resolve only under a qualified name —
+`GeometricOptimizers.solution` for `x`, `GeometricOptimizers.previous_solution` for `x̄`,
+`GeometricOptimizers.previous_gradient` for `ḡ` and `GeometricOptimizers.previous_value` for `f̄`.
 """
 mutable struct NewtonOptimizerState{T, AT, GT, GS} <: OptimizerState{T}
     iterations::Int
@@ -79,8 +85,15 @@ function update!(state::NewtonOptimizerState{T}, x::AbstractVector{T}, g::Abstra
     section(state).Y .= x
 end
 
-solution(cache::NewtonOptimizerState) = cache.x̄
-gradient(cache::NewtonOptimizerState) = cache.ḡ
+# The unbarred field is the current iterate's, which is what the unbarred accessor name means on
+# every other `OptimizerState`. `NewtonOptimizerCache` is a separate type whose `x` means something
+# else, so `solution(::NewtonOptimizerCache)` is `cache.x` and does not carry over to the state.
+solution(state::NewtonOptimizerState) = state.x
+previous_solution(state::NewtonOptimizerState) = state.x̄
+gradient(state::NewtonOptimizerState) = state.g
+previous_gradient(state::NewtonOptimizerState) = state.ḡ
+value(state::NewtonOptimizerState) = state.f
+previous_value(state::NewtonOptimizerState) = state.f̄
 
 """
     update!(state::NewtonOptimizerState, gradient, x)

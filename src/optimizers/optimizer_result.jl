@@ -36,6 +36,17 @@ Serves as a diagnostic tool for the [`Optimizer`](@ref) and is the return argume
 - `trace`: one [`OptimizerTraceEntry`](@ref) per iteration if `Options.store_trace` was set, and
   empty otherwise. See [`trace`](@ref).
 
+# Accessors
+
+- `Base.minimum(result)` is the objective at the solution, i.e. the `f` field,
+- `solution(result)` is the point,
+- `status(result)` is the [`OptimizerStatus`](@ref), and [`trace`](@ref)`(result)` the record.
+
+`minimum` is `Base`'s. The other three are internal: `solution`, `status` and `trace` are neither
+exported nor `Base.ispublic`, so a caller writes `GeometricOptimizers.solution(result)` and so on.
+
+`minimum` and not `value`: `value` evaluates an [`OptimizerProblem`](@ref) at a point, which is a
+different question from reading a number a finished solve already holds.
 """
 mutable struct OptimizerResult{T, YT, VT, OST <: OptimizerStatus{T, YT}}
     status::OST
