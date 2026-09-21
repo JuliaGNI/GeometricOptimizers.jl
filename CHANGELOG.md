@@ -1367,6 +1367,103 @@ breaking release).
   beside it takes eighteen products against a rectangular `E`, where only one order and one operand
   conform at all, and covers all fifteen of the projection's own tie-breakers plus the
   triangular-times-projection one that the triangular block carries.
+- **`AbstractLieAlgHorMatrix` — the two horizontal lifts, `StiefelLieAlgHorMatrix` and
+  `GrassmannLieAlgHorMatrix` — multiplies without scalar indexing, so a lift times matrix product
+  on a device-backed point now runs end to end.** Both lifts hold no kernel of their own; a lift is
+  the block matrix `[A -Bᵀ; B 𝕆]` with the `A` block absent for a Grassmann lift, and `A` is a
+  `SkewSymMatrix` for a Stiefel lift. The per-type part is the first `n` rows, written in a
+  `_hor_top_rows` method beside each concrete lift; everything else is one method on the shared
+  supertype. So a product against an `N × m` matrix is three block products — two for a Grassmann
+  lift — and nothing else.
+
+  Six new methods in `src/lie_algebras/abstract_lie_algebra_horizontal.jl`: `*(lift,
+  ::AbstractMatrix)`, `*(::AbstractMatrix, lift)`, two row-vector methods (`Adjoint` and
+  `Transpose` of a vector on the left), `*(lift, ::AbstractVector)`, and `*(lift, lift)`. The
+  row-vector pair resolves an ambiguity with `LinearAlgebra`'s narrower methods, exactly as the
+  pair the projection needed in the entry above.
+
+  **`transpose` and not `adjoint`, in both halves of the change:** `getindex` builds the
+  off-diagonal block as `-B.B[j - n, i]`, entrywise and without conjugating, so a lift is
+  skew-*symmetric* rather than skew-Hermitian. With `adjoint` the product disagrees with the
+  dense product on a complex element type and agrees on a real one — the difference no real-path
+  test can see. `test/lie_algebras/grassmann_lie_algebra_horizontal.jl` pins it on a complex
+  draw, matching the existing testset for `+` in the Stiefel file.
+
+  **Nineteen tie-breakers join `src/ambiguities.jl`.** A `*` against a bare `AbstractMatrix` on
+  both sides puts each of the two lifts in a standoff with every other owned type twice over.
+  Nineteen and not twenty-two because `Adjoint{<:StiefelManifold}` multiplies on the left of a
+  bare `AbstractMatrix` and not on the right, so it meets a lift once; `GrassmannManifold`
+  defines no such `*` at all and meets it not at all. No new kind of pair and no new rule: a lift
+  computes, so under rule 2 it materializes whatever is to its right unless that operand is a
+  wrapper, and under rule 1 a wrapper to either side unwraps. `test/ambiguities.jl` asserts the
+  own-vs-own set is empty, so the count is a consequence rather than something to remember.
+
+  Both lifts join the `LEFT` and `RIGHT` lists of that file's product sweep, which takes it from
+  110 products to 156, and both join the rectangular sweep, which goes from 18 products to 22. A
+  type listed on one side only leaves its own tie-breakers unexercised. That file's header
+  sentence that said the two horizontal lifts "define no `*` against a matrix at all" is corrected;
+  `AbstractLieAlgHorMatrix` joins the row-vector table there.
+
+  Measured on `JLArrays` under `allowscalar(false)` in `Float32`, at `N, n = 6, 3`, with the
+  lift built the way the retractions build one — `global_rep(GlobalSection(Y), rgrad(Y, ...))` for
+  the Stiefel device lift; the Grassmann device lift is constructed directly from a `JLArray`.
+  Lift times matrix, matrix times lift, lift times vector and lift times `StiefelProjection`
+  all complete and agree with the host dense form. The other order comes
+  back a `Transpose` around a `JLArray` and not a bare `JLArray`: `LinearAlgebra` pushes the
+  unary minus through the wrapper rather than materializing, so the outer `transpose` stays lazy.
+  That is the same shape `*(::AbstractMatrix, ::SkewSymMatrix)` has always returned, and `parent`
+  is what the test asserts on. Each of those four products, on both lift types where both apply,
+  raises `Scalar indexing is disallowed` on the exact path the new methods shadow, checked one at
+  a time through `invoke(*, Tuple{AbstractMatrix, AbstractMatrix}, ...)` in one process. So each
+  new assertion is a real check and not one that passes by construction.
+
+  Host cost — measured on the expression `B * C`, with `B = rand(LT{Float64}, N, N ÷ 2)` for each
+  of the two lift types and `C = rand(Float64, N, N ÷ 2)`, against the path that very method
+  shadows. The baseline is reached with `invoke(*, Tuple{AbstractMatrix, AbstractMatrix}, B, C)`,
+  so it is that method in the same process and not a reimplementation of it and not a second
+  checkout. **Five runs, each a separate cold process**, BLAS pinned to **one thread** with
+  `BLAS.set_num_threads(1)` — the thread count decides this ratio outright, because the new path
+  reaches BLAS and the baseline cannot. Within a run, the median of 201 samples up to `N = 32` and
+  31 above it, with enough calls folded into each sample that the 42 ns clock tick is below the
+  noise. Script: `scripts/lift_multiply_cost.jl`. Median of the five run medians, and the full
+  spread across them:
+
+  | | `N = 6` | `N = 32` | `N = 128` | `N = 512` |
+  |:--|--:|--:|--:|--:|
+  | `StiefelLieAlgHorMatrix`, block ÷ generic | **0.36x** | 2.12x | 2.79x | 2.74x |
+  | spread over five cold runs | 0.30–0.37 | 2.04–2.26 | 2.66–2.94 | 2.70–2.79 |
+  | `GrassmannLieAlgHorMatrix`, block ÷ generic | **0.74x** | 6.37x | 14.04x | 17.86x |
+  | spread over five cold runs | 0.72–0.80 | 5.87–6.80 | 13.11–14.53 | 17.21–18.36 |
+
+  **The column is not monotone in `N`, and two of its entries cannot be ordered against each
+  other.** The Stiefel row rises and then flattens: its `N = 128` and `N = 512` spreads overlap
+  (2.66–2.94 against 2.70–2.79), so those two sizes are indistinguishable here and only the
+  direction — both a little under 3x — is a result. The Grassmann row does rise across every step
+  and its top two spreads do not overlap. Read every cell as its band; `0.36x` and `17.86x` are
+  both real, and the arithmetic that would predict a single factor from the stored-entry count
+  predicts neither. `scripts/triangular_multiply_cost.jl` records what happened the last time such
+  a counting argument was published for these types.
+
+  **The reason for the large-`N` gain is mechanical and not a better algorithm.** The block path
+  hands its off-diagonal products to BLAS; the baseline cannot use BLAS at all, because a lift is
+  not a `StridedArray` and `invoke` therefore reaches `generic_matmatmul!`. That is the whole of
+  it, and it is why the Grassmann row — one BLAS product against a full `generic_matmatmul!` —
+  runs so far ahead of the Stiefel one. **At `N = 6` both are slower, and the Stiefel lift is
+  about 2.8x slower.** Its `A` block goes through the `SkewSymMatrix` product, which is a
+  `KernelAbstractions` launch with a fixed cost a 3×3 block cannot amortize. The Grassmann lift
+  has no `A` block and loses only a little. `N = 6` is the size the retraction tests use.
+
+  **The block path also allocates more, at every size.** Bytes, block against generic: Stiefel
+  1 024 / 224 at `N = 6`, 12 912 / 4 176 at 32, 197 232 / 65 616 at 128, 3 146 352 / 1 048 656
+  at 512; Grassmann 656 / 224, 10 560 / 4 176, 164 160 / 65 616, 2 621 760 / 1 048 656. Between
+  2.5x and 4.6x, from the intermediate each block product returns. Identical across all five
+  runs.
+
+  **This is API surface and not a defect repair, and nothing in the package pays the small-`N`
+  cost.** After `geodesic` and `cayley` on both a `StiefelManifold` and a `GrassmannManifold`,
+  all six new `*` methods have zero specializations — measured with `Base.specializations` in a cold
+  process. The retractions form `expB * E` with a dense `expB`, so they never reach a lift
+  product. The device is what this buys.
 - **A manifold point and its global section are orthonormalized with CholeskyQR2 rather than
   `LinearAlgebra.qr!`, on every backend.** `rand(backend, StiefelManifold, N, n)` and
   `global_section` are the four call sites. This is what makes a device draw work at all:
