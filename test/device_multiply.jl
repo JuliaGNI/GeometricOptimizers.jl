@@ -1,12 +1,14 @@
 # Products involving this package's own wrapper matrices, on a device backend.
 #
-# Two families reach the generic `AbstractMatrix` product unless a method stops them, and the
+# Three families reach the generic `AbstractMatrix` product unless a method stops them, and the
 # generic product asks its argument for one entry at a time. That is scalar indexing, which no
 # device array serves.
 #
 #   * the two `AbstractTriangular`s, which hold a packed storage vector and manufacture the rest of
 #     the matrix in `getindex`;
-#   * `StiefelProjection`, which holds an ordinary array and only has to be unwrapped.
+#   * `StiefelProjection`, which holds an ordinary array and only has to be unwrapped;
+#   * the two `AbstractLieAlgHorMatrix`es, which hold ordinary blocks and assemble the ambient
+#     `N × N` matrix in `getindex`.
 #
 # The second is what stops a retraction: `geodesic(Y, Δ)` and `cayley(Y, Δ)` each take one product
 # against the projection — `expB * E` and `cayleyB * E` — with `E` built from the horizontal lift
@@ -17,11 +19,11 @@
 # index on a `JLArray` merely warns. `JLArrays` stands in for the device, as it does in
 # `similar_backend.jl` and `gradient_backend.jl`.
 #
-# The file holds two kinds of assertion, and they are not interchangeable. The five "runs on the
+# The file holds two kinds of assertion, and they are not interchangeable. The seven "runs on the
 # device" testsets each assert a product that the methods under test make reachable: strip those
-# methods and every one of them raises `Scalar indexing is disallowed`. The two `@test_throws`
-# testsets assert the opposite — they pin where the device path stops, and each limit they pin
-# belongs to `JLArrays` or to `AbstractLieAlgHorMatrix` rather than to the products here.
+# methods and every one of them raises `Scalar indexing is disallowed`. The one `@test_throws`
+# testset asserts the opposite — it pins where the device path stops, and the limit it pins belongs
+# to `JLArrays` rather than to the products here.
 
 using GeometricOptimizers
 using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular, check,
@@ -144,15 +146,58 @@ end
     @test_throws "Scalar indexing is disallowed" cayley(Y, Δ / 100)
 end
 
-@testset "a lift times a StiefelProjection is still host-only, for a reason of its own" begin
-    # `B * E` with `B` a horizontal lift is a *third* wrapper meeting the same class of gap: an
-    # `AbstractLieAlgHorMatrix` has `getindex` and no kernel-backed `*` either, so unwrapping the
-    # projection only moves the scalar index one frame in. The gap is left open rather than widened
-    # into, because nothing under `src/` takes this product: the retractions form `expB * E` with a
-    # dense `expB`, which is the testset above.
-    Y = rand(device, StiefelManifold, N, n)
-    B = global_rep(GlobalSection(Y), rgrad(Y, JLArray(rand(T, N, n))))
+# A lift on a device, built the way the retractions build one: `global_rep` of a Riemannian gradient
+# at a device-backed point. The blocks then carry the point's backend, which is what the products
+# below run on.
+device_lift(Y) = global_rep(GlobalSection(Y), rgrad(Y, JLArray(rand(T, N, n))))
+
+# The host twin of a device lift, block by block. `Matrix(B)` would scalar-index `B`, so the dense
+# form each assertion below compares against has to be built on the host first.
+function host_lift(B::StiefelLieAlgHorMatrix)
+    Matrix{T}(StiefelLieAlgHorMatrix(
+        SkewSymMatrix(Array(B.A.S), B.A.n), Array(B.B), B.N, B.n))
+end
+function host_lift(B::GrassmannLieAlgHorMatrix)
+    Matrix{T}(GrassmannLieAlgHorMatrix(
+        Array(B.B), B.N, B.n))
+end
+
+@testset "a horizontal lift times a matrix runs on the device" begin
+    # This is the third wrapper meeting the same gap the two above meet: an
+    # `AbstractLieAlgHorMatrix` assembles its ambient `N × N` matrix in `getindex` too. It needs no
+    # kernel, unlike the triangulars — it holds ordinary blocks, and the `A` block of a Stiefel lift
+    # is a `SkewSymMatrix`, which carries a kernel-backed product of its own.
+    for B in (device_lift(rand(device, StiefelManifold, N, n)),
+        GrassmannLieAlgHorMatrix(JLArray(rand(T, N - n, n)), N, n))
+        D = host_lift(B)
+        C = JLArray(rand(T, N, n))
+
+        @test B * C isa JLArray{T, 2}
+        @test size(B * C) == (N, n)
+        @test Array(B * C) ≈ D * Array(C)
+
+        # The other order, which is `-transpose(B * transpose(C))` on `Bᵀ = -B`. It comes back a
+        # `Transpose` around a `JLArray` and not a `JLArray`: `LinearAlgebra` pushes a unary minus
+        # through the wrapper rather than materializing, so the outer `transpose` stays lazy. That
+        # is on the device, which is what this file is about, and it is the shape
+        # `*(::AbstractMatrix, ::SkewSymMatrix)` returns as well — `parent` is what to assert on,
+        # exactly as in the triangular testset above.
+        @test parent(C' * B) isa JLArray{T, 2}
+        @test Array(C' * B) ≈ Array(C)' * D
+
+        c = JLArray(rand(T, N))
+        @test B * c isa JLArray{T, 1}
+        @test Array(B * c) ≈ D * Array(c)
+    end
+end
+
+@testset "a horizontal lift times a StiefelProjection runs on the device" begin
+    # `B * E` unwraps the projection and hands the lift a bare array, so unwrapping alone moves the
+    # scalar index one frame in rather than removing it. This is the assertion that says the gap is
+    # shut and not moved.
+    B = device_lift(rand(device, StiefelManifold, N, n))
     E = StiefelProjection(B)
 
-    @test_throws "Scalar indexing is disallowed" B * E
+    @test B * E isa JLArray{T, 2}
+    @test Array(B * E) ≈ host_lift(B) * Matrix{T}(StiefelProjection(N, n, T))
 end

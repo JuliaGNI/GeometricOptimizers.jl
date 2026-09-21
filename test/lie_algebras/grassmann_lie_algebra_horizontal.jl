@@ -124,3 +124,70 @@ end
         end
     end
 end
+
+# `*` is the other method on the shared supertype, and it is there for the same reason `one` above
+# is: the generic `AbstractMatrix` product asks the lift for one entry at a time, which no device
+# array serves. It takes the product on the stored blocks instead. The answer has to be the one the
+# ambient matrix gives, and that is what the dense form on the right of each assertion says --
+# `_hor_top_rows` is written per lift type, and the `GrassmannLieAlgHorMatrix` method ignores the
+# argument the `StiefelLieAlgHorMatrix` one multiplies its `A` block against.
+#
+# `N × m` with `m ≠ N` on the right, and its transpose on the left, because a square operand cannot
+# see an operand dropped or the product taken the other way round.
+@testset "a product of a horizontal lift reads the blocks" begin
+    for T in (Float32, Float64), N in 3:6, n in 1:(N - 1)
+        m = max(1, N - 2)
+
+        for B in lifts(T, N, n)
+            D = Matrix{T}(B)
+            C = rand(T, N, m)
+            v = rand(T, N)
+
+            @test B * C ≈ D * C
+            @test transpose(C) * B ≈ transpose(C) * D
+            @test B * v ≈ D * v
+            @test transpose(v) * B ≈ transpose(v) * D
+            @test v' * B ≈ v' * D
+
+            @test eltype(B * C) == T
+            @test size(B * C) == (N, m)
+            @test B * v isa AbstractVector
+        end
+
+        # two lifts: the standoff the two methods above create between themselves
+        B₁, B₂ = lifts(T, N, n)
+        @test B₁ * B₂ ≈ Matrix{T}(B₁) * Matrix{T}(B₂)
+        @test B₂ * B₁ ≈ Matrix{T}(B₂) * Matrix{T}(B₁)
+    end
+end
+
+# `getindex` builds the upper-right block as `-B.B[j - n, i]`, entrywise and without conjugating,
+# so a lift is skew-*symmetric* rather than skew-Hermitian. Both halves of the product spell that
+# with `transpose` for that reason: `_hor_top_rows` forms `-(transpose(B.B) * C₂)`, and
+# `*(::AbstractMatrix, ::AbstractLieAlgHorMatrix)` is `-transpose(B * transpose(C))` on the
+# identity `Bᵀ = -B`. With `adjoint` in either place the product disagrees with the dense product on
+# a complex element type and agrees on a real one -- the difference the loop above cannot see. See
+# the matching testset for `+` in `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`.
+@testset "the product stays a transpose on a complex element type" begin
+    lifts_c = (
+        StiefelLieAlgHorMatrix(
+            SkewSymMatrix(randn(ComplexF64, 2, 2)), randn(ComplexF64, 2, 2), 4, 2),
+        GrassmannLieAlgHorMatrix(randn(ComplexF64, 2, 2), 4, 2))
+    C = randn(ComplexF64, 4, 3)
+    v = randn(ComplexF64, 4)
+
+    for B in lifts_c
+        D = Matrix(B)
+
+        @test transpose(D) == -D
+        @test B * C ≈ D * C
+        @test transpose(C) * B ≈ transpose(C) * D
+        @test C' * B ≈ C' * D
+        @test B * v ≈ D * v
+
+        # the two row-vector methods, which the matrix products above do not reach: `C'` is a
+        # `3 × 4` matrix, so it dispatches to `*(::AbstractMatrix, ::AbstractLieAlgHorMatrix)`
+        @test v' * B ≈ v' * D
+        @test transpose(v) * B ≈ transpose(v) * D
+    end
+end

@@ -198,6 +198,23 @@ Base.:+(A::SkewSymMatrix{T}, C::StiefelLieAlgHorMatrix{T}) where {T} = C + A
 
 Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
 
+# The first `n` rows of `B * C`, which is the one part of the product that differs between the two
+# lifts. This lift's top row of blocks is `[A  -Bᵀ]`, so both blocks contribute; the docstring on
+# `*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)` in `abstract_lie_algebra_horizontal.jl` says why
+# the product needs a method at all.
+#
+# `transpose` and not `adjoint`, for the reason the comment on `+(::StiefelLieAlgHorMatrix,
+# ::AbstractMatrix)` above gives: `getindex` builds that block as `-B.B[j - n, i]`, entrywise and
+# without conjugating, so the product has to spell it the same way or the two disagree on a complex
+# element type.
+#
+# The minus stays outside the product rather than moving onto the transpose, which is
+# arithmetically the same and cheaper: `transpose(B.B)` is a lazy wrapper that feeds straight into
+# the product, where `-transpose(B.B)` materializes a whole second `n × (N - n)` block first. The
+# comment on `*(::AbstractMatrix, ::SkewSymMatrix)` in `special_matrices/skew_symmetric.jl`
+# measures that difference for the case it is written about.
+_hor_top_rows(B::StiefelLieAlgHorMatrix, C₁, C₂) = B.A * C₁ - transpose(B.B) * C₂
+
 function Base.zeros(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     StiefelLieAlgHorMatrix(
         zeros(SkewSymMatrix{T}, n),

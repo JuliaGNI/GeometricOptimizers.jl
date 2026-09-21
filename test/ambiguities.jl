@@ -46,10 +46,11 @@ end
 # every tie-breaker in `src/ambiguities.jl` is written to give.
 const N = 6
 
-# `StiefelProjection` and `U'` appear on both sides, and the two triangulars on the left, because
-# each of them multiplies against a bare `AbstractMatrix` and so takes part in a standoff with every
-# other type here. A type that appears on one side only leaves its own tie-breakers unexercised: the
-# sweep is `LEFT × RIGHT`, so a pair is checked exactly when one of its operands is in each list.
+# `StiefelProjection`, `U'`, the two triangulars and the two horizontal lifts appear on both sides,
+# because each of them multiplies against a bare `AbstractMatrix` on both sides and so takes part
+# in a standoff with every other type here. A type that appears on one side only leaves
+# its own tie-breakers unexercised: the sweep is `LEFT × RIGHT`, so a pair is checked exactly when
+# one of its operands is in each list.
 # `detect_ambiguities` above shows those pairs are *separated*; only this sweep shows the right
 # answer comes back, and a tie-breaker that dropped a `.parent` would compile and resolve.
 const LEFT = let
@@ -65,7 +66,9 @@ const LEFT = let
         "LowerTriangular" => rand(LowerTriangular{Float64}, N),
         "UpperTriangular" => rand(UpperTriangular{Float64}, N),
         "SkewSym" => rand(SkewSymMatrix, N),
-        "Sym" => rand(SymmetricMatrix, N)]
+        "Sym" => rand(SymmetricMatrix, N),
+        "StiefelHor" => rand(StiefelLieAlgHorMatrix, N, N ÷ 2),
+        "GrassmannHor" => rand(GrassmannLieAlgHorMatrix, N, N ÷ 2)]
 end
 
 const RIGHT = let
@@ -79,7 +82,9 @@ const RIGHT = let
         "LowerTriangular" => rand(LowerTriangular{Float64}, N),
         "UpperTriangular" => rand(UpperTriangular{Float64}, N),
         "SkewSym" => rand(SkewSymMatrix, N),
-        "Sym" => rand(SymmetricMatrix, N)]
+        "Sym" => rand(SymmetricMatrix, N),
+        "StiefelHor" => rand(StiefelLieAlgHorMatrix, N, N ÷ 2),
+        "GrassmannHor" => rand(GrassmannLieAlgHorMatrix, N, N ÷ 2)]
 end
 
 # The sweep is `LEFT × RIGHT`, so every operand in it has to be square — and a square
@@ -102,7 +107,9 @@ const RECT_LEFT = let
         "LowerTriangular" => rand(LowerTriangular{Float64}, N),
         "UpperTriangular" => rand(UpperTriangular{Float64}, N),
         "SkewSym" => rand(SkewSymMatrix, N),
-        "Sym" => rand(SymmetricMatrix, N)]
+        "Sym" => rand(SymmetricMatrix, N),
+        "StiefelHor" => rand(StiefelLieAlgHorMatrix, N, N ÷ 2),
+        "GrassmannHor" => rand(GrassmannLieAlgHorMatrix, N, N ÷ 2)]
 end
 
 const RECT_RIGHT = let
@@ -115,7 +122,9 @@ const RECT_RIGHT = let
         "LowerTriangular" => rand(LowerTriangular{Float64}, SHORT),
         "UpperTriangular" => rand(UpperTriangular{Float64}, SHORT),
         "SkewSym" => rand(SkewSymMatrix, SHORT),
-        "Sym" => rand(SymmetricMatrix, SHORT)]
+        "Sym" => rand(SymmetricMatrix, SHORT),
+        "StiefelHor" => rand(StiefelLieAlgHorMatrix, SHORT, 1),
+        "GrassmannHor" => rand(GrassmannLieAlgHorMatrix, SHORT, 1)]
 end
 
 @testset "a rectangular StiefelProjection keeps its operands in order" begin

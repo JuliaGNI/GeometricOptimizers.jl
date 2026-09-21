@@ -92,3 +92,75 @@ recorded for [`GeometricOptimizers.𝔄`](@ref), whose argument is a bare matrix
 function Base.one(B::AbstractLieAlgHorMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(B), T, B.N)
 end
+
+@doc raw"""
+    *(B::AbstractLieAlgHorMatrix, C::AbstractMatrix)
+    *(C::AbstractMatrix, B::AbstractLieAlgHorMatrix)
+    *(B::AbstractLieAlgHorMatrix, c::AbstractVector)
+
+The product, taken on the stored blocks rather than through `getindex`.
+
+Without these the product falls through to the generic `AbstractMatrix` path, which asks the lift
+for one entry at a time. That is scalar indexing, so it **cannot run on a device at all** — the
+third wrapper in this package to meet that gap, after [`StiefelProjection`](@ref) and the two
+[`GeometricOptimizers.AbstractTriangular`](@ref)s.
+
+A lift is block ``\begin{pmatrix} A & -B^T \\ B & \mathbb{O} \end{pmatrix}``, with ``A`` absent for
+a [`GrassmannLieAlgHorMatrix`](@ref), so the product against an ``N\times{}m`` matrix is three
+block products — two for a Grassmann lift — and nothing else. **No kernel is needed and none is
+written**, which is where this differs from the triangulars: those hold a packed vector their
+`getindex` unpacks, while a lift holds ordinary blocks and a [`SkewSymMatrix`](@ref) that already
+carries a kernel-backed product of its own. The per-type part is the first ``n`` rows,
+`_hor_top_rows`, beside each concrete lift.
+
+`*(C, B)` is written `-transpose(B * transpose(C))`, on the identity ``B^T = -B``; the vector form
+goes through the matrix one as a single column. `transpose` and not `adjoint` wherever one appears,
+for the reason the comment on `*(::AbstractMatrix, ::SkewSymMatrix)` in
+`special_matrices/skew_symmetric.jl` gives at length: the identity is a statement about the
+transpose, and `getindex` builds the off-diagonal blocks entrywise without conjugating. The two
+agree on a real element type and disagree on a complex one.
+"""
+function Base.:*(B::AbstractLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
+    @assert B.N == size(C, 1)
+    _check_same_backend(B, C)
+    backend = KernelAbstractions.get_backend(B)
+
+    D = KernelAbstractions.allocate(backend, T, B.N, size(C, 2))
+    C₁ = @view C[1:(B.n), :]
+    C₂ = @view C[(B.n + 1):(B.N), :]
+    @views D[1:(B.n), :] .= _hor_top_rows(B, C₁, C₂)
+    @views D[(B.n + 1):(B.N), :] .= B.B * C₁
+    D
+end
+
+function Base.:*(C::AbstractMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T}
+    -transpose(B * transpose(C))
+end
+
+# A row vector on the left is the one shape the method above leaves unsettled: it stands off against
+# `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
+# `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
+# vector gets the answer that method gives every other matrix, and gets it the same cheap way:
+# `transpose(x)` is one column, which reaches the block products as a single column instead of
+# materializing the lift. One pair covers both lifts, because the method above is written on
+# `AbstractLieAlgHorMatrix` too.
+function Base.:*(x::Adjoint{T, <:AbstractVector}, B::AbstractLieAlgHorMatrix{T}) where {T}
+    -transpose(B * transpose(x))
+end
+function Base.:*(x::Transpose{T, <:AbstractVector}, B::AbstractLieAlgHorMatrix{T}) where {T}
+    -transpose(B * transpose(x))
+end
+
+# see the comment on `*(::SkewSymMatrix, ::AbstractVector)`: the vector goes through the
+# matrix--matrix path as a single column, and the `N × 1` result is reshaped back to a vector
+function Base.:*(B::AbstractLieAlgHorMatrix, c::AbstractVector{T}) where {T}
+    vec(B * reshape(c, length(c), 1))
+end
+
+# Two lifts are the standoff the two methods above create between themselves, and rule 2 in
+# `src/ambiguities.jl` decides it: the right-hand operand is materialized, spelled `B₂ * one(B₂)` as
+# the triangulars and the symmetric matrices already spell it. The result is dense, as every
+# tie-breaker's is.
+function Base.:*(B₁::AbstractLieAlgHorMatrix{T}, B₂::AbstractLieAlgHorMatrix{T}) where {T}
+    B₁ * (B₂ * one(B₂))
+end

@@ -16,9 +16,10 @@
 #     an ordinary array, and the method being bypassed on that side would have done nothing but
 #     unwrap it. So unwrap it here and hand the result to the other operand's method: the answer is
 #     then whatever that method gives for a plain array, which is what the wrapper stood for.
-#  2. Where both operands compute — the two kernel-backed matrices, the triangulars and the `Sfac`
-#     operator — one of them has to be materialized. It is the right-hand one, written
-#     `B * one(B)` for a kernel-backed matrix or a triangular and `Matrix(B)` for an `Sfac`. That
+#  2. Where both operands compute — the two kernel-backed matrices, the triangulars, the two
+#     horizontal lifts and the `Sfac` operator — one of them has to be materialized. It is the
+#     right-hand one, written `B * one(B)` for a kernel-backed matrix, a triangular or a lift and
+#     `Matrix(B)` for an `Sfac`. That
 #     is how `*(::SymmetricMatrix, ::SymmetricMatrix)` and `*(::AbstractTriangular,
 #     ::AbstractTriangular)` already materialize their right operand;
 #     `*(::SkewSymMatrix, ::SkewSymMatrix)` spells it `one(B) * B` and `*(::Sfac, ::Sfac)`
@@ -57,12 +58,13 @@
 #   | `SkewSymMatrix`                         | `special_matrices/skew_symmetric.jl`       |
 #   | `SymmetricMatrix`                       | `special_matrices/symmetric.jl`            |
 #   | `AbstractTriangular`                    | `special_matrices/triangular.jl`           |
+#   | `AbstractLieAlgHorMatrix`               | `lie_algebras/abstract_lie_algebra_horizontal.jl` |
 #
 # Everything else here is absent because it defines no `*(::AbstractMatrix, ::Owned)`, so a row
-# vector against it reaches `LinearAlgebra` unopposed: `GrassmannManifold` and the two horizontal
-# lifts define no `*` against a matrix at all, and `Adjoint{<:StiefelManifold}` has only the method
-# that takes it on the *left*. `Adjoint{<:SymplecticStiefelManifold}` is in the table because
-# [`metric`](@ref) needs the mirror as well.
+# vector against it reaches `LinearAlgebra` unopposed: `GrassmannManifold` defines no `*` against a
+# matrix at all, and `Adjoint{<:StiefelManifold}` has only the method that takes it on the *left*.
+# `Adjoint{<:SymplecticStiefelManifold}` is in the table because [`metric`](@ref) needs the mirror
+# as well.
 #
 # The element-type rule is the same: bound where the method being separated binds it, free where it
 # does not. What each returns is decided once rather than by the two rules above, because here the
@@ -256,6 +258,51 @@ Base.:*(A::AbstractTriangular{T}, S::Sfac{false, T}) where {T} = A * Matrix(S)
 Base.:*(A::AbstractTriangular{T}, S::Sfac{true, T}) where {T} = A * Matrix(S)
 Base.:*(A::AbstractTriangular{T}, B::SkewSymMatrix{T}) where {T} = A * (B * one(B))
 Base.:*(A::AbstractTriangular{T}, B::SymmetricMatrix{T}) where {T} = A * (B * one(B))
+
+# `AbstractLieAlgHorMatrix` multiplies on both sides of a bare `AbstractMatrix`, so it meets every
+# other owned type twice over — nineteen pairs, one method each. No new kind of pair and no new
+# rule: a lift computes, from its stored blocks, so under rule 2 it materializes whatever is to its
+# right unless that operand is a wrapper, and under rule 1 a wrapper to either side unwraps.
+#
+# Nineteen and not twenty, because `Adjoint{<:StiefelManifold}` multiplies on the left of a bare
+# `AbstractMatrix` and not on the right, so it meets a lift once. `GrassmannManifold` meets it not
+# at all, for the reason the row-vector table above gives.
+#
+# `T` is bound in both slots throughout, because the two methods being separated bind it in both —
+# see the paragraph on the element type at the head of this file.
+function Base.:*(B::AbstractLieAlgHorMatrix{T},
+        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
+    B * U.parent.A'
+end
+Base.:*(B::AbstractLieAlgHorMatrix{T}, Y::StiefelManifold{T}) where {T} = B * Y.A
+Base.:*(B::AbstractLieAlgHorMatrix{T}, U::SymplecticStiefelManifold{T}) where {T} = B * U.A
+Base.:*(B::AbstractLieAlgHorMatrix{T}, E::StiefelProjection{T}) where {T} = B * E.A
+Base.:*(B::AbstractLieAlgHorMatrix{T}, S::Sfac{false, T}) where {T} = B * Matrix(S)
+Base.:*(B::AbstractLieAlgHorMatrix{T}, S::Sfac{true, T}) where {T} = B * Matrix(S)
+function Base.:*(B::AbstractLieAlgHorMatrix{T}, A::AbstractTriangular{T}) where {T}
+    B * (A * one(A))
+end
+Base.:*(B::AbstractLieAlgHorMatrix{T}, A::SkewSymMatrix{T}) where {T} = B * (A * one(A))
+Base.:*(B::AbstractLieAlgHorMatrix{T}, A::SymmetricMatrix{T}) where {T} = B * (A * one(A))
+
+function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
+        B::AbstractLieAlgHorMatrix{T}) where {T, AT <: AbstractMatrix{T}}
+    Y.parent.A' * B
+end
+function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
+        B::AbstractLieAlgHorMatrix{T}) where {T, AT <: AbstractMatrix{T}}
+    U.parent.A' * B
+end
+Base.:*(Y::StiefelManifold{T}, B::AbstractLieAlgHorMatrix{T}) where {T} = Y.A * B
+Base.:*(U::SymplecticStiefelManifold{T}, B::AbstractLieAlgHorMatrix{T}) where {T} = U.A * B
+Base.:*(E::StiefelProjection{T}, B::AbstractLieAlgHorMatrix{T}) where {T} = E.A * B
+Base.:*(S::Sfac{false, T}, B::AbstractLieAlgHorMatrix{T}) where {T} = S * (B * one(B))
+Base.:*(S::Sfac{true, T}, B::AbstractLieAlgHorMatrix{T}) where {T} = S * (B * one(B))
+function Base.:*(A::AbstractTriangular{T}, B::AbstractLieAlgHorMatrix{T}) where {T}
+    A * (B * one(B))
+end
+Base.:*(A::SkewSymMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T} = A * (B * one(B))
+Base.:*(A::SymmetricMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T} = A * (B * one(B))
 
 Base.:+(E::StiefelProjection, A::SkewSymMatrix) = E.A + A
 Base.:+(E::StiefelProjection, C::StiefelLieAlgHorMatrix) = E.A + C
