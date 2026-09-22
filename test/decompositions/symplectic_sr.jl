@@ -137,6 +137,28 @@ end
     end
 end
 
+# The reflectors and the symplectic form are bilinear, `aᵀJb`, so a complex operand is not
+# conjugated. The factorization itself is of a real matrix; only the operand is complex. With
+# `adjoint` in place of `transpose` the real part still agrees and the product is wrong by O(1).
+@testset "a complex operand times a real Sfac" begin
+    for (N2, _) in SIZES
+        F = sr(randn(N2, N2))
+        B = randn(ComplexF64, 3, N2)
+        v = randn(ComplexF64, N2)
+        for X in (F.S, inv(F.S))
+            M = Matrix(X)
+            @test norm(B * X - B * M) < tolerance(N2)
+            @test norm(X * transpose(B) - M * transpose(B)) < tolerance(N2)
+            @test norm(X * v - M * v) < tolerance(N2)
+            @test norm(transpose(v) * X - transpose(v) * M) < tolerance(N2)
+            @test norm(v' * X - v' * M) < tolerance(N2)
+        end
+        J = _poisson_tensor(Float64, N2)
+        a, b = randn(ComplexF64, N2), randn(ComplexF64, N2)
+        @test symplectic_form(a, b) ≈ transpose(a) * J * b
+    end
+end
+
 @testset "symplectic Gram-Schmidt" begin
     for (N2, n2) in SIZES
         J_N = _poisson_tensor(Float64, N2)

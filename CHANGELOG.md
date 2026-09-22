@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased] — targeting 0.9.0
+
+### Fixed
+
+- **Symplectic Householder right-multiplication and `symplectic_form` now use `transpose` instead of `adjoint`.** The form is bilinear (aᵀJb), not sesquilinear, and `adjoint` conjugates a complex operand. For a complex operand `‖B*S − B*Matrix(S)‖` was of order 1–30 (measured 27.85); for a real one it was 3e-15. The operations affected are: `B * Sfac`, `B * inv(Sfac)`, row vectors `v' * S`, and `transpose(v) * S`. Real results are unchanged.
+
+### Changed
+
+- **Documentation: module docstring and the special-matrices manual page state that the package supports real element types only.** The special-matrices manual page also sets out the two forms of a gradient of a structured matrix: the natural cotangent that `ProjectTo` gives (the Frobenius projection `(dA ± dAᵀ)/2`), and the storage gradient `∂L/∂S`, whose off-diagonal entries are twice as large. A complex element type is not rejected, and some operations give a wrong answer for it: the structured matrices, the retractions and the symplectic form assume a real field.
+
+### Known issues
+
+- **`symplectic_normalize` and `symplectic_gram_schmidt!` are real-only by construction.** Both scale a pair by `sign(fac)/sqrt(abs(fac))`, which gives `eᵀJf = 1` only for a real `fac`; for a complex one the form comes out as `sign(fac)²`. They still use `'` for the form, and a switch to `transpose` alone would not make them correct, so they are unchanged. The package supports real element types only.
+- **`ProjectTo` is pinned as the Frobenius projection, and the storage gradient is not yet derived from it.** `ProjectTo` on a `SymmetricMatrix` or `SkewSymMatrix` gives the natural cotangent, and a new test holds it to that: its pairing with every storage direction matches a central difference, and a weight used twice (two cotangents added, then projected again) gets the projection of the sum. That representation is kept because AD can add and re-project it. Returning `∂L/∂S` from `ProjectTo` instead was tried and rejected: Zygote adds the two cotangents of a weight used twice as dense matrices and projects the sum again, which doubled the off-diagonal entries (ratio 2.0 against finite differences), and a dense Zygote-native cotangent mixed in gave ratios from −1.6 to 3.2. A code path that reads the storage of a natural cotangent as `∂L/∂S` — the flat gradient of a parameter set through Zygote, and so the step of a `GradientMethod` or `MomentumMethod` — still sees half the off-diagonal gradient; the conversion to `∂L/∂S` (the lower triangle of `G + Gᵀ` with the diagonal counted once, or of `G − Gᵀ`) belongs where an AD cotangent becomes a parameter gradient.
+
 ## [0.8.0]
 
 **This release makes the host/device seam and the `LinearAlgebra` contract explicit.** An

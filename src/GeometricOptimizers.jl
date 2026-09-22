@@ -1,3 +1,12 @@
+"""
+    GeometricOptimizers
+
+Optimizers on manifolds, and the structured matrices and manifolds they update.
+
+The package supports real element types only. The structured matrices, the retractions and the
+symplectic form assume a real field: a complex element type is not rejected, and some operations
+give a wrong answer for it.
+"""
 module GeometricOptimizers
 
 using Base: Callable
