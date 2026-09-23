@@ -10,16 +10,12 @@ breaking release).
 
 ### Fixed
 
-- **Symplectic Householder right-multiplication and `symplectic_form` now use `transpose` instead of `adjoint`.** The form is bilinear (aᵀJb), not sesquilinear, and `adjoint` conjugates a complex operand. For a complex operand `‖B*S − B*Matrix(S)‖` was of order 1–30 (measured 27.85); for a real one it was 3e-15. The operations affected are: `B * Sfac`, `B * inv(Sfac)`, row vectors `v' * S`, and `transpose(v) * S`. Real results are unchanged.
+- **Symplectic Householder right-multiplication and `symplectic_form` now use `transpose` instead of `adjoint`.** The form is bilinear (aᵀJb), not sesquilinear, and `adjoint` conjugates a complex operand. For a complex operand `‖B*S − B*Matrix(S)‖` was wrong by order 1 or more, growing with the conditioning of S (medians for S of size 4, 6 and 10 being 16.7–17.1, 135–169, 7.9e4–1.3e5); for a real one it was negligible. The operations affected are: `B * Sfac`, `B * inv(Sfac)`, row vectors `v' * S`, and `transpose(v) * S`. Real results are unchanged.
 
 ### Changed
 
-- **Documentation: module docstring and the special-matrices manual page state that the package supports real element types only.** The special-matrices manual page also sets out the two forms of a gradient of a structured matrix: the natural cotangent that `ProjectTo` gives (the Frobenius projection `(dA ± dAᵀ)/2`), and the storage gradient `∂L/∂S`, whose off-diagonal entries are twice as large. A complex element type is not rejected, and some operations give a wrong answer for it: the structured matrices, the retractions and the symplectic form assume a real field.
+- **Documentation: module docstring and the special-matrices manual page state that the package supports real element types only.** The special-matrices manual page also sets out the two forms of a gradient of a structured matrix: the natural cotangent that `ProjectTo` gives (the Frobenius projection `(dA ± dAᵀ)/2`), and the storage gradient `∂L/∂S`, whose off-diagonal entries are twice as large. A complex element type is not rejected, and some operations give a wrong answer for it: the structured matrices, the retractions and the symplectic Gram-Schmidt process assume a real field.
 
-### Known issues
-
-- **`symplectic_normalize` and `symplectic_gram_schmidt!` are real-only by construction.** Both scale a pair by `sign(fac)/sqrt(abs(fac))`, which gives `eᵀJf = 1` only for a real `fac`; for a complex one the form comes out as `sign(fac)²`. They still use `'` for the form, and a switch to `transpose` alone would not make them correct, so they are unchanged. The package supports real element types only.
-- **`ProjectTo` is pinned as the Frobenius projection, and the storage gradient is not yet derived from it.** `ProjectTo` on a `SymmetricMatrix` or `SkewSymMatrix` gives the natural cotangent, and a new test holds it to that: its pairing with every storage direction matches a central difference, and a weight used twice (two cotangents added, then projected again) gets the projection of the sum. That representation is kept because AD can add and re-project it. Returning `∂L/∂S` from `ProjectTo` instead was tried and rejected: Zygote adds the two cotangents of a weight used twice as dense matrices and projects the sum again, which doubled the off-diagonal entries (ratio 2.0 against finite differences), and a dense Zygote-native cotangent mixed in gave ratios from −1.6 to 3.2. A code path that reads the storage of a natural cotangent as `∂L/∂S` — the flat gradient of a parameter set through Zygote, and so the step of a `GradientMethod` or `MomentumMethod` — still sees half the off-diagonal gradient; the conversion to `∂L/∂S` (the lower triangle of `G + Gᵀ` with the diagonal counted once, or of `G − Gᵀ`) belongs where an AD cotangent becomes a parameter gradient.
 
 ## [0.8.0]
 
@@ -5474,6 +5470,52 @@ and `Base.zero` already find the backend of a point they are given
 the check is a GPU run of the optimizer, which nothing in this repository does any more, so this
 should be closed together with A19 — one backend, one session, both claims settled.
 
+#### A26. `symplectic_normalize` and `symplectic_gram_schmidt!` are real-only by construction
+
+**Severity: medium.** Found in the review of [#111], the PR that fixed
+`symplectic_form` for complex operands.
+
+Both scale a pair by `sign(fac)/sqrt(abs(fac))`, which gives `eᵀJf = 1` only for a
+real `fac`; for a complex one the form comes out as `sign(fac)²`. They still use `'`
+for the form, and a switch to `transpose` alone would not make them correct. The
+functions are unchanged and will not work with complex element types. The package
+documents that it supports real element types only.
+
+**What to do**: Write a complex-valued algorithm that computes the sign correctly,
+or replace both with a method that accepts only real input by type constraint.
+
+#### A27. `ProjectTo` is pinned as the Frobenius projection, and the storage gradient is not yet derived from it
+
+**Severity: medium.** Found in the review of [#111], in investigation of why a
+code path that reads a `ProjectTo` cotangent's storage as `∂L/∂S` gives the wrong
+gradient.
+
+`ProjectTo` on a `SymmetricMatrix` or `SkewSymMatrix` gives the natural cotangent
+(the Frobenius projection `½(Ā ± Āᵀ)` of a dense cotangent). A new test holds it to
+that: its pairing with every storage direction matches a central difference, and a
+weight used twice (two cotangents added, then projected again) gets the projection of
+the sum. That representation is kept because AD can add and re-project it.
+
+Returning `∂L/∂S` from `ProjectTo` instead was tried and rejected: Zygote adds the
+two cotangents of a weight used twice as dense matrices and projects the sum again,
+which doubled the off-diagonal entries (ratio 2.0 against finite differences), and a
+dense Zygote-native cotangent mixed in gave ratios from −1.6 to 3.2.
+
+A caller that forms the flat gradient of a parameter set through Zygote and passes
+its storage as `∂L/∂S` gets half of each off-diagonal entry: the ratio of the storage
+gradient, by finite differences, to the storage of the Zygote cotangent is 1 on the
+diagonal and 2 off it for a `SymmetricMatrix`, and 2 for every entry of a
+`SkewSymMatrix`, whose storage holds only off-diagonal entries (n = 3, Zygote 0.7.13).
+A `GradientMethod` or `MomentumMethod` step taken on that storage therefore moves
+those entries by half; this follows from the cotangent and was not measured through
+an optimizer step. The conversion to `∂L/∂S` (the lower triangle of
+`G + Gᵀ` with the diagonal counted once, or of `G − Gᵀ`) belongs where an AD
+cotangent becomes a parameter gradient, not in `ProjectTo` itself.
+
+**What to do**: The mechanism is a step in the optimizer's parameter update after
+Zygote adds cotangents, and before the gradient is applied. Which package owns it
+(GeometricOptimizers or NeuralNetworkParameters) is a design decision.
+
 ---
 
 ### B. This package — observability
@@ -6098,6 +6140,7 @@ and both are corrected: see C8.)
 [#60]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/60
 [#67]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/67
 [#77]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/77
+[#111]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/111
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1
