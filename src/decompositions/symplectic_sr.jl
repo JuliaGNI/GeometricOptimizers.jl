@@ -99,6 +99,10 @@ end
 
 Base.size(R::Rfac) = size(R.Λ.A)
 
+# The entries are read off `Λ.A`, so the factor is on that array's backend. `R` has no kernel of its
+# own: against an owned matrix it is the plain operand, and the backend guard there asks for it.
+KernelAbstractions.get_backend(R::Rfac) = KernelAbstractions.get_backend(R.Λ.A)
+
 function Base.getindex(R::Rfac{T}, i::Integer, j::Integer) where {T}
     # Every branch below either reads a packed array or returns a structural zero, so an index past
     # the end can reach a `zero(T)` and come back looking like a legitimate entry. The packed arrays

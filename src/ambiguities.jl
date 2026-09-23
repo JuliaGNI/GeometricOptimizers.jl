@@ -33,12 +33,15 @@
 const OwnedMatrix = Union{SkewSymMatrix, SymmetricMatrix, AbstractTriangular,
     AbstractLieAlgHorMatrix, StiefelProjection, Manifold}
 
+# The wrappers of rule 1.
+const OwnedWrapper = Union{StiefelManifold, SymplecticStiefelManifold, StiefelProjection,
+    Adjoint{<:Any, <:StiefelManifold}, Adjoint{<:Any, <:SymplecticStiefelManifold}}
+
 # The types that take part in a product: each has a product kernel of its own. `GrassmannManifold`
 # and its adjoint have none, so a product with one of them reaches `LinearAlgebra` as the plain
 # matrix it is.
 const OwnedFactor = Union{SkewSymMatrix, SymmetricMatrix, AbstractTriangular,
-    AbstractLieAlgHorMatrix, StiefelProjection, StiefelManifold, SymplecticStiefelManifold, Sfac,
-    Adjoint{<:Any, <:StiefelManifold}, Adjoint{<:Any, <:SymplecticStiefelManifold}}
+    AbstractLieAlgHorMatrix, Sfac, OwnedWrapper}
 
 Base.:*(A::OwnedFactor, B::AbstractMatrix) = _lmul(A, B)
 Base.:*(A::OwnedFactor, b::AbstractVector) = _lmul(A, b)
@@ -60,9 +63,6 @@ _rmul(A, B) = invoke(*, Tuple{_invoke_type(A), AbstractMatrix}, A, B)
 # instead: its own type would find the methods above again.
 _invoke_type(X) = typeof(X)
 _invoke_type(::OwnedFactor) = AbstractMatrix
-
-const OwnedWrapper = Union{StiefelManifold, SymplecticStiefelManifold, StiefelProjection,
-    Adjoint{<:Any, <:StiefelManifold}, Adjoint{<:Any, <:SymplecticStiefelManifold}}
 
 _unwrap(A::Union{StiefelManifold, SymplecticStiefelManifold, StiefelProjection}) = A.A
 _unwrap(A::Adjoint) = parent(A).A'
@@ -98,8 +98,9 @@ function _owned_add(A, B)
     _ladd(A, B)
 end
 
-# `-` has no per-type method against a plain matrix, so all three entries check the backends and
-# hand the pair to `Base`'s generic `-`. `invoke` and not a plain `-`, which would re-enter them.
+# Checks the backends and hands the pair to `Base`'s generic `+` or `-`: `invoke` and not a plain
+# operator, which would re-enter the methods here. It is the fallback of `_ladd`, and `-` has no
+# per-type method against a plain matrix, so all three `-` entries call it directly.
 function _guarded_dense(op, A, B)
     _check_same_backend(A, B)
     invoke(op, Tuple{AbstractArray, AbstractArray}, A, B)

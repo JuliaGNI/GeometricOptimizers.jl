@@ -309,6 +309,21 @@ end
         LowerTriangular(rand(T, N, N)), lo, UpperTriangular(rand(T, N, N)))
 end
 
+# `KernelAbstractions.get_backend` raises for an array type it has no method for, and the guard lets
+# that `ArgumentError` through: a pair with an operand it cannot place raises rather than computing.
+@testset "an unplaceable operand raises" begin
+    skew = rand(SkewSymMatrix{T}, N)
+    bidiag = LinearAlgebra.Bidiagonal(rand(T, N), rand(T, N - 1), :U)
+
+    # the premise: this really is a type `get_backend` cannot answer for
+    @test_throws ArgumentError KernelAbstractions.get_backend(bidiag)
+
+    for op in (*, +, -)
+        @test_throws ArgumentError op(skew, bidiag)
+        @test_throws ArgumentError op(bidiag, skew)
+    end
+end
+
 # The three transfer operations keep crossing backends. `copyto!` is the one with a contract in
 # `Base`; PR #85 is the reference for how these types meet it.
 @testset "`copyto!` still crosses backends" begin
