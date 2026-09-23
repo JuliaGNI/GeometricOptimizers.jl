@@ -23,9 +23,9 @@ function _check_supported_eltype(backend::KernelAbstractions.Backend, ::Type{T})
 end
 
 # A computation needs both of its operands on one backend. This says so, and names both operand
-# types and both backends. Its return value is the shared backend, or `nothing` where either operand
-# is unplaceable; no call site reads it, because a site launches on the backend of one named operand
-# and that operand is not always this function's first argument.
+# types and both backends. Its return value is the shared backend; no call site reads it, because a
+# site launches on the backend of one named operand and that operand is not always this function's
+# first argument.
 #
 # Without the guard a mismatch is not a clean failure. On a backend that can fall back to the host —
 # `JLArrays` under `allowscalar(false)` is the one reachable from the test suite — a host/device pair
@@ -45,37 +45,11 @@ end
 # in `abstract_manifold.jl` is the third exemption and is deliberate: `rgrad` moves the gradient onto
 # the point's backend rather than refusing, because the point is the parameter.
 #
-# Both reads fold away for concrete array types, so a same-backend call pays nothing.
-#
-# **It refuses only what it can prove.** `KernelAbstractions.get_backend` has no method for every
-# array type and *raises* rather than answering for the ones it does not cover -- a
-# `LazyArrays.ApplyArray`, which is what backs a `StiefelLieAlgHorMatrix` built over a flat parameter
-# buffer, is the one this package meets. A `ForwardDiff.Dual` matrix is *not* an example: it is a
-# plain `Array`, `get_backend(::Array) = CPU()` has no element-type restriction, and
-# `get_backend(zeros(ForwardDiff.Dual{Nothing, Float64, 2}, 2, 2))` answers `CPU(false)`. Both
-# operands there are on the host and the operation is fine. So an unanswerable backend returns
-# `nothing` and the pair is let through: this guard's job is to catch a mismatch, not to require that
-# every array be placeable. Turning "I cannot tell" into a refusal rejects the host-only sums and
-# subtractions in `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`.
-#
-# The raise is what has to be caught, because the fallback is a *method* that throws rather than a
-# missing method: `hasmethod(KernelAbstractions.get_backend, Tuple{T})` is true for every
-# `T <: AbstractArray`, so nothing short of calling it tells the two apart. Only `ArgumentError` is
-# caught, which is what that fallback raises; anything else is rethrown.
-function _backend_or_nothing(A)
-    try
-        KernelAbstractions.get_backend(A)
-    catch err
-        err isa ArgumentError || rethrow()
-        nothing
-    end
-end
-
+# Both reads fold away for concrete array types, so a same-backend call pays nothing. An array that
+# `KernelAbstractions.get_backend` cannot place raises that function's own `ArgumentError`.
 function _check_same_backend(A, B)
-    backend_a = _backend_or_nothing(A)
-    backend_a === nothing && return nothing
-    backend_b = _backend_or_nothing(B)
-    backend_b === nothing && return nothing
+    backend_a = KernelAbstractions.get_backend(A)
+    backend_b = KernelAbstractions.get_backend(B)
     backend_a == backend_b && return backend_a
 
     throw(ArgumentError("mixed backends: $(nameof(typeof(A))) is on $(backend_a) and $(nameof(typeof(B))) is on $(backend_b). A computation needs both operands on one backend; move one with `copyto!` or `changebackend` first."))

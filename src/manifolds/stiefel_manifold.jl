@@ -14,47 +14,20 @@ mutable struct StiefelManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
     A::AT
 end
 
-function Base.:*(Y::StiefelManifold, B::AbstractMatrix)
+# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
+function _lmul(Y::StiefelManifold, B::AbstractMatrix)
     _check_same_backend(Y, B)
     Y.A * B
 end
-function Base.:*(B::AbstractMatrix, Y::StiefelManifold)
+function _rmul(B::AbstractMatrix, Y::StiefelManifold)
     _check_same_backend(Y, B)
     B * Y.A
 end
 
-# A row vector on the left is the one shape the second method above leaves unsettled: it stands off
-# against `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned
-# matrix* in `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one
-# above, so a row vector gets the answer that method gives every other matrix: a point is an
-# ordinary array in a wrapper, so unwrap it and let the row vector have the array.
-function Base.:*(x::Adjoint{<:Any, <:AbstractVector}, Y::StiefelManifold)
-    _check_same_backend(Y, x)
-    x * Y.A
-end
-function Base.:*(x::Transpose{<:Any, <:AbstractVector}, Y::StiefelManifold)
-    _check_same_backend(Y, x)
-    x * Y.A
-end
-
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where {
+function _lmul(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where {
         T, AT <: AbstractMatrix{T}}
     _check_same_backend(parent(Y), B)
     Y.parent.A' * B
-end
-
-# `B` carries no type parameter, and that is what separates the method directly above from the
-# `AbstractMatrix * StiefelManifold` one. Binding the storage array type to the adjoint's would
-# leave those two ambiguous for every pair of points whose storage types differ -- one held in a
-# `Matrix` against one held in a `SubArray` or in a device array -- since neither of them is more
-# specific than the other there. Binding only the element type moves the same hole to a pair that
-# differs in that instead. Either way it is an ordinary product that raises nothing a caller can act
-# on. This is the same whole-type-binding shape as `copyto!(::Manifold, ::Manifold)` in
-# `manifolds/abstract_manifold.jl`, whose comment spells the mechanism out.
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
-        B::StiefelManifold) where {T, AT <: AbstractMatrix{T}}
-    _check_same_backend(parent(Y), B)
-    Y.parent.A' * B.A
 end
 
 @doc raw"""

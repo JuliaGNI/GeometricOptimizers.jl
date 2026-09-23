@@ -446,9 +446,3 @@ function Base.copyto!(dest::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
     copyto!(dest.Y, src)
     dest
 end
-
-# auxiliary function
-function global_rep(::GlobalSection{T, AT, Nothing},
-        gx::AbstractVecOrMat{T}) where {T, AT <: AbstractVecOrMat{T}}
-    gx
-end

@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: map_to_Skew
+using GeometricOptimizers: map_to_Skew, freeparameters
 using LinearAlgebra: transpose
 using Test
 import Random
@@ -171,16 +171,19 @@ end
     @test SkewSymMatrix(A) ≈ (Float64.(A) .- Float64.(A)') ./ 2
 end
 
-# The storage layout is public: `vec` returns it and the two-argument constructor takes it. Spelling
-# it out for one matrix pins the index arithmetic, which a change that kept `vec` and the constructor
+# The storage layout is public: `freeparameters` returns it and the two-argument constructor takes
+# it. Spelling it out for one matrix pins the index arithmetic, which a change that kept the two
 # consistent with *each other* would otherwise slip past. From
 # `GeometricMachineLearning`'s `test/arrays/{triangular,constructor_tests_for_custom_arrays}.jl`.
 @testset "storage layout" begin
     M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
-    @test vec(SkewSymMatrix(M)) ≈ [1.5, 3.0, 1.5, 4.5, 3.0, 1.5]
+    @test freeparameters(SkewSymMatrix(M)) ≈ [1.5, 3.0, 1.5, 4.5, 3.0, 1.5]
 
     @test SkewSymMatrix([1, 2, 3, 4, 5, 6], 4) == [0 -1 -2 -4; 1 0 -3 -5; 2 3 0 -6; 4 5 6 0]
-    @test SkewSymMatrix(vec(SkewSymMatrix(M)), 4) ≈ SkewSymMatrix(M)
+    @test SkewSymMatrix(freeparameters(SkewSymMatrix(M)), 4) ≈ SkewSymMatrix(M)
+
+    # `vec` is `Base`'s: the `n²` entries, not the storage
+    @test vec(SkewSymMatrix(M)) == vec(Matrix(SkewSymMatrix(M)))
 end
 
 # `SkewSymMatrix` is the set `{M : Mᵀ = -M}` -- a transpose identity, which is what `getindex`
@@ -215,11 +218,9 @@ end
     @test Br * Sr ≈ Br * Matrix(Sr)
 end
 
-# A row vector on the left is the one shape `*(::AbstractMatrix, ::SkewSymMatrix)` does not settle on
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::OwnedFactor)` does not settle on
 # its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on the
-# right, so neither wins. The two tie-breakers beside that product in
-# `src/special_matrices/skew_symmetric.jl` settle it. `test/ambiguities.jl` cannot cover this pair,
-# because one of its two methods is not this package's.
+# right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
 @testset "a row vector times a SkewSymMatrix" begin
     for T in (Float32, Float64), N in 2:5
 

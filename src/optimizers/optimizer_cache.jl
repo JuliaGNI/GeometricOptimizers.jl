@@ -58,7 +58,7 @@ refresh_latest_gradient!(cache::OptimizerCache, ::Gradient) = cache
 #
 # It splits on the parameters for the same reason `trial_slope` does, and the split is the same one:
 # `global_rep` maps an ambient gradient to the horizontal lift on a `Manifold`, and on a plain array
-# it is the identity (`global_rep(::GlobalSection{T,AT,Nothing}, gx) = gx`), so there the gradient can
+# it is the identity (`global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) = gx`), so there the gradient can
 # go straight into `latest_gradient` and the allocation the manifold branch needs is pure waste. At
 # `n = 500` that is 4 160 bytes an iteration against none.
 function _refresh_latest_gradient!(cache::OptimizerCache, g::Gradient)

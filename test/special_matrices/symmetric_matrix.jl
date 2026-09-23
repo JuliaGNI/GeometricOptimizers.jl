@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: map_to_S
+using GeometricOptimizers: map_to_S, freeparameters
 using LinearAlgebra: transpose
 using Test
 import Random
@@ -92,7 +92,8 @@ end
     M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
     @test SymmetricMatrix([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4) ==
           [1 2 4 7; 2 3 5 8; 4 5 6 9; 7 8 9 10]
-    @test SymmetricMatrix(vec(SymmetricMatrix(M)), 4) ≈ SymmetricMatrix(M)
+    @test SymmetricMatrix(freeparameters(SymmetricMatrix(M)), 4) ≈ SymmetricMatrix(M)
+    @test vec(SymmetricMatrix(M)) == vec(Matrix(SymmetricMatrix(M)))
 end
 
 # see `the projection and the product are transposes on a complex element type` in
@@ -128,9 +129,7 @@ end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::SymmetricMatrix)` does not settle
 # on its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on
-# the right, so neither wins. The two tie-breakers beside that product in
-# `src/special_matrices/symmetric.jl` settle it. `test/ambiguities.jl` cannot cover this pair,
-# because one of its two methods is not this package's.
+# the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
 @testset "a row vector times a SymmetricMatrix" begin
     for T in (Float32, Float64), N in 2:5
 

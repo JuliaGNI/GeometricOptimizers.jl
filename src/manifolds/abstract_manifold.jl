@@ -18,7 +18,7 @@ abstract type Manifold{T} <: AbstractMatrix{T} end
 # gradient `KernelAbstractions` cannot place on the host path it was always on. A
 # `ForwardDiff.Dual` matrix is not such a gradient: it is a plain `Array` and
 # `KernelAbstractions.get_backend` answers `CPU(false)` for it. What it does keep off that path is a
-# lazy wrapper, a `LazyArrays.ApplyArray` among them, for which `get_backend` raises.
+# lazy wrapper for which `get_backend` raises.
 function _match_backend(Y::Manifold, ∇L::AbstractMatrix)
     backend = KernelAbstractions.get_backend(Y)
     backend isa GPU || return ∇L
