@@ -231,7 +231,7 @@ LinearAlgebra.rmul!(C::SkewSymMatrix, α::Real) = mul!(C, C, α)
 # The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them. The
 # in-place form is the one the others are written on: the retraction workspace writes the dense form
 # of a lift's `A` block into a buffer it owns.
-function _lmul!(C::AbstractMatrix{T}, A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
+function _lmul_into!(C::AbstractMatrix{T}, A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     @assert A.n == size(B, 1)
     @assert size(B, 2) == size(C, 2)
     @assert A.n == size(C, 1)
@@ -244,7 +244,7 @@ end
 
 function _lmul(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(A)
-    _lmul!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
+    _lmul_into!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
 end
 
 @kernel function skew_mat_mul_kernel!(

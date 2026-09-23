@@ -194,7 +194,7 @@ to is not an `AbstractTriangular`. So that product stays on the generic path and
 Base.:*(::AbstractTriangular, ::AbstractMatrix)
 
 # The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them.
-function _lmul!(C::AbstractMatrix{T}, A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
+function _lmul_into!(C::AbstractMatrix{T}, A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
     @assert size(B, 1) == A.n == size(C, 1)
     @assert size(B, 2) == size(C, 2)
     backend = KernelAbstractions.get_backend(A)
@@ -206,7 +206,7 @@ end
 
 function _lmul(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(A)
-    _lmul!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
+    _lmul_into!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
 end
 
 function Base.zero(A::AT) where {AT <: AbstractTriangular}

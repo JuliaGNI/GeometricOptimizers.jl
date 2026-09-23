@@ -90,8 +90,9 @@ The product, taken on the wrapped array.
 
 `StiefelProjection` holds its entries in an ordinary array, so unwrapping is all these do — for `E`
 and `E'` alike, and for `+`, `-`, `mul!` and a scalar product as well, with the same methods that a
-manifold point uses. Without them the product falls through to the generic `AbstractMatrix` path, which reaches `getindex` one entry at a time. **That is scalar indexing, and
-it is what stops a retraction on a device**: [`geodesic`](@ref) and [`cayley`](@ref) each take one
+manifold point uses. Without them the product falls through to the generic `AbstractMatrix` path,
+which reaches `getindex` one entry at a time. **That is scalar indexing, and it is what stops a
+retraction on a device**: [`geodesic`](@ref) and [`cayley`](@ref) each take one
 product against the projection — `expB * E` and `cayleyB * E` — with `E` built from the horizontal
 lift and so carrying the point's own backend. Both operands are on the device, and only the wrapper
 puts the product on the host path.

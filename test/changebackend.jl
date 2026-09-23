@@ -6,8 +6,9 @@
 # methods in `GeometricMachineLearning`'s HDF5 extension were there to provide, and it is what has to
 # hold before they can be deleted from there.
 
-using AbstractNeuralNetworks: changebackend, CPU
+using AbstractNeuralNetworks: changebackend, CPU, ZeroVector
 using GeometricOptimizers
+using LinearAlgebra: mul!
 using NeuralNetworkParameters: NetworkParameters
 using Random
 using Test
@@ -84,4 +85,22 @@ end
     @test eltype(changebackend(CPU(), x)) === Float32
     Y = rand(StiefelManifold{Float32}, N, n)
     @test eltype(changebackend(CPU(), Y)) === Float32
+end
+
+@testset "a StiefelProjection keeps its type" begin
+    E = GeometricOptimizers.StiefelProjection(N, n, Float32)
+    F = changebackend(CPU(), E)
+    @test F isa GeometricOptimizers.StiefelProjection{Float32}
+    @test F == E
+    @test F.A !== E.A
+end
+
+# The extension carries one more method, the tie-breaker between this package's vector `mul!` and
+# `AbstractNeuralNetworks`' `mul!(out, A, ::ZeroVector)`. Without it every owned type is ambiguous.
+@testset "a product with a ZeroVector is zero for every owned type" begin
+    for A in (rand(SkewSymMatrix, N), rand(SymmetricMatrix, N), rand(StiefelManifold, N, n))
+        out = rand(N)
+        @test mul!(out, A, ZeroVector(Float64, size(A, 2))) === out
+        @test iszero(out)
+    end
 end

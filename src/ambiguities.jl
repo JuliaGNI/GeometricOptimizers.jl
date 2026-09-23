@@ -14,13 +14,13 @@
 # because one backend legitimately holds a `Vector` and a `Matrix`, or a view and its parent.
 #
 # The per-type code is on internal functions that `Base` and `LinearAlgebra` never see: `_lmul` and
-# `_lmul!` for an owned left operand, `_rmul` and `_rmul!` for an owned right operand, `_ladd` for an
-# owned operand in a sum, and `_owned_add` and `_owned_sub` for two owned operands. Each has one
-# untyped fallback, which is the method the call reaches when no per-type method applies — an
-# element type that does not match a kernel's, or a type with no kernel at all. The fallbacks give
-# the answer the call gets without this package: `_lmul` and `_rmul` `invoke` the method
-# `LinearAlgebra` or `Base` has for the plain operand's type, `_lmul!` and `_rmul!` call the
-# five-argument `mul!`, and the sums go to `_dense`.
+# `_lmul_into!` for an owned left operand, `_rmul` and `_rmul_into!` for an owned right operand,
+# `_ladd` for an owned operand in a sum, and `_owned_add` and `_owned_sub` for two owned operands.
+# Each has one untyped fallback, which is the method the call reaches when no per-type method
+# applies — an element type that does not match a kernel's, or a type with no kernel at all. The
+# fallbacks give the answer the call gets without this package: `_lmul` and `_rmul` `invoke` the
+# method `LinearAlgebra` or `Base` has for the plain operand's type, `_lmul_into!` and
+# `_rmul_into!` call the five-argument `mul!`, and the sums go to `_dense`.
 #
 # Two rules decide a product of two owned operands, in `_owned_mul` and `_owned_mul!`:
 #
@@ -93,15 +93,15 @@ _unwrap(A::Adjoint) = _unwrap(parent(A))'
 # The wrappers' kernels: the product of the array they hold.
 _lmul(A::OwnedWrapper, B::AbstractVecOrMat) = _unwrap(A) * B
 _rmul(B::AbstractMatrix, A::OwnedWrapper) = B * _unwrap(A)
-_lmul!(C, A::OwnedWrapper, B) = mul!(C, _unwrap(A), B)
-_rmul!(C, B, A::OwnedWrapper) = mul!(C, B, _unwrap(A))
+_lmul_into!(C, A::OwnedWrapper, B) = mul!(C, _unwrap(A), B)
+_rmul_into!(C, B, A::OwnedWrapper) = mul!(C, B, _unwrap(A))
 
 # The minus goes on the result, where it costs one pass over the product; on the parent it would
 # build a second packed matrix first.
 _lmul(A::SkewAdjoint, B::AbstractVecOrMat) = -(parent(A) * B)
 _rmul(B::AbstractMatrix, A::SkewAdjoint) = -(B * parent(A))
-_lmul!(C, A::SkewAdjoint, B) = (mul!(C, parent(A), B); C .= .-C)
-_rmul!(C, B, A::SkewAdjoint) = (mul!(C, B, parent(A)); C .= .-C)
+_lmul_into!(C, A::SkewAdjoint, B) = (mul!(C, parent(A), B); C .= .-C)
+_rmul_into!(C, B, A::SkewAdjoint) = (mul!(C, B, parent(A)); C .= .-C)
 
 # `adjoint` again, and not the dense matrix `Base` gives: this is what `LinearAlgebra` does for `-`
 # on an `Adjoint`, and it keeps the scalar product on the packed storage.
@@ -135,11 +135,11 @@ end
 # `LinearAlgebra`'s own three-argument `mul!` is untyped, so each of these is narrower than it.
 function LinearAlgebra.mul!(C::AbstractMatrix, A::OwnedMatrix, B::AbstractMatrix)
     _check_same_backend(A, B, C)
-    _lmul!(C, A, B)
+    _lmul_into!(C, A, B)
 end
 function LinearAlgebra.mul!(C::AbstractMatrix, A::AbstractMatrix, B::OwnedMatrix)
     _check_same_backend(A, B, C)
-    _rmul!(C, A, B)
+    _rmul_into!(C, A, B)
 end
 function LinearAlgebra.mul!(C::AbstractMatrix, A::OwnedMatrix, B::OwnedMatrix)
     _check_same_backend(A, B, C)
@@ -150,16 +150,16 @@ end
 # shares the buffer, so the kernel writes straight into `c`.
 function LinearAlgebra.mul!(c::AbstractVector, A::OwnedMatrix, b::AbstractVector)
     _check_same_backend(A, b, c)
-    _lmul!(reshape(c, length(c), 1), A, reshape(b, length(b), 1))
+    _lmul_into!(reshape(c, length(c), 1), A, reshape(b, length(b), 1))
     c
 end
 
-_lmul!(C, A, B) = mul!(C, A, B, true, false)
-_rmul!(C, A, B) = mul!(C, A, B, true, false)
+_lmul_into!(C, A, B) = mul!(C, A, B, true, false)
+_rmul_into!(C, A, B) = mul!(C, A, B, true, false)
 
 # A computing type on the right has no in-place kernel: its `_rmul` is the transpose of a left
 # product, so the product is taken there and copied into `C`.
-function _rmul!(C::AbstractMatrix{T}, B::AbstractMatrix{T},
+function _rmul_into!(C::AbstractMatrix{T}, B::AbstractMatrix{T},
         A::Union{SkewSymMatrix{T}, SymmetricMatrix{T}, AbstractTriangular{T},
             AbstractLieAlgHorMatrix{T}}) where {T}
     C .= _rmul(B, A)

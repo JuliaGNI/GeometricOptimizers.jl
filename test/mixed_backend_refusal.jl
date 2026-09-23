@@ -9,9 +9,10 @@
 # `Scalar indexing is disallowed`, which names neither operand.
 #
 # The check sits in the entry methods of `*`, `+`, `-` and `mul!` in `src/ambiguities.jl`, in
-# `add!`, and nowhere else. So the first testset calls every entry with every owned type in the slot
-# the entry names, a host operand against a device one; a type that is left out of the unions there,
-# or an entry that loses its check, fails it.
+# `add!`, and in the triangular `/ᵉˡᵉ` and scalar `mul!`, which have testsets of their own below. So
+# the first testset calls every entry with every owned type in the slot the entry names, a host
+# operand against a device one; a type that is left out of the unions there, or an entry that loses
+# its check, fails it.
 #
 # Three operations are deliberately absent, because they must keep crossing backends: `copyto!` and
 # `assign!` are transfers, which is the contract `Base` sets for `copyto!` and the one PR #85 settled

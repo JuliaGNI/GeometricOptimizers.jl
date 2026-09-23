@@ -265,7 +265,7 @@ LinearAlgebra.rmul!(C::SymmetricMatrix, α::Real) = mul!(C, C, α)
 end
 
 # The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them.
-function _lmul!(C::AbstractMatrix{T}, A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
+function _lmul_into!(C::AbstractMatrix{T}, A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
     @assert A.n == size(B, 1)
     @assert size(B, 2) == size(C, 2)
     @assert A.n == size(C, 1)
@@ -277,7 +277,7 @@ end
 
 function _lmul(A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(A.S)
-    _lmul!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
+    _lmul_into!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
 end
 
 # `transpose` and not `adjoint`, for the reason the counterpart in `skew_symmetric.jl` spells out:

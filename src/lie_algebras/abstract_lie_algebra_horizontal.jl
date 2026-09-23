@@ -83,8 +83,9 @@ written**, which is where this differs from the triangulars: those hold a packed
 carries a kernel-backed product of its own. The per-type part is the first ``n`` rows,
 `_hor_top_rows`, beside each concrete lift.
 
-`*(C, B)` is written `-transpose(B * transpose(C))`, on the identity ``B^T = -B``; the vector form
-goes through the matrix one as a single column. `transpose` and not `adjoint` wherever one appears,
+`*(C, B)` is written `-transpose(B * permutedims(C))`, on the identity ``B^T = -B``; a row vector
+`x` takes `transpose(x)` in place of `permutedims(C)`, and the vector form goes through the matrix
+one as a single column. `transpose` and `permutedims`, and not `adjoint`, wherever one appears,
 for the reason the comment on `_rmul(::AbstractMatrix, ::SkewSymMatrix)` in
 `special_matrices/skew_symmetric.jl` gives at length: the identity is a statement about the
 transpose, and `getindex` builds the off-diagonal blocks entrywise without conjugating. The two
@@ -93,7 +94,7 @@ agree on a real element type and disagree on a complex one.
 Base.:*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)
 
 # The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them.
-function _lmul!(D::AbstractMatrix{T}, B::AbstractLieAlgHorMatrix{T},
+function _lmul_into!(D::AbstractMatrix{T}, B::AbstractLieAlgHorMatrix{T},
         C::AbstractMatrix{T}) where {T}
     @assert B.N == size(C, 1) == size(D, 1)
     @assert size(C, 2) == size(D, 2)
@@ -107,7 +108,7 @@ end
 
 function _lmul(B::AbstractLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(B)
-    _lmul!(KernelAbstractions.allocate(backend, T, B.N, size(C, 2)), B, C)
+    _lmul_into!(KernelAbstractions.allocate(backend, T, B.N, size(C, 2)), B, C)
 end
 
 # `permutedims` and not a lazy `transpose`: the block products above take views of their operand,
