@@ -19,10 +19,13 @@ const JLARRAYS_GAPS = ("cayley(StiefelManifold, Δ)", "cayley(GrassmannManifold,
 # `geodesic(B, ProjectedSkew())` calls the backend's own `qr` and `eigen`. `JLArrays` has neither, so
 # under `allowscalar(false)` it raises inside the generic `qr`, and that is where Metal stops too.
 # With scalar indexing allowed the generic ones run, and a result that is still a `JLArray` is what
-# says that no step copies to the host — the part of the method this package controls.
-@testset "ProjectedSkew keeps every step on the lift's backend" begin
+# says that no step copies to the host — the part of the method this package controls. `(6, 4)` has
+# `2n > N`, where the thin `Q` has `N` columns and not `2n`.
+const PROJECTED_SKEW_SHAPES = ((6, 3), (6, 4))
+
+@testset "ProjectedSkew keeps every step on the lift's backend, $N × $n" for (N, n) in PROJECTED_SKEW_SHAPES
     rng = Random.Xoshiro(4)
-    host = StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix{T}, 3), randn(rng, T, 3, 3), 6, 3)
+    host = StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix{T}, n), randn(rng, T, N - n, n), N, n)
     device = todev(JLArray, host)
 
     @test_throws "Scalar indexing is disallowed" geodesic(device, GeometricOptimizers.ProjectedSkew())

@@ -138,7 +138,7 @@ function device_products(todevice; seed = 1234)
             end)
     end
 
-    # The manifold operations `[precision-metal]` found failing, and the retractions they sit on.
+    # The manifold operations on a device, and the retractions they sit on.
     for M in (StiefelManifold, GrassmannManifold)
         Y = M(Matrix(qr!(randn(rng, T, 6, 6)).Q)[:, 1:3])
         Δ = rgrad(Y, randn(rng, T, 6, 3)) / 10

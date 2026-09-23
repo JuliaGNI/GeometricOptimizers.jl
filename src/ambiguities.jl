@@ -158,10 +158,12 @@ _lmul_into!(C, A, B) = mul!(C, A, B, true, false)
 _rmul_into!(C, A, B) = mul!(C, A, B, true, false)
 
 # A computing type on the right has no in-place kernel: its `_rmul` is the transpose of a left
-# product, so the product is taken there and copied into `C`.
+# product, so on a device the product is taken there and copied into `C`. The host keeps the generic
+# five-argument `mul!`, which reads `A` through `getindex` and allocates nothing, as `_dense` does.
 function _rmul_into!(C::AbstractMatrix{T}, B::AbstractMatrix{T},
         A::Union{SkewSymMatrix{T}, SymmetricMatrix{T}, AbstractTriangular{T},
             AbstractLieAlgHorMatrix{T}}) where {T}
+    KernelAbstractions.get_backend(A) isa CPU && return mul!(C, B, A, true, false)
     C .= _rmul(B, A)
 end
 

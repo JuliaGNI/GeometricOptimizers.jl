@@ -187,9 +187,11 @@ function geodesic(B::AbstractLieAlgHorMatrix, ::ProjectedSkew)
     # inside the range of `B̂`. In an orthonormal basis `Q` of that range it *is* a 2n × 2n
     # skew-symmetric matrix, and the exponential of one of those can be formed from an
     # eigendecomposition — which makes the result orthogonal by construction rather than by
-    # cancellation, at every lift norm. The thin `Q` is the factor applied to the first `2n` columns
+    # cancellation, at every lift norm. The thin `Q` is the factor applied to the first `k` columns
     # of the identity, which keeps it on `B̂`'s backend where `Matrix` would copy it to the host.
-    Q = qr(B̂).Q * StiefelProjection(B̂).A
+    # `B̂` is `N × 2n`, so the thin factor has `k = min(N, 2n)` columns.
+    k = min(B.N, 2 * B.n)
+    Q = qr(B̂).Q * StiefelProjection(backend, T, B.N, k).A
     M = (Q' * B̂) * (B̄' * Q)
     M = (M - M') / 2                              # `M` is skew up to round-off; make it exactly so
 
@@ -199,7 +201,7 @@ function geodesic(B::AbstractLieAlgHorMatrix, ::ProjectedSkew)
     expM = real((V .* transpose(cis.(-Λ))) * V')
 
     retracted = unit_matrix(backend, T, B.N)
-    mul!(retracted, Q * (expM - unit_matrix(backend, T, 2 * B.n)), Q', one(T), one(T))
+    mul!(retracted, Q * (expM - unit_matrix(backend, T, k)), Q', one(T), one(T))
     manifold_type(B)(retracted)
 end
 
