@@ -331,10 +331,10 @@ function apply_S_right!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom)
         @views v₂ = Λ.A[row_ind, j + M]
         for i in axes(B, 1)
             @views b = B[i, row_ind]
-            fac₁ = -Λ.c₁[j] * b' * v₁
+            fac₁ = -Λ.c₁[j] * transpose(b) * v₁
             b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
             b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
-            fac₂ = -Λ.c₂[j] * b' * v₂
+            fac₂ = -Λ.c₂[j] * transpose(b) * v₂
             b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
             b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
         end
@@ -359,10 +359,10 @@ function apply_S_inverse_right!(B::AbstractMatrix, Λ::SymplecticHouseholderDeco
         @views v₂ = Λ.A[row_ind, j + M]
         for i in axes(B, 1)
             @views b = B[i, row_ind]
-            fac₂ = Λ.c₂[j] * b' * v₂
+            fac₂ = Λ.c₂[j] * transpose(b) * v₂
             b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
             b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
-            fac₁ = Λ.c₁[j] * b' * v₁
+            fac₁ = Λ.c₁[j] * transpose(b) * v₁
             b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
             b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
         end
@@ -393,7 +393,7 @@ The canonical symplectic form ``a^TJb`` of two vectors of even length, evaluated
     @assert iseven(N2)
     @assert length(b) == N2
     N = N2 ÷ 2
-    -a[(N + 1):(2 * N)]' * b[1:N] + a[1:N]' * b[(N + 1):(2 * N)]
+    -transpose(a[(N + 1):(2 * N)]) * b[1:N] + transpose(a[1:N]) * b[(N + 1):(2 * N)]
 end
 
 @doc raw"""

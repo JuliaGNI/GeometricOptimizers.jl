@@ -219,6 +219,24 @@ package brings in an extension that answers for all three families here — thes
 manifolds, and the horizontal lifts. Flattening, differentiating and saving a parameter set that
 contains them therefore needs no case per type in the package doing the training.
 
+A gradient of one of these matrices has two forms, and they are not equal. The *natural cotangent* is
+a matrix of the same structure: `ChainRulesCore.ProjectTo` gives it for a dense cotangent
+``\bar{A} = \partial L/\partial A``, as the Frobenius projection ``\frac{1}{2}(\bar{A} \pm \bar{A}^T)``.
+Automatic differentiation can add two natural cotangents and project the sum again, because the
+projection is linear and idempotent. The *storage gradient* ``\partial L/\partial S`` is what the flat
+parameter vector and forward-mode differentiation give. An off-diagonal entry of a
+[`SymmetricMatrix`](@ref) appears twice in the matrix, so its storage gradient is
+``\bar{A}_{ij} + \bar{A}_{ji}``, twice the natural cotangent; the diagonal entries agree. For a
+[`SkewSymMatrix`](@ref) every storage entry is ``\bar{A}_{ij} - \bar{A}_{ji}``, again twice the
+natural cotangent. The triangular types store each entry once, so the two forms agree.
+
+## Element types
+
+These matrices, and the package as a whole, support real element types only. The storage of a
+[`SymmetricMatrix`](@ref) and a [`SkewSymMatrix`](@ref) describes ``A^T = \pm A``, which is not a
+Hermitian structure for a complex ``A``. A complex element type is not rejected, and some operations
+give a wrong answer for it.
+
 ## Library functions
 
 [`AbstractTriangular`](@ref), [`UpperTriangular`](@ref), [`LowerTriangular`](@ref),
