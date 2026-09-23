@@ -58,35 +58,6 @@ function SymplecticStiefelManifold{T, AT}(A::AT) where {T, AT <: AbstractMatrix{
     SymplecticStiefelManifold(A)
 end
 
-# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
-function _lmul(U::SymplecticStiefelManifold, B::AbstractMatrix)
-    _check_same_backend(U, B)
-    U.A * B
-end
-function _rmul(B::AbstractMatrix, U::SymplecticStiefelManifold)
-    _check_same_backend(U, B)
-    B * U.A
-end
-
-# `U'` is where this type's own operations go: `rgrad` and `metric` form `U'U`, and `check` is
-# `U'JU`. Without a kernel for the adjoint it keeps its wrapper into `LinearAlgebra`'s generic
-# product, which reads the point one entry at a time — scalar indexing, which a device array does
-# not serve. `LinearAlgebra` rewrites an `Adjoint` of a real matrix to a `Transpose` on its way into
-# `mul!`, so that failure reports a `Transpose`.
-function _lmul(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
-        B::AbstractMatrix) where {T, AT <: AbstractMatrix{T}}
-    _check_same_backend(parent(U), B)
-    U.parent.A' * B
-end
-
-# The mirror, which [`metric`](@ref) needs: it forms `J'·U·inv(U'U)·U'·J`, so the adjoint appears on
-# the right of a product as well as on the left.
-function _rmul(B::AbstractMatrix,
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    _check_same_backend(parent(U), B)
-    B * U.parent.A'
-end
-
 # Writes the two off-diagonal blocks of the Poisson tensor. A kernel is what it takes to write them
 # without scalar indexing, for the reason `write_ones_kernel!` and `unit_matrix` give one level up.
 @kernel function write_poisson_blocks_kernel!(J::AbstractMatrix{T}, n) where {T}

@@ -21,7 +21,8 @@ module AbstractNeuralNetworksExt
 # horizontal lifts, which never had one -- reduce to a delegation. A type added to
 # `src/parameter_protocol.jl` later is covered without a change here.
 
-using GeometricOptimizers: Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix
+using GeometricOptimizers: Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix,
+                           StiefelProjection
 
 import AbstractNeuralNetworks: changebackend
 using AbstractNeuralNetworks: NeuralNetworkBackend
@@ -31,6 +32,12 @@ using NeuralNetworkParameters: mapstorage
 function changebackend(backend::NeuralNetworkBackend,
         x::Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix})
     mapstorage(y -> changebackend(backend, y), x)
+end
+
+# `StiefelProjection` is no parameter, so the protocol does not cover it. It is rebuilt on the backend
+# its moved array is on; the `AbstractArray` method would read it one entry at a time.
+function changebackend(backend::NeuralNetworkBackend, E::StiefelProjection)
+    StiefelProjection(changebackend(backend, E.A))
 end
 
 end

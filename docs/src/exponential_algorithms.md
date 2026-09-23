@@ -81,7 +81,7 @@ All five algorithms in this package are:
 | [`ScaledSquaring`](@ref) | ``\mathfrak{A}(X)`` | Taylor series | low-rank modified squaring | matrix products and reductions |
 | [`NativePade`](@ref) | ``\mathfrak{A}(X)`` | degree-6 Padé | low-rank modified squaring | matrix products and reductions |
 | [`AugmentedPade`](@ref) | ``\mathfrak{A}(X)`` as a block of a ``4n\times{}4n`` exponential | delegated to `Base.exp` | delegated to `Base.exp` | CPU (dense LAPACK) |
-| [`ProjectedSkew`](@ref) | ``\exp(M)`` for the ``2n\times{}2n`` skew ``M = Q^T\bar{B}Q`` | eigendecomposition | none | CPU (dense LAPACK) |
+| [`ProjectedSkew`](@ref) | ``\exp(M)`` for the ``2n\times{}2n`` skew ``M = Q^T\bar{B}Q`` | eigendecomposition | none | the backend's `qr` and `eigen` (LAPACK, cuSOLVER) |
 
 Note that the two algorithms a reader is most likely to reach for, [`ScaledSquaring`](@ref) and
 [`NativePade`](@ref), differ **only in the kernel column**. Both scale the argument down and both
@@ -1483,12 +1483,13 @@ the property you specifically need.**
 |---|---|---|
 | [`ScaledSquaring`](@ref) | almost always; it is the default | `check` drifting up with the size of the lift |
 | [`NativePade`](@ref) | you want an independent direct calculation on a backend that forbids scalar indexing | `1.8×` the isolated ``\mathfrak{A}`` runtime and `1.6×` its allocations, the same accuracy in `Float64`, the worst `check` of the three in `Float32`, and `θ` bounded by `1/2` |
-| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | `1.1×`–`1.6×` the cost, the largest forward error in either format, CPU only |
+| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | `1.1×`–`1.6×` the cost, the largest forward error in either format, not on Metal |
 | [`AugmentedPade`](@ref) | you want a second opinion from an implementation that introduces no numerics of its own | roughly `2.5×` the cost of the ``\mathfrak{A}`` call, no better than [`ScaledSquaring`](@ref) on accuracy, CPU only |
 | [`TaylorSeries`](@ref) | never; it exists so the pre-0.2.0 regression stays reproducible | leaving the manifold silently above ``\Vert\bar{B}\Vert \approx 50`` |
 
 [`ScaledSquaring`](@ref), [`NativePade`](@ref) and [`TaylorSeries`](@ref) avoid dense LAPACK and scalar
-indexing in package code; [`AugmentedPade`](@ref) and [`ProjectedSkew`](@ref) do not. Whether any of
+indexing in package code; [`AugmentedPade`](@ref) does not, and [`ProjectedSkew`](@ref) needs the
+backend's own `qr` and `eigen`. Whether any of
 the first three runs on a particular accelerator depends on that backend's matrix-multiplication and
 reduction support. [`ScaledSquaring`](@ref) is the default among them because it does less work, and
 [`NativePade`](@ref) is the independent cross-check that was previously missing there.

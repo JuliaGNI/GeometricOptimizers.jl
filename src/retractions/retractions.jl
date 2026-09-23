@@ -176,23 +176,31 @@ function geodesic(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgo
     manifold_type(B)(retracted)
 end
 
+# Every step runs on the lift's backend: the `qr` and the `eigen` are the backend's own, and nothing
+# is copied to the host. A backend that supplies neither for a dense array raises inside them.
 function geodesic(B::AbstractLieAlgHorMatrix, ::ProjectedSkew)
+    T = eltype(B)
+    backend = KernelAbstractions.get_backend(B)
     B̂, B̄ = lift_factors(B)
 
     # `B̄` is skew-symmetric of rank ≤ 2n, so its range and its row space coincide and both sit
     # inside the range of `B̂`. In an orthonormal basis `Q` of that range it *is* a 2n × 2n
     # skew-symmetric matrix, and the exponential of one of those can be formed from an
     # eigendecomposition — which makes the result orthogonal by construction rather than by
-    # cancellation, at every lift norm.
-    Q = Matrix(qr(B̂).Q)
+    # cancellation, at every lift norm. The thin `Q` is the factor applied to the first `2n` columns
+    # of the identity, which keeps it on `B̂`'s backend where `Matrix` would copy it to the host.
+    Q = qr(B̂).Q * StiefelProjection(B̂).A
     M = (Q' * B̂) * (B̄' * Q)
     M = (M - M') / 2                              # `M` is skew up to round-off; make it exactly so
 
     # `im * M` is Hermitian for real skew `M`, so `M = -i·V·Λ·V*` and `exp(M) = ℜ(V·exp(-iΛ)·V*)`.
+    # The broadcast scales the columns of `V`, which is the product with `Diagonal(exp(-iΛ))`.
     Λ, V = eigen(Hermitian(im * M))
-    expM = real(V * Diagonal(cis.(-Λ)) * V')
+    expM = real((V .* transpose(cis.(-Λ))) * V')
 
-    manifold_type(B)(one(B) + Q * (expM - I) * Q')
+    retracted = unit_matrix(backend, T, B.N)
+    mul!(retracted, Q * (expM - unit_matrix(backend, T, 2 * B.n)), Q', one(T), one(T))
+    manifold_type(B)(retracted)
 end
 
 cayley(B::NetworkParameters) = mapparameters(cayley, B)

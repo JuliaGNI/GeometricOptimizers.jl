@@ -108,10 +108,9 @@ Base.size(A::SkewSymMatrix) = (A.n, A.n)
     nothing
 end
 
-# The sum kernel. `src/ambiguities.jl` has the `+` methods that reach it.
+# The sum kernels. `src/ambiguities.jl` has the `+` and `-` methods that reach them.
 function _ladd(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     @assert size(A) == size(B)
-    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(B)
     addition! = addition_kernel!(backend)
     C = KernelAbstractions.allocate(backend, T, size(A)...)
@@ -120,9 +119,8 @@ function _ladd(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     C
 end
 
-function Base.:+(A::SkewSymMatrix, B::SkewSymMatrix)
+function _owned_add(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
-    _check_same_backend(A, B)
     SkewSymMatrix(A.S + B.S, A.n)
 end
 
@@ -134,9 +132,8 @@ end
 # `_add!` and the other optimizer primitives for this type are generic over `VectorStorageMatrix`,
 # next to the rest of them in `optimizers/named_tuple_wrapper.jl`.
 
-function Base.:-(A::SkewSymMatrix, B::SkewSymMatrix)
+function _owned_sub(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
-    _check_same_backend(A, B)
     SkewSymMatrix(A.S - B.S, A.n)
 end
 
@@ -231,17 +228,13 @@ end
 LinearAlgebra.mul!(C::SkewSymMatrix, α::Real, A::SkewSymMatrix) = mul!(C, A, α)
 LinearAlgebra.rmul!(C::SkewSymMatrix, α::Real) = mul!(C, C, α)
 
-# The in-place form, and the one `_lmul` below is written on — the shape `mul!(C, ::SymmetricMatrix,
-# ::AbstractMatrix)` already has in `symmetric.jl`. It exists because the retraction workspace needs
-# the dense form of a lift's `A` block written into a buffer it owns rather than returned in a fresh
-# one, and because a structured matrix that has a `*` and no `mul!` makes a caller who has a
-# destination allocate anyway.
-function LinearAlgebra.mul!(C::AbstractMatrix, A::SkewSymMatrix, B::AbstractMatrix)
+# The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them. The
+# in-place form is the one the others are written on: the retraction workspace writes the dense form
+# of a lift's `A` block into a buffer it owns.
+function _lmul!(C::AbstractMatrix{T}, A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     @assert A.n == size(B, 1)
     @assert size(B, 2) == size(C, 2)
     @assert A.n == size(C, 1)
-    _check_same_backend(A, C)
-    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A.S)
 
     skew_mat_mul! = skew_mat_mul_kernel!(backend)
@@ -249,13 +242,9 @@ function LinearAlgebra.mul!(C::AbstractMatrix, A::SkewSymMatrix, B::AbstractMatr
     C
 end
 
-# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
 function _lmul(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
-    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A)
-    C = KernelAbstractions.allocate(backend, T, A.n, size(B, 2))
-    LinearAlgebra.mul!(C, A, B)
-    C
+    _lmul!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
 end
 
 @kernel function skew_mat_mul_kernel!(

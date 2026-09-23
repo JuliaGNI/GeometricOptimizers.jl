@@ -9,10 +9,9 @@ Base.parent(A::AbstractTriangular) = A.S
 Base.size(A::AbstractTriangular) = (A.n, A.n)
 
 # Each argument carries its own type, and the species is compared at run time. Bound as
-# `(A::AT, B::AT) where {AT <: AbstractTriangular}` these three do not dispatch for a pair whose
-# storage arrays differ -- a host `LowerTriangular{T, Vector{T}}` and a device
-# `LowerTriangular{T, JLArray{T, 1}}` are different concrete types, so `AT` cannot bind both and the
-# call reaches `Base`'s generic array `+` at `arraymath.jl:6` instead.
+# `(A::AT, B::AT) where {AT <: AbstractTriangular}` these do not dispatch for a pair whose storage
+# arrays differ -- a host `LowerTriangular{T, Vector{T}}` and a device
+# `LowerTriangular{T, JLArray{T, 1}}` are different concrete types, so `AT` cannot bind both.
 # `copyto!(::AbstractTriangular, …)` below carries this same idiom against the same whole-type
 # binding, as does `Manifold`'s `copyto!`.
 #
@@ -23,21 +22,15 @@ Base.size(A::AbstractTriangular) = (A.n, A.n)
 #
 # The sum of a lower and an upper triangular *is* well defined — it is a general matrix, which is
 # what `Base`'s generic `+` returns for the pair and what `*` between the two species already
-# returns. So `+` and `-` hand a mixed species to that path rather than refusing it. Only the
+# returns. So `+` and `-` hand a mixed species to the dense path rather than refusing it. Only the
 # packed-storage shortcut needs the two to agree.
-#
-# That path broadcasts through `getindex`, so it is host-only: a mixed-species pair whose storage is
-# on a device raises `Scalar indexing is disallowed` rather than returning the dense sum. The `*`
-# above is not the same in that respect -- it runs a kernel and answers on a device. A device
-# mixed-species sum therefore needs a kernel of its own, which nothing asks for yet.
 _triangular_species(A::AbstractTriangular) = Base.typename(typeof(A)).wrapper
 
-function Base.:+(A::AbstractTriangular, B::AbstractTriangular)
+# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
+function _owned_add(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
-    _check_same_backend(A, B)
     AT = _triangular_species(A)
-    AT === _triangular_species(B) ||
-        return invoke(+, Tuple{AbstractArray, AbstractArray}, A, B)
+    AT === _triangular_species(B) || return _dense(+, A, B)
     AT(A.S + B.S, A.n)
 end
 
@@ -52,12 +45,10 @@ function add!(C::AbstractTriangular, A::AbstractTriangular, B::AbstractTriangula
     add!(C.S, A.S, B.S)
 end
 
-function Base.:-(A::AbstractTriangular, B::AbstractTriangular)
+function _owned_sub(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
-    _check_same_backend(A, B)
     AT = _triangular_species(A)
-    AT === _triangular_species(B) ||
-        return invoke(-, Tuple{AbstractArray, AbstractArray}, A, B)
+    AT === _triangular_species(B) || return _dense(-, A, B)
     AT(A.S - B.S, A.n)
 end
 
@@ -202,17 +193,20 @@ to is not an `AbstractTriangular`. So that product stays on the generic path and
 """
 Base.:*(::AbstractTriangular, ::AbstractMatrix)
 
-# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
-function _lmul(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
-    m1, m2 = size(B)
-    @assert m1 == A.n
-    _check_same_backend(A, B)
+# The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them.
+function _lmul!(C::AbstractMatrix{T}, A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
+    @assert size(B, 1) == A.n == size(C, 1)
+    @assert size(B, 2) == size(C, 2)
     backend = KernelAbstractions.get_backend(A)
-    C = KernelAbstractions.allocate(backend, T, A.n, m2)
 
     triangular_mat_mul! = mat_mul_kernel(A, backend)
     triangular_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
     C
+end
+
+function _lmul(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
+    backend = KernelAbstractions.get_backend(A)
+    _lmul!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
 end
 
 function Base.zero(A::AT) where {AT <: AbstractTriangular}

@@ -14,22 +14,6 @@ mutable struct StiefelManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
     A::AT
 end
 
-# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
-function _lmul(Y::StiefelManifold, B::AbstractMatrix)
-    _check_same_backend(Y, B)
-    Y.A * B
-end
-function _rmul(B::AbstractMatrix, Y::StiefelManifold)
-    _check_same_backend(Y, B)
-    B * Y.A
-end
-
-function _lmul(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where {
-        T, AT <: AbstractMatrix{T}}
-    _check_same_backend(parent(Y), B)
-    Y.parent.A' * B
-end
-
 @doc raw"""
     rgrad(Y::StiefelManifold, ∇L::AbstractMatrix)
 

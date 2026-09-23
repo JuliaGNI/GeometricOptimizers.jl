@@ -43,16 +43,21 @@ const OPERANDS = let
     S = sr!(randn(N, N ÷ 2 + 1)).S
     # `sr!` asserts an even number of columns, so `n ÷ 2 + 1` has to be even as well
     Sₙ = sr!(randn(n, n ÷ 2 + 1)).S
+    skew = rand(SkewSymMatrix, N)
+    lift = rand(StiefelLieAlgHorMatrix, N, N ÷ 2)
+    grass = rand(GrassmannLieAlgHorMatrix, N, N ÷ 2)
     ["Y" => Y, "Y'" => Y', "Yview" => StiefelManifold(view(Q, :, :)),
+        "G" => GrassmannManifold(Q), "G'" => GrassmannManifold(Q)',
         "U" => U, "U'" => U', "S" => S, "inv(S)" => inv(S),
         "E" => StiefelProjection(N, N),
         "LowerTriangular" => rand(LowerTriangular{Float64}, N),
         "UpperTriangular" => rand(UpperTriangular{Float64}, N),
-        "SkewSym" => rand(SkewSymMatrix, N), "Sym" => rand(SymmetricMatrix, N),
-        "StiefelHor" => rand(StiefelLieAlgHorMatrix, N, N ÷ 2),
-        "GrassmannHor" => rand(GrassmannLieAlgHorMatrix, N, N ÷ 2),
+        "SkewSym" => skew, "SkewSym'" => skew', "Sym" => rand(SymmetricMatrix, N),
+        "StiefelHor" => lift, "StiefelHor'" => lift',
+        "GrassmannHor" => grass, "GrassmannHor'" => grass',
         # `6 × 2` and `2 × 6`
         "Yᵣ" => Yᵣ, "Yᵣ'" => Yᵣ', "Uᵣ" => Uᵣ, "Uᵣ'" => Uᵣ', "Eᵣ" => StiefelProjection(N, n),
+        "Eᵣ'" => StiefelProjection(N, n)',
         # `2 × 2` and `2 × 1`
         "Yₙ" => qpoint(n, 1), "Uₙ" => rand(SymplecticStiefelManifold, n, n), "Sₙ" => Sₙ,
         "inv(Sₙ)" => inv(Sₙ), "Eₙ" => StiefelProjection(n, 1),
@@ -103,25 +108,22 @@ end
 end
 
 # An owned operand whose element type differs from the other's reaches the untyped fallback of its
-# kernel, and so `LinearAlgebra`'s or `Base`'s own answer. That answer goes through `mul!`, and the
-# `mul!` kernels of `SkewSymMatrix` and `SymmetricMatrix` take one element type only, so a product
-# that reaches one of them with two element types raises a `MethodError`. The `broken` cases are
-# those.
+# kernel, and so `LinearAlgebra`'s or `Base`'s own answer. That answer goes through `mul!`, where the
+# kernels take one element type only, so a pair with two reaches the five-argument generic `mul!`.
 @testset "mixed element types" begin
     for A in (rand(SkewSymMatrix{Float32}, N), rand(SymmetricMatrix{Float32}, N),
         rand(LowerTriangular{Float32}, N), rand(StiefelLieAlgHorMatrix{Float32}, N, n),
         StiefelManifold(Float32.(Matrix(qr!(randn(N, N)).Q))))
-        kernel_on_left = A isa Union{SkewSymMatrix, SymmetricMatrix}
         M, v = randn(N, N), randn(N)
         B = rand(SkewSymMatrix, N)
-        @test A * M≈Matrix(A) * M broken=kernel_on_left
+        @test A * M ≈ Matrix(A) * M
         @test M * A ≈ M * Matrix(A)
-        @test A * v≈Matrix(A) * v broken=kernel_on_left
-        @test v' * A≈v' * Matrix(A) broken=A isa SymmetricMatrix
+        @test A * v ≈ Matrix(A) * v
+        @test v' * A ≈ v' * Matrix(A)
         @test A + M ≈ Matrix(A) + M
         @test M + A ≈ M + Matrix(A)
-        @test A * B≈Matrix(A) * Matrix(B) broken=kernel_on_left
-        @test B * A≈Matrix(B) * Matrix(A) broken=true
+        @test A * B ≈ Matrix(A) * Matrix(B)
+        @test B * A ≈ Matrix(B) * Matrix(A)
     end
 end
 
