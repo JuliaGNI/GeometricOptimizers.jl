@@ -48,7 +48,7 @@ end
 
 function stiefel_lie_alg_vectorization_test(n::Integer, N::Integer, T::DataType = Float32)
     A = rand(StiefelLieAlgHorMatrix{T}, N, n)
-    @test isapprox(StiefelLieAlgHorMatrix(vec(A), N, n), A)
+    @test isapprox(StiefelLieAlgHorMatrix(vcat(parent(A.A), vec(A.B)), N, n), A)
 end
 
 function scalar_multiplication(n::Integer, N::Integer, T::DataType = Float32)

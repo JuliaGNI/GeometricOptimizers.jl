@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: AbstractTriangular
+using GeometricOptimizers: AbstractTriangular, freeparameters
 using KernelAbstractions: CPU
 using LinearAlgebra: tr, transpose, tril, triu
 using Test
@@ -142,32 +142,36 @@ end
 # `CPU()`. The two give the same array at less cost, and this pins the placement and the values.
 @testset "the backendless allocators place on the host" begin
     for T in (Float32, Float64), MT in (LowerTriangular, UpperTriangular), n in 2:5
-        @test vec(zeros(MT{T}, n)) isa Vector{T}
-        @test all(iszero, vec(zeros(MT{T}, n)))
-        @test vec(zeros(MT{T}, n)) == vec(zeros(CPU(), MT{T}, n))
+        @test freeparameters(zeros(MT{T}, n)) isa Vector{T}
+        @test all(iszero, freeparameters(zeros(MT{T}, n)))
+        @test freeparameters(zeros(MT{T}, n)) == freeparameters(zeros(CPU(), MT{T}, n))
 
         # the same rng state has to give the same draw through either spelling
-        @test vec(rand(Random.MersenneTwister(7), MT{T}, n)) isa Vector{T}
-        @test vec(rand(Random.MersenneTwister(7), MT{T}, n)) ==
-              vec(rand(Random.MersenneTwister(7), CPU(), MT{T}, n))
+        @test freeparameters(rand(Random.MersenneTwister(7), MT{T}, n)) isa Vector{T}
+        @test freeparameters(rand(Random.MersenneTwister(7), MT{T}, n)) ==
+              freeparameters(rand(Random.MersenneTwister(7), CPU(), MT{T}, n))
     end
 end
 
-# The storage layout is public: `vec` returns it and the two-argument constructor takes it, so a
-# change to the index arithmetic that kept them consistent with each other would still be breaking.
-# Spelling the layout out for one matrix is what pins it.
+# The storage layout is public: `freeparameters` returns it and the two-argument constructor takes
+# it, so a change to the index arithmetic that kept them consistent with each other would still be
+# breaking. Spelling the layout out for one matrix is what pins it.
 @testset "storage layout" begin
     M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
 
     @test LowerTriangular(M) == [0 0 0 0; 5 0 0 0; 9 10 0 0; 13 14 15 0]
     @test UpperTriangular(M) == [0 2 3 4; 0 0 7 8; 0 0 0 12; 0 0 0 0]
 
-    @test vec(LowerTriangular(M)) == [5, 9, 10, 13, 14, 15]
-    @test vec(UpperTriangular(M)) == [2, 3, 7, 4, 8, 12]
+    @test freeparameters(LowerTriangular(M)) == [5, 9, 10, 13, 14, 15]
+    @test freeparameters(UpperTriangular(M)) == [2, 3, 7, 4, 8, 12]
 
-    # and the round trip: the vector the second constructor takes is the one `vec` returns
-    @test LowerTriangular(vec(LowerTriangular(M)), 4) == LowerTriangular(M)
-    @test UpperTriangular(vec(UpperTriangular(M)), 4) == UpperTriangular(M)
+    # and the round trip: the vector the second constructor takes is the one `freeparameters`
+    # returns
+    @test LowerTriangular(freeparameters(LowerTriangular(M)), 4) == LowerTriangular(M)
+    @test UpperTriangular(freeparameters(UpperTriangular(M)), 4) == UpperTriangular(M)
+
+    # `vec` is `Base`'s: the `n²` entries, not the storage
+    @test vec(LowerTriangular(M)) == vec(Matrix(LowerTriangular(M)))
 
     @test LowerTriangular([1, 2, 3, 4, 5, 6], 4) == [0 0 0 0; 1 0 0 0; 2 3 0 0; 4 5 6 0]
     @test UpperTriangular([1, 2, 3, 4, 5, 6], 4) == [0 1 2 4; 0 0 3 5; 0 0 0 6; 0 0 0 0]
@@ -175,10 +179,9 @@ end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::AbstractTriangular)` does not
 # settle on its own: `LinearAlgebra` has its own method for that left operand, narrower there and
-# wider on the right, so neither wins. The two tie-breakers beside that product in
-# `src/special_matrices/triangular.jl` settle it. `test/ambiguities.jl` cannot cover this pair,
-# because one of its two methods is not this package's. Both triangles run, because one pair of
-# methods covers them and neither is symmetric, so each pins which triangle the body reaches for.
+# wider on the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
+# Both triangles run, because one kernel covers them and neither is symmetric, so each pins which
+# triangle the body reaches for.
 @testset "a row vector times a triangular matrix" begin
     for T in (Float32, Float64), N in 2:5, AT in (LowerTriangular, UpperTriangular)
         A = rand(AT{T}, N)

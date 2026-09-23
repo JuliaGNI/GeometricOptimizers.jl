@@ -15,6 +15,16 @@ breaking release).
 ### Changed
 
 - **Documentation: module docstring and the special-matrices manual page state that the package supports real element types only.** The special-matrices manual page also sets out the two forms of a gradient of a structured matrix: the natural cotangent that `ProjectTo` gives (the Frobenius projection `(dA ± dAᵀ)/2`), and the storage gradient `∂L/∂S`, whose off-diagonal entries are twice as large. A complex element type is not rejected, and some operations give a wrong answer for it: the structured matrices, the retractions and the symplectic Gram-Schmidt process assume a real field.
+- **`*`, `+` and `-` on the owned matrix types go through one `Union` design.** Each operator has entry methods on `(Owned, AbstractMatrix)`, `(AbstractMatrix, Owned)` and `(Owned, Owned)` in `src/ambiguities.jl` (for `*` also a vector and two row-vector methods), and the per-type code is on internal kernels. The pairwise tie-breakers, the 20 per-type row-vector methods and the four `Sfac`–`Sfac` products are gone: the package owns 19 methods on `*` instead of 169, and 10 on `+` instead of 18. `detect_ambiguities(GeometricOptimizers)` reports no pair between two of the package's own methods (2 before), and 4 in total in the package's own environment, all against `StaticArrays` (230 before, most of them against `FillArrays` and `ArrayLayouts`). A pinning probe over 5616 operand pairs finds no product, sum or difference whose value or result type changed, and none whose inferred return type stopped being concrete; 24 pairs that raised now answer, among them `Sfac * SkewSymMatrix{Float32}` and `Sfac + SkewSymMatrix`.
+- **`+` against a plain matrix refuses a mixed-backend pair for all ten owned matrix types**, not only for `SkewSymMatrix`, `StiefelLieAlgHorMatrix` and `StiefelProjection`. The other seven answered on whichever backend the argument order picked, or raised `Scalar indexing is disallowed`. A same-backend sum keeps its value and type.
+- **`Sfac` reports a backend**, that of its reflector storage, so a sum or difference of an `Sfac` and an owned matrix type is checked and answers. Against a plain matrix it still reaches `Base`'s generic `+` and `-`; see open issue A25.
+- **The second `global_rep` method for a section without a lift is deleted.** It duplicated `global_rep(::GlobalSection{T}, ::AbstractVecOrMat{T})` and was the cause of both ambiguities between two of the package's own methods.
+
+### Breaking Changes
+
+- **`vec` is `Base`'s for `SkewSymMatrix`, `SymmetricMatrix`, both triangulars and both horizontal lifts.** It returns the entries of the matrix, not the packed storage; for a lift it returned a `LazyArrays.Vcat` of the storage blocks. Code that read the storage through `vec` uses `freeparameters` (which this package extends from `NeuralNetworkParameters`) or `parent`.
+- **LazyArrays is no longer a dependency**, and FillArrays and ArrayLayouts leave the environment with it. Its one use was `vec` of a lift.
+- **An operand that `KernelAbstractions.get_backend` cannot place raises in a checked `+`, `-` or `*`**, with `KernelAbstractions`' own `ArgumentError`, instead of being let through unchecked. In the probe above, 445 pairs that answered now raise; every one has a `Bidiagonal`, a FillArrays or a LazyArrays operand, and 42 of them are ambiguities that arise only when FillArrays or LazyArrays is loaded. The same holds, outside that probe, for `SymTridiagonal`, a range and a StaticArrays matrix; `+` with a StaticArrays matrix raises a `MethodError`, from an ambiguity with StaticArrays' `+(::AbstractArray, ::StaticArray)`, as `-` already did. Convert such an operand with `Matrix` first.
 
 
 ## [0.8.0]
@@ -5350,72 +5360,14 @@ section — not an optimization target.
 
 ---
 
-#### A25. `+` against a plain `AbstractMatrix` still crosses backends for seven of the ten owned types
+#### A25. `Sfac` and the adjoint of a point still cross backends against a plain matrix
 
-**Severity: medium** — it returns a value computed on a backend the caller did not choose, which is
-the class of defect `_check_same_backend` exists for. Found in the review of the PR that added that
-guard, and the `-` half of the same gap is closed in [Unreleased](#unreleased) above. **Pre-existing
-on `main`.**
-
-`scripts/mixed_backend_plain_matrix.jl` enumerates the 80 mixed-backend pairings of an owned matrix
-with a plain `AbstractMatrix`: ten types, `+` and `-`, both argument orders, the structured operand
-on each side. After the `-` fix, 52 are refused by name and 28 are not. All 28 are `+`:
-
-| type | `+` guarded | why |
-|:--|:--|:--|
-| `SkewSymMatrix` | yes | owns a kernel-backed `+(X, ::AbstractMatrix)` and its mirror |
-| `StiefelLieAlgHorMatrix` | yes | same |
-| `StiefelProjection` | yes | same |
-| `SymmetricMatrix` | **no** | no owned `+` against a plain matrix |
-| `LowerTriangular`, `UpperTriangular` | **no** | same |
-| `GrassmannLieAlgHorMatrix` | **no** | same |
-| `StiefelManifold`, `GrassmannManifold`, `SymplecticStiefelManifold` | **no** | same |
-
-Half of the 28 answer on the device and half raise `Scalar indexing is disallowed`, which names
-neither operand. Which half a pair falls in follows the argument order: with the structured operand
-on the host and the plain one on the device, `Base`'s broadcast picks the device and answers; with
-the structured operand on the device it reaches `getindex` and raises.
-
-**Why the `-` fix does not carry over.** `-` had no owned method against a plain matrix anywhere, so
-the three-method `(Owned, AbstractMatrix)` / `(AbstractMatrix, Owned)` / `(Owned, Owned)` pattern
-covers it without meeting anything. `+` has three such methods already, each kernel-backed and each
-narrower in the left argument than an `(AbstractMatrix, Owned)` method and wider in the right. A
-`Union` method is then wider in the slot the standoff is about, which is the mechanism the head of
-`src/ambiguities.jl` describes. Adding the `+` triple was measured: **sixteen** owned pairs become
-ambiguous — `SkewSym + Sym`, `SkewSym + Lower`, `Lift + Grass` and the rest — where on `main` all 98
-ordered `±` pairs answer cleanly.
-
-**What to do.** Two decisions, and the second is the substance:
-
-1. A tie-breaker per pair, in `src/ambiguities.jl`, in the shape that file already uses for `*`. The
-   count is bounded by the three types that own a `+`: one `+(X, ::OwnedMatrix)` and one
-   `+(::OwnedMatrix, X)` per type separates a whole row at a time, so it is six methods and not
-   thirty-six — but each of the three cross-pairs among `SkewSymMatrix`, `StiefelLieAlgHorMatrix`
-   and `StiefelProjection` then needs its own, and two of those exist only for matching element
-   types.
-2. **What each tie-breaker returns**, which is the same choice rules 1 and 2 at the head of
-   `src/ambiguities.jl` make for `*`. `addition_kernel!` reads its right operand through `getindex`,
-   so it runs on a device only where that operand is a plain device array: `SkewSymMatrix(dev) +
-   JLArray(dev)` answers on the device, and `SkewSymMatrix(dev) + SymmetricMatrix(dev)` raises
-   `Scalar indexing is disallowed` — measured. So a kernel path and a broadcast path are host-only in
-   the same places for an owned right operand, and the choice between them is about which type the
-   result carries rather than about device support.
-
-**Two types are outside the union and outside the sweep, and both still answer on the device.**
-Neither is fixed by adding it to `OwnedMatrix`, so each is its own small piece of work:
-
-- `Sfac`, the symplectic factor. `Sfac - JLArray` answers on the device in both argument orders.
-  Union membership alone would not guard it, because `KernelAbstractions.get_backend(::Sfac)`
-  raises, so `_check_same_backend` returns `nothing` and lets the pair through by design. It needs a
-  `get_backend` method first, and that is a statement about where an `Sfac`'s reflectors live.
-- `Adjoint{<:Manifold}`. `Y' - JLArray` answers on the device where `Y - JLArray` is refused. The
-  head of `src/ambiguities.jl` already treats `Adjoint{<:SymplecticStiefelManifold}` as a
-  participating type for `*`, so the shape is known; an `Adjoint` arm on these three methods brings
-  its own ambiguity surface and is a design decision rather than a widening.
-
-Until this closes, the accurate statement is the one the [Unreleased](#unreleased) entry now makes:
-the guard covers the binary arithmetic **wherever this package owns the method**, which for a plain
-`AbstractMatrix` on the other side is `-` on the ten union members and `+` on three of them.
+**Severity: medium.** `+` and `-` refuse a mixed-backend pair for the ten members of `OwnedMatrix`
+(see [Unreleased](#unreleased)). Two types are outside that union: `Sfac` and
+`Adjoint{<:Manifold}`. `Sfac ± JLArray` and `Y' ± JLArray` reach `Base`'s generic `+` and `-`,
+which take their backend from the argument order. Adding either type to the union is a design
+decision, because each brings its own ambiguity surface against `LinearAlgebra`'s methods on
+`Adjoint`.
 
 ---
 

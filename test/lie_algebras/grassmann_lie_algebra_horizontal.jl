@@ -76,7 +76,6 @@ end
         for B in lifts(T, N, n)
             v, _ = flatten(T, B)
             @test l2norm(B) ≈ l2norm(v)
-            @test l2norm(B) ≈ l2norm(collect(vec(B)))       # `vec` is the flattening too
             # and it is *not* the ambient norm, unless the lift is zero
             @test l2norm(B) < norm(Matrix(B))
             @test norm(Matrix(B)) ≈ √T(2) * l2norm(B)

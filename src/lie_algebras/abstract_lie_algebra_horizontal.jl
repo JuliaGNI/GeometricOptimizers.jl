@@ -48,36 +48,6 @@ function assign!(B::AbstractLieAlgHorMatrix{T}, C::AbstractLieAlgHorMatrix{T}) w
 end
 
 @doc raw"""
-    vec(B::AbstractLieAlgHorMatrix)
-
-The free parameters of `B`, laid out end to end and lazily — *not* the ``N^2`` entries of the matrix
-`B` presents itself as.
-
-# Examples
-
-```jldoctest
-using GeometricOptimizers
-
-A = SkewSymMatrix([1, ], 2)
-B = [2 3; ]
-B̄ = StiefelLieAlgHorMatrix(A, B, 3, 2)
-B̄ |> vec
-
-# output
-
-vcat(1-element Vector{Int64}, 2-element Vector{Int64}):
- 1
- 2
- 3
-```
-
-# Implementation
-
-This is using `Vcat` from the package `LazyArrays`, so nothing is copied.
-"""
-Base.vec(B::AbstractLieAlgHorMatrix) = LazyArrays.Vcat(map(vec, parent(B))...)
-
-@doc raw"""
     one(B::AbstractLieAlgHorMatrix)
 
 The ``N\times{}N`` identity, built with a `KernelAbstractions` kernel.
@@ -115,12 +85,15 @@ carries a kernel-backed product of its own. The per-type part is the first ``n``
 
 `*(C, B)` is written `-transpose(B * transpose(C))`, on the identity ``B^T = -B``; the vector form
 goes through the matrix one as a single column. `transpose` and not `adjoint` wherever one appears,
-for the reason the comment on `*(::AbstractMatrix, ::SkewSymMatrix)` in
+for the reason the comment on `_rmul(::AbstractMatrix, ::SkewSymMatrix)` in
 `special_matrices/skew_symmetric.jl` gives at length: the identity is a statement about the
 transpose, and `getindex` builds the off-diagonal blocks entrywise without conjugating. The two
 agree on a real element type and disagree on a complex one.
 """
-function Base.:*(B::AbstractLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
+Base.:*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)
+
+# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
+function _lmul(B::AbstractLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
     @assert B.N == size(C, 1)
     _check_same_backend(B, C)
     backend = KernelAbstractions.get_backend(B)
@@ -133,34 +106,14 @@ function Base.:*(B::AbstractLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
     D
 end
 
-function Base.:*(C::AbstractMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T}
+# A row vector reaches this method too, and gets it the same cheap way: `transpose(x)` is one
+# column, which reaches the block products as a single column instead of materializing the lift.
+function _rmul(C::AbstractMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T}
     -transpose(B * transpose(C))
 end
 
-# A row vector on the left is the one shape the method above leaves unsettled: it stands off against
-# `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
-# `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
-# vector gets the answer that method gives every other matrix, and gets it the same cheap way:
-# `transpose(x)` is one column, which reaches the block products as a single column instead of
-# materializing the lift. One pair covers both lifts, because the method above is written on
-# `AbstractLieAlgHorMatrix` too.
-function Base.:*(x::Adjoint{T, <:AbstractVector}, B::AbstractLieAlgHorMatrix{T}) where {T}
-    -transpose(B * transpose(x))
-end
-function Base.:*(x::Transpose{T, <:AbstractVector}, B::AbstractLieAlgHorMatrix{T}) where {T}
-    -transpose(B * transpose(x))
-end
-
-# see the comment on `*(::SkewSymMatrix, ::AbstractVector)`: the vector goes through the
+# see the comment on `_lmul(::SkewSymMatrix, ::AbstractVector)`: the vector goes through the
 # matrix--matrix path as a single column, and the `N × 1` result is reshaped back to a vector
-function Base.:*(B::AbstractLieAlgHorMatrix, c::AbstractVector{T}) where {T}
+function _lmul(B::AbstractLieAlgHorMatrix, c::AbstractVector{T}) where {T}
     vec(B * reshape(c, length(c), 1))
-end
-
-# Two lifts are the standoff the two methods above create between themselves, and rule 2 in
-# `src/ambiguities.jl` decides it: the right-hand operand is materialized, spelled `B₂ * one(B₂)` as
-# the triangulars and the symmetric matrices already spell it. The result is dense, as every
-# tie-breaker's is.
-function Base.:*(B₁::AbstractLieAlgHorMatrix{T}, B₂::AbstractLieAlgHorMatrix{T}) where {T}
-    B₁ * (B₂ * one(B₂))
 end

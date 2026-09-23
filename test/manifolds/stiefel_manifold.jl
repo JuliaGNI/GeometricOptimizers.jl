@@ -65,10 +65,8 @@ end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::StiefelManifold)` does not settle
 # on its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on
-# the right, so neither wins. The two tie-breakers beside the products in
-# `src/manifolds/stiefel_manifold.jl` settle it. `test/ambiguities.jl` cannot cover this pair,
-# because one of its two methods is not this package's. `Y` is rectangular, so a tie-breaker that
-# swapped or dropped an operand would not conform.
+# the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it. `Y` is
+# rectangular, so a method that swapped or dropped an operand would not conform.
 @testset "a row vector times a StiefelManifold" begin
     for T in (Float32, Float64), N in (20, 10), n in (5, 3)
         Y = rand(StiefelManifold{T}, N, n)

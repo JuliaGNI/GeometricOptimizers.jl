@@ -178,11 +178,9 @@ end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::Sfac)` does not settle on its own:
 # `LinearAlgebra` has its own method for that left operand, narrower there and wider on the right,
-# so neither wins. The four tie-breakers beside those products in
-# `src/decompositions/symplectic_sr.jl` settle it. `test/ambiguities.jl` cannot cover these pairs,
-# because one method of each is not this package's.
+# so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
 #
-# Both `S` and `inv(S)` run: they are separate types and so need, and have, separate methods. This
+# Both `S` and `inv(S)` run: they are separate types and so need, and have, separate kernels. This
 # compares the operator against its own dense form rather than against the manifold, so the
 # factorization's residual does not enter and the tolerance above is not needed.
 @testset "a row vector times an Sfac" begin

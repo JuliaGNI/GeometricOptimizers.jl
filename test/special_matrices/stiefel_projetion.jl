@@ -34,10 +34,8 @@ end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::StiefelProjection)` does not
 # settle on its own: `LinearAlgebra` has its own method for that left operand, narrower there and
-# wider on the right, so neither wins. The two tie-breakers beside the products in
-# `src/special_matrices/stiefel_projection.jl` settle it. This shape worked before
-# `StiefelProjection` had a `*` at all, so what is pinned here is that adding one did not take it
-# away. `E` is rectangular, so a tie-breaker that swapped or dropped an operand would not conform.
+# wider on the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
+# `E` is rectangular, so a method that swapped or dropped an operand would not conform.
 @testset "a row vector times a StiefelProjection" begin
     for T in (Float32, Float64), N in 3:5, n in 1:N
         E = StiefelProjection(N, n, T)

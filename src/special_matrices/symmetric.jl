@@ -301,7 +301,8 @@ function LinearAlgebra.mul!(c::AbstractVector, A::SymmetricMatrix, b::AbstractVe
     c
 end
 
-function Base.:*(A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
+# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
+function _lmul(A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
     _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A.S)
     C = KernelAbstractions.allocate(backend, T, A.n, size(B, 2))
@@ -311,30 +312,11 @@ end
 
 # `transpose` and not `adjoint`, for the reason the counterpart in `skew_symmetric.jl` spells out:
 # the identity rests on `Aᵀ = A`, so `(A·Bᵀ)ᵀ = B·Aᵀ = B·A`. Written `(A * B')'` it reads
-# `B·Aᴴ = B·conj(A)`, which agrees only where `A` is real.
-Base.:*(B::AbstractMatrix{T}, A::SymmetricMatrix{T}) where {T} = transpose(A * transpose(B))
+# `B·Aᴴ = B·conj(A)`, which agrees only where `A` is real. A row vector reaches this method too, as
+# the one column `transpose(x)`, for the reason the counterpart gives.
+_rmul(B::AbstractMatrix{T}, A::SymmetricMatrix{T}) where {T} = transpose(A * transpose(B))
 
-# A row vector on the left is the one shape the method above leaves unsettled: it stands off against
-# `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
-# `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
-# vector gets the answer that method gives every other matrix, including its `transpose`, and gets
-# it the same cheap way: `transpose(x)` is one column, which reaches the kernel as a single column
-# instead of materializing `A`. It is a `Vector` for a real element type and an `n×1` wrapper for a
-# complex one -- either way one column, so the two return the same values on different backings.
-# `T` is bound in both slots because the method above binds it there; free, these would not be
-# contained in it and would separate nothing.
-function Base.:*(x::Adjoint{T, <:AbstractVector}, A::SymmetricMatrix{T}) where {T}
-    transpose(A * transpose(x))
-end
-function Base.:*(x::Transpose{T, <:AbstractVector}, A::SymmetricMatrix{T}) where {T}
-    transpose(A * transpose(x))
-end
-
-function Base.:*(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where {T}
-    A * (B * one(B))
-end
-
-function Base.:*(A::SymmetricMatrix{T}, b::AbstractVector{T}) where {T}
+function _lmul(A::SymmetricMatrix{T}, b::AbstractVector{T}) where {T}
     _check_same_backend(A, b)
     backend = KernelAbstractions.get_backend(A.S)
     c = KernelAbstractions.allocate(backend, T, A.n)
@@ -356,8 +338,6 @@ end
 function Base.copy(A::SymmetricMatrix)
     SymmetricMatrix(copy(A.S), A.n)
 end
-
-Base.vec(A::SymmetricMatrix) = A.S
 
 function Base.copyto!(A::SymmetricMatrix{T}, B::SymmetricMatrix{T}) where {T}
     @assert A.n == B.n

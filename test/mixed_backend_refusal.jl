@@ -198,18 +198,13 @@ end
     @test parent(dev_lo + dev_lo) isa JLArray
 end
 
-# Without the three `-` methods in `ambiguities.jl` no owned matrix type has a `-` against a plain
-# `AbstractMatrix` at all, so every pair here falls to `Base`'s generic `-` at `arraymath.jl:6` and
-# takes its backend from the argument order. Both orders are asserted, because the unguarded answer
-# lands on whichever side comes first.
+# Without the `+` and `-` methods in `ambiguities.jl` a type with no kernel of its own falls to
+# `Base`'s generic `+` or `-` at `arraymath.jl:6` and takes its backend from the argument order.
+# Both orders are asserted, because the unguarded answer lands on whichever side comes first.
 #
 # All ten members of `OwnedMatrix` appear below, and the count is the point: a type added to that
 # union and not to this testset is a widening of the guard that nothing checks.
-#
-# `+` is **not** in this testset for seven of the ten types, and that is not an oversight: it is open
-# issue A25. The two types below that do refuse a `+` against a plain matrix are the ones whose
-# kernel-backed `+(X, ::AbstractMatrix)` carries the guard already.
-@testset "`-` against a plain matrix refuses a mixed-backend pair" begin
+@testset "`+` and `-` against a plain matrix refuse a mixed-backend pair" begin
     host_lo = LowerTriangular(rand(T, N, N))
     dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
     host_up = UpperTriangular(rand(T, N, N))
@@ -222,28 +217,31 @@ end
     dev_wide = JLArray(rand(T, N, 4))
     host_E = StiefelProjection(T, N, n)
 
-    for owned in (host_skew, host_sym, host_lo, host_up, host_lift, host_grass)
-        @test_throws ArgumentError owned - dev_mat
-        @test_throws ArgumentError dev_mat - owned
-    end
-    for owned in (host_Y, host_G, host_E)
-        @test_throws ArgumentError owned - dev_En
-        @test_throws ArgumentError dev_En - owned
-    end
-    @test_throws ArgumentError host_U - dev_wide
-    @test_throws ArgumentError dev_wide - host_U
+    for op in (+, -)
+        for owned in (host_skew, host_sym, host_lo, host_up, host_lift, host_grass)
+            @test_throws ArgumentError op(owned, dev_mat)
+            @test_throws ArgumentError op(dev_mat, owned)
+        end
+        for owned in (host_Y, host_G, host_E)
+            @test_throws ArgumentError op(owned, dev_En)
+            @test_throws ArgumentError op(dev_En, owned)
+        end
+        @test_throws ArgumentError op(host_U, dev_wide)
+        @test_throws ArgumentError op(dev_wide, host_U)
 
-    # the device operand on the left is the arm that raised `Scalar indexing is disallowed` before,
-    # which named neither operand
-    @test_throws ArgumentError dev_lo - host_mat
-    @test_throws ArgumentError host_mat - dev_lo
+        # the device operand on the left is the arm that raises `Scalar indexing is disallowed`
+        # without the guard, which names neither operand
+        @test_throws ArgumentError op(dev_lo, host_mat)
+        @test_throws ArgumentError op(host_mat, dev_lo)
 
-    # and the guard fires for two owned operands of different types, which is the pair the
-    # `(Owned, Owned)` tie-breaker exists for
-    @test_throws ArgumentError host_skew - SymmetricMatrix(JLArray(rand(T, N, N)))
+        # and the guard fires for two owned operands of different types, which is the pair the
+        # `(Owned, Owned)` method exists for
+        @test_throws ArgumentError op(host_skew, SymmetricMatrix(JLArray(rand(T, N, N))))
+        @test_throws ArgumentError op(host_lo, SymmetricMatrix(JLArray(rand(T, N, N))))
+    end
 
     # A same-backend difference is untouched: same value, same type, same backend. The structured
-    # results are what say the tie-breaker did not swallow the concrete same-type methods.
+    # results are what say the `(Owned, Owned)` method did not swallow the concrete same-type methods.
     @test host_skew - host_skew isa SkewSymMatrix
     @test host_lo - host_lo isa LowerTriangular
     @test dev_lo - dev_lo isa LowerTriangular
@@ -309,23 +307,6 @@ end
     # sum of the two
     @test_throws ArgumentError add!(
         LowerTriangular(rand(T, N, N)), lo, UpperTriangular(rand(T, N, N)))
-end
-
-# `KernelAbstractions.get_backend` *raises* for an array type it has no method for, rather than
-# answering. `StiefelLieAlgHorMatrix(vec(B), N, n)` is such a case: the blocks are views into a
-# `LazyArrays.Vcat`, both operands are on the host, and the operation is fine. A guard that turned
-# that raise into a refusal would reject the host-only assertions in
-# `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`, so the rule is that the guard refuses only
-# what it can prove.
-@testset "an unplaceable array is let through rather than refused" begin
-    B = rand(StiefelLieAlgHorMatrix{T}, N, n)
-    lazy = StiefelLieAlgHorMatrix(vec(B), N, n)
-
-    # the premise: this really is a type `get_backend` cannot answer for
-    @test_throws ArgumentError KernelAbstractions.get_backend(lazy)
-
-    @test isapprox(lazy - lazy, B - B)
-    @test isapprox(lazy + lazy, B + B)
 end
 
 # The three transfer operations keep crossing backends. `copyto!` is the one with a contract in
