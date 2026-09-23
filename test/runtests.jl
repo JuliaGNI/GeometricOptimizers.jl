@@ -48,7 +48,7 @@ begin
     @safetestset "Symmetric Matrix             " include("special_matrices/symmetric_matrix.jl")
 end
 begin
-    @safetestset "ProjectTo storage gradient   " include("special_matrices/project_to.jl")
+    @safetestset "ProjectTo natural cotangent  " include("special_matrices/project_to.jl")
 end
 begin
     @safetestset "Triangular Matrices          " include("special_matrices/triangular.jl")
