@@ -11,9 +11,9 @@
 # draws far from orthogonal, and only the second orthonormalisation brings `‖Yᵀλ‖` to rounding
 # level. The script prints, per element type and size, the largest and the median `‖Yᵀλ‖`, the
 # largest `‖λᵀλ - I‖`, the number of draws CholeskyQR2 breaks down on, and the fastest of 200 calls
-# of the first and the last variant. The figures in the `global_section` docstring and in its
-# CHANGELOG entry come from this script; the maxima are the worst of one seed of a heavy-tailed
-# value, so another seed gives a different worst case.
+# of the first and the last variant. The figures in the `global_section` docstring and the host
+# figures in its CHANGELOG entry come from this script; the maxima are the worst of one seed of a
+# heavy-tailed value, so another seed gives a different worst case.
 #
 # Run in a cold process:
 #

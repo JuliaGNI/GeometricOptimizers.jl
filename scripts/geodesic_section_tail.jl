@@ -3,21 +3,18 @@
 #
 # `geodesic(Y, Δ)` draws its global section from the global generator. For a `6 × 3` Stiefel and
 # Grassmann point and a step `rgrad(Y, ·) / 10`, the script retracts 20000 times on each backend and
-# prints the median, the 99.9th percentile and the largest `check` of the result, and the number of
-# results above the `1f-4` that `scripts/device_products.jl` asserts. It also retracts twice with
-# the same seed on a JLArray and says whether the two results are equal, which is what that sweep
-# relies on when it seeds its retraction rows.
+# prints the largest `check` of the result and the number of results above the `1f-4` that
+# `scripts/device_products.jl` asserts, and for the JLArray also the median and the 99.9th
+# percentile. It also retracts twice with the same seed on a JLArray and says whether the two
+# results are equal, which is what that sweep relies on when it seeds its retraction rows.
 #
-# With `global_section` projecting and orthonormalising once, one or two retractions in a thousand
-# exceeded `1f-4`, on the host and on a JLArray alike, and the largest `check` reached `8.5e-3`;
-# the CHANGELOG entry that fixes this quotes those figures. With the second pass none does: 0 of
-# 20000 on either backend, the largest `check` `6.2e-7` for the Stiefel and `2.8e-7` for the
-# Grassmann point.
+# None exceeds `1f-4`: 0 of 20000 on either backend, the largest `check` `6.2e-7` for the Stiefel
+# and `2.8e-7` for the Grassmann point.
 #
-# Run in a cold process:
+# Run in a cold process, in an environment that develops this checkout and adds JLArrays and
+# GPUArraysCore:
 #
-#     julia --startup-file=no --project=<env with GeometricOptimizers, JLArrays and GPUArraysCore> \
-#         scripts/geodesic_section_tail.jl
+#     julia --startup-file=no --project=<env> scripts/geodesic_section_tail.jl
 
 using GeometricOptimizers
 using GPUArraysCore: allowscalar
