@@ -1,4 +1,5 @@
 using GeometricOptimizers: StiefelProjection
+using JLArrays: JLArray
 using KernelAbstractions: CPU, KernelAbstractions
 using LinearAlgebra: I, transpose
 using Test
@@ -30,6 +31,18 @@ end
     end
     # the element type still defaults to `Float64`, as `zeros(N, n)` does
     @test eltype(StiefelProjection(5, 3)) === Float64
+end
+
+# The backend constructor writes its ones with a kernel, one work item per diagonal entry. An
+# `N × n` matrix has `min(N, n)` of them, so a wide one (`n > N`) must not launch `n` items; the host
+# constructor, `Matrix{T}(I, N, n)`, is the reference for every shape.
+@testset "a device StiefelProjection of any shape matches the host one" begin
+    device = KernelAbstractions.get_backend(JLArray(zeros(Float32, 1)))
+    for (N, n) in ((2, 4), (3, 3), (5, 2), (0, 3), (3, 0), (0, 0))
+        E = StiefelProjection(device, Float32, N, n)
+        @test E.A isa JLArray{Float32, 2}
+        @test Array(E.A) == StiefelProjection(N, n, Float32).A
+    end
 end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::StiefelProjection)` does not
