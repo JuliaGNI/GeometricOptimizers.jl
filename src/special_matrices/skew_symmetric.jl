@@ -150,12 +150,12 @@ Base.:*(α::Real, A::SkewSymMatrix) = A * α
 # The two allocators every owned type has; `src/allocators.jl` has the chain that supplies `rng`,
 # `backend` and `T` when a call leaves them out.
 function Base.zeros(backend::KernelAbstractions.Backend,
-        ::Type{<:SkewSymMatrix{T}}, n::Integer) where {T}
+        ::Type{SkewSymMatrix{T}}, n::Integer) where {T}
     SkewSymMatrix(_zeros(backend, T, n * (n - 1) ÷ 2), n)
 end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
-        ::Type{<:SkewSymMatrix{T}}, n::Integer) where {T}
+        ::Type{SkewSymMatrix{T}}, n::Integer) where {T}
     SkewSymMatrix(_rand(rng, backend, T, n * (n - 1) ÷ 2), n)
 end
 

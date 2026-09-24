@@ -181,12 +181,12 @@ Base.:*(α::Real, A::SymmetricMatrix) = A*α
 # types do: a symmetric matrix is an optimizer parameter in exactly the same way, and
 # `GeometricMachineLearning`'s SympNet and symplectic-attention layers are parametrized by both.
 function Base.zeros(backend::KernelAbstractions.Backend,
-        ::Type{<:SymmetricMatrix{T}}, n::Integer) where {T}
+        ::Type{SymmetricMatrix{T}}, n::Integer) where {T}
     SymmetricMatrix(_zeros(backend, T, n*(n+1)÷2), n)
 end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
-        ::Type{<:SymmetricMatrix{T}}, n::Integer) where {T}
+        ::Type{SymmetricMatrix{T}}, n::Integer) where {T}
     SymmetricMatrix(_rand(rng, backend, T, n*(n+1)÷2), n)
 end
 

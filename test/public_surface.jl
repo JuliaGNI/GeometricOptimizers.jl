@@ -47,6 +47,20 @@ end
 
 # A type that already names its element type is not given a second one: a wrong call is a
 # `MethodError`, not a `TypeError` from the chain.
+@testset "a storage type the backend does not give is refused, not ignored" begin
+    @test_throws MethodError zeros(CPU(), SkewSymMatrix{Float32, JLArray{Float32, 1}}, 3)
+    @test_throws MethodError zeros(jl_backend, SymmetricMatrix{Float64, Vector{Float64}}, 3)
+    @test_throws MethodError rand(
+        Xoshiro(1), CPU(), StrictlyLowerTriangular{Float32, JLArray{Float32, 1}}, 3)
+    @test_throws MethodError zeros(
+        jl_backend, StrictlyUpperTriangular{Float32, Vector{Float32}}, 3)
+    @test_throws MethodError rand(CPU(),
+        StiefelLieAlgHorMatrix{Float32, SkewSymMatrix{Float32, JLArray{Float32, 1}},
+            JLArray{Float32, 2}}, 5, 2)
+    @test_throws MethodError zeros(
+        CPU(), GrassmannLieAlgHorMatrix{Float32, JLArray{Float32, 2}}, 5, 2)
+end
+
 @testset "a wrong call to an owned type is a MethodError" begin
     @test_throws MethodError zeros(SkewSymMatrix{Float32}, 3, 3)
     @test_throws MethodError rand(Xoshiro(1), CPU(), SkewSymMatrix{Float32}, 3, 3)

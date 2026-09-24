@@ -183,21 +183,21 @@ end
 @doc raw"""
     default_eltype(backend)
 
-The element type a `rand` that names a backend but no element type draws in: `Float64` on the host
-and `Float32` on a device.
+The element type a `zeros` or a `rand` that names no element type allocates in: `Float64` on the
+host and `Float32` on a device.
 
 Neither value is arbitrary, which is the whole reason this is a function rather than a literal in
-each of two methods. `Float64` on the host is what `zeros(n)` and `rand(n)` already give, so a
-manifold drawn without an element type matches every other array drawn without one. `Float32` on a
+each allocator. `Float64` on the host is what `zeros(n)` and `rand(n)` already give, so an owned
+array or manifold allocated without an element type matches every other array allocated without
+one. `Float32` on a
 device is the width an accelerator is built for, and a device that carries `Float64` at all
 normally carries it at a fraction of the `Float32` rate.
 
 **The rule deliberately does not ask `KernelAbstractions.supports_float64`.** A backend being
 *able* to hold a `Float64` is not a reason to hand it one: a caller who has not said which width it
-wants is better served by the width the device is fast at. That trait answers the other half of the
-question instead — an element type the caller *does* name and the backend cannot hold is refused by
-the backend's own allocation rather than narrowed, which the `rand(backend, manifold_type, N, n)`
-docstring states.
+wants is better served by the width the device is fast at. An element type the caller *does* name
+and the backend cannot hold is refused by the backend's own allocation rather than narrowed, which
+the `rand(backend, manifold_type, N, n)` docstring states.
 
 A caller who wants a fixed width names it, in the parametric form
 `rand(backend, StiefelManifold{Float64}, N, n)`.

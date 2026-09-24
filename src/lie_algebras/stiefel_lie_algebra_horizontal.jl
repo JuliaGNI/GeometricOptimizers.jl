@@ -204,7 +204,7 @@ Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
 _hor_top_rows(B::StiefelLieAlgHorMatrix, C₁, C₂) = B.A * C₁ - transpose(B.B) * C₂
 
 function Base.zeros(backend::KernelAbstractions.Backend,
-        ::Type{<:StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+        ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     StiefelLieAlgHorMatrix(
         zeros(backend, SkewSymMatrix{T}, n), _zeros(backend, T, N - n, n), N, n)
 end
@@ -212,7 +212,7 @@ end
 # The `A` block is drawn before the `B` block, on every backend, so that a seeded draw names the same
 # matrix whether or not the call names the backend.
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
-        ::Type{<:StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+        ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     A = rand(rng, backend, SkewSymMatrix{T}, n)
     StiefelLieAlgHorMatrix(A, _rand(rng, backend, T, N - n, n), N, n)
 end

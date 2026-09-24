@@ -62,20 +62,6 @@ end
 
 Base.:*(α::Real, A::AT) where {AT <: AbstractTriangular} = A * α
 
-function Base.zeros(backend::KernelAbstractions.Backend, ::Type{AT},
-        n::Integer) where {T, AT <: AbstractTriangular{T}}
-    # Base.typename(AT).wrapper strips the type parameters, giving the bare constructor
-    # (StrictlyUpperTriangular or StrictlyLowerTriangular) as a constant the compiler can see, which
-    # is what makes the return type inferrable: `Base.return_types` gives the concrete triangular type
-    # here and `Any` for a name resolved through the evaluator at run time.
-    Base.typename(AT).wrapper(_zeros(backend, T, n*(n-1)÷2), Int(n))
-end
-
-function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
-        ::Type{AT}, n::Integer) where {T, AT <: AbstractTriangular{T}}
-    Base.typename(AT).wrapper(_rand(rng, backend, T, n*(n-1)÷2), Int(n))
-end
-
 # these are Adam operations:
 function scalar_add(A::AT, δ::Real) where {T, AT <: AbstractTriangular{T}}
     AT(A.S .+ δ, A.n)

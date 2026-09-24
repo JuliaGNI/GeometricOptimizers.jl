@@ -142,12 +142,12 @@ Base.:*(α::Real, A::GrassmannLieAlgHorMatrix) = A*α
 _hor_top_rows(B::GrassmannLieAlgHorMatrix, C₁, C₂) = -(transpose(B.B) * C₂)
 
 function Base.zeros(backend::KernelAbstractions.Backend,
-        ::Type{<:GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+        ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     GrassmannLieAlgHorMatrix(_zeros(backend, T, N-n, n), N, n)
 end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
-        ::Type{<:GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+        ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     GrassmannLieAlgHorMatrix(_rand(rng, backend, T, N - n, n), N, n)
 end
 

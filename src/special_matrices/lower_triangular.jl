@@ -60,6 +60,18 @@ function StrictlyLowerTriangular(S::AbstractMatrix{T}) where {T}
     StrictlyLowerTriangular(S_vec, n)
 end
 
+# The two allocators; `src/allocators.jl` has the chain. `Type{StrictlyLowerTriangular{T}}` and not
+# `Type{<:…}`, so that a storage type the backend does not give is a `MethodError`.
+function Base.zeros(backend::KernelAbstractions.Backend,
+        ::Type{StrictlyLowerTriangular{T}}, n::Integer) where {T}
+    StrictlyLowerTriangular(_zeros(backend, T, n * (n - 1) ÷ 2), Int(n))
+end
+
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
+        ::Type{StrictlyLowerTriangular{T}}, n::Integer) where {T}
+    StrictlyLowerTriangular(_rand(rng, backend, T, n * (n - 1) ÷ 2), Int(n))
+end
+
 function Base.getindex(A::StrictlyLowerTriangular{T}, i::Int, j::Int) where {T}
     if j == i
         return zero(T)

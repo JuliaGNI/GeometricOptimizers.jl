@@ -6,9 +6,14 @@
 # Each owned type has two methods, `zeros(backend, X{T}, dims...)` and
 # `rand(rng, backend, X{T}, dims...)`, next to its definition; a manifold has the `rand` alone. The
 # methods below supply what a call leaves out: `rng = Random.default_rng()`, `backend = CPU()`, and
-# `T = default_eltype(backend)` for a bare `X`. The per-type methods take `Type{<:X{T}}`, which a
-# bare `X` does not match, so a bare `X` reaches the last method of each function here and comes back
-# parametrized.
+# `T = default_eltype(backend)` for a bare `X`.
+#
+# The per-type methods take exactly `Type{X{T}}`, so a storage type the backend does not give --
+# `SkewSymMatrix{Float32, JLArray{Float32, 1}}` on the host -- matches none of them and is a
+# `MethodError` rather than a result of another type. A manifold's `rand` is the exception: it takes
+# `MT <: Manifold{T}` and keeps a concrete `MT`. The methods that fill in `T` take the bare types
+# only, so every other `X` that has no per-type method is a `MethodError` from
+# dispatch.
 #
 # Each method takes a leading `Integer` before the `Integer...`. Without it the zero-dimension call
 # `rand(X)` is a method of these as well, and `Random`'s `rand(::Type{X})` is ambiguous with it.
@@ -19,9 +24,19 @@ function Base.zeros(::Type{X}, d::Integer, dims::Integer...) where {X <: _OwnedA
     zeros(CPU(), X, d, dims...)
 end
 
-function Base.zeros(backend::KernelAbstractions.Backend, ::Type{X}, d::Integer,
-        dims::Integer...) where {X <: _OwnedAllocType}
-    zeros(backend, _with_default_eltype(zeros, backend, X, d, dims...), d, dims...)
+# One method per bare type, generated, and not one method on a `Union` of `Type`s: Julia does not
+# specialize on an argument of such a `Union`, and the result would infer as `Any`.
+for X in (SkewSymMatrix, SymmetricMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular,
+    StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix,
+    StiefelManifold, GrassmannManifold, SymplecticStiefelManifold)
+    @eval function Base.zeros(backend::KernelAbstractions.Backend, ::Type{$X}, d::Integer,
+            dims::Integer...)
+        zeros(backend, $X{default_eltype(backend)}, d, dims...)
+    end
+    @eval function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
+            ::Type{$X}, d::Integer, dims::Integer...)
+        rand(rng, backend, $X{default_eltype(backend)}, d, dims...)
+    end
 end
 
 function Base.rand(::Type{X}, d::Integer, dims::Integer...) where {X <: _OwnedAllocType}
@@ -36,20 +51,6 @@ end
 function Base.rand(backend::KernelAbstractions.Backend, ::Type{X}, d::Integer,
         dims::Integer...) where {X <: _OwnedAllocType}
     rand(Random.default_rng(), backend, X, d, dims...)
-end
-
-function Base.rand(
-        rng::AbstractRNG, backend::KernelAbstractions.Backend, ::Type{X}, d::Integer,
-        dims::Integer...) where {X <: _OwnedAllocType}
-    rand(rng, backend, _with_default_eltype(rand, backend, X, d, dims...), d, dims...)
-end
-
-# Only a bare `X` gets the default element type. An `X{T}` that reaches the two methods above has no
-# per-type method for these arguments, so it is a `MethodError` for the call the caller wrote, not a
-# `TypeError` from a second parameter.
-function _with_default_eltype(f, backend, ::Type{X}, dims...) where {X}
-    X === Base.typename(X).wrapper || throw(MethodError(f, (backend, X, dims...)))
-    X{default_eltype(backend)}
 end
 
 # The storage every per-type method allocates.

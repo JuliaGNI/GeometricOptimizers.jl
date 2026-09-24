@@ -55,7 +55,7 @@ and `_mul!` reach `SimpleSolvers`' own methods on them, and nothing is allocated
 buffering would add a copy per iteration and buy nothing. The accessors below make that case take the
 identical path it always did.
 """
-_flat_scratch(::Type, ::AbstractVector) = nothing
+_flat_scratch(::Type{T}, ::AbstractVector) where {T} = nothing
 
 function _flat_scratch(::Type{T}, g) where {T}
     δ = FlatParameters(T, g)

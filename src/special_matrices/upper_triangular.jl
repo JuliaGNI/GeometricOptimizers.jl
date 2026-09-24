@@ -60,6 +60,17 @@ function StrictlyUpperTriangular(S::AbstractMatrix{T}) where {T}
     StrictlyUpperTriangular(S_vec, n)
 end
 
+# see the allocators in `lower_triangular.jl`
+function Base.zeros(backend::KernelAbstractions.Backend,
+        ::Type{StrictlyUpperTriangular{T}}, n::Integer) where {T}
+    StrictlyUpperTriangular(_zeros(backend, T, n * (n - 1) ÷ 2), Int(n))
+end
+
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
+        ::Type{StrictlyUpperTriangular{T}}, n::Integer) where {T}
+    StrictlyUpperTriangular(_rand(rng, backend, T, n * (n - 1) ÷ 2), Int(n))
+end
+
 function Base.getindex(A::StrictlyUpperTriangular{T}, i::Int, j::Int) where {T}
     if j == i
         return zero(T)
