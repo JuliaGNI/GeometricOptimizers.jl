@@ -1,7 +1,7 @@
 # Every product and sum among this package's own matrix types, and between one of them and a plain
 # array, on a device, each against a host twin built from the same numbers.
 #
-# The sweep is `scripts/device_products.jl`, and the Metal check runs the same one: `JLArrays` with
+# The sweep is `scripts/device_products.jl`, and `metal.jl` runs the same one on Metal: `JLArrays` with
 # `allowscalar(false)` stands in for the device here, as it does in `device_multiply.jl`. A row that
 # reads an owned matrix one entry at a time raises `Scalar indexing is disallowed`, and a row whose
 # answer comes back on the host or disagrees with the host twin is `:wrong`.

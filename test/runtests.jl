@@ -2,6 +2,14 @@ using GeometricOptimizers
 using SafeTestsets
 using Test
 
+# `Pkg.test(test_args = ["metal"])` runs the Metal testset alone and stops. Asked for that way it
+# also runs off Apple silicon, where it fails rather than passing with nothing run; `metal.jl`
+# says why. A full run takes it last instead, because a failing top-level testset ends the file.
+if "metal" in ARGS
+    @safetestset "Metal                        " include("metal.jl")
+    exit()
+end
+
 begin
     @safetestset "Exports                      " include("exports.jl")
 end
@@ -160,4 +168,8 @@ begin
 end
 begin
     @safetestset "mixed-backend refusal        " include("mixed_backend_refusal.jl")
+end
+# Last, so that a Metal failure hides no host result.
+if Sys.isapple() && Sys.ARCH === :aarch64
+    @safetestset "Metal                        " include("metal.jl")
 end
