@@ -11,7 +11,7 @@ breaking release).
 ### Fixed
 
 - **`StiefelProjection(backend, T, N, n)` with more columns than rows (`n > N`) or with no columns (`n == 0`) builds on a device.** Its kernel launched `n` work items to write the diagonal, and an `N × n` matrix has `min(N, n)` diagonal entries. For `n > N` the call raised a `BoundsError` — on JLArrays from the kernel, on Metal as a `KernelException`; for `n == 0` Metal raised a `DivideError` on the empty launch. The kernel now launches `min(N, n)` work items and is skipped when that is zero. The host constructor was not affected. The docstring states what such a projection is: `Matrix{T}(I, N, n)`, whose columns are orthonormal only for `N ≥ n`.
-- **Two tests say what they claim.** The device sweep (`scripts/device_products.jl`, run by `test/device_products.jl`) seeds the global section its retraction rows draw, so a rare section no longer fails the suite about once in 500 runs; open issue A29 records that tail. And the `StiefelProjection` testset that meant to compare the host constructor with the backend one compared the host constructor with itself, because `StiefelProjection(CPU(), …)` routes to it; it reaches the backend constructor through `invoke` now. No package code changes.
+- **Two tests say what they claim.** The device sweep (`scripts/device_products.jl`, run by `test/device_products.jl`) seeds the global section its retraction rows draw, so a rare section no longer fails the suite once in about 400 runs; open issue A29 records the cause. And the `StiefelProjection` testset that meant to compare the host constructor with the backend one compared the host constructor with itself, because `StiefelProjection(CPU(), …)` routes to it; it reaches the backend constructor through `invoke` now. No package code changes.
 - **Symplectic Householder right-multiplication and `symplectic_form` now use `transpose` instead of `adjoint`.** The form is bilinear (aᵀJb), not sesquilinear, and `adjoint` conjugates a complex operand. For a complex operand `‖B*S − B*Matrix(S)‖` was wrong by order 1 or more, growing with the conditioning of S (medians for S of size 4, 6 and 10 being 16.7–17.1, 135–169, 7.9e4–1.3e5); for a real one it was negligible. The operations affected are: `B * Sfac`, `B * inv(Sfac)`, row vectors `v' * S`, and `transpose(v) * S`. Real results are unchanged.
 - **`+` against a plain matrix refuses a mixed-backend pair for all ten owned matrix types**, not only for `SkewSymMatrix`, `StiefelLieAlgHorMatrix` and `StiefelProjection`. The other seven answered on whichever backend the argument order picked, or raised `Scalar indexing is disallowed`. A same-backend sum keeps its value and type.
 - **Every product, sum, difference and three-argument `mul!` among the owned matrix types now runs on the device and matches a host twin.** Before this change, 612 of the 817 calls in a sweep of operations raised `Scalar indexing is disallowed` on JLArrays with `allowscalar(false)`, or failed inside a device kernel. A sweep of 817 calls (`scripts/device_products.jl`, asserted by `test/device_products.jl`) now passes except the two `cayley` retractions, which stop at JLArrays' missing `lu`; on Metal (an M4 Max) all 817 pass. The types covered are `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal lifts, the Stiefel, Grassmann and symplectic Stiefel points, `StiefelProjection`, and the adjoints of the points, of `StiefelProjection` and of a real `SkewSymMatrix` or lift. The operations covered are `*`, `+`, `-` and `mul!` into a plain destination, between two of these types or between one of them and a plain device array, and a scalar product. A `mul!` into an owned destination still raises, because the packed types have no `setindex!`. Named failures that are fixed: `GrassmannManifold` had no product methods, so `cayley`/`geodesic(Y, Δ)`, `apply_section`, `Y * B` and `Y' * B` failed; `Ω(Y, Δ)` for both Stiefel and Grassmann manifolds (through `Y * Y'`); `mul!(C, d, B)` for triangulars, both lifts and `StiefelProjection`, and `mul!(C, B, d)` for every owned type; `B * d` for both lifts; `StiefelProjection` operations `-`, `2f0 * E`, `-E`, `changebackend`, and `E' * X`; dense `+` and `-` of an owned matrix against a plain one broadcast through `getindex`.
@@ -5481,10 +5481,20 @@ points and every structured matrix move between backends. Found by `scripts/devi
 retracted point does not depend on that section. In `Float32` it does, now and then. For a `6 × 3`
 point and a step `rgrad(Y, ·) / 10`, the median `check` of the result is `2.5e-7` to `6e-7`, and
 over 20000 draws the number above `1e-4` is 32 for a Stiefel point (maximum `8.5e-3`) and 11 for a
-Grassmann point (maximum `1.4e-3`) on the host, and 34 and 18 on a JLArray. The cause is not
-measured; a near-singular random complement that CholeskyQR2 orthonormalises
-poorly in `Float32` is the likely one. It made the retraction rows of the device sweep fail about
-once in 500 runs, and the sweep now seeds the draw.
+Grassmann point (maximum `1.4e-3`) on the host, and 34 and 18 on a JLArray. It made the retraction
+rows of the device sweep fail once in about 400 runs, and the sweep now seeds the draw.
+
+The cause is in `global_section`, for both manifolds: it projects the span of `Y` out of the
+Gaussian draw once, `A - Y(YᵀA)`, and then orthonormalises. When a draw lies close to that span, the
+projection cancels most of it, the rounding error left in the span is large relative to what
+remains, and CholeskyQR2 turns what remains into columns that are orthonormal among themselves but
+not orthogonal to `Y`. Measured in `Float32` on one `6 × 3` Stiefel point over 20000 draws: the
+largest `‖λᵀλ - I‖` is `4.8e-7`, the largest `‖Yᵀλ‖` is `5.3e-3` (median `7.7e-7`, 7 draws above
+`1e-3`).
+
+**What to do**: project again after the first orthonormalisation and orthonormalise once more —
+the "twice is enough" rule of Gram–Schmidt. On the same draws the largest `‖Yᵀλ‖` then falls to
+`1.4e-7`. The cost of the second pass on a device is not measured.
 
 ---
 
