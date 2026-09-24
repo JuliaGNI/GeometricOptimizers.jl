@@ -137,7 +137,8 @@ derived from one failure probability raised to the eighth power. The script is
 **A redraw costs the caller determinism, not just time.** The number of Gaussian draws
 [`global_section`](@ref) consumes in `Float32` depends on the draws themselves, so a seeded
 `Float32` computation downstream of one is not reproducible across a change to this function or to
-the element type. Nothing in this package relies on that today.
+the element type. The device sweep in `scripts/device_products.jl` seeds one, and relies only on the
+same code repeating its draws.
 
 Shifted CholeskyQR3 measured on the same draws does not close it — one failure in 300 even with
 the exact ``\|A\|_2`` in the shift, because forming ``A^TA`` in `Float32` loses a singular value

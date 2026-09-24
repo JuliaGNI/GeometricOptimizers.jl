@@ -4,7 +4,8 @@
 # `device_products(todevice)` takes the function that moves a host array onto the device and returns
 # one row per call: its name, `:pass`, `:wrong` (it ran and disagrees with the host twin, or its
 # result left the device) or the first line of the error it raised. Scalar indexing has to be off
-# for the rows to mean anything, and the function turns it off.
+# for the rows to mean anything, and the function turns it off. It also reseeds the global generator
+# with `seed`, for the retraction rows; a caller that needs its own stream reseeds after it.
 #
 #     using JLArrays; device_products(JLArray)     # what `test/device_products.jl` asserts
 #     using Metal;    device_products(MtlArray)    # what `test/metal.jl` asserts
@@ -142,6 +143,12 @@ function device_products(todevice; seed = 1234)
     end
 
     # The manifold operations on a device, and the retractions they sit on.
+    #
+    # A retraction draws its global section from the global generator, and one or two sections in a
+    # thousand give a `Float32` geodesic whose `check` is above the `1f-4` below — on the host as
+    # well as on a device, so it is not what this sweep tests. The seed fixes the draw. On a
+    # JLArray `Random.seed!` makes it repeatable; a device with a generator of its own may not.
+    Random.seed!(seed)
     for M in (StiefelManifold, GrassmannManifold)
         Y = M(Matrix(qr!(randn(rng, T, 6, 6)).Q)[:, 1:3])
         Δ = rgrad(Y, randn(rng, T, 6, 3)) / 10
