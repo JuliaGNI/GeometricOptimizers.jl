@@ -5476,11 +5476,12 @@ points and every structured matrix move between backends. Found by `scripts/devi
 
 #### A29. A rare global section leaves a `Float32` geodesic far off the manifold
 
-**Severity: medium.** `geodesic(Y, Δ)` draws its global section at random. For a `6 × 3` point in
-`Float32` and a step `rgrad(Y, ·) / 10`, the median `check` of the result is about `5e-7`, and one
-or two draws in a thousand exceed `1e-4`: over 20000 draws on the host, 32 for a Stiefel point
-(maximum `8.5e-3`) and 11 for a Grassmann point (maximum `1.4e-3`), with the same rate on a JLArray.
-The cause is not measured; a near-singular random complement that CholeskyQR2 orthonormalises
+**Severity: medium.** `geodesic(Y, Δ)` draws its global section at random, and A5 says the
+retracted point does not depend on that section. In `Float32` it does, now and then. For a `6 × 3`
+point and a step `rgrad(Y, ·) / 10`, the median `check` of the result is `2.5e-7` to `6e-7`, and
+over 20000 draws the number above `1e-4` is 32 for a Stiefel point (maximum `8.5e-3`) and 11 for a
+Grassmann point (maximum `1.4e-3`) on the host, and 34 and 18 on a JLArray. The cause is not
+measured; a near-singular random complement that CholeskyQR2 orthonormalises
 poorly in `Float32` is the likely one. It made the retraction rows of the device sweep fail about
 once in 500 runs, and the sweep now seeds the draw.
 
