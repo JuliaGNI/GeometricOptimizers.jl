@@ -9,7 +9,7 @@ using GeometricOptimizers
 using GeometricOptimizers: default_eltype
 using GPUArraysCore: GPUArraysCore
 using JLArrays: JLArray
-using KernelAbstractions: KernelAbstractions, CPU, get_backend
+using KernelAbstractions: CPU, get_backend
 using Random: Random, Xoshiro
 using Test
 
