@@ -3,11 +3,17 @@
 
 Make a matrix of the form ``\begin{bmatrix} \mathbb{I} & \mathbb{O} \end{bmatrix}^T`` for a specific backend and data type.
 
-An array that essentially does `vcat(I(n), zeros(N-n, n))` with GPU support. 
+An array that essentially does `vcat(I(n), zeros(N-n, n))` with GPU support.
 
 # Extended help
 
-An instance of `StiefelProjection` should technically also belong to [`StiefelManifold`](@ref). 
+For ``N \geq n`` an instance of `StiefelProjection` should technically also belong to
+[`StiefelManifold`](@ref): its columns are orthonormal.
+
+Any other shape is the same matrix `Matrix{T}(I, N, n)`: ones on the diagonal and zeros elsewhere.
+For ``n > N`` that is ``\begin{bmatrix} \mathbb{I} & \mathbb{O} \end{bmatrix}``, whose columns are not
+orthonormal, and a projection with no rows or no columns is the empty matrix of its size. The host
+and the backend constructors agree on every shape.
 """
 struct StiefelProjection{T, AT} <: AbstractMatrix{T}
     N::Int
