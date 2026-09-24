@@ -2,6 +2,14 @@ using GeometricOptimizers
 using SafeTestsets
 using Test
 
+# Metal runs on every Apple-silicon Mac, and first, so that `Pkg.test(test_args = ["metal"])` can
+# run it alone and stop. Asked for that way it also runs off Apple silicon, where it fails rather
+# than passing with nothing run; `metal.jl` says why.
+if "metal" in ARGS || (Sys.isapple() && Sys.ARCH === :aarch64)
+    @safetestset "Metal                        " include("metal.jl")
+end
+"metal" in ARGS && exit()
+
 begin
     @safetestset "Exports                      " include("exports.jl")
 end
