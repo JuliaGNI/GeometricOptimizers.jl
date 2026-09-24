@@ -83,8 +83,9 @@ written**, which is where this differs from the triangulars: those hold a packed
 carries a kernel-backed product of its own. The per-type part is the first ``n`` rows,
 `_hor_top_rows`, beside each concrete lift.
 
-`*(C, B)` is written `-transpose(B * transpose(C))`, on the identity ``B^T = -B``; the vector form
-goes through the matrix one as a single column. `transpose` and not `adjoint` wherever one appears,
+`*(C, B)` is written `-transpose(B * permutedims(C))`, on the identity ``B^T = -B``; a row vector
+`x` takes `transpose(x)` in place of `permutedims(C)`, and the vector form goes through the matrix
+one as a single column. `transpose` and `permutedims`, and not `adjoint`, wherever one appears,
 for the reason the comment on `_rmul(::AbstractMatrix, ::SkewSymMatrix)` in
 `special_matrices/skew_symmetric.jl` gives at length: the identity is a statement about the
 transpose, and `getindex` builds the off-diagonal blocks entrywise without conjugating. The two
@@ -92,13 +93,12 @@ agree on a real element type and disagree on a complex one.
 """
 Base.:*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)
 
-# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
-function _lmul(B::AbstractLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
-    @assert B.N == size(C, 1)
-    _check_same_backend(B, C)
-    backend = KernelAbstractions.get_backend(B)
+# The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them.
+function _lmul_into!(D::AbstractMatrix{T}, B::AbstractLieAlgHorMatrix{T},
+        C::AbstractMatrix{T}) where {T}
+    @assert B.N == size(C, 1) == size(D, 1)
+    @assert size(C, 2) == size(D, 2)
 
-    D = KernelAbstractions.allocate(backend, T, B.N, size(C, 2))
     C₁ = @view C[1:(B.n), :]
     C₂ = @view C[(B.n + 1):(B.N), :]
     @views D[1:(B.n), :] .= _hor_top_rows(B, C₁, C₂)
@@ -106,10 +106,23 @@ function _lmul(B::AbstractLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
     D
 end
 
-# A row vector reaches this method too, and gets it the same cheap way: `transpose(x)` is one
-# column, which reaches the block products as a single column instead of materializing the lift.
+function _lmul(B::AbstractLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
+    backend = KernelAbstractions.get_backend(B)
+    _lmul_into!(KernelAbstractions.allocate(backend, T, B.N, size(C, 2)), B, C)
+end
+
+# `permutedims` and not a lazy `transpose`: the block products above take views of their operand,
+# and a device array's product does not serve a view of a `Transpose`. `permutedims` does not
+# conjugate either, so the two are the same matrix for every element type.
 function _rmul(C::AbstractMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T}
-    -transpose(B * transpose(C))
+    -transpose(B * permutedims(C))
+end
+
+# A row vector gets the same product the cheap way: `transpose(x)` is one column, which reaches the
+# block products as a single column instead of materializing the lift.
+function _rmul(x::Union{Adjoint{T, <:AbstractVector}, Transpose{T, <:AbstractVector}},
+        B::AbstractLieAlgHorMatrix{T}) where {T}
+    -transpose(B * transpose(x))
 end
 
 # see the comment on `_lmul(::SkewSymMatrix, ::AbstractVector)`: the vector goes through the

@@ -179,9 +179,9 @@ The third and fourth shapes place on the host without saying so, and that is del
 mirror `Base`, where `zeros(Float32, 3)` is a host array and nothing about the call suggests
 otherwise; these types present as `AbstractMatrix`, so `zeros(SkewSymMatrix{Float32}, n)` should
 read as the `Array` case does. A host placement also cannot quietly corrupt a device computation:
-mixing one with a device array throws at the first arithmetic — `+` and `add!` both reach the
-storage arrays and fail there — so the loud failure already gives the guarantee that making these
-shapes take a backend would buy. `copyto!` and `assign!` are the deliberate exception, because they
+mixing one with a device array throws at the first arithmetic — `*`, `+`, `-`, `mul!` and `add!`
+refuse a pair on two backends with an `ArgumentError` that names both — so the loud failure already
+gives the guarantee that making these shapes take a backend would buy. `copyto!` and `assign!` are the deliberate exception, because they
 *are* the transfer: moving a host-built structured matrix onto a device is what they exist for.
 
 The second shape is the only one where the package decides something the caller did not, which is
@@ -201,6 +201,20 @@ None of this reaches an allocation the package makes for itself. `zero`, `simila
 `_similar` all take an *instance*, so the backend and the element type both come from the argument
 and there is nothing to default — which is what every optimizer cache and every state allocates
 through. A parameter set on a device stays there.
+
+## Arithmetic and broadcasting on a device
+
+A product, a sum, a difference and a `mul!` between two of these matrices, or between one of them and
+a plain array, run on the backend of their operands: the structured matrices, the horizontal lifts,
+the manifold points, `StiefelProjection` and the adjoints of each. None of them reads an entry at a
+time, which a device does not serve.
+
+A **broadcast** does. These matrices define no broadcast style, so `A .+ 1` or `f.(A)` reads `A`
+through `getindex`, and on a device that raises `Scalar indexing is disallowed`. Broadcast over the
+storage instead — `parent(A)` for the structured matrices, `Y.A` for a manifold point — and rebuild
+the matrix around the result where its structure still holds. A manifold point is left without a
+broadcast style on purpose: a broadcast over a point returns a plain array, because its result is in
+general not on the manifold.
 
 ## Why the storage matters here
 

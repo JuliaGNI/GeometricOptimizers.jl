@@ -97,20 +97,19 @@ function Base.getindex(A::StiefelLieAlgHorMatrix{T}, i, j) where {T}
     return zero(T)
 end
 
-function Base.:+(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
+# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
+function _owned_add(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
-    _check_same_backend(A, B)
     StiefelLieAlgHorMatrix(A.A + B.A,
         A.B + B.B,
         A.N,
         A.n)
 end
 
-function Base.:-(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
+function _owned_sub(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
-    _check_same_backend(A, B)
     StiefelLieAlgHorMatrix(A.A - B.A,
         A.B - B.B,
         A.N,
@@ -142,7 +141,6 @@ function _ladd(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
     # half that falls outside its stored entries. The sum of a horizontal lift and an arbitrary
     # matrix carries none of those structures. The element type is promoted across both operands for
     # the same reason -- `copy(A)` gave the destination `A`'s element type alone.
-    _check_same_backend(B, A)
     backend = KernelAbstractions.get_backend(A)
     C = KernelAbstractions.allocate(backend, promote_type(eltype(A), eltype(B)), size(A)...)
     copyto!(C, A)
@@ -166,9 +164,8 @@ end
 # inner `n × n` block uses for the same entry, so the first `n * (n - 1) ÷ 2` entries take `C.A.S`
 # as one slice. Row `i > n` holds `C.B[i - n, :]` in its first `n` columns and zero in the rest,
 # which is the loop.
-function Base.:+(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
+function _owned_add(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
     @assert size(A) == size(C)
-    _check_same_backend(C, A)
 
     S = similar(A.S, promote_type(eltype(A), eltype(C)))
     copyto!(S, A.S)
@@ -181,7 +178,7 @@ function Base.:+(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
     SkewSymMatrix(S, C.N)
 end
 
-Base.:+(A::SkewSymMatrix, C::StiefelLieAlgHorMatrix) = C + A
+_owned_add(A::SkewSymMatrix, C::StiefelLieAlgHorMatrix) = _owned_add(C, A)
 
 # `-` on the same mixed pair returns a dense matrix, although the difference of two skew-symmetric
 # matrices is skew-symmetric as well. A structured `-` would be a behaviour change, so the asymmetry

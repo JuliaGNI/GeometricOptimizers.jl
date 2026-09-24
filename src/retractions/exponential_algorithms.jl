@@ -220,10 +220,12 @@ largest lifts, and a QR plus an eigendecomposition instead of matrix products. C
 on the manifold matters more than agreeing with the exponential to the last bit — a long `Float32`
 run, for instance, where `check` accumulates over thousands of steps.
 
-!!! warning "CPU only"
-    `qr` and `eigen` on a dense matrix need LAPACK. [`ScaledSquaring`](@ref) and
-    [`NativePade`](@ref) avoid that dependency, subject to backend support for their matrix
-    operations.
+!!! warning "Needs the backend's `qr` and `eigen`"
+    Every step runs on the lift's own backend, so the backend has to supply a `qr` and an `eigen`
+    of a `Hermitian` matrix for its dense arrays. LAPACK does on the host, and CUDA.jl provides
+    both through cuSOLVER, which this package does not test. Metal and JLArrays supply neither,
+    and there the call raises inside `qr`.
+    [`ScaledSquaring`](@ref) needs matrix products only, and [`NativePade`](@ref) a solve besides.
 
 See [5. `ProjectedSkew`](@ref) for the measurements and
 [`AbstractExponentialAlgorithm`](@ref) for the alternatives.

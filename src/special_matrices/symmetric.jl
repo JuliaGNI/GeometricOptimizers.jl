@@ -151,9 +151,9 @@ end
 Base.parent(A::SymmetricMatrix) = A.S
 Base.size(A::SymmetricMatrix) = (A.n, A.n)
 
-function Base.:+(A::SymmetricMatrix, B::SymmetricMatrix)
+# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
+function _owned_add(A::SymmetricMatrix, B::SymmetricMatrix)
     @assert A.n == B.n
-    _check_same_backend(A, B)
     SymmetricMatrix(A.S + B.S, A.n)
 end
 
@@ -162,9 +162,8 @@ function add!(C::SymmetricMatrix, A::SymmetricMatrix, B::SymmetricMatrix)
     add!(C.S, A.S, B.S)
 end
 
-function Base.:-(A::SymmetricMatrix, B::SymmetricMatrix)
+function _owned_sub(A::SymmetricMatrix, B::SymmetricMatrix)
     @assert A.n == B.n
-    _check_same_backend(A, B)
     SymmetricMatrix(A.S - B.S, A.n)
 end
 
@@ -265,49 +264,20 @@ LinearAlgebra.rmul!(C::SymmetricMatrix, α::Real) = mul!(C, C, α)
     C[i, j] = tmp_sum
 end
 
-function LinearAlgebra.mul!(C::AbstractMatrix, A::SymmetricMatrix, B::AbstractMatrix)
+# The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them.
+function _lmul_into!(C::AbstractMatrix{T}, A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
     @assert A.n == size(B, 1)
     @assert size(B, 2) == size(C, 2)
     @assert A.n == size(C, 1)
-    _check_same_backend(A, C)
-    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A.S)
     symmetric_mat_mul! = symmetric_mat_mul_kernel!(backend)
     symmetric_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
     C
 end
 
-@kernel function symmetric_vector_mul_kernel!(
-        c::AbstractVector{T}, S::AbstractVector{T}, b::AbstractVector{T}, n) where {T}
-    i = @index(Global)
-
-    tmp_sum = zero(T)
-    for k in 1:i
-        tmp_sum += S[((i - 1) * i) ÷ 2 + k] * b[k]
-    end
-    for k in (i + 1):n
-        tmp_sum += S[((k - 1) * k) ÷ 2 + i] * b[k]
-    end
-    c[i] = tmp_sum
-end
-
-function LinearAlgebra.mul!(c::AbstractVector, A::SymmetricMatrix, b::AbstractVector)
-    @assert A.n == length(c) == length(b)
-    _check_same_backend(A, c)
-    _check_same_backend(A, b)
-    backend = KernelAbstractions.get_backend(A.S)
-    symmetric_vector_mul! = symmetric_vector_mul_kernel!(backend)
-    symmetric_vector_mul!(c, A.S, b, A.n, ndrange = size(c))
-    c
-end
-
-# The product kernels. `src/ambiguities.jl` has the `*` methods that reach them.
 function _lmul(A::SymmetricMatrix{T}, B::AbstractMatrix{T}) where {T}
-    _check_same_backend(A, B)
     backend = KernelAbstractions.get_backend(A.S)
-    C = KernelAbstractions.allocate(backend, T, A.n, size(B, 2))
-    LinearAlgebra.mul!(C, A, B)
-    C
+    _lmul_into!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
 end
 
 # `transpose` and not `adjoint`, for the reason the counterpart in `skew_symmetric.jl` spells out:
@@ -316,12 +286,10 @@ end
 # the one column `transpose(x)`, for the reason the counterpart gives.
 _rmul(B::AbstractMatrix{T}, A::SymmetricMatrix{T}) where {T} = transpose(A * transpose(B))
 
+# see the comment on `_lmul(::SkewSymMatrix, ::AbstractVector)`: the vector goes through the
+# matrix--matrix kernel as a single column, and the `n × 1` result is reshaped back to a vector
 function _lmul(A::SymmetricMatrix{T}, b::AbstractVector{T}) where {T}
-    _check_same_backend(A, b)
-    backend = KernelAbstractions.get_backend(A.S)
-    c = KernelAbstractions.allocate(backend, T, A.n)
-    LinearAlgebra.mul!(c, A, b)
-    c
+    vec(A * reshape(b, length(b), 1))
 end
 
 function Base.one(A::SymmetricMatrix{T}) where {T}

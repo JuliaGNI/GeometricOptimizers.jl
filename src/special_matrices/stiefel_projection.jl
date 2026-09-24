@@ -80,11 +80,6 @@ end
 
 Base.size(E::StiefelProjection) = (E.N, E.n)
 Base.getindex(E::StiefelProjection, i, j) = getindex(E.A, i, j)
-# The sum and product kernels. `src/ambiguities.jl` has the `+` and `*` methods that reach them.
-function _ladd(E::StiefelProjection, A::AbstractMatrix)
-    _check_same_backend(E, A)
-    E.A + A
-end
 
 @doc raw"""
     *(E::StiefelProjection, A::AbstractMatrix)
@@ -93,10 +88,11 @@ end
 
 The product, taken on the wrapped array.
 
-`StiefelProjection` holds its entries in an ordinary array, so unwrapping is all these do — the same
-thing `+` above does, and for the same reason. Without them the product falls through to the generic
-`AbstractMatrix` path, which reaches `getindex` one entry at a time. **That is scalar indexing, and
-it is what stops a retraction on a device**: [`geodesic`](@ref) and [`cayley`](@ref) each take one
+`StiefelProjection` holds its entries in an ordinary array, so unwrapping is all these do — for `E`
+and `E'` alike, and for `+`, `-`, `mul!` and a scalar product as well, with the same methods that a
+manifold point uses. Without them the product falls through to the generic `AbstractMatrix` path,
+which reaches `getindex` one entry at a time. **That is scalar indexing, and it is what stops a
+retraction on a device**: [`geodesic`](@ref) and [`cayley`](@ref) each take one
 product against the projection — `expB * E` and `cayleyB * E` — with `E` built from the horizontal
 lift and so carrying the point's own backend. Both operands are on the device, and only the wrapper
 puts the product on the host path.
@@ -105,15 +101,6 @@ Both operands have to be on one backend: a pair on two backends raises an `Argum
 both, rather than answering on whichever backend the argument order picks.
 """
 Base.:*(::StiefelProjection, ::AbstractMatrix)
-
-function _lmul(E::StiefelProjection, A::AbstractVecOrMat)
-    _check_same_backend(E, A)
-    E.A * A
-end
-function _rmul(A::AbstractMatrix, E::StiefelProjection)
-    _check_same_backend(E, A)
-    A * E.A
-end
 
 function Base.vcat(A::AbstractVecOrMat{T}, E::StiefelProjection{T}) where {T <: Number}
     vcat(A, E.A)

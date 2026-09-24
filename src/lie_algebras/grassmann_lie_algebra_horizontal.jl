@@ -100,19 +100,18 @@ function Base.getindex(A::GrassmannLieAlgHorMatrix{T}, i::Integer, j::Integer) w
     return zero(T)
 end
 
-function Base.:+(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
+# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
+function _owned_add(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
-    _check_same_backend(A, B)
     GrassmannLieAlgHorMatrix(A.B + B.B,
         A.N,
         A.n)
 end
 
-function Base.:-(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
+function _owned_sub(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
-    _check_same_backend(A, B)
     GrassmannLieAlgHorMatrix(A.B - B.B,
         A.N,
         A.n)

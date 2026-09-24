@@ -176,7 +176,7 @@ end
     end
 end
 
-# A row vector on the left is the one shape `*(::AbstractMatrix, ::OwnedFactor)` does not settle on
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::OwnedMatrix)` does not settle on
 # its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on the
 # right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
 #

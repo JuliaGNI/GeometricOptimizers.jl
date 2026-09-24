@@ -46,11 +46,7 @@ rgrad(Y, Δ)
 function rgrad(Y::GrassmannManifold, ∇L::AbstractMatrix)
     ∇L = _match_backend(Y, ∇L) # TEMPORARY, see `_match_backend`
 
-    # Through the representative, as `rgrad(::StiefelManifold, …)` also does. `Y'` is an
-    # `Adjoint{…, GrassmannManifold}` and this manifold, unlike `StiefelManifold`, defines no `*`
-    # that unwraps one, so a product written through `Y` falls back to elementwise indexing: the
-    # slow path on the host, and `Scalar indexing is disallowed` on a device. `Y.A` reaches the
-    # backend's own `mul!`, and the two are the same matrix by definition.
+    # Through the representative, as `rgrad(::StiefelManifold, …)` also does.
     ∇L - Y.A * (Y.A' * ∇L)
 end
 

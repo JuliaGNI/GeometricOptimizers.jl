@@ -12,19 +12,28 @@ breaking release).
 
 - **Symplectic Householder right-multiplication and `symplectic_form` now use `transpose` instead of `adjoint`.** The form is bilinear (aᵀJb), not sesquilinear, and `adjoint` conjugates a complex operand. For a complex operand `‖B*S − B*Matrix(S)‖` was wrong by order 1 or more, growing with the conditioning of S (medians for S of size 4, 6 and 10 being 16.7–17.1, 135–169, 7.9e4–1.3e5); for a real one it was negligible. The operations affected are: `B * Sfac`, `B * inv(Sfac)`, row vectors `v' * S`, and `transpose(v) * S`. Real results are unchanged.
 - **`+` against a plain matrix refuses a mixed-backend pair for all ten owned matrix types**, not only for `SkewSymMatrix`, `StiefelLieAlgHorMatrix` and `StiefelProjection`. The other seven answered on whichever backend the argument order picked, or raised `Scalar indexing is disallowed`. A same-backend sum keeps its value and type.
+- **Every product, sum, difference and three-argument `mul!` among the owned matrix types now runs on the device and matches a host twin.** Before this change, 612 of the 817 calls in a sweep of operations raised `Scalar indexing is disallowed` on JLArrays with `allowscalar(false)`, or failed inside a device kernel. A sweep of 817 calls (`scripts/device_products.jl`, asserted by `test/device_products.jl`) now passes except the two `cayley` retractions, which stop at JLArrays' missing `lu`; on Metal (an M4 Max) all 817 pass. The types covered are `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal lifts, the Stiefel, Grassmann and symplectic Stiefel points, `StiefelProjection`, and the adjoints of the points, of `StiefelProjection` and of a real `SkewSymMatrix` or lift. The operations covered are `*`, `+`, `-` and `mul!` into a plain destination, between two of these types or between one of them and a plain device array, and a scalar product. A `mul!` into an owned destination still raises, because the packed types have no `setindex!`. Named failures that are fixed: `GrassmannManifold` had no product methods, so `cayley`/`geodesic(Y, Δ)`, `apply_section`, `Y * B` and `Y' * B` failed; `Ω(Y, Δ)` for both Stiefel and Grassmann manifolds (through `Y * Y'`); `mul!(C, d, B)` for triangulars, both lifts and `StiefelProjection`, and `mul!(C, B, d)` for every owned type; `B * d` for both lifts; `StiefelProjection` operations `-`, `2f0 * E`, `-E`, `changebackend`, and `E' * X`; dense `+` and `-` of an owned matrix against a plain one broadcast through `getindex`.
+- **`mul!` with two element types no longer raises a `MethodError` from the kernel; it reaches LinearAlgebra's generic product.** A product like `SkewSymMatrix{Float32} * Matrix{Float64}` reaches the five-argument `mul!` fallback instead of raising inside a kernel. The `broken` assertions in `test/ambiguities.jl` for that case are fixed.
+- **`Sfac` and the adjoint of a point refuse a mixed-backend pair in `+` and `-` against a plain matrix.** Both are members of the owned union now, so the entry methods check them; before, `Sfac ± JLArray` and `Y' ± JLArray` reached `Base`'s generic `+` and `-`, which took the backend from the argument order. This closes open issue A25.
 
 ### Changed
 
 - **Documentation: module docstring and the special-matrices manual page state that the package supports real element types only.** The special-matrices manual page also sets out the two forms of a gradient of a structured matrix: the natural cotangent that `ProjectTo` gives (the Frobenius projection `(dA ± dAᵀ)/2`), and the storage gradient `∂L/∂S`, whose off-diagonal entries are twice as large. A complex element type is not rejected, and some operations give a wrong answer for it: the structured matrices, the retractions and the symplectic Gram-Schmidt process assume a real field.
 - **`*`, `+` and `-` on the owned matrix types go through one `Union` design.** Each operator has entry methods on `(Owned, AbstractMatrix)`, `(AbstractMatrix, Owned)` and `(Owned, Owned)` in `src/ambiguities.jl` (for `*` also a vector and two row-vector methods), and the per-type code is on internal kernels. The pairwise tie-breakers and the 20 per-type row-vector methods are gone, and the four `Sfac`–`Sfac` products are now one method: the package owns 19 methods on `*` instead of 169, and 10 on `+` instead of 18. `detect_ambiguities(GeometricOptimizers)` reports no pair between two of the package's own methods (2 before), and 4 in total in the package's own environment, all against `StaticArrays` (230 before, most of them against `FillArrays` and `ArrayLayouts`). Over 5616 operand pairs between an owned matrix type and another operand, no product, sum or difference changed its value or result type, and none had its inferred return type stop being concrete; 24 pairs that raised now answer, among them `Sfac * SkewSymMatrix{Float32}` and `Sfac + SkewSymMatrix`.
-- **`Sfac` and `Rfac` report a backend**, that of their storage, so a sum or difference of an `Sfac` or `Rfac` and an owned matrix type is checked and answers. An `Sfac` against a plain matrix still reaches `Base`'s generic `+` and `-`; see open issue A25.
+- **`Sfac` and `Rfac` report a backend**, that of their storage, so a sum or difference of an `Sfac` or `Rfac` and an owned matrix type is checked and answers.
 - **The second `global_rep` method for a section without a lift is deleted.** It duplicated `global_rep(::GlobalSection{T}, ::AbstractVecOrMat{T})` and was the cause of both ambiguities between two of the package's own methods.
+- **`_check_same_backend` runs only in the entry methods of `*`, `+`, `-` and `mul!` in `src/ambiguities.jl`, in `add!`, and in the triangular `/ᵉˡᵉ` and scalar `mul!`.** The check runs at 19 call sites instead of 39. The same-structure sums and differences (`SkewSym ± SkewSym`, `Sym ± Sym`, triangular ± triangular, lift ± lift, lift + `SkewSym`) are internal methods behind the entries; values and result types are unchanged.
+- **The package owns `mul!` entry methods for every owned type:** `(C, Owned, Matrix)`, `(C, Matrix, Owned)`, `(C, Owned, Owned)`, `(c, Owned, Vector)`. `detect_ambiguities` still reports 0 own-vs-own pairs and 4 in total, all against `StaticArrays`, as after part G1. The vector entry would be ambiguous with `AbstractNeuralNetworks`' `mul!(out, A, ::ZeroVector)`; a method in the `AbstractNeuralNetworks` extension settles the pair with the zero vector's answer, which is the answer those calls gave before.
+- **Host values: products with a Grassmann point, with a point's adjoint on the right (`B * Y'`), and `mul!` with a point or `StiefelProjection` now go through BLAS on the unwrapped array instead of LinearAlgebra's generic loop,** so they differ at round-off level. `2f0 * A'` for a real `SkewSymMatrix` or lift returns a lazy `Adjoint` of the scaled matrix instead of a dense `Matrix` (same values).
+- **A plain matrix times a horizontal lift materializes `permutedims(C)` first** (a device product does not serve a view of a `Transpose`). Host cost, measured cold with BLAS on one thread by `scripts/lift_right_multiply_cost.jl`, two runs each, 4×N matrix times an N×N lift: N=6: 0.24 → 0.32 μs, 1472 → 1744 B; N=50: 0.58 → 0.63 μs; N=200: 3.3 → 2.8 μs; N=1000: 38 → 14 μs, 100928 → 133776 B.
+- **`geodesic(B, ProjectedSkew())` keeps every step on the lift's backend.** The thin Q is `qr(B̂).Q` applied to a `StiefelProjection`, the `Diagonal` product is a broadcast, and the identity is `unit_matrix` instead of copying Q to the host with `Matrix`. It runs where the backend supplies `qr` and `eigen` of a `Hermitian` matrix (LAPACK on the host; CUDA.jl's cuSOLVER, untested); on Metal and JLArrays it raises inside `qr`. On the host the result moves at round-off level only.
+- **The special-matrices manual page has a section on arithmetic and broadcasting on a device:** the structured matrices define no broadcast style, and manifold points none on purpose.
 
 ### Breaking Changes
 
 - **`vec` is `Base`'s for `SkewSymMatrix`, `SymmetricMatrix`, both triangulars and both horizontal lifts.** It returns the entries of the matrix, not the packed storage; for a lift it returned a `LazyArrays.Vcat` of the storage blocks. Code that read the storage through `vec` uses `freeparameters` (which this package extends from `NeuralNetworkParameters`) or `parent`.
 - **LazyArrays is no longer a dependency**, and FillArrays and ArrayLayouts leave the environment with it. Its one use was `vec` of a lift.
-- **An operand that `KernelAbstractions.get_backend` cannot place raises in a checked `+`, `-` or `*`**, with `KernelAbstractions`' own `ArgumentError`, instead of being let through unchecked. Of the 5616 operand pairs compared under **Changed**, 445 that answered now raise; every one has a `Bidiagonal`, a FillArrays or a LazyArrays operand, and 42 of them are ambiguities that arise only when FillArrays or LazyArrays is loaded. The same holds, outside those pairs, for `SymTridiagonal`, a range and a StaticArrays matrix; `+` with a StaticArrays matrix raises a `MethodError`, from an ambiguity with StaticArrays' `+(::AbstractArray, ::StaticArray)`, as `-` already did. Convert such an operand with `Matrix` first.
+- **An operand that `KernelAbstractions.get_backend` cannot place raises in a checked `+`, `-`, `*`, or `mul!`**, with `KernelAbstractions`' own `ArgumentError`, instead of being let through unchecked. Of the 5616 operand pairs compared under **Changed**, 445 that answered now raise; every one has a `Bidiagonal`, a FillArrays or a LazyArrays operand, and 42 of them are ambiguities that arise only when FillArrays or LazyArrays is loaded. The same holds, outside those pairs, for `SymTridiagonal`, a range and a StaticArrays matrix; `+` with a StaticArrays matrix raises a `MethodError`, from an ambiguity with StaticArrays' `+(::AbstractArray, ::StaticArray)`, as `-` already did. Convert such an operand with `Matrix` first.
 
 
 ## [0.8.0]
@@ -5360,17 +5369,6 @@ section — not an optimization target.
 
 ---
 
-#### A25. `Sfac` and the adjoint of a point still cross backends against a plain matrix
-
-**Severity: medium.** `+` and `-` refuse a mixed-backend pair for the ten members of `OwnedMatrix`
-(see [Unreleased](#unreleased)). Two types are outside that union: `Sfac` and
-`Adjoint{<:Manifold}`. `Sfac ± JLArray` and `Y' ± JLArray` reach `Base`'s generic `+` and `-`,
-which take their backend from the argument order. Adding either type to the union is a design
-decision, because each brings its own ambiguity surface against `LinearAlgebra`'s methods on
-`Adjoint`.
-
----
-
 #### A21. The optimizer interface cannot hold GPU arrays
 
 **Severity: medium**, and a regression rather than a gap: `GeometricMachineLearning`'s optimizers ran
@@ -5467,6 +5465,13 @@ cotangent becomes a parameter gradient, not in `ProjectTo` itself.
 **What to do**: The mechanism is a step in the optimizer's parameter update after
 Zygote adds cotangents, and before the gradient is applied. Which package owns it
 (GeometricOptimizers or NeuralNetworkParameters) is a design decision.
+
+#### A28. `SymplecticStiefelManifold` has no `rebuild`, so `changebackend` refuses it
+
+**Severity: low.** `src/parameter_protocol.jl` gives the symplectic Stiefel manifold a
+`freeparameters` and no `rebuild`, so `mapstorage` raises an `ArgumentError` for it, and
+`changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
+points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
 
 ---
 

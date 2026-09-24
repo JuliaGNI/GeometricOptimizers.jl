@@ -55,6 +55,9 @@ function _check_same_backend(A, B)
     throw(ArgumentError("mixed backends: $(nameof(typeof(A))) is on $(backend_a) and $(nameof(typeof(B))) is on $(backend_b). A computation needs both operands on one backend; move one with `copyto!` or `changebackend` first."))
 end
 
+# The destination of a `mul!` or an `add!` is the third array on the backend.
+_check_same_backend(A, B, C) = (_check_same_backend(A, B); _check_same_backend(A, C))
+
 # Writes the diagonal of an identity matrix. `unit_matrix` below is the only caller; a kernel is what
 # it takes to write a diagonal without scalar indexing, and that docstring says why that matters.
 @kernel function write_ones_kernel!(matrix::AbstractMatrix{T}) where {T}
@@ -128,8 +131,7 @@ end
 function add!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat)
     @assert axes(A) == axes(B) == axes(C)
     # every structured `add!` unwraps to this one, so the three-way check is written once here
-    _check_same_backend(A, B)
-    _check_same_backend(A, C)
+    _check_same_backend(A, B, C)
     C .= A .+ B
 end
 
