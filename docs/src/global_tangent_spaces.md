@@ -138,7 +138,7 @@ A = A - Y * (Y' * A)
 B = A / maximum(abs, A)                # so that the Gram matrix cannot overflow
 Q = B / cholesky(Symmetric(B'B)).U     # first pass
 λ = Q / cholesky(Symmetric(Q'Q)).U     # second pass; see below
-Y⟂ = cholesky_qr2(λ - Y * (Y' * λ))    # the same projection and orthonormalization once more
+Y⟂ = _cholesky_qr2(λ - Y * (Y' * λ))   # the same projection and orthonormalization once more
 ```
 
 So we draw ``(N - n)`` new columns randomly, subtract the part that is spanned by the columns of ``Y`` and then orthonormalize the resulting matrix. The result is a matrix of ``(N - n)`` columns that is orthogonal to ``Y`` and is typically referred to as ``Y_\perp``  [absil2004riemannian, absil2008optimization, bendokat2020grassmann](@cite). We can easily check that this ``Y_\perp`` is indeed orthogonal to ``Y``.
