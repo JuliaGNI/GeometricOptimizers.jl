@@ -10,6 +10,8 @@ breaking release).
 
 ### Fixed
 
+- **`global_section` is orthogonal to the point on every draw**, for the Stiefel and the Grassmann manifold (closes open issue A29). It projected the span of `Y` out of a Gaussian draw once and then orthonormalised, and the orthonormalisation multiplies the rounding error left in that span by the condition number of the projected draw, which has a heavy tail. One draw in a few thousand gave `‖Yᵀλ‖` up to `1e-2` in `Float32` and `1e-10` in `Float64`, and a `Float32` geodesic that far off the manifold. It now projects and orthonormalises a second time; the first result is orthonormal, so the second pass amplifies nothing. Over 20000 host draws the largest `‖Yᵀλ‖` falls from `7.9e-3` to `1.5e-7` at `6 × 3`, from `6.7e-2` to `6.1e-7` at `200 × 10` in `Float32`, and to `1.1e-15` in `Float64`; on Metal it is at most `3.4e-7`. Projecting twice before one orthonormalisation does not fix it (`5e-2` at `200 × 10`). A section now costs about twice as long on the host: `0.71 → 1.5 μs` at `6 × 3`, `563 → 1150 μs` at `200 × 10`, one thread. On Metal (an M4 Max, the median of 100 calls in one warm session) the ratio is `1.1×` to `3.4×`, `20 → 60 ms` at `6 × 3` and `23 → 80 ms` at `200 × 10`; those times are mostly launch and synchronisation latency, and a cold measurement per variant is not done. The second pass draws nothing, so a seeded run consumes the same random numbers and its section moves only by the error this removes.
+
 - **`StiefelProjection(backend, T, N, n)` with more columns than rows (`n > N`) or with no columns (`n == 0`) builds on a device.** Its kernel launched `n` work items to write the diagonal, and an `N × n` matrix has `min(N, n)` diagonal entries. For `n > N` the call raised a `BoundsError` — on JLArrays from the kernel, on Metal as a `KernelException`; for `n == 0` Metal raised a `DivideError` on the empty launch. The kernel now launches `min(N, n)` work items and is skipped when that is zero. The host constructor was not affected. The docstring states what such a projection is: `Matrix{T}(I, N, n)`, whose columns are orthonormal only for `N ≥ n`.
 - **Two tests say what they claim.** The device sweep (`scripts/device_products.jl`, run by `test/device_products.jl`) seeds the global section its retraction rows draw, so a rare section no longer fails the suite once in about 400 runs; open issue A29 records the cause. And the `StiefelProjection` testset that meant to compare the host constructor with the backend one compared the host constructor with itself, because `StiefelProjection(CPU(), …)` routes to it; it reaches the backend constructor through `invoke` now. No package code changes.
 - **Symplectic Householder right-multiplication and `symplectic_form` now use `transpose` instead of `adjoint`.** The form is bilinear (aᵀJb), not sesquilinear, and `adjoint` conjugates a complex operand. For a complex operand `‖B*S − B*Matrix(S)‖` was wrong by order 1 or more, growing with the conditioning of S (medians for S of size 4, 6 and 10 being 16.7–17.1, 135–169, 7.9e4–1.3e5); for a real one it was negligible. The operations affected are: `B * Sfac`, `B * inv(Sfac)`, row vectors `v' * S`, and `transpose(v) * S`. Real results are unchanged.
@@ -5474,27 +5476,6 @@ Zygote adds cotangents, and before the gradient is applied. Which package owns i
 `freeparameters` and no `rebuild`, so `mapstorage` raises an `ArgumentError` for it, and
 `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
 points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
-
-#### A29. A rare global section leaves a `Float32` geodesic far off the manifold
-
-**Severity: medium.** `geodesic(Y, Δ)` draws its global section at random, and A5 says the
-retracted point does not depend on that section. In `Float32` it does, now and then. For a `6 × 3`
-point and a step `rgrad(Y, ·) / 10`, the median `check` of the result is `2.5e-7` to `6e-7`, and
-over 20000 draws the number above `1e-4` is 32 for a Stiefel point (maximum `8.5e-3`) and 11 for a
-Grassmann point (maximum `1.4e-3`) on the host, and 34 and 18 on a JLArray. It made the retraction
-rows of the device sweep fail once in about 400 runs, and the sweep now seeds the draw.
-
-The cause is in `global_section`, for both manifolds: it projects the span of `Y` out of the
-Gaussian draw once, `A - Y(YᵀA)`, and then orthonormalises. When a draw lies close to that span, the
-projection cancels most of it, the rounding error left in the span is large relative to what
-remains, and CholeskyQR2 turns what remains into columns that are orthonormal among themselves but
-not orthogonal to `Y`. Measured in `Float32` on one `6 × 3` Stiefel point over 20000 draws: the
-largest `‖λᵀλ - I‖` is `4.8e-7`, the largest `‖Yᵀλ‖` is `5.3e-3` (median `7.7e-7`, 7 draws above
-`1e-3`).
-
-**What to do**: project again after the first orthonormalisation and orthonormalise once more —
-the "twice is enough" rule of Gram–Schmidt. On the same draws the largest `‖Yᵀλ‖` then falls to
-`1.4e-7`. The cost of the second pass on a device is not measured.
 
 ---
 

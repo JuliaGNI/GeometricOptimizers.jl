@@ -77,14 +77,8 @@ The method `global_section` for the Grassmann manifold is equivalent to that for
 
 See the documentation for [`global_section(Y::StiefelManifold{T}) where T`](@ref).
 """
-function global_section(Y::GrassmannManifold{T}) where {T}
-    N, n = size(Y)
-    backend = KernelAbstractions.get_backend(Y)
-    λ = orthonormal_columns() do
-        A = KernelAbstractions.allocate(backend, T, N, N - n)
-        randn!(A)
-        A - Y.A * (Y.A' * A)
-    end
+function global_section(Y::GrassmannManifold)
+    λ = _complement_columns(Y.A)
 
     # the storage-type branch of `global_section(::StiefelManifold)`, for the reason given there
     λ isa typeof(Y.A) ? λ : typeof(Y.A)(λ)
