@@ -36,6 +36,11 @@ breaking release).
 - **LazyArrays is no longer a dependency**, and FillArrays and ArrayLayouts leave the environment with it. Its one use was `vec` of a lift.
 - **An operand that `KernelAbstractions.get_backend` cannot place raises in a checked `+`, `-`, `*`, or `mul!`**, with `KernelAbstractions`' own `ArgumentError`, instead of being let through unchecked. Of the 5616 operand pairs compared under **Changed**, 445 that answered now raise; every one has a `Bidiagonal`, a FillArrays or a LazyArrays operand, and 42 of them are ambiguities that arise only when FillArrays or LazyArrays is loaded. The same holds, outside those pairs, for `SymTridiagonal`, a range and a StaticArrays matrix; `+` with a StaticArrays matrix raises a `MethodError`, from an ambiguity with StaticArrays' `+(::AbstractArray, ::StaticArray)`, as `-` already did. Convert such an operand with `Matrix` first.
 
+### Added
+
+- **The test suite runs the device sweep on Metal on every Apple-silicon Mac.** `test/metal.jl` runs `scripts/device_products.jl` with `MtlArray` in place of the `JLArrays` stand-in and asserts that every row passes, the two `cayley` rows included, because Metal supplies the `lu` that `JLArrays` lacks. Where `Metal.functional()` is `false` the file skips itself, which is what happens inside a sandbox. `Pkg.test(test_args = ["metal"])` runs this file alone, and then a missing device fails the run. Metal (1.10 or later) is a test dependency on every platform; it installs and precompiles on Linux and Windows, and nothing there loads it. On an Apple M4 Max with Metal 1.11.1 all 817 rows pass, and the testset takes about five minutes.
+- **A `Metal` workflow runs the Metal tests on GitHub's `macos-15` runner**, for the `min` and `1` Julia versions. The runner's GPU is Apple's paravirtual device, which Metal.jl supports from 1.10 and on macOS 15 or later. The job is not a required check. CI's `macOS-latest` entry runs the same testset as part of the full suite, and that entry is required.
+
 
 ## [0.8.0]
 
