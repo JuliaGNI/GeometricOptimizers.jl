@@ -25,6 +25,34 @@ const MANIFOLDS = (StiefelManifold, GrassmannManifold)
 _dims(X) = X in SQUARE ? (3,) : (5, 2)
 const ARRAYS = (SQUARE..., LIFTS...)
 
+@testset "an Int32 dimension works for every owned type" begin
+    for backend in (CPU(), jl_backend), T in (Float32, Float64)
+
+        for X in ARRAYS
+            d = Int32.(_dims(X))
+            for A in (@inferred(zeros(backend, X{T}, d...)),
+                @inferred(rand(Xoshiro(1), backend, X{T}, d...)))
+                @test A isa X{T}
+                @test get_backend(A) == backend
+                @test size(A) == (X in SQUARE ? (3, 3) : (5, 5))
+            end
+            @test zeros(X{T}, d...) isa X{T}
+        end
+        for X in MANIFOLDS
+            Y = @inferred rand(Xoshiro(1), backend, X{T}, Int32(5), Int32(2))
+            @test Y isa X{T} && size(Y) == (5, 2)
+        end
+    end
+end
+
+# A type that already names its element type is not given a second one: a wrong call is a
+# `MethodError`, not a `TypeError` from the chain.
+@testset "a wrong call to an owned type is a MethodError" begin
+    @test_throws MethodError zeros(SkewSymMatrix{Float32}, 3, 3)
+    @test_throws MethodError rand(Xoshiro(1), CPU(), SkewSymMatrix{Float32}, 3, 3)
+    @test_throws MethodError zeros(StiefelManifold, 5, 2)
+end
+
 @testset "the rows of the allocator table return the requested type and infer" begin
     for T in (Float32, Float64)
         for A in (@inferred(zeros(SkewSymMatrix{T}, Int32(3))),

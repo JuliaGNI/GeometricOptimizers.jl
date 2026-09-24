@@ -21,7 +21,7 @@ end
 
 function Base.zeros(backend::KernelAbstractions.Backend, ::Type{X}, d::Integer,
         dims::Integer...) where {X <: _OwnedAllocType}
-    zeros(backend, X{default_eltype(backend)}, d, dims...)
+    zeros(backend, _with_default_eltype(zeros, backend, X, d, dims...), d, dims...)
 end
 
 function Base.rand(::Type{X}, d::Integer, dims::Integer...) where {X <: _OwnedAllocType}
@@ -41,7 +41,15 @@ end
 function Base.rand(
         rng::AbstractRNG, backend::KernelAbstractions.Backend, ::Type{X}, d::Integer,
         dims::Integer...) where {X <: _OwnedAllocType}
-    rand(rng, backend, X{default_eltype(backend)}, d, dims...)
+    rand(rng, backend, _with_default_eltype(rand, backend, X, d, dims...), d, dims...)
+end
+
+# Only a bare `X` gets the default element type. An `X{T}` that reaches the two methods above has no
+# per-type method for these arguments, so it is a `MethodError` for the call the caller wrote, not a
+# `TypeError` from a second parameter.
+function _with_default_eltype(f, backend, ::Type{X}, dims...) where {X}
+    X === Base.typename(X).wrapper || throw(MethodError(f, (backend, X, dims...)))
+    X{default_eltype(backend)}
 end
 
 # The storage every per-type method allocates.

@@ -1,8 +1,8 @@
 # Every allocator that takes a backend *and* a caller-named element type returns that element type
 # on that backend. A width the backend cannot hold is refused by the backend's own allocation: on
 # Metal, `Metal does not support Float64 values, try using Float32 instead`, which names the width.
-# No host backend refuses `Float64`, so no test here can reproduce that refusal; `test/metal.jl`
-# and `scripts/metal_check.jl` are where it is seen.
+# No host backend refuses `Float64`, so no test here can reproduce that refusal. It was measured by
+# hand, through Kaimon on a Metal device.
 #
 # `_Float64GPU` allocates host arrays, which makes it a device every one of these methods actually
 # runs on.
