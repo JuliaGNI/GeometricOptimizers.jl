@@ -22,15 +22,19 @@ struct StiefelProjection{T, AT} <: AbstractMatrix{T}
         _check_supported_eltype(backend, T)
         A = KernelAbstractions.zeros(backend, T, N, n)
         assign_ones_for_stiefel_projection! = assign_ones_for_stiefel_projection_kernel!(backend)
-        # one work item per diagonal entry, and an `N × n` matrix has `min(N, n)` of them
-        assign_ones_for_stiefel_projection!(A, ndrange = min(N, n))
+        # one work item per diagonal entry, and an `N × n` matrix has `min(N, n)` of them. With none
+        # there is nothing to write, and Metal's launch raises a `DivideError` on an empty range.
+        k = min(N, n)
+        if k > 0
+            assign_ones_for_stiefel_projection!(A, ndrange = k)
+        end
         new{T, typeof(A)}(N, n, A)
     end
 
     # The host constructor allocates and fills in one step, with no backend and no kernel launch:
-    # `Matrix{T}(I, N, n)` is exactly the matrix the docstring above describes. Routing through
-    # `StiefelProjection(CPU(), T, N, n)` instead allocates through `KernelAbstractions.zeros` and
-    # then starts a kernel to write `min(N, n)` ones. A host placement is
+    # `Matrix{T}(I, N, n)` is exactly the matrix the docstring above describes. The backend
+    # constructor above instead allocates through `KernelAbstractions.zeros` and then starts a
+    # kernel to write `min(N, n)` ones; the `CPU` method below routes around it. A host placement is
     # the common case here and must not pay for the device machinery: `KernelAbstractions.zeros` on
     # a `CPU` costs an overhead at every length, growing with it, and between about 1.9x and 25x
     # the time of `zeros` -- worst at the smallest lengths, where its fixed floor dominates. The
