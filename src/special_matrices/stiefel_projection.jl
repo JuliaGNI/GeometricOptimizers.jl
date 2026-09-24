@@ -22,7 +22,8 @@ struct StiefelProjection{T, AT} <: AbstractMatrix{T}
         _check_supported_eltype(backend, T)
         A = KernelAbstractions.zeros(backend, T, N, n)
         assign_ones_for_stiefel_projection! = assign_ones_for_stiefel_projection_kernel!(backend)
-        assign_ones_for_stiefel_projection!(A, ndrange = n)
+        # one work item per diagonal entry, and an `N × n` matrix has `min(N, n)` of them
+        assign_ones_for_stiefel_projection!(A, ndrange = min(N, n))
         new{T, typeof(A)}(N, n, A)
     end
 
