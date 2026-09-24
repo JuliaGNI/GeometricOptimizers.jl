@@ -35,9 +35,10 @@
 #
 # ## It skips itself where there is no device
 #
-# `Metal.functional()` is `false` on CI and on any machine without an Apple GPU, and
-# `Metal.device()` can return a null device inside a sandbox even where the hardware is present. The
-# script says so and exits 0 rather than failing, so it is safe to run anywhere.
+# `Metal.functional()` is `false` on Linux, on Windows, on a Mac without Apple silicon and on a
+# macOS runner older than 15, and `Metal.device()` can return a null device inside a sandbox even
+# where the hardware is present. The script says so and exits 0 rather than failing, so it is safe
+# to run anywhere.
 
 using GeometricOptimizers
 using GeometricOptimizers: LowerTriangular, StiefelProjection, add!
