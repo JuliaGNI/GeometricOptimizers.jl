@@ -15,16 +15,18 @@ using Test
           [Tuple{Int, Int}]
 end
 
-# The host constructor builds `[I; O]` directly rather than routing through
-# `StiefelProjection(CPU(), T, N, n)`, which allocates through `KernelAbstractions.zeros` and then
-# starts a kernel to write `n` ones. What is pinned here is that the two agree, entry for entry and
-# in type, so that the cheaper spelling is the same matrix.
-@testset "the host and the `CPU()` constructor agree" begin
+# The host constructor builds `[I; O]` directly, and `StiefelProjection(CPU(), T, N, n)` routes to
+# it. The backend constructor allocates through `KernelAbstractions.zeros` and then starts a kernel
+# to write the ones; `invoke` reaches it on a `CPU` past that routing. What is pinned here is that
+# the three agree, entry for entry and in type, so that the cheaper spelling is the same matrix.
+@testset "the host, the `CPU()` and the backend constructor agree" begin
+    backend_signature = Tuple{KernelAbstractions.Backend, Type, Integer, Integer}
     for T in (Float32, Float64), N in 3:5, n in 1:N
         E = StiefelProjection(N, n, T)
-        E_backend = StiefelProjection(CPU(), T, N, n)
-        @test typeof(E) === typeof(E_backend)
-        @test E.A == E_backend.A
+        E_cpu = StiefelProjection(CPU(), T, N, n)
+        E_backend = invoke(StiefelProjection, backend_signature, CPU(), T, N, n)
+        @test typeof(E) === typeof(E_cpu) === typeof(E_backend)
+        @test E.A == E_cpu.A == E_backend.A
         @test E.A isa Matrix{T}
         @test KernelAbstractions.get_backend(E) == CPU()
     end

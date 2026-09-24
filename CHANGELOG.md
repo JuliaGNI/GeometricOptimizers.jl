@@ -10,6 +10,7 @@ breaking release).
 
 ### Fixed
 
+- **Two tests say what they claim.** The device sweep (`scripts/device_products.jl`, run by `test/device_products.jl`) seeds the global section its retraction rows draw, so a rare section no longer fails the suite about once in 500 runs; open issue A29 records that tail. And the `StiefelProjection` testset that meant to compare the host constructor with the backend one compared the host constructor with itself, because `StiefelProjection(CPU(), …)` routes to it; it reaches the backend constructor through `invoke` now. No package code changes.
 - **Symplectic Householder right-multiplication and `symplectic_form` now use `transpose` instead of `adjoint`.** The form is bilinear (aᵀJb), not sesquilinear, and `adjoint` conjugates a complex operand. For a complex operand `‖B*S − B*Matrix(S)‖` was wrong by order 1 or more, growing with the conditioning of S (medians for S of size 4, 6 and 10 being 16.7–17.1, 135–169, 7.9e4–1.3e5); for a real one it was negligible. The operations affected are: `B * Sfac`, `B * inv(Sfac)`, row vectors `v' * S`, and `transpose(v) * S`. Real results are unchanged.
 - **`+` against a plain matrix refuses a mixed-backend pair for all ten owned matrix types**, not only for `SkewSymMatrix`, `StiefelLieAlgHorMatrix` and `StiefelProjection`. The other seven answered on whichever backend the argument order picked, or raised `Scalar indexing is disallowed`. A same-backend sum keeps its value and type.
 - **Every product, sum, difference and three-argument `mul!` among the owned matrix types now runs on the device and matches a host twin.** Before this change, 612 of the 817 calls in a sweep of operations raised `Scalar indexing is disallowed` on JLArrays with `allowscalar(false)`, or failed inside a device kernel. A sweep of 817 calls (`scripts/device_products.jl`, asserted by `test/device_products.jl`) now passes except the two `cayley` retractions, which stop at JLArrays' missing `lu`; on Metal (an M4 Max) all 817 pass. The types covered are `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal lifts, the Stiefel, Grassmann and symplectic Stiefel points, `StiefelProjection`, and the adjoints of the points, of `StiefelProjection` and of a real `SkewSymMatrix` or lift. The operations covered are `*`, `+`, `-` and `mul!` into a plain destination, between two of these types or between one of them and a plain device array, and a scalar product. A `mul!` into an owned destination still raises, because the packed types have no `setindex!`. Named failures that are fixed: `GrassmannManifold` had no product methods, so `cayley`/`geodesic(Y, Δ)`, `apply_section`, `Y * B` and `Y' * B` failed; `Ω(Y, Δ)` for both Stiefel and Grassmann manifolds (through `Y * Y'`); `mul!(C, d, B)` for triangulars, both lifts and `StiefelProjection`, and `mul!(C, B, d)` for every owned type; `B * d` for both lifts; `StiefelProjection` operations `-`, `2f0 * E`, `-E`, `changebackend`, and `E' * X`; dense `+` and `-` of an owned matrix against a plain one broadcast through `getindex`.
@@ -5472,6 +5473,16 @@ Zygote adds cotangents, and before the gradient is applied. Which package owns i
 `freeparameters` and no `rebuild`, so `mapstorage` raises an `ArgumentError` for it, and
 `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
 points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
+
+#### A29. A rare global section leaves a `Float32` geodesic far off the manifold
+
+**Severity: medium.** `geodesic(Y, Δ)` draws its global section at random. For a `6 × 3` point in
+`Float32` and a step `rgrad(Y, ·) / 10`, the median `check` of the result is about `5e-7`, and one
+or two draws in a thousand exceed `1e-4`: over 20000 draws on the host, 32 for a Stiefel point
+(maximum `8.5e-3`) and 11 for a Grassmann point (maximum `1.4e-3`), with the same rate on a JLArray.
+The cause is not measured; a near-singular random complement that CholeskyQR2 orthonormalises
+poorly in `Float32` is the likely one. It made the retraction rows of the device sweep fail about
+once in 500 runs, and the sweep now seeds the draw.
 
 ---
 
