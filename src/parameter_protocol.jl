@@ -34,8 +34,8 @@ rebuild(::GrassmannManifold, data) = GrassmannManifold(data)
 
 rebuild(A::SymmetricMatrix, data) = SymmetricMatrix(data, A.n)
 rebuild(A::SkewSymMatrix, data) = SkewSymMatrix(data, A.n)
-rebuild(A::LowerTriangular, data) = LowerTriangular(data, A.n)
-rebuild(A::UpperTriangular, data) = UpperTriangular(data, A.n)
+rebuild(A::StrictlyLowerTriangular, data) = StrictlyLowerTriangular(data, A.n)
+rebuild(A::StrictlyUpperTriangular, data) = StrictlyUpperTriangular(data, A.n)
 
 # The blocks arrive in the order `parent` returned them. `A` is itself a `SkewSymMatrix`, so it has
 # already been rebuilt by the time this sees it.

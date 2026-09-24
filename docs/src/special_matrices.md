@@ -4,11 +4,11 @@
 
 # Symmetric, Skew-Symmetric and Triangular Matrices
 
-Among the special arrays implemented in `GeometricOptimizers` [`SymmetricMatrix`](@ref), [`SkewSymMatrix`](@ref), [`UpperTriangular`](@ref) and [`LowerTriangular`](@ref) are the most common ones and similar implementations can also be found in other libraries; `LinearAlgebra.jl` has an implementation of a symmetric matrix called [`Symmetric`](https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/#LinearAlgebra.Symmetric) for example. The versions of these matrices in `GeometricOptimizers` are however more memory efficient as they only store as many parameters as are necessary, i.e. ``n(n+1)/2`` for the symmetric matrix and ``n(n-1)/2`` for the other three. In addition, `GeometricMachineLearning` implements matrix and tensor multiplication for these matrices so that they work in parallel on GPU; see [Tensors](@extref GeometricMachineLearning Tensors-in-GeometricMachineLearning) there. We here give an overview of *elementary* custom matrices that are implemented in `GeometricOptimizers`. More *involved* matrices are the so-called [global tangent spaces](@ref "Global Tangent Spaces").
+Among the special arrays implemented in `GeometricOptimizers` [`SymmetricMatrix`](@ref), [`SkewSymMatrix`](@ref), [`StrictlyUpperTriangular`](@ref) and [`StrictlyLowerTriangular`](@ref) are the most common ones and similar implementations can also be found in other libraries; `LinearAlgebra.jl` has an implementation of a symmetric matrix called [`Symmetric`](https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/#LinearAlgebra.Symmetric) for example. The versions of these matrices in `GeometricOptimizers` are however more memory efficient as they only store as many parameters as are necessary, i.e. ``n(n+1)/2`` for the symmetric matrix and ``n(n-1)/2`` for the other three. In addition, `GeometricMachineLearning` implements matrix and tensor multiplication for these matrices so that they work in parallel on GPU; see [Tensors](@extref GeometricMachineLearning Tensors-in-GeometricMachineLearning) there. We here give an overview of *elementary* custom matrices that are implemented in `GeometricOptimizers`. More *involved* matrices are the so-called [global tangent spaces](@ref "Global Tangent Spaces").
 
 ## Custom Matrices
 
-`GeometricOptimizers` has two types of *triangular matrices*. The first one is [`UpperTriangular`](@ref):
+`GeometricOptimizers` has two types of *triangular matrices*. The first one is [`StrictlyUpperTriangular`](@ref):
 
 ```math 
 U = \begin{pmatrix}
@@ -19,7 +19,7 @@ U = \begin{pmatrix}
 \end{pmatrix}.
 ```
 
-And the second one is [`LowerTriangular`](@ref):
+And the second one is [`StrictlyLowerTriangular`](@ref):
 
 ```math 
 L = \begin{pmatrix}
@@ -30,7 +30,7 @@ L = \begin{pmatrix}
 \end{pmatrix}.
 ```
 
-`adjoint` swaps between the two: `L'` is an `UpperTriangular` and `U'` is a `LowerTriangular`.
+`adjoint` swaps between the two: `L'` is a `StrictlyUpperTriangular` and `U'` is a `StrictlyLowerTriangular`.
 That swap is built around the *same* storage vector rather than a copy, so `parent(L') === parent(L)`
 holds and writing into `L'` also writes into `L`. Reusing the storage transposes without
 conjugating, so that swap is bound to a real element type; a complex one falls through to
@@ -90,7 +90,7 @@ We can further confirm the identity above:
 M  ≈ A + B
 ```
 
-Note that for [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) no projection step is involved, which means that if we start with a matrix of type `AbstractMatrix{Int64}` we will end up with a matrix that is also of type `AbstractMatrix{Int64}`. The type changes however when we call [`SkewSymMatrix`](@ref) and [`SymmetricMatrix`](@ref):
+Note that for [`StrictlyLowerTriangular`](@ref) and [`StrictlyUpperTriangular`](@ref) no projection step is involved, which means that if we start with a matrix of type `AbstractMatrix{Int64}` we will end up with a matrix that is also of type `AbstractMatrix{Int64}`. The type changes however when we call [`SkewSymMatrix`](@ref) and [`SymmetricMatrix`](@ref):
 
 ```@example sym_skew_sym_example
 @assert (typeof(A) <: AbstractMatrix{Int64}) == false # hide
@@ -101,8 +101,8 @@ Note that for [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) no project
 For the triangular matrices:
 
 ```@example sym_skew_sym_example
-U = UpperTriangular(M)
-L = LowerTriangular(M)
+U = StrictlyUpperTriangular(M)
+L = StrictlyLowerTriangular(M)
 @assert (typeof(U) <: AbstractMatrix{Int64}) == true # hide
 @assert (typeof(L) <: AbstractMatrix{Int64}) == true # hide
 (typeof(U) <: AbstractMatrix{Int64}, typeof(L) <: AbstractMatrix{Int64})
@@ -161,17 +161,18 @@ use one or more of them. That package also batches them over the third axis of a
 
 ## Where a sampled array lands, and what it holds
 
-`rand` and `zeros` here come in four shapes, by whether the call names a backend and whether it
-names an element type. The shape decides both answers, and it decides them the same way for the
-structured matrices above, for the [manifolds](@ref "The Stiefel Manifold") and for the horizontal
-lifts wherever a type offers the shape at all. Not every type offers all four — the second shape is
-the manifolds' alone, and a shape a type does not offer is a `MethodError` rather than a different
-answer:
+Every owned type has one allocator convention, `zeros([backend,] X{T}, dims...)` and
+`rand([rng,] [backend,] X{T}, dims...)`: the backend defaults to `CPU()`, a bare `X` means
+[`default_eltype`](@ref GeometricOptimizers.default_eltype) of the backend, and `rng` defaults to
+`Random.default_rng()`. A manifold has `rand` only. So a call comes in four shapes, by whether it
+names a backend and whether it names an element type. The shape decides both answers, and it
+decides them the same way for the structured matrices above, for the
+[manifolds](@ref "The Stiefel Manifold") and for the horizontal lifts:
 
 | a call of this shape | backend | element type | gives |
 |:--|:--|:--|:--|
 | `rand(backend, SkewSymMatrix{Float32}, n)` | named | named | exactly what was asked for |
-| `rand(backend, StiefelManifold, N, n)` | named | **chosen** | the backend's array, element type from [`default_eltype`](@ref GeometricOptimizers.default_eltype) |
+| `rand(backend, SkewSymMatrix, n)` | named | **chosen** | the backend's array, element type from [`default_eltype`](@ref GeometricOptimizers.default_eltype) |
 | `rand(SkewSymMatrix{Float32}, n)` | — | named | the named element type, **on the host** |
 | `rand(SkewSymMatrix, n)` | — | — | the host, and `Float64` |
 
@@ -190,12 +191,11 @@ device. See [`default_eltype`](@ref GeometricOptimizers.default_eltype) for why 
 it is, and note that a backend being *able* to hold a `Float64` is not one of the reasons.
 
 The first shape has a rule of its own, in the other direction: an element type the caller names and
-the backend declares it cannot hold is **refused**, not narrowed, so
+the backend cannot hold is **refused**, not narrowed. The backend's own allocation refuses it, so
 `rand(MetalBackend(), SkewSymMatrix{Float64}, n)` and
-`rand(MetalBackend(), StiefelManifold{Float64}, N, n)` are both an `ArgumentError`. A narrowed
-result would have a different type from the one asked for, which is exactly what naming the element
-type rules out. Every allocator of this shape carries the check; `KernelAbstractions.supports_float64`
-is what it asks, so it can only fire where a backend's own package has declared the limitation.
+`rand(MetalBackend(), StiefelManifold{Float64}, N, n)` both raise Metal's `ErrorException`, whose
+message names `Float64`. A narrowed result would have a different type from the one asked for,
+which is exactly what naming the element type rules out.
 
 None of this reaches an allocation the package makes for itself. `zero`, `similar`, `_zero` and
 `_similar` all take an *instance*, so the backend and the element type both come from the argument
@@ -253,7 +253,7 @@ give a wrong answer for it.
 
 ## Library functions
 
-[`AbstractTriangular`](@ref), [`UpperTriangular`](@ref), [`LowerTriangular`](@ref),
+[`AbstractTriangular`](@ref), [`StrictlyUpperTriangular`](@ref), [`StrictlyLowerTriangular`](@ref),
 [`SkewSymMatrix`](@ref), [`SymmetricMatrix`](@ref) and
 [`VectorStorageMatrix`](@ref GeometricOptimizers.VectorStorageMatrix). Their docstrings are on the
 [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once;

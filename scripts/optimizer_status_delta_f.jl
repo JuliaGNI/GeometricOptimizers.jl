@@ -26,7 +26,7 @@
 # `MomentumState` and `AdamState` hold a pair and shift `f̄ ← f` inside `update!`, which puts an
 # extra iteration into the subtraction.
 #
-# `NewtonOptimizerState` holds a pair and shifts like them, and still reports one step, because
+# `NewtonState` holds a pair and shifts like them, and still reports one step, because
 # `optimizer.jl:431` calls `update!` a second time inside `solver_step!` and re-synchronises `f̄`
 # before the status reads it. That line carries the comment `# this will have to be removed later`,
 # so this script is also what would catch its removal.

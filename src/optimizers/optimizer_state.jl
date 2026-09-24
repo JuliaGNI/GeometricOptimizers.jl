@@ -19,10 +19,10 @@ linesearch(alg::OptimizerState)
 which return the problem to optimize, its gradient and (approximate) Hessian as well as the
 linesearch algorithm used in conjunction with the optimization algorithm if any.
 
-See [`NewtonOptimizerState`](@ref) for a `struct` that was derived from `OptimizerState`.
+See [`NewtonState`](@ref) for a `struct` that was derived from `OptimizerState`.
 
 !!! info
-    Note that a `OptimizerState` is not necessarily a `NewtonOptimizerState` as we can also have other optimizers, *Adam* for example.
+    Note that a `OptimizerState` is not necessarily a `NewtonState` as we can also have other optimizers, *Adam* for example.
 """
 abstract type OptimizerState{T} <: AbstractSolverState end
 

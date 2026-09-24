@@ -18,7 +18,7 @@ end
 @testset "the optimizer methods and their states are exported" begin
     for name in (:Newton, :BFGS, :DFP,
         :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam,
-        :NewtonOptimizerState, :BFGSState, :DFPState,
+        :NewtonState, :BFGSState, :DFPState,
         :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState)
         @test name in names(GeometricOptimizers)
     end
@@ -49,7 +49,7 @@ end
     # the symplectic SR decomposition the symplectic point is built through
         :sr, :sr!, :symplectic_gram_schmidt, :symplectic_gram_schmidt!,
     # the structured matrices and the lifts
-        :SkewSymMatrix, :SymmetricMatrix, :LowerTriangular, :UpperTriangular,
+        :SkewSymMatrix, :SymmetricMatrix, :StrictlyLowerTriangular, :StrictlyUpperTriangular,
         :AbstractTriangular, :StiefelProjection,
         :AbstractLieAlgHorMatrix, :StiefelLieAlgHorMatrix, :GrassmannLieAlgHorMatrix,
     # global sections

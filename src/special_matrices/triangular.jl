@@ -1,7 +1,7 @@
 @doc raw"""
     AbstractTriangular
 
-See [`UpperTriangular`](@ref) and [`LowerTriangular`](@ref).
+See [`StrictlyUpperTriangular`](@ref) and [`StrictlyLowerTriangular`](@ref).
 """
 abstract type AbstractTriangular{T} <: AbstractMatrix{T} end
 
@@ -10,15 +10,15 @@ Base.size(A::AbstractTriangular) = (A.n, A.n)
 
 # Each argument carries its own type, and the species is compared at run time. Bound as
 # `(A::AT, B::AT) where {AT <: AbstractTriangular}` these do not dispatch for a pair whose storage
-# arrays differ -- a host `LowerTriangular{T, Vector{T}}` and a device
-# `LowerTriangular{T, JLArray{T, 1}}` are different concrete types, so `AT` cannot bind both.
+# arrays differ -- a host `StrictlyLowerTriangular{T, Vector{T}}` and a device
+# `StrictlyLowerTriangular{T, JLArray{T, 1}}` are different concrete types, so `AT` cannot bind both.
 # `copyto!(::AbstractTriangular, …)` below carries this same idiom against the same whole-type
 # binding, as does `Manifold`'s `copyto!`.
 #
 # `Base.typename(…).wrapper` and not `typeof`: the question is whether both are lower or both upper,
 # not whether their storage agrees. With two independent arguments and no species check at all, an
-# `UpperTriangular` added to a `LowerTriangular` reads the upper storage into the lower triangle and
-# returns a `LowerTriangular`, which is not the sum of the two.
+# `StrictlyUpperTriangular` added to a `StrictlyLowerTriangular` reads the upper storage into the lower triangle and
+# returns a `StrictlyLowerTriangular`, which is not the sum of the two.
 #
 # The sum of a lower and an upper triangular *is* well defined — it is a general matrix, which is
 # what `Base`'s generic `+` returns for the pair and what `*` between the two species already
@@ -63,61 +63,17 @@ end
 Base.:*(α::Real, A::AT) where {AT <: AbstractTriangular} = A * α
 
 function Base.zeros(backend::KernelAbstractions.Backend, ::Type{AT},
-        n::Int) where {T, AT <: AbstractTriangular{T}}
-    _check_supported_eltype(backend, T)
+        n::Integer) where {T, AT <: AbstractTriangular{T}}
     # Base.typename(AT).wrapper strips the type parameters, giving the bare constructor
-    # (UpperTriangular or LowerTriangular) as a constant the compiler can see, which is what makes
-    # the return type inferrable: `Base.return_types` gives the concrete triangular type here and
-    # `Any` for a name resolved through the evaluator at run time.
-    Base.typename(AT).wrapper(KernelAbstractions.zeros(backend, T, n*(n-1)÷2), n)
-end
-
-# The host spelling is `zeros(T, m)` and not `zeros(CPU(), AT, n)`: `KernelAbstractions.zeros` on a
-# `CPU` returns the same `Vector{T}` with the same values and charges for it. It fills rather than
-# reaching `calloc`, so it loses the zero page, and the gap therefore grows with the length rather
-# than being a constant. Measured by `scripts/host_allocation_cost.jl` on Julia 1.13 at
-# `--check-bounds=auto`, one cold process per run: 128 B of overhead up to 500 elements, 144 B at
-# 1024 and 12 384 B at 2^18.
-#
-# The time ratio is not monotone, and the worst case is the *small* matrix rather than the large
-# one. `KernelAbstractions.zeros` has a floor of about 120 ns whatever the length, so the ratio
-# starts near 25x at one element, falls to about 1.9x at 1024 to 2048 elements as the host path
-# grows into that floor, then rises again to about 5x at 2^18 as the fill outgrows `calloc`.
-#
-# Treat the figures as this machine's -- what does not move is that an overhead is paid at every
-# length, that the bytes grow with the length, and that the device spelling was never the faster of
-# the two at any length measured. The
-# host path is the common one here and must not pay for the device machinery. Every other
-# host-placing allocator in this package -- `SkewSymMatrix`'s, `SymmetricMatrix`'s and both lie
-# algebras' -- already spells it this way.
-function Base.zeros(::Type{AT}, n::Int) where {T, AT <: AbstractTriangular{T}}
-    Base.typename(AT).wrapper(zeros(T, n*(n-1)÷2), n)
+    # (StrictlyUpperTriangular or StrictlyLowerTriangular) as a constant the compiler can see, which
+    # is what makes the return type inferrable: `Base.return_types` gives the concrete triangular type
+    # here and `Any` for a name resolved through the evaluator at run time.
+    Base.typename(AT).wrapper(_zeros(backend, T, n*(n-1)÷2), n)
 end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{AT}, n::Integer) where {T, AT <: AbstractTriangular{T}}
-    _check_supported_eltype(backend, T)
-    S = KernelAbstractions.allocate(backend, T, n*(n-1)÷2)
-    Random.rand!(rng, S)
-    Base.typename(AT).wrapper(S, n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{AT}, n::Int) where {
-        T, AT <: AbstractTriangular{T}}
-    Base.typename(AT).wrapper(rand(rng, T, n*(n-1)÷2), n)
-end
-
-function Base.rand(type::Type{AT}, n::Integer) where {T, AT <: AbstractTriangular{T}}
-    rand(Random.default_rng(), type, n)
-end
-
-function Base.rand(::Type{AT}, n::Integer) where {AT <: AbstractTriangular}
-    rand(AT{Float64}, n)
-end
-
-function Base.rand(backend::KernelAbstractions.Backend, type::Type{AT},
-        n::Integer) where {T, AT <: AbstractTriangular{T}}
-    rand(Random.default_rng(), backend, type, n)
+    Base.typename(AT).wrapper(_rand(rng, backend, T, n*(n-1)÷2), n)
 end
 
 # these are Adam operations:
@@ -173,7 +129,7 @@ The product, read off the packed storage vector by a kernel rather than through 
 Without this method the product falls through to the generic `AbstractMatrix` path, which asks `A`
 for one entry at a time. That is scalar indexing, so it **cannot run on a device at all**. The
 packed vector holds ``n(n-1)/2`` entries and the generic path reads ``n^2`` of them, the other
-``n(n+1)/2`` being zeros that [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) manufacture —
+``n(n+1)/2`` being zeros that [`StrictlyLowerTriangular`](@ref) and [`StrictlyUpperTriangular`](@ref) manufacture —
 but **do not read a host speed-up into that**, which is what the arithmetic invites. Measured
 against the very path this method shadows, the ratio runs from 0.76x to 1.72x and is not monotone
 in `n`. At `n = 6` — the size the retraction tests use — both products are *slower* than the path
@@ -188,7 +144,7 @@ through different index arithmetic.
 `*(::AbstractMatrix, ::AbstractTriangular)` is written as `(A' * B')'`. For a **real** element type
 that goes through here as well, because `adjoint` on one of these is then a type swap onto the same
 storage. A complex one does not: the swap is bound to `Real`, for the reason the comment on
-`adjoint(::LowerTriangular)` in `upper_triangular.jl` gives, and the lazy `Adjoint` it falls through
+`adjoint(::StrictlyLowerTriangular)` in `upper_triangular.jl` gives, and the lazy `Adjoint` it falls through
 to is not an `AbstractTriangular`. So that product stays on the generic path and stays host-only.
 """
 Base.:*(::AbstractTriangular, ::AbstractMatrix)
@@ -239,8 +195,8 @@ end
 # The species check is a runtime one for the reason given on `copyto!(::Manifold, ::Manifold)`: a
 # type parameter shared by both arguments binds the whole type, storage array included, and so
 # excludes exactly the host-to-device transfer this method exists for. Both arguments are only
-# constrained to `AbstractTriangular`, so without the check a `LowerTriangular` destination accepts
-# an `UpperTriangular` source and takes its storage into the opposite triangle.
+# constrained to `AbstractTriangular`, so without the check a `StrictlyLowerTriangular` destination accepts
+# a `StrictlyUpperTriangular` source and takes its storage into the opposite triangle.
 function Base.copyto!(A::AbstractTriangular, B::AbstractTriangular)
     AT, BT = Base.typename(typeof(A)).wrapper, Base.typename(typeof(B)).wrapper
     AT === BT || throw(ArgumentError("cannot copyto! a $BT into a $AT"))

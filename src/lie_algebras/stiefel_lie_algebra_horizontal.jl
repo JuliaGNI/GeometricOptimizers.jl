@@ -203,30 +203,18 @@ Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
 # measures that difference for the case it is written about.
 _hor_top_rows(B::StiefelLieAlgHorMatrix, C₁, C₂) = B.A * C₁ - transpose(B.B) * C₂
 
-function Base.zeros(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    StiefelLieAlgHorMatrix(
-        zeros(SkewSymMatrix{T}, n),
-        zeros(T, N - n, n),
-        N,
-        n
-    )
-end
-
-function Base.zeros(::Type{StiefelLieAlgHorMatrix}, N::Integer, n::Integer)
-    StiefelLieAlgHorMatrix(
-        zeros(SkewSymMatrix, n),
-        zeros(N - n, n),
-        N,
-        n
-    )
-end
-
 function Base.zeros(backend::KernelAbstractions.Backend,
-        ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    _check_supported_eltype(backend, T)
+        ::Type{<:StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     StiefelLieAlgHorMatrix(
-        zeros(backend, SkewSymMatrix{T}, n),
-        KernelAbstractions.zeros(backend, T, N - n, n), N, n)
+        zeros(backend, SkewSymMatrix{T}, n), _zeros(backend, T, N - n, n), N, n)
+end
+
+# The `A` block is drawn before the `B` block, on every backend, so that a seeded draw names the same
+# matrix whether or not the call names the backend.
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
+        ::Type{<:StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
+    A = rand(rng, backend, SkewSymMatrix{T}, n)
+    StiefelLieAlgHorMatrix(A, _rand(rng, backend, T, N - n, n), N, n)
 end
 
 # Both methods allocate on the backend `A` is already on, through the method above. That is what
@@ -238,35 +226,6 @@ function Base.similar(A::StiefelLieAlgHorMatrix, dims::Union{Integer, AbstractUn
 end
 function Base.similar(A::StiefelLieAlgHorMatrix)
     zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, A.N, A.n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
-        ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    _check_supported_eltype(backend, T)
-    B = KernelAbstractions.allocate(backend, T, N - n, n)
-    rand!(rng, B)
-    StiefelLieAlgHorMatrix(rand(rng, backend, SkewSymMatrix{T}, n), B, N, n)
-end
-
-function Base.rand(backend::KernelAbstractions.Backend,
-        type::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    rand(Random.default_rng(), backend, type, N, n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix{T}, n), rand(rng, T, N - n, n), N, n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{StiefelLieAlgHorMatrix}, N::Integer, n::Integer)
-    StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix, n), rand(rng, N - n, n), N, n)
-end
-
-function Base.rand(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    rand(Random.default_rng(), StiefelLieAlgHorMatrix{T}, N, n)
-end
-
-function Base.rand(::Type{StiefelLieAlgHorMatrix}, N::Integer, n::Integer)
-    rand(Random.default_rng(), StiefelLieAlgHorMatrix, N, n)
 end
 
 function scalar_add(A::StiefelLieAlgHorMatrix, δ::Real)

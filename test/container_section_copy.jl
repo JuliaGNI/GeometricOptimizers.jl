@@ -18,7 +18,7 @@
 # corner between them.
 
 using GeometricOptimizers
-using GeometricOptimizers: _copyto!, GlobalSection, GlobalSectionNamedTuple
+using GeometricOptimizers: _copyto!, GlobalSection, GlobalSectionNamedTuple, check
 using NeuralNetworkParameters
 using Test
 import Random

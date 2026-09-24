@@ -35,7 +35,8 @@
 # `scripts/metal_backend_refusal.jl` asks the same question of a real device.
 
 using GeometricOptimizers
-using GeometricOptimizers: LowerTriangular, UpperTriangular, StiefelProjection
+using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular,
+                           StiefelProjection
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
@@ -70,10 +71,10 @@ const TYPES = (
         SkewSymMatrix(JLArray(rand(T, N, N))), host_mat, dev_mat),
     ("Sym", SymmetricMatrix(rand(T, N, N)),
         SymmetricMatrix(JLArray(rand(T, N, N))), host_mat, dev_mat),
-    ("Lower", LowerTriangular(rand(T, N, N)),
-        LowerTriangular(JLArray(rand(T, N, N))), host_mat, dev_mat),
-    ("Upper", UpperTriangular(rand(T, N, N)),
-        UpperTriangular(JLArray(rand(T, N, N))), host_mat, dev_mat),
+    ("Lower", StrictlyLowerTriangular(rand(T, N, N)),
+        StrictlyLowerTriangular(JLArray(rand(T, N, N))), host_mat, dev_mat),
+    ("Upper", StrictlyUpperTriangular(rand(T, N, N)),
+        StrictlyUpperTriangular(JLArray(rand(T, N, N))), host_mat, dev_mat),
     ("Lift", host_lift,
         StiefelLieAlgHorMatrix(SkewSymMatrix(JLArray(Matrix(host_lift.A))),
             JLArray(Matrix(host_lift.B)), N, n), host_mat, dev_mat),

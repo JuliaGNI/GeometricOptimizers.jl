@@ -18,15 +18,15 @@ Random.seed!(1234)
     for T in (Float32, Float64), n in 2:5
 
         A = rand(T, n, n)
-        @test tr(A) ≈ sum(A - LowerTriangular(A) - UpperTriangular(A))
+        @test tr(A) ≈ sum(A - StrictlyLowerTriangular(A) - StrictlyUpperTriangular(A))
     end
 end
 
 @testset "multiplication agrees with the dense matrix" begin
     for T in (Float32, Float64), n in 2:5
 
-        Aₗ = rand(LowerTriangular{T}, n)
-        Aᵤ = rand(UpperTriangular{T}, n)
+        Aₗ = rand(StrictlyLowerTriangular{T}, n)
+        Aᵤ = rand(StrictlyUpperTriangular{T}, n)
         B = rand(T, n, n)
         b = rand(T, n)
 
@@ -55,7 +55,7 @@ end
         B = rand(T, n, n)
         α = rand(T)
 
-        for MT in (LowerTriangular, UpperTriangular)
+        for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
             @test MT(A + B) ≈ MT(A) + MT(B)
             @test MT(α * A) ≈ α * MT(A)
             @test typeof(MT(A) + MT(B)) <: MT{T}
@@ -65,7 +65,7 @@ end
 end
 
 @testset "adjoint aliases the storage of its argument" begin
-    # `adjoint` is a type swap (`LowerTriangular` <-> `UpperTriangular`), built around the *same*
+    # `adjoint` is a type swap (`StrictlyLowerTriangular` <-> `StrictlyUpperTriangular`), built around the *same*
     # storage vector rather than a copy. This is deliberate for performance, since the package's own
     # right-multiply `*(::AbstractMatrix, ::AbstractTriangular) = (A' * B')'` is read-only and would
     # otherwise pay for an allocation it never needs. But it means a write through the adjoint is a
@@ -73,8 +73,8 @@ end
     # test is the one that catches it.
     for T in (Float32, Float64), n in 2:5
 
-        L = rand(LowerTriangular{T}, n)
-        U = rand(UpperTriangular{T}, n)
+        L = rand(StrictlyLowerTriangular{T}, n)
+        U = rand(StrictlyUpperTriangular{T}, n)
 
         @test parent(L') === parent(L)
         @test parent(U') === parent(U)
@@ -99,7 +99,7 @@ end
 # path keeps the storage-sharing swap. This testset asserts both halves, because a later edit that
 # widened the methods again would restore the wrong answer with nothing else complaining.
 @testset "adjoint conjugates on a complex element type" begin
-    for MT in (LowerTriangular, UpperTriangular)
+    for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
         C = MT(ComplexF64[1 + 2im, 3 + 4im, 5 + 6im], 3)
         M = Matrix(C)
         B = randn(ComplexF64, 3, 3)
@@ -118,7 +118,8 @@ end
 end
 
 @testset "random generation" begin
-    for T in (Float32, Float64), n in 2:5, MT in (LowerTriangular, UpperTriangular)
+    for T in (Float32, Float64), n in 2:5,
+        MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
         A = rand(MT{T}, n)
         @test typeof(A) <: MT{T}
         @test eltype(A) == T
@@ -130,7 +131,7 @@ end
 # `zeros` and `rand` recover the bare constructor from the type parameter without going through
 # the evaluator, so both infer to a concrete type rather than `Any`.
 @testset "zeros and rand infer concretely" begin
-    for T in (Float32, Float64), MT in (LowerTriangular, UpperTriangular)
+    for T in (Float32, Float64), MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
 
         @test (@inferred zeros(MT{T}, 4)) isa MT{T}
         @test (@inferred rand(MT{T}, 4)) isa MT{T}
@@ -141,7 +142,8 @@ end
 # m)` and `rand(rng, T, m)` rather than a route through `KernelAbstractions` with an explicit
 # `CPU()`. The two give the same array at less cost, and this pins the placement and the values.
 @testset "the backendless allocators place on the host" begin
-    for T in (Float32, Float64), MT in (LowerTriangular, UpperTriangular), n in 2:5
+    for T in (Float32, Float64), MT in (StrictlyLowerTriangular, StrictlyUpperTriangular),
+        n in 2:5
         @test freeparameters(zeros(MT{T}, n)) isa Vector{T}
         @test all(iszero, freeparameters(zeros(MT{T}, n)))
         @test freeparameters(zeros(MT{T}, n)) == freeparameters(zeros(CPU(), MT{T}, n))
@@ -159,22 +161,26 @@ end
 @testset "storage layout" begin
     M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
 
-    @test LowerTriangular(M) == [0 0 0 0; 5 0 0 0; 9 10 0 0; 13 14 15 0]
-    @test UpperTriangular(M) == [0 2 3 4; 0 0 7 8; 0 0 0 12; 0 0 0 0]
+    @test StrictlyLowerTriangular(M) == [0 0 0 0; 5 0 0 0; 9 10 0 0; 13 14 15 0]
+    @test StrictlyUpperTriangular(M) == [0 2 3 4; 0 0 7 8; 0 0 0 12; 0 0 0 0]
 
-    @test freeparameters(LowerTriangular(M)) == [5, 9, 10, 13, 14, 15]
-    @test freeparameters(UpperTriangular(M)) == [2, 3, 7, 4, 8, 12]
+    @test freeparameters(StrictlyLowerTriangular(M)) == [5, 9, 10, 13, 14, 15]
+    @test freeparameters(StrictlyUpperTriangular(M)) == [2, 3, 7, 4, 8, 12]
 
     # and the round trip: the vector the second constructor takes is the one `freeparameters`
     # returns
-    @test LowerTriangular(freeparameters(LowerTriangular(M)), 4) == LowerTriangular(M)
-    @test UpperTriangular(freeparameters(UpperTriangular(M)), 4) == UpperTriangular(M)
+    @test StrictlyLowerTriangular(freeparameters(StrictlyLowerTriangular(M)), 4) ==
+          StrictlyLowerTriangular(M)
+    @test StrictlyUpperTriangular(freeparameters(StrictlyUpperTriangular(M)), 4) ==
+          StrictlyUpperTriangular(M)
 
     # `vec` is `Base`'s: the `n²` entries, not the storage
-    @test vec(LowerTriangular(M)) == vec(Matrix(LowerTriangular(M)))
+    @test vec(StrictlyLowerTriangular(M)) == vec(Matrix(StrictlyLowerTriangular(M)))
 
-    @test LowerTriangular([1, 2, 3, 4, 5, 6], 4) == [0 0 0 0; 1 0 0 0; 2 3 0 0; 4 5 6 0]
-    @test UpperTriangular([1, 2, 3, 4, 5, 6], 4) == [0 1 2 4; 0 0 3 5; 0 0 0 6; 0 0 0 0]
+    @test StrictlyLowerTriangular([1, 2, 3, 4, 5, 6], 4) ==
+          [0 0 0 0; 1 0 0 0; 2 3 0 0; 4 5 6 0]
+    @test StrictlyUpperTriangular([1, 2, 3, 4, 5, 6], 4) ==
+          [0 1 2 4; 0 0 3 5; 0 0 0 6; 0 0 0 0]
 end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::AbstractTriangular)` does not
@@ -183,7 +189,8 @@ end
 # Both triangles run, because one kernel covers them and neither is symmetric, so each pins which
 # triangle the body reaches for.
 @testset "a row vector times a triangular matrix" begin
-    for T in (Float32, Float64), N in 2:5, AT in (LowerTriangular, UpperTriangular)
+    for T in (Float32, Float64), N in 2:5,
+        AT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
         A = rand(AT{T}, N)
         v = rand(T, N)
 
@@ -195,16 +202,16 @@ end
 
 # Neither constructor projects: each reads the strict triangle that is there. `map_to_low` reads it
 # directly and `map_to_up` reaches it by swapping the indices, which is a transpose. Spelt `A'` the
-# swap conjugates on the way, so `UpperTriangular` stored a triangle nobody asked for — while
-# `LowerTriangular` was exact, so the two constructors disagreed with each other. The real path
+# swap conjugates on the way, so `StrictlyUpperTriangular` stored a triangle nobody asked for — while
+# `StrictlyLowerTriangular` was exact, so the two constructors disagreed with each other. The real path
 # cannot see it, which is why this testset is here.
 @testset "neither constructor conjugates on a complex element type" begin
     M = randn(ComplexF64, 4, 4)
 
-    @test Matrix(LowerTriangular(M)) == tril(M, -1)
-    @test Matrix(UpperTriangular(M)) == triu(M, 1)
+    @test Matrix(StrictlyLowerTriangular(M)) == tril(M, -1)
+    @test Matrix(StrictlyUpperTriangular(M)) == triu(M, 1)
 
     Mr = randn(4, 4)
-    @test Matrix(LowerTriangular(Mr)) == tril(Mr, -1)
-    @test Matrix(UpperTriangular(Mr)) == triu(Mr, 1)
+    @test Matrix(StrictlyLowerTriangular(Mr)) == tril(Mr, -1)
+    @test Matrix(StrictlyUpperTriangular(Mr)) == triu(Mr, 1)
 end

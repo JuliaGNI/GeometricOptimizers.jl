@@ -9,7 +9,7 @@ This is also used in [`OptimizerResult`](@ref).
 
 ```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: NewtonOptimizerCache, OptimizerStatus)
 x = ones(3)
-state = NewtonOptimizerState(x)
+state = NewtonState(x)
 cache = NewtonOptimizerCache(x)
 f = 1.
 config = Options()

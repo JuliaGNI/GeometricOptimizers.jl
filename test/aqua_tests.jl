@@ -22,6 +22,7 @@
 
 using Aqua
 using GeometricOptimizers
+using GeometricOptimizers: gradient
 using Test
 
 # `test_piracies`, plural: Aqua 0.8 defines no `Aqua.test_piracy`.

@@ -22,8 +22,8 @@ leaves = (
     grassmann = rand(GrassmannManifold{Float64}, N, n),
     symmetric = SymmetricMatrix(rand(n, n)),
     skew = SkewSymMatrix(rand(n, n)),
-    lower = LowerTriangular(rand(n, n)),
-    upper = UpperTriangular(rand(n, n)),
+    lower = StrictlyLowerTriangular(rand(n, n)),
+    upper = StrictlyUpperTriangular(rand(n, n)),
     stiefhor = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(n, n)), rand(N - n, n), N, n),
     grasshor = GrassmannLieAlgHorMatrix(rand(N - n, n), N, n)
 )
@@ -88,7 +88,7 @@ end
 end
 
 @testset "a StiefelProjection keeps its type" begin
-    E = GeometricOptimizers.StiefelProjection(N, n, Float32)
+    E = GeometricOptimizers.StiefelProjection(Float32, N, n)
     F = changebackend(CPU(), E)
     @test F isa GeometricOptimizers.StiefelProjection{Float32}
     @test F == E

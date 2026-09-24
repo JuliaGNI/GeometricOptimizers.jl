@@ -1,27 +1,3 @@
-# A named element type a backend cannot hold is rejected and not narrowed. Narrowing would return a
-# result of a different type from the one the caller asked for, which is the one thing a call that
-# names its element type has ruled out; the caller would then carry `Float32` results through code
-# written for `Float64` with nothing to say so.
-#
-# Every allocator a caller reaches by naming a backend *and* an element type calls this: the
-# manifold `rand`, `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal
-# lifts, `StiefelProjection` and `unit_matrix` below. The derived allocators -- `zero`, `similar`,
-# `_zero`, `_similar`, `+`, `map_to_S`, `global_section` -- must not call it and do not: they take
-# an instance, so their element type comes from an array that is already on that backend and the
-# case cannot arise. A check there would guard something that cannot happen.
-#
-# `KernelAbstractions.supports_float64` is the backend's own declaration. It answers `true` for
-# every backend that does not override it, so this can only fire where a backend author has stated
-# that the width is unavailable -- `Metal.jl` sets it `false`, and `CUDA` is unaffected. Without
-# this the same call still fails, but further in and in the backend's words: allocating a `Float64`
-# `MtlArray` raises `Metal does not support Float64 values, try using Float32 instead`, which names
-# neither the type being built nor the call that asked for it.
-function _check_supported_eltype(backend::KernelAbstractions.Backend, ::Type{T}) where {T}
-    if T === Float64 && !KernelAbstractions.supports_float64(backend)
-        throw(ArgumentError("$(backend) does not support Float64; name an element type it does support, such as Float32"))
-    end
-end
-
 # A computation needs both of its operands on one backend. This says so, and names both operand
 # types and both backends. Its return value is the shared backend; no call site reads it, because a
 # site launches on the backend of one named operand and that operand is not always this function's
@@ -90,7 +66,6 @@ The matrix form takes the backend and the element type from `A` and its size fro
 `LinearAlgebra.checksquare`, so it throws on a non-square argument exactly as `Base.one` does.
 """
 function unit_matrix(backend::KernelAbstractions.Backend, ::Type{T}, n::Integer) where {T}
-    _check_supported_eltype(backend, T)
     matrix = KernelAbstractions.zeros(backend, T, n, n)
     write_ones! = write_ones_kernel!(backend)
     write_ones!(matrix; ndrange = n)
@@ -100,20 +75,13 @@ end
 
 # The host arm allocates and fills in one step, with no kernel launch, and returns the same
 # `Matrix{T}` the generic arm above returns on a `CPU`. This is the argument
-# `StiefelProjection(N, n, T)` already makes in `src/special_matrices/stiefel_projection.jl`, and the
+# `StiefelProjection(T, N, n)` already makes in `src/special_matrices/stiefel_projection.jl`, and the
 # retraction path is where it is worth making: `KernelAbstractions.zeros` on a `CPU` writes the zeros
 # itself rather than taking a page the operating system has already zeroed
 # (`scripts/host_allocation_cost.jl`), and the launch then costs three allocations of
 # `KernelAbstractions.CompilerMetadata` per call regardless of `n`. A `cayley` of a horizontal lift
 # builds two of these identities and is called once per line-search trial.
-#
-# `_check_supported_eltype` is called here too, although `supports_float64(CPU())` is `true` and so it
-# can never fire: the invariant the header of this file states is that *every* allocator a caller
-# reaches by naming a backend and an element type calls it, and `test/backend_eltype_check.jl` asserts
-# that list. A method that quietly leaves the check out is how that list stops being true.
-function unit_matrix(backend::KernelAbstractions.CPU, ::Type{T}, n::Integer) where {T}
-    _check_supported_eltype(backend, T)
-
+function unit_matrix(::KernelAbstractions.CPU, ::Type{T}, n::Integer) where {T}
     Matrix{T}(I, n, n)
 end
 
@@ -215,7 +183,7 @@ end
 
 # `SimpleSolvers.Gradient` guarantees a functor and no field, so `grad.F` reaches a convention its
 # three concrete subtypes happen to share rather than an interface. Every wrapper in this package
-# therefore has to be asked for the objective instead of read for it -- `NewtonOptimizerState`'s
+# therefore has to be asked for the objective instead of read for it -- `NewtonState`'s
 # `update!` is the one consumer that needs the objective and holds only a gradient.
 _objective(grad::Gradient) = grad.F
 _objective(grad::RiemannianGradient) = _objective(grad.gradient)

@@ -13,7 +13,7 @@ Internally the `struct` saves a vector ``S`` of size ``n(n+1)\div2``. The conver
 
 So ``S`` stores a string of vectors taken from ``A``: ``S = [\tilde{a}_1, \tilde{a}_2, \ldots, \tilde{a}_n]`` with ``\tilde{a}_i = [[A]_{i1},[A]_{i2},\ldots,[A]_{ii}]``.
 
-Also see [`SkewSymMatrix`](@ref), [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref).
+Also see [`SkewSymMatrix`](@ref), [`StrictlyLowerTriangular`](@ref) and [`StrictlyUpperTriangular`](@ref).
 
 # Examples 
 ```jldoctest
@@ -75,7 +75,7 @@ If the user wishes to allocate a matrix `SymmetricMatrix{<:Integer}` then call
 SymmetricMatrix(::AbstractVector, n::Integer)
 ```
 
-Note that this is different from [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) as no projection takes place there.
+Note that this is different from [`StrictlyLowerTriangular`](@ref) and [`StrictlyUpperTriangular`](@ref) as no projection takes place there.
 """
 function SymmetricMatrix(A::AbstractMatrix{T}) where {T}
     S = map_to_S(A)
@@ -118,7 +118,7 @@ function map_to_S(A::AbstractMatrix{T}) where {T <: Integer}
 end
 
 # A symmetric matrix is its own *transpose*, and only a real one is its own adjoint. Bound to `Real`
-# for the same reason `adjoint(::LowerTriangular{<:Real})` in `upper_triangular.jl` is: the bound
+# for the same reason `adjoint(::StrictlyLowerTriangular{<:Real})` in `upper_triangular.jl` is: the bound
 # does not reject a complex argument, it hands it to `LinearAlgebra`'s lazy `Adjoint`, which
 # conjugates and is correct. Returning `A` unconditionally answered `A' == A` for a complex `A`,
 # which is false.
@@ -180,50 +180,14 @@ Base.:*(α::Real, A::SymmetricMatrix) = A*α
 # The backend-taking allocators mirror `SkewSymMatrix`'s method for method, as the rest of the two
 # types do: a symmetric matrix is an optimizer parameter in exactly the same way, and
 # `GeometricMachineLearning`'s SympNet and symplectic-attention layers are parametrized by both.
-#
-# No `n == 1` branch here, unlike `SkewSymMatrix`'s: this storage is `n(n+1)/2`, which is `1` at
-# `n = 1` rather than `0`, so the length-zero case that guard is about does not arise.
 function Base.zeros(backend::KernelAbstractions.Backend,
-        ::Type{SymmetricMatrix{T}}, n::Int) where {T}
-    _check_supported_eltype(backend, T)
-    SymmetricMatrix(KernelAbstractions.zeros(backend, T, n*(n+1)÷2), n)
+        ::Type{<:SymmetricMatrix{T}}, n::Integer) where {T}
+    SymmetricMatrix(_zeros(backend, T, n*(n+1)÷2), n)
 end
 
-function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
-        ::Type{SymmetricMatrix{T}}, n::Integer) where {T}
-    _check_supported_eltype(backend, T)
-    S = KernelAbstractions.allocate(backend, T, n*(n+1)÷2)
-    Random.rand!(rng, S)
-    SymmetricMatrix(S, n)
-end
-
-function Base.rand(backend::KernelAbstractions.Backend,
-        type::Type{SymmetricMatrix{T}}, n::Integer) where {T}
-    rand(Random.default_rng(), backend, type, n)
-end
-
-function Base.zeros(::Type{SymmetricMatrix{T}}, n::Int) where {T}
-    SymmetricMatrix(zeros(T, n*(n+1)÷2), n)
-end
-
-function Base.zeros(::Type{SymmetricMatrix}, n::Int)
-    SymmetricMatrix(zeros(n*(n+1)÷2), n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{SymmetricMatrix{T}}, n::Int) where {T}
-    SymmetricMatrix(rand(rng, T, n*(n+1)÷2), n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{SymmetricMatrix}, n::Int)
-    SymmetricMatrix(rand(rng, n*(n+1)÷2), n)
-end
-
-function Base.rand(type::Type{SymmetricMatrix{T}}, n::Integer) where {T}
-    rand(Random.default_rng(), type, n)
-end
-
-function Base.rand(type::Type{SymmetricMatrix}, n::Integer)
-    rand(Random.default_rng(), type, n)
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
+        ::Type{<:SymmetricMatrix{T}}, n::Integer) where {T}
+    SymmetricMatrix(_rand(rng, backend, T, n*(n+1)÷2), n)
 end
 
 #these are Adam operations:

@@ -20,7 +20,8 @@
 # to that, so a later widening of the guard cannot quietly take it.
 
 using GeometricOptimizers
-using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular, add!, sr!
+using GeometricOptimizers: StrictlyLowerTriangular, StiefelProjection,
+                           StrictlyUpperTriangular, add!, sr!
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
@@ -51,8 +52,8 @@ const HOST_OWNED = let
     U = rand(SymplecticStiefelManifold{T}, N, 4)
     E = StiefelProjection(T, N, n)
     ["SkewSym" => host_skew, "SkewSym'" => host_skew', "Sym" => host_sym,
-        "Lower" => LowerTriangular(rand(T, N, N)),
-        "Upper" => UpperTriangular(rand(T, N, N)),
+        "Lower" => StrictlyLowerTriangular(rand(T, N, N)),
+        "Upper" => StrictlyUpperTriangular(rand(T, N, N)),
         "StiefelHor" => lift, "StiefelHor'" => lift', "GrassmannHor" => grass,
         "GrassmannHor'" => grass', "Y" => Y, "Y'" => Y', "G" => G, "G'" => G', "U" => U,
         "U'" => U', "E" => E, "E'" => E', "Sfac" => sr!(randn(T, N, 4)).S]
@@ -93,13 +94,13 @@ end
     @test_throws ArgumentError host_skew + dev_skew
     @test_throws ArgumentError dev_skew - host_skew
     @test_throws ArgumentError host_sym + dev_sym
-    @test_throws ArgumentError LowerTriangular(rand(T, N, N)) -
-                               LowerTriangular(JLArray(rand(T, N, N)))
+    @test_throws ArgumentError StrictlyLowerTriangular(rand(T, N, N)) -
+                               StrictlyLowerTriangular(JLArray(rand(T, N, N)))
 
     @test_throws ArgumentError add!(SkewSymMatrix(rand(T, N, N)), host_skew, dev_skew)
-    host_lo = LowerTriangular(rand(T, N, N))
-    @test_throws ArgumentError add!(LowerTriangular(rand(T, N, N)), host_lo,
-        LowerTriangular(JLArray(rand(T, N, N))))
+    host_lo = StrictlyLowerTriangular(rand(T, N, N))
+    @test_throws ArgumentError add!(StrictlyLowerTriangular(rand(T, N, N)), host_lo,
+        StrictlyLowerTriangular(JLArray(rand(T, N, N))))
 end
 
 # The message is the whole point of the change, so it is asserted rather than assumed: a bare
@@ -130,12 +131,13 @@ end
     # per-argument binding does not cost the type its own method: on one shared type variable this
     # pair dispatches correctly and a mixed one does not, so only a same-backend device pair
     # distinguishes "reaches the right method" from "reaches `Base`'s".
-    @test LowerTriangular(rand(T, N, N)) + LowerTriangular(rand(T, N, N)) isa
-          LowerTriangular
-    dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
-    @test dev_lo + dev_lo isa LowerTriangular
+    @test StrictlyLowerTriangular(rand(T, N, N)) +
+          StrictlyLowerTriangular(rand(T, N, N)) isa
+          StrictlyLowerTriangular
+    dev_lo = StrictlyLowerTriangular(JLArray(rand(T, N, N)))
+    @test dev_lo + dev_lo isa StrictlyLowerTriangular
     @test parent(dev_lo + dev_lo) isa JLArray
-    @test dev_lo - dev_lo isa LowerTriangular
+    @test dev_lo - dev_lo isa StrictlyLowerTriangular
     @test parent(dev_lo - dev_lo) isa JLArray
 end
 
@@ -144,19 +146,19 @@ end
 # is the one the per-argument binding exists for: a destination and a source of the same species
 # whose storage arrays are different concrete types.
 @testset "the triangular `mul!` checks species, backend and storage" begin
-    host_lo = LowerTriangular(rand(T, N, N))
-    host_up = UpperTriangular(rand(T, N, N))
-    dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
+    host_lo = StrictlyLowerTriangular(rand(T, N, N))
+    host_up = StrictlyUpperTriangular(rand(T, N, N))
+    dev_lo = StrictlyLowerTriangular(JLArray(rand(T, N, N)))
 
     @test_throws ArgumentError LinearAlgebra.mul!(host_up, host_lo, T(2))
     @test_throws ArgumentError LinearAlgebra.mul!(host_up, T(2), host_lo)
     @test_throws ArgumentError LinearAlgebra.mul!(dev_lo, host_lo, T(2))
     @test_throws ArgumentError LinearAlgebra.mul!(host_lo, dev_lo, T(2))
 
-    source = LowerTriangular(rand(T, N, N))
-    destination = LowerTriangular(view(collect(source.S), :), N)
+    source = StrictlyLowerTriangular(rand(T, N, N))
+    destination = StrictlyLowerTriangular(view(collect(source.S), :), N)
     @test parent(destination) isa SubArray
-    @test LinearAlgebra.mul!(destination, source, T(2)) isa LowerTriangular
+    @test LinearAlgebra.mul!(destination, source, T(2)) isa StrictlyLowerTriangular
     @test parent(destination) ≈ 2 .* parent(source)
 end
 
@@ -165,16 +167,16 @@ end
 # rather than falling back to a dense path, because an element-wise quotient of a lower by an upper
 # divides by the zeros each keeps outside its own triangle.
 @testset "`/ᵉˡᵉ` checks species, backend and storage" begin
-    host_lo = LowerTriangular(rand(T, N, N) .+ one(T))
-    host_up = UpperTriangular(rand(T, N, N) .+ one(T))
-    dev_lo = LowerTriangular(JLArray(rand(T, N, N) .+ one(T)))
+    host_lo = StrictlyLowerTriangular(rand(T, N, N) .+ one(T))
+    host_up = StrictlyUpperTriangular(rand(T, N, N) .+ one(T))
+    dev_lo = StrictlyLowerTriangular(JLArray(rand(T, N, N) .+ one(T)))
 
     @test_throws ArgumentError GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, host_up)
     @test_throws ArgumentError GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, dev_lo)
 
-    other = LowerTriangular(view(collect(host_lo.S), :), N)
+    other = StrictlyLowerTriangular(view(collect(host_lo.S), :), N)
     quotient = GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, other)
-    @test quotient isa LowerTriangular
+    @test quotient isa StrictlyLowerTriangular
     @test parent(quotient) ≈ parent(host_lo) ./ parent(other)
 end
 
@@ -183,8 +185,8 @@ end
 # to the dense path rather than being refused — the answer `Base`'s generic `+` gives, and the one
 # `*` between the two species already gives.
 @testset "the two triangular species sum to a dense matrix" begin
-    lo = LowerTriangular(rand(T, N, N))
-    up = UpperTriangular(rand(T, N, N))
+    lo = StrictlyLowerTriangular(rand(T, N, N))
+    up = StrictlyUpperTriangular(rand(T, N, N))
 
     @test lo + up ≈ Matrix(lo) + Matrix(up)
     @test lo - up ≈ Matrix(lo) - Matrix(up)
@@ -194,7 +196,7 @@ end
     # `add!` is the exception, and not by choice: its destination is one species and cannot hold the
     # sum of the two
     @test_throws ArgumentError add!(
-        LowerTriangular(rand(T, N, N)), lo, UpperTriangular(rand(T, N, N)))
+        StrictlyLowerTriangular(rand(T, N, N)), lo, StrictlyUpperTriangular(rand(T, N, N)))
 end
 
 # `KernelAbstractions.get_backend` raises for an array type it has no method for, and the guard lets

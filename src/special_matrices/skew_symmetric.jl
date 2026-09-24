@@ -14,7 +14,7 @@ Internally the `struct` saves a vector ``S`` of size ``n(n-1)\div2``. The conver
 
 So ``S`` stores a string of vectors taken from ``A``: ``S = [\tilde{a}_1, \tilde{a}_2, \ldots, \tilde{a}_n]`` with ``\tilde{a}_i = [[A]_{i1},[A]_{i2},\ldots,[A]_{i(i-1)}]``.
 
-Also see [`SymmetricMatrix`](@ref), [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref).
+Also see [`SymmetricMatrix`](@ref), [`StrictlyLowerTriangular`](@ref) and [`StrictlyUpperTriangular`](@ref).
 
 # Examples
 ```jldoctest
@@ -76,7 +76,7 @@ If the user wishes to allocate a matrix `SkewSymMatrix{<:Integer}` then call:
 SkewSymMatrix(::AbstractVector, n::Integer)
 ```
 
-Note that this is different from [`LowerTriangular`](@ref) and [`UpperTriangular`](@ref) as no projection takes place there.
+Note that this is different from [`StrictlyLowerTriangular`](@ref) and [`StrictlyUpperTriangular`](@ref) as no projection takes place there.
 """
 function SkewSymMatrix(S::AbstractMatrix{T}) where {T}
     n = size(S, 1)
@@ -147,61 +147,16 @@ end
 
 Base.:*(α::Real, A::SkewSymMatrix) = A * α
 
-# The `n == 1` arm below -- `allocate` where every other length takes `zeros` -- is kept although no
-# backend reachable here needs it, and it is deliberately not deleted. A `1x1` skew-symmetric matrix
-# stores nothing, so what the arm avoids is `KernelAbstractions.zeros` at length zero. Measured:
-# `CPU()` returns a `(0,)` array from both
-# `zeros` and `allocate`, and `MetalBackend()` does too. Neither is therefore the case it guards.
-# Nobody here has a CUDA device, and an older `KernelAbstractions` is the likely reason it exists.
-# Two backends' worth of evidence is not enough to remove a guard -- find the backend or the
-# version that failed first. `map_to_Skew` carries the same branch for the same reason.
-function Base.zeros(backend::KernelAbstractions.Backend, ::Type{SkewSymMatrix{T}}, n::Int) where {T}
-    _check_supported_eltype(backend, T)
-    zero_vec = if n != 1
-        KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
-    else
-        KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
-    end
-    SkewSymMatrix(zero_vec, n)
-end
-
-function Base.zeros(::Type{SkewSymMatrix{T}}, n::Int) where {T}
-    SkewSymMatrix(zeros(T, n * (n - 1) ÷ 2), n)
-end
-
-# `SkewSymMatrix` is exported, so `zeros(SkewSymMatrix, n)` is public API and defaults to
-# `Float64` just like `zeros(n)` does. It has to be kept alongside the parametric method above
-# and not replaced by it: without it `zeros(SkewSymMatrix, n)` falls through to
-# `Base.zeros(::Type, ::Int)`, which throws `MethodError: no method matching
-# zero(::Type{SkewSymMatrix})`. `zeros(::Type{StiefelLieAlgHorMatrix}, N, n)` calls it, too.
-Base.zeros(::Type{SkewSymMatrix}, n::Int) = zeros(SkewSymMatrix{Float64}, n)
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{SkewSymMatrix{T}}, n::Int) where {T}
-    SkewSymMatrix(rand(rng, T, n * (n - 1) ÷ 2), n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{SkewSymMatrix}, n::Int)
-    SkewSymMatrix(rand(rng, n * (n - 1) ÷ 2), n)
-end
-
-function Base.rand(type::Type{SkewSymMatrix{T}}, n::Integer) where {T}
-    rand(Random.default_rng(), type, n)
-end
-
-function Base.rand(type::Type{SkewSymMatrix}, n::Integer)
-    rand(Random.default_rng(), type, n)
+# The two allocators every owned type has; `src/allocators.jl` has the chain that supplies `rng`,
+# `backend` and `T` when a call leaves them out.
+function Base.zeros(backend::KernelAbstractions.Backend,
+        ::Type{<:SkewSymMatrix{T}}, n::Integer) where {T}
+    SkewSymMatrix(_zeros(backend, T, n * (n - 1) ÷ 2), n)
 end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
-        type::Type{SkewSymMatrix{T}}, n::Integer) where {T}
-    _check_supported_eltype(backend, T)
-    S = KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
-    Random.rand!(rng, S)
-    SkewSymMatrix(S, n)
-end
-
-function Base.rand(backend::KernelAbstractions.Backend, type::Type{SkewSymMatrix{T}}, n::Integer) where {T}
-    rand(Random.default_rng(), backend, type, n)
+        ::Type{<:SkewSymMatrix{T}}, n::Integer) where {T}
+    SkewSymMatrix(_rand(rng, backend, T, n * (n - 1) ÷ 2), n)
 end
 
 #these are Adam operations:
@@ -334,13 +289,7 @@ function map_to_Skew(A::AbstractMatrix{T}) where {T}
     @assert size(A, 2) == n
     A_skew = T(0.5) * (A - transpose(A))
     backend = KernelAbstractions.get_backend(A)
-    # the `n != 1` branch of `zeros(::Backend, ::Type{SkewSymMatrix{T}}, n)` above, and the comment
-    # there says why it stays
-    S = if n != 1
-        KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
-    else
-        KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
-    end
+    S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
     assign_Skew_val! = assign_Skew_val_kernel!(backend)
     for i in 2:n
         assign_Skew_val!(S, A_skew, i, ndrange = (i - 1))

@@ -340,7 +340,7 @@ end
     GeometricOptimizers.AdamCache, GeometricOptimizers.BFGSCache,
     GeometricOptimizers.DFPCache, GeometricOptimizers.NewtonOptimizerCache,
     GradientState, MomentumState, AdamState,
-    BFGSState, NewtonOptimizerState)
+    BFGSState, NewtonState)
     @test _all_parameters_unbounded(TT)
 end
 
@@ -360,7 +360,7 @@ end
     @test OptimizerCache(DFP(), ps) isa GeometricOptimizers.DFPCache{Float64}
     @test OptimizerCache(Newton(), zeros(3)) isa
           GeometricOptimizers.NewtonOptimizerCache{Float64}
-    @test OptimizerState(Newton(), zeros(3)) isa NewtonOptimizerState{Float64}
+    @test OptimizerState(Newton(), zeros(3)) isa NewtonState{Float64}
 end
 
 # The other half of the commitment: a bare `NamedTuple` is *not* a set of parameters, and the

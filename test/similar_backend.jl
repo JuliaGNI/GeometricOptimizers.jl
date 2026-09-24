@@ -22,7 +22,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: AdamCache, GradientCache, MomentumCache
-using GeometricOptimizers: LowerTriangular, UpperTriangular
+using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular
 using GeometricOptimizers: _copy, _fill!, _similar, _zero
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
@@ -53,8 +53,8 @@ leaves = (
     plain = JLArray(rand(T, N, n)),
     symmetric = SymmetricMatrix(JLArray(rand(T, n, n))),
     skew = SkewSymMatrix(JLArray(rand(T, n, n))),
-    lower = LowerTriangular(JLArray(rand(T, n, n))),
-    upper = UpperTriangular(JLArray(rand(T, n, n))),
+    lower = StrictlyLowerTriangular(JLArray(rand(T, n, n))),
+    upper = StrictlyUpperTriangular(JLArray(rand(T, n, n))),
     stiefhor = StiefelLieAlgHorMatrix(
         SkewSymMatrix(JLArray(rand(T, n, n))), JLArray(rand(T, N - n, n)), N, n),
     grasshor = GrassmannLieAlgHorMatrix(JLArray(rand(T, N - n, n)), N, n)

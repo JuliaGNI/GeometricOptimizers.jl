@@ -1,36 +1,14 @@
-# Every allocator that takes a backend *and* a caller-named element type refuses a width the
-# backend has declared it cannot hold, rather than narrowing it or failing further in.
+# Every allocator that takes a backend *and* a caller-named element type returns that element type
+# on that backend. A width the backend cannot hold is refused by the backend's own allocation: on
+# Metal, `Metal does not support Float64 values, try using Float32 instead`, which names the width.
+# No host backend refuses `Float64`, so no test here can reproduce that refusal; `test/metal.jl`
+# and `scripts/metal_check.jl` are where it is seen.
 #
-# Without the check the same call still fails, but inside the backend and in its words: on Metal,
-# `Metal does not support Float64 values, try using Float32 instead`, which names neither the type
-# being built nor the call that asked for it. The width is never silently narrowed either way; what
-# the check supplies is the message and one place to read the rule.
-#
-# Three stand-in devices. `_Float64GPU` and `_NoFloat64GPU` differ in one declaration and nothing
-# else, and both allocate host arrays, which makes them devices every one of these methods actually
-# runs on. `JLArrays` is a real device backend and does run the draw — see
-# `device_orthonormalization.jl` — but it declares itself `Float64`-capable, so it cannot stand on
-# both sides of the distinction these methods turn on.
-#
-# `_UnallocatableGPU` is the third and has one job: it declares no `Float64` and can allocate
-# nothing at all, so an `ArgumentError` from it is proof that the check stopped the call *before*
-# it reached the backend. A call that got past would be a `MethodError` on `allocate` instead.
-#
-# What must NOT be guarded, and is asserted below: the derived allocators. `zero`, `similar`,
-# `_zero`, `_similar` and the arithmetic take an instance, so their element type comes from an
-# array already on the backend and the case cannot arise. A check there would be error handling for
-# something that cannot happen.
-#
-# **The `CPU` arms of `unit_matrix` and `StiefelProjection` are unwitnessed here, by construction.**
-# All three stand-ins are `<: GPU`, and `KernelAbstractions.CPU` is concrete, so no stand-in can
-# declare itself a host that cannot hold `Float64`. Those two arms call `_check_supported_eltype`
-# for the invariant `src/utils.jl`'s header states rather than for anything that can fire, and
-# nothing below can tell whether they do. A missing call in either arm is therefore invisible to
-# this file; reading the two arms against that invariant is what catches it.
+# `_Float64GPU` allocates host arrays, which makes it a device every one of these methods actually
+# runs on.
 
 using GeometricOptimizers
-using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular,
-                           _check_supported_eltype, unit_matrix
+using GeometricOptimizers: StiefelProjection, unit_matrix
 using KernelAbstractions: KernelAbstractions, CPU, GPU
 using Random
 using Test
@@ -42,15 +20,6 @@ function KernelAbstractions.allocate(::_Float64GPU, ::Type{T}, dims::Tuple; kwar
     Array{T}(undef, dims)
 end
 
-struct _NoFloat64GPU <: GPU end
-KernelAbstractions.supports_float64(::_NoFloat64GPU) = false
-function KernelAbstractions.allocate(::_NoFloat64GPU, ::Type{T}, dims::Tuple; kwargs...) where {T}
-    Array{T}(undef, dims)
-end
-
-struct _UnallocatableGPU <: GPU end
-KernelAbstractions.supports_float64(::_UnallocatableGPU) = false
-
 const N, n = 6, 2
 
 # every entry point that names a backend and an element type, as a caller writes it
@@ -60,10 +29,10 @@ function allocators(T)
         "rand SkewSymMatrix" => b -> rand(b, SkewSymMatrix{T}, n),
         "zeros SymmetricMatrix" => b -> zeros(b, SymmetricMatrix{T}, n),
         "rand SymmetricMatrix" => b -> rand(b, SymmetricMatrix{T}, n),
-        "zeros LowerTriangular" => b -> zeros(b, LowerTriangular{T}, n),
-        "rand LowerTriangular" => b -> rand(b, LowerTriangular{T}, n),
-        "zeros UpperTriangular" => b -> zeros(b, UpperTriangular{T}, n),
-        "rand UpperTriangular" => b -> rand(b, UpperTriangular{T}, n),
+        "zeros StrictlyLowerTriangular" => b -> zeros(b, StrictlyLowerTriangular{T}, n),
+        "rand StrictlyLowerTriangular" => b -> rand(b, StrictlyLowerTriangular{T}, n),
+        "zeros StrictlyUpperTriangular" => b -> zeros(b, StrictlyUpperTriangular{T}, n),
+        "rand StrictlyUpperTriangular" => b -> rand(b, StrictlyUpperTriangular{T}, n),
         "zeros StiefelLieAlgHorMatrix" => b -> zeros(b, StiefelLieAlgHorMatrix{T}, N, n),
         "rand StiefelLieAlgHorMatrix" => b -> rand(b, StiefelLieAlgHorMatrix{T}, N, n),
         "zeros GrassmannLieAlgHorMatrix" =>
@@ -77,51 +46,11 @@ function allocators(T)
 end
 
 # `StiefelProjection` and `unit_matrix` are the two entry points that launch a kernel, and a
-# stand-in device can allocate but not run one. They stay in the refusal testset — the check fires
-# before the kernel, so the refusal is exactly what is observable there — and drop out of the ones
-# that have to complete a call. Their successful paths are covered on a real backend by
-# `test/special_matrices/stiefel_projetion.jl` and `test/retractions/exponential_accuracy.jl`.
+# stand-in device can allocate but not run one. Their successful paths on a device are covered on a
+# real backend by `test/special_matrices/stiefel_projetion.jl` and
+# `test/retractions/exponential_accuracy.jl`.
 const KERNEL_LAUNCHING = ("StiefelProjection", "unit_matrix")
 runnable(as) = filter(p -> first(p) ∉ KERNEL_LAUNCHING, collect(as))
-
-@testset "a width the backend declares it cannot hold is refused" begin
-    for (name, allocate) in allocators(Float64)
-        @testset "$name" begin
-            @test_throws ArgumentError allocate(_NoFloat64GPU())
-
-            err = try
-                allocate(_NoFloat64GPU())
-                nothing
-            catch e
-                e
-            end
-            @test err isa ArgumentError
-            @test occursin("Float64", err.msg)
-            @test occursin("Float32", err.msg)
-
-            # and it is refused *before* the backend is asked for memory: this one can allocate
-            # nothing, so anything that got past the check would be a `MethodError` instead.
-            #
-            # `zeros StiefelLieAlgHorMatrix` is the one case this does not witness on its own: its
-            # first argument is `zeros(backend, SkewSymMatrix{T}, n)`, which carries its own check
-            # and raises the same error first, so deleting the guard from the lift's method would
-            # leave every assertion here green. It stays because the delegation is not a property
-            # of the signature and a later edit could drop it.
-            @test_throws ArgumentError allocate(_UnallocatableGPU())
-        end
-    end
-end
-
-@testset "a width the backend declares it cannot hold is refused for nothing else" begin
-    # the same calls at `Float32`, on the backend that cannot hold a `Float64`: the check is about
-    # one width and must not stand in the way of any other
-    for (name, allocate) in runnable(allocators(Float32))
-        @testset "$name" begin
-            A = allocate(_NoFloat64GPU())
-            @test eltype(A) === Float32
-        end
-    end
-end
 
 @testset "a backend that carries Float64 allocates one" begin
     for T in (Float32, Float64), (name, allocate) in runnable(allocators(T))
@@ -143,7 +72,7 @@ end
     end
 end
 
-# `SymmetricMatrix`'s three backend-taking allocators mirror `SkewSymMatrix`'s, which is what these
+# `SymmetricMatrix`'s backend-taking allocators mirror `SkewSymMatrix`'s, which is what these
 # assert: the two types are optimizer parameters in the same way and are placed on a device alike.
 @testset "SymmetricMatrix allocates on a backend as SkewSymMatrix does" begin
     for T in (Float32, Float64)
@@ -176,21 +105,4 @@ end
         @test rand(_Float64GPU(), GrassmannLieAlgHorMatrix{T}, N, n) isa
               GrassmannLieAlgHorMatrix{T}
     end
-end
-
-# The derived allocators take an instance, so the element type and the backend both come from the
-# argument. They must keep working on a backend that has no `Float64` even for a `Float64` array,
-# because nothing about them lets a caller ask for a width the holder does not already have.
-@testset "an allocator that takes an instance is not checked" begin
-    A = SkewSymMatrix(rand(Float64, n * (n - 1) ÷ 2), n)
-    for allocate in (zero, similar, copy)
-        @test eltype(allocate(A)) === Float64
-    end
-    @test _check_supported_eltype(_Float64GPU(), Float64) === nothing
-    @test _check_supported_eltype(CPU(), Float64) === nothing
-    # one width, and only on a backend that has declared it cannot hold it
-    for T in (Float32, Int32, Int64, ComplexF32)
-        @test _check_supported_eltype(_NoFloat64GPU(), T) === nothing
-    end
-    @test_throws ArgumentError _check_supported_eltype(_NoFloat64GPU(), Float64)
 end

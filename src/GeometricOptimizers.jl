@@ -104,8 +104,13 @@ include("decompositions/symplectic_gram_schmidt.jl")
 # these types has to be able to extend them. `GeometricMachineLearning` reached all four through
 # `GeometricOptimizers.`-qualified names or through copies of its own until 0.5; see
 # GeometricMachineLearning#234.
+#
+# `check` is `public` and not exported, as `gradient` and `value` below are: all three are names
+# that other packages export too (`Zygote` exports `gradient`), and two exports of one name make it
+# unusable unqualified in a `Main` that loads both.
 export Manifold, StiefelManifold, GrassmannManifold, SymplecticStiefelManifold
-export rgrad, metric, check, Ω
+export rgrad, metric, Ω
+public check
 # `orthonormal_columns` is public for the same reason, and for one more: a downstream layer that
 # initialises a manifold weight has to orthonormalise it, and `LinearAlgebra.qr!` cannot do that
 # on a device. This is the only entry point here that can. `_cholesky_qr2` behind it stays
@@ -120,7 +125,7 @@ include("manifolds/stiefel_manifold.jl")
 include("manifolds/grassmann_manifold.jl")
 include("manifolds/symplectic_stiefel_manifold.jl")
 
-export SkewSymMatrix, SymmetricMatrix, LowerTriangular, UpperTriangular
+export SkewSymMatrix, SymmetricMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular
 export AbstractTriangular, StiefelProjection
 include("special_matrices/skew_symmetric.jl")
 include("special_matrices/symmetric.jl")
@@ -135,6 +140,9 @@ include("lie_algebras/abstract_lie_algebra_horizontal.jl")
 include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
 include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
 include("lie_algebras/stiefel_projection.jl")
+
+# The `zeros` and `rand` chain over all of the types above.
+include("allocators.jl")
 
 # `*`, `+` and `-` on the types above, once all of them and `Sfac` exist. They define no type and
 # export nothing; the file's head says what each of them returns and why.
@@ -167,7 +175,7 @@ export Optimizer,
        OptimizerMethod,
        OptimizerSolution,
        OptimizerState, isaOptimizerState,
-       NewtonOptimizerState,
+       NewtonState,
        HessianAutodiff,
        HessianBFGS,
        HessianDFP
@@ -176,11 +184,12 @@ export EventLog, PhaseTimer, NoStepObserver, observe_optimizer_phase, step_obser
 import SimpleSolvers: solve!, solve
 # `Newton`, `BFGS` and `DFP` are the optimizer methods, and `BFGSState`/`DFPState` are the states
 # that go with them -- as `GradientState`, `MomentumState` and `AdamState` are exported with the
-# first-order methods further down, and `NewtonOptimizerState` above. `OptimizerMethod`, their
+# first-order methods further down, and `NewtonState` above. `OptimizerMethod`, their
 # common supertype, is exported above so that a caller can dispatch on "any method". `DFPState` is
 # an alias for `BFGSState`. Only the *caches* stay internal, for every method alike: they are
 # `solver_step!` scratch, and nothing outside a step should be reading one.
-export solve!, solve, value, gradient, Newton, BFGS, DFP, BFGSState, DFPState
+export solve!, solve, Newton, BFGS, DFP, BFGSState, DFPState
+public value, gradient
 
 include("optimizer_solution.jl")
 include("optimizers/optimizer_problems.jl")
@@ -238,8 +247,10 @@ function __init__()
     register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(_dense(S)))
     register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
     register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
-    register_parameter_type!("LowerTriangular", (S, md) -> LowerTriangular(_vector(S, md)...))
-    register_parameter_type!("UpperTriangular", (S, md) -> UpperTriangular(_vector(S, md)...))
+    register_parameter_type!("StrictlyLowerTriangular", (
+        S, md) -> StrictlyLowerTriangular(_vector(S, md)...))
+    register_parameter_type!("StrictlyUpperTriangular", (
+        S, md) -> StrictlyUpperTriangular(_vector(S, md)...))
     # These two index positionally where the six above go by name, because they can: the older layout
     # covered five types and never a lift, so their `storage` is only ever the `Tuple` this protocol
     # wrote, in the order `parent` returned. A `NamedTuple` from that layout records no key order, so

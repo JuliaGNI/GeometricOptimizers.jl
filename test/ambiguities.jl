@@ -50,8 +50,8 @@ const OPERANDS = let
         "G" => GrassmannManifold(Q), "G'" => GrassmannManifold(Q)',
         "U" => U, "U'" => U', "S" => S, "inv(S)" => inv(S),
         "E" => StiefelProjection(N, N),
-        "LowerTriangular" => rand(LowerTriangular{Float64}, N),
-        "UpperTriangular" => rand(UpperTriangular{Float64}, N),
+        "StrictlyLowerTriangular" => rand(StrictlyLowerTriangular{Float64}, N),
+        "StrictlyUpperTriangular" => rand(StrictlyUpperTriangular{Float64}, N),
         "SkewSym" => skew, "SkewSym'" => skew', "Sym" => rand(SymmetricMatrix, N),
         "StiefelHor" => lift, "StiefelHor'" => lift',
         "GrassmannHor" => grass, "GrassmannHor'" => grass',
@@ -61,8 +61,8 @@ const OPERANDS = let
         # `2 × 2` and `2 × 1`
         "Yₙ" => qpoint(n, 1), "Uₙ" => rand(SymplecticStiefelManifold, n, n), "Sₙ" => Sₙ,
         "inv(Sₙ)" => inv(Sₙ), "Eₙ" => StiefelProjection(n, 1),
-        "LowerTriangularₙ" => rand(LowerTriangular{Float64}, n),
-        "UpperTriangularₙ" => rand(UpperTriangular{Float64}, n),
+        "StrictlyLowerTriangularₙ" => rand(StrictlyLowerTriangular{Float64}, n),
+        "StrictlyUpperTriangularₙ" => rand(StrictlyUpperTriangular{Float64}, n),
         "SkewSymₙ" => rand(SkewSymMatrix, n), "Symₙ" => rand(SymmetricMatrix, n),
         "StiefelHorₙ" => rand(StiefelLieAlgHorMatrix, n, 1),
         "GrassmannHorₙ" => rand(GrassmannLieAlgHorMatrix, n, 1)]
@@ -112,7 +112,7 @@ end
 # kernels take one element type only, so a pair with two reaches the five-argument generic `mul!`.
 @testset "mixed element types" begin
     for A in (rand(SkewSymMatrix{Float32}, N), rand(SymmetricMatrix{Float32}, N),
-        rand(LowerTriangular{Float32}, N), rand(StiefelLieAlgHorMatrix{Float32}, N, n),
+        rand(StrictlyLowerTriangular{Float32}, N), rand(StiefelLieAlgHorMatrix{Float32}, N, n),
         StiefelManifold(Float32.(Matrix(qr!(randn(N, N)).Q))))
         M, v = randn(N, N), randn(N)
         B = rand(SkewSymMatrix, N)
@@ -148,8 +148,9 @@ end
     @test A + A isa SkewSymMatrix
     @test A - A isa SkewSymMatrix
     @test C + C isa StiefelLieAlgHorMatrix
-    @test rand(LowerTriangular{Float64}, N) + rand(LowerTriangular{Float64}, N) isa
-          LowerTriangular
+    @test rand(StrictlyLowerTriangular{Float64}, N) +
+          rand(StrictlyLowerTriangular{Float64}, N) isa
+          StrictlyLowerTriangular
 
     # Built in the packed representation and not through `SkewSymMatrix(::AbstractMatrix)`, which
     # would halve a difference and so widen an integer element type to a float one.

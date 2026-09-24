@@ -41,7 +41,7 @@
 # to run anywhere.
 
 using GeometricOptimizers
-using GeometricOptimizers: LowerTriangular, StiefelProjection, add!
+using GeometricOptimizers: StrictlyLowerTriangular, StiefelProjection, add!
 using KernelAbstractions: KernelAbstractions
 using LinearAlgebra: mul!
 using Metal
@@ -64,7 +64,7 @@ println()
 
 host_skew = SkewSymMatrix(rand(T, N, N))
 host_sym = SymmetricMatrix(rand(T, N, N))
-host_lo = LowerTriangular(rand(T, N, N))
+host_lo = StrictlyLowerTriangular(rand(T, N, N))
 host_mat = rand(T, N, N)
 host_tall = rand(T, N, n)
 host_lift = rand(StiefelLieAlgHorMatrix{T}, N, n)
@@ -73,7 +73,7 @@ host_Y = rand(StiefelManifold{T}, N, n)
 
 device_skew = SkewSymMatrix(MtlArray(rand(T, N, N)))
 device_sym = SymmetricMatrix(MtlArray(rand(T, N, N)))
-device_lo = LowerTriangular(MtlArray(rand(T, N, N)))
+device_lo = StrictlyLowerTriangular(MtlArray(rand(T, N, N)))
 device_mat = MtlArray(rand(T, N, N))
 device_tall = MtlArray(rand(T, N, n))
 device_lift = StiefelLieAlgHorMatrix(

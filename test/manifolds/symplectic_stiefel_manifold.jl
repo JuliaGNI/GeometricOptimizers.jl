@@ -1,7 +1,7 @@
 using Test
 using LinearAlgebra
 using GeometricOptimizers
-using GeometricOptimizers: _poisson_tensor, _similar
+using GeometricOptimizers: _poisson_tensor, _similar, check
 using KernelAbstractions: CPU, GPU
 import Random
 
@@ -220,7 +220,7 @@ struct _StandInGPU <: GPU end
     end
 
     # the rng-taking spelling reaches the same draw
-    U = rand(CPU(), Random.default_rng(), SymplecticStiefelManifold{Float64}, 6, 4)
+    U = rand(Random.default_rng(), CPU(), SymplecticStiefelManifold{Float64}, 6, 4)
     @test check(U) < tolerance(6)
     @test norm(U.A' * U.A - I) > 1e-6
 end
@@ -234,5 +234,5 @@ end
     # the element type left open, which `default_eltype` fills in before dispatch arrives here
     @test_throws ArgumentError rand(_StandInGPU(), SymplecticStiefelManifold, 6, 4)
     @test_throws ArgumentError rand(
-        _StandInGPU(), Random.default_rng(), SymplecticStiefelManifold{Float64}, 6, 4)
+        Random.default_rng(), _StandInGPU(), SymplecticStiefelManifold{Float64}, 6, 4)
 end

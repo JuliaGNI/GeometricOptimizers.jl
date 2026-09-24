@@ -1,4 +1,15 @@
 geodesic(A::AbstractVecOrMat) = A
+
+@doc raw"""
+    cayley(A::AbstractVecOrMat)
+
+Return `A` unchanged. This is the identity by design, not a missing Cayley transform.
+
+A plain vector or matrix is a parameter in a vector space, and the retraction there is the
+Euclidean one, ``x \mapsto x + A``. That addition happens in [`update_section!`](@ref), so the
+retraction applied to the direction has nothing left to do. [`geodesic`](@ref) on a plain array is
+the identity for the same reason. On a horizontal lift, `cayley` is the Cayley transform.
+"""
 cayley(A::AbstractVecOrMat) = A
 
 # On a vector space the retraction is addition, so the exponential never enters and the choice of
