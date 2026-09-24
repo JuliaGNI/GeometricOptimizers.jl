@@ -111,11 +111,13 @@ _cholesky_qr2(λ - Y.A * (Y.A' * λ))
 
 **The projection and the orthonormalization are done twice.** The first projection leaves a
 rounding error in the span of `Y`, and the orthonormalization multiplies it by the condition number
-of the projected draw, which has a heavy tail. Once only, one draw in a few thousand gives
-``\|Y^T\lambda\|`` near `1e-2` in `Float32`. The first result is orthonormal, so the second
-orthonormalization amplifies nothing, and ``\|Y^T\lambda\|`` stays at rounding level: measured over
-20000 draws, below `2.3e-7` in `Float32` and `1.1e-15` in `Float64`, at twice the cost. Projecting
-twice before one orthonormalization does not do this, because the amplification comes after it.
+of the projected draw, which has a heavy tail. Once only, the worst of a few thousand draws gives
+``\|Y^T\lambda\|`` of `3e-3` to `7e-2` in `Float32`, depending on the size. The first result is
+orthonormal, so the second orthonormalization amplifies nothing, and ``\|Y^T\lambda\|`` stays at
+rounding level: measured over 20000 draws at ``6\times3`` and 2000 at ``50\times3`` and
+``200\times10``, at most `6.1e-7` in `Float32` and `1.1e-15` in `Float64`, at twice the cost.
+Projecting twice before one orthonormalization does not do this, because the amplification comes
+after it.
 
 The orthonormalization is **CholeskyQR2 and not `LinearAlgebra.qr!`**, on every backend — see
 [`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2). `qr!` is a host factorization here:
