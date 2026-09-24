@@ -123,7 +123,7 @@ end
     end
 end
 
-@testset "a hard-coded Float64 no longer overrides default_eltype" begin
+@testset "a bare X on a backend uses default_eltype" begin
     @test default_eltype(jl_backend) === Float32
     @test eltype(zeros(jl_backend, SkewSymMatrix, 3)) === Float32
     @test eltype(zeros(jl_backend, SymmetricMatrix, 3)) === Float32
