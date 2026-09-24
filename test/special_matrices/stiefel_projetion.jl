@@ -22,7 +22,7 @@ end
 # the three agree, entry for entry and in type, so that the cheaper spelling is the same matrix.
 @testset "the host, the `CPU()` and the backend constructor agree" begin
     backend_signature = Tuple{KernelAbstractions.Backend, Type, Integer, Integer}
-    for T in (Float32, Float64), N in 3:5, n in 1:N
+    for T in (Float32, Float64), N in 3:5, n in 0:(N + 1)
         E = StiefelProjection(N, n, T)
         E_cpu = StiefelProjection(CPU(), T, N, n)
         E_backend = invoke(StiefelProjection, backend_signature, CPU(), T, N, n)
