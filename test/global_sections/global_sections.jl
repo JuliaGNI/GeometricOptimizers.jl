@@ -56,3 +56,19 @@ for N in 3:5
         @test global_tangent_space_rep(N, n, T)
     end
 end
+
+# The section's columns are orthogonal to `Y`, to rounding, on every draw. One projection of `Y` out
+# of the Gaussian draw leaves a rounding error in the span of `Y`, and the orthonormalisation
+# amplifies it by the condition number of the projected draw, which has a heavy tail. With one pass
+# only, one draw in a few thousand gives `‖Yᵀλ‖` near `1e-2` in `Float32` and `1e-10` in `Float64`,
+# so the property is asserted over many draws of one seeded run rather than over one.
+@testset "the section is orthogonal to the point on every draw" begin
+    Random.seed!(2024)
+    tolerances = ((Float32, 1.0f-5), (Float64, 1e-13))
+    shapes = ((6, 3, 20000), (50, 3, 2000))
+    for (T, tol) in tolerances, (N, n, draws) in shapes,
+        M in (StiefelManifold, GrassmannManifold)
+        Y = rand(M{T}, N, n)
+        @test maximum(_ -> norm(Y.A' * global_section(Y)), 1:draws) < tol
+    end
+end

@@ -144,10 +144,10 @@ function device_products(todevice; seed = 1234)
 
     # The manifold operations on a device, and the retractions they sit on.
     #
-    # A retraction draws its global section from the global generator, and one or two sections in a
-    # thousand give a `Float32` geodesic whose `check` is above the `1f-4` below — on the host as
-    # well as on a device, so it is not what this sweep tests. The seed fixes the draw. On a
-    # JLArray `Random.seed!` makes it repeatable; a device with a generator of its own may not.
+    # A retraction draws its global section from the global generator, so the retraction rows see a
+    # different section on every run. The seed makes them see the same one, and a failure there then
+    # repeats. On a JLArray `Random.seed!` makes the draw repeatable; a device with a generator of
+    # its own may not.
     Random.seed!(seed)
     for M in (StiefelManifold, GrassmannManifold)
         Y = M(Matrix(qr!(randn(rng, T, 6, 6)).Q)[:, 1:3])
