@@ -4,7 +4,8 @@
 #   * one pass: project the span of `Y` out of the draw, then orthonormalise with CholeskyQR2;
 #   * project twice: project twice, then orthonormalise once;
 #   * orthonormalise twice: one pass, then project the orthonormal result and orthonormalise it
-#     again, which is what `global_section` does.
+#     again, which is what `global_section` does; the script asserts that it matches the package's
+#     helper on a seeded draw.
 #
 # The orthonormalisation multiplies the rounding error left in the span of `Y` by the condition
 # number of the projected draw. So projecting twice before one orthonormalisation leaves the worst
@@ -15,13 +16,12 @@
 # figures in its CHANGELOG entry come from this script; the maxima are the worst of one seed of a
 # heavy-tailed value, so another seed gives a different worst case.
 #
-# Run in a cold process:
+# Run with the repository as the active project, in a cold process:
 #
-#     julia --startup-file=no --project=<env with GeometricOptimizers> \
-#         scripts/global_section_orthogonality.jl
+#     julia --startup-file=no --project=. scripts/global_section_orthogonality.jl
 
 using GeometricOptimizers
-using GeometricOptimizers: _cholesky_qr2
+using GeometricOptimizers: _cholesky_qr2, _complement_columns
 using LinearAlgebra
 using Random
 using Statistics
@@ -35,11 +35,17 @@ function orthonormalise_twice(Y, A)
     λ = _cholesky_qr2(project(Y, A))
     λ === nothing ? nothing : _cholesky_qr2(project(Y, λ))
 end
+sig(x) = round(x; sigdigits = 2)
+μs(t) = round(t * 1e6; digits = 2)
 
 for T in (Float32, Float64), (N, n) in ((6, 3), (50, 3), (200, 10))
 
     rng = Xoshiro(3)
     Y = Matrix(qr!(randn(rng, T, N, N)).Q)[:, 1:n]
+    # `global_section`'s helper redraws a breakdown, which `orthonormalise_twice` counts instead;
+    # this seed breaks down at no size, so the two agree bit for bit.
+    @assert (Random.seed!(5); _complement_columns(Y)) ==
+            (Random.seed!(5); orthonormalise_twice(Y, randn(T, N, N - n)))
     draws = [randn(rng, T, N, N - n) for _ in 1:(N ≤ 6 ? 20000 : 2000)]
     label = rpad("$T $N×$n", 16)
     for (name, f) in (("one pass", one_pass), ("project twice", project_twice),
@@ -48,7 +54,6 @@ for T in (Float32, Float64), (N, n) in ((6, 3), (50, 3), (200, 10))
         off = [norm(Y' * λ) for λ in λs]
         orth = [norm(λ' * λ - I) for λ in λs]
         breakdowns = length(draws) - length(λs)
-        sig(x) = round(x; sigdigits = 2)
         println(label, rpad(name, 22), "max ‖Yᵀλ‖ ", sig(maximum(off)), "  median ",
             sig(median(off)), "  max ‖λᵀλ-I‖ ", sig(maximum(orth)), "  breakdowns ", breakdowns)
     end
@@ -57,6 +62,5 @@ for T in (Float32, Float64), (N, n) in ((6, 3), (50, 3), (200, 10))
     orthonormalise_twice(Y, A)
     t₁ = minimum(@elapsed(one_pass(Y, A)) for _ in 1:200)
     t₂ = minimum(@elapsed(orthonormalise_twice(Y, A)) for _ in 1:200)
-    μs(t) = round(t * 1e6; digits = 2)
     println(label, "time: one pass ", μs(t₁), " μs, orthonormalise twice ", μs(t₂), " μs")
 end

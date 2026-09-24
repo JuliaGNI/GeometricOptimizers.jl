@@ -24,6 +24,7 @@ using Random
 using Statistics
 
 allowscalar(false)
+sig(x) = round(x; sigdigits = 2)
 
 const T = Float32
 rng = Xoshiro(7)
@@ -38,7 +39,7 @@ for M in (StiefelManifold, GrassmannManifold)
     device = [GeometricOptimizers.check(geodesic(dY, dΔ)) for _ in 1:20000]
     host = [GeometricOptimizers.check(geodesic(Y, Δ)) for _ in 1:20000]
     println(nameof(M), ": seed repeatable = ", a == b,
-        " | device: median ", median(device), " q999 ", quantile(device, 0.999),
-        " max ", maximum(device), " above 1e-4: ", count(>(1.0f-4), device),
-        " | host: max ", maximum(host), " above 1e-4: ", count(>(1.0f-4), host))
+        " | device: median ", sig(median(device)), " q999 ", sig(quantile(device, 0.999)),
+        " max ", sig(maximum(device)), " above 1f-4: ", count(>(1.0f-4), device),
+        " | host: max ", sig(maximum(host)), " above 1f-4: ", count(>(1.0f-4), host))
 end
