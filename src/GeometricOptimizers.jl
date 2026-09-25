@@ -222,12 +222,19 @@ export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # alongside it; `AdamW` is exported so that the name errors with an explanation instead of an
 # `UndefVarError` (see its docstring)
 export AdamWithEuclideanDecay, AdamW
+# `CompositeMethod` is a method like the others and is exported with them. `leafmethod`,
+# `accepts_parameter_set` and `sync_state!` go with it: they are the three questions a package that
+# walks its own parameter tree has to ask this one, and `GeometricMachineLearning` asks all three.
+export CompositeMethod, LeafTypeSelector, leafmethod, accepts_parameter_set, sync_state!
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")
 include("manifold_optimizers/adam_optimizer.jl")
 include("manifold_optimizers/scalar_moment_adam_optimizer.jl")
 include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
+
+# The forwarding half of `CompositeMethod`, which needs the three first-order states above.
+include("optimizers/composite_method.jl")
 
 # Teach `NeuralNetworkParameters.load` how to rebuild each of these types from a file, which has no
 # prototype to rebuild against. Was the extension's `__init__` before the package became a hard

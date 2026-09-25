@@ -90,6 +90,53 @@ own entry further down, where the evidence is.
 
 ### Added
 
+- Added **`CompositeMethod`**, one `OptimizerMethod` per *leaf* of a mixed parameter tree, chosen by
+  a selector. `CompositeMethod(; manifold, array)` is the selection callers actually want —
+  `LeafTypeSelector`, which reads `manifold` for a `Manifold` leaf and `array` for every other, and
+  answers for a whole *group* of weights when every weight in it is of one kind — and
+  `CompositeMethod(f)` takes an arbitrary one.
+
+  The case that forces it is `ScalarMomentAdam`, whose scope is a single `StiefelManifold` on purpose
+  (`_SCALAR_MOMENT_ADAM_SCOPE`): a *scalar* second moment is a statement about one manifold and means
+  nothing pooled across a tree. A transformer with Stiefel attention projections beside ordinary
+  arrays, or a symplectic autoencoder with Stiefel PSD layers beside Euclidean SympNet layers, has no
+  single method that covers it — and every caller that wanted one had been assembling it by hand,
+  outside this package and in a different way each time. Two such assemblies of the *same* method,
+  differing only in seam, is what this replaces.
+
+  It is a **choice and not an implementation**. `OptimizerCache`, `OptimizerState`, `Hessian` and
+  `update!` all forward through `leafmethod`, so a leaf stepped under a composite is bit-for-bit a
+  leaf stepped under the method selected for it; there is no composite cache and no composite state.
+  It is also *not* an optimizer over a tree: nothing pools a moment, a section or a step across
+  leaves, and nothing here walks a tree. The walk belongs to whoever owns the tree, and the selection
+  is the part that was being written twice.
+
+  `CompositeMethod` joins `FirstOrderMethodWithState`, so `solver_step!` hands `update!` the method
+  rather than a Hessian and the forward has something to forward. A selector returning a method from
+  the other branch — a quasi-Newton one, or `GradientMethod` — is rejected by `leafmethod` with a
+  message naming it, rather than reaching an `update!` that does not exist several frames further
+  down. Its `default_linesearch` is the `AdamFamily`'s fixed `Static(DEFAULT_LEARNING_RATE)`, for the
+  same reason theirs is.
+- Added **`leafmethod(method, x)`**, the one question a package that walks its own parameter tree has
+  to ask about a method: which method steps this leaf. It is the identity for an ordinary
+  `OptimizerMethod`, so such a caller asks it unconditionally and needs no test of its own for
+  whether a composite is in play.
+- Added **`accepts_parameter_set(method)`**: whether a method takes a whole `NetworkParameters` as its
+  solution or only a single leaf. `true` for everything here except `ScalarMomentAdam`, which rejects
+  a container even when it holds exactly one Stiefel weight. A host package that groups a tree into
+  layers before handing each layer over needs to know this to hand the single weight instead; the
+  grouping rule is the caller's, but *which methods it applies to* is this package's, and it is now
+  stated here rather than as a list of type names maintained downstream.
+- Added **`sync_state!(state, cache, method)`**: copy the per-method carry — a momentum, a pair of
+  moments — out of a cache and into a state, for a caller that drove the cache directly instead of
+  going through `solver_step!`. This is the half of `update!(state, opt, x)` that is not about the
+  iterate, and without it a training loop of that shape restarts its moments from zero on every step
+  and the method silently degrades to its first-iteration behaviour forever. The default is a no-op
+  for the methods that carry nothing, so it may be called unconditionally; `MomentumMethod` advances
+  `p ← αp + ∇L` rather than copying, because the cache never holds the new momentum on its own.
+  `GeometricMachineLearning` carried this as a chain of `isa` tests over the state types, which is
+  knowledge about the methods living outside the package that owns them.
+
 - Added the **symplectic Stiefel manifold** `SymplecticStiefelManifold`, the set of ``2N\times2n``
   matrices with ``U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}``, with `rand`, `rgrad`, `metric`, `check`
   and `global_section`. It joins the Stiefel and Grassmann manifolds as a third case of the

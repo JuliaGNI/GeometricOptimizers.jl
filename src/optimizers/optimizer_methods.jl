@@ -396,6 +396,142 @@ cache:
 """
 const AdamFamily = Union{Adam, AdamWithEuclideanDecay, ScalarMomentAdam}
 
+@doc raw"""
+    CompositeMethod(select)
+    CompositeMethod(; manifold, array)
+
+One [`OptimizerMethod`](@ref) per *leaf*, chosen by `select`, for a parameter tree whose leaves are
+not all of one kind.
+
+A method is a statement about the geometry of the thing it steps, and a mixed tree has more than one
+geometry in it. [`ScalarMomentAdam`](@ref) is the case that forces the point: its scope is a single
+[`StiefelManifold`](@ref) (`_SCALAR_MOMENT_ADAM_SCOPE`), deliberately so, because a *scalar* second
+moment is a statement about one manifold and means nothing pooled across a tree. A transformer with
+`StiefelManifold` attention projections beside ordinary `Matrix` and `Vector` leaves, or a symplectic
+autoencoder with Stiefel PSD layers beside Euclidean SympNet layers, therefore has no single method
+that covers it — and until now every caller that wanted one assembled it by hand, outside this
+package and in a different way each time.
+
+`select` is a function from a leaf to the method for that leaf. The keyword form is the selection
+this package expects callers to want, by leaf type:
+
+```julia
+CompositeMethod(; manifold = ScalarMomentAdam(Float32), array = Adam(Float32))
+```
+
+which reads `manifold` for a [`Manifold`](@ref) leaf and `array` for every other, and is
+[`LeafTypeSelector`](@ref).
+
+# What the composite does and does not do
+
+It chooses the method, and nothing else. [`OptimizerCache`](@ref), [`OptimizerState`](@ref),
+`Hessian` and `update!` all forward to [`leafmethod`](@ref), so a composite is usable anywhere a
+method is — one [`Optimizer`](@ref) per leaf, or a host package that builds a cache and a state per
+leaf of its own tree — and every leaf gets exactly the cache, the state and the update of the method
+selected for it.
+
+It is **not** an optimizer over the whole tree. Nothing here pools a moment, a section or a step
+across leaves, and nothing here walks a tree: the walk belongs to whoever owns the tree, and the
+selection is the part that was being written twice.
+
+!!! warning "The selected methods have to be `FirstOrderMethodWithState`"
+    `CompositeMethod` is itself in that union, so [`solver_step!`](@ref) takes the branch that hands
+    `update!` the *method* rather than a Hessian, and forwards it per leaf. A selector returning a
+    (quasi-)Newton method would reach that branch too, where its `update!` does not exist;
+    [`leafmethod`](@ref) rejects it by name instead.
+"""
+struct CompositeMethod{S} <: OptimizerMethod
+    select::S
+end
+
+"""
+    LeafTypeSelector(manifold, array)
+
+The selector of `CompositeMethod(; manifold, array)`: `manifold` for a [`Manifold`](@ref) leaf,
+`array` for every other.
+
+A named type and not a closure so that a composite prints as what it is, and so that the two methods
+can be read back off it — the run records of a comparison have to quote both.
+
+`Manifold` and not `StiefelManifold`, because the question the split asks is "does this leaf have a
+constraint the method has to respect", and that is the manifold-ness of it.
+
+A *group* of weights — a `NamedTuple` or a
+[`NeuralNetworkParameters.NetworkParameters`](@extref), which is the shape a host package hands over
+when it steps a network one layer at a time — is answered for as a whole, because one cache is what
+it gets: `manifold` if every weight in it is on a manifold, `array` if none is. A group that mixes
+the two has no answer, and is an `ArgumentError` naming it rather than a silent choice of one arm:
+the whole reason to reach for a composite is that the two kinds need different methods, so a group
+holding both has to be split before it gets here. An empty group is rejected for the same reason —
+there is nothing in it to read a geometry off.
+"""
+struct LeafTypeSelector{M, A}
+    manifold::M
+    array::A
+end
+
+(selector::LeafTypeSelector)(::Manifold) = selector.manifold
+(selector::LeafTypeSelector)(_) = selector.array
+
+function (selector::LeafTypeSelector)(x::Union{NetworkParameters, NamedTuple})
+    weights = values(x)
+    isempty(weights) && throw(ArgumentError(
+        "a LeafTypeSelector cannot choose a method for an empty group of weights"))
+    manifolds = count(weight -> weight isa Manifold, weights)
+    manifolds == length(weights) && return selector.manifold
+    manifolds == 0 && return selector.array
+    throw(ArgumentError(
+        "a LeafTypeSelector was asked for one method for a group of $(length(weights)) weights " *
+        "($(join(keys(x), ", "))) of which $(manifolds) are on a manifold; a group that mixes the " *
+        "two has to be split before it is given one cache"))
+end
+
+function CompositeMethod(; manifold::OptimizerMethod, array::OptimizerMethod)
+    CompositeMethod(LeafTypeSelector(manifold, array))
+end
+
+"""
+    leafmethod(method, x)
+
+The method that steps the leaf `x`: `method` itself for an ordinary [`OptimizerMethod`](@ref), and
+`method.select(x)` for a [`CompositeMethod`](@ref).
+
+The identity method is what makes this callable unconditionally. A host package that walks a
+parameter tree asks it once per leaf and needs no test for whether a composite is in play — which is
+the whole of what it has to know about one.
+"""
+leafmethod(method::OptimizerMethod, _) = method
+
+function leafmethod(method::CompositeMethod, x)
+    selected = method.select(x)
+    selected isa FirstOrderMethodWithState || throw(ArgumentError(
+        "a CompositeMethod selected $(typeof(selected)) for a $(typeof(x)) leaf; the selected " *
+        "methods have to be FirstOrderMethodWithState (`MomentumMethod` or the `AdamFamily`), " *
+        "because a composite step hands `update!` the method rather than a Hessian"))
+    selected
+end
+
+"""
+    accepts_parameter_set(method)
+
+Whether `method` takes a whole [`NeuralNetworkParameters.NetworkParameters`](@extref) as its
+solution, or only a single leaf.
+
+`true` for every method here except [`ScalarMomentAdam`](@ref), whose scope is one
+[`StiefelManifold`](@ref) and which rejects a container even when that container holds exactly one.
+
+The question is asked by a host package that groups a tree into layers before handing each layer to
+this one: a layer is a set of weights, and a method that does not accept a set has to be given the
+single weight inside it instead. That grouping rule is the caller's, but *which methods it applies
+to* is this package's, and stating it here is what keeps the answer from being a list of type names
+maintained somewhere else.
+"""
+accepts_parameter_set(::OptimizerMethod) = true
+accepts_parameter_set(::ScalarMomentAdam) = false
+accepts_parameter_set(::CompositeMethod) = throw(ArgumentError(
+    "`accepts_parameter_set` is a question about a leaf's method; ask it of " *
+    "`leafmethod(method, leaf)` rather than of the CompositeMethod"))
+
 """
 The methods whose `update!` needs the *method* rather than a
 [`SimpleSolvers.Hessian`](@extref), because they carry state of their own out of which the
@@ -404,6 +540,10 @@ complement: their direction comes from the Hessian and the method object holds n
 
 [`GradientMethod`](@ref) is in neither group: it has no Hessian *and* no state, and takes the
 Hessian branch because `NoHessian` is all that branch needs from it.
+
+[`CompositeMethod`](@ref) is here because it *forwards* to one of these per leaf, and so needs the
+same branch; [`leafmethod`](@ref) is what keeps a selector from returning a method that does not
+belong in it.
 
 `solver_step!` also uses this to decide whether [`ensure_descent!`](@ref) applies. It must not:
 a momentum and a moment average are deliberately allowed not to descend on an individual step,
@@ -415,7 +555,7 @@ restart *after* it as well. It no longer is — see [`linesearch_rejected`](@ref
 Declining to overrule the direction is not the same as taking the longest step along it, which
 is what a rejected search hands back.
 """
-const FirstOrderMethodWithState = Union{MomentumMethod, AdamFamily}
+const FirstOrderMethodWithState = Union{MomentumMethod, AdamFamily, CompositeMethod}
 
 @doc raw"""
     default_linesearch(T, method)
@@ -431,7 +571,10 @@ genuine descent directions, so a backtracking search always has an `α` to find.
 `expand = true` is what lets that search *lengthen* a step as well as shorten it, and it is not the
 SimpleSolvers default — see the tip below for why it is the default here.
 
-The [`AdamFamily`](@ref) methods are the exception and keep a fixed `Static(DEFAULT_LEARNING_RATE)`.
+The [`AdamFamily`](@ref) methods are the exception and keep a fixed `Static(DEFAULT_LEARNING_RATE)`,
+and [`CompositeMethod`](@ref) keeps it with them: a composite exists for a tree that has an
+`AdamFamily` method on some of its leaves, and a searching line search would have nothing to work
+with on exactly those.
 [`Adam`](@ref)'s direction is ``-m_1/(\sqrt{m_2} + \delta)`` and [`ScalarMomentAdam`](@ref)'s is
 ``-m_1/\sqrt{m_2 + \delta}``; either way it is a moving average that is deliberately *not* required to
 descend on any individual step, so a sufficient-decrease search has nothing to work with and would
