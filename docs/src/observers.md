@@ -121,7 +121,7 @@ observer cannot change the step, and a step behaves the same whether one is inst
 |:---|:---|
 | `:gradient` | The gradient evaluation itself: the reverse pass, the automatic differentiation, or the user's in-place `∇F!`, over the flattened iterate. |
 | `:objective` | An evaluation of the objective. |
-| `:retraction_application` | Construction and application of a retraction: the exponential or Cayley map on the lift, the [`update_section!`](@ref) that follows it, and the copy of the retracted point onto the parameters. Also the first-order state update after an accepted step, [`advance_state!`](@ref), which copies the frame the retraction left in the cache into the state. |
+| `:retraction_application` | Construction and application of a retraction: the exponential or Cayley map on the lift, the [`update_section!`](@ref) that follows it, and the copy of the retracted point onto the parameters. Also the first-order state update after an accepted step, [`advance_state!`](@ref GeometricOptimizers.advance_state!), which copies the frame the retraction left in the cache into the state. |
 
 `:objective` is in that list mainly so that it can be *subtracted*. Objective evaluations are driven
 by the line search, they are the caller's own function, and their cost has nothing to do with the
@@ -283,9 +283,9 @@ Two boundaries need stating for a caller doing arithmetic on the totals:
   exceeds the number of retractions actually applied by one per request.
 * For [`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref) and
   [`ScalarMomentAdam`](@ref), the state update `solve!` makes after each accepted step is reported
-  as `:retraction_application` too. It applies no retraction: [`advance_state!`](@ref) copies the
-  frame the step's retraction left in the cache into the state and advances the momentum or
-  moments. It adds one more `:retraction_application` call per iteration, except the last, after
+  as `:retraction_application` too. It applies no retraction:
+  [`advance_state!`](@ref GeometricOptimizers.advance_state!) copies the frame the step's
+  retraction left in the cache into the state and advances the momentum or moments. It adds one more `:retraction_application` call per iteration, except the last, after
   which `solve!` stops without updating the state.
 
 For a whole set of parameters, the observed gradient sits *inside* the
