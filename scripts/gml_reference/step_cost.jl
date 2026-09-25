@@ -6,7 +6,6 @@ using GeometricMachineLearning
 import GeometricOptimizers as GO
 using LinearAlgebra: BLAS
 using Random: Xoshiro
-using NeuralNetworkParameters: params
 
 BLAS.set_num_threads(1)
 

@@ -139,10 +139,10 @@ end
 @testset "after k steps the state, the cache and x agree" begin
     methods = (
         GradientMethod(), MomentumMethod(; α = 0.5), Adam(), AdamWithEuclideanDecay())
-    for T in PRECISIONS, shape in SHAPES, method in methods
+    for T in PRECISIONS, shape in SHAPES, m in methods
         # a weight decay on a bare manifold warns that it does nothing
-        method isa AdamWithEuclideanDecay && shape === :stiefel &&
-            (method = AdamWithEuclideanDecay(; λ = 0.0))
+        method = m isa AdamWithEuclideanDecay && shape === :stiefel ?
+                 AdamWithEuclideanDecay(; λ = 0.0) : m
         x = _parameters(T, shape)
         opt = TrainingOptimizer(x; algorithm = method)
         for k in 1:3
