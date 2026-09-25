@@ -84,6 +84,9 @@ begin
     @safetestset "Optimizer phase observer     " include("optimizer_observer.jl")
 end
 begin
+    @safetestset "Composite optimizer method   " include("composite_method.jl")
+end
+begin
     @safetestset "Optimizer Problems           " include("optimizer_problems.jl")
 end
 begin

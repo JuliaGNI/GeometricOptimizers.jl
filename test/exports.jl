@@ -17,7 +17,7 @@ end
 # `BFGS()`, which is the reason these in particular are exported rather than internal.
 @testset "the optimizer methods and their states are exported" begin
     for name in (:Newton, :BFGS, :DFP,
-        :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam,
+        :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam, :CompositeMethod,
         :NewtonOptimizerState, :BFGSState, :DFPState,
         :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState)
         @test name in names(GeometricOptimizers)
@@ -60,7 +60,9 @@ end
     # the optimizer types a caller dispatches on
         :OptimizerMethod, :OptimizerState, :OptimizerSolution,
     # opt-in phase observation
-        :EventLog, :PhaseTimer, :NoStepObserver, :observe_optimizer_phase, :step_observer)
+        :EventLog, :PhaseTimer, :NoStepObserver, :observe_optimizer_phase, :step_observer,
+    # the seams a package that walks its own parameter tree asks this one about a method
+        :CompositeMethod, :LeafTypeSelector, :leafmethod, :accepts_parameter_set, :sync_state!)
         @test name in names(GeometricOptimizers)
     end
 
