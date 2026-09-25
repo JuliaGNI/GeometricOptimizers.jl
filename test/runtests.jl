@@ -57,6 +57,7 @@ if "core" in GROUPS
     @safetestset "Adam + decaying step         " include("optimizers/decaying_static.jl")
     @safetestset "Scalar-moment Adam           " include("manifold_optimizers/scalar_moment_adam_optimizer.jl")
     @safetestset "Training step                " include("integration/training_optimizer.jl")
+    @safetestset "Composite optimizer method   " include("optimizers/composite_method.jl")
     @safetestset "Flat Parameters              " include("integration/flat_parameters.jl")
     @safetestset "NeuralNetworkParameters      " include("integration/neural_network_parameters_protocol.jl")
     @safetestset "Container Parameters         " include("integration/network_parameters_optimizer.jl")

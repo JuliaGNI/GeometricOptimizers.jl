@@ -298,10 +298,43 @@ state = OptimizerState(pairing.algorithm, weight)
 typeof(GeometricOptimizers.first_moment(state).A)
 ```
 
+## Composing methods over a mixed tree
+
+A method is a statement about the geometry of the thing it steps, and a parameter tree can hold more
+than one geometry. [`ScalarMomentAdam`](@ref) is the case that forces the point: its scope is a
+single [`StiefelManifold`](@ref), deliberately, because a *scalar* second moment is a statement about
+one manifold and means nothing pooled across a tree. A transformer whose attention projections are
+Stiefel and whose residual blocks are ordinary arrays therefore has no single method that covers it.
+
+[`CompositeMethod`](@ref) is the choice of method per leaf, and nothing else:
+
+```@example optimizer_methods
+composite = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
+
+(leafmethod(composite, rand(StiefelManifold, 4, 2)), leafmethod(composite, rand(3)))
+```
+
+[`leafmethod`](@ref) is the one question a caller asks, and it answers for an ordinary method too —
+`leafmethod(Adam(), x)` is `Adam()` — so a loop that walks a tree asks it unconditionally and needs
+no test for whether a composite is in play. Every other call forwards through it, so a leaf stepped
+under a composite is bit-for-bit a leaf stepped under the method selected for it: there is no
+composite cache and no composite state.
+
+What it is *not* is an optimizer over the whole tree. Nothing pools a moment, a section or a step
+across leaves, and nothing here walks a tree — the walk belongs to whoever owns the tree.
+
+Two further seams go with it, both for a package that does own one. [`accepts_parameter_set`](@ref)
+says whether a method takes a whole container or only a single leaf, which is `ScalarMomentAdam`'s
+scope stated once rather than as a list of type names kept elsewhere. [`sync_state!`](@ref) copies the
+per-method carry out of a cache and into a state, for a training loop that drives a cache directly
+instead of going through [`solve!`](@ref) — without it the moments restart from zero on every step.
+
 ## Library functions
 
 [`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref),
-[`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and [`OptimizerState`](@ref). Their
+[`CompositeMethod`](@ref), [`LeafTypeSelector`](@ref), [`leafmethod`](@ref),
+[`accepts_parameter_set`](@ref), [`sync_state!`](@ref), [`AdamOptimizerWithDecay`](@ref),
+[`DecayingStatic`](@ref) and [`OptimizerState`](@ref). Their
 docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the
 package is rendered once; the names above link to them.
 
