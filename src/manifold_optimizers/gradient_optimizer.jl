@@ -184,7 +184,7 @@ end
 
 # this should be moved to a different file
 function update!(
-        state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}, f::T) where {T}
+        state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}, f) where {T}
     update!(state, direction(cache(opt)), gradient(opt), x, f, opt.retraction,
         step_observer(opt))
 end

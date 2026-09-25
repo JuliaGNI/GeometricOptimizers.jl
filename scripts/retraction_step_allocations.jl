@@ -97,7 +97,7 @@ function step!(x, state, opt)
     solver_step!(x, state, opt)
     f = value(problem(opt), x)
     OptimizerStatus(state, cache(opt), f; config = config(opt))
-    update!(state, opt, x)
+    update!(state, opt, x, f)
 
     f
 end

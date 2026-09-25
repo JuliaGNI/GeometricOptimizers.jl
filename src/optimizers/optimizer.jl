@@ -617,9 +617,9 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
-        # One objective evaluation per iterate, reused for the status and the trace entry: both read
-        # the same `x`, and with an observer installed a second call would also emit a second
-        # `:objective` pair for a step that only ever evaluated once.
+        # One objective evaluation per iterate, reused for the status, the trace entry and the state
+        # update: all three read the same `x`, and with an observer installed a second call would
+        # also emit a second `:objective` pair for a step that only ever evaluated once.
         f = observe_optimizer_phase(observer, :objective) do
             value(problem(opt), x)
         end
