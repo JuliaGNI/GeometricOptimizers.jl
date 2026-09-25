@@ -109,10 +109,10 @@ function initialize!(state::BFGSState{T}, ::OptimizerSolution{T}) where {T}
 end
 
 # `update!(state::BFGSState, ::Gradient, x, retraction)` was deleted in 0.6.0. It had no caller: for a
-# `BFGSState` the live path is `update!(state, opt, x)` in `gradient_optimizer.jl`, which reaches the
-# method below and hands it the observed `problem(opt).F(x)` value. Nothing in `src/`, `test/`,
-# `docs/` or `scripts/` called the four-argument form, and neither does `GeometricMachineLearning` or
-# `GMLDatasets`.
+# `BFGSState` the live path is `update!(state, opt, x, f)` in `gradient_optimizer.jl`, which reaches
+# the method below and hands it the objective value `solve!` evaluated at `x`. Nothing in `src/`,
+# `test/`, `docs/` or `scripts/` called the deleted form, and neither does `GeometricMachineLearning`
+# or `GMLDatasets`.
 #
 # It is named here because of what it did rather than because it is missed: it set `f̄` with
 # `gradient.F(flatten(T, x)[1])`, and `gradient.F` is the closure `_x -> F(unflatten(layout, _x))` —

@@ -150,8 +150,8 @@ becomes the cache's, and the method's own memory advances — the momentum ``p \
 \nabla{}L`` of [`MomentumMethod`](@ref), the moments of the [`AdamFamily`](@ref).
 
 This is the half of a state update that needs no objective, which is why it is the whole of the state
-update in [`optimization_step!`](@ref). [`solve!`](@ref)'s `update!(state, opt, x)` calls it after it
-has recorded the iterate, its gradient and its objective value.
+update in [`optimization_step!`](@ref). [`solve!`](@ref)'s `update!(state, opt, x, f)` calls it
+after it has recorded the iterate, its gradient and its objective value.
 
 `section(cache)` is `update_section!(section(state), direction, retraction)` once the step is taken,
 so it is copied and not retracted a second time; a retraction on a manifold is ``O(N^3)`` where the
@@ -162,7 +162,7 @@ function advance_state!(state::GradientState, cache::GradientCache, ::GradientMe
     state
 end
 
-# `solve!`'s `update!(state, opt, x)` for the four first-order states is in
+# `solve!`'s `update!(state, opt, x, f)` for the four first-order states is in
 # `scalar_moment_adam_optimizer.jl`, the first file where all four state types exist.
 
 # function compute_direction!(opt::Optimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
@@ -183,11 +183,15 @@ function update!(cache::GradientCache{T}, state::GradientState{T},
 end
 
 # this should be moved to a different file
+function update!(
+        state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}, f::T) where {T}
+    update!(state, direction(cache(opt)), gradient(opt), x, f, opt.retraction,
+        step_observer(opt))
+end
+
 function update!(state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}) where {T}
-    observer = step_observer(opt)
-    f = observe_optimizer_phase(observer, :objective) do
+    f = observe_optimizer_phase(step_observer(opt), :objective) do
         problem(opt).F(x)
     end
-    update!(
-        state, direction(cache(opt)), gradient(opt), x, f, opt.retraction, observer)
+    update!(state, opt, x, f)
 end

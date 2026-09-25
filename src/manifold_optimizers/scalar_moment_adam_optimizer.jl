@@ -181,24 +181,31 @@ function advance_state!(
 end
 
 # The state update `solve!` makes after each step, one for the four first-order states: record the
-# iterate, its gradient and its objective value, then advance the state as a training step does.
+# iterate, its gradient and its objective value `f`, then advance the state as a training step does.
+# `solve!` passes the `f` it has already evaluated at `x`.
 function update!(
         state::Union{GradientState, MomentumState, AdamState, ScalarMomentAdamState},
-        opt::Optimizer, x::OptimizerSolution)
-    observer = step_observer(opt)
+        opt::Optimizer, x::OptimizerSolution, f)
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
     _copyto!(solution(state), x)
     _copyto!(gradient(state), gradient_array(cache(opt)))
-    state.f = observe_optimizer_phase(observer, :objective) do
-        problem(opt).F(x)
-    end
-    observe_optimizer_phase(observer, :retraction_application) do
+    state.f = f
+    observe_optimizer_phase(step_observer(opt), :retraction_application) do
         advance_state!(state, cache(opt), algorithm(opt))
     end
 
     state
+end
+
+function update!(
+        state::Union{GradientState, MomentumState, AdamState, ScalarMomentAdamState},
+        opt::Optimizer, x::OptimizerSolution)
+    f = observe_optimizer_phase(step_observer(opt), :objective) do
+        problem(opt).F(x)
+    end
+    update!(state, opt, x, f)
 end
 
 """

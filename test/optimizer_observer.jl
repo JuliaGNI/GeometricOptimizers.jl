@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: gradient, increase_iteration_number!, initialize_state!,
-                           solver_step!
+                           iteration_number, solver_step!
 using Test
 
 const EXPECTED_STEP_EVENTS = [
@@ -103,6 +103,34 @@ end
         @test count(==((:objective, :enter)), observer.events) == objective_calls[]
         @test count(==((:objective, :exit)), observer.events) == objective_calls[]
     end
+end
+
+@testset "solve! evaluates the objective once per iterate" begin
+    # One evaluation at the start, two per step — the NaN guard's trial point and the iterate the
+    # step returns — and one after the loop: the state update reuses the loop's value at the same
+    # iterate. The automatic differentiation calls the objective with dual numbers; those are not
+    # counted.
+    function counted_solve(x, objective, method)
+        objective_calls = Ref(0)
+        counted = x -> (eltype(x) === Float64 && (objective_calls[] += 1); objective(x))
+        optimizer = Optimizer(x, counted; algorithm = method, linesearch = Static(0.01),
+            max_iterations = 3)
+        state = OptimizerState(method, x)
+        objective_calls[] = 0
+        solve!(x, state, optimizer)
+        objective_calls[], iteration_number(state)
+    end
+
+    for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam(), BFGS(), DFP())
+        calls, n = counted_solve([1.0, -2.0], x -> sum(abs2, x), method)
+        @test n == 3
+        @test calls == 2n + 2
+    end
+
+    Y = StiefelManifold([1.0 0.0; 0.0 1.0; 0.0 0.0])
+    calls, n = counted_solve(Y, Y -> sum(abs2, Y.A .- 1), ScalarMomentAdam())
+    @test n == 3
+    @test calls == 2n + 2
 end
 
 @testset "parameter-set gradients retain the Riemannian wrapper" begin
