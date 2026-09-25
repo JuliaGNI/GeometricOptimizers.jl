@@ -147,7 +147,7 @@ end
         @test rand(Xoshiro(1), CPU(), SymplecticStiefelManifold{T}, 6, 4) ==
               rand(Xoshiro(1), SymplecticStiefelManifold{T}, 6, 4)
     end
-    # the old order, backend before rng, is gone
+    # rng comes before backend; the reverse order is a `MethodError`
     @test_throws MethodError rand(CPU(), Xoshiro(1), StiefelManifold{Float64}, 5, 2)
     @test_throws MethodError rand(CPU(), Xoshiro(1), StiefelManifold, 5, 2)
 end

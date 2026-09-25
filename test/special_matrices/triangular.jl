@@ -128,8 +128,8 @@ end
     end
 end
 
-# `zeros` and `rand` recover the bare constructor from the type parameter without going through
-# the evaluator, so both infer to a concrete type rather than `Any`.
+# Each per-type `zeros` and `rand` names its constructor, so both infer to a concrete type rather
+# than `Any`.
 @testset "zeros and rand infer concretely" begin
     for T in (Float32, Float64), MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
 
@@ -138,9 +138,9 @@ end
     end
 end
 
-# The backendless `zeros` and `rand` place on the host, and now say so in one spelling: `zeros(T,
-# m)` and `rand(rng, T, m)` rather than a route through `KernelAbstractions` with an explicit
-# `CPU()`. The two give the same array at less cost, and this pins the placement and the values.
+# The backendless `zeros` and `rand` place on the host: the chain in `src/allocators.jl` supplies
+# `CPU()`, so each reaches the same method as the spelling that names it. This pins the placement
+# and the values.
 @testset "the backendless allocators place on the host" begin
     for T in (Float32, Float64), MT in (StrictlyLowerTriangular, StrictlyUpperTriangular),
         n in 2:5
