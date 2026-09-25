@@ -33,7 +33,7 @@ end
 
 @testset "step phase events are complete and nested" begin
     objective(x) = sum(abs2, x)
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), BFGS(), DFP())
+    for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam(), BFGS(), DFP())
         @test observed_step_events([1.0, -2.0], objective, method) == EXPECTED_STEP_EVENTS
     end
 

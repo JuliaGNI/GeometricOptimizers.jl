@@ -1,5 +1,5 @@
 @doc raw"""
-    DecayingStatic(T; η₁, η₂, n)
+    DecayingStatic(; η₁, η₂, n)
 
 A [`SimpleSolvers.LinesearchMethod`](@extref) that takes no search at all, like
 [`SimpleSolvers.Static`](@extref), but whose step size decays geometrically with the iteration
@@ -45,6 +45,10 @@ ls = DecayingStatic(; η₁ = 1e-2, η₂ = 1e-6, n = 1000)
 DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
 ```
 
+The schedule carries no element type of the parameters: [`Optimizer`](@ref) and
+[`TrainingOptimizer`](@ref) convert it once, with `change_precision`, which computes ``\gamma`` in
+the element type of the parameters.
+
 !!! info "The iteration number comes from the state"
     `solve_with_status` reads `iteration_number(params.state)`, which [`solver_step!`](@ref) puts into
     the line search's parameters. A `DecayingStatic` handed a `params` without a `state` therefore
@@ -61,22 +65,31 @@ struct DecayingStatic{T <: Number} <: LinesearchMethod{T}
     γ::T
     n::Int
 
-    function DecayingStatic(::Type{T} = Float64; η₁ = T(1.0e-2), η₂ = T(1.0e-6), n::Integer = 1000) where {T}
+    function DecayingStatic{T}(η₁::T, η₂::T, n::Integer) where {T}
         @assert η₁ > 0 && η₂ > 0 "the step sizes have to be positive, got η₁ = $(η₁) and η₂ = $(η₂)"
         @assert η₂ ≤ η₁ "this decays, so η₂ = $(η₂) has to be at most η₁ = $(η₁)"
         @assert n > 0 "the decay horizon has to be positive, got n = $(n)"
-        new{T}(T(η₁), T(η₂), T(exp(log(η₂ / η₁) / n)), Int(n))
+        new{T}(η₁, η₂, T(exp(log(η₂ / η₁) / n)), Int(n))
     end
 end
 
-"""
-    step_size(method, t)
+function DecayingStatic(; η₁ = 1.0e-2, η₂ = 1.0e-6, n::Integer = 1000)
+    η₁, η₂ = promote(float(η₁), float(η₂))
+    DecayingStatic{typeof(η₁)}(η₁, η₂, n)
+end
 
-The step size a [`DecayingStatic`](@ref) takes in iteration `t`, where `t` is the iteration number
-the solve reports — so `t = 1` for the first step, and `t = 0` evaluates the schedule at a point no
-solve asks for (see the remark on ``\\alpha(0)`` in [`DecayingStatic`](@ref)).
+"""
+    step_size(schedule, t)
+
+The step size a training step takes in iteration `t`, where `t` is the iteration number the state
+reports — so `t = 1` for the first step.
+
+For a [`SimpleSolvers.Static`](@extref) this is its `α` at every `t`. For a [`DecayingStatic`](@ref)
+it is ``\\gamma^t\\eta_1``, and `t = 0` evaluates the schedule at a point no solve asks for (see the
+remark on ``\\alpha(0)`` there).
 """
 step_size(method::DecayingStatic{T}, t::Integer) where {T} = method.γ^t * method.η₁
+step_size(method::Static, ::Integer) = method.α
 
 # `solve_with_status` and not `solve`: since SimpleSolvers 0.12 a `LinesearchMethod` implements this
 # one and gets `solve` — the call plus `linesearch_warnings` — derived from it for free. The generic
@@ -102,7 +115,7 @@ end
 
 function change_precision(::Type{T}, method::DecayingStatic) where {T}
     T ≠ eltype(method) || return method
-    DecayingStatic(T; η₁ = T(method.η₁), η₂ = T(method.η₂), n = method.n)
+    DecayingStatic{T}(T(method.η₁), T(method.η₂), method.n)
 end
 
 function Base.show(io::IO, alg::DecayingStatic)
@@ -111,11 +124,11 @@ function Base.show(io::IO, alg::DecayingStatic)
 end
 
 @doc raw"""
-    AdamOptimizerWithDecay(n_epochs, T; η₁, η₂, kwargs...)
+    AdamOptimizerWithDecay(n_epochs; η₁, η₂, kwargs...)
 
 [`Adam`](@ref) paired with a [`DecayingStatic`](@ref) line search whose learning rate decays
 geometrically from `η₁` to `η₂` over `n_epochs`, returned as a `NamedTuple` to splat into
-[`Optimizer`](@ref):
+[`Optimizer`](@ref) or [`TrainingOptimizer`](@ref):
 
 ```julia
 method = AdamOptimizerWithDecay(1000)
@@ -126,8 +139,9 @@ solve!(x, OptimizerState(method.algorithm, x), opt)
 The state has to be built from `method.algorithm`, so the pairing is worth binding to a name rather
 than splatting it twice.
 
-There is no new type here and no schedule of its own: this is exactly `Adam(T)` and
-`DecayingStatic(T; η₁, η₂, n = n_epochs)`, under the one name that the two together used to have.
+There is no new type here and no schedule of its own: this is exactly `Adam()` and
+`DecayingStatic(; η₁, η₂, n = n_epochs)`, under the name of `GeometricMachineLearning`'s pairing.
+Neither carries the element type of the parameters; the optimizer converts both.
 
 # Why it exists
 
@@ -150,22 +164,15 @@ made `using` the two of them together an error; see
 
 `η₁`, `η₂` and `n_epochs` go to the line search; everything else is forwarded to [`Adam`](@ref), so
 `β₁`, `β₂` and `δ` — GML's `ρ₁`, `ρ₂` and `δ` — keep `Adam`'s own defaults rather than a second copy
-of them. `T` is the element type of the parameters and is positional, as it is for `Adam` and
-`DecayingStatic`.
+of them.
 
 !!! note "What a call migrated from `GeometricMachineLearning` has to change"
     GML's signature is
-    `AdamOptimizerWithDecay(n_epochs, η₁ = 1f-2, η₂ = 1f-6, ρ₁ = 9f-1, ρ₂ = 9.9f-1, δ = 1f-8; T = typeof(η₁))`,
-    so the *name* migrates but the call does not always:
-
-    - **The default element type differs.** GML takes `T` from `η₁`, whose default is a `Float32`
-      literal, so `AdamOptimizerWithDecay(1000)` is `Float32` there and `Float64` here. Pass the type
-      — `AdamOptimizerWithDecay(1000, Float32)` — for a `Float32` network. Forgetting to is not
-      silent: `OptimizerCache` rejects an `Adam{Float64}` handed `Float32` parameters and says so.
-    - **The step sizes and moment coefficients are keywords here, not positional arguments**, and the
-      coefficients are spelled `β₁`, `β₂` as everywhere else in this package. GML's
-      `AdamOptimizerWithDecay(1000, 1f-3, 1f-8)` becomes
-      `AdamOptimizerWithDecay(1000, Float32; η₁ = 1f-3, η₂ = 1f-8)`.
+    `AdamOptimizerWithDecay(n_epochs, η₁ = 1f-2, η₂ = 1f-6, ρ₁ = 9f-1, ρ₂ = 9.9f-1, δ = 1f-8; T = typeof(η₁))`.
+    The step sizes and moment coefficients are keywords here, not positional arguments, and the
+    coefficients are spelled `β₁`, `β₂` as everywhere else in this package. GML's
+    `AdamOptimizerWithDecay(1000, 1f-3, 1f-8)` becomes
+    `AdamOptimizerWithDecay(1000; η₁ = 1e-3, η₂ = 1e-8)`.
 
 # Examples
 
@@ -177,12 +184,6 @@ AdamOptimizerWithDecay(1000).linesearch
 DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
 ```
 """
-function AdamOptimizerWithDecay(
-        n_epochs::Integer, ::Type{T} = Float64; η₁ = T(1.0e-2), η₂ = T(1.0e-6),
-        kwargs...) where {T}
-    # the `η` defaults are written in `T` (and not as bare `Float64` literals) so that `γ` is computed
-    # in `T`, i.e. so that this really is the `DecayingStatic(T; …)` it claims to be down to the last
-    # bit; they are `DecayingStatic`'s defaults, which are also GML's.
-    (algorithm = Adam(T; kwargs...),
-        linesearch = DecayingStatic(T; η₁ = η₁, η₂ = η₂, n = n_epochs))
+function AdamOptimizerWithDecay(n_epochs::Integer; η₁ = 1.0e-2, η₂ = 1.0e-6, kwargs...)
+    (algorithm = Adam(; kwargs...), linesearch = DecayingStatic(; η₁, η₂, n = n_epochs))
 end

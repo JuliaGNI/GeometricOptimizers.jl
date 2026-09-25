@@ -91,8 +91,7 @@ function optimize(ps, F, algorithm; steps = 20, η = 0.1, retraction = Cayley())
     ps, checks, losses
 end
 
-# see `test/flat_parameters.jl` for why `Adam` is constructed with the element type
-algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(T(0.1)), Adam(T))
+algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(; α = T(0.1)), Adam())
 retractions() = (Geodesic(), Cayley())
 
 # see the note on `MANIFOLD_TOLERANCE_IN_EPS` in `test/flat_parameters.jl`: a round-off

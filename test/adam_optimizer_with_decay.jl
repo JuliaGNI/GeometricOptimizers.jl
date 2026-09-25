@@ -28,7 +28,7 @@ x₀() = (Random.seed!(1234); StiefelManifold([1.0; 0.0; 0.0;;]))
     # it adds no schedule of its own -- this is the same object the two arguments would build, all
     # four fields of it, and `Adam` likewise gets nothing but its own defaults
     @test o.linesearch == DecayingStatic(; η₁ = 1.0e-2, η₂ = 1.0e-6, n = 1000)
-    @test o.algorithm == Adam(Float64)
+    @test o.algorithm == Adam()
 end
 
 @testset "AdamOptimizerWithDecay forwards every argument" begin
@@ -42,13 +42,12 @@ end
     @test o.linesearch.η₂ == 1.0e-4
     @test o.linesearch.n == 500
 
-    # `T` is positional, as it is for `Adam` and `DecayingStatic`, and reaches both halves
-    @test eltype(AdamOptimizerWithDecay(10, Float32).linesearch) == Float32
-    @test AdamOptimizerWithDecay(10, Float32).algorithm isa Adam{Float32}
-
-    # `γ` is computed in `T` and not in `Float64` and then rounded, so the pairing is the same object
-    # `DecayingStatic(T; …)` builds in `Float32` too, not merely the same to within an ulp
-    @test AdamOptimizerWithDecay(10, Float32).linesearch === DecayingStatic(Float32; n = 10)
+    # neither half carries the element type of the parameters; the optimizer converts both, and
+    # `change_precision` computes `γ` in `Float32` rather than rounding the `Float64` one
+    o₁₀ = AdamOptimizerWithDecay(10)
+    ls₃₂ = GeometricOptimizers.change_precision(Float32, o₁₀.linesearch)
+    @test ls₃₂ isa DecayingStatic{Float32}
+    @test ls₃₂.γ === Float32(exp(log(1.0f-6 / 1.0f-2) / 10))
 
     # everything that is not the schedule goes to `Adam`, so `Adam`'s defaults are not copied here
     # and cannot drift from it -- and a name `Adam` does not know is an error rather than a silent
@@ -86,15 +85,15 @@ end
         @test solve(linesearch(opt), 1.0, (x = x, state = state)) ≈ η₁ * γ_gml^t
     end
 
-    # GML's defaults are `Float32` literals ρ₁ = 9f-1, ρ₂ = 9.9f-1, δ = 1f-8, which are Adam's --
-    # but GML takes `T` from `η₁ = 1f-2` and so defaults to `Float32`, where this defaults to
-    # `Float64`; a migrated call has to pass the type
-    o₃₂ = AdamOptimizerWithDecay(n_epochs, Float32)
-    @test o₃₂.algorithm.β₁ == 9.0f-1
-    @test o₃₂.algorithm.β₂ == 9.9f-1
-    @test o₃₂.algorithm.δ == 1.0f-8
-    @test o₃₂.linesearch.η₁ == 1.0f-2
-    @test o₃₂.linesearch.η₂ == 1.0f-6
+    # GML's defaults are `Float32` literals ρ₁ = 9f-1, ρ₂ = 9.9f-1, δ = 1f-8, which are Adam's; the
+    # optimizer converts the pairing to the element type of `Float32` parameters
+    x₃₂ = StiefelManifold(Float32[1.0; 0.0; 0.0;;])
+    o₃₂ = Optimizer(x₃₂, f; AdamOptimizerWithDecay(n_epochs)...)
+    @test o₃₂.algorithm.β₁ === 9.0f-1
+    @test o₃₂.algorithm.β₂ === 9.9f-1
+    @test o₃₂.algorithm.δ === 1.0f-8
+    @test method(linesearch(o₃₂)).η₁ === 1.0f-2
+    @test method(linesearch(o₃₂)).η₂ === 1.0f-6
 end
 
 @testset "AdamOptimizerWithDecay splats into Optimizer and converges" begin
@@ -125,7 +124,7 @@ end
     @test default_linesearch(Float64, AdamWithEuclideanDecay()) isa Static
 
     # and they compose: the decayed schedule can drive a weight-decaying method
-    o = Optimizer(x₀(), f; algorithm = AdamWithEuclideanDecay(Float64; λ = 0.0),
+    o = Optimizer(x₀(), f; algorithm = AdamWithEuclideanDecay(; λ = 0.0),
         linesearch = AdamOptimizerWithDecay(400).linesearch)
     @test method(linesearch(o)) isa DecayingStatic
 end

@@ -180,8 +180,8 @@ function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T},
         options_kwargs...) where {T}
     # `_riemannian_gradient` here as in the two methods below, so that every route into the inner
     # constructor projects; see the note there.
-    Optimizer(
-        algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...),
+    Optimizer(change_precision(T, algorithm), problem, hessian, cache,
+        _linesearch_method(T, linesearch), Options(T; options_kwargs...),
         _riemannian_gradient(gradient, cache.x), retraction, step_ceiling, observer)
 end
 
@@ -214,27 +214,53 @@ end
 """
     _optimizer(x, problem, algorithm, linesearch, gradient, retraction, config)
 
-Build the cache and the Hessian for `algorithm` and hand everything to [`Optimizer`](@ref)'s inner
-constructor.
+Convert `algorithm` and `linesearch` to the element type of `x`, build the cache and the Hessian for
+`algorithm`, and hand everything to [`Optimizer`](@ref)'s inner constructor.
 
 Takes every argument positionally on purpose; see the note on Julia 1.12 below
 [`Optimizer(x, F)`](@ref).
 """
 function _optimizer(
         x::OptimizerSolution{T}, problem::OptimizerProblem{T}, algorithm::OptimizerMethod,
-        linesearch::LinesearchMethod, gradient::Gradient{T}, retraction::AbstractRetraction,
-        config::Options{T}, step_ceiling::Real, observer) where {T}
-    # translate to the correct type if we use the momentum method
-    algorithm = typeof(algorithm) <: MomentumMethod ? MomentumMethod(T(algorithm.α)) :
-                algorithm
-    cache = OptimizerCache(algorithm, x)
-    hes = Hessian(algorithm, problem, x)
-    Optimizer(algorithm, problem, hes, cache, linesearch,
+        linesearch::Union{LinesearchMethod, Real}, gradient::Gradient{T},
+        retraction::AbstractRetraction, config::Options{T}, step_ceiling::Real,
+        observer) where {T}
+    method = change_precision(T, algorithm)
+    cache = OptimizerCache(method, x)
+    hes = Hessian(method, problem, x)
+    Optimizer(method, problem, hes, cache, _linesearch_method(T, linesearch),
         config, gradient, retraction, step_ceiling, observer)
 end
 
+# A number is a fixed step size, and a `Static` or a `DecayingStatic` is converted to the element type
+# of the parameters, as the method is. A searching line search is taken as it is.
+_linesearch_method(::Type{T}, η::Real) where {T} = _linesearch_method(T, Static(η))
+# `true` is a `Real` that is `1`, and never meant as a step size
+function _linesearch_method(::Type, η::Bool)
+    throw(ArgumentError("a step size is a number, not $(η)"))
+end
+# The check is on the converted step size: `1e-50` is `0` in `Float32`, and `1e40` is `Inf32`.
+function _linesearch_method(::Type{T}, ls::Static) where {T}
+    s = change_precision(T, ls)
+    isfinite(s.α) && s.α > 0 ||
+        throw(ArgumentError("a fixed step size is finite and positive in $(T), not $(s.α)"))
+    s
+end
+_linesearch_method(::Type{T}, ls::DecayingStatic) where {T} = change_precision(T, ls)
+_linesearch_method(::Type, ls::LinesearchMethod) = ls
+
+# A training step takes what `_linesearch_method` converts, except a searching line search.
+function _training_step_size(T::Type, ls::Union{Real, Static, DecayingStatic})
+    _linesearch_method(T, ls)
+end
+function _training_step_size(::Type, ls)
+    throw(ArgumentError(
+        "a training step takes a step size or a `DecayingStatic`, not a $(typeof(ls)): it has the " *
+        "gradient of one minibatch and no objective for a line search to search along."))
+end
+
 function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod = BFGS(),
-        linesearch::LinesearchMethod = default_linesearch(T, algorithm),
+        linesearch::Union{LinesearchMethod, Real} = default_linesearch(T, algorithm),
         gradient::Union{Gradient, Nothing} = nothing, retraction::AbstractRetraction = Cayley(),
         step_ceiling = DEFAULT_STEP_CEILING, observer = NoStepObserver(),
         options_kwargs...) where {
@@ -251,6 +277,11 @@ end
     Optimizer(x, F; ∇F!, mode, algorithm, linesearch, retraction, observer, options_kwargs...)
 
 Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
+
+`linesearch` is a [`SimpleSolvers.LinesearchMethod`](@extref) or a number, which is the fixed step
+size `Static(η)`. `algorithm`, and a `Static` or [`DecayingStatic`](@ref) `linesearch`, are converted
+to the element type of `x`, so `Optimizer(Float32[1, 2, 3], F; algorithm = Adam())` optimizes in
+`Float32`.
 
 # Implementation
 
@@ -279,7 +310,8 @@ Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
     flat call chain.
 """
 function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = :autodiff,
-        algorithm::OptimizerMethod = BFGS(), linesearch::Union{LinesearchMethod, Nothing} = nothing,
+        algorithm::OptimizerMethod = BFGS(),
+        linesearch::Union{LinesearchMethod, Real, Nothing} = nothing,
         retraction::AbstractRetraction = Cayley(), step_ceiling = DEFAULT_STEP_CEILING,
         observer = NoStepObserver(), options_kwargs...) where {
         T, VT <: OptimizerSolution{T}}
@@ -317,6 +349,11 @@ gradient(opt::Optimizer) = opt.gradient
 # so changes at every step. See `DEFAULT_STEP_CEILING` and `step_αmax`.
 step_ceiling(opt::Optimizer) = opt.step_ceiling
 retraction_workspace(opt::Optimizer) = opt.retraction_workspace
+
+# What `update!(cache, state, gradient, ·, x)` forms the direction from: the Hessian for the
+# (quasi-)Newton methods, and the method itself for the first-order methods, which have none.
+_direction_rule(opt::Optimizer) = hessian(opt)
+_direction_rule(opt::Optimizer{T, <:FirstOrderMethod}) where {T} = algorithm(opt)
 
 """
     step_observer(opt::Optimizer)
@@ -410,24 +447,13 @@ julia> solver_step!(x, state, opt)
     best, so that case is exempt and the step is taken. See [`linesearch_rejected`](@ref) and issue
     B3.
 """
-function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T}, opt::Optimizer{
-        T, MT}) where {T, MT}
+function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
+        opt::Optimizer{T}) where {T}
     # update cache
     # solve H δx = - ∇f
     # rhs is -g
-    # The `FirstOrderMethodWithState` methods -- `MomentumMethod` and the `AdamFamily` -- need their
-    # own parameters to form the direction and have no Hessian; the other methods need the Hessian and
-    # have no parameters. Named through the aliases and not member by member, so that a new method
-    # joining one of the unions does not leave a stale list behind here.
-    if MT <: FirstOrderMethodWithState
-        update!(cache(opt), state, gradient(opt), algorithm(opt), x)
-    else
-        update!(cache(opt), state, gradient(opt), hessian(opt), x)
-        # A (quasi-)Newton direction only descends where the Hessian is positive definite; see
-        # `ensure_descent!`. The `FirstOrderMethodWithState` methods are excluded on purpose -- their
-        # direction is a moving average and is allowed not to descend on an individual step.
-        ensure_descent!(cache(opt), algorithm(opt), config(opt))
-    end
+    update!(cache(opt), state, gradient(opt), _direction_rule(opt), x)
+    ensure_descent!(cache(opt), algorithm(opt), config(opt))
     typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
 
     for _ in 1:config(opt).nan_max_iterations

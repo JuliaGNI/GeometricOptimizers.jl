@@ -264,9 +264,10 @@ const NT_LINESEARCHES = (
     Bisection(Float64), Quadratic(Float64), BierlaireQuadratic(Float64), StrongWolfe(Float64; c₂ = 0.1))
 
 @testset "the first-order methods solve on a manifold NamedTuple, on every line search" begin
-    for method in (GradientMethod(), MomentumMethod(0.1)),
+    for method in (GradientMethod(), MomentumMethod(; α = 0.1)),
         linesearch in NT_LINESEARCHES,
         retraction in (Geodesic(), Cayley())
+
         ps = ps₀()
         state = OptimizerState(method, ps)
         opt = Optimizer(ps, two_spheres; algorithm = method, linesearch = linesearch,
@@ -307,9 +308,9 @@ end
     for linesearch in NT_LINESEARCHES, retraction in (Geodesic(), Cayley())
 
         ps = ps₀()
-        state = OptimizerState(Adam(Float64), ps)
+        state = OptimizerState(Adam(), ps)
         opt = Optimizer(
-            ps, two_spheres; algorithm = Adam(Float64), linesearch = linesearch,
+            ps, two_spheres; algorithm = Adam(), linesearch = linesearch,
             retraction = retraction, max_iterations = 1000, warn_iterations = 0)
 
         solve!(ps, state, opt)
@@ -327,11 +328,10 @@ end
     # `solver_step!` refreshes `latest_gradient` at the accepted iterate and the next
     # `update!(cache, ...)` reuses it rather than evaluating `∇f` again at the same point; see
     # `store_gradient!`. The manifold case is the one where that could go wrong quietly, because the
-    # gradient is expressed in the frame of a `GlobalSection` and the cache's and the state's frames
-    # are advanced by two different calls. They are the same call underneath -- `update_section!`'s
-    # three-argument method has the body the two-argument one uses -- and this asserts it, bit for
-    # bit, rather than taking it on trust.
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64)),
+    # gradient is expressed in the frame of a `GlobalSection`. The state's frame is the copy of the
+    # cache's that `advance_state!` makes, and this asserts, bit for bit, that the reused gradient
+    # is the fresh one, rather than taking it on trust.
+    for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam()),
         retraction in (Geodesic(), Cayley())
 
         ps = ps₀()
@@ -366,7 +366,7 @@ end
     @test step_size(ls, 2000) < 1.0e-6              # ... and keeps going, which is what converges
     @test step_size(ls, 500) ≈ sqrt(1.0e-2 * 1.0e-6)  # geometric, so the midpoint is the geometric mean
 
-    @test eltype(DecayingStatic(Float32)) == Float32
+    @test eltype(DecayingStatic()) == Float64
     @test_throws AssertionError DecayingStatic(; η₁ = 1.0e-6, η₂ = 1.0e-2)   # η₂ ≤ η₁
     @test_throws AssertionError DecayingStatic(; η₁ = -1.0)
     @test_throws AssertionError DecayingStatic(; n = 0)
@@ -377,8 +377,8 @@ end
     # step it circles the minimizer at that distance and never terminates on a criterion. This is
     # the `Float64`/`Cayley` case that used to run out its 1000 iterations.
     x = x₀()
-    state = OptimizerState(Adam(Float64), x)
-    opt = Optimizer(x, f; algorithm = Adam(Float64), retraction = Cayley(),
+    state = OptimizerState(Adam(), x)
+    opt = Optimizer(x, f; algorithm = Adam(), retraction = Cayley(),
         linesearch = DecayingStatic(; η₁ = 0.1, η₂ = 1.0e-8, n = 400))
 
     result = solve!(x, state, opt)

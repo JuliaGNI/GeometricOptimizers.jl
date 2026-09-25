@@ -62,7 +62,7 @@ In the case of the momentum optimizer the cache is non-trivial:
 
 ```@example optimizer_methods
 const α = 0.5
-method = MomentumMethod(α)
+method = MomentumMethod(; α)
 weight = NetworkParameters((A = zeros(4, 4), ))
 state = OptimizerState(method, weight)
 
@@ -111,7 +111,7 @@ const ρ₁ = 0.9
 const ρ₂ = 0.99
 const δ = 1e-8
 
-method = Adam(Float64; β₁ = ρ₁, β₂ = ρ₂, δ)
+method = Adam(; β₁ = ρ₁, β₂ = ρ₂, δ)
 state = OptimizerState(method, weight)
 
 GeometricOptimizers.first_moment(state).A
@@ -286,7 +286,7 @@ const η₁ = 1e-2
 const η₂ = 1e-6
 const n_epochs = 1000
 
-pairing = AdamOptimizerWithDecay(n_epochs, Float64; η₁ = η₁, η₂ = η₂)
+pairing = AdamOptimizerWithDecay(n_epochs; η₁ = η₁, η₂ = η₂)
 pairing.linesearch
 ```
 

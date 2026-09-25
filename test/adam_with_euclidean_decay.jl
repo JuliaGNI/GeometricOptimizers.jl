@@ -160,9 +160,9 @@ end
         f(Y::StiefelManifold) = norm(vec(Y) - target)
         x₀ = StiefelManifold(T[0.0; sqrt(T(0.5)); sqrt(T(0.5));;])
 
-        adam = run!(deepcopy(x₀), Adam(T), f, 25; α = T(0.1))
+        adam = run!(deepcopy(x₀), Adam(), f, 25; α = T(0.1))
         adamw = @test_logs (:warn, r"none of the parameters") match_mode = :any run!(
-            deepcopy(x₀), AdamWithEuclideanDecay(T; λ = T(λ)), f, 25; α = T(0.1))
+            deepcopy(x₀), AdamWithEuclideanDecay(; λ = T(λ)), f, 25; α = T(0.1))
 
         @test adamw isa StiefelManifold{T}
         @test adamw.A == adam.A                     # bit for bit, not just to a tolerance
@@ -187,9 +187,9 @@ end
         Random.seed!(1234)
         x₀ = rand(GrassmannManifold{T}, 3, 1)
 
-        adam = run!(deepcopy(x₀), Adam(T), f, 25; α = T(0.1))
+        adam = run!(deepcopy(x₀), Adam(), f, 25; α = T(0.1))
         adamw = @test_logs (:warn, r"none of the parameters") match_mode = :any run!(
-            deepcopy(x₀), AdamWithEuclideanDecay(T; λ = T(λ)), f, 25; α = T(0.1))
+            deepcopy(x₀), AdamWithEuclideanDecay(; λ = T(λ)), f, 25; α = T(0.1))
 
         @test adamw isa GrassmannManifold{T}
         @test adamw.A == adam.A                     # bit for bit, as on the Stiefel manifold
@@ -294,12 +294,13 @@ end
     @test check(adamw.w) < 1e-12                    # the manifold entry survives 200 steps
 end
 
-# `AdamWithEuclideanDecay(Float32)` is needed for `Float32` parameters, exactly as for `Adam`:
-# `Optimizer` does not convert it (only `MomentumMethod` is converted).
-@testset "the element type is the one that was asked for" begin
-    @test AdamWithEuclideanDecay(Float32) isa AdamWithEuclideanDecay{Float32}
+# The method carries no element type of the parameters: `Optimizer` converts it to theirs.
+@testset "the optimizer converts the method to the element type of the parameters" begin
     @test AdamWithEuclideanDecay() isa AdamWithEuclideanDecay{Float64}
-    @test AdamWithEuclideanDecay(Float32; λ = 0.5).λ === 0.5f0
+    x = Float32[1, 2, 3]
+    opt = Optimizer(x, x -> sum(abs2, x); algorithm = AdamWithEuclideanDecay(; λ = 0.5))
+    @test opt.algorithm isa AdamWithEuclideanDecay{Float32}
+    @test opt.algorithm.λ === 0.5f0
     # the method only produces a direction; the learning rate is the line search's `α`
     @test !hasproperty(AdamWithEuclideanDecay(), :η)
 end

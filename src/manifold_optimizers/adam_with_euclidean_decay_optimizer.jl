@@ -52,7 +52,7 @@ function _is_decayable(Y::Manifold)
           "horizontal representation.")
 end
 
-function OptimizerCache(method::AdamWithEuclideanDecay{T}, x::OptimizerSolution{T}) where {T}
+function OptimizerCache(method::AdamWithEuclideanDecay, x::OptimizerSolution)
     # A `λ` that cannot reach a single weight is almost certainly not what was meant, and it is
     # invisible otherwise: the run is `Adam`, it converges, and nothing anywhere says that the
     # decay was dropped. Warning here rather than at every step costs one check per optimizer.
@@ -91,6 +91,14 @@ did something here would have to look like. `test/adam_with_euclidean_decay.jl` 
 function _weight_decay!(δ::AbstractArray{T}, x::AbstractArray{T}, λ::T) where {T}
     @assert axes(δ) == axes(x)
     δ .-= λ .* x
+    δ
+end
+
+# The structured matrices are linear in their storage and define no `setindex!` for every entry, so
+# the decay acts on the storage: `S ← S - λS` is `x ← x - λx` for each of them.
+function _weight_decay!(δ::VectorStorageMatrix{T}, x::VectorStorageMatrix{T}, λ::T) where {T}
+    @assert axes(δ) == axes(x)
+    δ.S .-= λ .* x.S
     δ
 end
 

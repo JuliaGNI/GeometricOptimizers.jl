@@ -106,7 +106,7 @@ The gradient descent algorithm.
 struct GradientMethod <: OptimizerMethod end
 
 @doc raw"""
-    MomentumMethod(α)
+    MomentumMethod(; α)
 
 The gradient descent algorithm with momentum, i.e. the *heavy ball* method.
 
@@ -116,20 +116,24 @@ Stores the *momentum coefficient* `α`. The momentum is accumulated as
 ```
 and the direction is ``-p``.
 
+`α` carries no element type of the parameters: [`Optimizer`](@ref) and [`TrainingOptimizer`](@ref)
+convert it once, with `change_precision`, to the element type of the parameters they are given.
+
 !!! info "The step size is not stored here"
     Like every [`OptimizerMethod`](@ref), `MomentumMethod` only produces a direction; how far
     the optimizer goes along it is the line search's business. A fixed learning rate ``\eta``
-    is therefore expressed as `linesearch = Static(η)`, which is also the default (see
-    [`default_linesearch`](@ref)).
+    is therefore expressed as `linesearch = η`, or `linesearch = Static(η)`.
 """
 struct MomentumMethod{T} <: OptimizerMethod
     α::T
 
-    MomentumMethod(α::T = DEFAULT_MOMENTUM_α) where {T} = new{T}(α)
+    MomentumMethod{T}(α) where {T} = new{T}(α)
 end
 
+MomentumMethod(; α = DEFAULT_MOMENTUM_α) = MomentumMethod{typeof(float(α))}(float(α))
+
 @doc raw"""
-    Adam(T; β₁, β₂, δ)
+    Adam(; β₁, β₂, δ)
 
 The Adam optimizer, with the defaults suggested in [goodfellow2016deep; page 301](@cite).
 
@@ -143,9 +147,9 @@ m_2 \gets \frac{\beta_2 - \beta_2^t}{1 - \beta_2^t}m_2 + \frac{1 - \beta_2}{1 - 
 ```
 from which the direction is computed as ``-m_1/(\sqrt{m_2} + \delta)``.
 
-`T` is the element type of the parameters that are to be optimized; unlike
-[`MomentumMethod`](@ref), `Adam` is *not* converted by [`Optimizer`](@ref), so
-`Adam(Float32)` is needed for `Float32` parameters.
+The coefficients carry no element type of the parameters: [`Optimizer`](@ref) and
+[`TrainingOptimizer`](@ref) convert them once, with `change_precision`, to the element type of the
+parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters alike.
 
 !!! info "A searching line search is not the way to make this converge"
     Because the direction has magnitude ``\approx{}1`` per component whatever the gradient is,
@@ -159,27 +163,28 @@ from which the direction is computed as ``-m_1/(\sqrt{m_2} + \delta)``.
 
 !!! info "The learning rate is not stored here"
     `Adam` only produces a direction, of magnitude ``\approx{}1`` per component; the learning
-    rate ``\eta`` is the line search's `α`, i.e. it is passed as `linesearch = Static(η)`,
-    which is also the default (see [`default_linesearch`](@ref)). `Adam` used to carry an `η`
-    field that was never applied to the direction, so `Adam(1e-3)` and `Adam(1e2)` gave
-    identical results; it is gone, and because it used to be the *first positional* argument,
-    `β₁`, `β₂` and `δ` are keyword arguments now so that an old `Adam(1e-3)` call fails
-    instead of silently setting `β₁ = 1e-3`.
+    rate ``\eta`` is the line search's `α`, i.e. it is passed as `linesearch = η` or
+    `linesearch = Static(η)`, and [`default_linesearch`](@ref) is the default. `β₁`, `β₂` and `δ`
+    are keyword arguments, so that a positional `Adam(1e-3)` meant as a learning rate fails instead
+    of setting `β₁`.
 """
 struct Adam{T} <: OptimizerMethod
     β₁::T
     β₂::T
     δ::T
 
-    # the defaults are written as `Float64` literals so that `T(9.0e-1)` is `0.9` and not
-    # `Float64(9.0f-1) = 0.8999999761581421`; for `T = Float32` they are the same numbers
-    function Adam(::Type{T} = Float64; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8) where {T}
-        new{T}(T(β₁), T(β₂), T(δ))
-    end
+    Adam{T}(β₁, β₂, δ) where {T} = new{T}(β₁, β₂, δ)
+end
+
+# The defaults are `Float64` literals, so that `change_precision(Float32, Adam())` holds `0.9f0` and
+# not a `Float32` rounded from a `Float32` literal.
+function Adam(; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8)
+    β₁, β₂, δ = promote(float(β₁), float(β₂), float(δ))
+    Adam{typeof(δ)}(β₁, β₂, δ)
 end
 
 @doc raw"""
-    ScalarMomentAdam(T; β₁, β₂, δ, ambient_norm)
+    ScalarMomentAdam(; β₁, β₂, δ, ambient_norm)
 
 *Cayley ADAM*, [li2020efficient; Algorithm 2](@cite), as an experimental Stiefel-only baseline for
 [`Adam`](@ref).
@@ -203,8 +208,8 @@ whole matrix instead of one per coordinate. That is a reproduction of a publishe
 straw man — on some objectives it will beat [`Adam`](@ref).
 
 Only a single `StiefelManifold{T}` solution is supported; ordinary arrays, `NamedTuple`s, Grassmann
-solutions and mixed parameter trees throw an `ArgumentError`. As for [`Adam`](@ref), `T` is the
-element type of the parameters and is not converted by [`Optimizer`](@ref).
+solutions and mixed parameter trees throw an `ArgumentError`. As for [`Adam`](@ref), the
+coefficients carry no element type of the parameters, and [`Optimizer`](@ref) converts them.
 
 !!! info "The Cayley transform is the retraction here, and it is exact"
     The source's lines 12–14 approximate the Cayley transform with two fixed-point iterations, and
@@ -233,8 +238,8 @@ element type of the parameters and is not converted by [`Optimizer`](@ref).
 
 # Arguments
 
-`β₁`, `β₂` and `δ` are the source's ``\beta_1``, ``\beta_2`` and ``\varepsilon``, all converted to
-`T`, with ``0 \le \beta_1, \beta_2 < 1`` and ``\delta \ge 0`` validated. `ambient_norm` selects which
+`β₁`, `β₂` and `δ` are the source's ``\beta_1``, ``\beta_2`` and ``\varepsilon``, with
+``0 \le \beta_1, \beta_2 < 1`` and ``\delta \ge 0`` validated. `ambient_norm` selects which
 ``\lVert\cdot\rVert^2`` the second moment accumulates and defaults to `false`; see
 [`GeometricOptimizers._squared_gradient_norm`](@ref), which is also where the reason the two choices
 are not interchangeable up to a constant is written down.
@@ -272,18 +277,21 @@ struct ScalarMomentAdam{T} <: OptimizerMethod
     δ::T
     ambient_norm::Bool
 
-    function ScalarMomentAdam(::Type{T} = Float64; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8,
-            ambient_norm::Bool = false) where {T <: AbstractFloat}
-        β₁T, β₂T, δT = T(β₁), T(β₂), T(δ)
-        0 ≤ β₁T < 1 || throw(ArgumentError("β₁ must satisfy 0 ≤ β₁ < 1"))
-        0 ≤ β₂T < 1 || throw(ArgumentError("β₂ must satisfy 0 ≤ β₂ < 1"))
-        δT ≥ 0 || throw(ArgumentError("δ must be nonnegative"))
-        new{T}(β₁T, β₂T, δT, ambient_norm)
+    function ScalarMomentAdam{T}(β₁, β₂, δ, ambient_norm::Bool) where {T <: AbstractFloat}
+        0 ≤ β₁ < 1 || throw(ArgumentError("β₁ must satisfy 0 ≤ β₁ < 1"))
+        0 ≤ β₂ < 1 || throw(ArgumentError("β₂ must satisfy 0 ≤ β₂ < 1"))
+        δ ≥ 0 || throw(ArgumentError("δ must be nonnegative"))
+        new{T}(β₁, β₂, δ, ambient_norm)
     end
 end
 
+function ScalarMomentAdam(; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8, ambient_norm::Bool = false)
+    β₁, β₂, δ = promote(float(β₁), float(β₂), float(δ))
+    ScalarMomentAdam{typeof(δ)}(β₁, β₂, δ, ambient_norm)
+end
+
 @doc raw"""
-    AdamWithEuclideanDecay(T; β₁, β₂, δ, λ)
+    AdamWithEuclideanDecay(; β₁, β₂, δ, λ)
 
 [`Adam`](@ref) with the *decoupled* weight decay of [loshchilov2019decoupled](@cite), which is
 the **Euclidean** ``\lambda{}x`` and therefore acts on the unconstrained weights only.
@@ -322,10 +330,9 @@ The derivation, the Grassmann case and why the name `AdamW` is held in reserve f
 
 # Arguments
 
-As for [`Adam`](@ref), `T` is the element type of the parameters
-(`AdamWithEuclideanDecay(Float32)` for `Float32` parameters) and the learning rate ``\eta`` is
-*not* stored here: it is the `α` of the line search, i.e. `linesearch = Static(η)`, which is
-also the default (see [`default_linesearch`](@ref)). `λ` is hence multiplied by ``\eta``,
+As for [`Adam`](@ref), the coefficients carry no element type of the parameters, and the learning
+rate ``\eta`` is *not* stored here: it is the `α` of the line search, i.e. `linesearch = η`, and
+[`default_linesearch`](@ref) is the default. `λ` is hence multiplied by ``\eta``,
 exactly as in [loshchilov2019decoupled](@cite), where the two are decoupled from each other but
 the decay is still scaled by the schedule.
 
@@ -349,11 +356,14 @@ struct AdamWithEuclideanDecay{T} <: OptimizerMethod
     δ::T
     λ::T
 
-    # see the remark on the `Float64` literals in `Adam`
-    function AdamWithEuclideanDecay(::Type{T} = Float64; β₁ = 9.0e-1, β₂ = 9.9e-1,
-            δ = 1.0e-8, λ = DEFAULT_WEIGHT_DECAY) where {T}
-        new{T}(T(β₁), T(β₂), T(δ), T(λ))
-    end
+    AdamWithEuclideanDecay{T}(β₁, β₂, δ, λ) where {T} = new{T}(β₁, β₂, δ, λ)
+end
+
+# see the remark on the `Float64` literals in `Adam`
+function AdamWithEuclideanDecay(;
+        β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8, λ = DEFAULT_WEIGHT_DECAY)
+    β₁, β₂, δ, λ = promote(float(β₁), float(β₂), float(δ), float(λ))
+    AdamWithEuclideanDecay{typeof(δ)}(β₁, β₂, δ, λ)
 end
 
 """
@@ -402,10 +412,10 @@ The methods whose `update!` needs the *method* rather than a
 direction is built — a momentum or a pair of moments. The (quasi-)Newton methods are the
 complement: their direction comes from the Hessian and the method object holds nothing.
 
-[`GradientMethod`](@ref) is in neither group: it has no Hessian *and* no state, and takes the
-Hessian branch because `NoHessian` is all that branch needs from it.
+[`GradientMethod`](@ref) has no Hessian *and* no state; with these methods it forms the
+[`FirstOrderMethod`](@ref)s, whose `update!` takes the method.
 
-`solver_step!` also uses this to decide whether [`ensure_descent!`](@ref) applies. It must not:
+[`ensure_descent!`](@ref) has a no-op method for these. It must not apply to them:
 a momentum and a moment average are deliberately allowed not to descend on an individual step,
 and the decay of [`AdamWithEuclideanDecay`](@ref) tilts the direction further away from the
 gradient still.
@@ -579,6 +589,39 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
 """
 default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T; expand = true)
 default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNING_RATE))
+
+"""
+    FirstOrderMethod
+
+The methods that build their direction from the gradient alone: [`GradientMethod`](@ref) and the
+[`FirstOrderMethodWithState`](@ref). These are the methods a [`TrainingOptimizer`](@ref) takes, and
+the methods whose `update!(cache, state, gradient, method, x)` takes the method rather than a
+[`SimpleSolvers.Hessian`](@extref).
+"""
+const FirstOrderMethod = Union{GradientMethod, FirstOrderMethodWithState}
+
+"""
+    default_step_size(method)
+
+The fixed step size a [`TrainingOptimizer`](@ref) takes for `method` if its `linesearch` keyword is
+not given: `1e-2` for [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), and
+`DEFAULT_LEARNING_RATE = 1e-3` for the [`AdamFamily`](@ref), whose direction has magnitude
+``\\approx{}1`` per component whatever the gradient is.
+"""
+default_step_size(::Union{GradientMethod, MomentumMethod}) = 1.0e-2
+default_step_size(::AdamFamily) = DEFAULT_LEARNING_RATE
+
+# The conversion `Optimizer` and `TrainingOptimizer` apply once, to the element type of the
+# parameters. A method without coefficients is returned as it is.
+change_precision(::Type, method::OptimizerMethod) = method
+change_precision(::Type{T}, m::MomentumMethod) where {T} = MomentumMethod{T}(T(m.α))
+change_precision(::Type{T}, m::Adam) where {T} = Adam{T}(T(m.β₁), T(m.β₂), T(m.δ))
+function change_precision(::Type{T}, m::ScalarMomentAdam) where {T}
+    ScalarMomentAdam{T}(T(m.β₁), T(m.β₂), T(m.δ), m.ambient_norm)
+end
+function change_precision(::Type{T}, m::AdamWithEuclideanDecay) where {T}
+    AdamWithEuclideanDecay{T}(T(m.β₁), T(m.β₂), T(m.δ), T(m.λ))
+end
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
 Base.show(io::IO, alg::DFP) = print(io, "DFP")

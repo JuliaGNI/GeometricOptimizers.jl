@@ -124,10 +124,10 @@ which is what the three first-order `update!(cache, ...)` methods build their di
 This reuses [`latest_gradient`](@ref) when [`latest_gradient_is_current`](@ref) says it already holds
 that value, which in a [`solve!`](@ref) loop is every iteration but the first: `solver_step!` refreshes
 it at the accepted iterate, and the next `update!` is asked for the gradient at that same iterate in
-the same frame. The two are not merely close, they are the same computation --
-`update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B, retraction)` has the body the two-argument form
-`update!(::MomentumState, ...)` uses, so `section(cache)` after `solver_step!` is bit-for-bit
-`section(state)` after `update!(state, opt, x)`.
+the same frame. The two are not merely close, they are the same values -- for the first-order
+states, `update!(state, opt, x)` copies `section(cache)` into the state through
+[`advance_state!`](@ref), so `section(state)` after it is bit-for-bit `section(cache)` after
+`solver_step!`.
 
 Without the reuse the refresh doubles the gradient evaluations of a first-order step: on the SVD
 problem of `test/optimizer_convergence/svd_optim.jl`, `Adam` + `Static` over 2 000 iterations costs

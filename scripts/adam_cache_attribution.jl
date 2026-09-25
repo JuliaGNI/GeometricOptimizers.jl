@@ -1,4 +1,4 @@
-# Where the ~88 s of a cold `OptimizerCache(Adam(T), ps)` goes, for a *nested* container.
+# Where the ~88 s of a cold `OptimizerCache(Adam(), ps)` goes, for a *nested* container.
 #
 # Run with the repository as the active project:
 #
@@ -94,8 +94,8 @@ xc = fc("_copy(ps)", _copy, ps)
 fc("GlobalSection(_copy(ps))", x -> GlobalSection(_copy(x)), ps)
 fc("AdamCache(x, g, δ, Δg)", (a, b, c, d) -> AdamCache(a, b, c, d), xc, g, _zero(g), sim)
 fc("AdamCache(x, g, δ)", (a, b, c) -> AdamCache(a, b, c), _copy(ps), _zero(ps), _zero(ps))
-fc("OptimizerCache(Adam, ps)", x -> OptimizerCache(Adam(T), x), ps)
-fc("OptimizerState(Adam, ps)", x -> OptimizerState(Adam(T), x), ps)
+fc("OptimizerCache(Adam, ps)", x -> OptimizerCache(Adam(), x), ps)
+fc("OptimizerState(Adam, ps)", x -> OptimizerState(Adam(), x), ps)
 # The two the old diagnosis blamed, measured last so their figures are what they add to everything
 # above — which is the fairest possible reading for that diagnosis, and they are still under 2 s.
 fc("parameterlayout(ps)", parameterlayout, ps)

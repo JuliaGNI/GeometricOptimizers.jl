@@ -20,7 +20,7 @@ comparison is `false` — is replaced by `rhs`, which always descends. The subst
 !!! info "Only the (quasi-)Newton methods are safeguarded"
     [`Adam`](@ref) and [`MomentumMethod`](@ref) build their direction from a moving average, which is
     *allowed* not to descend on an individual step — that is what the momentum term is for — so
-    [`solver_step!`](@ref) does not call this for them.
+    their method, on [`FirstOrderMethodWithState`](@ref), leaves the direction as it is.
 
 !!! info "Why this is needed now"
     Up to SimpleSolvers 0.8 the `Bisection` and `Quadratic` line searches could return a *negative*
@@ -60,6 +60,10 @@ function ensure_descent!(cache::OptimizerCache, method::OptimizerMethod, config:
 
     cache
 end
+
+# The `FirstOrderMethodWithState` methods are exempt: their direction is a moving average and is
+# allowed not to descend on an individual step.
+ensure_descent!(cache::OptimizerCache, ::FirstOrderMethodWithState, ::Options) = cache
 
 @doc raw"""
     linesearch_rejected(status)
@@ -102,7 +106,7 @@ it resolves silently to the wrong page.)
     untouched, so the exemption did not permit a non-descent step, it took the *longest* step
     available along one.
 
-    Issue A7 is what that cost. On Rosenbrock from ``(-1.2, 1)`` with `MomentumMethod(0.1)` under the
+    Issue A7 is what that cost. On Rosenbrock from ``(-1.2, 1)`` with `MomentumMethod(; α = 0.1)` under the
     expanding `Backtracking` default, the solve reaches `f = 7.8e-5` by iteration 400 and then:
 
     | iteration | outcome | ``\alpha`` | ``f`` |

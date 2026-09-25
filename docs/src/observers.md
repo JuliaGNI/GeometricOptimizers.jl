@@ -121,7 +121,7 @@ observer cannot change the step, and a step behaves the same whether one is inst
 |:---|:---|
 | `:gradient` | The gradient evaluation itself: the reverse pass, the automatic differentiation, or the user's in-place `∇F!`, over the flattened iterate. |
 | `:objective` | An evaluation of the objective. |
-| `:retraction_application` | Construction and application of a retraction: the exponential or Cayley map on the lift, the [`update_section!`](@ref) that follows it, and the copy of the retracted point onto the parameters. |
+| `:retraction_application` | Construction and application of a retraction: the exponential or Cayley map on the lift, the [`update_section!`](@ref) that follows it, and the copy of the retracted point onto the parameters. Also the first-order state update after an accepted step, [`advance_state!`](@ref GeometricOptimizers.advance_state!), which copies the frame the retraction left in the cache into the state. |
 
 `:objective` is in that list mainly so that it can be *subtracted*. Objective evaluations are driven
 by the line search, they are the caller's own function, and their cost has nothing to do with the
@@ -270,7 +270,7 @@ objective evaluation made by `solve!` is reported as `:objective`, including the
 already evaluated for the status at the same iterate rather than evaluating again, so they
 contribute no events of their own.
 
-One boundary needs stating for a caller doing arithmetic on the totals:
+Two boundaries need stating for a caller doing arithmetic on the totals:
 
 * The slope ``\varphi'(\alpha)`` a differentiable line search asks for is reported as
   `:retraction_application`, because on a manifold that is what most of it is: the differential of the
@@ -281,6 +281,12 @@ One boundary needs stating for a caller doing arithmetic on the totals:
   A consequence for `calls` rather than for `exclusive`: `:retraction_application` is entered twice
   per slope request — once for the trial point and once for the slope itself — so its call count
   exceeds the number of retractions actually applied by one per request.
+* For [`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref) and
+  [`ScalarMomentAdam`](@ref), the state update `solve!` makes after each accepted step is reported
+  as `:retraction_application` too. It applies no retraction:
+  [`advance_state!`](@ref GeometricOptimizers.advance_state!) copies the frame the step's
+  retraction left in the cache into the state and advances the momentum or moments. It adds one more `:retraction_application` call per iteration, except the last, after
+  which `solve!` stops without updating the state.
 
 For a whole set of parameters, the observed gradient sits *inside* the
 [`RiemannianGradient`](@ref) wrapper. `:gradient` therefore covers the flat gradient and the

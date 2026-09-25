@@ -188,7 +188,7 @@ function optimize(MT, algorithm; steps = 5, η = 0.1)
 end
 
 @testset "an optimizer runs over a $(nameof(MT)) parameter -- $(nameof(typeof(algorithm)))" for MT in TYPES,
-    algorithm in (GradientMethod(), MomentumMethod(0.1), Adam(Float64))
+    algorithm in (GradientMethod(), MomentumMethod(; α = 0.1), Adam())
 
     before, after, ps = optimize(MT, algorithm)
     @test after < before
