@@ -328,10 +328,9 @@ end
     # `solver_step!` refreshes `latest_gradient` at the accepted iterate and the next
     # `update!(cache, ...)` reuses it rather than evaluating `∇f` again at the same point; see
     # `store_gradient!`. The manifold case is the one where that could go wrong quietly, because the
-    # gradient is expressed in the frame of a `GlobalSection` and the cache's and the state's frames
-    # are advanced by two different calls. They are the same call underneath -- `update_section!`'s
-    # three-argument method has the body the two-argument one uses -- and this asserts it, bit for
-    # bit, rather than taking it on trust.
+    # gradient is expressed in the frame of a `GlobalSection`. The state's frame is the copy of the
+    # cache's that `advance_state!` makes, and this asserts, bit for bit, that the reused gradient
+    # is the fresh one, rather than taking it on trust.
     for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam()),
         retraction in (Geodesic(), Cayley())
 

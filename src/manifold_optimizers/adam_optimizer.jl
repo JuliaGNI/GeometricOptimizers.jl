@@ -187,7 +187,7 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     _copyto!(second_moment(cache), _mul(fac₂₁, second_moment(state)))
     _add!(second_moment(cache), _mul(fac₂₂, _square(gradient_array(cache))))
     # `m̃₂ = √m₂ + δ`; note that the square root must not be applied to `m₂` in place, as
-    # `m₂` is stored in the state in `update!(::AdamState, ...)` afterwards.
+    # `advance_state!` stores `m₂` in the state afterwards.
     _copyto!(_second_moment(cache), second_moment(cache))
     _rac!(_second_moment(cache))
     _add!(_second_moment(cache), δ)

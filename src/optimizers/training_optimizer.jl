@@ -38,8 +38,8 @@ retraction, and the buffers the retraction works in.
 [`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, and
 raises an `ArgumentError` for any other `x`. `linesearch` is a finite positive number, which is
 the fixed step size `Static(η)`, a [`SimpleSolvers.Static`](@extref) or a
-[`DecayingStatic`](@ref); the default is [`default_step_size`](@ref)`(algorithm)`. `retraction` is an [`AbstractRetraction`](@ref) type,
-`Cayley()` or `Geodesic()`.
+[`DecayingStatic`](@ref); the default is [`default_step_size`](@ref)`(algorithm)`. `retraction` is
+an instance of an [`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
 
 # Why a training step is not `solve!`
 
@@ -96,8 +96,9 @@ and write the new parameters into `x`, which it returns.
 
 `x` is the object `opt` was built on, and nothing else changes it between steps: the step starts
 from the point `opt.state` carries, which is `x` after the previous step. `dp` has the shape and the
-element type of `x`; a `dp` of another element type is an `ArgumentError`, and a `dp` of another
-shape is a `DimensionMismatch`, raised before the iteration number moves.
+element type of `x`. An `x` or a `dp` of another element type than `opt` is an `ArgumentError`. A
+`dp` with arrays of other sizes is a `DimensionMismatch`, and a parameter set with other keys or
+another number of leaves is an `ArgumentError`. Each is raised before the iteration number moves.
 
 The step increments the iteration number `t` of `opt.state`, reads the step size
 [`step_size`](@ref)`(opt.linesearch, t)`, forms the direction of `opt.method` from the
@@ -107,7 +108,8 @@ result into `x`. [`advance_state!`](@ref) then carries the state over to the new
 For a parameter set, `dp` is a [`NeuralNetworkParameters.NetworkParameters`](@extref) of the same
 shape as `x`. See [`TrainingOptimizer`](@ref) for why this is not [`solve!`](@ref).
 """
-function optimization_step!(x::OptimizerSolution{T}, opt::TrainingOptimizer,
+function optimization_step!(x::OptimizerSolution{T},
+        opt::TrainingOptimizer{<:FirstOrderMethod, <:OptimizerCache, <:OptimizerState{T}},
         dp::Union{AbstractArray{T}, NetworkParameters{T}}) where {T}
     # before the count moves, so that a refused step leaves the state as it was
     _same_shape(x, dp) || throw(DimensionMismatch(
@@ -131,7 +133,8 @@ end
 _same_shape(_, _) = false
 
 # The element-type check is dispatch, so the step above pays nothing for it.
-function optimization_step!(x::OptimizerSolution, ::TrainingOptimizer, dp)
-    throw(ArgumentError("the gradient is a $(typeof(dp)) and the parameters are a $(typeof(x)): " *
-                        "a training step takes a gradient of the shape and element type of `x`."))
+function optimization_step!(x::OptimizerSolution, opt::TrainingOptimizer, dp)
+    throw(ArgumentError("the gradient is a $(typeof(dp)), the parameters are a $(typeof(x)) and " *
+                        "the optimizer state is a $(typeof(opt.state)): a training step takes " *
+                        "parameters and a gradient of the element type `opt` was built for."))
 end

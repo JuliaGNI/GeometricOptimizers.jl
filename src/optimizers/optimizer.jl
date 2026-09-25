@@ -234,18 +234,19 @@ end
 
 # A number is a fixed step size, and a `Static` or a `DecayingStatic` is converted to the element type
 # of the parameters, as the method is. A searching line search is taken as it is.
-function _linesearch_method(::Type{T}, η::Real) where {T}
-    isfinite(η) && η > 0 ||
-        throw(ArgumentError("a fixed step size is finite and positive, not $(η)"))
-    Static(T(η))
-end
+_linesearch_method(::Type{T}, η::Real) where {T} = _linesearch_method(T, Static(η))
 # `true` is a `Real` that is `1`, and never meant as a step size
 function _linesearch_method(::Type, η::Bool)
     throw(ArgumentError("a step size is a number, not $(η)"))
 end
-function _linesearch_method(::Type{T}, ls::Union{Static, DecayingStatic}) where {T}
-    change_precision(T, ls)
+# The check is on the converted step size: `1e-50` is `0` in `Float32`, and `1e40` is `Inf32`.
+function _linesearch_method(::Type{T}, ls::Static) where {T}
+    s = change_precision(T, ls)
+    isfinite(s.α) && s.α > 0 ||
+        throw(ArgumentError("a fixed step size is finite and positive in $(T), not $(s.α)"))
+    s
 end
+_linesearch_method(::Type{T}, ls::DecayingStatic) where {T} = change_precision(T, ls)
 _linesearch_method(::Type, ls::LinesearchMethod) = ls
 
 # A training step takes what `_linesearch_method` converts, except a searching line search.

@@ -256,6 +256,9 @@ end
         dp = _gradient(_parameters(S, shape))
         @test_throws ArgumentError optimization_step!(x, opt, dp)
         @test iteration_number(opt.state) == 0
+        # parameters and gradient agree, and the optimizer was built for the other type
+        @test_throws ArgumentError optimization_step!(_parameters(S, shape), opt, dp)
+        @test iteration_number(opt.state) == 0
     end
 end
 
@@ -314,9 +317,15 @@ end
 
 @testset "a step size is finite and positive" begin
     x = _parameters(Float64, :vector)
-    for η in (NaN, Inf, -1, 0, true)
+    for η in (NaN, Inf, -1, 0, true, Static(-1.0), Static(NaN))
         @test_throws ArgumentError TrainingOptimizer(x; algorithm = Adam(), linesearch = η)
         @test_throws ArgumentError Optimizer(x, x -> sum(abs2, x); linesearch = η)
+    end
+    # the check is on the step size in the element type of the parameters
+    y = _parameters(Float32, :vector)
+    for η in (1e-50, 1e40)
+        @test_throws ArgumentError TrainingOptimizer(y; algorithm = Adam(), linesearch = η)
+        @test_throws ArgumentError Optimizer(y, y -> sum(abs2, y); linesearch = η)
     end
 end
 
