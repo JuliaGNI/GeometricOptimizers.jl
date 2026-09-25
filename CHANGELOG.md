@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Added
+
+- Added **`scripts/retraction_records.jl`**, the retraction benchmark of `scripts/retraction_accuracy.jl` written as machine-readable records instead of tables.
+
+  That script answers "how do these algorithms compare" for a reader and prints a `minimum` over repetitions, which is the right shape for the figures this package quotes and the wrong one for an external experiment. The new script writes the same measurement as one row per *invocation*: a warm-up row at repetition 0, then the steady-state rows. It has a CUDA path beside the host one, keeps host and device allocation apart, and writes an explicit `success=false` row for an invocation that threw rather than a gap in a table. A downstream experiment harness had carried a parallel copy of the benchmark against this package's environment; the algorithms, the reference and the sweep live here, so the recording does now too.
+
+  The lift sweep is shared rather than repeated: `SCALES` and `sweep` moved into **`scripts/retraction_sweep.jl`**, which both scripts include. They draw from the same seed on the same stream as before, so every figure in `src/retractions/exponential_algorithms.jl` and the note on `Cayley` in `src/retractions/retraction_types.jl` are unchanged. The accuracy tables on the Exponential Algorithms page, `docs/src/exponential_algorithms.md`, are recomputed when the documentation is built, but from a copy of the sweep in that page (the same seed and the same eight scales), not from `retraction_sweep.jl`. The two copies are not shared yet: a change to the scales or the seed in one does not reach the other.
+
+  **The runtime and the memory figure now come from one execution.** The natural way to write this, a timed call followed by a second call inside `@allocated`, doubles the benchmark's cost and, on a device backend, synchronizes the two separately, so the two numbers describe different invocations of the same operation. `@allocated` wraps the timed region instead.
+
+  Provenance is the caller's: `--source-sha`, `--source-dirty`, `--source-patch-file` and `--source-patch-sha256` are stamped into every row and are not captured here. A harness that archives a patch beside the CSV already owns that identity; a second capture would be a second implementation of the one thing whose purpose is to have exactly one.
+
 ## [0.9.0]
 
 **This release makes the package the optimizer that GeometricMachineLearning trains with.**
