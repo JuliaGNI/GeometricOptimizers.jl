@@ -17,8 +17,8 @@
 # on both sides does not make the completions equal. GML 0.8 builds one state per layer, and each
 # state draws a random `x̄` for each manifold leaf after its sections, so a later layer's section is
 # drawn at a different point of the stream than a `TrainingOptimizer`'s, which draws every section
-# first. And GeometricOptimizers orthonormalises a completion twice since 0.8.0, where 0.8.0 did it
-# once, which moves it by round-off. So the test copies these completions into its own state before
+# first. And GeometricOptimizers after 0.8.0 (PR #118) orthonormalises a completion a second time,
+# which moves it by round-off. So the test copies these completions into its own state before
 # the first step.
 using GeometricMachineLearning, KernelAbstractions, Random
 import GeometricOptimizers as GO

@@ -29,7 +29,8 @@ continues with the same momentum or moments.
 ## The methods and the step size
 
 `algorithm` is one of the first-order methods: [`GradientMethod`](@ref), [`MomentumMethod`](@ref),
-[`Adam`](@ref), [`AdamWithEuclideanDecay`](@ref) or [`ScalarMomentAdam`](@ref). A method carries no
+[`Adam`](@ref), [`AdamWithEuclideanDecay`](@ref) or [`ScalarMomentAdam`](@ref).
+[`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, not a parameter set. A method carries no
 element type. [`TrainingOptimizer`](@ref) converts it once, with `change_precision`, to the element
 type of `x`, so `Adam()` trains `Float32` and `Float64` parameters alike:
 

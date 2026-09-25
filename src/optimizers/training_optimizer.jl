@@ -35,7 +35,8 @@ It holds the first-order `algorithm`, converted once to the element type of `x` 
 retraction, and the buffers the retraction works in.
 
 `algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref) or a member of the
-[`AdamFamily`](@ref). `linesearch` is a number, which is the fixed step size `Static(η)`, a
+[`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, and
+raises an `ArgumentError` for any other `x`. `dp` has the element type of `x`. `linesearch` is a number, which is the fixed step size `Static(η)`, a
 [`SimpleSolvers.Static`](@extref) or a [`DecayingStatic`](@ref); the default is
 [`default_step_size`](@ref)`(algorithm)`. `retraction` is an [`AbstractRetraction`](@ref) type,
 `Cayley()` or `Geodesic()`.
@@ -87,9 +88,8 @@ function TrainingOptimizer(x::OptimizerSolution{T}; algorithm::FirstOrderMethod 
         retraction_workspace(x))
 end
 
-_training_step_size(::Type{T}, η::Real) where {T} = Static(T(η))
-function _training_step_size(::Type{T}, ls::Union{Static, DecayingStatic}) where {T}
-    change_precision(T, ls)
+function _training_step_size(::Type{T}, ls::Union{Real, Static, DecayingStatic}) where {T}
+    _linesearch_method(T, ls)
 end
 function _training_step_size(::Type, ls)
     throw(ArgumentError("a training step takes a fixed step size (a number or a `Static`) or a " *
