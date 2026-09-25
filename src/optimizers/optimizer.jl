@@ -617,9 +617,9 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
-        # One objective evaluation per iterate, reused for the status and the trace entry: both read
-        # the same `x`, and with an observer installed a second call would also emit a second
-        # `:objective` pair for a step that only ever evaluated once.
+        # One objective evaluation per iterate, reused for the status, the trace entry and the state
+        # update: all three read the same `x`, and with an observer installed a second call would
+        # also emit a second `:objective` pair for a step that only ever evaluated once.
         f = observe_optimizer_phase(observer, :objective) do
             value(problem(opt), x)
         end
@@ -627,7 +627,7 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
         tracing && push!(_trace,
             OptimizerTraceEntry(iteration_number(state), f, g_residual(status)))
         meets_stopping_criteria(status, opt, state) && break
-        update!(state, opt, x)
+        update!(state, opt, x, f)
     end
 
     f = observe_optimizer_phase(observer, :objective) do
@@ -642,6 +642,12 @@ end
 
 function update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution)
     update!(state, gradient(opt), x)
+end
+
+# `solve!` hands the state update the objective value it has already evaluated at `x`. The states
+# that record it have their own method; every other state ignores it.
+function update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution, f)
+    update!(state, opt, x)
 end
 
 function initialize_state!(state::OptimizerState)
