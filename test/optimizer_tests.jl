@@ -80,7 +80,7 @@ end
         # makes `λ` mean what it is documented to mean — the merit does not contain the penalty, so
         # a searching `α` would be picked partly in order to undo the decay, and `αλ` would be
         # whatever the search settled on. See `default_linesearch`.
-        for method in (Adam(T), AdamWithEuclideanDecay(T))
+        for method in (Adam(), AdamWithEuclideanDecay())
             ls = default_linesearch(T, method)
             @test ls isa Static{T}
             @test ls.α == T(DEFAULT_LEARNING_RATE)
@@ -95,7 +95,7 @@ end
         # in SimpleSolvers 0.11: it needs a search that can *lengthen* a step, and until `expand` that
         # ruled `Backtracking` out for it entirely (47_115 iterations on the SVD problem, against 702
         # with the expansion phase). See `default_linesearch`.
-        for method in (GradientMethod(), MomentumMethod(T(0.1)), Newton(), BFGS(), DFP())
+        for method in (GradientMethod(), MomentumMethod(; α = T(0.1)), Newton(), BFGS(), DFP())
             ls = default_linesearch(T, method)
             @test ls isa Backtracking{T}
             # the property the default turns on, and the one a future SimpleSolvers bump could drop
@@ -112,8 +112,8 @@ end
     # `DEFAULT_LEARNING_RATE` is written as a `Float64` literal so that the `Float32` default is
     # `1f-3` and not `Float32(1.0e-3)` rounded through `Float64` — i.e. so that `Static`'s `α`
     # prints as `0.001` for both element types.
-    @test default_linesearch(Float32, Adam(Float32)).α === 1.0f-3
-    @test default_linesearch(Float32, AdamWithEuclideanDecay(Float32)).α === 1.0f-3
+    @test default_linesearch(Float32, Adam()).α === 1.0f-3
+    @test default_linesearch(Float32, AdamWithEuclideanDecay()).α === 1.0f-3
 
     # `Adam` no longer takes a learning rate, and `β₁`, `β₂` and `δ` are keyword arguments, so
     # an old positional call fails instead of quietly setting `β₁ = 0.01`.
@@ -143,9 +143,10 @@ Fsmooth(x) = sum(sqrt.(1 .+ x .^ 2))
         # a moving average that is deliberately allowed not to descend, so `AdamFamily` keeps
         # `Static` as its default (asserted above). It still has to *work* when one is passed
         # explicitly, which is what this covers -- and before this branch it threw as well.
-        for method in (GradientMethod(), MomentumMethod(T(0.1)), Adam(T)),
+        for method in (GradientMethod(), MomentumMethod(; α = T(0.1)), Adam()),
             _linesearch in linesearches,
             (name, obj, ∇obj!) in (("F", F, ∇F!), ("Fsmooth", Fsmooth, ∇Fsmooth!))
+
             @testset "$(method) & $(_linesearch) & $(T) & $(name)" begin
                 x = ones(T, 3)
                 state = OptimizerState(method, x)
@@ -194,7 +195,7 @@ end
         c₂ = 0.1),
         Backtracking(; expand = true), Static(0.1))
         x = [1.5, -0.8, 0.4]
-        method = MomentumMethod(α)
+        method = MomentumMethod(; α)
         state = OptimizerState(method, x)
         opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = method, linesearch = _linesearch)
         g = similar(x)
@@ -225,7 +226,7 @@ end
     # `DFP`. That was issue A8; `Backtracking` is in the list below for exactly that reason.
     ∇F(x) = 2 .* x
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), BFGS(), DFP()),
+    for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam(), Newton(), BFGS(), DFP()),
         _linesearch in (Backtracking(; expand = true), Bisection(), Quadratic(), BierlaireQuadratic(),
             StrongWolfe(; c₂ = 0.1))
 
@@ -255,7 +256,7 @@ end
     f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4 .+ 0.3 .* sin.(3x))
     ∇f!(g, x) = (g .= 2 .* x .+ 0.4 .* x .^ 3 .+ 0.9 .* cos.(3x))
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), BFGS(), DFP()),
+    for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam(), BFGS(), DFP()),
         _linesearch in (Static(0.1), Backtracking(; expand = true), Bisection(), Quadratic(),
             BierlaireQuadratic(), StrongWolfe(; c₂ = 0.1))
 
@@ -354,7 +355,7 @@ end
     ∇f(x) = 2 .* x .+ 0.4 .* x .^ 3
     ∇f!(g, x) = (g .= ∇f(x))
 
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64), Newton(), BFGS(), DFP()),
+    for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam(), Newton(), BFGS(), DFP()),
         _linesearch in (Static(0.1), Bisection(), Quadratic())
 
         x = [1.5, -0.8, 0.4]
@@ -380,7 +381,7 @@ end
 
     # the first iteration used to read uninitialized memory; a one-iteration solve is the smallest
     # case that reaches it
-    for method in (GradientMethod(), MomentumMethod(0.1), Adam(Float64))
+    for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam())
         x = ones(3)
         result = solve!(x, OptimizerState(method, x),
             Optimizer(

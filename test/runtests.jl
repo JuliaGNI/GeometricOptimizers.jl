@@ -137,6 +137,9 @@ begin
     @safetestset "Scalar-moment Adam           " include("scalar_moment_adam.jl")
 end
 begin
+    @safetestset "Training step                " include("training_optimizer.jl")
+end
+begin
     @safetestset "Flat Parameters              " include("flat_parameters.jl")
 end
 begin

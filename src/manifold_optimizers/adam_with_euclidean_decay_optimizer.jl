@@ -52,7 +52,7 @@ function _is_decayable(Y::Manifold)
           "horizontal representation.")
 end
 
-function OptimizerCache(method::AdamWithEuclideanDecay{T}, x::OptimizerSolution{T}) where {T}
+function OptimizerCache(method::AdamWithEuclideanDecay, x::OptimizerSolution)
     # A `λ` that cannot reach a single weight is almost certainly not what was meant, and it is
     # invisible otherwise: the run is `Adam`, it converges, and nothing anywhere says that the
     # decay was dropped. Warning here rather than at every step costs one check per optimizer.

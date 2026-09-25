@@ -1,4 +1,4 @@
-function OptimizerCache(::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
+function OptimizerCache(::MomentumMethod, x::OptimizerSolution)
     MomentumCache(_copy(x), _zero(x), _zero(x))
 end
 function Hessian(::MomentumMethod, ::OptimizerProblem, ::OptimizerSolution{T}) where {T}
@@ -123,36 +123,20 @@ MomentumState(x::OptimizerSolution) = MomentumState(x, _zero(x))
 
 OptimizerState(::MomentumMethod, x...) = MomentumState(x...)
 
-function update!(state::MomentumState{T}, gradient_array::GradientStorage{T},
-        direction::GradientStorage{T}, α::T,
-        x::OptimizerSolution{T}, f::Callable, retraction,
-        observer = NoStepObserver()) where {T}
-    _copyto!(previous_solution(state), solution(state))
-    _copyto!(previous_gradient(state), gradient(state))
-    state.f̄ = value(state)
-    _copyto!(solution(state), x)
-    _copyto!(gradient(state), gradient_array)
+function advance_state!(state::MomentumState{T}, cache::MomentumCache{T},
+        method::MomentumMethod{T}) where {T}
+    _copyto!(section(state), section(cache))
     # `p ← αp + ∇L`, i.e. the classic momentum recursion, which is what `update!(::MomentumCache,
-    # ...)` anticipates when it forms the direction. Note that the decay has to be applied to `p`
-    # and *not* to `∇L`: `p ← p + α∇L` (what this used to do) is an undamped accumulator that
-    # grows without bound for a constant gradient instead of saturating at `∇L/(1 - α)`. See
-    # issue #18.
-    _rmul!(momentum(state), α)
-    _add!(momentum(state), gradient_array)
-    state.f = observe_optimizer_phase(observer, :objective) do
-        f(x)
-    end
-
-    observe_optimizer_phase(observer, :retraction_application) do
-        update_section!(section(state), direction, retraction)
-    end
-
+    # ...)` anticipates when it forms the direction. The decay is applied to `p` and *not* to `∇L`:
+    # `p ← p + α∇L` is an undamped accumulator that grows without bound for a constant gradient
+    # instead of saturating at `∇L/(1 - α)`. See issue #18.
+    _rmul!(momentum(state), method.α)
+    _add!(momentum(state), gradient_array(cache))
     state
 end
 
 function update!(state::MomentumState, opt::Optimizer, x::OptimizerSolution)
-    update!(state, gradient_array(cache(opt)), direction(cache(opt)),
-        algorithm(opt).α, x, problem(opt).F, opt.retraction, step_observer(opt))
+    _update_first_order_state!(state, opt, x)
 end
 
 function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T},

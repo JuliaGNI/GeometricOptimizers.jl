@@ -61,6 +61,10 @@ function ensure_descent!(cache::OptimizerCache, method::OptimizerMethod, config:
     cache
 end
 
+# The `FirstOrderMethodWithState` methods are exempt: their direction is a moving average and is
+# allowed not to descend on an individual step.
+ensure_descent!(cache::OptimizerCache, ::FirstOrderMethodWithState, ::Options) = cache
+
 @doc raw"""
     linesearch_rejected(status)
     linesearch_rejected(status, αmax)
@@ -102,7 +106,7 @@ it resolves silently to the wrong page.)
     untouched, so the exemption did not permit a non-descent step, it took the *longest* step
     available along one.
 
-    Issue A7 is what that cost. On Rosenbrock from ``(-1.2, 1)`` with `MomentumMethod(0.1)` under the
+    Issue A7 is what that cost. On Rosenbrock from ``(-1.2, 1)`` with `MomentumMethod(; α = 0.1)` under the
     expanding `Backtracking` default, the solve reaches `f = 7.8e-5` by iteration 400 and then:
 
     | iteration | outcome | ``\alpha`` | ``f`` |

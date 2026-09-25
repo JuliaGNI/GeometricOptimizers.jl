@@ -106,7 +106,7 @@ convergence_tolerance(::Type{T}, ::Adam) where {T} = 10 * sqrt(eps(T))
 @testset "the stateful algorithms accept a bare Manifold too" begin
     for T in (Float64, Float32), retraction in (Geodesic(), Cayley())
 
-        for algorithm in (MomentumMethod(T(0.1)), Adam(T))
+        for algorithm in (MomentumMethod(; α = T(0.1)), Adam())
             # `Adam` gets a searching line search; see `convergence_tolerance` above. `Bisection`
             # rather than `Backtracking` because Adam's direction is not required to descend, and a
             # sufficient-decrease search reports that on every step where it does not.

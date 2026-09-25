@@ -238,6 +238,12 @@ include("manifold_optimizers/adam_optimizer.jl")
 include("manifold_optimizers/scalar_moment_adam_optimizer.jl")
 include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
 
+# The training step: one step per minibatch, with a gradient the caller computed and a fixed or
+# scheduled step size. `step_size` and `default_step_size` are how that step size is read and chosen.
+export TrainingOptimizer, optimization_step!
+public PrecomputedGradient, step_size, default_step_size
+include("optimizers/training_optimizer.jl")
+
 # Teach `NeuralNetworkParameters.load` how to rebuild each of these types from a file, which has no
 # prototype to rebuild against. Was the extension's `__init__` before the package became a hard
 # dependency; the registry lives in that package's main module, not its HDF5 extension, so this costs

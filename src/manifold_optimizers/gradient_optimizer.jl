@@ -142,28 +142,47 @@ GradientState(x::OptimizerSolution) = GradientState(x, _zero(x))
 
 OptimizerState(::GradientMethod, x...) = GradientState(x...)
 
-function update!(state::GradientState{T}, gradient_array::GradientStorage{T},
-        direction::GradientStorage{T}, x::OptimizerSolution{T},
-        f::Callable, retraction, observer = NoStepObserver()) where {T}
+@doc raw"""
+    advance_state!(state, cache, method)
+
+Carry `state` over to the step `cache` has just taken, without evaluating anything: the section
+becomes the cache's, and the method's own memory advances — the momentum ``p \gets \alpha{}p +
+\nabla{}L`` of [`MomentumMethod`](@ref), the moments of the [`AdamFamily`](@ref).
+
+This is the half of a state update that needs no objective, which is why it is the whole of the state
+update in [`optimization_step!`](@ref). [`solve!`](@ref)'s `update!(state, opt, x)` calls it after it
+has recorded the iterate, its gradient and its objective value.
+
+`section(cache)` is `update_section!(section(state), direction, retraction)` once the step is taken,
+so it is copied and not retracted a second time; a retraction on a manifold is ``O(N^3)`` where the
+copy is ``O(N^2)``.
+"""
+function advance_state!(state::GradientState, cache::GradientCache, ::GradientMethod)
+    _copyto!(section(state), section(cache))
+    state
+end
+
+# The state update `solve!` makes after each step, shared by the four first-order states: record the
+# iterate, its gradient and its objective value, then advance the state as a training step does.
+function _update_first_order_state!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution)
+    observer = step_observer(opt)
     _copyto!(previous_solution(state), solution(state))
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
     _copyto!(solution(state), x)
-    _copyto!(gradient(state), gradient_array)
+    _copyto!(gradient(state), gradient_array(cache(opt)))
     state.f = observe_optimizer_phase(observer, :objective) do
-        f(x)
+        problem(opt).F(x)
     end
-
     observe_optimizer_phase(observer, :retraction_application) do
-        update_section!(section(state), direction, retraction)
+        advance_state!(state, cache(opt), algorithm(opt))
     end
 
     state
 end
 
 function update!(state::GradientState, opt::Optimizer, x::OptimizerSolution)
-    update!(state, gradient_array(cache(opt)), direction(cache(opt)),
-        x, problem(opt).F, opt.retraction, step_observer(opt))
+    _update_first_order_state!(state, opt, x)
 end
 
 # function compute_direction!(opt::Optimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
@@ -171,7 +190,7 @@ end
 # end
 
 function update!(cache::GradientCache{T}, state::GradientState{T},
-        gradient::Gradient{T}, ::Hessian{T}, x::OptimizerSolution{T}) where {T}
+        gradient::Gradient{T}, ::GradientMethod, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below: it compares `solution(cache)` against `x` and
     # `section(cache)` against `section(state)`, which those overwrite
     store_gradient!(cache, state, gradient, x)

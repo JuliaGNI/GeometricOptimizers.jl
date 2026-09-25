@@ -1,4 +1,4 @@
-function OptimizerCache(::Adam{T}, x::OptimizerSolution{T}) where {T}
+function OptimizerCache(::Adam, x::OptimizerSolution)
     AdamCache(_copy(x), _zero(x), _zero(x))
 end
 Hessian(::Adam, ::OptimizerProblem, ::OptimizerSolution{T}) where {T} = NoHessian{T}()
@@ -153,33 +153,17 @@ AdamState(x::OptimizerSolution) = AdamState(x, _zero(x))
 
 OptimizerState(::Adam, x...) = AdamState(x...)
 
-function update!(state::AdamState{T}, gradient_array::GradientStorage{T},
-        direction::GradientStorage{T}, _first_moment::GradientStorage{T},
-        _second_moment::GradientStorage{T},
-        x::OptimizerSolution{T}, f::Callable, retraction,
-        observer = NoStepObserver()) where {T}
-    _copyto!(previous_solution(state), solution(state))
-    _copyto!(previous_gradient(state), gradient(state))
-    state.f̄ = value(state)
-    _copyto!(solution(state), x)
-    _copyto!(gradient(state), gradient_array)
-    _copyto!(first_moment(state), _first_moment)
-    _copyto!(second_moment(state), _second_moment)
-    state.f = observe_optimizer_phase(observer, :objective) do
-        f(x)
-    end
-
-    observe_optimizer_phase(observer, :retraction_application) do
-        update_section!(section(state), direction, retraction)
-    end
-
+# `AdamWithEuclideanDecay` shares the cache and the state, and its moments are `Adam`'s.
+function advance_state!(
+        state::AdamState, cache::AdamCache, ::Union{Adam, AdamWithEuclideanDecay})
+    _copyto!(section(state), section(cache))
+    _copyto!(first_moment(state), first_moment(cache))
+    _copyto!(second_moment(state), second_moment(cache))
     state
 end
 
 function update!(state::AdamState, opt::Optimizer, x::OptimizerSolution)
-    update!(
-        state, gradient_array(cache(opt)), direction(cache(opt)), first_moment(opt.cache),
-        second_moment(opt.cache), x, problem(opt).F, opt.retraction, step_observer(opt))
+    _update_first_order_state!(state, opt, x)
 end
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},

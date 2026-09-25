@@ -37,10 +37,11 @@ function paper_W(Y::AbstractMatrix, Z::AbstractMatrix)
 end
 
 @testset "ScalarMomentAdam constructor and scope" begin
-    method = ScalarMomentAdam(Float32; β₁ = 0.8, β₂ = 0.95, δ = 1.0f-6)
-    @test method.β₁ isa Float32
-    @test method.β₂ isa Float32
-    @test method.δ isa Float32
+    method = ScalarMomentAdam(; β₁ = 0.8, β₂ = 0.95, δ = 1.0e-6)
+    method₃₂ = GeometricOptimizers.change_precision(Float32, method)
+    @test method₃₂.β₁ === 0.8f0
+    @test method₃₂.β₂ === 0.95f0
+    @test method₃₂.δ === 1.0f-6
     @test_throws ArgumentError ScalarMomentAdam(; β₁ = 1.0)
     @test_throws ArgumentError ScalarMomentAdam(; β₂ = -0.1)
     @test_throws ArgumentError ScalarMomentAdam(; δ = -1.0)
@@ -66,49 +67,25 @@ end
     @test iszero(second_moment(state))
 end
 
-# `OptimizerCache(::ScalarMomentAdam, x)` used to leave its second argument untyped, which made it
-# *ambiguous* with the fallback `OptimizerCache(::OptimizerMethod, ::OptimizerSolution{T})` in
-# `optimizers/newton_optimizer/newton_optimizer_cache.jl`: neither is more specific, so every one of
-# the four cases below raised a `MethodError` about an ambiguity rather than the `ArgumentError` the
-# docstring, the manual and the changelog promise. `OptimizerState` was unaffected -- its fallback is
-# a `Vararg` method and so *is* less specific -- which is why testing only that one missed this.
+# The scope check is an `ArgumentError` on every path a caller reaches it by, and not a `MethodError`.
 @testset "ScalarMomentAdam rejects unsupported parameters through Optimizer" begin
     f(x) = sum(abs2, x)
     for x in (rand(3),
         NetworkParameters((Y = rand(StiefelManifold, 4, 2), z = rand(3))),
-        rand(GrassmannManifold, 4, 2),
-        rand(StiefelManifold{Float32}, 4, 2))
+        rand(GrassmannManifold, 4, 2))
         @test_throws ArgumentError Optimizer(x, f; algorithm = ScalarMomentAdam())
     end
-    # ... and the element-type mismatch says so, rather than claiming the manifold is unsupported
-    err = try
-        Optimizer(rand(StiefelManifold{Float32}, 4, 2), f; algorithm = ScalarMomentAdam())
-    catch e
-        e
-    end
-    @test occursin("ScalarMomentAdam(Float32)", err.msg)
 
-    # The same check on the `OptimizerState` path, which the changelog promises and which used to be
-    # missing: `OptimizerState(::ScalarMomentAdam, ::StiefelManifold)` was untyped in `T`, so a
-    # `Float64` method handed `Float32` parameters returned a `ScalarMomentAdamState{Float32}` rather
-    # than saying that the method has to be constructed with the parameters' element type.
+    # A `Float32` Stiefel manifold is in scope: the method carries no element type, and `Optimizer`
+    # converts it. The state takes the element type of the parameters on both arities.
     Y32 = rand(StiefelManifold{Float32}, 4, 2)
+    @test Optimizer(Y32, f; algorithm = ScalarMomentAdam()).algorithm isa
+          ScalarMomentAdam{Float32}
     Ḡ32 = global_rep(GlobalSection(Y32), rgrad(Y32, randn(Float32, 4, 2)))
-    for args in ((Y32,), (Y32, Ḡ32))
-        err = try
-            OptimizerState(ScalarMomentAdam(), args...)
-        catch e
-            e
-        end
-        @test err isa ArgumentError
-        @test occursin("ScalarMomentAdam(Float32)", err.msg)
-    end
-    # and the matching element type still works, on both arities
-    @test OptimizerState(ScalarMomentAdam(Float32), Y32) isa ScalarMomentAdamState{Float32}
-    @test OptimizerState(ScalarMomentAdam(Float32), Y32, Ḡ32) isa
-          ScalarMomentAdamState{Float32}
-    # the scope message, not the element-type one, when `x` is not a Stiefel manifold at all -- on the
-    # gradient-supplying arity as well
+    @test OptimizerState(ScalarMomentAdam(), Y32) isa ScalarMomentAdamState{Float32}
+    @test OptimizerState(ScalarMomentAdam(), Y32, Ḡ32) isa ScalarMomentAdamState{Float32}
+    # the scope message when `x` is not a Stiefel manifold at all, on the gradient-supplying arity
+    # as well
     @test_throws ArgumentError OptimizerState(ScalarMomentAdam(), rand(3), rand(3))
 end
 
@@ -119,12 +96,12 @@ end
 # optimizer on `ones(T, 3)`, which this method rejects.
 @testset "ScalarMomentAdam keeps AdamFamily's fixed Static" begin
     for T in (Float64, Float32)
-        ls = default_linesearch(T, ScalarMomentAdam(T))
+        ls = default_linesearch(T, ScalarMomentAdam())
         @test ls isa Static{T}
         @test ls.α == T(DEFAULT_LEARNING_RATE)
 
         Y = rand(StiefelManifold{T}, 5, 2)
-        opt = Optimizer(Y, Ỹ -> sum(abs2, Ỹ.A .- 1); algorithm = ScalarMomentAdam(T))
+        opt = Optimizer(Y, Ỹ -> sum(abs2, Ỹ.A .- 1); algorithm = ScalarMomentAdam())
         @test linesearch(opt).method isa Static{T}
         @test linesearch(opt).method.α == T(DEFAULT_LEARNING_RATE)
     end
@@ -152,7 +129,8 @@ end
         Y = rand(StiefelManifold{T}, 5, 2)
         C = T[1 2; -3 4; 2 -1; 1 0; -2 3]
         β₁, β₂, δ = T(0.5), T(0.25), T(0.1)
-        method = ScalarMomentAdam(T; β₁, β₂, δ)
+        # converted as `Optimizer` converts it, because `update!` is called with it directly below
+        method = GeometricOptimizers.change_precision(T, ScalarMomentAdam(; β₁, β₂, δ))
         opt = Optimizer(Y, linear_stiefel_objective(C); algorithm = method,
             linesearch = Static(T(0.01)), retraction = Cayley())
         state = OptimizerState(method, Y)
@@ -338,7 +316,7 @@ end
         for retraction in (Cayley(), Geodesic())
             Y = rand(StiefelManifold{T}, 5, 2)
             C = T[1 2; -3 4; 2 -1; 1 0; -2 3]
-            method = ScalarMomentAdam(T)
+            method = ScalarMomentAdam()
             opt = Optimizer(Y, linear_stiefel_objective(C); algorithm = method,
                 linesearch = Static(T(0.01)), retraction = retraction)
             state = OptimizerState(method, Y)

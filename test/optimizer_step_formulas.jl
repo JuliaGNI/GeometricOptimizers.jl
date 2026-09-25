@@ -46,7 +46,7 @@ end
     steps = 10
 
     x = zeros(3)
-    algorithm = MomentumMethod(α)
+    algorithm = MomentumMethod(; α)
     optimizer = Optimizer(x, objective; algorithm = algorithm, linesearch = Static(η))
     state = MomentumState(x)
 

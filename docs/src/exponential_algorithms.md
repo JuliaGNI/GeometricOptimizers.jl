@@ -1192,7 +1192,7 @@ A retraction is passed to [`Optimizer`](@ref) as a keyword argument, and the alg
 it:
 
 ```julia
-optimizer = Optimizer(ps, L; algorithm  = Adam(Float32),
+optimizer = Optimizer(ps, L; algorithm  = Adam(),
                              retraction = Geodesic(ProjectedSkew()))
 ```
 

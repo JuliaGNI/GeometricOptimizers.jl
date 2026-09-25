@@ -180,6 +180,7 @@ makedocs(;
             "Exponential Algorithms" => "exponential_algorithms.md",
             "Parallel Transport" => "parallel_transport.md",
             "Optimizer Methods" => "optimizer_methods.md",
+            "The Training Step" => "training_step.md",
             "Observing Optimizer Phases" => "observers.md"
         ],
         "Linesearch" => [

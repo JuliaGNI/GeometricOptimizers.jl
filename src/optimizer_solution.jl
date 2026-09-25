@@ -4,7 +4,7 @@
 # they are ruinously expensive, because they *couple* the parameters.
 #
 # Inference cannot solve `NamedTuple{S,<:Tuple{Vararg{AbstractArray{T}}}}` down to a concrete
-# `NamedTuple`, so `OptimizerCache(Adam(Float64), ps)` for a `NamedTuple` of parameters infers to a
+# `NamedTuple`, so `OptimizerCache(Adam(), ps)` for a `NamedTuple` of parameters infers to a
 # `UnionAll` whatever these structs look like — the outer constructors' own signatures are written in
 # the same aliases and are enough to cause that on their own. Removing the struct bounds does not
 # make the inferred type concrete and is not meant to.

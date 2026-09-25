@@ -247,9 +247,9 @@ const NESTED_BLOCKS, NESTED_LEAVES = 16, 24     # 384 leaves, ≤24 children at 
 function cache_construction(name, ps)
     println(name)
     row("OptimizerCache(Adam)", _NOT_A_SOLUTION,
-        x -> GeometricOptimizers.OptimizerCache(Adam(T), x), ps)
+        x -> GeometricOptimizers.OptimizerCache(Adam(), x), ps)
     row("OptimizerState(Adam)", _NOT_A_SOLUTION,
-        x -> GeometricOptimizers.OptimizerState(Adam(T), x), ps)
+        x -> GeometricOptimizers.OptimizerState(Adam(), x), ps)
     row("OptimizerCache(BFGS)", _NOT_A_SOLUTION,
         x -> GeometricOptimizers.OptimizerCache(BFGS(), x), ps)
     row("OptimizerState(BFGS)", _NOT_A_SOLUTION,

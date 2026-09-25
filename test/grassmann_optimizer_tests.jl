@@ -98,7 +98,7 @@ manifold_tolerance(::Type{T}) where {T} = 1000 * eps(T)
 # is 4.6e-8 (`Float64`) and 2.6e-3 (`Float32`); the first-order methods are the loose ones.
 subspace_tolerance(::Type{T}) where {T} = 100 * sqrt(eps(T))
 
-const METHODS = (GradientMethod(), MomentumMethod(0.1), Adam(Float64), BFGS(), DFP())
+const METHODS = (GradientMethod(), MomentumMethod(; α = 0.1), Adam(), BFGS(), DFP())
 
 @testset "a bare GrassmannManifold can be optimized" begin
     for (N, n) in ((3, 1), (5, 2)), retraction in (Geodesic(), Cayley()),
@@ -119,7 +119,7 @@ end
 @testset "…in Float32 as well as Float64" begin
     for (N, n) in ((3, 1), (5, 2)), retraction in (Geodesic(), Cayley())
 
-        for algorithm in (GradientMethod(), MomentumMethod(0.1f0), Adam(Float32), BFGS(), DFP())
+        for algorithm in (GradientMethod(), MomentumMethod(; α = 0.1f0), Adam(), BFGS(), DFP())
             x, x₀, f = optimize(Float32, N, n, algorithm; retraction = retraction,
                 linesearch = linesearch_for(Float32, algorithm))
 

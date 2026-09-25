@@ -102,11 +102,7 @@ function optimize(::Type{T}, algorithm; steps = 20, η = 0.1,
     ps, checks, losses
 end
 
-# Note that `Adam` has to be constructed with the element type of the parameters: unlike
-# `MomentumMethod`, which the `Optimizer` converts, an `Adam{Float64}` does not dispatch to
-# `OptimizerCache(::Adam{T}, ::OptimizerSolution{T})` for `Float32` parameters. That mismatch
-# now errors with a message that says so, see the testset at the bottom of this file.
-algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(T(0.1)), Adam(T))
+algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(; α = T(0.1)), Adam())
 retractions() = (Geodesic(), Cayley())
 
 # `NetworkParameters{T}` derives its `T` by *promotion* over the leaves, so a set mixing a
@@ -285,18 +281,12 @@ end
     end
 end
 
-# The one thing about `Adam` that a user has to get right is that it carries its own
-# parameters, so it has to be constructed with the element type of the parameters (see the
-# comment above `algorithms`). `MomentumMethod` is converted by the `Optimizer`, `Adam` is not,
-# and without the check below the mismatch surfaces as `MethodError: no method matching
-# OptimizerCache(::Adam{Float64}, ::NetworkParameters{Float32,...})` — which says what did not match
-# but not what to do about it.
-@testset "an Adam of the wrong element type says what is wrong" begin
+# `Adam` carries no element type of the parameters: the `Optimizer` converts it to theirs.
+@testset "Adam() optimizes a Float32 parameter set" begin
     ps = initial_parameters(Float32)
-    @test_throws "Adam(Float32)" OptimizerCache(Adam(Float64), ps)
-    @test_throws ErrorException Optimizer(ps, test_problem(Float32)[1]; algorithm = Adam(Float64))
-    # `Adam(Float32)` is what the message asks for, and it works
-    @test OptimizerCache(Adam(Float32), ps) isa GeometricOptimizers.AdamCache{Float32}
+    opt = Optimizer(ps, test_problem(Float32)[1]; algorithm = Adam())
+    @test opt.algorithm isa Adam{Float32}
+    @test OptimizerCache(Adam(), ps) isa GeometricOptimizers.AdamCache{Float32}
 end
 
 # This guards a property that no other test can see, because the bug it protects against did not
@@ -353,8 +343,8 @@ end
 
     # ... and the constructors still produce exactly the types they always did.
     ps = initial_parameters(Float64)
-    @test OptimizerCache(Adam(Float64), ps) isa GeometricOptimizers.AdamCache{Float64}
-    @test OptimizerState(Adam(Float64), ps) isa AdamState{Float64}
+    @test OptimizerCache(Adam(), ps) isa GeometricOptimizers.AdamCache{Float64}
+    @test OptimizerState(Adam(), ps) isa AdamState{Float64}
     @test OptimizerCache(BFGS(), ps) isa GeometricOptimizers.BFGSCache{Float64}
     @test OptimizerState(BFGS(), ps) isa BFGSState{Float64}
     @test OptimizerCache(DFP(), ps) isa GeometricOptimizers.DFPCache{Float64}
@@ -374,8 +364,8 @@ end
         W = randn(Random.Xoshiro(5678), n, m), b = zeros(N))
 
     @test !(bare isa OptimizerSolution)
-    @test_throws MethodError OptimizerCache(Adam(Float64), bare)
-    @test_throws MethodError OptimizerState(Adam(Float64), bare)
+    @test_throws MethodError OptimizerCache(Adam(), bare)
+    @test_throws MethodError OptimizerState(Adam(), bare)
     @test_throws MethodError Optimizer(bare, test_problem(Float64)[1]; algorithm = GradientMethod())
 
     # ... and the wrap is enough, without touching the objective, the gradient or the leaves
