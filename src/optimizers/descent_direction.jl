@@ -20,7 +20,7 @@ comparison is `false` — is replaced by `rhs`, which always descends. The subst
 !!! info "Only the (quasi-)Newton methods are safeguarded"
     [`Adam`](@ref) and [`MomentumMethod`](@ref) build their direction from a moving average, which is
     *allowed* not to descend on an individual step — that is what the momentum term is for — so
-    [`solver_step!`](@ref) does not call this for them.
+    their method, on [`FirstOrderMethodWithState`](@ref), leaves the direction as it is.
 
 !!! info "Why this is needed now"
     Up to SimpleSolvers 0.8 the `Bisection` and `Quadratic` line searches could return a *negative*
