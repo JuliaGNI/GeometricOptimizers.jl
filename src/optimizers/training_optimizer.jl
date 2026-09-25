@@ -108,6 +108,9 @@ shape as `x`. See [`TrainingOptimizer`](@ref) for why this is not [`solve!`](@re
 """
 function optimization_step!(x::OptimizerSolution{T}, opt::TrainingOptimizer,
         dp::Union{AbstractArray{T}, NetworkParameters{T}}) where {T}
+    # before the count moves, so that a refused step leaves the state as it was
+    _same_shape(x, dp) || throw(DimensionMismatch(
+        "the gradient does not have the shape of the parameters it is a gradient of"))
     increase_iteration_number!(opt.state)
     α = step_size(opt.linesearch, iteration_number(opt.state))
     update!(opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, x)
@@ -119,6 +122,12 @@ function optimization_step!(x::OptimizerSolution{T}, opt::TrainingOptimizer,
     advance_state!(opt.state, opt.cache, opt.method)
     x
 end
+
+_same_shape(x::AbstractArray, dp::AbstractArray) = size(x) == size(dp)
+function _same_shape(x::NetworkParameters, dp::NetworkParameters)
+    foldparameters((same, xᵢ, dpᵢ) -> same && size(xᵢ) == size(dpᵢ), true, x, dp)
+end
+_same_shape(_, _) = false
 
 # The element-type check is dispatch, so the step above pays nothing for it.
 function optimization_step!(x::OptimizerSolution, ::TrainingOptimizer, dp)

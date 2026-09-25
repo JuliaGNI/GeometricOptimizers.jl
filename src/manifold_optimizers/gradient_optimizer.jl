@@ -162,29 +162,6 @@ function advance_state!(state::GradientState, cache::GradientCache, ::GradientMe
     state
 end
 
-# The state update `solve!` makes after each step, shared by the four first-order states: record the
-# iterate, its gradient and its objective value, then advance the state as a training step does.
-function _update_first_order_state!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution)
-    observer = step_observer(opt)
-    _copyto!(previous_solution(state), solution(state))
-    _copyto!(previous_gradient(state), gradient(state))
-    state.f̄ = value(state)
-    _copyto!(solution(state), x)
-    _copyto!(gradient(state), gradient_array(cache(opt)))
-    state.f = observe_optimizer_phase(observer, :objective) do
-        problem(opt).F(x)
-    end
-    observe_optimizer_phase(observer, :retraction_application) do
-        advance_state!(state, cache(opt), algorithm(opt))
-    end
-
-    state
-end
-
-function update!(state::GradientState, opt::Optimizer, x::OptimizerSolution)
-    _update_first_order_state!(state, opt, x)
-end
-
 # function compute_direction!(opt::Optimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
 #     direction(opt) .= rhs(opt)
 # end

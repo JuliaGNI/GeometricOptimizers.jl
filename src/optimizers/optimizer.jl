@@ -180,8 +180,8 @@ function Optimizer(algorithm::OptimizerMethod, problem::OptimizerProblem{T},
         options_kwargs...) where {T}
     # `_riemannian_gradient` here as in the two methods below, so that every route into the inner
     # constructor projects; see the note there.
-    Optimizer(
-        algorithm, problem, hessian, cache, linesearch, Options(T; options_kwargs...),
+    Optimizer(change_precision(T, algorithm), problem, hessian, cache,
+        _linesearch_method(T, linesearch), Options(T; options_kwargs...),
         _riemannian_gradient(gradient, cache.x), retraction, step_ceiling, observer)
 end
 
@@ -238,6 +238,10 @@ function _linesearch_method(::Type{T}, η::Real) where {T}
     isfinite(η) && η > 0 ||
         throw(ArgumentError("a fixed step size is finite and positive, not $(η)"))
     Static(T(η))
+end
+# `true` is a `Real` that is `1`, and never meant as a step size
+function _linesearch_method(::Type, η::Bool)
+    throw(ArgumentError("a step size is a number, not $(η)"))
 end
 function _linesearch_method(::Type{T}, ls::Union{Static, DecayingStatic}) where {T}
     change_precision(T, ls)

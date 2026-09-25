@@ -135,10 +135,6 @@ function advance_state!(state::MomentumState{T}, cache::MomentumCache{T},
     state
 end
 
-function update!(state::MomentumState, opt::Optimizer, x::OptimizerSolution)
-    _update_first_order_state!(state, opt, x)
-end
-
 function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T},
         method::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`

@@ -162,10 +162,6 @@ function advance_state!(
     state
 end
 
-function update!(state::AdamState, opt::Optimizer, x::OptimizerSolution)
-    _update_first_order_state!(state, opt, x)
-end
-
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
         β₁::T, β₂::T, δ::T, t::Integer, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`

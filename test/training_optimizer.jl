@@ -5,7 +5,7 @@ using GeometricOptimizers
 using GeometricOptimizers: section, solution, iteration_number, step_size,
                            default_step_size,
                            PrecomputedGradient, DecayingStatic, AdamOptimizerWithDecay
-using NeuralNetworkParameters: flatten, mapparameters
+using NeuralNetworkParameters: flatten, mapparameters, params
 using LinearAlgebra: norm
 using Random: Random
 using Test
@@ -30,14 +30,23 @@ function _parameters(::Type{T}, shape) where {T}
         NetworkParameters((
             L1 = (weight = rand(Random.Xoshiro(2), StiefelManifold{T}, 5, 2),),
             L2 = (W = T[1 2; 3 4], b = T[1, -1]),
-            L3 = (S = SymmetricMatrix(T[1, 2, 3], 2),)))
+            L3 = (S = SymmetricMatrix(T[1, 2, 3], 2), K = SkewSymMatrix(T[1, -2, 3], 3),
+                Lo = StrictlyLowerTriangular(T[2, 1, -1], 3),
+                Up = StrictlyUpperTriangular(T[-3, 1, 2], 3))))
     end
+end
+const VectorStorage = Union{
+    SymmetricMatrix, SkewSymMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular}
+function _storage_gradient(x::VectorStorage)
+    typeof(x).name.wrapper(
+        eltype(x).(collect(1:length(x.S))) ./ 8, x.n)
 end
 _gradient(x::AbstractVector{T}) where {T} = T[0.5, -1, 2]
 _gradient(x::StiefelManifold{T}) where {T} = T.(reshape(1:10, 5, 2)) ./ 10
 _gradient(x::NetworkParameters) = mapparameters(_leaf_gradient, x)
 _leaf_gradient(x::StiefelManifold{T}) where {T} = T.(reshape(1:10, 5, 2)) ./ 10
 _leaf_gradient(x::SymmetricMatrix{T}) where {T} = SymmetricMatrix(T[1, -1, 2] ./ 4, 2)
+_leaf_gradient(x::VectorStorage) = _storage_gradient(x)
 _leaf_gradient(x::AbstractArray{T}) where {T} = fill(T(1 // 4), size(x))
 
 const SHAPES = (:vector, :stiefel, :network)
@@ -248,9 +257,62 @@ end
     end
 end
 
+@testset "AdamWithEuclideanDecay shrinks every structured leaf by 1 - ηλ" begin
+    # The decay is decoupled: the step is Adam's plus `-ηλx`, and the structured matrices are
+    # linear in their storage, so on the storage it is Adam's step minus `ηλ` times the storage.
+    for T in PRECISIONS
+        leaves() = NetworkParameters((L = (
+            S = SymmetricMatrix(T[1, 2, 3, 4, 5, 6], 3), K = SkewSymMatrix(T[1, -2, 3], 3),
+            Lo = StrictlyLowerTriangular(T[2, 1, -1], 3),
+            Up = StrictlyUpperTriangular(T[-3, 1, 2], 3)),))
+        η, λ = T(1 // 10), T(1 // 4)
+        x₀, x_adam, x_awd = leaves(), leaves(), leaves()
+        dp = mapparameters(_storage_gradient, x₀)
+        optimization_step!(
+            x_adam, TrainingOptimizer(x_adam; algorithm = Adam(),
+                linesearch = η), dp)
+        optimization_step!(x_awd,
+            TrainingOptimizer(x_awd; algorithm = AdamWithEuclideanDecay(; λ), linesearch = η),
+            dp)
+        for k in (:S, :K, :Lo, :Up)
+            a, w, s = x_adam.L[k].S, x_awd.L[k].S, x₀.L[k].S
+            @test eltype(w) === T
+            @test norm(w - (a - η * λ * s)) ≤ 4eps(T) * norm(s)
+        end
+    end
+end
+
+@testset "the positional Optimizer converts the method" begin
+    x = Float32[1, 2, 3]
+    problem = GeometricOptimizers.OptimizerProblem(x -> sum(abs2, x), x)
+    method = Adam()
+    opt = Optimizer(method, problem, GeometricOptimizers.Hessian(method, problem, x),
+        GeometricOptimizers.OptimizerCache(method, x), Static(0.01f0); max_iterations = 3,
+        warn_iterations = 0)
+    @test opt.algorithm isa Adam{Float32}
+    @test minimum(solve!(x, OptimizerState(method, x), opt)) isa Float32
+end
+
+@testset "a gradient of the wrong shape is refused before the step counts" begin
+    for T in PRECISIONS
+        x = _parameters(T, :vector)
+        opt = TrainingOptimizer(x; algorithm = Adam())
+        @test_throws DimensionMismatch optimization_step!(x, opt, T[1, 2])
+        @test iteration_number(opt.state) == 0
+        ps = _parameters(T, :network)
+        opt = TrainingOptimizer(ps; algorithm = Adam())
+        dp = NetworkParameters((
+            L1 = (weight = ones(T, 4, 2),), L2 = (W = ones(T, 2, 2),
+                b = ones(T, 2)),
+            L3 = params(_gradient(ps)).L3))
+        @test_throws DimensionMismatch optimization_step!(ps, opt, dp)
+        @test iteration_number(opt.state) == 0
+    end
+end
+
 @testset "a step size is finite and positive" begin
     x = _parameters(Float64, :vector)
-    for η in (NaN, Inf, -1, 0)
+    for η in (NaN, Inf, -1, 0, true)
         @test_throws ArgumentError TrainingOptimizer(x; algorithm = Adam(), linesearch = η)
         @test_throws ArgumentError Optimizer(x, x -> sum(abs2, x); linesearch = η)
     end

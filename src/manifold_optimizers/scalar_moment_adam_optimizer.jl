@@ -180,8 +180,25 @@ function advance_state!(
     state
 end
 
-function update!(state::ScalarMomentAdamState, opt::Optimizer, x::OptimizerSolution)
-    _update_first_order_state!(state, opt, x)
+# The state update `solve!` makes after each step, one for the four first-order states: record the
+# iterate, its gradient and its objective value, then advance the state as a training step does.
+function update!(
+        state::Union{GradientState, MomentumState, AdamState, ScalarMomentAdamState},
+        opt::Optimizer, x::OptimizerSolution)
+    observer = step_observer(opt)
+    _copyto!(previous_solution(state), solution(state))
+    _copyto!(previous_gradient(state), gradient(state))
+    state.f̄ = value(state)
+    _copyto!(solution(state), x)
+    _copyto!(gradient(state), gradient_array(cache(opt)))
+    state.f = observe_optimizer_phase(observer, :objective) do
+        problem(opt).F(x)
+    end
+    observe_optimizer_phase(observer, :retraction_application) do
+        advance_state!(state, cache(opt), algorithm(opt))
+    end
+
+    state
 end
 
 """

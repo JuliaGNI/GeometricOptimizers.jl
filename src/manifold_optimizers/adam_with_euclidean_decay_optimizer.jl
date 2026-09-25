@@ -94,6 +94,14 @@ function _weight_decay!(δ::AbstractArray{T}, x::AbstractArray{T}, λ::T) where 
     δ
 end
 
+# The structured matrices are linear in their storage and define no `setindex!` for every entry, so
+# the decay acts on the storage: `S ← S - λS` is `x ← x - λx` for each of them.
+function _weight_decay!(δ::VectorStorageMatrix{T}, x::VectorStorageMatrix{T}, λ::T) where {T}
+    @assert axes(δ) == axes(x)
+    δ.S .-= λ .* x.S
+    δ
+end
+
 function _weight_decay!(δ::AbstractLieAlgHorMatrix{T}, x::Manifold{T}, ::T) where {T}
     # constant-folded to nothing for the manifolds that define `_is_decayable`, and the error of
     # `_is_decayable(::Manifold)` for one that does not
