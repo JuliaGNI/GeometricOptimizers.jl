@@ -141,45 +141,14 @@ Base.:*(α::Real, A::GrassmannLieAlgHorMatrix) = A*α
 # `*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)` be written once for the two lifts.
 _hor_top_rows(B::GrassmannLieAlgHorMatrix, C₁, C₂) = -(transpose(B.B) * C₂)
 
-function Base.zeros(::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    GrassmannLieAlgHorMatrix(
-        zeros(T, N-n, n),
-        N,
-        n
-    )
-end
-
-function Base.zeros(::Type{GrassmannLieAlgHorMatrix}, N::Integer, n::Integer)
-    GrassmannLieAlgHorMatrix(
-        zeros(N-n, n),
-        N,
-        n
-    )
-end
-
 function Base.zeros(backend::KernelAbstractions.Backend,
         ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    _check_supported_eltype(backend, T)
-    GrassmannLieAlgHorMatrix(
-        KernelAbstractions.zeros(backend, T, N-n, n),
-        N,
-        n
-    )
+    GrassmannLieAlgHorMatrix(_zeros(backend, T, N-n, n), N, n)
 end
 
-# The backend-taking `rand` mirrors `StiefelLieAlgHorMatrix`'s, as the rest of the pair's methods
-# do: a Grassmann lift is drawn on a device by naming one exactly as it is zeroed on one.
-function Base.rand(rng::Random.AbstractRNG, backend::KernelAbstractions.Backend,
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    _check_supported_eltype(backend, T)
-    B = KernelAbstractions.allocate(backend, T, N - n, n)
-    rand!(rng, B)
-    GrassmannLieAlgHorMatrix(B, N, n)
-end
-
-function Base.rand(backend::KernelAbstractions.Backend,
-        type::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    rand(Random.default_rng(), backend, type, N, n)
+    GrassmannLieAlgHorMatrix(_rand(rng, backend, T, N - n, n), N, n)
 end
 
 # `typeof(A)` is the two-parameter `GrassmannLieAlgHorMatrix{T, AT}`, which `zeros` has no
@@ -192,23 +161,6 @@ function Base.similar(A::GrassmannLieAlgHorMatrix, dims::Union{
 end
 function Base.similar(A::GrassmannLieAlgHorMatrix)
     zeros(KernelAbstractions.get_backend(A), GrassmannLieAlgHorMatrix{eltype(A)}, A.N, A.n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{GrassmannLieAlgHorMatrix{T}},
-        N::Integer, n::Integer) where {T}
-    GrassmannLieAlgHorMatrix(rand(rng, T, N-n, n), N, n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, ::Type{GrassmannLieAlgHorMatrix}, N::Integer, n::Integer)
-    GrassmannLieAlgHorMatrix(rand(rng, N-n, n), N, n)
-end
-
-function Base.rand(::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    rand(Random.default_rng(), GrassmannLieAlgHorMatrix{T}, N, n)
-end
-
-function Base.rand(::Type{GrassmannLieAlgHorMatrix}, N::Integer, n::Integer)
-    rand(Random.default_rng(), GrassmannLieAlgHorMatrix, N, n)
 end
 
 function scalar_add(A::GrassmannLieAlgHorMatrix, δ::Real)

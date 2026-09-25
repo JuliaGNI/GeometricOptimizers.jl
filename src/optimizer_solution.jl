@@ -38,7 +38,7 @@
 # methods.
 #
 # Every optimizer cache and state leaves its parameters unbounded, including the ones whose bounds
-# were never the expensive kind (`NewtonOptimizerCache`, `NewtonOptimizerState`). The family stays
+# were never the expensive kind (`NewtonOptimizerCache`, `NewtonState`). The family stays
 # uniform, and nobody has to work out per struct whether a given bound happens to be one that costs.
 # `test/flat_parameters.jl` pins this.
 

@@ -14,6 +14,9 @@ begin
     @safetestset "Exports                      " include("exports.jl")
 end
 begin
+    @safetestset "Public surface               " include("public_surface.jl")
+end
+begin
     @safetestset "Aqua: piracy and compat      " include("aqua_tests.jl")
 end
 begin

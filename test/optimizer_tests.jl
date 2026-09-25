@@ -282,7 +282,7 @@ end
     end
 
     # `Newton` is the one method that does not reliably get the reuse, and it is the state's section
-    # that denies it: `update!(::NewtonOptimizerState, opt, x)` advances `state.section` by the
+    # that denies it: `update!(::NewtonState, opt, x)` advances `state.section` by the
     # *gradient* rather than by the direction, so the two frames differ by `∇f - δ` and the guard
     # falls back to a fresh evaluation. That is the gradient evaluation per iteration the refresh
     # costs for `Newton` and for nothing else. It comes back once the solve has converged, where both

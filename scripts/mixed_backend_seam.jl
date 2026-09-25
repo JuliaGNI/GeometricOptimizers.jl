@@ -19,7 +19,7 @@
 # scalar index on a `JLArray` merely warns and more cases come back with an answer.
 
 using GeometricOptimizers
-using GeometricOptimizers: LowerTriangular, StiefelProjection, add!
+using GeometricOptimizers: StrictlyLowerTriangular, StiefelProjection, add!
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using KernelAbstractions: KernelAbstractions
@@ -39,8 +39,8 @@ host_skew = SkewSymMatrix(rand(T, N, N))
 dev_skew = SkewSymMatrix(JLArray(rand(T, N, N)))
 host_sym = SymmetricMatrix(rand(T, N, N))
 dev_sym = SymmetricMatrix(JLArray(rand(T, N, N)))
-host_lo = LowerTriangular(rand(T, N, N))
-dev_lo = LowerTriangular(JLArray(rand(T, N, N)))
+host_lo = StrictlyLowerTriangular(rand(T, N, N))
+dev_lo = StrictlyLowerTriangular(JLArray(rand(T, N, N)))
 host_mat = rand(T, N, N)
 dev_mat = JLArray(rand(T, N, N))
 host_Y = rand(StiefelManifold{T}, N, n)

@@ -38,7 +38,7 @@
 #     sample that a tick is a rounding error, which is what makes the `n = 6` row mean anything.
 #   * **Dead code.** Neither result escapes, so both are folded into a checksum that is printed.
 
-using GeometricOptimizers: LowerTriangular, UpperTriangular
+using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular
 using Printf
 using Random
 
@@ -85,7 +85,7 @@ function main()
         "generic [B]")
     println("-"^90)
 
-    for MT in (LowerTriangular, UpperTriangular), n in SIZES
+    for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular), n in SIZES
 
         A = MT(rand(T, n * (n - 1) ÷ 2), n)
         B = rand(T, n, n)

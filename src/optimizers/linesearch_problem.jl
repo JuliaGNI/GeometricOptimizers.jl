@@ -304,7 +304,7 @@ julia> hess = HessianAutodiff{Float64}(obj.F, length(x));
 
 julia> cache = NewtonOptimizerCache(x);
 
-julia> state = NewtonOptimizerState(x); update!(state, grad, x);
+julia> state = NewtonState(x); update!(state, grad, x);
 
 julia> params = (x = state.x, state = state);
 

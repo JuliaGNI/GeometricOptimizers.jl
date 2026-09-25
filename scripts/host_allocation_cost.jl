@@ -5,8 +5,8 @@
 #
 #     julia --startup-file=no --project=. scripts/host_allocation_cost.jl
 #
-# This is the check behind the comment on `Base.zeros(::Type{AT}, n)` in
-# `src/special_matrices/triangular.jl` and behind the matching CHANGELOG entry. Both quote figures from
+# This is the check behind the comment on `_zeros` in
+# `src/allocators.jl` and behind the matching CHANGELOG entry. Both quote figures from
 # it. An earlier round of those figures was quoted from a measurement nobody had archived, and two
 # independent re-runs then disagreed about the byte number — which is the whole reason this file exists.
 #

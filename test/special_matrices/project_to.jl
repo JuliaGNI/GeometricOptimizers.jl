@@ -39,11 +39,12 @@ end
 
 storage_length(::Type{SymmetricMatrix}, n) = n * (n + 1) ÷ 2
 storage_length(::Type{SkewSymMatrix}, n) = n * (n - 1) ÷ 2
-storage_length(::Type{GeometricOptimizers.LowerTriangular}, n) = n * (n - 1) ÷ 2
-storage_length(::Type{GeometricOptimizers.UpperTriangular}, n) = n * (n - 1) ÷ 2
+storage_length(::Type{GeometricOptimizers.StrictlyLowerTriangular}, n) = n * (n - 1) ÷ 2
+storage_length(::Type{GeometricOptimizers.StrictlyUpperTriangular}, n) = n * (n - 1) ÷ 2
 
-const STRUCTURED = (SymmetricMatrix, SkewSymMatrix, GeometricOptimizers.LowerTriangular,
-    GeometricOptimizers.UpperTriangular)
+const STRUCTURED = (
+    SymmetricMatrix, SkewSymMatrix, GeometricOptimizers.StrictlyLowerTriangular,
+    GeometricOptimizers.StrictlyUpperTriangular)
 
 @testset "ProjectTo gives the natural cotangent: $X, $T" for X in STRUCTURED,
     T in (Float32, Float64)

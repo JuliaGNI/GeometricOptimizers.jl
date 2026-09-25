@@ -29,6 +29,7 @@ symplectic SR decomposition [`sr!`](@ref), which is the construction
 
 ```jldoctest
 using GeometricOptimizers
+using GeometricOptimizers: check
 import Random
 
 Random.seed!(1234)
@@ -82,7 +83,7 @@ end
 # The host spelling is a loop over a `zeros(T, n2, n2)`, with no backend and no kernel launch.
 # Routing it through `KernelAbstractions.zeros` and a kernel launch would make the common case pay
 # for the device machinery, and the measurement behind that is the comment on
-# `zeros(::Type{AT}, n)` in `special_matrices/triangular.jl`. `StiefelProjection` splits its
+# `_zeros` in `allocators.jl`. `StiefelProjection` splits its
 # constructor the same way, and this is the same split: the backendless form names the element type
 # and places on the host, which is the third of the four call shapes in
 # `docs/src/special_matrices.md`.
@@ -103,7 +104,6 @@ function _poisson_tensor(
         backend::KernelAbstractions.Backend, ::Type{T}, n2::Integer) where {T}
     @assert iseven(n2)
     n = n2 ÷ 2
-    _check_supported_eltype(backend, T)
     J = KernelAbstractions.zeros(backend, T, n2, n2)
     write_poisson_blocks! = write_poisson_blocks_kernel!(backend)
     write_poisson_blocks!(J, n; ndrange = n)
@@ -121,41 +121,25 @@ is `n` columns from each half of the symplectic factor. This is the symplectic c
 orthonormalization `rand(::Type{StiefelManifold}, …)` does, and no orthonormalization will serve
 here: an orthonormal factor preserves the Euclidean form, not ``\mathbb{J}``.
 """
-function Base.rand(rng::Random.AbstractRNG, ::Type{SymplecticStiefelManifold{T}},
-        N2::Integer, n2::Integer) where {T}
-    _rand_symplectic_stiefel(randn(rng, T, N2, n2), N2, n2)
-end
+Base.rand(::Type{<:SymplecticStiefelManifold}, ::Integer, ::Integer)
 
-function Base.rand(rng::Random.AbstractRNG, ::Type{SymplecticStiefelManifold},
-        N2::Integer, n2::Integer)
-    _rand_symplectic_stiefel(randn(rng, N2, n2), N2, n2)
-end
-
-function Base.rand(::Type{SymplecticStiefelManifold{T}}, N2::Integer, n2::Integer) where {T}
-    rand(Random.default_rng(), SymplecticStiefelManifold{T}, N2, n2)
-end
-
-function Base.rand(::Type{SymplecticStiefelManifold}, N2::Integer, n2::Integer)
-    rand(Random.default_rng(), SymplecticStiefelManifold, N2, n2)
-end
-
-# The backend-taking spellings belong to this type and not to the generic `Manifold{T}` draw in
+# The backend-taking methods belong to this type and not to the generic `Manifold{T}` draw in
 # `abstract_manifold.jl`. That draw orthonormalizes, which preserves the Euclidean form and not
 # ``\mathbb{J}``, and the inner constructor above asserts shape alone -- so the generic
 # method wraps a matrix that is not on this manifold and nothing downstream says so. Both methods
 # mirror the generic pair's signature, `MT <: SymplecticStiefelManifold{T}` rather than
 # `MT <: Manifold{T}`, so a bare `SymplecticStiefelManifold` still picks up `default_eltype` first
 # and arrives here parametrized.
-function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
+function Base.rand(rng::AbstractRNG, ::CPU, ::Type{MT},
         N2::Integer, n2::Integer) where {T, MT <: SymplecticStiefelManifold{T}}
-    rand(rng, SymplecticStiefelManifold{T}, N2, n2)
+    _rand_symplectic_stiefel(randn(rng, T, N2, n2), N2, n2)
 end
 
 # `sr!` is a host factorization: `_rand_symplectic_stiefel` calls `Matrix` on its factor. A device
 # draw is therefore a host draw and a transfer, which is a different operation from the device-native
 # one the other two manifolds offer. Refusing says so; returning a host-drawn point from a call that
 # named a device would not.
-function Base.rand(backend::GPU, ::Random.AbstractRNG, ::Type{MT},
+function Base.rand(::AbstractRNG, backend::GPU, ::Type{MT},
         N2::Integer, n2::Integer) where {T, MT <: SymplecticStiefelManifold{T}}
     throw(ArgumentError("$(backend) cannot draw a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host. Draw on the host with rand(SymplecticStiefelManifold{$(T)}, $(N2), $(n2))."))
 end
@@ -247,7 +231,7 @@ The counterpart of that method, with the symplectic form in place of the Euclide
 
 [`rgrad`](@ref), [`metric`](@ref) and [`check`](@ref) run wherever the point is — [`metric`](@ref)
 as far as the backend supplies an `lu`, since it forms ``\mathrm{inv}(U^TU)``. This does not, and
-the reason is the same one that makes `rand(::GPU, ::Type{<:SymplecticStiefelManifold}, …)` refuse:
+the reason is the same one that makes `rand(::AbstractRNG, ::GPU, ::Type{<:SymplecticStiefelManifold}, …)` refuse:
 the completion is orthogonalized by the symplectic SR decomposition [`sr!`](@ref), which is a host
 factorization — `_rand_symplectic_stiefel` calls `Matrix` on its factor. A device spelling would be
 a host computation with two transfers around it, which is a different operation from the

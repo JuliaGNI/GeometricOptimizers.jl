@@ -8,7 +8,7 @@ Random.seed!(1234)
 
 # `value` and `previous_value` are how a caller reads the objective a state holds, and this file is
 # the only one under `test/` that calls either. The four first-order manifold states carry both
-# fields and answer both; `NewtonOptimizerState` carries both and answers both; `BFGSState` carries
+# fields and answer both; `NewtonState` carries both and answers both; `BFGSState` carries
 # only the previous one and answers only `previous_value`.
 #
 # The fields are written directly here rather than through a solve, so that a failure names the
@@ -28,8 +28,8 @@ Random.seed!(1234)
     end
 end
 
-@testset "`NewtonOptimizerState` reports both objective values" begin
-    state = NewtonOptimizerState([1.0, 2.0])
+@testset "`NewtonState` reports both objective values" begin
+    state = NewtonState([1.0, 2.0])
     state.f = 3.5
     state.f̄ = 7.25
 
@@ -40,8 +40,8 @@ end
 # `update!` shifts the barred fields and then writes the unbarred ones, so the unbarred fields are
 # the current iterate's. `solution` and `gradient` read the unbarred ones, which is what `value`
 # reads on the same object and what the same names read on every other state. See issue #106.
-@testset "`NewtonOptimizerState` reads the current iterate, not the previous one" begin
-    state = NewtonOptimizerState([0.0, 0.0])
+@testset "`NewtonState` reads the current iterate, not the previous one" begin
+    state = NewtonState([0.0, 0.0])
     state.x .= [1.0, 2.0]
     state.x̄ .= [3.0, 4.0]
     state.g .= [5.0, 6.0]

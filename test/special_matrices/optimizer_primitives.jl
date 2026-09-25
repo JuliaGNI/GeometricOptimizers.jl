@@ -14,7 +14,8 @@ Random.seed!(1234)
 # broadcast through. Before these methods existed, a `SymmetricMatrix` or a triangular matrix could
 # not be an optimizer parameter at all -- `GeometricMachineLearning` carried its own copies of them
 # to work around it (GeometricMachineLearning#234).
-const TYPES = (SkewSymMatrix, SymmetricMatrix, LowerTriangular, UpperTriangular)
+const TYPES = (
+    SkewSymMatrix, SymmetricMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular)
 
 const N = 5
 

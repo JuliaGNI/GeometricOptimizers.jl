@@ -1,7 +1,4 @@
-# The element type a `rand` uses when the caller names a backend, and what happens when the caller
-# names one the backend cannot hold.
-#
-# Two separate questions, and the package answers them from two different places on purpose.
+# The element type a `rand` uses when the caller names a backend.
 #
 # The element type nobody named is `default_eltype(backend)`: `Float64` on the host, because that is
 # what `zeros(n)` gives, and `Float32` on a device, because that is the width an accelerator is
@@ -10,8 +7,8 @@
 # asserts against, so that adding a backend does not mean editing a literal here.
 #
 # **The rule does not consult `supports_float64`.** A backend being able to hold a `Float64` is not
-# a reason to hand it one. That trait answers the other question: an element type the caller *did*
-# name and the backend cannot hold is rejected, not narrowed.
+# a reason to hand it one. An element type the caller *did* name and the backend cannot hold is
+# refused by the backend's own allocation, not narrowed.
 
 using GeometricOptimizers
 using GeometricOptimizers: default_eltype
@@ -33,12 +30,10 @@ KernelAbstractions.supports_float64(::_NoFloat64GPU) = false
 struct _Float64GPU <: GPU end
 
 # `_Float64GPU` allocates host arrays, which makes it a device the whole device `rand` will actually
-# run on: the real method, its element-type check, the orthonormalization and the type application
-# included. It is here for the element type and not for the draw -- `JLArrays` is a real device
-# backend and runs the draw, in `device_orthonormalization.jl`, but it declares itself
-# `Float64`-capable and so cannot stand on both sides of the distinction the rule turns on.
-# `_NoFloat64GPU` deliberately gets no `allocate` method: every call on it is meant to be refused
-# before it allocates anything.
+# run on: the real method, the orthonormalization and the type application included. It is here for
+# the element type and not for the draw -- `JLArrays` is a real device backend and runs the draw, in
+# `device_orthonormalization.jl`, but it declares itself `Float64`-capable and so cannot stand on
+# both sides of the distinction the rule turns on.
 function KernelAbstractions.allocate(::_Float64GPU, ::Type{T}, dims::Tuple; kwargs...) where {T}
     Array{T}(undef, dims)
 end
@@ -59,7 +54,7 @@ end
 
     # and the same holds through `rand` itself, which is where a caller meets it
     for MT in (StiefelManifold, GrassmannManifold)
-        @test eltype(rand(_Float64GPU(), Random.default_rng(), MT, 5, 3)) === Float32
+        @test eltype(rand(Random.default_rng(), _Float64GPU(), MT, 5, 3)) === Float32
     end
 end
 
@@ -69,48 +64,17 @@ end
     N, n = 5, 3
     for MT in (StiefelManifold{Float32, Matrix{Float32}},
         GrassmannManifold{Float32, Matrix{Float32}})
-        Y = rand(_Float64GPU(), Random.default_rng(), MT, N, n)
+        Y = rand(Random.default_rng(), _Float64GPU(), MT, N, n)
         @test typeof(Y) === MT
         @test GeometricOptimizers.check(Y) < 10 * eps(eltype(Y))
     end
 end
 
-@testset "a named element type the backend cannot hold is refused, not narrowed" begin
-    # `_NoFloat64GPU` can allocate nothing at all, so a call that got past the check would be a
-    # `MethodError` on `allocate`. An `ArgumentError` is therefore proof that the check stopped it
-    # first, which is the property: refused before anything is allocated
-    for MT in (StiefelManifold, GrassmannManifold)
-        @test_throws ArgumentError rand(
-            _NoFloat64GPU(), Random.default_rng(), MT{Float64}, 5, 3)
-
-        # the message has to name the width and the way out, since raising it here rather than
-        # letting the backend's own allocation fail is the whole point of the check
-        err = try
-            rand(_NoFloat64GPU(), Random.default_rng(), MT{Float64}, 5, 3)
-            nothing
-        catch e
-            e
-        end
-        @test err isa ArgumentError
-        @test occursin("Float64", err.msg)
-        @test occursin("Float32", err.msg)
-    end
-end
-
-@testset "the check passes everything a backend can hold" begin
-    check_eltype = GeometricOptimizers._check_supported_eltype
-    for T in (Float32, Float64, Int32, Int64)
-        @test check_eltype(_Float64GPU(), T) === nothing
-        @test check_eltype(CPU(), T) === nothing
-    end
-    # and a device that carries `Float64` draws one when asked, through the whole device path
+@testset "a device that carries Float64 draws one when asked" begin
     for T in (Float32, Float64)
         @test eltype(rand(
-            _Float64GPU(), Random.default_rng(), StiefelManifold{T}, 5, 3)) === T
+            Random.default_rng(), _Float64GPU(), StiefelManifold{T}, 5, 3)) === T
     end
-    # and only `Float64` on the one backend that declares it cannot hold it
-    @test check_eltype(_NoFloat64GPU(), Float32) === nothing
-    @test_throws ArgumentError check_eltype(_NoFloat64GPU(), Float64)
 end
 
 @testset "the backend-taking `rand` uses the rule on the host" begin
@@ -139,7 +103,7 @@ end
     N, n = 5, 3
     for MT in (StiefelManifold{Float64, Matrix{Float64}},
         GrassmannManifold{Float32, Matrix{Float32}})
-        Y = rand(CPU(), Random.default_rng(), MT, N, n)
+        Y = rand(Random.default_rng(), CPU(), MT, N, n)
         @test typeof(Y) === MT
         @test GeometricOptimizers.check(Y) < 10 * eps(eltype(Y))
     end

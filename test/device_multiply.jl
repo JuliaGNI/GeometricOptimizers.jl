@@ -26,7 +26,8 @@
 # to `JLArrays` rather than to the products here.
 
 using GeometricOptimizers
-using GeometricOptimizers: LowerTriangular, StiefelProjection, UpperTriangular, check,
+using GeometricOptimizers: StrictlyLowerTriangular, StiefelProjection,
+                           StrictlyUpperTriangular, check,
                            global_rep
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
@@ -43,12 +44,12 @@ const N, n = 6, 3
 allowscalar(false)
 
 # A triangular whose storage is on the device, built by moving the packed vector rather than through
-# the matrix constructor: `LowerTriangular(::AbstractMatrix)` runs a kernel per row and is a
+# the matrix constructor: `StrictlyLowerTriangular(::AbstractMatrix)` runs a kernel per row and is a
 # different thing to test.
 device_triangular(MT, m) = MT(JLArray(rand(T, m * (m - 1) ÷ 2)), m)
 
 @testset "a triangular times a matrix runs on the device" begin
-    for MT in (LowerTriangular, UpperTriangular), m in (3, 6)
+    for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular), m in (3, 6)
 
         A = device_triangular(MT, m)
         B = JLArray(rand(T, m, m))
@@ -73,7 +74,7 @@ end
     # `adjoint` in `(A' * B')'` is lazy. It is still on the device, which is what this file is about,
     # and it is the shape `*(::AbstractMatrix, ::SkewSymMatrix)` returns as well —
     # `parent` is therefore what to assert on.
-    for MT in (LowerTriangular, UpperTriangular), m in (3, 6)
+    for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular), m in (3, 6)
 
         A = device_triangular(MT, m)
         B = JLArray(rand(T, m, m))
@@ -88,7 +89,8 @@ end
 
 @testset "a triangular times a triangular runs on the device" begin
     # this materializes its right operand through `one`, which is `unit_matrix` and kernel-backed
-    for MT₁ in (LowerTriangular, UpperTriangular), MT₂ in (LowerTriangular, UpperTriangular)
+    for MT₁ in (StrictlyLowerTriangular, StrictlyUpperTriangular),
+        MT₂ in (StrictlyLowerTriangular, StrictlyUpperTriangular)
 
         A = device_triangular(MT₁, N)
         B = device_triangular(MT₂, N)
@@ -105,13 +107,13 @@ end
     B = JLArray(rand(T, n, n))
     A = JLArray(rand(T, n, N))
 
-    @test Array(E * B) ≈ Matrix{T}(StiefelProjection(N, n, T)) * Array(B)
-    @test Array(A * E) ≈ Array(A) * Matrix{T}(StiefelProjection(N, n, T))
+    @test Array(E * B) ≈ Matrix{T}(StiefelProjection(T, N, n)) * Array(B)
+    @test Array(A * E) ≈ Array(A) * Matrix{T}(StiefelProjection(T, N, n))
     @test E * B isa JLArray{T, 2}
     @test A * E isa JLArray{T, 2}
 
     b = JLArray(rand(T, n))
-    @test Array(E * b) ≈ Matrix{T}(StiefelProjection(N, n, T)) * Array(b)
+    @test Array(E * b) ≈ Matrix{T}(StiefelProjection(T, N, n)) * Array(b)
 end
 
 @testset "a geodesic retraction of a device-backed point runs end to end" begin
@@ -199,5 +201,5 @@ end
     E = StiefelProjection(B)
 
     @test B * E isa JLArray{T, 2}
-    @test Array(B * E) ≈ host_lift(B) * Matrix{T}(StiefelProjection(N, n, T))
+    @test Array(B * E) ≈ host_lift(B) * Matrix{T}(StiefelProjection(T, N, n))
 end

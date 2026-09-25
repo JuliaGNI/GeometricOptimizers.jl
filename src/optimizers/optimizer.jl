@@ -346,7 +346,7 @@ Compute a full iterate for an [`Optimizer`](@ref).
 
 # Examples
 
-```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: solver_step!, NewtonOptimizerState)
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: gradient, solver_step!, NewtonState)
 julia> f(x) = sum(x .^ 2 + x .^ 3 / 3);
 
 julia> x = [1f0, 2f0]
@@ -356,7 +356,7 @@ julia> x = [1f0, 2f0]
 
 julia> opt = Optimizer(x, f; algorithm = Newton());
 
-julia> state = NewtonOptimizerState(x);
+julia> state = NewtonState(x);
 
 julia> update!(state, gradient(opt), x);
 
@@ -532,7 +532,7 @@ Solve the optimization problem described by `opt::`[`Optimizer`](@ref) and store
 
 # Examples
 
-```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: solve!, NewtonOptimizerState, update!, iteration_number; using Random: seed!; seed!(123))
+```jldoctest; setup = :(using GeometricOptimizers; using GeometricOptimizers: solve!, NewtonState, update!, iteration_number; using Random: seed!; seed!(123))
 julia> f(x) = sum(x .^ 2 + x .^ 3 / 3);
 
 julia> x = [1f0, 2f0]
@@ -542,7 +542,7 @@ julia> x = [1f0, 2f0]
 
 julia> opt = Optimizer(x, f; algorithm = Newton());
 
-julia> state = NewtonOptimizerState(x);
+julia> state = NewtonState(x);
 
 julia> solve!(x, state, opt)
 GeometricOptimizers.OptimizerResult{Float32, Float32, Vector{Float32}, GeometricOptimizers.OptimizerStatus{Float32, Float32}}( * Convergence measures
@@ -642,7 +642,7 @@ function warn_iteration_number(state::OptimizerState, config::Options)
 end
 
 # put this somewhere else eventually!
-function update!(state::NewtonOptimizerState, opt::Optimizer, x::AbstractVector)
+function update!(state::NewtonState, opt::Optimizer, x::AbstractVector)
     update!(state, gradient(opt), x)
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
         update_section!(

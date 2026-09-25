@@ -154,7 +154,7 @@ function orthonormal_columns(draw)
 end
 
 # TODO: check the distribution this is coming from - related to the Haar measure ???
-function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
+function Base.rand(rng::AbstractRNG, ::CPU, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
     Q = orthonormal_columns(() -> randn(rng, T, N, n))
@@ -168,10 +168,9 @@ function Base.rand(::CPU, rng::Random.AbstractRNG, ::Type{MT},
     (isconcretetype(MT) ? MT : MT{typeof(Q)})(Q)
 end
 
-function Base.rand(backend::GPU, rng::Random.AbstractRNG, ::Type{MT},
+function Base.rand(rng::AbstractRNG, backend::GPU, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
-    _check_supported_eltype(backend, T)
     Q = orthonormal_columns() do
         A = KernelAbstractions.allocate(backend, T, N, n)
         Random.randn!(rng, A)
@@ -184,20 +183,20 @@ end
 @doc raw"""
     default_eltype(backend)
 
-The element type a `rand` that names a backend but no element type draws in: `Float64` on the host
-and `Float32` on a device.
+The element type a `zeros` or a `rand` that names no element type allocates in: `Float64` on the
+host and `Float32` on a device.
 
 Neither value is arbitrary, which is the whole reason this is a function rather than a literal in
-each of two methods. `Float64` on the host is what `zeros(n)` and `rand(n)` already give, so a
-manifold drawn without an element type matches every other array drawn without one. `Float32` on a
-device is the width an accelerator is built for, and a device that carries `Float64` at all
-normally carries it at a fraction of the `Float32` rate.
+each allocator. `Float64` on the host is what `zeros(n)` and `rand(n)` already give, so an owned
+array or manifold allocated without an element type matches every other array allocated without
+one. `Float32` on a device is the width an accelerator is built for, and a device that carries
+`Float64` at all normally carries it at a fraction of the `Float32` rate.
 
 **The rule deliberately does not ask `KernelAbstractions.supports_float64`.** A backend being
 *able* to hold a `Float64` is not a reason to hand it one: a caller who has not said which width it
-wants is better served by the width the device is fast at. That trait answers the other half of the
-question instead — an element type the caller *does* name and the backend cannot hold is rejected
-rather than narrowed, which the `rand(backend, manifold_type, N, n)` docstring states.
+wants is better served by the width the device is fast at. An element type the caller *does* name
+and the backend cannot hold is refused by the backend's own allocation rather than narrowed, which
+the `rand(backend, manifold_type, N, n)` docstring states.
 
 A caller who wants a fixed width names it, in the parametric form
 `rand(backend, StiefelManifold{Float64}, N, n)`.
@@ -206,17 +205,6 @@ function default_eltype end
 
 default_eltype(::CPU) = Float64
 default_eltype(::GPU) = Float32
-
-function Base.rand(
-        backend::KernelAbstractions.Backend, rng::Random.AbstractRNG, ::Type{MT},
-        N::Integer, n::Integer) where {MT <: Manifold}
-    rand(backend, rng, MT{default_eltype(backend)}, N, n)
-end
-
-function Base.rand(rng::Random.AbstractRNG, manifold_type::Type{MT},
-        N::Integer, n::Integer) where {MT <: Manifold}
-    rand(CPU(), rng, manifold_type, N, n)
-end
 
 # `_round` rewraps, and is the only thing here that may: rounding a point's entries to a few decimals
 # is a *display* operation on a point that is already on the manifold, and the docstrings that print
@@ -251,9 +239,9 @@ rand(CUDABackend(), StiefelManifold{Float32}, N, n)
 # The element type
 
 Naming it, as above, is what fixes it, and a named element type is honoured or refused — never
-narrowed. `rand(MetalBackend(), StiefelManifold{Float64}, N, n)` throws an `ArgumentError` saying
-the backend has no `Float64`, rather than quietly returning a `Float32` point of a type the caller
-did not ask for.
+narrowed. `rand(MetalBackend(), StiefelManifold{Float64}, N, n)` throws Metal's own
+`ErrorException` at allocation, whose message names `Float64`, rather than quietly returning a
+`Float32` point of a type the caller did not ask for.
 
 A call that leaves the element type open — `rand(CUDABackend(), StiefelManifold, N, n)` — gets
 [`default_eltype`](@ref GeometricOptimizers.default_eltype) of the backend: `Float64` on the host
@@ -281,10 +269,7 @@ drawn on the host alone: its draw is the symplectic SR decomposition [`sr!`](@re
 factorization, so a device spelling would be a host draw followed by a transfer rather than the
 device-native draw the other two get. Naming a device for it throws an `ArgumentError` saying so.
 """
-function Base.rand(backend::KernelAbstractions.Backend, manifold_type::Type{MT},
-        N::Integer, n::Integer) where {MT <: Manifold}
-    rand(backend, Random.default_rng(), manifold_type, N, n)
-end
+Base.rand(::KernelAbstractions.Backend, ::Type{<:Manifold}, ::Integer, ::Integer)
 
 @doc raw"""
     rand(manifold_type, N, n)
@@ -325,9 +310,7 @@ factorization for several of the backends this package supports, and CholeskyQR2
 products, reductions and triangular solves alone. The two answers differ by the sign of each column,
 since CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
 """
-function Base.rand(manifold_type::Type{MT}, N::Integer, n::Integer) where {MT <: Manifold}
-    rand(Random.default_rng(), manifold_type, N, n)
-end
+Base.rand(::Type{<:Manifold}, ::Integer, ::Integer)
 
 @doc raw"""
     check(Y::Manifold)

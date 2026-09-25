@@ -7,7 +7,7 @@
 # `--check-bounds=auto` and not the `Pkg.test()` default of `=yes`, which inflates the figures and is
 # why an allocation number taken from a test run says nothing.
 #
-# Two claims, and the reason they belong in one harness. `NewtonOptimizerState`'s `update!` used to
+# Two claims, and the reason they belong in one harness. `NewtonState`'s `update!` used to
 # obtain the objective as `gradient.F(x)`. `F` is a field the three concrete `SimpleSolvers.Gradient`
 # subtypes happen to share; the `Gradient` interface guarantees a functor and nothing else. So every
 # wrapper threw a `FieldError` on the first step — the `ObservedGradient` that `Optimizer` installs

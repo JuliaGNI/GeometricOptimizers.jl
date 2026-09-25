@@ -18,7 +18,8 @@
 
 using AbstractNeuralNetworks: changebackend
 using GeometricOptimizers
-using GeometricOptimizers: LowerTriangular, UpperTriangular, StiefelProjection, Manifold,
+using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular,
+                           StiefelProjection, Manifold,
                            VectorStorageMatrix, AbstractLieAlgHorMatrix, GlobalSection,
                            apply_section, Ω
 using GPUArraysCore: AbstractGPUArray, allowscalar
@@ -62,14 +63,14 @@ function fixtures(rng)
     grass = rand(rng, GrassmannLieAlgHorMatrix{T}, N, n)
     # the adjoints of the two triangulars are the other triangular, and a symmetric matrix is its own
     ["SkewSym" => skew, "SkewSym'" => skew', "Sym" => rand(rng, SymmetricMatrix{T}, N),
-        "Lower" => rand(rng, LowerTriangular{T}, N),
-        "Upper" => rand(rng, UpperTriangular{T}, N),
+        "Lower" => rand(rng, StrictlyLowerTriangular{T}, N),
+        "Upper" => rand(rng, StrictlyUpperTriangular{T}, N),
         "StiefelHor" => lift, "StiefelHor'" => lift', "GrassmannHor" => grass,
         "GrassmannHor'" => grass',
         "Y" => StiefelManifold(Q[:, 1:n]), "Y'" => StiefelManifold(Q[:, 1:n])',
         "G" => GrassmannManifold(Q[:, 1:n]), "G'" => GrassmannManifold(Q[:, 1:n])',
-        "U" => U, "U'" => U', "E" => StiefelProjection(N, n, T),
-        "E'" => StiefelProjection(N, n, T)']
+        "U" => U, "U'" => U', "E" => StiefelProjection(T, N, n),
+        "E'" => StiefelProjection(T, N, n)']
 end
 
 function row(name, f, host_args, dev_args, backend)

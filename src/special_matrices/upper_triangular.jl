@@ -1,38 +1,38 @@
 @doc raw"""
-    UpperTriangular(S::AbstractVector, n::Int)
+    StrictlyUpperTriangular(S::AbstractVector, n::Int)
 
 Build an upper-triangular matrix from a vector.
 
 An upper-triangular matrix is an ``n\times{}n`` matrix that has zeros on the diagonal and on the lower triangular.
 
-The data are stored in a vector ``S`` similarly to other matrices. See [`LowerTriangular`](@ref), [`SkewSymMatrix`](@ref) and [`SymmetricMatrix`](@ref).
+The data are stored in a vector ``S`` similarly to other matrices. See [`StrictlyLowerTriangular`](@ref), [`SkewSymMatrix`](@ref) and [`SymmetricMatrix`](@ref).
 
 The struct has two fields: `S` and `n`. The first stores all the entries of the matrix in a sparse fashion (in a vector) and the second is the dimension ``n`` for ``A\in\mathbb{R}^{n\times{}n}``.
 
-`adjoint` (`U'`) returns a [`LowerTriangular`](@ref) built around the *same* storage vector, not a copy: `parent(U') === parent(U)` holds, so writing into the adjoint also writes into `U`. Reusing the storage transposes without conjugating, so this method is defined for a real element type only; a complex one falls through to `LinearAlgebra`'s lazy `Adjoint`, which conjugates and does not alias.
+`adjoint` (`U'`) returns a [`StrictlyLowerTriangular`](@ref) built around the *same* storage vector, not a copy: `parent(U') === parent(U)` holds, so writing into the adjoint also writes into `U`. Reusing the storage transposes without conjugating, so this method is defined for a real element type only; a complex one falls through to `LinearAlgebra`'s lazy `Adjoint`, which conjugates and does not alias.
 
 # Examples
 ```jldoctest
 using GeometricOptimizers
 S = [1, 2, 3, 4, 5, 6]
-UpperTriangular(S, 4)
+StrictlyUpperTriangular(S, 4)
 
 # output
 
-4×4 UpperTriangular{Int64, Vector{Int64}}:
+4×4 StrictlyUpperTriangular{Int64, Vector{Int64}}:
  0  1  2  4
  0  0  3  5
  0  0  0  6
  0  0  0  0
 ```
 """
-mutable struct UpperTriangular{T, AT <: AbstractVector{T}} <: AbstractTriangular{T}
+mutable struct StrictlyUpperTriangular{T, AT <: AbstractVector{T}} <: AbstractTriangular{T}
     S::AT
     n::Int
 end
 
 @doc raw"""
-    UpperTriangular(A::AbstractMatrix)
+    StrictlyUpperTriangular(A::AbstractMatrix)
 
 Build an upper-triangular matrix from a matrix.
 
@@ -42,25 +42,36 @@ This is done by taking the upper right of that matrix.
 ```jldoctest
 using GeometricOptimizers
 M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
-UpperTriangular(M)
+StrictlyUpperTriangular(M)
 
 # output
 
-4×4 UpperTriangular{Int64, Vector{Int64}}:
+4×4 StrictlyUpperTriangular{Int64, Vector{Int64}}:
  0  2  3   4
  0  0  7   8
  0  0  0  12
  0  0  0   0
 ```
 """
-function UpperTriangular(S::AbstractMatrix{T}) where {T}
+function StrictlyUpperTriangular(S::AbstractMatrix{T}) where {T}
     n = size(S, 1)
     @assert size(S, 2) == n
     S_vec = map_to_up(S)
-    UpperTriangular(S_vec, n)
+    StrictlyUpperTriangular(S_vec, n)
 end
 
-function Base.getindex(A::UpperTriangular{T}, i::Int, j::Int) where {T}
+# see the allocators in `lower_triangular.jl`
+function Base.zeros(backend::KernelAbstractions.Backend,
+        ::Type{StrictlyUpperTriangular{T}}, n::Integer) where {T}
+    StrictlyUpperTriangular(_zeros(backend, T, n * (n - 1) ÷ 2), Int(n))
+end
+
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
+        ::Type{StrictlyUpperTriangular{T}}, n::Integer) where {T}
+    StrictlyUpperTriangular(_rand(rng, backend, T, n * (n - 1) ÷ 2), Int(n))
+end
+
+function Base.getindex(A::StrictlyUpperTriangular{T}, i::Int, j::Int) where {T}
     if j == i
         return zero(T)
     end
@@ -84,7 +95,7 @@ end
     C[i, j] = tmp_sum
 end
 
-mat_mul_kernel(::UpperTriangular, backend) = up_mat_mul_kernel!(backend)
+mat_mul_kernel(::StrictlyUpperTriangular, backend) = up_mat_mul_kernel!(backend)
 
 function map_to_up(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
@@ -103,18 +114,18 @@ function map_to_up(A::AbstractMatrix{T}) where {T}
     S
 end
 
-# define routines for generalizing ChainRulesCore to UpperTriangular 
-function ChainRulesCore.ProjectTo(A::AT) where {AT <: UpperTriangular}
+# define routines for generalizing ChainRulesCore to StrictlyUpperTriangular 
+function ChainRulesCore.ProjectTo(A::AT) where {AT <: StrictlyUpperTriangular}
     ProjectTo{AT}(; triang = ProjectTo(A.S))
 end
-function (project::ProjectTo{<:UpperTriangular})(dA::AbstractMatrix)
-    UpperTriangular(project.triang(map_to_up(dA)), size(dA, 2))
+function (project::ProjectTo{<:StrictlyUpperTriangular})(dA::AbstractMatrix)
+    StrictlyUpperTriangular(project.triang(map_to_up(dA)), size(dA, 2))
 end
-function (project::ProjectTo{<:UpperTriangular})(dA::UpperTriangular)
-    UpperTriangular(project.triang(dA.S), dA.n)
+function (project::ProjectTo{<:StrictlyUpperTriangular})(dA::StrictlyUpperTriangular)
+    StrictlyUpperTriangular(project.triang(dA.S), dA.n)
 end
 
-# A type swap, not a wrapper: the result is this package's own `UpperTriangular`, built around the
+# A type swap, not a wrapper: the result is this package's own `StrictlyUpperTriangular`, built around the
 # *same* storage vector `A.S` rather than a copy, so `parent(A') === parent(A)` holds and a write
 # through the adjoint writes `A` too.
 #
@@ -123,11 +134,11 @@ end
 # written as `(A' * B')'` — so an unbound method returned a silently wrong product. The bound does
 # not reject a complex argument: it falls through to `LinearAlgebra`'s lazy `Adjoint`, which
 # conjugates and is correct. Real element types keep the storage-sharing swap below.
-function Base.adjoint(A::LowerTriangular{<:Real})
-    UpperTriangular(A.S, A.n)
+function Base.adjoint(A::StrictlyLowerTriangular{<:Real})
+    StrictlyUpperTriangular(A.S, A.n)
 end
 
 # As above, and bound to a real element type for the same reason.
-function Base.adjoint(A::UpperTriangular{<:Real})
-    LowerTriangular(A.S, A.n)
+function Base.adjoint(A::StrictlyUpperTriangular{<:Real})
+    StrictlyLowerTriangular(A.S, A.n)
 end

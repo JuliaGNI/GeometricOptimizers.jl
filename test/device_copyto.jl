@@ -77,16 +77,16 @@ const N, n = 6, 3
         @test dev.S.data ≈ host.S
     end
 
-    @testset "LowerTriangular" begin
-        host = LowerTriangular(rand(T, n, n))
-        dev = LowerTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n)
+    @testset "StrictlyLowerTriangular" begin
+        host = StrictlyLowerTriangular(rand(T, n, n))
+        dev = StrictlyLowerTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n)
         copyto!(dev, host)
         @test dev.S.data ≈ host.S
     end
 
-    @testset "UpperTriangular" begin
-        host = UpperTriangular(rand(T, n, n))
-        dev = UpperTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n)
+    @testset "StrictlyUpperTriangular" begin
+        host = StrictlyUpperTriangular(rand(T, n, n))
+        dev = StrictlyUpperTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n)
         copyto!(dev, host)
         @test dev.S.data ≈ host.S
     end
@@ -169,10 +169,10 @@ end
         SkewSymMatrix(rand(T, n, n))),
         (SymmetricMatrix(_NoBroadcastVector(zeros(T, n * (n + 1) ÷ 2)), n),
         SymmetricMatrix(rand(T, n, n))),
-        (LowerTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
-        LowerTriangular(rand(T, n, n))),
-        (UpperTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
-        UpperTriangular(rand(T, n, n))))
+        (StrictlyLowerTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
+        StrictlyLowerTriangular(rand(T, n, n))),
+        (StrictlyUpperTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
+        StrictlyUpperTriangular(rand(T, n, n))))
         assign!(dev, host)
         @test dev.S.data ≈ host.S
     end
@@ -195,7 +195,7 @@ end
     @test_throws AssertionError copyto!(
         SymmetricMatrix(rand(T, n + 1, n + 1)), SymmetricMatrix(rand(T, n, n)))
     @test_throws AssertionError copyto!(
-        LowerTriangular(rand(T, n + 1, n + 1)), LowerTriangular(rand(T, n, n)))
+        StrictlyLowerTriangular(rand(T, n + 1, n + 1)), StrictlyLowerTriangular(rand(T, n, n)))
     @test_throws AssertionError copyto!(
         rand(StiefelManifold{T}, N + 1, n), rand(StiefelManifold{T}, N, n))
     @test_throws AssertionError assign!(zeros(T, n + 1, n + 1), rand(T, n, n))
@@ -206,9 +206,9 @@ end
     # both arguments carry only their abstract supertype, which is what lets a host and a device
     # copy of one type meet here, so the species is a runtime check
     @test_throws ArgumentError copyto!(
-        LowerTriangular(rand(T, n, n)), UpperTriangular(rand(T, n, n)))
+        StrictlyLowerTriangular(rand(T, n, n)), StrictlyUpperTriangular(rand(T, n, n)))
     @test_throws ArgumentError assign!(
-        LowerTriangular(rand(T, n, n)), UpperTriangular(rand(T, n, n)))
+        StrictlyLowerTriangular(rand(T, n, n)), StrictlyUpperTriangular(rand(T, n, n)))
     @test_throws ArgumentError copyto!(
         rand(StiefelManifold{T}, N, n), rand(GrassmannManifold{T}, N, n))
 end

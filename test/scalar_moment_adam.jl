@@ -1,7 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: cache, default_linesearch, direction, first_moment,
                            second_moment,
-                           _second_moment, gradient, gradient_array, global_rep,
+                           _second_moment, check, gradient, gradient_array, global_rep,
                            increase_iteration_number!,
                            isconverged, iteration_number, l2norm, linesearch, section,
                            solver_step!, status, update!,

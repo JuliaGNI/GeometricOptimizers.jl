@@ -23,7 +23,7 @@ end
 @testset "the host, the `CPU()` and the backend constructor agree" begin
     backend_signature = Tuple{KernelAbstractions.Backend, Type, Integer, Integer}
     for T in (Float32, Float64), N in 3:5, n in 0:(N + 1)
-        E = StiefelProjection(N, n, T)
+        E = StiefelProjection(T, N, n)
         E_cpu = StiefelProjection(CPU(), T, N, n)
         E_backend = invoke(StiefelProjection, backend_signature, CPU(), T, N, n)
         @test typeof(E) === typeof(E_cpu) === typeof(E_backend)
@@ -43,7 +43,7 @@ end
     for (N, n) in ((2, 4), (3, 3), (5, 2), (0, 3), (3, 0), (0, 0))
         E = StiefelProjection(device, Float32, N, n)
         @test E.A isa JLArray{Float32, 2}
-        @test Array(E.A) == StiefelProjection(N, n, Float32).A
+        @test Array(E.A) == StiefelProjection(Float32, N, n).A
     end
 end
 
@@ -53,7 +53,7 @@ end
 # `E` is rectangular, so a method that swapped or dropped an operand would not conform.
 @testset "a row vector times a StiefelProjection" begin
     for T in (Float32, Float64), N in 3:5, n in 1:N
-        E = StiefelProjection(N, n, T)
+        E = StiefelProjection(T, N, n)
         v = rand(T, N)
 
         @test v' * E ≈ v' * Matrix{T}(E)
@@ -66,7 +66,7 @@ end
 # reaches is a default nothing checks, so it is gone rather than spelled correctly.
 function stiefel_proj(N::Integer, n::Integer, T::DataType)
     In = I(n)
-    E = StiefelProjection(N, n, T)
+    E = StiefelProjection(T, N, n)
     @test all(abs.((E'*E) .- In) .< eps(T))
 end
 

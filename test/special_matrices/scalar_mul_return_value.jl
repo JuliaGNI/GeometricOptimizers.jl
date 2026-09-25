@@ -28,8 +28,8 @@ function instances()
     (
         rand(SkewSymMatrix, n),
         rand(SymmetricMatrix, n),
-        rand(GeometricOptimizers.LowerTriangular, n),
-        rand(GeometricOptimizers.UpperTriangular, n),
+        rand(GeometricOptimizers.StrictlyLowerTriangular, n),
+        rand(GeometricOptimizers.StrictlyUpperTriangular, n),
         rand(StiefelLieAlgHorMatrix, N, n),
         rand(GrassmannLieAlgHorMatrix, N, n)
     )

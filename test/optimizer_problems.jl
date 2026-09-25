@@ -1,4 +1,5 @@
 using GeometricOptimizers
+using GeometricOptimizers: gradient, value
 import SimpleSolvers
 using Test
 
