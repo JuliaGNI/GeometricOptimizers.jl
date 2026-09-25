@@ -59,6 +59,10 @@ end
 
 Base.size(S::Sfac) = (size(S.Λ.A, 1), size(S.Λ.A, 1))
 
+# The reflectors are stored in `Λ.A`, so the factor is on that array's backend. The backend guard
+# on `+` and `-` asks for it.
+KernelAbstractions.get_backend(S::Sfac) = KernelAbstractions.get_backend(S.Λ.A)
+
 function Base.Matrix(S::Sfac{false, T}) where {T}
     apply_S_left!(Matrix{T}(LinearAlgebra.I, size(S)...), S.Λ)
 end
@@ -95,6 +99,10 @@ end
 
 Base.size(R::Rfac) = size(R.Λ.A)
 
+# The entries are read off `Λ.A`, so the factor is on that array's backend. `R` has no kernel of its
+# own: against an owned matrix it is the plain operand, and the backend guard there asks for it.
+KernelAbstractions.get_backend(R::Rfac) = KernelAbstractions.get_backend(R.Λ.A)
+
 function Base.getindex(R::Rfac{T}, i::Integer, j::Integer) where {T}
     # Every branch below either reads a packed array or returns a structural zero, so an index past
     # the end can reach a `zero(T)` and come back looking like a legitimate entry. The packed arrays
@@ -116,50 +124,20 @@ function Base.getindex(R::Rfac{T}, i::Integer, j::Integer) where {T}
     return zero(T)
 end
 
-# The matrix and vector cases are separate methods on purpose. One method on `AbstractVecOrMat` is
-# ambiguous against `LinearAlgebra`'s `*(::AbstractMatrix, ::AbstractVector)`, because `Sfac` is an
-# `AbstractMatrix` itself: neither signature is more specific in both arguments, so `S * x` for a
-# vector `x` is a `MethodError` at the call site.
-Base.:*(S::Sfac{false}, B::AbstractMatrix) = apply_S_left(S.Λ, B)
-Base.:*(S::Sfac{false}, b::AbstractVector) = apply_S_left(S.Λ, b)
-Base.:*(S::Sfac{true}, B::AbstractMatrix) = apply_S_inverse_left(S.Λ, B)
-Base.:*(S::Sfac{true}, b::AbstractVector) = apply_S_inverse_left(S.Λ, b)
-Base.:*(B::AbstractMatrix, S::Sfac{false}) = apply_S_right(B, S.Λ)
+# The product kernels, one per side and per flag. `src/ambiguities.jl` has the `*` methods that
+# reach them. A row vector reaches `_rmul` too, so the reflectors are applied to the one row rather
+# than assembled into a matrix.
+_lmul(S::Sfac{false}, B::AbstractVecOrMat) = apply_S_left(S.Λ, B)
+_lmul(S::Sfac{true}, B::AbstractVecOrMat) = apply_S_inverse_left(S.Λ, B)
+_rmul(B::AbstractMatrix, S::Sfac{false}) = apply_S_right(B, S.Λ)
+_rmul(B::AbstractMatrix, S::Sfac{true}) = apply_S_inverse_right(B, S.Λ)
 
-Base.:*(B::AbstractMatrix, S::Sfac{true}) = apply_S_inverse_right(B, S.Λ)
-
-# A row vector on the left is the one shape the two methods above leave unsettled: each stands off
-# against `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned
-# matrix* in `src/ambiguities.jl` gives the mechanism and lists every site. Each body is the one
-# above it, so a row vector gets the answer that method gives every other matrix, and gets it the
-# same cheap way: the reflectors are applied to the one row rather than assembled into a matrix.
-#
-# Four methods and not two, for the reason the `Sfac`-`Sfac` comment below gives: one method on
-# `Sfac` is wider than `Sfac{false}` in that slot and so separates neither pair.
-Base.:*(x::Adjoint{<:Any, <:AbstractVector}, S::Sfac{false}) = apply_S_right(x, S.Λ)
-Base.:*(x::Transpose{<:Any, <:AbstractVector}, S::Sfac{false}) = apply_S_right(x, S.Λ)
-Base.:*(x::Adjoint{<:Any, <:AbstractVector}, S::Sfac{true}) = apply_S_inverse_right(x, S.Λ)
-function Base.:*(x::Transpose{<:Any, <:AbstractVector}, S::Sfac{true})
-    apply_S_inverse_right(x, S.Λ)
-end
-
-# Without this, `S * inv(S)` — the most natural thing to write with two of these — is an ambiguous
-# `MethodError` between the two methods above, because `Sfac` is itself an `AbstractMatrix` and
-# neither signature is more specific in both arguments. Both factors are materialized rather than
-# chained: it is the one resolution that is correct for every pair without a special case, and no
-# caller in this package multiplies two of them, so the cost falls only on someone who asks for it.
-# `S * inv(S)` is therefore the identity only up to the roundoff of the two kernels, which is the
-# honest answer rather than an exact `I`: measured, `‖S·S⁻¹ - I‖` is 5.8e-16 at `2N = 4`, 4.4e-14
-# at `2N = 10` and 1.7e-8 at `2N = 20`, growing with the size the way everything else here does.
-#
-# All four combinations are written out because one method on `(::Sfac, ::Sfac)` does not resolve
-# it: against `(::Sfac{false}, ::AbstractMatrix)` it is narrower in the second argument and wider
-# in the first, so neither dominates and the call stays ambiguous. Each pair below is narrower in
-# both.
-Base.:*(S₁::Sfac{false}, S₂::Sfac{false}) = Matrix(S₁) * Matrix(S₂)
-Base.:*(S₁::Sfac{false}, S₂::Sfac{true}) = Matrix(S₁) * Matrix(S₂)
-Base.:*(S₁::Sfac{true}, S₂::Sfac{false}) = Matrix(S₁) * Matrix(S₂)
-Base.:*(S₁::Sfac{true}, S₂::Sfac{true}) = Matrix(S₁) * Matrix(S₂)
+# Both factors are materialized rather than chained: it is the one resolution that is correct for
+# every pair without a special case, and no caller in this package multiplies two of them, so the
+# cost falls only on someone who asks for it. `S * inv(S)` is therefore the identity only up to the
+# roundoff of the two kernels: `‖S·S⁻¹ - I‖` is 5.8e-16 at `2N = 4`, 4.4e-14 at `2N = 10` and
+# 1.7e-8 at `2N = 20`, growing with the size the way everything else here does.
+Base.:*(S₁::Sfac, S₂::Sfac) = Matrix(S₁) * Matrix(S₂)
 
 @doc raw"""
     SR(S::Sfac, R::Rfac)
@@ -331,10 +309,10 @@ function apply_S_right!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom)
         @views v₂ = Λ.A[row_ind, j + M]
         for i in axes(B, 1)
             @views b = B[i, row_ind]
-            fac₁ = -Λ.c₁[j] * b' * v₁
+            fac₁ = -Λ.c₁[j] * transpose(b) * v₁
             b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
             b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
-            fac₂ = -Λ.c₂[j] * b' * v₂
+            fac₂ = -Λ.c₂[j] * transpose(b) * v₂
             b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
             b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
         end
@@ -359,10 +337,10 @@ function apply_S_inverse_right!(B::AbstractMatrix, Λ::SymplecticHouseholderDeco
         @views v₂ = Λ.A[row_ind, j + M]
         for i in axes(B, 1)
             @views b = B[i, row_ind]
-            fac₂ = Λ.c₂[j] * b' * v₂
+            fac₂ = Λ.c₂[j] * transpose(b) * v₂
             b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
             b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
-            fac₁ = Λ.c₁[j] * b' * v₁
+            fac₁ = Λ.c₁[j] * transpose(b) * v₁
             b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
             b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
         end
@@ -393,7 +371,7 @@ The canonical symplectic form ``a^TJb`` of two vectors of even length, evaluated
     @assert iseven(N2)
     @assert length(b) == N2
     N = N2 ÷ 2
-    -a[(N + 1):(2 * N)]' * b[1:N] + a[1:N]' * b[(N + 1):(2 * N)]
+    -transpose(a[(N + 1):(2 * N)]) * b[1:N] + transpose(a[1:N]) * b[(N + 1):(2 * N)]
 end
 
 @doc raw"""

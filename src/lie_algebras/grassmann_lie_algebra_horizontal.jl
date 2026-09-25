@@ -100,7 +100,8 @@ function Base.getindex(A::GrassmannLieAlgHorMatrix{T}, i::Integer, j::Integer) w
     return zero(T)
 end
 
-function Base.:+(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
+# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
+function _owned_add(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
     GrassmannLieAlgHorMatrix(A.B + B.B,
@@ -108,7 +109,7 @@ function Base.:+(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
         A.n)
 end
 
-function Base.:-(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
+function _owned_sub(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
     GrassmannLieAlgHorMatrix(A.B - B.B,
@@ -131,6 +132,14 @@ function Base.:*(A::GrassmannLieAlgHorMatrix, α::Real)
 end
 
 Base.:*(α::Real, A::GrassmannLieAlgHorMatrix) = A*α
+
+# The first `n` rows of `B * C` — see the comment on the `StiefelLieAlgHorMatrix` method of this
+# function for the `transpose` and for where the minus sits. This lift's `(1, 1)` block is the zero
+# matrix, so only the `-Bᵀ` block contributes.
+#
+# `C₁` goes unused here. It is taken so that both methods share one signature, which is what lets
+# `*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)` be written once for the two lifts.
+_hor_top_rows(B::GrassmannLieAlgHorMatrix, C₁, C₂) = -(transpose(B.B) * C₂)
 
 function Base.zeros(::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     GrassmannLieAlgHorMatrix(

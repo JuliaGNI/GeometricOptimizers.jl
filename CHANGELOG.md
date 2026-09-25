@@ -6,7 +6,87 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased]
+## [Unreleased] — targeting 0.9.0
+
+### Fixed
+
+- **`global_section` is orthogonal to the point on every draw**, for the Stiefel and the Grassmann manifold (closes open issue A29). It projected the span of `Y` out of a Gaussian draw once and then orthonormalised, and the orthonormalisation multiplies the rounding error left in that span by the condition number of the projected draw, which has a heavy tail. The worst of a few thousand draws gave `‖Yᵀλ‖` of `3e-3` to `7e-2` in `Float32`, depending on the size, and `9e-12` to `8e-11` in `Float64`, and a `Float32` geodesic that far off the manifold. It now projects and orthonormalises a second time; the first result is orthonormal, so the second pass amplifies nothing. Over 20000 host draws at `6 × 3` and 2000 at the other sizes, the largest `‖Yᵀλ‖` falls from `7.9e-3` to `1.5e-7` at `6 × 3`, from `6.7e-2` to `6.1e-7` at `200 × 10` in `Float32`, and to `1.1e-15` in `Float64`; on Metal it is at most `3.4e-7`. Projecting twice before one orthonormalisation does not fix it (`5e-2` at `200 × 10`). A section now costs about twice as long on the host: `0.71 → 1.5 μs` at `6 × 3` and `563 → 1150 μs` at `200 × 10` in `Float32`, one thread. On Metal (an M4 Max, the median of 100 calls in one warm session) the ratio is `3.0×` at `6 × 3` (`20 → 60 ms`), `1.1×` at `50 × 3` (`32 → 34 ms`) and `3.4×` at `200 × 10` (`23 → 80 ms`); those times are mostly launch and synchronisation latency, and a cold measurement per variant is not done. The second pass draws nothing, so a seeded run consumes the same random numbers and its section moves only by the error this removes. The host figures come from `scripts/global_section_orthogonality.jl`; `scripts/geodesic_section_tail.jl` measures the geodesic, where no retraction of 20000 exceeds `1f-4` any more, on the host or on a JLArray.
+- **`StiefelProjection(backend, T, N, n)` with more columns than rows (`n > N`) or with no columns (`n == 0`) builds on a device.** Its kernel launched `n` work items to write the diagonal, and an `N × n` matrix has `min(N, n)` diagonal entries. For `n > N` the call raised a `BoundsError` — on JLArrays from the kernel, on Metal as a `KernelException`; for `n == 0` Metal raised a `DivideError` on the empty launch. The kernel now launches `min(N, n)` work items and is skipped when that is zero. The host constructor was not affected. The docstring states what such a projection is: `Matrix{T}(I, N, n)`, whose columns are orthonormal only for `N ≥ n`.
+- **Two tests say what they claim.** The device sweep (`scripts/device_products.jl`, run by `test/device_products.jl`) seeds the global section its retraction rows draw, so a rare section no longer fails the suite once in about 400 runs; the entry on `global_section` above fixes the cause. And the `StiefelProjection` testset that meant to compare the host constructor with the backend one compared the host constructor with itself, because `StiefelProjection(CPU(), …)` routes to it; it reaches the backend constructor through `invoke` now. No package code changes.
+- **Symplectic Householder right-multiplication and `symplectic_form` now use `transpose` instead of `adjoint`.** The form is bilinear (aᵀJb), not sesquilinear, and `adjoint` conjugates a complex operand. For a complex operand `‖B*S − B*Matrix(S)‖` was wrong by order 1 or more, growing with the conditioning of S (medians for S of size 4, 6 and 10 being 16.7–17.1, 135–169, 7.9e4–1.3e5); for a real one it was negligible. The operations affected are: `B * Sfac`, `B * inv(Sfac)`, row vectors `v' * S`, and `transpose(v) * S`. Real results are unchanged.
+- **`+` against a plain matrix refuses a mixed-backend pair for all ten owned matrix types**, not only for `SkewSymMatrix`, `StiefelLieAlgHorMatrix` and `StiefelProjection`. The other seven answered on whichever backend the argument order picked, or raised `Scalar indexing is disallowed`. A same-backend sum keeps its value and type.
+- **Every product, sum, difference and three-argument `mul!` among the owned matrix types now runs on the device and matches a host twin.** Before this change, 612 of the 817 calls in a sweep of operations raised `Scalar indexing is disallowed` on JLArrays with `allowscalar(false)`, or failed inside a device kernel. A sweep of 817 calls (`scripts/device_products.jl`, asserted by `test/device_products.jl`) now passes except the two `cayley` retractions, which stop at JLArrays' missing `lu`; on Metal (an M4 Max) all 817 pass. The types covered are `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal lifts, the Stiefel, Grassmann and symplectic Stiefel points, `StiefelProjection`, and the adjoints of the points, of `StiefelProjection` and of a real `SkewSymMatrix` or lift. The operations covered are `*`, `+`, `-` and `mul!` into a plain destination, between two of these types or between one of them and a plain device array, and a scalar product. A `mul!` into an owned destination still raises, because the packed types have no `setindex!`. Named failures that are fixed: `GrassmannManifold` had no product methods, so `cayley`/`geodesic(Y, Δ)`, `apply_section`, `Y * B` and `Y' * B` failed; `Ω(Y, Δ)` for both Stiefel and Grassmann manifolds (through `Y * Y'`); `mul!(C, d, B)` for triangulars, both lifts and `StiefelProjection`, and `mul!(C, B, d)` for every owned type; `B * d` for both lifts; `StiefelProjection` operations `-`, `2f0 * E`, `-E`, `changebackend`, and `E' * X`; dense `+` and `-` of an owned matrix against a plain one broadcast through `getindex`.
+- **`mul!` with two element types no longer raises a `MethodError` from the kernel; it reaches LinearAlgebra's generic product.** A product like `SkewSymMatrix{Float32} * Matrix{Float64}` reaches the five-argument `mul!` fallback instead of raising inside a kernel. The `broken` assertions in `test/ambiguities.jl` for that case are fixed.
+- **`Sfac` and the adjoint of a point refuse a mixed-backend pair in `+` and `-` against a plain matrix.** Both are members of the owned union now, so the entry methods check them; before, `Sfac ± JLArray` and `Y' ± JLArray` reached `Base`'s generic `+` and `-`, which took the backend from the argument order. This closes open issue A25.
+
+### Changed
+
+- **Documentation: module docstring and the special-matrices manual page state that the package supports real element types only.** The special-matrices manual page also sets out the two forms of a gradient of a structured matrix: the natural cotangent that `ProjectTo` gives (the Frobenius projection `(dA ± dAᵀ)/2`), and the storage gradient `∂L/∂S`, whose off-diagonal entries are twice as large. A complex element type is not rejected, and some operations give a wrong answer for it: the structured matrices, the retractions and the symplectic Gram-Schmidt process assume a real field.
+- **`*`, `+` and `-` on the owned matrix types go through one `Union` design.** Each operator has entry methods on `(Owned, AbstractMatrix)`, `(AbstractMatrix, Owned)` and `(Owned, Owned)` in `src/ambiguities.jl` (for `*` also a vector and two row-vector methods), and the per-type code is on internal kernels. The pairwise tie-breakers and the 20 per-type row-vector methods are gone, and the four `Sfac`–`Sfac` products are now one method: the package owns 19 methods on `*` instead of 169, and 10 on `+` instead of 18. `detect_ambiguities(GeometricOptimizers)` reports no pair between two of the package's own methods (2 before), and 4 in total in the package's own environment, all against `StaticArrays` (230 before, most of them against `FillArrays` and `ArrayLayouts`). Over 5616 operand pairs between an owned matrix type and another operand, no product, sum or difference changed its value or result type, and none had its inferred return type stop being concrete; 24 pairs that raised now answer, among them `Sfac * SkewSymMatrix{Float32}` and `Sfac + SkewSymMatrix`.
+- **`Sfac` and `Rfac` report a backend**, that of their storage, so a sum or difference of an `Sfac` or `Rfac` and an owned matrix type is checked and answers.
+- **The second `global_rep` method for a section without a lift is deleted.** It duplicated `global_rep(::GlobalSection{T}, ::AbstractVecOrMat{T})` and was the cause of both ambiguities between two of the package's own methods.
+- **`_check_same_backend` runs only in the entry methods of `*`, `+`, `-` and `mul!` in `src/ambiguities.jl`, in `add!`, and in the triangular `/ᵉˡᵉ` and scalar `mul!`.** The check runs at 19 call sites instead of 39. The same-structure sums and differences (`SkewSym ± SkewSym`, `Sym ± Sym`, triangular ± triangular, lift ± lift, lift + `SkewSym`) are internal methods behind the entries; values and result types are unchanged.
+- **The package owns `mul!` entry methods for every owned type:** `(C, Owned, Matrix)`, `(C, Matrix, Owned)`, `(C, Owned, Owned)`, `(c, Owned, Vector)`. `detect_ambiguities` still reports 0 own-vs-own pairs and 4 in total, all against `StaticArrays`, as after part G1. The vector entry would be ambiguous with `AbstractNeuralNetworks`' `mul!(out, A, ::ZeroVector)`; a method in the `AbstractNeuralNetworks` extension settles the pair with the zero vector's answer, which is the answer those calls gave before.
+- **Host values: products with a Grassmann point, with a point's adjoint on the right (`B * Y'`), and `mul!` with a point or `StiefelProjection` now go through BLAS on the unwrapped array instead of LinearAlgebra's generic loop,** so they differ at round-off level. `2f0 * A'` for a real `SkewSymMatrix` or lift returns a lazy `Adjoint` of the scaled matrix instead of a dense `Matrix` (same values).
+- **A plain matrix times a horizontal lift materializes `permutedims(C)` first** (a device product does not serve a view of a `Transpose`). Host cost, measured cold with BLAS on one thread by `scripts/lift_right_multiply_cost.jl`, two runs each, 4×N matrix times an N×N lift: N=6: 0.24 → 0.32 μs, 1472 → 1744 B; N=50: 0.58 → 0.63 μs; N=200: 3.3 → 2.8 μs; N=1000: 38 → 14 μs, 100928 → 133776 B.
+- **`geodesic(B, ProjectedSkew())` keeps every step on the lift's backend.** The thin Q is `qr(B̂).Q` applied to a `StiefelProjection`, the `Diagonal` product is a broadcast, and the identity is `unit_matrix` instead of copying Q to the host with `Matrix`. It runs where the backend supplies `qr` and `eigen` of a `Hermitian` matrix (LAPACK on the host; CUDA.jl's cuSOLVER, untested); on Metal and JLArrays it raises inside `qr`. On the host the result moves at round-off level only.
+- **The special-matrices manual page has a section on arithmetic and broadcasting on a device:** the structured matrices define no broadcast style, and manifold points none on purpose.
+
+### Breaking Changes
+
+- **`vec` is `Base`'s for `SkewSymMatrix`, `SymmetricMatrix`, both triangulars and both horizontal lifts.** It returns the entries of the matrix, not the packed storage; for a lift it returned a `LazyArrays.Vcat` of the storage blocks. Code that read the storage through `vec` uses `freeparameters` (which this package extends from `NeuralNetworkParameters`) or `parent`.
+- **LazyArrays is no longer a dependency**, and FillArrays and ArrayLayouts leave the environment with it. Its one use was `vec` of a lift.
+- **An operand that `KernelAbstractions.get_backend` cannot place raises in a checked `+`, `-`, `*`, or `mul!`**, with `KernelAbstractions`' own `ArgumentError`, instead of being let through unchecked. Of the 5616 operand pairs compared under **Changed**, 445 that answered now raise; every one has a `Bidiagonal`, a FillArrays or a LazyArrays operand, and 42 of them are ambiguities that arise only when FillArrays or LazyArrays is loaded. The same holds, outside those pairs, for `SymTridiagonal`, a range and a StaticArrays matrix; `+` with a StaticArrays matrix raises a `MethodError`, from an ambiguity with StaticArrays' `+(::AbstractArray, ::StaticArray)`, as `-` already did. Convert such an operand with `Matrix` first.
+
+### Added
+
+- **The test suite runs the device sweep on Metal on every Apple-silicon Mac.** `test/metal.jl` runs `scripts/device_products.jl` with `MtlArray` in place of the `JLArrays` stand-in and asserts that every row passes, the two `cayley` rows included, because Metal supplies the `lu` that `JLArrays` lacks. Where `Metal.functional()` is `false` the file skips itself, which is what happens inside a sandbox. `Pkg.test(test_args = ["metal"])` runs this file alone, and then a missing device fails the run. Metal (1.10 or later) is a test dependency on every platform; it installs and precompiles on Linux and Windows, and nothing there loads it. On an Apple M4 Max with Metal 1.11.1 all 817 rows pass, and the testset takes about five minutes.
+- **A `Metal` workflow runs the Metal tests on GitHub's `macos-15` runner**, for the `min` and `1` Julia versions. The runner's GPU is Apple's paravirtual device, which Metal.jl supports from 1.10 and on macOS 15 or later. The job is not a required check. CI's `macOS-latest` entry runs the same testset as part of the full suite, and that entry is required.
+
+
+## [0.8.0]
+
+**This release makes the host/device seam and the `LinearAlgebra` contract explicit.** An
+operation that mixes two backends is refused by name rather than answering on whichever backend
+argument order happens to pick, and the structured matrices keep the return-value contract that
+`mul!`, `copyto!` and a matrix-vector product carry everywhere else. Each item below points at its
+own entry further down, where the evidence is.
+
+### Breaking Changes
+
+- **A computation across two backends is refused by name.** Most were not refused at all before:
+  seven of twelve mixed operations returned an answer, and which backend it landed on depended on
+  the argument order. Move one operand first, with `copyto!` or `changebackend`. See *A
+  computation across two backends is refused by name* under **Fixed**.
+- **`broadcast(f, Y)` on a `Manifold` returns a plain array.** The method that rewrapped the
+  result is deleted, because the wrapper claimed an invariant the result does not hold. A caller
+  who knows the result is on the manifold writes
+  `manifold_constructor(Y)(broadcast(f, Y.A))`, which also keeps a device-backed point on the
+  device. Dot syntax never reached the deleted method and is unaffected.
+- **An allocator that names a backend refuses an element type that backend cannot hold**, rather
+  than failing later inside a kernel. Name a supported element type.
+- **`Optimizer` carries ten type parameters, against eight in 0.7.0** — one for the observer and
+  one, `WT`, for the retraction workspace, in the order
+  `Optimizer{T, ALG, OBJ, GT, HT, OCT, LST, RT, WT, OT}`. Code that spells the type out has to add
+  both, and `WT` is not last. The constructors and every accessor are unaffected.
+- **`mul!` returns its destination, `copyto!` returns its destination, and `A * b` returns a
+  vector**, for `SkewSymMatrix`, `SymmetricMatrix` and both triangulars. The first two returned
+  `nothing` and the third returned an ``n\times1`` matrix.
+- **`assign!` and `copyto!` reject a mismatched pair** instead of writing part of the destination.
+- **`SkewSymMatrix` and `SymmetricMatrix` project an integer matrix into `float(T)`**, not into
+  `Float32`. An `Int64` matrix now yields `Float64`.
+- **A point and its global section are orthonormalized with CholeskyQR2, not `LinearAlgebra.qr!`.**
+  This is what makes a draw on a device work at all, and the factor it returns differs from the
+  Householder one in the last digits. A result that depends on the exact section moves with it.
+- **`StiefelProjection`'s `N` and `n` are `Int`, not `Integer`.** They were the package's only
+  size parameters that were not.
+- **A triangular product whose operands differ in storage or element type returns a triangular**
+  where it returned a dense `Matrix`, because the method it could not reach before is the one that
+  keeps the packed form.
+- **`Newton` rejects a `Manifold` solution and a parameter set**, with a message that names the
+  method, rather than failing further in.
+- **`solve!` does not evaluate the objective a second time** at an iterate it has just evaluated.
+  An objective with side effects, or a call counter, sees one call where it saw two.
 
 ### Added
 
@@ -387,8 +467,285 @@ breaking release).
   allocates for `geodesic`. Both are ``O(n^2)``. `inv` stays an `inv`: `lu!` and `rdiv!` would take
   it in place on the host, and neither is something a `KernelAbstractions` backend is obliged to
   supply, where `inv` is what `cayley` already runs on Metal through.
+- Added `scripts/retraction_differential_allocations.jl`, the archived check behind the
+  `retraction_differential` figures quoted under *Changed*. It reuses the sizes and the fixture of
+  `scripts/retraction_step_allocations.jl`, so the part of the step path the workspace reaches and
+  the part it does not can be read side by side. The ``\alpha = 0`` column is load-bearing and not
+  decoration: it is what says the default `Backtracking` pays none of this.
+- **`value` and `previous_value` now answer for every optimizer state that holds the number.**
+  They existed for `AdamState`, `GradientState`, `MomentumState` and `ScalarMomentAdamState` and
+  raised a `MethodError` for the other two. `NewtonOptimizerState` gains both, because it carries an
+  `f` and an `f̄` field and both are already maintained. `BFGSState` — and therefore `DFPState`,
+  which is an alias for it — gains `previous_value` only.
+
+  **The asymmetry is the type's shape and not an oversight, so it is written down rather than
+  papered over.** `BFGSState` holds one iterate and one objective, not a pair: `update!` writes `x̄`
+  and `f̄` at the end of the iteration, and the next iteration reads them as the previous ones. The
+  objective at the current iterate belongs to the solve loop, which hands it to `OptimizerStatus`
+  directly and never reads it back off the state. Giving the type an `f` field would not be
+  additive — `OptimizerStatus` computes `Δf = f - state.f̄` and reads the field, not the accessor, so
+  a second slot changes what `f̄` holds when the status reads it, and with it the `Δf` that
+  `f_converged` and `f_increased` rest on. That reaches `BFGS` and `DFP`, which are one type and not
+  two; `Newton` has its own state and is untouched by it. The `BFGSState` docstring now says this.
+
+  `test/optimizer_state_accessors.jl` is the first test of either accessor: nothing under `test/`
+  called `value(::OptimizerState)` or `previous_value` before, which is why the suite was green with
+  two of the six states unable to answer. **Eight of its seventeen assertions fail on the pre-change
+  source and nine pin behaviour that already held**, each checked individually rather than as a
+  batch. Six of the eight raise a `MethodError`; the two that do not are the sharper pair — see the
+  `solution`/`gradient` entry under *Fixed*, where the old methods returned a wrong vector rather
+  than no vector. Among the nine is `isempty(methods(value, Tuple{BFGSState}))`, which keeps the
+  missing `value` method deliberate rather than a gap that grows back. It is the method table and
+  not `applicable`, because a narrower `value(::BFGSState{Float32})` leaves `!applicable` passing on
+  a `Float64` state.
+- Added `scripts/optimizer_status_delta_f.jl`, the archived check behind the paragraph above and
+  behind the `BFGSState` docstring. It asks, per optimizer method, whether the `Δf` the status
+  reports is `f[end] - f[end-1]` or `f[end] - f[end-2]`, taking the objective values from a stored
+  trace. Exact equality, so it needs no tolerance, no warm-up and no cold process.
+
+  **It reports that `Δf` spans two iterations for `GradientMethod`, `MomentumMethod` and `Adam`,
+  and one for `BFGS`, `DFP` and `Newton`.** That is a defect and it is *not* fixed here — it is
+  open issue A24 below, beside A10, which is the `ḡ` half of the same ordering. It is recorded here
+  as well because it is the reason `BFGSState` gains no `f` field. During monotone descent a
+  two-step `Δf` overstates the decrease, so `f_converged` fires late rather than early;
+  `f_increased`, which is one of the two `x_converged` guards, compares against a value two
+  iterations old. Newton's one step is an accident of the second `update!` at `optimizer.jl:431`,
+  whose own comment proposes removing it — this script is what would catch that.
+- **Two docstrings now state an answer that had to be read off the source.** `OptimizerResult`
+  listed `f` as a field and named no accessor: it gains an *Accessors* section saying that
+  `Base.minimum(result)` is the objective, `solution(result)` the point, and why the name is
+  `minimum` and not `value` — `value` evaluates an `OptimizerProblem` at a point, which is a
+  different question from reading a number a finished solve already holds. `symplectic_gram_schmidt`
+  and `symplectic_gram_schmidt!` are exported; nothing under `src/` calls either except where the
+  copying version calls the in-place form, because `sr!` builds its symplectic factor from
+  `symplectic_householder!` reflectors; the file's head comment now says
+  that this is intended and that they are the standalone entry point to the process.
+
+  The `NewtonOptimizerState` docstring listed `f̄` twice in its `# Keys` block and never listed `f`,
+  and said the type "is also used for the `BFGS` and the `DFP` optimizer", which the code
+  contradicts: `OptimizerState(::Newton, …)` returns a `NewtonOptimizerState`, `BFGS() isa Newton`
+  is `false`, and the `<: Newton` guard in `solver_step!` never fires for either. Both corrected
+  with the accessors, because that block is what a reader checks to know the fields the new methods
+  read — and the false sentence is where this entry's own first draft got the scope of `BFGSState`
+  wrong.
+- Added `scripts/mixed_backend_seam.jl`, the archived check behind the `_check_same_backend` entry
+  under *Fixed*. It enumerates 48 mixed-backend operations across the owned matrix types and reports
+  what each one does, and it runs on either side of that change: without the guard it counts how
+  many answer anyway, with it how many are refused by name. **The enumeration is the point** — a
+  ratio quoted without it cannot be re-measured, because the denominator is entirely a function of
+  which operations are listed. The twenty `SymplecticStiefelManifold` pairs are the largest block,
+  because that type carries ten of the guard sites, more than any other file.
+- Added `scripts/mixed_backend_plain_matrix.jl`, the second enumeration, for the case
+  `scripts/mixed_backend_seam.jl` does not reach: an owned matrix paired with a **plain**
+  `AbstractMatrix`. Its 80 cases are the ten owned types × `+` and `-` × both argument orders ×
+  the structured operand on each side, and the sweep is closed rather than hand-picked, which is
+  what lets the count be re-measured. It runs on either side of the `-` guard.
+- Added `scripts/metal_backend_refusal.jl`, the same question against a **real** Metal device rather
+  than the `JLArrays` stand-in every other figure here uses. `Float32` throughout, because Metal has
+  no `Float64`. It skips itself with a message where `Metal.functional()` is `false`, so it is
+  runnable anywhere and measures only where there is a device.
+- Added three testsets to `test/mixed_backend_refusal.jl`, which goes from 77 assertions to 118: the
+  `-` refusal against a plain matrix in both argument orders for all ten owned types, the
+  `LinearAlgebra.mul!` species and backend checks on `AbstractTriangular` — which the change that
+  added them left with no assertion at all — and `/ᵉˡᵉ`'s species, backend and differing-storage
+  cases.
 
 ### Fixed
+
+- **`solution` and `gradient` on a `NewtonOptimizerState` returned the previous iterate's
+  quantities.** `update!` shifts the barred fields and then writes the unbarred ones, so `x`, `g`
+  and `f` are the current iterate's and `x̄`, `ḡ` and `f̄` the previous one's. The two accessors read
+  `x̄` and `ḡ`, where the same names on all five other states read the unbarred fields, and the type
+  had no `previous_solution` or `previous_gradient` at all — so the previous quantities were
+  reachable under the current-quantity name and the current ones were not reachable at all.
+
+  **This change is public through `gradient` and qualified-name-only through `solution`**, so the
+  reach is stated plainly rather than buried. `gradient` is exported and `Base.ispublic`, so
+  `gradient(::NewtonOptimizerState)` moves a public surface and a caller reaches it after a bare
+  `using GeometricOptimizers`. `solution` is neither exported nor `Base.ispublic`, so it is reachable
+  only as `GeometricOptimizers.solution`; the same holds for the three `previous_*` names the entry
+  above adds. The direction is the same either way: code that called one of the two for the previous
+  iterate now gets the current one and wants `previous_solution` or `previous_gradient`. Nothing
+  under `src/` called either method — every
+  `solution(state)` and `gradient(state)` call site is inside a first-order manifold optimizer's own
+  `update!`, dispatching on its own concrete state type — so the in-tree blast radius was zero, and
+  the whole family is set at once rather than left half right.
+
+  The likely origin is a copy across a type boundary: both methods took a parameter named `cache`,
+  and `solution(::NewtonOptimizerCache)` is `cache.x`, which is correct there because a cache's `x`
+  means something else. Discussion of the public contract is in
+  [issue #106](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/106).
+
+  The two regression assertions are the sharpest in the new test file, because on the pre-change
+  source they returned a **wrong vector** rather than raising a `MethodError`: `solution(state)`
+  gave the previous iterate's vector and compared `false`. A missing method announces itself; a
+  wrong answer does not, which is why nothing caught this.
+- **A structured matrix minus a plain `AbstractMatrix` crossed backends unguarded, and no owned type
+  had such a `-` at all.** The entry below states that the guard covers `-`; it covered `-` between
+  two owned operands. Against a plain `AbstractMatrix` there was no owned `-` method anywhere, so
+  every such pair fell to `Base`'s generic `-` at `arraymath.jl:6`, which broadcasts and takes its
+  backend from the argument order. `SkewSymMatrix(host) + JLArray` was refused; `SkewSymMatrix(host)
+  - JLArray` answered on the device.
+
+  Three methods in `src/ambiguities.jl` close it — `(Owned, AbstractMatrix)`,
+  `(AbstractMatrix, Owned)` and the `(Owned, Owned)` tie-breaker the first two need, over a new
+  `OwnedMatrix` union of the ten types. Each checks and then hands the pair to the same `Base`
+  method it would have reached, through `invoke`, so **no same-backend call changes its value, its
+  type or its backend**: all 98 ordered `±` pairs over the seven square owned types return the same
+  type and the same value as on `origin/main`, and the structure-preserving results
+  (`SkewSymMatrix - SkewSymMatrix`, `LowerTriangular - LowerTriangular`, `StiefelLieAlgHorMatrix -
+  StiefelLieAlgHorMatrix`) are kept by the concrete same-type methods, which stay more specific than
+  the tie-breaker.
+
+  `scripts/mixed_backend_plain_matrix.jl` is the archived check. It enumerates the 80 mixed-backend
+  pairings of the ten owned types with a plain `AbstractMatrix` — both operators, both argument
+  orders, the structured operand on each side — and runs on either tree:
+
+  | | refused by name | answered anyway | `Scalar indexing is disallowed` |
+  |:--|--:|--:|--:|
+  | before | 12 | **34** | 34 |
+  | after | **52** | 14 | 14 |
+
+  All 40 `-` cases are now refused. **The 28 that remain are `+`, and they are open issue A25**:
+  `SkewSymMatrix`, `StiefelLieAlgHorMatrix` and `StiefelProjection` each already own a kernel-backed
+  `+(X, ::AbstractMatrix)`, which is narrower in the left argument than an `(AbstractMatrix, Owned)`
+  method and wider in the right, so a `Union` method is wider in the slot that standoff is about —
+  exactly what the head of `src/ambiguities.jl` says. Adding the `+` triple makes **sixteen** owned
+  pairs ambiguous, measured, so `+` needs a tie-breaker per pair and a decision per pair about which
+  kernel answers. That is a design change and is not taken here.
+
+  `Test.detect_ambiguities(GeometricOptimizers; recursive = true)` goes from **207 to 209**. The two
+  it adds are named below. The comparison is made **inside one process**, by measuring, deleting the
+  three methods with `Base.delete_method` and measuring again — that count is a function of which
+  packages the process has loaded, so two separate `julia` runs are not comparable and a figure
+  quoted without its process is not re-measurable. The package's own gate is unmoved:
+  `test/ambiguities.jl` keeps only own-against-own pairs and still reports the two `global_rep`
+  ones it asserts.
+
+  **The two are against `StaticArrays`, and they make `-` match `+`.** `StaticArraysCore` carries
+  `-(::StaticArray, ::AbstractArray)` and its mirror, each narrower in one argument than the two
+  mixed methods above and wider in the other, so `SkewSymMatrix - SMatrix` now raises a
+  `MethodError` where it answered. `SkewSymMatrix + SMatrix` already raised it on `main`, for the
+  same standoff against the kernel-backed `+` — six methods here are of that shape — so this makes
+  the two operators agree rather than introducing an anomaly. `StaticArrays` is not a dependency of
+  this package, and `test/aqua_tests.jl:18-22` already excludes this whole class from
+  `Aqua.test_ambiguities`.
+
+  **This names a mismatch; it does not make `-` work on a device.** There is no subtraction kernel,
+  so a *same-backend* device pair still reaches the same broadcast it always did and still raises
+  `Scalar indexing is disallowed` where one operand is a structured type. Each of the three methods
+  was checked against `invoke(-, Tuple{AbstractArray, AbstractArray}, …)` directly and gives the
+  identical outcome, which is what "pass-through" means here.
+- **`/ᵉˡᵉ` on an `AbstractTriangular` kept the whole-type binding the entry below removed from `+`,
+  `-`, `add!` and `mul!`.** `/ᵉˡᵉ(A::AT, B::AT) where {AT <: AbstractTriangular}` raised a
+  `MethodError` for a same-species pair whose storage arrays were different concrete types — a
+  `LowerTriangular{T, Vector{T}}` and a `LowerTriangular{T, SubArray{…}}`. It is the fifth site of
+  that defect and takes the same fix: an independent type variable per argument, plus
+  `_triangular_species`. It **refuses** a mixed species rather than falling back to a dense path, as
+  `add!` does and for a reason of its own: an element-wise quotient of a lower by an upper divides by
+  the zeros each keeps outside its own triangle, so there is no dense answer to fall back to. It
+  carries `_check_same_backend` with it.
+- **Two source comments named a type that disproves the sentence they are in.** `src/utils.jl:53`
+  and `src/manifolds/abstract_manifold.jl:18` both cited a `ForwardDiff.Dual` matrix as a type
+  `KernelAbstractions.get_backend` cannot place. It is a plain `Array`, `get_backend(::Array)` has no
+  element-type restriction, and `get_backend(zeros(ForwardDiff.Dual{Nothing, Float64, 2}, 2, 2))`
+  answers `CPU(false)`. The `LazyArrays.ApplyArray` half of both sentences is right and is what the
+  guard's leniency actually rests on; the `Dual` half is removed from both. Nothing about the
+  behaviour of either function changes — only the justification was wrong.
+- **The `arraymath.jl` citation was off by two** and now reads `:6` in both places it appears —
+  `src/special_matrices/triangular.jl:15` and the `AbstractTriangular` entry below.
+  `-(::AbstractArray, ::AbstractArray)` is at `arraymath.jl:6` on the running 1.13 and on the 1.11
+  compat floor; `:8` is the `broadcast_preserving_zero_d` line inside its body.
+- **A computation across two backends is refused by name, and most of them were not refused at
+  all.** `_check_same_backend` guards the binary arithmetic wherever this package owns the method —
+  48 call sites across nine files, covering `+`, `-`, `add!`, `*` and `LinearAlgebra.mul!` on
+  `SkewSymMatrix`, `SymmetricMatrix`, both `AbstractTriangular`s, both horizontal lifts,
+  `StiefelProjection`, `StiefelManifold` and `SymplecticStiefelManifold` — including the row-vector
+  and adjoint product forms — plus the generic `add!` in `src/utils.jl` that every structured `add!`
+  unwraps to. The message names both operand types and both backends.
+
+  **"Wherever this package owns the method" is the whole of the claim, and it is narrower than every
+  owned type.** A structured matrix paired with a *plain* `AbstractMatrix` reaches an owned method
+  only where one was written for that pair. The `-` half of that gap is closed in the entry above;
+  the `+` half is open issue A25.
+
+  **The record this closes called it a message problem. It was not only that.**
+  `scripts/mixed_backend_seam.jl` enumerates 48 mixed-backend operations across every guarded type
+  and reports what each one does, on either side of this change. With `JLArrays` standing in for the
+  device and `allowscalar(false)` set:
+
+  | | refused by name | answered anyway | other error |
+  |:--|--:|--:|--:|
+  | before | 0 | **37** | 11 |
+  | after | **48** | 0 | 0 |
+
+  **Fourteen of the 37 answered on the *host***, pulling the device operand off the device and
+  saying nothing — every one of them a row-vector or adjoint product, on `StiefelManifold`,
+  `StiefelProjection` or `SymplecticStiefelManifold`. The other 23 pushed the host operand onto the
+  device. Which side the answer landed on followed the argument order, not the types.
+
+  Of the 11 that raised, 7 said `Scalar indexing is disallowed`, which names neither operand; the
+  other 4 are the adjoint-against-adjoint and point-against-point pairs, which no point satisfies
+  dimensionally and which raised `DimensionMismatch`. Those four are kept in the enumeration because
+  the guard fires before the shape check, which is the right order: a backend mismatch is the more
+  fundamental error, and the caller needs to hear about it first.
+
+  On real Metal the whole set fails instead, inside `GPU compilation of MethodInstance for
+  …broadcast_linear…`, which names neither backend nor the mismatch. **That is the failure the
+  record quotes, and it is the better of the two behaviours**: on a backend that can fall back to
+  the host there was no error at all. The Metal half is not re-measured here — this machine has no
+  device, and every figure above is `JLArrays`'.
+
+  **The guard refuses only what it can prove.** `KernelAbstractions.get_backend` *raises* rather
+  than answering for an array type it has no method for, and a `StiefelLieAlgHorMatrix` built over
+  a flat parameter buffer is such a type — its blocks are views into a `LazyArrays.Vcat`. Both
+  operands there are on the host and the operation is fine. An unanswerable backend therefore
+  returns `nothing` and the pair is let through. Requiring an answer instead broke 24 host-only
+  assertions in `test/lie_algebras/stiefel_lie_algebra_horizontal.jl`, and
+  `test/mixed_backend_refusal.jl` now pins the leniency, premise included: it asserts that
+  `get_backend` really does raise for that type before asserting that the subtraction still works.
+
+  **`copyto!`, `assign!` and `changebackend` are exempt and stay exempt** — a transfer's whole
+  purpose is to cross backends, which is the contract `Base` sets for `copyto!`. `_match_backend` in
+  `abstract_manifold.jl` is the third exemption and is deliberate: `rgrad` moves the gradient onto
+  the point's backend rather than refusing. The new test file holds `copyto!` to that, so a later
+  widening of the guard cannot quietly take it.
+
+- **`+`, `-` and `add!` on an `AbstractTriangular` never dispatched for a pair whose storage arrays
+  differed.** All three bound one type variable to both arguments
+  (`(A::AT, B::AT) where {AT <: AbstractTriangular}`), so a host `LowerTriangular{T, Vector{T}}` and
+  a device `LowerTriangular{T, JLArray{T, 1}}` — already different concrete types — could not bind
+  `AT` and fell through to `Base`'s generic array `+` at `arraymath.jl:6`. **This is the same
+  whole-type binding defect `Manifold`'s `copyto!` had**, and `copyto!(::AbstractTriangular, …)` in
+  the same file already carried the fix idiom.
+
+  Each argument now carries its own type, and `_triangular_species` reads
+  `Base.typename(typeof(·)).wrapper` so the two can be compared at run time. Without that, an
+  `UpperTriangular` added to a `LowerTriangular` would read the upper storage into the lower
+  triangle and return a `LowerTriangular`, which is not the sum. **A mixed species goes to the dense
+  path rather than being refused**: the sum of a lower and an upper triangular is a general matrix,
+  which is what `Base`'s generic `+` returns for the pair and what `*` between the two species
+  already returned. `add!` is the exception, and not by choice — it writes into a triangular
+  destination that cannot hold the sum of the two species, and there is no dense path to fall back
+  to because the caller owns the destination.
+
+  `LinearAlgebra.mul!(C::AbstractTriangular, A::AbstractTriangular, α::Real)` had the same shared
+  type variable and is unbound with it. That is the fourth site of this defect in the package:
+  `Manifold`'s `copyto!`, `assign!` on the triangulars, these three, and now this one.
+
+  **Three same-backend behaviours change with it, which the dispatch fix makes unavoidable.** A pair
+  of one species whose storage types differ — a `Vector` against a `SubArray` — or whose element
+  types differ now returns a triangular where it previously returned a dense `Matrix`, because the
+  method it could not reach before is the one that keeps the packed form. And `mul!` with a
+  destination and a source of differing storage went from raising
+  `CanonicalIndexError: setindex! not defined for LowerTriangular` to writing the product, for the
+  same reason. Nothing under `src/`, `test/`, `docs/` or `scripts/` depended on either old result.
+
+  **Found by writing the mixed-backend test, not by reading the source** — the guard above was dead
+  code for these three methods and nothing said so. A same-backend *device* pair is what tells the
+  two situations apart: on one shared type variable that pair dispatched correctly and only the
+  mixed pair did not, so the test asserts the device sum's species *and* that its storage is still a
+  `JLArray`.
 
 - **The `Test` extra had no `[compat]` bound.** Every other dependency, weak dependency and test
   extra carried one; `Test` did not, so `Aqua.test_deps_compat` failed on that and on nothing else.
@@ -1137,6 +1494,103 @@ breaking release).
   beside it takes eighteen products against a rectangular `E`, where only one order and one operand
   conform at all, and covers all fifteen of the projection's own tie-breakers plus the
   triangular-times-projection one that the triangular block carries.
+- **`AbstractLieAlgHorMatrix` — the two horizontal lifts, `StiefelLieAlgHorMatrix` and
+  `GrassmannLieAlgHorMatrix` — multiplies without scalar indexing, so a lift times matrix product
+  on a device-backed point now runs end to end.** Both lifts hold no kernel of their own; a lift is
+  the block matrix `[A -Bᵀ; B 𝕆]` with the `A` block absent for a Grassmann lift, and `A` is a
+  `SkewSymMatrix` for a Stiefel lift. The per-type part is the first `n` rows, written in a
+  `_hor_top_rows` method beside each concrete lift; everything else is one method on the shared
+  supertype. So a product against an `N × m` matrix is three block products — two for a Grassmann
+  lift — and nothing else.
+
+  Six new methods in `src/lie_algebras/abstract_lie_algebra_horizontal.jl`: `*(lift,
+  ::AbstractMatrix)`, `*(::AbstractMatrix, lift)`, two row-vector methods (`Adjoint` and
+  `Transpose` of a vector on the left), `*(lift, ::AbstractVector)`, and `*(lift, lift)`. The
+  row-vector pair resolves an ambiguity with `LinearAlgebra`'s narrower methods, exactly as the
+  pair the projection needed in the entry above.
+
+  **`transpose` and not `adjoint`, in both halves of the change:** `getindex` builds the
+  off-diagonal block as `-B.B[j - n, i]`, entrywise and without conjugating, so a lift is
+  skew-*symmetric* rather than skew-Hermitian. With `adjoint` the product disagrees with the
+  dense product on a complex element type and agrees on a real one — the difference no real-path
+  test can see. `test/lie_algebras/grassmann_lie_algebra_horizontal.jl` pins it on a complex
+  draw, matching the existing testset for `+` in the Stiefel file.
+
+  **Nineteen tie-breakers join `src/ambiguities.jl`.** A `*` against a bare `AbstractMatrix` on
+  both sides puts each of the two lifts in a standoff with every other owned type twice over.
+  Nineteen and not twenty-two because `Adjoint{<:StiefelManifold}` multiplies on the left of a
+  bare `AbstractMatrix` and not on the right, so it meets a lift once; `GrassmannManifold`
+  defines no such `*` at all and meets it not at all. No new kind of pair and no new rule: a lift
+  computes, so under rule 2 it materializes whatever is to its right unless that operand is a
+  wrapper, and under rule 1 a wrapper to either side unwraps. `test/ambiguities.jl` asserts the
+  own-vs-own set is empty, so the count is a consequence rather than something to remember.
+
+  Both lifts join the `LEFT` and `RIGHT` lists of that file's product sweep, which takes it from
+  110 products to 156, and both join the rectangular sweep, which goes from 18 products to 22. A
+  type listed on one side only leaves its own tie-breakers unexercised. That file's header
+  sentence that said the two horizontal lifts "define no `*` against a matrix at all" is corrected;
+  `AbstractLieAlgHorMatrix` joins the row-vector table there.
+
+  Measured on `JLArrays` under `allowscalar(false)` in `Float32`, at `N, n = 6, 3`, with the
+  lift built the way the retractions build one — `global_rep(GlobalSection(Y), rgrad(Y, ...))` for
+  the Stiefel device lift; the Grassmann device lift is constructed directly from a `JLArray`.
+  Lift times matrix, matrix times lift, lift times vector and lift times `StiefelProjection`
+  all complete and agree with the host dense form. The other order comes
+  back a `Transpose` around a `JLArray` and not a bare `JLArray`: `LinearAlgebra` pushes the
+  unary minus through the wrapper rather than materializing, so the outer `transpose` stays lazy.
+  That is the same shape `*(::AbstractMatrix, ::SkewSymMatrix)` has always returned, and `parent`
+  is what the test asserts on. Each of those four products, on both lift types where both apply,
+  raises `Scalar indexing is disallowed` on the exact path the new methods shadow, checked one at
+  a time through `invoke(*, Tuple{AbstractMatrix, AbstractMatrix}, ...)` in one process. So each
+  new assertion is a real check and not one that passes by construction.
+
+  Host cost — measured on the expression `B * C`, with `B = rand(LT{Float64}, N, N ÷ 2)` for each
+  of the two lift types and `C = rand(Float64, N, N ÷ 2)`, against the path that very method
+  shadows. The baseline is reached with `invoke(*, Tuple{AbstractMatrix, AbstractMatrix}, B, C)`,
+  so it is that method in the same process and not a reimplementation of it and not a second
+  checkout. **Five runs, each a separate cold process**, BLAS pinned to **one thread** with
+  `BLAS.set_num_threads(1)` — the thread count decides this ratio outright, because the new path
+  reaches BLAS and the baseline cannot. Within a run, the median of 201 samples up to `N = 32` and
+  31 above it, with enough calls folded into each sample that the 42 ns clock tick is below the
+  noise. Script: `scripts/lift_multiply_cost.jl`. Median of the five run medians, and the full
+  spread across them:
+
+  | | `N = 6` | `N = 32` | `N = 128` | `N = 512` |
+  |:--|--:|--:|--:|--:|
+  | `StiefelLieAlgHorMatrix`, block ÷ generic | **0.36x** | 2.12x | 2.79x | 2.74x |
+  | spread over five cold runs | 0.30–0.37 | 2.04–2.26 | 2.66–2.94 | 2.70–2.79 |
+  | `GrassmannLieAlgHorMatrix`, block ÷ generic | **0.74x** | 6.37x | 14.04x | 17.86x |
+  | spread over five cold runs | 0.72–0.80 | 5.87–6.80 | 13.11–14.53 | 17.21–18.36 |
+
+  **The column is not monotone in `N`, and two of its entries cannot be ordered against each
+  other.** The Stiefel row rises and then flattens: its `N = 128` and `N = 512` spreads overlap
+  (2.66–2.94 against 2.70–2.79), so those two sizes are indistinguishable here and only the
+  direction — both a little under 3x — is a result. The Grassmann row does rise across every step
+  and its top two spreads do not overlap. Read every cell as its band; `0.36x` and `17.86x` are
+  both real, and the arithmetic that would predict a single factor from the stored-entry count
+  predicts neither. `scripts/triangular_multiply_cost.jl` records what happened the last time such
+  a counting argument was published for these types.
+
+  **The reason for the large-`N` gain is mechanical and not a better algorithm.** The block path
+  hands its off-diagonal products to BLAS; the baseline cannot use BLAS at all, because a lift is
+  not a `StridedArray` and `invoke` therefore reaches `generic_matmatmul!`. That is the whole of
+  it, and it is why the Grassmann row — one BLAS product against a full `generic_matmatmul!` —
+  runs so far ahead of the Stiefel one. **At `N = 6` both are slower, and the Stiefel lift is
+  about 2.8x slower.** Its `A` block goes through the `SkewSymMatrix` product, which is a
+  `KernelAbstractions` launch with a fixed cost a 3×3 block cannot amortize. The Grassmann lift
+  has no `A` block and loses only a little. `N = 6` is the size the retraction tests use.
+
+  **The block path also allocates more, at every size.** Bytes, block against generic: Stiefel
+  1 024 / 224 at `N = 6`, 12 912 / 4 176 at 32, 197 232 / 65 616 at 128, 3 146 352 / 1 048 656
+  at 512; Grassmann 656 / 224, 10 560 / 4 176, 164 160 / 65 616, 2 621 760 / 1 048 656. Between
+  2.5x and 4.6x, from the intermediate each block product returns. Identical across all five
+  runs.
+
+  **This is API surface and not a defect repair, and nothing in the package pays the small-`N`
+  cost.** After `geodesic` and `cayley` on both a `StiefelManifold` and a `GrassmannManifold`,
+  all six new `*` methods have zero specializations — measured with `Base.specializations` in a cold
+  process. The retractions form `expB * E` with a dense `expB`, so they never reach a lift
+  product. The device is what this buys.
 - **A manifold point and its global section are orthonormalized with CholeskyQR2 rather than
   `LinearAlgebra.qr!`, on every backend.** `rand(backend, StiefelManifold, N, n)` and
   `global_section` are the four call sites. This is what makes a device draw work at all:
@@ -1369,6 +1823,36 @@ breaking release).
   is `(A' * B')'`, which is read-only and would incur an allocation if `adjoint` copied. Documented
   in the docstrings of `LowerTriangular` and `UpperTriangular`, in `docs/src/special_matrices.md`,
   and pinned by regression tests.
+- **`Optimizer` carries a second further type parameter, `WT`, for the retraction workspace, and it
+  sits *before* the observer's.** The observer's own entry earlier in this section says one further
+  parameter; over this release as a whole there are two, and the observer's is no longer last. The
+  order is
+  `Optimizer{T, ALG, OBJ, GT, HT, OCT, LST, RT, WT, OT}` — ten parameters, against eight in 0.7.0.
+  Code that spells the type out with all of its parameters has to add `WT` in that position and not
+  at the end; the constructors and every accessor are unaffected, and `retraction_workspace(opt)`
+  is the accessor for the field.
+- **`docs/make.jl`'s `size_threshold` goes from 500 KiB to 600 KiB**, for the reason the 400-to-450
+  bump recorded under 0.4.2 gives. `RetractionWorkspace` and the four names beside it took `api.md`
+  — the one catch-all `@autodocs` over the whole package — to 509.07 KiB against the 500 then
+  allowed, 1.8% over, and `size_threshold` is an error rather than a warning, so the build failed as
+  it should. This is again the smaller half of the fix and not the fix: what bounds the page is
+  continuing the migration that moves docstrings onto the chapters that explain them.
+  `size_threshold_warn` stays at its default, so the warning names the page on every build.
+- **The workspace does not reach `retraction_differential`, which under `Cayley` is the largest
+  per-trial manifold allocation left.** Under `Geodesic` there is nothing to reach:
+  `retraction_differential(::Geodesic, B, α)` returns `B` and allocates nothing at any ``\alpha``.
+  `retraction_differential(::Cayley, ::AbstractLieAlgHorMatrix, α)` still calls
+  `lift_factors(B)` and `StiefelProjection(B)` fresh on the line-search path, and allocates
+  8 672, 12 576, 59 536 and 194 992 bytes at ``(N, n)`` = (6, 3), (20, 3), (100, 5) and (400, 5) —
+  cold, with BLAS pinned to one thread, from `scripts/retraction_differential_allocations.jl`. It
+  allocates **nothing at ``\alpha = 0``**, which is the only point the default `Backtracking`
+  evaluates ``\varphi'`` at, so the default line search pays none of it. `Static` and
+  `DecayingStatic` pay nothing either, evaluating neither ``\varphi`` nor ``\varphi'``. The four
+  remaining line searches of the seven this package exports each pay it once per trial: `Bisection`
+  bisects ``\varphi'``, `StrongWolfe`'s curvature condition is stated in terms of it, and
+  `Quadratic` and `BierlaireQuadratic` each evaluate it at the trial point and at a bracket
+  endpoint. Giving it a workspace is a separate change: it needs buffers of shapes the retraction's
+  own workspace does not hold.
 
 ### Temporary
 
@@ -4540,6 +5024,53 @@ separated first, and `update!(::MomentumState, …)`'s argument list says they c
 
 ---
 
+#### A24. `Δf` spans two iterations for the three first-order states
+
+**Severity: low** — it moves when convergence fires, not whether a solve is correct. Found in the
+review of the `value`/`previous_value` work in 0.6.0, and it is the `f̄` half of A10: same states,
+same root cause, `update!(state, opt, x)` running after the step. **Pre-existing on `main`.**
+
+`OptimizerStatus` computes `Δf = f - state.f̄` (`optimizer_status.jl:103`), reading the field and not
+the accessor. `scripts/optimizer_status_delta_f.jl` asks, per optimizer method, whether that `Δf`
+equals the one-step difference `f[end] - f[end-1]` or the two-step difference `f[end] - f[end-2]`,
+taking the objective values from a stored trace. Exact equality, so there is no tolerance to tune.
+On `f(x) = Σ(x⁴ + x²)` from `[1.0, 2.0, 3.0]`, six iterations:
+
+| method | `Δf` spans |
+|:--|:--|
+| `GradientMethod` | **two steps** |
+| `MomentumMethod` | **two steps** |
+| `Adam` | **two steps** |
+| `BFGS` | one step |
+| `DFP` | one step |
+| `Newton` | one step |
+
+Two consumers, both stale for the first three:
+
+- `rfₐ = norm(Δf)` and `rfᵣ = rfₐ / norm(f)` (`optimizer_status.jl:109-110`), which are what
+  `f_converged` tests (`:397`). During monotone descent a two-step `Δf` overstates the decrease, so
+  `f_converged` fires late rather than early — the safe direction, which is why this is low and not
+  medium.
+- `f_increased = f > state.f̄` (`:130`), which reads the same stale field and is one of the two
+  guards on `x_converged` (`:391`). Here the comparison is against an objective two iterations old,
+  so an iterate that rose against its immediate predecessor can still read as a decrease.
+
+`BFGSState` holds one iterate and one objective rather than a pair, which is why it spans one step
+and why it gains `previous_value` and no `value` in 0.6.0. `NewtonOptimizerState` holds a pair and
+shifts like the first-order states, and still spans one step only because `optimizer.jl:431` calls
+`update!` a second time inside `solver_step!` and re-synchronises `f̄` before the status reads it.
+That line carries the comment `# this will have to be removed later`; removing it moves `Newton`
+into the two-step column, and the script is what would catch that.
+
+**What to do.** The fix is the one A10 names, one level up: `update!(state, opt, x)` should store the
+objective and the gradient that belong to the `x` it is storing. It cannot be taken for `f̄` alone,
+because `f_increased` and `Δf` read the same field and would move together, and because
+`INITIAL_BFGS_F` — the first-iteration sentinel `optimizer_status.jl:124-129` describes — is
+calibrated against the present ordering. Settle it with A10 and with issue #108, which is the third
+face of the same ordering: a state read after `solve!` returns lags the returned iterate by one.
+
+---
+
 #### A12. The `Cayley` differential is recomputed per `φ'`, and its cost is unmeasured
 
 **Severity: low**, and not a defect — a cost this release introduced and did not measure. Found in
@@ -4943,6 +5474,59 @@ and `Base.zero` already find the backend of a point they are given
 (`src/manifolds/stiefel_manifold.jl:128,143`). Neither is large, and neither is worth doing blind:
 the check is a GPU run of the optimizer, which nothing in this repository does any more, so this
 should be closed together with A19 — one backend, one session, both claims settled.
+
+#### A26. `symplectic_normalize` and `symplectic_gram_schmidt!` are real-only by construction
+
+**Severity: medium.** Found in the review of [#111], the PR that fixed
+`symplectic_form` for complex operands.
+
+Both scale a pair by `sign(fac)/sqrt(abs(fac))`, which gives `eᵀJf = 1` only for a
+real `fac`; for a complex one the form comes out as `sign(fac)²`. They still use `'`
+for the form, and a switch to `transpose` alone would not make them correct. The
+functions are unchanged and will not work with complex element types. The package
+documents that it supports real element types only.
+
+**What to do**: Write a complex-valued algorithm that computes the sign correctly,
+or replace both with a method that accepts only real input by type constraint.
+
+#### A27. `ProjectTo` is pinned as the Frobenius projection, and the storage gradient is not yet derived from it
+
+**Severity: medium.** Found in the review of [#111], in investigation of why a
+code path that reads a `ProjectTo` cotangent's storage as `∂L/∂S` gives the wrong
+gradient.
+
+`ProjectTo` on a `SymmetricMatrix` or `SkewSymMatrix` gives the natural cotangent
+(the Frobenius projection `½(Ā ± Āᵀ)` of a dense cotangent). A new test holds it to
+that: its pairing with every storage direction matches a central difference, and a
+weight used twice (two cotangents added, then projected again) gets the projection of
+the sum. That representation is kept because AD can add and re-project it.
+
+Returning `∂L/∂S` from `ProjectTo` instead was tried and rejected: Zygote adds the
+two cotangents of a weight used twice as dense matrices and projects the sum again,
+which doubled the off-diagonal entries (ratio 2.0 against finite differences), and a
+dense Zygote-native cotangent mixed in gave ratios from −1.6 to 3.2.
+
+A caller that forms the flat gradient of a parameter set through Zygote and passes
+its storage as `∂L/∂S` gets half of each off-diagonal entry: the ratio of the storage
+gradient, by finite differences, to the storage of the Zygote cotangent is 1 on the
+diagonal and 2 off it for a `SymmetricMatrix`, and 2 for every entry of a
+`SkewSymMatrix`, whose storage holds only off-diagonal entries (n = 3, Zygote 0.7.13).
+A `GradientMethod` or `MomentumMethod` step taken on that storage therefore moves
+those entries by half; this follows from the cotangent and was not measured through
+an optimizer step. The conversion to `∂L/∂S` (the lower triangle of
+`G + Gᵀ` with the diagonal counted once, or of `G − Gᵀ`) belongs where an AD
+cotangent becomes a parameter gradient, not in `ProjectTo` itself.
+
+**What to do**: The mechanism is a step in the optimizer's parameter update after
+Zygote adds cotangents, and before the gradient is applied. Which package owns it
+(GeometricOptimizers or NeuralNetworkParameters) is a design decision.
+
+#### A28. `SymplecticStiefelManifold` has no `rebuild`, so `changebackend` refuses it
+
+**Severity: low.** `src/parameter_protocol.jl` gives the symplectic Stiefel manifold a
+`freeparameters` and no `rebuild`, so `mapstorage` raises an `ArgumentError` for it, and
+`changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
+points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
 
 ---
 
@@ -5568,6 +6152,7 @@ and both are corrected: see C8.)
 [#60]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/60
 [#67]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/67
 [#77]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/77
+[#111]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/111
 [0.1.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.1.0
 [0.2.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.0
 [0.2.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.2.1

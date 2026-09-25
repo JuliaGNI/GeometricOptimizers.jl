@@ -176,13 +176,11 @@ end
     end
 end
 
-# A row vector on the left is the one shape `*(::AbstractMatrix, ::Sfac)` does not settle on its own:
-# `LinearAlgebra` has its own method for that left operand, narrower there and wider on the right,
-# so neither wins. The four tie-breakers beside those products in
-# `src/decompositions/symplectic_sr.jl` settle it. `test/ambiguities.jl` cannot cover these pairs,
-# because one method of each is not this package's.
+# A row vector on the left is the one shape `*(::AbstractMatrix, ::OwnedMatrix)` does not settle on
+# its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on the
+# right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
 #
-# Both `S` and `inv(S)` run: they are separate types and so need, and have, separate methods. This
+# Both `S` and `inv(S)` run: they are separate types and so need, and have, separate kernels. This
 # compares the operator against its own dense form rather than against the manifold, so the
 # factorization's residual does not enter and the tolerance above is not needed.
 @testset "a row vector times an Sfac" begin
@@ -196,5 +194,42 @@ end
             @test transpose(v) * X ≈ transpose(v) * Matrix(X)
             @test size(v' * X) == (1, N2)
         end
+    end
+end
+
+# `R` has no product kernel of its own, so against an owned matrix it is the plain operand and the
+# backend guard asks for its backend. Each answer is compared with the one for `R`'s dense form.
+@testset "the R factor against an owned matrix" begin
+    for (N2, n2) in SIZES
+        R = sr(randn(N2, n2)).R
+        Rsq = sr(randn(N2, N2)).R
+        A = rand(SkewSymMatrix, N2)
+
+        @test A * R ≈ A * Matrix(R)
+        @test Rsq * A ≈ Matrix(Rsq) * A
+        @test A - Rsq ≈ A - Matrix(Rsq)
+        @test Rsq + A ≈ Matrix(Rsq) + A
+    end
+end
+
+# The reflectors and the symplectic form are bilinear, `aᵀJb`, so a complex operand is not
+# conjugated. The factorization itself is of a real matrix; only the operand is complex. With
+# `adjoint` in place of `transpose` the real part still agrees and the product is wrong by O(1).
+@testset "a complex operand times a real Sfac" begin
+    for (N2, _) in SIZES
+        F = sr(randn(N2, N2))
+        B = randn(ComplexF64, 3, N2)
+        v = randn(ComplexF64, N2)
+        for X in (F.S, inv(F.S))
+            M = Matrix(X)
+            @test norm(B * X - B * M) < tolerance(N2)
+            @test norm(X * transpose(B) - M * transpose(B)) < tolerance(N2)
+            @test norm(X * v - M * v) < tolerance(N2)
+            @test norm(transpose(v) * X - transpose(v) * M) < tolerance(N2)
+            @test norm(v' * X - v' * M) < tolerance(N2)
+        end
+        J = _poisson_tensor(Float64, N2)
+        a, b = randn(ComplexF64, N2), randn(ComplexF64, N2)
+        @test symplectic_form(a, b) ≈ transpose(a) * J * b
     end
 end

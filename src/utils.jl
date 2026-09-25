@@ -22,6 +22,42 @@ function _check_supported_eltype(backend::KernelAbstractions.Backend, ::Type{T})
     end
 end
 
+# A computation needs both of its operands on one backend. This says so, and names both operand
+# types and both backends. Its return value is the shared backend; no call site reads it, because a
+# site launches on the backend of one named operand and that operand is not always this function's
+# first argument.
+#
+# Without the guard a mismatch is not a clean failure. On a backend that can fall back to the host —
+# `JLArrays` under `allowscalar(false)` is the one reachable from the test suite — a host/device pair
+# silently picks a side: `SkewSymMatrix(host) + SkewSymMatrix(device)` gives a device matrix,
+# `SkewSymMatrix(device) * host` a `JLArray`, and `StiefelManifold(device) * host` a **host**
+# `Matrix` — the device operand comes off the device and nothing says so. Which backend the answer
+# lands on follows the argument order. Where such a pair does raise instead, it says
+# `Scalar indexing is disallowed`, which names neither operand; on Metal it fails inside
+# `GPU compilation of MethodInstance for …broadcast_linear…`, which names neither backend nor the
+# mismatch.
+#
+# So this is not only a better message: on a backend that can fall back to the host it is the
+# difference between an answer computed somewhere the caller did not choose and no answer.
+#
+# `copyto!`, `assign!` and `changebackend` are exempt and must stay exempt — a transfer's whole
+# purpose is to cross backends, which is the rule `Base` already sets for `copyto!`. `_match_backend`
+# in `abstract_manifold.jl` is the third exemption and is deliberate: `rgrad` moves the gradient onto
+# the point's backend rather than refusing, because the point is the parameter.
+#
+# Both reads fold away for concrete array types, so a same-backend call pays nothing. An array that
+# `KernelAbstractions.get_backend` cannot place raises that function's own `ArgumentError`.
+function _check_same_backend(A, B)
+    backend_a = KernelAbstractions.get_backend(A)
+    backend_b = KernelAbstractions.get_backend(B)
+    backend_a == backend_b && return backend_a
+
+    throw(ArgumentError("mixed backends: $(nameof(typeof(A))) is on $(backend_a) and $(nameof(typeof(B))) is on $(backend_b). A computation needs both operands on one backend; move one with `copyto!` or `changebackend` first."))
+end
+
+# The destination of a `mul!` or an `add!` is the third array on the backend.
+_check_same_backend(A, B, C) = (_check_same_backend(A, B); _check_same_backend(A, C))
+
 # Writes the diagonal of an identity matrix. `unit_matrix` below is the only caller; a kernel is what
 # it takes to write a diagonal without scalar indexing, and that docstring says why that matters.
 @kernel function write_ones_kernel!(matrix::AbstractMatrix{T}) where {T}
@@ -94,6 +130,8 @@ end
 # of equal `size` can have different indices, and it is the indices this broadcast pairs.
 function add!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat)
     @assert axes(A) == axes(B) == axes(C)
+    # every structured `add!` unwraps to this one, so the three-way check is written once here
+    _check_same_backend(A, B, C)
     C .= A .+ B
 end
 

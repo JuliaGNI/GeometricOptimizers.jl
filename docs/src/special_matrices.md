@@ -179,9 +179,9 @@ The third and fourth shapes place on the host without saying so, and that is del
 mirror `Base`, where `zeros(Float32, 3)` is a host array and nothing about the call suggests
 otherwise; these types present as `AbstractMatrix`, so `zeros(SkewSymMatrix{Float32}, n)` should
 read as the `Array` case does. A host placement also cannot quietly corrupt a device computation:
-mixing one with a device array throws at the first arithmetic — `+` and `add!` both reach the
-storage arrays and fail there — so the loud failure already gives the guarantee that making these
-shapes take a backend would buy. `copyto!` and `assign!` are the deliberate exception, because they
+mixing one with a device array throws at the first arithmetic — `*`, `+`, `-`, `mul!` and `add!`
+refuse a pair on two backends with an `ArgumentError` that names both — so the loud failure already
+gives the guarantee that making these shapes take a backend would buy. `copyto!` and `assign!` are the deliberate exception, because they
 *are* the transfer: moving a host-built structured matrix onto a device is what they exist for.
 
 The second shape is the only one where the package decides something the caller did not, which is
@@ -202,6 +202,20 @@ None of this reaches an allocation the package makes for itself. `zero`, `simila
 and there is nothing to default — which is what every optimizer cache and every state allocates
 through. A parameter set on a device stays there.
 
+## Arithmetic and broadcasting on a device
+
+A product, a sum, a difference and a `mul!` between two of these matrices, or between one of them and
+a plain array, run on the backend of their operands: the structured matrices, the horizontal lifts,
+the manifold points, `StiefelProjection` and the adjoints of each. None of them reads an entry at a
+time, which a device does not serve.
+
+A **broadcast** does. These matrices define no broadcast style, so `A .+ 1` or `f.(A)` reads `A`
+through `getindex`, and on a device that raises `Scalar indexing is disallowed`. Broadcast over the
+storage instead — `parent(A)` for the structured matrices, `Y.A` for a manifold point — and rebuild
+the matrix around the result where its structure still holds. A manifold point is left without a
+broadcast style on purpose: a broadcast over a point returns a plain array, because its result is in
+general not on the manifold.
+
 ## Why the storage matters here
 
 Because these types keep only their free parameters, they are also what an optimizer has to be able
@@ -218,6 +232,24 @@ for exactly that relation, through its `freeparameters`/`rebuild` pair, and load
 package brings in an extension that answers for all three families here — these matrices, the
 manifolds, and the horizontal lifts. Flattening, differentiating and saving a parameter set that
 contains them therefore needs no case per type in the package doing the training.
+
+A gradient of one of these matrices has two forms, and they are not equal. The *natural cotangent* is
+a matrix of the same structure: `ChainRulesCore.ProjectTo` gives it for a dense cotangent
+``\bar{A} = \partial L/\partial A``, as the Frobenius projection ``\frac{1}{2}(\bar{A} \pm \bar{A}^T)``.
+Automatic differentiation can add two natural cotangents and project the sum again, because the
+projection is linear and idempotent. The *storage gradient* ``\partial L/\partial S`` is what the flat
+parameter vector and forward-mode differentiation give. An off-diagonal entry of a
+[`SymmetricMatrix`](@ref) appears twice in the matrix, so its storage gradient is
+``\bar{A}_{ij} + \bar{A}_{ji}``, twice the natural cotangent; the diagonal entries agree. For a
+[`SkewSymMatrix`](@ref) every storage entry is ``\bar{A}_{ij} - \bar{A}_{ji}``, again twice the
+natural cotangent. The triangular types store each entry once, so the two forms agree.
+
+## Element types
+
+These matrices, and the package as a whole, support real element types only. The storage of a
+[`SymmetricMatrix`](@ref) and a [`SkewSymMatrix`](@ref) describes ``A^T = \pm A``, which is not a
+Hermitian structure for a complex ``A``. A complex element type is not rejected, and some operations
+give a wrong answer for it.
 
 ## Library functions
 

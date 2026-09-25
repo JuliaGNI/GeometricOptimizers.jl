@@ -137,10 +137,13 @@ A = randn(N, N - n) # or the gpu equivalent
 A = A - Y * (Y' * A)
 B = A / maximum(abs, A)                # so that the Gram matrix cannot overflow
 Q = B / cholesky(Symmetric(B'B)).U     # first pass
-Y⟂ = Q / cholesky(Symmetric(Q'Q)).U    # second pass; see below
+λ = Q / cholesky(Symmetric(Q'Q)).U     # second pass; see below
+Y⟂ = _cholesky_qr2(λ - Y * (Y' * λ))   # the same projection and orthonormalization once more
 ```
 
 So we draw ``(N - n)`` new columns randomly, subtract the part that is spanned by the columns of ``Y`` and then orthonormalize the resulting matrix. The result is a matrix of ``(N - n)`` columns that is orthogonal to ``Y`` and is typically referred to as ``Y_\perp``  [absil2004riemannian, absil2008optimization, bendokat2020grassmann](@cite). We can easily check that this ``Y_\perp`` is indeed orthogonal to ``Y``.
+
+The last line is there because of rounding. The first projection leaves a rounding error in the span of ``Y``, and the orthonormalization multiplies it by the condition number of the projected draw, which is large now and then; in `Float32` the worst of a few thousand draws has ``\|Y^T\lambda\|`` of order ``10^{-2}``. ``\lambda`` is orthonormal, so projecting and orthonormalizing it again amplifies nothing, and ``Y_\perp`` is orthogonal to ``Y`` to rounding. The proof below is in exact arithmetic, where one pass is enough.
 
 The orthonormalization is **CholeskyQR2** — the Cholesky step shown twice above — and not `LinearAlgebra.qr`. `qr` is the textbook answer, but it is a host factorization for several of the backends supported here: `Metal` implements no `qr` for its array type at all, so a `qr` here would put [`GlobalSection`](@ref) and therefore [`Optimizer`](@ref) out of reach on such a device. CholeskyQR2 is expressible in matrix products, reductions and triangular solves alone, so it runs wherever the point already is, and its ``\|Q^TQ - \mathbb{I}\|`` is measured *smaller* than the host Householder QR's at every size tried. What the two give differs by the sign of each column, because CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
 

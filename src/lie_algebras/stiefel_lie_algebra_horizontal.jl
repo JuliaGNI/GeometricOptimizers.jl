@@ -97,7 +97,8 @@ function Base.getindex(A::StiefelLieAlgHorMatrix{T}, i, j) where {T}
     return zero(T)
 end
 
-function Base.:+(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
+# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
+function _owned_add(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
     StiefelLieAlgHorMatrix(A.A + B.A,
@@ -106,7 +107,7 @@ function Base.:+(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
         A.n)
 end
 
-function Base.:-(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
+function _owned_sub(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
     @assert A.N == B.N
     @assert A.n == B.n
     StiefelLieAlgHorMatrix(A.A - B.A,
@@ -130,7 +131,8 @@ function Base.:*(A::StiefelLieAlgHorMatrix, α::Real)
     StiefelLieAlgHorMatrix(α * A.A, α * A.B, A.N, A.n)
 end
 
-function Base.:+(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
+# The sum kernel. `src/ambiguities.jl` has the `+` methods that reach it.
+function _ladd(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
     @assert size(A) == size(B)
 
     # The destination is a fresh plain array rather than `copy(A)`. A structured `A` keeps its type
@@ -152,26 +154,17 @@ function Base.:+(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
     C
 end
 
-Base.:+(A::AbstractMatrix, B::StiefelLieAlgHorMatrix) = B + A
-
-# `+(::StiefelLieAlgHorMatrix, ::AbstractMatrix)` and `+(::AbstractMatrix, ::StiefelLieAlgHorMatrix)`
-# are ambiguous against the two `SkewSymMatrix` methods when both operands are owned. The
-# tie-breakers in `src/ambiguities.jl` all return dense; this pair is the exception, because a
-# `StiefelLieAlgHorMatrix` is skew-symmetric by construction and so the sum of the two is as well.
-# The result is built in the packed representation rather than dense and re-projected, which keeps
-# an integer element type integer.
+# A sum of two owned matrices is dense everywhere else (`src/ambiguities.jl`); this pair is the
+# exception, because a `StiefelLieAlgHorMatrix` is skew-symmetric by construction and so the sum of
+# the two is as well. The result is built in the packed representation rather than dense and
+# re-projected, which keeps an integer element type integer.
 #
 # Both blocks below land inside the destination's strict lower triangle, where the entry `(i, j)`
 # with `i > j` sits at `S[(i - 2) * (i - 1) ÷ 2 + j]`. For a row `i ≤ n` that index is the one the
 # inner `n × n` block uses for the same entry, so the first `n * (n - 1) ÷ 2` entries take `C.A.S`
 # as one slice. Row `i > n` holds `C.B[i - n, :]` in its first `n` columns and zero in the rest,
 # which is the loop.
-#
-# The element type is not bound across the two arguments, because the ambiguity is not bound either
-# -- see the head of `src/ambiguities.jl`. So this is the method that does the work and the
-# `SkewSymMatrix`-first spelling below defers to it; the other way round recurses for a mismatched
-# pair.
-function Base.:+(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
+function _owned_add(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
     @assert size(A) == size(C)
 
     S = similar(A.S, promote_type(eltype(A), eltype(C)))
@@ -185,14 +178,30 @@ function Base.:+(C::StiefelLieAlgHorMatrix, A::SkewSymMatrix)
     SkewSymMatrix(S, C.N)
 end
 
-Base.:+(A::SkewSymMatrix{T}, C::StiefelLieAlgHorMatrix{T}) where {T} = C + A
+_owned_add(A::SkewSymMatrix, C::StiefelLieAlgHorMatrix) = _owned_add(C, A)
 
 # `-` on the same mixed pair returns a dense matrix, although the difference of two skew-symmetric
-# matrices is skew-symmetric as well. The pair is not ambiguous under `-`, so there is nothing here
-# to separate, and a structured `-` would be a behaviour change rather than a tie-breaker. The
-# asymmetry against `+` above is therefore deliberate.
+# matrices is skew-symmetric as well. A structured `-` would be a behaviour change, so the asymmetry
+# against `+` above is deliberate.
 
 Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
+
+# The first `n` rows of `B * C`, which is the one part of the product that differs between the two
+# lifts. This lift's top row of blocks is `[A  -Bᵀ]`, so both blocks contribute; the docstring on
+# `*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)` in `abstract_lie_algebra_horizontal.jl` says why
+# the product needs a method at all.
+#
+# `transpose` and not `adjoint`, for the reason the comment on `+(::StiefelLieAlgHorMatrix,
+# ::AbstractMatrix)` above gives: `getindex` builds that block as `-B.B[j - n, i]`, entrywise and
+# without conjugating, so the product has to spell it the same way or the two disagree on a complex
+# element type.
+#
+# The minus stays outside the product rather than moving onto the transpose, which is
+# arithmetically the same and cheaper: `transpose(B.B)` is a lazy wrapper that feeds straight into
+# the product, where `-transpose(B.B)` materializes a whole second `n × (N - n)` block first. The
+# comment on `*(::AbstractMatrix, ::SkewSymMatrix)` in `special_matrices/skew_symmetric.jl`
+# measures that difference for the case it is written about.
+_hor_top_rows(B::StiefelLieAlgHorMatrix, C₁, C₂) = B.A * C₁ - transpose(B.B) * C₂
 
 function Base.zeros(::Type{StiefelLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     StiefelLieAlgHorMatrix(

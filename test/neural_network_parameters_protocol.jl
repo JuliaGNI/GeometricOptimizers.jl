@@ -156,11 +156,11 @@ end
     @test flatten(Float64, leaves.stiefel)[1] == vec(parent(leaves.stiefel))
     @test flatten(Float64, leaves.grassmann)[1] == vec(parent(leaves.grassmann))
 
-    # a storage matrix flattens as the vector it keeps, which is also what `vec` returns for it --
-    # `n(n±1)/2` numbers, not `n²`
+    # a storage matrix flattens as the vector it keeps, which is also what `freeparameters` returns
+    # for it -- `n(n±1)/2` numbers, not `n²`
     for x in (leaves.symmetric, leaves.skew, leaves.lower, leaves.upper)
         @test flatten(Float64, x)[1] == parent(x)
-        @test flatten(Float64, x)[1] == vec(x)
+        @test flatten(Float64, x)[1] == freeparameters(x)
     end
 
     # a lift flattens block by block, in the order `parent` returns them, and the first block of a

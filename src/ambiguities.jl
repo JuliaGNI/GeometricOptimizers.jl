@@ -1,259 +1,237 @@
-# Tie-breakers for the pairs where one of this package's own matrix types meets another one.
+# The binary arithmetic on this package's own matrix types, written once over a `Union`.
 #
-# Every pair below is a standoff between an `Owned ∘ AbstractMatrix` method and an
-# `AbstractMatrix ∘ Owned` one. For two owned operands neither of the two is more specific, so
-# without a method here the call would be ambiguous and an ordinary product or sum would raise a
-# `MethodError`.
-# The comment above the four `Sfac`-`Sfac` methods in `decompositions/symplectic_sr.jl` gives the
-# mechanism for the case it is written about, and it generalizes: a signature that is narrower in
-# one argument and wider in the other does not win. That is also why a single method taking a
-# `Union` of the owned types is no help — it is wider in the slot the standoff is about. Separating
-# a pair needs a signature contained in both, and that is one method per pair.
+# Every owned type computes a product or a sum against a plain matrix on either side. Written as a
+# `*(::X, ::AbstractMatrix)` and a `*(::AbstractMatrix, ::X)` per type, two owned operands `X * Y`
+# are ambiguous: each method is narrower in one argument and wider in the other. So `*`, `+`, `-`
+# and `mul!` each have entry methods here, on `(Owned, AbstractMatrix)`, `(AbstractMatrix, Owned)`
+# and `(Owned, Owned)`, and nothing per type. The third is contained in the other two and separates
+# them. `*(::SkewSymMatrix, ::SkewSymMatrix)` and `*(::Sfac, ::Sfac)` are the two same-type
+# specialisations that stay on `*`; they are narrower than `(Owned, Owned)`, and each reaches the
+# entries again.
 #
-# Two rules fix what each of them returns.
+# The entry methods are where the backends are checked, and the only place: a pair on two backends
+# raises an `ArgumentError` naming both, before any kernel runs. Pure dispatch cannot do this,
+# because one backend legitimately holds a `Vector` and a `Matrix`, or a view and its parent.
 #
-#  1. `StiefelManifold`, `SymplecticStiefelManifold` and `StiefelProjection` hold their entries in
-#     an ordinary array, and the method being bypassed on that side would have done nothing but
-#     unwrap it. So unwrap it here and hand the result to the other operand's method: the answer is
-#     then whatever that method gives for a plain array, which is what the wrapper stood for.
-#  2. Where both operands compute — the two kernel-backed matrices, the triangulars and the `Sfac`
-#     operator — one of them has to be materialized. It is the right-hand one, written
-#     `B * one(B)` for a kernel-backed matrix or a triangular and `Matrix(B)` for an `Sfac`. That
-#     is how `*(::SymmetricMatrix, ::SymmetricMatrix)` and `*(::AbstractTriangular,
-#     ::AbstractTriangular)` already materialize their right operand;
-#     `*(::SkewSymMatrix, ::SkewSymMatrix)` spells it `one(B) * B` and `*(::Sfac, ::Sfac)`
-#     materializes both. All four of those return dense, and so does every method here.
+# The per-type code is on internal functions that `Base` and `LinearAlgebra` never see: `_lmul` and
+# `_lmul_into!` for an owned left operand, `_rmul` and `_rmul_into!` for an owned right operand,
+# `_ladd` for an owned operand in a sum, and `_owned_add` and `_owned_sub` for two owned operands.
+# Each has one untyped fallback, which is the method the call reaches when no per-type method
+# applies — an element type that does not match a kernel's, or a type with no kernel at all. The
+# fallbacks give the answer the call gets without this package: `_lmul` and `_rmul` `invoke` the
+# method `LinearAlgebra` or `Base` has for the plain operand's type, `_lmul_into!` and
+# `_rmul_into!` call the five-argument `mul!`, and the sums go to `_dense`.
 #
-# Three of the pairs are not in this file. `+` on a `SkewSymMatrix` and a `StiefelLieAlgHorMatrix`
-# is the one case where both operands are skew-symmetric, so the sum is too and keeps that
-# structure; its two methods are in `lie_algebras/stiefel_lie_algebra_horizontal.jl`, next to the
-# packing they need. `*` on an adjoint `StiefelManifold` and a `StiefelManifold` is separated in
-# `manifolds/stiefel_manifold.jl`, by the method for that pair which lives beside the rest of the
-# manifold's arithmetic.
+# Two rules decide a product of two owned operands, in `_owned_mul` and `_owned_mul!`:
 #
-# Each signature binds the element type wherever one of the two methods it separates binds it, so
-# that it is contained in both. Without that it separates only the part of the overlap where the
-# element types agree.
+#  1. A point, a `StiefelProjection` and the adjoint of either hold their entries in an ordinary
+#     array. One of them unwraps — the left one if both are wrappers — and the other operand's
+#     method answers for that array.
+#  2. Where both operands compute and share an element type, the right-hand one is materialized:
+#     `B * one(B)`, or `Matrix(S)` for an `Sfac`. The result is dense.
 #
-# ## A row vector meets an owned matrix
-#
-# A second class of standoff. It is not in this file because the other method is not this
-# package's: `LinearAlgebra` carries
-# `*(::Adjoint{T, <:AbstractVector} where T, ::AbstractMatrix)` and a `Transpose` counterpart, each
-# narrower in the left argument than an `AbstractMatrix ∘ Owned` method and wider in the right. So
-# `v' * X` and `transpose(v) * X` are ambiguous for every owned type that has such a method, and
-# `Test.detect_ambiguities` in `test/ambiguities.jl` cannot report them: that sweep keeps only pairs
-# whose two methods both belong here. Each type's own testset covers its pair instead.
-#
-# Two methods per `AbstractMatrix ∘ Owned` method, beside the method they separate:
-#
-#   | type                                    | file                                       |
-#   |:----------------------------------------|:-------------------------------------------|
-#   | `StiefelManifold`                       | `manifolds/stiefel_manifold.jl`            |
-#   | `SymplecticStiefelManifold`             | `manifolds/symplectic_stiefel_manifold.jl` |
-#   | `Adjoint{<:SymplecticStiefelManifold}`  | `manifolds/symplectic_stiefel_manifold.jl` |
-#   | `Sfac{false}`, `Sfac{true}`             | `decompositions/symplectic_sr.jl`          |
-#   | `StiefelProjection`                     | `special_matrices/stiefel_projection.jl`   |
-#   | `SkewSymMatrix`                         | `special_matrices/skew_symmetric.jl`       |
-#   | `SymmetricMatrix`                       | `special_matrices/symmetric.jl`            |
-#   | `AbstractTriangular`                    | `special_matrices/triangular.jl`           |
-#
-# Everything else here is absent because it defines no `*(::AbstractMatrix, ::Owned)`, so a row
-# vector against it reaches `LinearAlgebra` unopposed: `GrassmannManifold` and the two horizontal
-# lifts define no `*` against a matrix at all, and `Adjoint{<:StiefelManifold}` has only the method
-# that takes it on the *left*. `Adjoint{<:SymplecticStiefelManifold}` is in the table because
-# [`metric`](@ref) needs the mirror as well.
-#
-# The element-type rule is the same: bound where the method being separated binds it, free where it
-# does not. What each returns is decided once rather than by the two rules above, because here the
-# bypassed method already takes an arbitrary matrix on the left. Every one of them repeats that
-# method's body verbatim, so a row vector gets exactly the answer any other matrix gets -- and gets
-# it the cheap way, since none of those bodies materializes its owned operand.
+# `+` follows the same shape, in `_owned_add`: a wrapper unwraps, a pair of one structure keeps it,
+# and otherwise the sum is dense. Against a plain matrix the owned operand's addition kernel answers;
+# addition commutes, so `(AbstractMatrix, Owned)` hands the pair to it with the operands swapped.
 
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
-        B::SymplecticStiefelManifold) where {
-        T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * B
+# The wrappers of rule 1.
+const ArrayWrapper = Union{StiefelManifold, GrassmannManifold, SymplecticStiefelManifold,
+    StiefelProjection}
+const OwnedWrapper = Union{ArrayWrapper, Adjoint{<:Any, <:ArrayWrapper}}
+
+# The adjoint of a real skew-symmetric matrix or horizontal lift is the matrix negated. `adjoint`
+# keeps it lazy, and these methods compute with the parent and the sign. A complex one is not owned,
+# and reaches `LinearAlgebra` as the plain matrix it is.
+const SkewAdjoint = Adjoint{<:Real, <:Union{SkewSymMatrix, AbstractLieAlgHorMatrix}}
+
+# The types that take part in a product, a sum or a difference.
+const OwnedMatrix = Union{SkewSymMatrix, SymmetricMatrix, AbstractTriangular,
+    AbstractLieAlgHorMatrix, Sfac, SkewAdjoint, OwnedWrapper}
+
+function Base.:*(A::OwnedMatrix, B::AbstractMatrix)
+    _check_same_backend(A, B)
+    _lmul(A, B)
 end
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::Sfac{false}) where {
-        T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * B
+function Base.:*(A::OwnedMatrix, b::AbstractVector)
+    _check_same_backend(A, b)
+    _lmul(A, b)
 end
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::Sfac{true}) where {
-        T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * B
+function Base.:*(A::AbstractMatrix, B::OwnedMatrix)
+    _check_same_backend(A, B)
+    _rmul(A, B)
 end
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
-        B::AbstractTriangular{T}) where {
-        T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * B
-end
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::SkewSymMatrix{T}) where {
-        T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * B
-end
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
-        B::SymmetricMatrix{T}) where {
-        T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * B
+function Base.:*(A::OwnedMatrix, B::OwnedMatrix)
+    _check_same_backend(A, B)
+    _owned_mul(A, B)
 end
 
-# `Adjoint{SymplecticStiefelManifold}` multiplies on both sides of a bare `AbstractMatrix`, so it
-# meets every other owned type twice over. Rule 1 throughout: the adjoint of a point is an ordinary
-# array transposed, so it unwraps and the other operand's method answers.
-# Both element types are free on the first method below, for the reason spelled out on
-# `*(::Adjoint{<:SymplecticStiefelManifold}, ::Adjoint{<:SymplecticStiefelManifold})`: the two
-# methods this separates bind `T` from different arguments, so their overlap does not require the
-# two to agree.
-function Base.:*(Y::Adjoint{T₁, StiefelManifold{T₁, AT₁}},
-        U::Adjoint{T₂, SymplecticStiefelManifold{T₂, AT₂}}) where {
-        T₁, AT₁ <: AbstractMatrix{T₁}, T₂, AT₂ <: AbstractMatrix{T₂}}
-    Y.parent.A' * U
+# `LinearAlgebra` has a `*(::Adjoint{<:Any, <:AbstractVector}, ::AbstractMatrix)` and a `Transpose`
+# counterpart, each narrower on the left than `(AbstractMatrix, OwnedMatrix)` and wider on the right.
+# These two separate that pair. One method on `AdjOrTransAbsVec` does not: it is ambiguous with the
+# `Adjoint` one in `LinearAlgebra`.
+function Base.:*(x::Adjoint{<:Any, <:AbstractVector}, B::OwnedMatrix)
+    _check_same_backend(x, B)
+    _rmul(x, B)
 end
-function Base.:*(Y::StiefelManifold,
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    Y.A * U
-end
-function Base.:*(V::SymplecticStiefelManifold,
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    V.A * U
-end
-function Base.:*(E::StiefelProjection,
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    E.A * U
-end
-function Base.:*(S::Sfac{false},
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    S * U.parent.A'
-end
-function Base.:*(S::Sfac{true},
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    S * U.parent.A'
-end
-function Base.:*(A::AbstractTriangular{T},
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    A * U.parent.A'
-end
-function Base.:*(A::SkewSymMatrix{T},
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    A * U.parent.A'
-end
-function Base.:*(A::SymmetricMatrix{T},
-        U::Adjoint{T, SymplecticStiefelManifold{T, AT}}) where {T, AT <: AbstractMatrix{T}}
-    A * U.parent.A'
+function Base.:*(x::Transpose{<:Any, <:AbstractVector}, B::OwnedMatrix)
+    _check_same_backend(x, B)
+    _rmul(x, B)
 end
 
-function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
-        Y::StiefelManifold) where {T, AT <: AbstractMatrix{T}}
-    U.parent.A' * Y
+_lmul(A, B) = invoke(*, Tuple{AbstractMatrix, _invoke_type(B)}, A, B)
+_rmul(A, B) = invoke(*, Tuple{_invoke_type(A), AbstractMatrix}, A, B)
+
+# The other operand keeps its own type for the `invoke`, so a method `LinearAlgebra` has for it still
+# answers. An owned one, which `_owned_mul` passes on as a plain matrix, takes `AbstractMatrix`
+# instead: its own type would find the methods above again.
+_invoke_type(X) = typeof(X)
+_invoke_type(::OwnedMatrix) = AbstractMatrix
+
+_unwrap(A::ArrayWrapper) = A.A
+_unwrap(A::Adjoint) = _unwrap(parent(A))'
+
+# The wrappers' kernels: the product of the array they hold.
+_lmul(A::OwnedWrapper, B::AbstractVecOrMat) = _unwrap(A) * B
+_rmul(B::AbstractMatrix, A::OwnedWrapper) = B * _unwrap(A)
+_lmul_into!(C, A::OwnedWrapper, B) = mul!(C, _unwrap(A), B)
+_rmul_into!(C, B, A::OwnedWrapper) = mul!(C, B, _unwrap(A))
+
+# The minus goes on the result, where it costs one pass over the product; on the parent it would
+# build a second packed matrix first.
+_lmul(A::SkewAdjoint, B::AbstractVecOrMat) = -(parent(A) * B)
+_rmul(B::AbstractMatrix, A::SkewAdjoint) = -(B * parent(A))
+_lmul_into!(C, A::SkewAdjoint, B) = (mul!(C, parent(A), B); C .= .-C)
+_rmul_into!(C, B, A::SkewAdjoint) = (mul!(C, B, parent(A)); C .= .-C)
+
+# `adjoint` again, and not the dense matrix `Base` gives: this is what `LinearAlgebra` does for `-`
+# on an `Adjoint`, and it keeps the scalar product on the packed storage.
+Base.:*(α::Real, A::SkewAdjoint) = adjoint(α * parent(A))
+Base.:*(A::SkewAdjoint, α::Real) = adjoint(parent(A) * α)
+
+# A scalar product or a negation of a wrapper is one of the array it holds. `Base` gives the same
+# dense result through `getindex`, one entry at a time.
+Base.:*(α::Real, A::OwnedWrapper) = α * _unwrap(A)
+Base.:*(A::OwnedWrapper, α::Real) = _unwrap(A) * α
+Base.:-(A::OwnedWrapper) = -_unwrap(A)
+
+_materialize(B) = B * one(B)
+_materialize(S::Sfac) = Matrix(S)
+_materialize(A::SkewAdjoint) = -_materialize(parent(A))
+
+# Two computing operands whose element types differ meet no kernel either way, so they go to the
+# generic product directly rather than through a materialized copy; an `Sfac`'s kernels take any
+# element type, so a pair with one keeps rule 2.
+function _owned_mul(A, B)
+    A isa OwnedWrapper && return _unwrap(A) * B
+    B isa OwnedWrapper && return A * _unwrap(B)
+    if eltype(A) === eltype(B) || A isa Sfac || B isa Sfac
+        A * _materialize(B)
+    else
+        invoke(*, Tuple{AbstractMatrix, AbstractMatrix}, A, B)
+    end
 end
-function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
-        E::StiefelProjection) where {T, AT <: AbstractMatrix{T}}
-    U.parent.A' * E
+
+# `mul!` into a destination the caller owns, on the same three entries and the same two rules.
+# `LinearAlgebra`'s own three-argument `mul!` is untyped, so each of these is narrower than it.
+function LinearAlgebra.mul!(C::AbstractMatrix, A::OwnedMatrix, B::AbstractMatrix)
+    _check_same_backend(A, B, C)
+    _lmul_into!(C, A, B)
 end
-function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
-        B::Sfac{false}) where {
-        T, AT <: AbstractMatrix{T}}
-    U.parent.A' * B
+function LinearAlgebra.mul!(C::AbstractMatrix, A::AbstractMatrix, B::OwnedMatrix)
+    _check_same_backend(A, B, C)
+    _rmul_into!(C, A, B)
 end
-function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
-        B::Sfac{true}) where {
-        T, AT <: AbstractMatrix{T}}
-    U.parent.A' * B
-end
-function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
-        B::AbstractTriangular{T}) where {T, AT <: AbstractMatrix{T}}
-    U.parent.A' * B
-end
-function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
-        B::SkewSymMatrix{T}) where {T, AT <: AbstractMatrix{T}}
-    U.parent.A' * B
-end
-function Base.:*(U::Adjoint{T, SymplecticStiefelManifold{T, AT}},
-        B::SymmetricMatrix{T}) where {T, AT <: AbstractMatrix{T}}
-    U.parent.A' * B
+function LinearAlgebra.mul!(C::AbstractMatrix, A::OwnedMatrix, B::OwnedMatrix)
+    _check_same_backend(A, B, C)
+    _owned_mul!(C, A, B)
 end
 
-Base.:*(Y::StiefelManifold, B::StiefelManifold) = Y.A * B
-Base.:*(Y::StiefelManifold, B::SymplecticStiefelManifold) = Y.A * B
-Base.:*(Y::StiefelManifold, B::Sfac{false}) = Y.A * B
-Base.:*(Y::StiefelManifold, B::Sfac{true}) = Y.A * B
-Base.:*(Y::StiefelManifold{T}, B::AbstractTriangular{T}) where {T} = Y.A * B
-Base.:*(Y::StiefelManifold{T}, B::SkewSymMatrix{T}) where {T} = Y.A * B
-Base.:*(Y::StiefelManifold{T}, B::SymmetricMatrix{T}) where {T} = Y.A * B
-
-Base.:*(U::SymplecticStiefelManifold, B::StiefelManifold) = U.A * B
-Base.:*(U::SymplecticStiefelManifold, B::SymplecticStiefelManifold) = U.A * B
-Base.:*(U::SymplecticStiefelManifold, B::Sfac{false}) = U.A * B
-Base.:*(U::SymplecticStiefelManifold, B::Sfac{true}) = U.A * B
-Base.:*(U::SymplecticStiefelManifold{T}, B::AbstractTriangular{T}) where {T} = U.A * B
-Base.:*(U::SymplecticStiefelManifold{T}, B::SkewSymMatrix{T}) where {T} = U.A * B
-Base.:*(U::SymplecticStiefelManifold{T}, B::SymmetricMatrix{T}) where {T} = U.A * B
-
-Base.:*(S::Sfac{false}, Y::StiefelManifold) = S * Y.A
-Base.:*(S::Sfac{false}, U::SymplecticStiefelManifold) = S * U.A
-Base.:*(S::Sfac{false, T}, B::AbstractTriangular{T}) where {T} = S * (B * one(B))
-Base.:*(S::Sfac{false, T}, B::SkewSymMatrix{T}) where {T} = S * (B * one(B))
-Base.:*(S::Sfac{false, T}, B::SymmetricMatrix{T}) where {T} = S * (B * one(B))
-
-Base.:*(S::Sfac{true}, Y::StiefelManifold) = S * Y.A
-Base.:*(S::Sfac{true}, U::SymplecticStiefelManifold) = S * U.A
-Base.:*(S::Sfac{true, T}, B::AbstractTriangular{T}) where {T} = S * (B * one(B))
-Base.:*(S::Sfac{true, T}, B::SkewSymMatrix{T}) where {T} = S * (B * one(B))
-Base.:*(S::Sfac{true, T}, B::SymmetricMatrix{T}) where {T} = S * (B * one(B))
-
-Base.:*(A::SkewSymMatrix{T}, Y::StiefelManifold{T}) where {T} = A * Y.A
-Base.:*(A::SkewSymMatrix{T}, U::SymplecticStiefelManifold{T}) where {T} = A * U.A
-Base.:*(A::SkewSymMatrix{T}, S::Sfac{false, T}) where {T} = A * Matrix(S)
-Base.:*(A::SkewSymMatrix{T}, S::Sfac{true, T}) where {T} = A * Matrix(S)
-Base.:*(A::SkewSymMatrix{T}, B::AbstractTriangular{T}) where {T} = A * (B * one(B))
-Base.:*(A::SkewSymMatrix{T}, B::SymmetricMatrix{T}) where {T} = A * (B * one(B))
-
-Base.:*(A::SymmetricMatrix{T}, Y::StiefelManifold{T}) where {T} = A * Y.A
-Base.:*(A::SymmetricMatrix{T}, U::SymplecticStiefelManifold{T}) where {T} = A * U.A
-Base.:*(A::SymmetricMatrix{T}, S::Sfac{false, T}) where {T} = A * Matrix(S)
-Base.:*(A::SymmetricMatrix{T}, S::Sfac{true, T}) where {T} = A * Matrix(S)
-Base.:*(A::SymmetricMatrix{T}, B::AbstractTriangular{T}) where {T} = A * (B * one(B))
-Base.:*(A::SymmetricMatrix{T}, B::SkewSymMatrix{T}) where {T} = A * (B * one(B))
-
-# `StiefelProjection` and `AbstractTriangular` each have a `*` against a bare `AbstractMatrix`, so
-# each of them meets every other owned type in the same standoff as the types above. The two rules
-# at the head of this file decide all of it: the projection unwraps under rule 1, since it holds its
-# entries in an ordinary array; a triangular computes, so under rule 2 it materializes whatever is
-# to its right unless that operand is itself a wrapper.
-Base.:*(E::StiefelProjection, Y::StiefelManifold) = E.A * Y
-Base.:*(E::StiefelProjection, U::SymplecticStiefelManifold) = E.A * U
-Base.:*(E::StiefelProjection, F::StiefelProjection) = E.A * F
-Base.:*(E::StiefelProjection, S::Sfac{false}) = E.A * S
-Base.:*(E::StiefelProjection, S::Sfac{true}) = E.A * S
-Base.:*(E::StiefelProjection{T}, B::AbstractTriangular{T}) where {T} = E.A * B
-Base.:*(E::StiefelProjection{T}, A::SkewSymMatrix{T}) where {T} = E.A * A
-Base.:*(E::StiefelProjection{T}, A::SymmetricMatrix{T}) where {T} = E.A * A
-
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, E::StiefelProjection) where {
-        T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * E
+# The kernels are matrix--matrix ones, so the vector goes through them as a single column. `reshape`
+# shares the buffer, so the kernel writes straight into `c`.
+function LinearAlgebra.mul!(c::AbstractVector, A::OwnedMatrix, b::AbstractVector)
+    _check_same_backend(A, b, c)
+    _lmul_into!(reshape(c, length(c), 1), A, reshape(b, length(b), 1))
+    c
 end
-Base.:*(Y::StiefelManifold, E::StiefelProjection) = Y.A * E
-Base.:*(U::SymplecticStiefelManifold, E::StiefelProjection) = U.A * E
-Base.:*(S::Sfac{false}, E::StiefelProjection) = S * E.A
-Base.:*(S::Sfac{true}, E::StiefelProjection) = S * E.A
-Base.:*(A::SkewSymMatrix{T}, E::StiefelProjection{T}) where {T} = A * E.A
-Base.:*(A::SymmetricMatrix{T}, E::StiefelProjection{T}) where {T} = A * E.A
 
-Base.:*(A::AbstractTriangular{T}, Y::StiefelManifold{T}) where {T} = A * Y.A
-Base.:*(A::AbstractTriangular{T}, U::SymplecticStiefelManifold{T}) where {T} = A * U.A
-Base.:*(A::AbstractTriangular{T}, E::StiefelProjection{T}) where {T} = A * E.A
-Base.:*(A::AbstractTriangular{T}, S::Sfac{false, T}) where {T} = A * Matrix(S)
-Base.:*(A::AbstractTriangular{T}, S::Sfac{true, T}) where {T} = A * Matrix(S)
-Base.:*(A::AbstractTriangular{T}, B::SkewSymMatrix{T}) where {T} = A * (B * one(B))
-Base.:*(A::AbstractTriangular{T}, B::SymmetricMatrix{T}) where {T} = A * (B * one(B))
+_lmul_into!(C, A, B) = mul!(C, A, B, true, false)
+_rmul_into!(C, A, B) = mul!(C, A, B, true, false)
 
-Base.:+(E::StiefelProjection, A::SkewSymMatrix) = E.A + A
-Base.:+(E::StiefelProjection, C::StiefelLieAlgHorMatrix) = E.A + C
-Base.:+(E::StiefelProjection, F::StiefelProjection) = E.A + F
-Base.:+(A::SkewSymMatrix{T}, E::StiefelProjection{T}) where {T} = A + E.A
-Base.:+(C::StiefelLieAlgHorMatrix, E::StiefelProjection) = C + E.A
+# A computing type on the right has no in-place kernel: its `_rmul` is the transpose of a left
+# product, so on a device the product is taken there and copied into `C`. The host keeps the generic
+# five-argument `mul!`, which reads `A` through `getindex` and allocates nothing, as `_dense` does.
+function _rmul_into!(C::AbstractMatrix{T}, B::AbstractMatrix{T},
+        A::Union{SkewSymMatrix{T}, SymmetricMatrix{T}, AbstractTriangular{T},
+            AbstractLieAlgHorMatrix{T}}) where {T}
+    KernelAbstractions.get_backend(A) isa CPU && return mul!(C, B, A, true, false)
+    C .= _rmul(B, A)
+end
+
+function _owned_mul!(C, A, B)
+    A isa OwnedWrapper && return mul!(C, _unwrap(A), B)
+    B isa OwnedWrapper && return mul!(C, A, _unwrap(B))
+    if eltype(A) === eltype(B) || A isa Sfac || B isa Sfac
+        mul!(C, A, _materialize(B))
+    else
+        mul!(C, A, B, true, false)
+    end
+end
+
+function Base.:+(A::OwnedMatrix, B::AbstractMatrix)
+    _check_same_backend(A, B)
+    _ladd(A, B)
+end
+function Base.:+(A::AbstractMatrix, B::OwnedMatrix)
+    _check_same_backend(A, B)
+    _ladd(B, A)
+end
+function Base.:+(A::OwnedMatrix, B::OwnedMatrix)
+    _check_same_backend(A, B)
+    _owned_add(A, B)
+end
+
+_ladd(A, B) = _dense(+, A, B)
+_ladd(A::OwnedWrapper, B) = _unwrap(A) + B
+
+# The pairs that keep a structure have a method of `_owned_add` beside their type. Any other pair of
+# two computing operands is dense: an addition kernel reads its second operand as a plain array.
+function _owned_add(A, B)
+    A isa OwnedWrapper && return _unwrap(A) + B
+    B isa OwnedWrapper && return A + _unwrap(B)
+    _dense(+, A, B)
+end
+
+# `-` has no per-type method against a plain matrix. The pairs that keep a structure have a method of
+# `_owned_sub` beside their type.
+function Base.:-(A::OwnedMatrix, B::AbstractMatrix)
+    _check_same_backend(A, B)
+    _dense(-, A, B)
+end
+function Base.:-(A::AbstractMatrix, B::OwnedMatrix)
+    _check_same_backend(A, B)
+    _dense(-, A, B)
+end
+function Base.:-(A::OwnedMatrix, B::OwnedMatrix)
+    _check_same_backend(A, B)
+    _owned_sub(A, B)
+end
+
+_owned_sub(A, B) = _dense(-, A, B)
+
+# The dense sum or difference. On the host it is `Base`'s generic `+` or `-`, which reads an owned
+# operand through `getindex` in one pass: `invoke` and not a plain operator, which would re-enter the
+# methods here. A device serves no `getindex`, so there an owned operand becomes the plain array it
+# holds, or the dense matrix it computes, and the backend's own broadcast takes the rest. That costs
+# a product for a computing operand, which is why the host keeps the one pass.
+function _dense(op, A, B)
+    KernelAbstractions.get_backend(A) isa CPU &&
+        return invoke(op, Tuple{AbstractArray, AbstractArray}, A, B)
+    op(_plain(A), _plain(B))
+end
+
+_plain(A) = A
+_plain(A::OwnedMatrix) = _materialize(A)
+_plain(A::OwnedWrapper) = _unwrap(A)
 
 function Base.vcat(E::StiefelProjection{T}, F::StiefelProjection{T}) where {T <: Number}
     vcat(E.A, F.A)

@@ -46,11 +46,7 @@ rgrad(Y, Δ)
 function rgrad(Y::GrassmannManifold, ∇L::AbstractMatrix)
     ∇L = _match_backend(Y, ∇L) # TEMPORARY, see `_match_backend`
 
-    # Through the representative, as `rgrad(::StiefelManifold, …)` also does. `Y'` is an
-    # `Adjoint{…, GrassmannManifold}` and this manifold, unlike `StiefelManifold`, defines no `*`
-    # that unwraps one, so a product written through `Y` falls back to elementwise indexing: the
-    # slow path on the host, and `Scalar indexing is disallowed` on a device. `Y.A` reaches the
-    # backend's own `mul!`, and the two are the same matrix by definition.
+    # Through the representative, as `rgrad(::StiefelManifold, …)` also does.
     ∇L - Y.A * (Y.A' * ∇L)
 end
 
@@ -81,14 +77,8 @@ The method `global_section` for the Grassmann manifold is equivalent to that for
 
 See the documentation for [`global_section(Y::StiefelManifold{T}) where T`](@ref).
 """
-function global_section(Y::GrassmannManifold{T}) where {T}
-    N, n = size(Y)
-    backend = KernelAbstractions.get_backend(Y)
-    λ = orthonormal_columns() do
-        A = KernelAbstractions.allocate(backend, T, N, N - n)
-        randn!(A)
-        A - Y.A * (Y.A' * A)
-    end
+function global_section(Y::GrassmannManifold)
+    λ = _complement_columns(Y.A)
 
     # the storage-type branch of `global_section(::StiefelManifold)`, for the reason given there
     λ isa typeof(Y.A) ? λ : typeof(Y.A)(λ)

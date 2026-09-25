@@ -2,6 +2,14 @@ using GeometricOptimizers
 using SafeTestsets
 using Test
 
+# `Pkg.test(test_args = ["metal"])` runs the Metal testset alone and stops. Asked for that way it
+# also runs off Apple silicon, where it fails rather than passing with nothing run; `metal.jl`
+# says why. A full run takes it last instead, because a failing top-level testset ends the file.
+if "metal" in ARGS
+    @safetestset "Metal                        " include("metal.jl")
+    exit()
+end
+
 begin
     @safetestset "Exports                      " include("exports.jl")
 end
@@ -46,6 +54,9 @@ begin
 end
 begin
     @safetestset "Symmetric Matrix             " include("special_matrices/symmetric_matrix.jl")
+end
+begin
+    @safetestset "ProjectTo natural cotangent  " include("special_matrices/project_to.jl")
 end
 begin
     @safetestset "Triangular Matrices          " include("special_matrices/triangular.jl")
@@ -111,6 +122,9 @@ begin
     @safetestset "Optimizer State Init         " include("optimizer_state_initialization.jl")
 end
 begin
+    @safetestset "Optimizer State Accessors    " include("optimizer_state_accessors.jl")
+end
+begin
     @safetestset "Optimizer Step Formulas      " include("optimizer_step_formulas.jl")
 end
 begin
@@ -151,4 +165,14 @@ begin
 end
 begin
     @safetestset "device multiply              " include("device_multiply.jl")
+end
+begin
+    @safetestset "device products and sums     " include("device_products.jl")
+end
+begin
+    @safetestset "mixed-backend refusal        " include("mixed_backend_refusal.jl")
+end
+# Last, so that a Metal failure hides no host result.
+if Sys.isapple() && Sys.ARCH === :aarch64
+    @safetestset "Metal                        " include("metal.jl")
 end

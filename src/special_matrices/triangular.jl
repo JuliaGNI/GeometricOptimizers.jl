@@ -8,18 +8,47 @@ abstract type AbstractTriangular{T} <: AbstractMatrix{T} end
 Base.parent(A::AbstractTriangular) = A.S
 Base.size(A::AbstractTriangular) = (A.n, A.n)
 
-function Base.:+(A::AT, B::AT) where {AT <: AbstractTriangular}
+# Each argument carries its own type, and the species is compared at run time. Bound as
+# `(A::AT, B::AT) where {AT <: AbstractTriangular}` these do not dispatch for a pair whose storage
+# arrays differ -- a host `LowerTriangular{T, Vector{T}}` and a device
+# `LowerTriangular{T, JLArray{T, 1}}` are different concrete types, so `AT` cannot bind both.
+# `copyto!(::AbstractTriangular, …)` below carries this same idiom against the same whole-type
+# binding, as does `Manifold`'s `copyto!`.
+#
+# `Base.typename(…).wrapper` and not `typeof`: the question is whether both are lower or both upper,
+# not whether their storage agrees. With two independent arguments and no species check at all, an
+# `UpperTriangular` added to a `LowerTriangular` reads the upper storage into the lower triangle and
+# returns a `LowerTriangular`, which is not the sum of the two.
+#
+# The sum of a lower and an upper triangular *is* well defined — it is a general matrix, which is
+# what `Base`'s generic `+` returns for the pair and what `*` between the two species already
+# returns. So `+` and `-` hand a mixed species to the dense path rather than refusing it. Only the
+# packed-storage shortcut needs the two to agree.
+_triangular_species(A::AbstractTriangular) = Base.typename(typeof(A)).wrapper
+
+# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
+function _owned_add(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) || return _dense(+, A, B)
     AT(A.S + B.S, A.n)
 end
 
-function add!(C::AT, A::AT, B::AT) where {AT <: AbstractTriangular}
+# `add!` is the one that refuses, and not by choice: it writes the sum into a triangular destination,
+# and a destination of one species cannot hold the sum of the two. There is no dense path to fall
+# back to, because the caller owns the destination.
+function add!(C::AbstractTriangular, A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n == C.n
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) === _triangular_species(C) ||
+        throw(ArgumentError("add! needs all three arguments to be the same triangular species"))
     add!(C.S, A.S, B.S)
 end
 
-function Base.:-(A::AT, B::AT) where {AT <: AbstractTriangular}
+function _owned_sub(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) || return _dense(-, A, B)
     AT(A.S - B.S, A.n)
 end
 
@@ -103,16 +132,33 @@ end
 function racᵉˡᵉ(A::AT) where {AT <: AbstractTriangular}
     AT(sqrt.(A.S), A.n)
 end
-function /ᵉˡᵉ(A::AT, B::AT) where {AT <: AbstractTriangular}
+# Two independent arguments, for the reason `+` above gives. This one refuses a mixed species rather
+# than falling back to a dense path, as `add!` does and for the same reason: an element-wise quotient
+# of a lower by an upper divides by the zeros each keeps outside its own triangle, so there is no
+# dense answer to fall back to.
+function /ᵉˡᵉ(A::AbstractTriangular, B::AbstractTriangular)
     @assert A.n == B.n
+    AT = _triangular_species(A)
+    AT === _triangular_species(B) ||
+        throw(ArgumentError("/ᵉˡᵉ needs both arguments to be the same triangular species"))
+    _check_same_backend(A, B)
     AT(A.S ./ B.S, A.n)
 end
 
-function LinearAlgebra.mul!(C::AT, A::AT, α::Real) where {AT <: AbstractTriangular}
+# Two independent arguments, for the reason `+` above gives: bound as `(C::AT, A::AT)` a destination
+# and a source whose storage arrays differ are already different concrete types, so `AT` cannot bind
+# both and the call reaches `LinearAlgebra`'s generic `mul!`, which reaches `setindex!` on a type
+# that has none.
+function LinearAlgebra.mul!(C::AbstractTriangular, A::AbstractTriangular, α::Real)
+    _triangular_species(C) === _triangular_species(A) ||
+        throw(ArgumentError("mul! needs the destination and the source to be the same triangular species"))
+    _check_same_backend(C, A)
     mul!(C.S, A.S, α)
     C
 end
-LinearAlgebra.mul!(C::AT, α::Real, A::AT) where {AT <: AbstractTriangular} = mul!(C, A, α)
+function LinearAlgebra.mul!(C::AbstractTriangular, α::Real, A::AbstractTriangular)
+    mul!(C, A, α)
+end
 LinearAlgebra.rmul!(C::AT, α::Real) where {AT <: AbstractTriangular} = mul!(C, C, α)
 
 function Base.one(A::AbstractTriangular{T}) where {T}
@@ -145,48 +191,22 @@ storage. A complex one does not: the swap is bound to `Real`, for the reason the
 `adjoint(::LowerTriangular)` in `upper_triangular.jl` gives, and the lazy `Adjoint` it falls through
 to is not an `AbstractTriangular`. So that product stays on the generic path and stays host-only.
 """
-function Base.:*(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
-    m1, m2 = size(B)
-    @assert m1 == A.n
+Base.:*(::AbstractTriangular, ::AbstractMatrix)
+
+# The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them.
+function _lmul_into!(C::AbstractMatrix{T}, A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
+    @assert size(B, 1) == A.n == size(C, 1)
+    @assert size(B, 2) == size(C, 2)
     backend = KernelAbstractions.get_backend(A)
-    C = KernelAbstractions.allocate(backend, T, A.n, m2)
 
     triangular_mat_mul! = mat_mul_kernel(A, backend)
     triangular_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
     C
 end
 
-# the first matrix is multiplied onto A2 in order for it to not be SkewSymMatrix!
-function Base.:*(A1::AbstractTriangular{T}, A2::AbstractTriangular{T}) where {T}
-    A1 * (A2 * one(A2))
-end
-
-@doc raw"""
-    vec(A::AbstractTriangular)
-
-Return the associated vector to ``A``.
-
-# Examples
-
-```jldoctest
-using GeometricOptimizers
-
-M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
-LowerTriangular(M) |> vec
-
-# output
-
-6-element Vector{Int64}:
-  5
-  9
- 10
- 13
- 14
- 15
-```
-"""
-function Base.vec(A::AbstractTriangular)
-    A.S
+function _lmul(A::AbstractTriangular{T}, B::AbstractMatrix{T}) where {T}
+    backend = KernelAbstractions.get_backend(A)
+    _lmul_into!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
 end
 
 function Base.zero(A::AT) where {AT <: AbstractTriangular}
@@ -229,25 +249,14 @@ function Base.copyto!(A::AbstractTriangular, B::AbstractTriangular)
     A
 end
 
-# see the comment on `*(::SkewSymMatrix, ::AbstractVector)`: the vector goes through the
+# see the comment on `_lmul(::SkewSymMatrix, ::AbstractVector)`: the vector goes through the
 # matrix--matrix path as a single column, and the `n × 1` result is reshaped back to a vector
-function Base.:*(A::AbstractTriangular, b::AbstractVector{T}) where {T}
+function _lmul(A::AbstractTriangular, b::AbstractVector{T}) where {T}
     vec(A * reshape(b, length(b), 1))
 end
 
-function Base.:*(B::AbstractMatrix{T}, A::AbstractTriangular{T}) where {T}
-    (A' * B')'
-end
-
-# A row vector on the left is the one shape the method above leaves unsettled: it stands off against
-# `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
-# `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
-# vector gets the answer that method gives every other matrix, and gets it the same cheap way: `x'`
-# is one column, which reaches the kernel as a single column instead of materializing `A`. It is a
-# `Vector` for a real element type and an `n×1` wrapper for a complex one -- either way one column,
-# so the two return the same values on different backings. `T` is bound in both slots because the
-# method above binds it there; free, these would not be contained in it and would separate nothing.
-#
-# One pair covers both triangulars, because the method above is written on `AbstractTriangular` too.
-Base.:*(x::Adjoint{T, <:AbstractVector}, A::AbstractTriangular{T}) where {T} = (A' * x')'
-Base.:*(x::Transpose{T, <:AbstractVector}, A::AbstractTriangular{T}) where {T} = (A' * x')'
+# A row vector reaches this method too, and gets it the same cheap way: `x'` is one column, which
+# reaches the kernel as a single column instead of materializing `A`. It is a `Vector` for a real
+# element type and an `n×1` wrapper for a complex one — either way one column, so the two return the
+# same values on different backings.
+_rmul(B::AbstractMatrix{T}, A::AbstractTriangular{T}) where {T} = (A' * B')'

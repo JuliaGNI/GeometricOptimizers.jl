@@ -21,16 +21,31 @@ module AbstractNeuralNetworksExt
 # horizontal lifts, which never had one -- reduce to a delegation. A type added to
 # `src/parameter_protocol.jl` later is covered without a change here.
 
-using GeometricOptimizers: Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix
+using GeometricOptimizers: Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix,
+                           StiefelProjection, OwnedMatrix
 
 import AbstractNeuralNetworks: changebackend
-using AbstractNeuralNetworks: NeuralNetworkBackend
+using AbstractNeuralNetworks: NeuralNetworkBackend, ZeroVector
+import LinearAlgebra
 
 using NeuralNetworkParameters: mapstorage
 
 function changebackend(backend::NeuralNetworkBackend,
         x::Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix})
     mapstorage(y -> changebackend(backend, y), x)
+end
+
+# `StiefelProjection` is no parameter, so the protocol does not cover it. It is rebuilt on the backend
+# its moved array is on; the `AbstractArray` method would read it one entry at a time.
+function changebackend(backend::NeuralNetworkBackend, E::StiefelProjection)
+    StiefelProjection(changebackend(backend, E.A))
+end
+
+# `mul!(out, A, ::ZeroVector)` is `AbstractNeuralNetworks`' and fills `out` with zeros. This
+# package's `mul!(::AbstractVector, ::OwnedMatrix, ::AbstractVector)` is narrower in `A` and wider in
+# the vector, so the pair is ambiguous; the zero vector's method is the answer.
+function LinearAlgebra.mul!(out::AbstractVector, A::OwnedMatrix, z::ZeroVector)
+    invoke(LinearAlgebra.mul!, Tuple{AbstractVector, AbstractMatrix, ZeroVector}, out, A, z)
 end
 
 end

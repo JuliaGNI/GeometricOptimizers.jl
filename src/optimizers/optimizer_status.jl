@@ -192,8 +192,7 @@ solution_scale(ps::NetworkParameters) = √_sumsq_leaves(solution_scale, ps)
 l2norm(a::AbstractLieAlgHorMatrix) = √_sumsq_leaves(l2norm, parent(a))
 
 # The same over the free parameters, for the same reason, for the four types that keep theirs in one
-# vector. The `AbstractMatrix` fallback below happens to agree, `vec` on a [`VectorStorageMatrix`](@ref)
-# *being* that vector, but only by way of a `vec` that is not the ambient one -- so this says it.
+# vector: `GeometricBase`'s `AbstractArray` method would take the norm of the `n²` entries instead.
 l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 
 # Two methods stood here until 0.6.0, `l2norm(a::AbstractMatrix) = l2norm(vec(a))` and

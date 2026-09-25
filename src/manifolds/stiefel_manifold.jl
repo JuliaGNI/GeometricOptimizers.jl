@@ -14,35 +14,6 @@ mutable struct StiefelManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
     A::AT
 end
 
-Base.:*(Y::StiefelManifold, B::AbstractMatrix) = Y.A * B
-Base.:*(B::AbstractMatrix, Y::StiefelManifold) = B * Y.A
-
-# A row vector on the left is the one shape the second method above leaves unsettled: it stands off
-# against `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned
-# matrix* in `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one
-# above, so a row vector gets the answer that method gives every other matrix: a point is an
-# ordinary array in a wrapper, so unwrap it and let the row vector have the array.
-Base.:*(x::Adjoint{<:Any, <:AbstractVector}, Y::StiefelManifold) = x * Y.A
-Base.:*(x::Transpose{<:Any, <:AbstractVector}, Y::StiefelManifold) = x * Y.A
-
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}}, B::AbstractMatrix) where {
-        T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * B
-end
-
-# `B` carries no type parameter, and that is what separates the method directly above from the
-# `AbstractMatrix * StiefelManifold` one. Binding the storage array type to the adjoint's would
-# leave those two ambiguous for every pair of points whose storage types differ -- one held in a
-# `Matrix` against one held in a `SubArray` or in a device array -- since neither of them is more
-# specific than the other there. Binding only the element type moves the same hole to a pair that
-# differs in that instead. Either way it is an ordinary product that raises nothing a caller can act
-# on. This is the same whole-type-binding shape as `copyto!(::Manifold, ::Manifold)` in
-# `manifolds/abstract_manifold.jl`, whose comment spells the mechanism out.
-function Base.:*(Y::Adjoint{T, StiefelManifold{T, AT}},
-        B::StiefelManifold) where {T, AT <: AbstractMatrix{T}}
-    Y.parent.A' * B.A
-end
-
 @doc raw"""
     rgrad(Y::StiefelManifold, ∇L::AbstractMatrix)
 
@@ -131,11 +102,22 @@ round.(global_section(Y); digits = 3)
 Internally we do:
 
 ```julia
-orthonormal_columns() do
+λ = orthonormal_columns() do
     A = randn(N, N - n) # or the gpu equivalent
     A - Y.A * (Y.A' * A)
 end
+_cholesky_qr2(λ - Y.A * (Y.A' * λ))
 ```
+
+**The projection and the orthonormalization are done twice.** The first projection leaves a
+rounding error in the span of `Y`, and the orthonormalization multiplies it by the condition number
+of the projected draw, which has a heavy tail. Once only, the worst of a few thousand draws gives
+``\|Y^T\lambda\|`` of `3e-3` to `7e-2` in `Float32`, depending on the size. The first result is
+orthonormal, so the second orthonormalization amplifies nothing, and ``\|Y^T\lambda\|`` stays at
+rounding level: measured over 20000 draws at ``6\times3`` and 2000 at ``50\times3`` and
+``200\times10``, at most `6.1e-7` in `Float32` and `1.1e-15` in `Float64`, at twice the cost.
+Projecting twice before one orthonormalization does not do this, because the amplification comes
+after it.
 
 The orthonormalization is **CholeskyQR2 and not `LinearAlgebra.qr!`**, on every backend — see
 [`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2). `qr!` is a host factorization here:
@@ -149,14 +131,8 @@ cannot orthonormalize is *replaced* — see
 [`orthonormal_columns`](@ref GeometricOptimizers.orthonormal_columns) for the measurement and for
 why a redraw rather than a repair is the honest answer.
 """
-function global_section(Y::StiefelManifold{T}) where {T}
-    N, n = size(Y)
-    backend = KernelAbstractions.get_backend(Y)
-    λ = orthonormal_columns() do
-        A = KernelAbstractions.allocate(backend, T, N, N - n)
-        randn!(A)
-        A - Y.A * (Y.A' * A)
-    end
+function global_section(Y::StiefelManifold)
+    λ = _complement_columns(Y.A)
 
     # The section's storage array has to be the *point's* array type, which `test/device_copyto.jl`
     # relies on to move a section between two of them. It already is for every `KernelAbstractions`
@@ -165,6 +141,20 @@ function global_section(Y::StiefelManifold{T}) where {T}
     # even where the two already agree, which is why the branch is here. `convert` is not the
     # spelling: an `AbstractMatrix` outside `Base`'s hierarchy need define no method for it.
     λ isa typeof(Y.A) ? λ : typeof(Y.A)(λ)
+end
+
+# Orthonormal columns spanning the complement of the columns of `Y`, for `global_section` of either
+# manifold; its docstring says why both steps are done twice. The first result is orthonormal, so
+# the second `_cholesky_qr2` cannot break down, and `something` raises if it ever does.
+function _complement_columns(Y::AbstractMatrix{T}) where {T}
+    N, n = size(Y)
+    backend = KernelAbstractions.get_backend(Y)
+    λ = orthonormal_columns() do
+        A = KernelAbstractions.allocate(backend, T, N, N - n)
+        randn!(A)
+        A - Y * (Y' * A)
+    end
+    something(_cholesky_qr2(λ - Y * (Y' * λ)))
 end
 
 function Base.zero(Y::StiefelManifold{T}) where {T}

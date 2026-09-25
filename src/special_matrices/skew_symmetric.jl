@@ -108,7 +108,8 @@ Base.size(A::SkewSymMatrix) = (A.n, A.n)
     nothing
 end
 
-function Base.:+(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
+# The sum kernels. `src/ambiguities.jl` has the `+` and `-` methods that reach them.
+function _ladd(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     @assert size(A) == size(B)
     backend = KernelAbstractions.get_backend(B)
     addition! = addition_kernel!(backend)
@@ -118,9 +119,7 @@ function Base.:+(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     C
 end
 
-Base.:+(B::AbstractMatrix, A::SkewSymMatrix) = A + B
-
-function Base.:+(A::SkewSymMatrix, B::SkewSymMatrix)
+function _owned_add(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
     SkewSymMatrix(A.S + B.S, A.n)
 end
@@ -133,7 +132,7 @@ end
 # `_add!` and the other optimizer primitives for this type are generic over `VectorStorageMatrix`,
 # next to the rest of them in `optimizers/named_tuple_wrapper.jl`.
 
-function Base.:-(A::SkewSymMatrix, B::SkewSymMatrix)
+function _owned_sub(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
     SkewSymMatrix(A.S - B.S, A.n)
 end
@@ -229,12 +228,10 @@ end
 LinearAlgebra.mul!(C::SkewSymMatrix, α::Real, A::SkewSymMatrix) = mul!(C, A, α)
 LinearAlgebra.rmul!(C::SkewSymMatrix, α::Real) = mul!(C, C, α)
 
-# The in-place form, and the one `*` below is written on — the shape `mul!(C, ::SymmetricMatrix,
-# ::AbstractMatrix)` already has in `symmetric.jl`. It exists because the retraction workspace needs
-# the dense form of a lift's `A` block written into a buffer it owns rather than returned in a fresh
-# one, and because a structured matrix that has a `*` and no `mul!` makes a caller who has a
-# destination allocate anyway.
-function LinearAlgebra.mul!(C::AbstractMatrix, A::SkewSymMatrix, B::AbstractMatrix)
+# The product kernels. `src/ambiguities.jl` has the `*` and `mul!` methods that reach them. The
+# in-place form is the one the others are written on: the retraction workspace writes the dense form
+# of a lift's `A` block into a buffer it owns.
+function _lmul_into!(C::AbstractMatrix{T}, A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     @assert A.n == size(B, 1)
     @assert size(B, 2) == size(C, 2)
     @assert A.n == size(C, 1)
@@ -245,11 +242,9 @@ function LinearAlgebra.mul!(C::AbstractMatrix, A::SkewSymMatrix, B::AbstractMatr
     C
 end
 
-function Base.:*(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
+function _lmul(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(A)
-    C = KernelAbstractions.allocate(backend, T, A.n, size(B, 2))
-    LinearAlgebra.mul!(C, A, B)
-    C
+    _lmul_into!(KernelAbstractions.allocate(backend, T, A.n, size(B, 2)), A, B)
 end
 
 @kernel function skew_mat_mul_kernel!(
@@ -280,30 +275,19 @@ end
 # cheaper: `-A` builds a whole second packed vector before the kernel runs. Measured at `n = 400`
 # against one column, `-transpose(A * transpose(x))` allocates 7 520 B where
 # `transpose(-A * transpose(x))` allocates 642 944 B, for the same values.
-function Base.:*(B::AbstractMatrix{T}, A::SkewSymMatrix{T}) where {T}
+#
+# A row vector reaches this method too, and gets it the same cheap way: `transpose(x)` is one
+# column, which reaches the kernel as a single column instead of materializing `A`. It is a `Vector`
+# for a real element type and an `n×1` wrapper for a complex one — either way one column, so the two
+# return the same values on different backings.
+function _rmul(B::AbstractMatrix{T}, A::SkewSymMatrix{T}) where {T}
     -transpose(A * transpose(B))
-end
-
-# A row vector on the left is the one shape the method above leaves unsettled: it stands off against
-# `LinearAlgebra`'s own row-vector product, and neither wins. *A row vector meets an owned matrix* in
-# `src/ambiguities.jl` gives the mechanism and lists every site. The body is the one above, so a row
-# vector gets the answer that method gives every other matrix, including its `transpose`, and gets
-# it the same cheap way: `transpose(x)` is one column, which reaches the kernel as a single column
-# instead of materializing `A`. It is a `Vector` for a real element type and an `n×1` wrapper for a
-# complex one -- either way one column, so the two return the same values on different backings.
-# `T` is bound in both slots because the method above binds it there; free, these would not be
-# contained in it and would separate nothing.
-function Base.:*(x::Adjoint{T, <:AbstractVector}, A::SkewSymMatrix{T}) where {T}
-    -transpose(A * transpose(x))
-end
-function Base.:*(x::Transpose{T, <:AbstractVector}, A::SkewSymMatrix{T}) where {T}
-    -transpose(A * transpose(x))
 end
 
 # The kernel this reaches is a matrix--matrix one, so the vector goes through it as a single column
 # -- and the `n × 1` result is reshaped back, because a matrix times a vector is a vector. `vec`
 # reshapes rather than copies, so the second step shares the kernel's buffer and copies no data.
-function Base.:*(A::SkewSymMatrix, b::AbstractVector{T}) where {T}
+function _lmul(A::SkewSymMatrix, b::AbstractVector{T}) where {T}
     vec(A * reshape(b, length(b), 1))
 end
 
@@ -314,34 +298,6 @@ end
 # the first matrix is multiplied onto A2 in order for it to not be SkewSymMatrix!
 function Base.:*(A1::SkewSymMatrix{T}, A2::SkewSymMatrix{T}) where {T}
     A1 * (one(A2) * A2)
-end
-
-@doc raw"""
-    vec(A)
-
-Output the associated vector of `A`.
-
-# Examples
-
-```jldoctest
-using GeometricOptimizers
-
-M = [1 2 3 4; 5 6 7 8; 9 10 11 12; 13 14 15 16]
-SkewSymMatrix(M) |> vec
-
-# output
-
-6-element Vector{Float64}:
- 1.5
- 3.0
- 1.5
- 4.5
- 3.0
- 1.5
-```
-"""
-function Base.vec(A::SkewSymMatrix)
-    A.S
 end
 
 function Base.zero(A::SkewSymMatrix)

@@ -1,4 +1,5 @@
 using GeometricOptimizers: StiefelProjection
+using JLArrays: JLArray
 using KernelAbstractions: CPU, KernelAbstractions
 using LinearAlgebra: I, transpose
 using Test
@@ -15,16 +16,18 @@ using Test
           [Tuple{Int, Int}]
 end
 
-# The host constructor builds `[I; O]` directly rather than routing through
-# `StiefelProjection(CPU(), T, N, n)`, which allocates through `KernelAbstractions.zeros` and then
-# starts a kernel to write `n` ones. What is pinned here is that the two agree, entry for entry and
-# in type, so that the cheaper spelling is the same matrix.
-@testset "the host and the `CPU()` constructor agree" begin
-    for T in (Float32, Float64), N in 3:5, n in 1:N
+# The host constructor builds `[I; O]` directly, and `StiefelProjection(CPU(), T, N, n)` routes to
+# it. The backend constructor allocates through `KernelAbstractions.zeros` and then starts a kernel
+# to write the ones; `invoke` reaches it on a `CPU` past that routing. What is pinned here is that
+# the three agree, entry for entry and in type, so that the cheaper spelling is the same matrix.
+@testset "the host, the `CPU()` and the backend constructor agree" begin
+    backend_signature = Tuple{KernelAbstractions.Backend, Type, Integer, Integer}
+    for T in (Float32, Float64), N in 3:5, n in 0:(N + 1)
         E = StiefelProjection(N, n, T)
-        E_backend = StiefelProjection(CPU(), T, N, n)
-        @test typeof(E) === typeof(E_backend)
-        @test E.A == E_backend.A
+        E_cpu = StiefelProjection(CPU(), T, N, n)
+        E_backend = invoke(StiefelProjection, backend_signature, CPU(), T, N, n)
+        @test typeof(E) === typeof(E_cpu) === typeof(E_backend)
+        @test E.A == E_cpu.A == E_backend.A
         @test E.A isa Matrix{T}
         @test KernelAbstractions.get_backend(E) == CPU()
     end
@@ -32,12 +35,22 @@ end
     @test eltype(StiefelProjection(5, 3)) === Float64
 end
 
+# The backend constructor writes its ones with a kernel, one work item per diagonal entry. An
+# `N × n` matrix has `min(N, n)` of them, so a wide one (`n > N`) must not launch `n` items; the host
+# constructor, `Matrix{T}(I, N, n)`, is the reference for every shape.
+@testset "a device StiefelProjection of any shape matches the host one" begin
+    device = KernelAbstractions.get_backend(JLArray(zeros(Float32, 1)))
+    for (N, n) in ((2, 4), (3, 3), (5, 2), (0, 3), (3, 0), (0, 0))
+        E = StiefelProjection(device, Float32, N, n)
+        @test E.A isa JLArray{Float32, 2}
+        @test Array(E.A) == StiefelProjection(N, n, Float32).A
+    end
+end
+
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::StiefelProjection)` does not
 # settle on its own: `LinearAlgebra` has its own method for that left operand, narrower there and
-# wider on the right, so neither wins. The two tie-breakers beside the products in
-# `src/special_matrices/stiefel_projection.jl` settle it. This shape worked before
-# `StiefelProjection` had a `*` at all, so what is pinned here is that adding one did not take it
-# away. `E` is rectangular, so a tie-breaker that swapped or dropped an operand would not conform.
+# wider on the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
+# `E` is rectangular, so a method that swapped or dropped an operand would not conform.
 @testset "a row vector times a StiefelProjection" begin
     for T in (Float32, Float64), N in 3:5, n in 1:N
         E = StiefelProjection(N, n, T)
