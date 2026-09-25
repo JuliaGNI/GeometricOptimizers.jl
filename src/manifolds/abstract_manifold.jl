@@ -189,9 +189,8 @@ host and `Float32` on a device.
 Neither value is arbitrary, which is the whole reason this is a function rather than a literal in
 each allocator. `Float64` on the host is what `zeros(n)` and `rand(n)` already give, so an owned
 array or manifold allocated without an element type matches every other array allocated without
-one. `Float32` on a
-device is the width an accelerator is built for, and a device that carries `Float64` at all
-normally carries it at a fraction of the `Float32` rate.
+one. `Float32` on a device is the width an accelerator is built for, and a device that carries
+`Float64` at all normally carries it at a fraction of the `Float32` rate.
 
 **The rule deliberately does not ask `KernelAbstractions.supports_float64`.** A backend being
 *able* to hold a `Float64` is not a reason to hand it one: a caller who has not said which width it

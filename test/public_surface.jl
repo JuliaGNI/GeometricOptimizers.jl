@@ -47,7 +47,8 @@ end
 
 # A type that already names its element type is not given a second one: a wrong call is a
 # `MethodError`, not a `TypeError` from the chain.
-@testset "a storage type the backend does not give is refused, not ignored" begin
+@testset "a type that names its storage is refused, not ignored" begin
+    @test_throws MethodError zeros(CPU(), SkewSymMatrix{Float32, Vector{Float32}}, 3)
     @test_throws MethodError zeros(CPU(), SkewSymMatrix{Float32, JLArray{Float32, 1}}, 3)
     @test_throws MethodError zeros(jl_backend, SymmetricMatrix{Float64, Vector{Float64}}, 3)
     @test_throws MethodError rand(

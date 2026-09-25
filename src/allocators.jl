@@ -8,19 +8,21 @@
 # methods below supply what a call leaves out: `rng = Random.default_rng()`, `backend = CPU()`, and
 # `T = default_eltype(backend)` for a bare `X`.
 #
-# The per-type methods take exactly `Type{X{T}}`, so a storage type the backend does not give --
-# `SkewSymMatrix{Float32, JLArray{Float32, 1}}` on the host -- matches none of them and is a
-# `MethodError` rather than a result of another type. A manifold's `rand` is the exception: it takes
+# The per-type methods take exactly `Type{X{T}}`, so a type that names its storage as well --
+# `SkewSymMatrix{Float32, Vector{Float32}}`, or `SkewSymMatrix{Float32, JLArray{Float32, 1}}` on
+# the host -- matches none of them and is a `MethodError` rather than a result of another type, even
+# where the backend gives that storage. A manifold's `rand` is the exception: it takes
 # `MT <: Manifold{T}` and keeps a concrete `MT`. The methods that fill in `T` take the bare types
 # only, so every other `X` that has no per-type method is a `MethodError` from
 # dispatch.
 #
 # Each method takes a leading `Integer` before the `Integer...`. Without it the zero-dimension call
 # `rand(X)` is a method of these as well, and `Random`'s `rand(::Type{X})` is ambiguous with it.
-const _OwnedAllocType = Union{SkewSymMatrix, SymmetricMatrix, AbstractTriangular,
-    AbstractLieAlgHorMatrix, Manifold}
+const _OwnedArrayType = Union{SkewSymMatrix, SymmetricMatrix, AbstractTriangular,
+    AbstractLieAlgHorMatrix}
+const _OwnedAllocType = Union{_OwnedArrayType, Manifold}
 
-function Base.zeros(::Type{X}, d::Integer, dims::Integer...) where {X <: _OwnedAllocType}
+function Base.zeros(::Type{X}, d::Integer, dims::Integer...) where {X <: _OwnedArrayType}
     zeros(CPU(), X, d, dims...)
 end
 
@@ -29,8 +31,8 @@ end
 for X in (SkewSymMatrix, SymmetricMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular,
     StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix,
     StiefelManifold, GrassmannManifold, SymplecticStiefelManifold)
-    @eval function Base.zeros(backend::KernelAbstractions.Backend, ::Type{$X}, d::Integer,
-            dims::Integer...)
+    X <: Manifold || @eval function Base.zeros(backend::KernelAbstractions.Backend,
+            ::Type{$X}, d::Integer, dims::Integer...)
         zeros(backend, $X{default_eltype(backend)}, d, dims...)
     end
     @eval function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,

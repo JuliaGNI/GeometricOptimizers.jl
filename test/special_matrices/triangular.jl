@@ -200,11 +200,11 @@ end
     end
 end
 
-# Neither constructor projects: each reads the strict triangle that is there. `map_to_low` reads it
-# directly and `map_to_up` reaches it by swapping the indices, which is a transpose. Spelt `A'` the
-# swap conjugates on the way, so `StrictlyUpperTriangular` stored a triangle nobody asked for — while
-# `StrictlyLowerTriangular` was exact, so the two constructors disagreed with each other. The real path
-# cannot see it, which is why this testset is here.
+# Neither constructor projects: each reads the strict triangle that is there. `map_to_lo` reads it
+# directly and `map_to_up` reaches it by swapping the indices, which is a transpose. Spelt `A'`, the
+# swap would conjugate on the way, so `StrictlyUpperTriangular` would store a triangle nobody asked
+# for while `StrictlyLowerTriangular` stays exact, and the two constructors would disagree. The real
+# path cannot see it, which is why this testset is here.
 @testset "neither constructor conjugates on a complex element type" begin
     M = randn(ComplexF64, 4, 4)
 

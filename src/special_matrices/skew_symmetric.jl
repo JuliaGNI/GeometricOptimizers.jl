@@ -289,7 +289,7 @@ function map_to_Skew(A::AbstractMatrix{T}) where {T}
     @assert size(A, 2) == n
     A_skew = T(0.5) * (A - transpose(A))
     backend = KernelAbstractions.get_backend(A)
-    S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
+    S = _zeros(backend, T, n * (n - 1) ÷ 2)
     assign_Skew_val! = assign_Skew_val_kernel!(backend)
     for i in 2:n
         assign_Skew_val!(S, A_skew, i, ndrange = (i - 1))
