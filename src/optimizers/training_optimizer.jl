@@ -96,7 +96,8 @@ and write the new parameters into `x`, which it returns.
 
 `x` is the object `opt` was built on, and nothing else changes it between steps: the step starts
 from the point `opt.state` carries, which is `x` after the previous step. `dp` has the shape and the
-element type of `x`; a `dp` of another element type is an `ArgumentError`.
+element type of `x`; a `dp` of another element type is an `ArgumentError`, and a `dp` of another
+shape is a `DimensionMismatch`, raised before the iteration number moves.
 
 The step increments the iteration number `t` of `opt.state`, reads the step size
 [`step_size`](@ref)`(opt.linesearch, t)`, forms the direction of `opt.method` from the

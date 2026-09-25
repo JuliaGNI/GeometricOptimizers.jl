@@ -162,6 +162,9 @@ function advance_state!(state::GradientState, cache::GradientCache, ::GradientMe
     state
 end
 
+# `solve!`'s `update!(state, opt, x)` for the four first-order states is in
+# `scalar_moment_adam_optimizer.jl`, the first file where all four state types exist.
+
 # function compute_direction!(opt::Optimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
 #     direction(opt) .= rhs(opt)
 # end

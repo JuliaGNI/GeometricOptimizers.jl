@@ -204,9 +204,11 @@ end
     end
 end
 
-# The bound for `GradientMethod` and `MomentumMethod` on a model with manifold leaves is the measured
-# difference of 1 to 2 `eps(T)` relative between GML 0.8's per-layer step and a step over the whole
-# parameter set. A model without a manifold leaf matches exactly. `Adam` matches exactly once the
+# The bound for `GradientMethod` and `MomentumMethod` on a model with manifold leaves is round-off
+# headroom. With the completions copied the difference measured 0 on aarch64 macOS, and without
+# them at most 0.57 `eps(T)` relative, from the second orthonormalisation of the completion; BLAS
+# and QR rounding differs by platform, which 4 `eps(T)` covers. A model without a manifold leaf
+# matches exactly. `Adam` matches exactly once the
 # random completion of each `GlobalSection` in the state is the one the reference drew; see
 # `scripts/gml_reference/generate.jl` for why seeding the RNG equally does not give that.
 _has_manifold(::Manifold) = true
