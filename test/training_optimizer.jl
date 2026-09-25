@@ -237,6 +237,25 @@ end
     end
 end
 
+@testset "a gradient of another element type is refused at the entry" begin
+    for (T, S) in ((Float32, Float64), (Float64, Float32)), shape in SHAPES
+
+        x = _parameters(T, shape)
+        opt = TrainingOptimizer(x; algorithm = Adam())
+        dp = _gradient(_parameters(S, shape))
+        @test_throws ArgumentError optimization_step!(x, opt, dp)
+        @test iteration_number(opt.state) == 0
+    end
+end
+
+@testset "a step size is finite and positive" begin
+    x = _parameters(Float64, :vector)
+    for η in (NaN, Inf, -1, 0)
+        @test_throws ArgumentError TrainingOptimizer(x; algorithm = Adam(), linesearch = η)
+        @test_throws ArgumentError Optimizer(x, x -> sum(abs2, x); linesearch = η)
+    end
+end
+
 @testset "the training step is public" begin
     @test Base.ispublic(GeometricOptimizers, :TrainingOptimizer)
     @test Base.ispublic(GeometricOptimizers, :optimization_step!)

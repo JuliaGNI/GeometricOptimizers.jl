@@ -234,11 +234,25 @@ end
 
 # A number is a fixed step size, and a `Static` or a `DecayingStatic` is converted to the element type
 # of the parameters, as the method is. A searching line search is taken as it is.
-_linesearch_method(::Type{T}, η::Real) where {T} = Static(T(η))
+function _linesearch_method(::Type{T}, η::Real) where {T}
+    isfinite(η) && η > 0 ||
+        throw(ArgumentError("a fixed step size is finite and positive, not $(η)"))
+    Static(T(η))
+end
 function _linesearch_method(::Type{T}, ls::Union{Static, DecayingStatic}) where {T}
     change_precision(T, ls)
 end
 _linesearch_method(::Type, ls::LinesearchMethod) = ls
+
+# A training step takes what `_linesearch_method` converts, except a searching line search.
+function _training_step_size(T::Type, ls::Union{Real, Static, DecayingStatic})
+    _linesearch_method(T, ls)
+end
+function _training_step_size(::Type, ls)
+    throw(ArgumentError(
+        "a training step takes a step size or a `DecayingStatic`, not a $(typeof(ls)): it has the " *
+        "gradient of one minibatch and no objective for a line search to search along."))
+end
 
 function Optimizer(x::VT, problem::OptimizerProblem; algorithm::OptimizerMethod = BFGS(),
         linesearch::Union{LinesearchMethod, Real} = default_linesearch(T, algorithm),

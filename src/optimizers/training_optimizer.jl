@@ -36,9 +36,9 @@ retraction, and the buffers the retraction works in.
 
 `algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref) or a member of the
 [`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, and
-raises an `ArgumentError` for any other `x`. `dp` has the element type of `x`. `linesearch` is a number, which is the fixed step size `Static(η)`, a
-[`SimpleSolvers.Static`](@extref) or a [`DecayingStatic`](@ref); the default is
-[`default_step_size`](@ref)`(algorithm)`. `retraction` is an [`AbstractRetraction`](@ref) type,
+raises an `ArgumentError` for any other `x`. `linesearch` is a finite positive number, which is
+the fixed step size `Static(η)`, a [`SimpleSolvers.Static`](@extref) or a
+[`DecayingStatic`](@ref); the default is [`default_step_size`](@ref)`(algorithm)`. `retraction` is an [`AbstractRetraction`](@ref) type,
 `Cayley()` or `Geodesic()`.
 
 # Why a training step is not `solve!`
@@ -88,20 +88,15 @@ function TrainingOptimizer(x::OptimizerSolution{T}; algorithm::FirstOrderMethod 
         retraction_workspace(x))
 end
 
-function _training_step_size(::Type{T}, ls::Union{Real, Static, DecayingStatic}) where {T}
-    _linesearch_method(T, ls)
-end
-function _training_step_size(::Type, ls)
-    throw(ArgumentError("a training step takes a fixed step size (a number or a `Static`) or a " *
-                        "`DecayingStatic` schedule, not a $(typeof(ls)): it has the gradient of " *
-                        "one minibatch and no objective for a line search to search along."))
-end
-
 @doc raw"""
     optimization_step!(x, opt::TrainingOptimizer, dp)
 
-Take one step of the training optimizer `opt` from the parameters `x`, with the Euclidean gradient
-`dp` of the loss at `x`, and return `x`, which holds the new parameters.
+Take one step of the training optimizer `opt` with the Euclidean gradient `dp` of the loss at `x`,
+and write the new parameters into `x`, which it returns.
+
+`x` is the object `opt` was built on, and nothing else changes it between steps: the step starts
+from the point `opt.state` carries, which is `x` after the previous step. `dp` has the shape and the
+element type of `x`; a `dp` of another element type is an `ArgumentError`.
 
 The step increments the iteration number `t` of `opt.state`, reads the step size
 [`step_size`](@ref)`(opt.linesearch, t)`, forms the direction of `opt.method` from the
@@ -111,7 +106,8 @@ result into `x`. [`advance_state!`](@ref) then carries the state over to the new
 For a parameter set, `dp` is a [`NeuralNetworkParameters.NetworkParameters`](@extref) of the same
 shape as `x`. See [`TrainingOptimizer`](@ref) for why this is not [`solve!`](@ref).
 """
-function optimization_step!(x::OptimizerSolution, opt::TrainingOptimizer, dp)
+function optimization_step!(x::OptimizerSolution{T}, opt::TrainingOptimizer,
+        dp::Union{AbstractArray{T}, NetworkParameters{T}}) where {T}
     increase_iteration_number!(opt.state)
     α = step_size(opt.linesearch, iteration_number(opt.state))
     update!(opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, x)
@@ -122,4 +118,10 @@ function optimization_step!(x::OptimizerSolution, opt::TrainingOptimizer, dp)
     _copyto!(x, solution(opt.cache))
     advance_state!(opt.state, opt.cache, opt.method)
     x
+end
+
+# The element-type check is dispatch, so the step above pays nothing for it.
+function optimization_step!(x::OptimizerSolution, ::TrainingOptimizer, dp)
+    throw(ArgumentError("the gradient is a $(typeof(dp)) and the parameters are a $(typeof(x)): " *
+                        "a training step takes a gradient of the shape and element type of `x`."))
 end
