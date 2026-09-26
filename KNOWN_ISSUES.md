@@ -493,7 +493,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: `src/decompositions/symplectic_sr.jl`
 - kind: defect
-- found: 2026-08-20
+- found: 2026-09-18
 - evidence:
 
   **Severity: medium**, and it is a property of the algorithm rather than a defect in the port. Opened
@@ -714,7 +714,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### B2 · `show_trace` and `extended_trace` are still accepted and ignored
 
-- location: `options.jl`
+- location: `SimpleSolvers/src/`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
@@ -820,7 +820,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C8 · `svd_optim.jl`'s table and the script's `COMBINATIONS` are not the same ten rows
 
-- location: `scripts/retraction_accuracy.jl`
+- location: `svd_optim.jl`
 - kind: docs
 - found: #40
 - evidence:
@@ -856,7 +856,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C9 · Most of the harnesses these figures come from are not in the repository
 
-- location: `scripts/retraction_accuracy.jl`
+- location: `/tmp/go_diag/`
 - kind: not verified
 - found: 2026-08-14
 - evidence:
@@ -1016,7 +1016,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C14 · `geodesic` and `𝔄exp` assemble the same product independently
 
-- location: —
+- location: `retractions.jl:128`
 - kind: dead code
 - found: #45
 - evidence:
@@ -1051,7 +1051,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C15 · The compile-time figures cover the first-order caches only
 
-- location: —
+- location: `scripts/`
 - kind: not verified
 - found: #45
 - evidence:
@@ -1194,7 +1194,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: `src/base/options.jl:458-460`
 - kind: upstream
-- found: 2026-08-14; one issue with SimpleSolvers' *Open Issues* entry "`store_trace`, `show_trace` and `extended_trace` have no readers"
+- found: 2026-08-15; one issue with SimpleSolvers' *Open Issues* entry "`store_trace`, `show_trace` and `extended_trace` have no readers"
 - evidence:
 
   `store_trace`, `show_trace` and `extended_trace` exist as fields of `SimpleSolvers.Options`
@@ -1329,6 +1329,36 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   body becomes a squashed commit message, the wrong reason goes into the history with it. The
   scripts have since moved to GMLDatasets.jl (see [0.3.1](#031)), which changes nothing
   about the PR body this entry is about.
+
+## G. Found when this file was split from the CHANGELOG
+
+### K2 · Four comments point at the *Open Issues* section of `CHANGELOG.md`, which is now this file
+
+- location: `scripts/optimizer_allocations.jl:8`
+- kind: docs
+- found: 2026-09-26
+- evidence: `scripts/optimizer_allocations.jl:8` and `scripts/retraction_step_allocations.jl:9` say "the
+  *Open Issues* preamble states"; `test/decompositions/symplectic_sr.jl:32` and
+  `test/manifolds/symplectic_stiefel_manifold.jl:14` say "*Open Issues* in `CHANGELOG.md`". Found by
+  `git grep -n -i 'open issues' origin/main -- ':!CHANGELOG.md'`.
+
+### K3 · The ID A22 was used for two different issues
+
+- location: `KNOWN_ISSUES.md`
+- kind: docs
+- found: 2026-09-26
+- evidence: commit 4d2ed06 (2026-08-20) added `#### A22. The only independent exponential
+  implementation was CPU-only`, and 7f66695 (2026-08-23) removed it. Commit 4e9eb5f (#90,
+  2026-09-18) used `A22` again for the SR decomposition. A commit message that cites A22 before
+  2026-09-18 means the first issue.
+
+### K4 · Three reference links in `CHANGELOG.md` have no definition
+
+- location: `CHANGELOG.md:71`
+- kind: docs
+- found: 2026-09-26
+- evidence: `[0.8.0]`, `[0.6.1]` and `[B]` (`CHANGELOG.md:71`, `:1091`, `:1235`, `:1996`) have no
+  `[label]: url` line, and `[Unreleased]` compares `v0.6.0...main`.
 
 [#14]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/14
 [#24]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/24
