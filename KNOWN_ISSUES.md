@@ -1332,7 +1332,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ## G. Found when this file was split from the CHANGELOG
 
-### K2 · Four comments point at *Open Issues* in `CHANGELOG.md`, which no longer holds it; the preamble rule that two of them cite is in neither file
+### K2 · Four comments point at *Open Issues* in `CHANGELOG.md`, which does not hold it; the preamble rule that two of them cite is in neither file
 
 - location: `scripts/optimizer_allocations.jl:8`
 - kind: docs
