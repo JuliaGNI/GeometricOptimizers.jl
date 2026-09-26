@@ -1332,14 +1332,17 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ## G. Found when this file was split from the CHANGELOG
 
-### K2 · Four comments point at the *Open Issues* section of `CHANGELOG.md`, which is now this file
+### K2 · Four comments point at *Open Issues* in `CHANGELOG.md`, which no longer holds it; the preamble rule that two of them cite is in neither file
 
 - location: `scripts/optimizer_allocations.jl:8`
 - kind: docs
 - found: 2026-09-26
-- evidence: `scripts/optimizer_allocations.jl:8` and `scripts/retraction_step_allocations.jl:9` say "the
-  *Open Issues* preamble states"; `test/decompositions/symplectic_sr.jl:32` and
-  `test/manifolds/symplectic_stiefel_manifold.jl:14` say "*Open Issues* in `CHANGELOG.md`". Found by
+- evidence: `scripts/optimizer_allocations.jl:8` says "because of the rule the *Open Issues* preamble
+  states" and `scripts/retraction_step_allocations.jl:9` says "reason the *Open Issues* preamble
+  states". That preamble rule ("treat a number here as reproducible only where the harness that
+  produced it is named") did not move into this file. `test/decompositions/symplectic_sr.jl:32` says
+  "See *Open Issues* in `CHANGELOG.md`." and `test/manifolds/symplectic_stiefel_manifold.jl:14` says
+  "The figures are in `CHANGELOG.md` under *Open Issues*." Found by
   `git grep -n -i 'open issues' origin/main -- ':!CHANGELOG.md'`.
 
 ### K3 · The ID A22 was used for two different issues
