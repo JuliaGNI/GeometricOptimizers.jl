@@ -1,7 +1,7 @@
 """
     OptimizerCache
 
-See e.g. [`NewtonOptimizerCache`](@ref) and [`BFGSCache`](@ref).
+See e.g. [`NewtonOptimizerCache`](@ref) and [`QuasiNewtonCache`](@ref).
 
 # Extended help
 
@@ -9,6 +9,14 @@ See e.g. [`NewtonOptimizerCache`](@ref) and [`BFGSCache`](@ref).
     `OptimizerCache`s are only used during [`solver_step!`](@ref)s. Outside of these, [`OptimizerState`](@ref)s are used to communicate information between different iterations. This may still have to be enforced consistently.
 """
 abstract type OptimizerCache{T} end
+
+# The accessors every cache in this package answers, on the fields they all name alike. `direction`
+# and `rhs` are not among them: the caches store those under different names.
+solution(cache::OptimizerCache) = cache.x
+gradient(cache::OptimizerCache) = cache.g
+section(cache::OptimizerCache) = cache.section
+# the array `store_gradient!` writes the gradient the direction is built from into
+gradient_array(cache::OptimizerCache) = gradient(cache)
 
 @doc raw"""
     latest_gradient(cache)
@@ -23,17 +31,13 @@ the direction and the state updates need to keep reading unchanged.
 
 # Implementation
 
-Every cache in this package carries a scratch array of its own for this and implements the three
-methods that go with it ([`refresh_latest_gradient!`](@ref), [`latest_gradient_is_current`](@ref),
-[`invalidate_latest_gradient!`](@ref)); see [`GradientCache`](@ref) for the field and for why it may
-not be shared with `gradient`.
-
-The default here aliases the two together, which is what all six caches did before there was a name
-for the distinction, and is what a cache that does not refresh anything should keep doing: nothing
-sets the pairing [`store_gradient!`](@ref) relies on, [`latest_gradient_is_current`](@ref) defaults to
-`false`, and `rg` then means ``\|\nabla{}f(x_k)\|`` at the iterate the step started from.
+Every cache in this package carries a scratch array of its own for this, the field `g̃`, and a flag
+`g̃_is_current` for the pairing [`store_gradient!`](@ref) relies on. The defaults of this method and
+of the three that go with it ([`refresh_latest_gradient!`](@ref), [`latest_gradient_is_current`](@ref),
+[`invalidate_latest_gradient!`](@ref)) read those two fields; see [`GradientCache`](@ref) for why `g̃`
+may not be shared with `gradient`.
 """
-latest_gradient(cache::OptimizerCache) = gradient(cache)
+latest_gradient(cache::OptimizerCache) = cache.g̃
 
 @doc raw"""
     refresh_latest_gradient!(cache, gradient_instance)
@@ -44,16 +48,17 @@ Evaluate the gradient at the iterate `cache` currently holds and store it in
 [`solver_step!`](@ref) calls this once the accepted step has been taken, so that `rg` is a statement
 about the point the solve is about to report rather than about the one it started the step from.
 
-All six caches in this package implement it; the default is a no-op so that a cache defined elsewhere
-keeps working, at the cost of an `rg` that means ``\|\nabla{}f(x_k)\|``. See [`latest_gradient`](@ref).
-
-It is also what establishes the pairing [`store_gradient!`](@ref) relies on, so a cache that
-implements this has to implement [`latest_gradient_is_current`](@ref) with it.
+It is also what establishes the pairing [`store_gradient!`](@ref) relies on. See
+[`latest_gradient`](@ref).
 """
-refresh_latest_gradient!(cache::OptimizerCache, ::Gradient) = cache
+function refresh_latest_gradient!(cache::OptimizerCache, g::Gradient)
+    _refresh_latest_gradient!(solution(cache), cache, g)
+    cache.g̃_is_current[] = true
 
-# The shared body of the three first-order methods' `refresh_latest_gradient!`. This is the same
-# expression `update!(::GradientCache, ...)` builds `cache.g` from: `section(cache)` and
+    cache
+end
+
+# This is the same expression `update!(::GradientCache, ...)` builds `cache.g` from: `section(cache)` and
 # `solution(cache)` are both at the accepted iterate by the time `solver_step!` gets here.
 #
 # It splits on the parameters for the same reason `trial_slope` does, and the split is the same one:
@@ -61,13 +66,6 @@ refresh_latest_gradient!(cache::OptimizerCache, ::Gradient) = cache
 # it is the identity (`global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) = gx`), so there the gradient can
 # go straight into `latest_gradient` and the allocation the manifold branch needs is pure waste. At
 # `n = 500` that is 4 160 bytes an iteration against none.
-function _refresh_latest_gradient!(cache::OptimizerCache, g::Gradient)
-    _refresh_latest_gradient!(solution(cache), cache, g)
-    cache.g̃_is_current[] = true
-
-    cache
-end
-
 function _refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::Gradient)
     g(latest_gradient(cache), solution(cache))
 end
@@ -81,12 +79,12 @@ end
 
 Whether [`latest_gradient`](@ref) already holds ``\mathrm{global\_rep}(\mathrm{section}(state),
 \nabla{}f(x))``, i.e. exactly what [`store_gradient!`](@ref) would otherwise evaluate.
-
-The default is `false`: a cache that never refreshes `latest_gradient` has nothing to reuse.
 """
-latest_gradient_is_current(::OptimizerCache, ::OptimizerState, ::OptimizerSolution) = false
+function latest_gradient_is_current(cache::OptimizerCache, state::OptimizerState, x::OptimizerSolution)
+    cache.g̃_is_current[] && solution(cache) == x && section(cache) == section(state)
+end
 
-# The shared body for the three first-order caches. `g̃_is_current` says the pairing "`latest_gradient`
+# `g̃_is_current` says the pairing "`latest_gradient`
 # is `∇f` at `solution(cache)`, in the frame of `section(cache)`" was established -- only
 # `refresh_latest_gradient!` sets it and only `store_gradient!` clears it, so every intermediate move
 # of `solution(cache)`, in `solver_step!`'s `NaN` loop and throughout the line search, is covered. The
@@ -98,20 +96,13 @@ latest_gradient_is_current(::OptimizerCache, ::OptimizerState, ::OptimizerSoluti
 # The flag is not redundant with the comparisons: on Euclidean parameters the cache's and the state's
 # sections both start life as a copy of `x₀` with `λ = nothing`, so before the first step they compare
 # *equal*, and without the flag the `NaN`-filled scratch would be reused.
-function _latest_gradient_is_current(cache::OptimizerCache, state::OptimizerState, x::OptimizerSolution)
-    cache.g̃_is_current[] && solution(cache) == x && section(cache) == section(state)
-end
 
 """
     invalidate_latest_gradient!(cache)
 
 Declare that [`latest_gradient`](@ref) is no longer the gradient at `solution(cache)`.
-
-The default is a no-op, for the caches that never claim the pairing in the first place.
 """
-invalidate_latest_gradient!(cache::OptimizerCache) = cache
-
-_invalidate_latest_gradient!(cache::OptimizerCache) = (cache.g̃_is_current[] = false; cache)
+invalidate_latest_gradient!(cache::OptimizerCache) = (cache.g̃_is_current[] = false; cache)
 
 @doc raw"""
     store_gradient!(cache, state, gradient_instance, x)
@@ -150,11 +141,4 @@ function store_gradient!(cache::OptimizerCache, state::OptimizerState, g::Gradie
     invalidate_latest_gradient!(cache)
 
     cache
-end
-
-# The shared body of the three first-order caches' `gradient_difference!`. Both gradients are in the
-# cache once `solver_step!` has refreshed `latest_gradient`, so unlike the generic method this needs
-# no `state.ḡ` -- see `gradient_difference!` for why that matters here.
-function _latest_gradient_difference!(cache::OptimizerCache)
-    _difference!(cache.Δg, latest_gradient(cache), gradient(cache))
 end

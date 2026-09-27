@@ -58,26 +58,11 @@ function MomentumCache(x::OptimizerSolution{T}) where {T}
     MomentumCache(x, g)
 end
 
-solution(cache::MomentumCache) = cache.x
-gradient(cache::MomentumCache) = cache.g
-gradient_array(cache::MomentumCache) = gradient(cache)
-latest_gradient(cache::MomentumCache) = cache.g̃
-function refresh_latest_gradient!(cache::MomentumCache, g::Gradient)
-    _refresh_latest_gradient!(cache, g)
-end
-function latest_gradient_is_current(cache::MomentumCache, state::OptimizerState, x::OptimizerSolution)
-    _latest_gradient_is_current(cache, state, x)
-end
-invalidate_latest_gradient!(cache::MomentumCache) = _invalidate_latest_gradient!(cache)
-function gradient_difference!(cache::MomentumCache, ::OptimizerState)
-    _latest_gradient_difference!(cache)
-end
 direction(cache::MomentumCache) = cache.δ
 rhs(cache::MomentumCache) = direction(cache)
 # `rhs` above is an alias for the direction, so the default `steepest_descent!` would be a silent
 # no-op here -- and the direction is `-(αp + ∇f)`, not `-∇f`. See `steepest_descent!`.
 steepest_descent!(cache::MomentumCache) = _steepest_descent_from_gradient!(cache)
-section(cache::MomentumCache) = cache.section
 
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
 # The invariant is enforced by the outer constructors below.
@@ -99,15 +84,7 @@ mutable struct MomentumState{T, OT, GS, VT} <: OptimizerState{T}
     f̄::T
 end
 
-solution(state::MomentumState) = state.x
-previous_solution(state::MomentumState) = state.x̄
-gradient(state::MomentumState) = state.g
-previous_gradient(state::MomentumState) = state.ḡ
-value(state::MomentumState) = state.f
-previous_value(state::MomentumState) = state.f̄
 momentum(state::MomentumState) = state.p
-
-section(state::MomentumState) = state.section
 
 function MomentumState(x::OST, g::GradientStorage{T}) where {T, OST <: OptimizerSolution{T}}
     _x = _copy(x)

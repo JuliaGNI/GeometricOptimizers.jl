@@ -100,12 +100,8 @@ end
     optv = Optimizer(ones(3), F; algorithm = GradientMethod())
     @test optv.gradient isa GradientAutodiff
 
-    # And the Hessian functor's error, now on this package's own Hessian types. Both halves: the
-    # iterative one that `BFGS` and `DFP` build, and the `NoHessian` that every direction-only method
-    # builds. They are separate methods because the two types have no common supertype of this
-    # package's own below `SimpleSolvers.Hessian`, so a single method would have had to be written on
-    # that -- which is the piracy this pair exists to avoid.
-    @test_throws ErrorException HessianBFGS(F, ones(3))(zeros(3, 3), ones(3))
+    # And the Hessian functor's error, on this package's own `NoHessian`, which every method but
+    # `Newton` builds: a method on `SimpleSolvers.Hessian` would be piracy.
     @test_throws ErrorException GeometricOptimizers.NoHessian{Float64}()(zeros(3, 3), ones(3))
 end
 

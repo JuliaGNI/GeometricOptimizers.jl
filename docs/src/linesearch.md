@@ -5,7 +5,7 @@ In `GeometricOptimizers` we typically build the search direction by applying the
 ```math
     p_k = -H_{x_k}^{-1}(\nabla_{x_k}f),
 ```
-where ``[H_{x_k}]_{ij} = \frac{\partial^2{}f}{\partial{}x_i\partial{}x_j}\Big|_{x_k}`` is the [Hessian](@extref SimpleSolvers Hessians). Note that we often use approximations of this Hessian in practice (such as the [`HessianBFGS`](@ref)).
+where ``[H_{x_k}]_{ij} = \frac{\partial^2{}f}{\partial{}x_i\partial{}x_j}\Big|_{x_k}`` is the [Hessian](@extref SimpleSolvers Hessians). Note that we often use approximations of this Hessian in practice (such as the inverse-Hessian approximation of [`BFGS`](@ref)).
 
 The linesearch objective is then built as
 ```math

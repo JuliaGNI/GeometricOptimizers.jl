@@ -91,14 +91,14 @@ end
     for (name, Y) in pairs(manifolds)
         @testset "$name" begin
             # `similar` of a point is an error by design: a point is not storage to be reused, and
-            # the message says to use `rand`. `zero` is the horizontal lift of its tangent space,
-            # which is the type the cache blocks then are.
+            # the message says to use `rand`. `_zero` is the horizontal lift of its tangent space,
+            # which is the type the cache blocks then are; `zero` is not (issue #21).
             @test_throws ErrorException similar(Y)
 
-            for allocate in (zero, copy, _zero, _copy)
+            for allocate in (_zero, _copy, copy)
                 @test KernelAbstractions.get_backend(allocate(Y)) == device
             end
-            @test zero(Y) isa GeometricOptimizers.AbstractLieAlgHorMatrix
+            @test _zero(Y) isa GeometricOptimizers.AbstractLieAlgHorMatrix
             @test typeof(copy(Y)) === typeof(Y)
         end
     end

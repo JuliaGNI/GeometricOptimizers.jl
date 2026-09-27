@@ -60,6 +60,8 @@ end
 # leaf paired with a branch fell through to the generic iterator `map`, which zipped the branch's
 # entries against the leaf's elements and returned a truncated `Array` instead of raising.
 _zero(a::AbstractArray) = zero(a)
+# the zero tangent vector at a point, which is a horizontal lift and not the point's own shape
+_zero(a::Union{StiefelManifold, GrassmannManifold}) = zero_tangent(a)
 _zero(a::NetworkParameters) = mapparameters(_zero, a)
 
 _copy(a::AbstractArray) = copy(a)
@@ -80,8 +82,6 @@ _similar(a::AbstractArray) = similar(a)
 _similar(a::NetworkParameters) = mapparameters(_similar, a)
 
 _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
-
-_fill!(a::Manifold{T}, ::T) where {T} = a
 
 _copyto!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = copyto!(a, b)
 function _copyto!(a::NetworkParameters{T}, b::NetworkParameters{T}) where {T}

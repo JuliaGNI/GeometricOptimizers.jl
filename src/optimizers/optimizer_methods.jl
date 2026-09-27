@@ -56,7 +56,7 @@ The Davidon–Fletcher–Powell method, from [nocedal2006numerical](@cite): the 
 Q \gets Q - \frac{Q\gamma\gamma^TQ}{\gamma^TQ\gamma} + \frac{\delta\delta^T}{\delta^T\gamma}
 ```
 (equation 6.15 there). Its state is [`BFGSState`](@ref), under the alias [`DFPState`](@ref), and the
-update itself lives in [`DFPCache`](@ref), which symmetrizes ``Q\gamma\gamma^TQ`` explicitly and
+update itself lives in [`QuasiNewtonCache`](@ref), which symmetrizes ``Q\gamma\gamma^TQ`` explicitly and
 skips the update when the secant pair fails [`curvature_is_usable`](@ref).
 
 Where [`BFGS`](@ref) is the better-conditioned choice and the default, `DFP` is here because it is
@@ -83,7 +83,7 @@ Hessian ``Q``, updated from the secant pair ``\delta = x^{(k)} - x^{(k-1)}``,
 Q \gets Q - \frac{\delta\gamma^TQ + Q\gamma\delta^T
     - \left(1 + \frac{\gamma^TQ\gamma}{\delta^T\gamma}\right)\delta\delta^T}{\delta^T\gamma}
 ```
-Its state is [`BFGSState`](@ref) and the update itself lives in [`BFGSCache`](@ref), which skips the
+Its state is [`BFGSState`](@ref) and the update itself lives in [`QuasiNewtonCache`](@ref), which skips the
 update when the secant pair fails [`curvature_is_usable`](@ref) — the condition that keeps ``Q``
 positive definite. [`restart!(::BFGSState)`](@ref) discards ``Q`` when a line search reports that it
 could not decrease the merit.

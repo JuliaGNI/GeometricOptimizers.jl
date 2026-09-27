@@ -79,7 +79,7 @@ function slope_errors(ps, F, retraction, αs; h = 1e-6)
     state = OptimizerState(BFGS(), ps)
     c = cache(opt)
     initialize!(c, ps)
-    update!(c, state, gradient(opt), hessian(opt), ps)
+    update!(c, state, gradient(opt), GeometricOptimizers._direction_rule(opt), ps)
 
     ls = linesearch_problem(problem(opt), gradient(opt), c, retraction)
     params = (x = ps, state = state)
@@ -503,7 +503,8 @@ end
         opt = Optimizer(x, f; algorithm = algorithm)
         # the same two calls `slope_errors` above makes to get a cache holding a real direction
         initialize!(cache(opt), x)
-        update!(cache(opt), state, gradient(opt), hessian(opt), x)
+        update!(
+            cache(opt), state, gradient(opt), GeometricOptimizers._direction_rule(opt), x)
 
         params = linesearch_parameters(cache(opt), x, state, DEFAULT_STEP_CEILING)
         @test hasproperty(params, :αmax)
@@ -517,7 +518,8 @@ end
         state = OptimizerState(algorithm, ps)
         opt = Optimizer(ps, two_spheres; algorithm = algorithm)
         initialize!(cache(opt), ps)
-        update!(cache(opt), state, gradient(opt), hessian(opt), ps)
+        update!(
+            cache(opt), state, gradient(opt), GeometricOptimizers._direction_rule(opt), ps)
 
         params = linesearch_parameters(cache(opt), ps, state, DEFAULT_STEP_CEILING)
         @test params.αmax ==

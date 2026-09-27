@@ -7,23 +7,25 @@
 The [`OptimizerState`](@ref) corresponding to the [`BFGS`](@ref) method.
 
 # Keys
-- `x̄`
+- `x`: the current iterate,
+- `x̄`: the previous iterate,
 - `s`: stores the previous direction. This needs to be stored in addition to the *previous solution* because of the manifold case.
-- `ḡ`
-- `f̄`
+- `ḡ`: the gradient the last step was built from,
+- `f`: the objective at `x`,
+- `f̄`: the objective at `x̄`,
 - `Q`
 
-`f̄` is read with `GeometricOptimizers.previous_value`, which is internal: it is neither exported nor
-`Base.ispublic`, so it resolves only under that qualified name. There is no counterpart to `value`,
-which *is* exported — this type
-holds one iterate and one objective rather than a pair, because [`update!`](@ref) writes `x̄` and `f̄`
-at the end of the iteration and the next iteration reads them as the previous ones. The objective at
-the current iterate belongs to the solve loop, which passes it to [`OptimizerStatus`](@ref) directly.
+The unbarred fields are the current iterate's and the barred ones the previous iterate's, as
+[`update!`](@ref) maintains them, and the accessors are the [`OptimizerState`](@ref) defaults:
+`value` reads `f` and is exported, `GeometricOptimizers.solution`,
+`GeometricOptimizers.previous_solution` and `GeometricOptimizers.previous_value` are internal.
 """
 mutable struct BFGSState{T, AT, GT, MT, GS} <: OptimizerState{T}
+    x::AT
     x̄::AT
     s::GT
     ḡ::GT
+    f::T
     f̄::T
     Q::MT
     iterations::Int
@@ -36,18 +38,14 @@ mutable struct BFGSState{T, AT, GT, MT, GS} <: OptimizerState{T}
             Q::MT) where {T, AT <: OptimizerSolution{T},
             GT <: GradientStorage{T}, MT <: AbstractMatrix{T}}
         section = GlobalSection(x̄)
-        state = new{T, AT, GT, MT, typeof(section)}(x̄, _similar(ḡ), ḡ, f̄, Q, 0, section)
-        initialize!(state, x̄)
-        state
+        state = new{T, AT, GT, MT, typeof(section)}(
+            _copy(x̄), x̄, _similar(ḡ), ḡ, f̄, f̄, Q, 0, section)
+        _poison!(state)
     end
 end
 
-section(state::BFGSState) = state.section
-
-previous_value(state::BFGSState) = state.f̄
-
 function BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientStorage{T}, f̄::T) where {T}
-    BFGSState(_copy(x̄), _copy(ḡ), f̄, alloc_h(x̄))
+    BFGSState(_copy(x̄), _copy(ḡ), f̄, _alloc_q(x̄))
 end
 function BFGSState(x̄::OptimizerSolution{T}, ḡ::GradientStorage{T}) where {T}
     BFGSState(_copy(x̄), _copy(ḡ), zero(T))
@@ -60,13 +58,14 @@ BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 # where the horizontal lift has only 2 free parameters, and the cache and the state then disagree
 # about how big `Q` is.
 #
-# `Manifold` alone, where this took a parameter set as well until 0.6.1. `alloc_h` is `SimpleSolvers`'
-# function and a parameter set is `NeuralNetworkParameters`', so that arm owned neither side of its
-# own signature; it is `SimpleSolvers`' own `alloc_h(::NetworkParameters)` as of 0.13.2, with `_zero`
-# written out as the `mapparameters(zero, ·)` it is. This arm needs no such move: `Manifold` is this
-# package's type. See issue #16.
-function alloc_h(x::Manifold{T}) where {T}
-    # `_zero(x)` for the reason `BFGSCache` gives: the lift's dimension, not the dense one
+# A function of this package's own and not a method of `SimpleSolvers.alloc_h`: `SimpleSolvers`'
+# `alloc_h(::NetworkParameters)` sizes by `mapparameters(zero, ·)`, and `zero` of a manifold point is
+# the point's own shape and not its lift (issue #21), so it would size `Q` by the dense storage. On a
+# plain vector the parameters are the flat coordinates, and `SimpleSolvers`' method is right.
+_alloc_q(x::AbstractVector) = alloc_h(x)
+
+function _alloc_q(x::OptimizerSolution{T}) where {T}
+    # `_zero(x)` for the reason `QuasiNewtonCache` gives: the lift's dimension, not the dense one
     n = flatlength(_zero(x))
     fill(T(NaN), n, n)
 end
@@ -97,13 +96,16 @@ function restart!(state::BFGSState)
     state
 end
 
-function initialize!(state::BFGSState{T}, ::OptimizerSolution{T}) where {T}
-    _fill!(state.x̄, T(NaN))
+# The one initialisation, which the constructor and `initialize_state!` share: the tangents and the
+# objectives read `NaN` until a step writes them, and `Q` starts at the identity. The points are not
+# filled, because a manifold point cannot hold `NaN` (issue #22). The first secant pair is then `NaN`
+# and `curvature_is_usable` rejects it, so the first step is steepest descent.
+function _poison!(state::BFGSState{T}) where {T}
     _fill!(state.s, T(NaN))
     _fill!(state.ḡ, T(NaN))
-    state.f̄ = NaN
+    state.f = T(NaN)
+    state.f̄ = T(NaN)
     inverse_hessian(state) .= one(inverse_hessian(state))
-    state.iterations = 0
 
     state
 end
@@ -129,12 +131,14 @@ function update!(state::BFGSState{T}, direction::GradientStorage{T}, gradient::G
         x::XT, f::T, retraction,
         observer = NoStepObserver()) where {
         T, XT <: OptimizerSolution{T}}
-    _copyto!(state.x̄, x)
+    _copyto!(state.x̄, state.x)
+    _copyto!(state.x, x)
     # `ḡ` is deliberately *not* refreshed here. This runs at the end of the iteration, at the same
     # iterate `x` that the next `Δg = ∇f(x) - ḡ` is formed at, so writing `∇f(x)` here made `Δg`
-    # identically zero and the quasi-Newton `Q` update never fired on any iteration. The BFGS and DFP
-    # caches advance `ḡ` themselves, right after they have used it.
-    state.f̄ = f
+    # identically zero and the quasi-Newton `Q` update never fired on any iteration. The
+    # quasi-Newton cache advances `ḡ` itself, right after it has used it.
+    state.f̄ = state.f
+    state.f = f
 
     _copyto!(state.s, direction)
     observe_optimizer_phase(observer, :retraction_application) do

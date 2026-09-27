@@ -49,6 +49,17 @@ end
 
 iteration_number(state::OptimizerState) = state.iterations
 
+# The accessors every state in this package answers, on the fields they all name alike: the unbarred
+# field is the current iterate's and the barred one the previous iterate's. `value` and `gradient`
+# are exported, the other five internal.
+solution(state::OptimizerState) = state.x
+previous_solution(state::OptimizerState) = state.x̄
+gradient(state::OptimizerState) = state.g
+previous_gradient(state::OptimizerState) = state.ḡ
+value(state::OptimizerState) = state.f
+previous_value(state::OptimizerState) = state.f̄
+section(state::OptimizerState) = state.section
+
 function increase_iteration_number!(state::OptimizerState)
     state.iterations = iteration_number(state) + 1
 end

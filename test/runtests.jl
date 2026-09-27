@@ -125,6 +125,9 @@ begin
     @safetestset "Optimizer State Accessors    " include("optimizer_state_accessors.jl")
 end
 begin
+    @safetestset "Optimizer State Semantics    " include("optimizer_state_semantics.jl")
+end
+begin
     @safetestset "Optimizer Step Formulas      " include("optimizer_step_formulas.jl")
 end
 begin

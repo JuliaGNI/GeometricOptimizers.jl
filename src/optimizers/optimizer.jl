@@ -350,10 +350,13 @@ gradient(opt::Optimizer) = opt.gradient
 step_ceiling(opt::Optimizer) = opt.step_ceiling
 retraction_workspace(opt::Optimizer) = opt.retraction_workspace
 
-# What `update!(cache, state, gradient, ·, x)` forms the direction from: the Hessian for the
-# (quasi-)Newton methods, and the method itself for the first-order methods, which have none.
+# What `update!(cache, state, gradient, ·, x)` forms the direction from: the Hessian for `Newton`,
+# and the method itself for the first-order and the quasi-Newton methods, which build none.
 _direction_rule(opt::Optimizer) = hessian(opt)
-_direction_rule(opt::Optimizer{T, <:FirstOrderMethod}) where {T} = algorithm(opt)
+function _direction_rule(opt::Optimizer{
+        T, <:Union{FirstOrderMethod, QuasiNewtonOptimizerMethod}}) where {T}
+    algorithm(opt)
+end
 
 """
     step_observer(opt::Optimizer)
@@ -454,7 +457,6 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
     # rhs is -g
     update!(cache(opt), state, gradient(opt), _direction_rule(opt), x)
     ensure_descent!(cache(opt), algorithm(opt), config(opt))
-    typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
 
     for _ in 1:config(opt).nan_max_iterations
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
@@ -603,7 +605,6 @@ difference it printed could not be anything else. See [`gradient_difference!`](@
 Also see [`solver_step!`](@ref).
 """
 function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T}) where {T}
-    initialize_state!(state)
     observer = step_observer(opt)
 
     # `status` below is computed on every iteration regardless, so recording it costs one `Bool` test
@@ -611,23 +612,27 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
     f = observe_optimizer_phase(observer, :objective) do
         value(problem(opt), x)
     end
+    initialize_state!(state, opt, x, f)
     tracing = config(opt).store_trace
     _trace = OptimizerTraceEntry{typeof(f), T}[]
 
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
-        # One objective evaluation per iterate, reused for the status, the trace entry and the state
-        # update: all three read the same `x`, and with an observer installed a second call would
-        # also emit a second `:objective` pair for a step that only ever evaluated once.
+        # One objective evaluation per iterate, reused for the state update, the status and the trace
+        # entry: all three read the same `x`, and with an observer installed a second call would also
+        # emit a second `:objective` pair for a step that only ever evaluated once.
         f = observe_optimizer_phase(observer, :objective) do
             value(problem(opt), x)
         end
+        # The state advances *before* the stop check, so that the state `solve!` returns holds the
+        # iterate it returns (issue #108), and the status reads `f` against the objective one step
+        # back, `previous_value(state)` (issue A24).
+        update!(state, opt, x, f)
         status = OptimizerStatus(state, cache(opt), f; config = config(opt))
         tracing && push!(_trace,
             OptimizerTraceEntry(iteration_number(state), f, g_residual(status)))
         meets_stopping_criteria(status, opt, state) && break
-        update!(state, opt, x, f)
     end
 
     f = observe_optimizer_phase(observer, :objective) do
@@ -650,35 +655,32 @@ function update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution, f)
     update!(state, opt, x)
 end
 
-function initialize_state!(state::OptimizerState)
-    state
+# What `solve!` does to `state` before its first step, with the starting point `x` and its objective
+# `f`. The first-order states are built from `x` and need nothing.
+function initialize_state!(state::OptimizerState, ::Optimizer, ::OptimizerSolution, _)
+    initialize_state!(state)
 end
 
-const INITIAL_BFGS_X = 0.12345
-const INITIAL_BFGS_G = 0.54321
-const INITIAL_BFGS_F = 0.23456
+initialize_state!(state::OptimizerState) = state
 
-function initialize_state!(state::Union{BFGSState{T}, DFPState{T}}) where {T}
-    _fill!(state.x̄, T(INITIAL_BFGS_X))
-    _fill!(state.ḡ, T(INITIAL_BFGS_G))
-    state.f̄ = T(INITIAL_BFGS_F)
-    state.Q .= one(state.Q)
+# A reset, so that a state reused for a second solve cannot carry a stale secant pair into it.
+initialize_state!(state::BFGSState) = _poison!(state)
 
-    state
+# `NewtonState` is built `NaN`-filled, and its section is the base the first step retracts from, so
+# it starts at `x`.
+function initialize_state!(state::NewtonState, opt::Optimizer, x::AbstractVector, f)
+    initialize!(state, x, gradient(opt)(x), f)
 end
 
 function warn_iteration_number(state::OptimizerState, config::Options)
     if config.warn_iterations > 0 && iteration_number(state) ≥ config.warn_iterations
-        println("WARNING: Optimizer took ", iteration_number(state), " iterations.")
+        @warn "Optimizer took $(iteration_number(state)) iterations."
     end
 end
 
-# put this somewhere else eventually!
-function update!(state::NewtonState, opt::Optimizer, x::AbstractVector)
-    update!(state, gradient(opt), x)
-    observe_optimizer_phase(step_observer(opt), :retraction_application) do
-        update_section!(
-            state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
-    end
+# `update!(state, x, g, f)` moves the section to `x`, which is the base the next step retracts from.
+# `latest_gradient` is `∇f(x)`, which `solver_step!` has just refreshed, so nothing is evaluated.
+function update!(state::NewtonState, opt::Optimizer, x::AbstractVector, f)
+    update!(state, x, latest_gradient(cache(opt)), f)
     state
 end

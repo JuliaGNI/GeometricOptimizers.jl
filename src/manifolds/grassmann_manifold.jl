@@ -84,7 +84,8 @@ function global_section(Y::GrassmannManifold)
     λ isa typeof(Y.A) ? λ : typeof(Y.A)(λ)
 end
 
-function Base.zero(Y::GrassmannManifold{T}) where {T}
+# See `zero_tangent(::StiefelManifold)`.
+function zero_tangent(Y::GrassmannManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y.A)
     zeros(backend, GrassmannLieAlgHorMatrix{T}, N, n)

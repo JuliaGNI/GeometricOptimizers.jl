@@ -20,7 +20,8 @@ test_optim = OptimizerTest{Float64}()
 test_x = zeros(3)
 test_obj = OptimizerProblem(F, test_x)
 
-@test_throws MethodError gradient(test_optim)
+# `gradient` has a default on `OptimizerState`, which reads the field `g` that this state lacks
+@test_throws (VERSION ≥ v"1.12" ? FieldError : ErrorException) gradient(test_optim)
 @test_throws MethodError hessian(test_optim)
 @test_throws MethodError linesearch(test_optim)
 @test_throws MethodError problem(test_optim)
@@ -282,13 +283,8 @@ end
         end
     end
 
-    # `Newton` is the one method that does not reliably get the reuse, and it is the state's section
-    # that denies it: `update!(::NewtonState, opt, x)` advances `state.section` by the
-    # *gradient* rather than by the direction, so the two frames differ by `∇f - δ` and the guard
-    # falls back to a fresh evaluation. That is the gradient evaluation per iteration the refresh
-    # costs for `Newton` and for nothing else. It comes back once the solve has converged, where both
-    # the gradient and the step have gone to zero and the frames agree again -- which is why what is
-    # asserted here is the gradient the direction is built from and not the branch taken to get it.
+    # `Newton`, on its own loop because it needs the exact Hessian: what is asserted is the gradient
+    # the direction is built from, whichever branch `store_gradient!` took to get it.
     for _linesearch in (Static(0.1), Backtracking(; expand = true), Bisection())
         x = [1.5, -0.8, 0.4]
         state = OptimizerState(Newton(), x)

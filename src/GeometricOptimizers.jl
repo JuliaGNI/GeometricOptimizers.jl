@@ -176,9 +176,7 @@ export Optimizer,
        OptimizerSolution,
        OptimizerState, isaOptimizerState,
        NewtonState,
-       HessianAutodiff,
-       HessianBFGS,
-       HessianDFP
+       HessianAutodiff
 export EventLog, PhaseTimer, NoStepObserver, observe_optimizer_phase, step_observer
 
 import SimpleSolvers: solve!, solve
@@ -202,8 +200,6 @@ include("optimizers/descent_direction.jl")
 include("optimizers/optimizer_status.jl")
 include("optimizers/optimizer_result.jl")
 include("optimizers/iterative_hessians/iterative_hessians.jl")
-include("optimizers/iterative_hessians/bfgs/hessian_bfgs.jl")
-include("optimizers/iterative_hessians/dfp/hessian_dfp.jl")
 include("optimizers/newton_optimizer/newton_optimizer_cache.jl")
 include("optimizers/newton_optimizer/newton_optimizer_state.jl")
 
@@ -213,8 +209,7 @@ include("optimizers/decaying_static.jl")
 include("optimizers/iterative_hessians/bfgs/bfgs_state.jl")
 include("optimizers/iterative_hessians/dfp/dfp_state.jl")
 
-include("optimizers/iterative_hessians/bfgs/bfgs_cache.jl")
-include("optimizers/iterative_hessians/dfp/dfp_cache.jl")
+include("optimizers/iterative_hessians/quasi_newton_cache.jl")
 
 include("utils.jl")
 

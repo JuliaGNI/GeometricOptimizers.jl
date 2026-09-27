@@ -4,32 +4,26 @@
 #
 #     julia --startup-file=no --project=. scripts/optimizer_status_delta_f.jl
 #
-# This is the check behind the *Added* entry in `CHANGELOG.md` that explains why `BFGSState` gains
-# `previous_value` and no `value`, and behind the paragraph in the `BFGSState` docstring that says
-# the type holds one objective rather than a pair. It needs no warm-up and no cold process: every
-# figure it prints is an exact equality between two stored numbers, not a timing.
+# This is the check behind issue A24 in `KNOWN_ISSUES.md` and its fix in the 0.9 `CHANGELOG.md`. It
+# needs no warm-up and no cold process: every figure it prints is an exact equality between two
+# stored numbers, not a timing. `test/optimizer_state_semantics.jl` asserts the same equality.
 #
 # ## What it compares
 #
-# `OptimizerStatus` computes `Δf = f - state.f̄` at `optimizer_status.jl:103`. It reads the **field**
-# and not the accessor, and `Δf` feeds `rfₐ` and `rfᵣ`, which decide `f_converged`. So which value
-# sits in `f̄` when the status is built is a convergence question.
+# `OptimizerStatus` computes `Δf = f - previous_value(state)`, and `Δf` feeds `rfₐ` and `rfᵣ`, which
+# decide `f_converged`. So which value the state holds as the previous objective when the status is
+# built is a convergence question.
 #
 # `store_trace = true` records one objective per iteration, so the trace is an independent record of
 # what the objective did. The script asks whether the `Δf` the status reports is the one-step
 # difference `f[end] - f[end-1]` or the two-step difference `f[end] - f[end-2]`.
 #
-# ## Why the two families differ
+# ## Why every method spans one step
 #
-# `BFGSState` holds one iterate and one objective. `update!` writes `x̄` and `f̄` at the end of the
-# iteration, and the next iteration reads them as the previous ones. `GradientState`,
-# `MomentumState` and `AdamState` hold a pair and shift `f̄ ← f` inside `update!`, which puts an
-# extra iteration into the subtraction.
-#
-# `NewtonState` holds a pair and shifts like them, and still reports one step, because
-# `optimizer.jl:431` calls `update!` a second time inside `solver_step!` and re-synchronises `f̄`
-# before the status reads it. That line carries the comment `# this will have to be removed later`,
-# so this script is also what would catch its removal.
+# Every state holds a pair, and `solve!` advances it to the new iterate before it builds the status,
+# so `previous_value(state)` is the objective one step back. Before 0.9 `solve!` advanced the state
+# after the stop check: the first-order states then spanned two steps, and `Newton` spanned one only
+# because `solver_step!` called `update!` on its state a second time.
 
 using GeometricOptimizers
 using GeometricOptimizers: trace, status

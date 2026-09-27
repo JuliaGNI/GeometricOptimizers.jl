@@ -84,26 +84,9 @@ function ScalarMomentAdamCache(x::StiefelManifold{T}) where {T}
         _copy(x), g, δ, Δg, g̃, Ref(false), _zero(g), zero(T), zero(T), sec)
 end
 
-solution(cache::ScalarMomentAdamCache) = cache.x
-gradient(cache::ScalarMomentAdamCache) = cache.g
-gradient_array(cache::ScalarMomentAdamCache) = cache.g
-latest_gradient(cache::ScalarMomentAdamCache) = cache.g̃
-function refresh_latest_gradient!(cache::ScalarMomentAdamCache, g::Gradient)
-    _refresh_latest_gradient!(cache, g)
-end
-function latest_gradient_is_current(cache::ScalarMomentAdamCache, state::OptimizerState, x::OptimizerSolution)
-    _latest_gradient_is_current(cache, state, x)
-end
-function invalidate_latest_gradient!(cache::ScalarMomentAdamCache)
-    _invalidate_latest_gradient!(cache)
-end
-function gradient_difference!(cache::ScalarMomentAdamCache, ::OptimizerState)
-    _latest_gradient_difference!(cache)
-end
 direction(cache::ScalarMomentAdamCache) = cache.δ
 rhs(cache::ScalarMomentAdamCache) = cache.δ
 steepest_descent!(cache::ScalarMomentAdamCache) = _steepest_descent_from_gradient!(cache)
-section(cache::ScalarMomentAdamCache) = cache.section
 first_moment(cache::ScalarMomentAdamCache) = cache.m₁
 second_moment(cache::ScalarMomentAdamCache) = cache.m₂
 _second_moment(cache::ScalarMomentAdamCache) = cache.m̃₂
@@ -162,15 +145,8 @@ function OptimizerState(::ScalarMomentAdam, x, args...)
     throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
 end
 
-solution(state::ScalarMomentAdamState) = state.x
-previous_solution(state::ScalarMomentAdamState) = state.x̄
-gradient(state::ScalarMomentAdamState) = state.g
-previous_gradient(state::ScalarMomentAdamState) = state.ḡ
-value(state::ScalarMomentAdamState) = state.f
-previous_value(state::ScalarMomentAdamState) = state.f̄
 first_moment(state::ScalarMomentAdamState) = state.m₁
 second_moment(state::ScalarMomentAdamState) = state.m₂
-section(state::ScalarMomentAdamState) = state.section
 
 function advance_state!(
         state::ScalarMomentAdamState, cache::ScalarMomentAdamCache, ::ScalarMomentAdam)
@@ -190,7 +166,10 @@ function update!(
     _copyto!(previous_gradient(state), gradient(state))
     state.f̄ = value(state)
     _copyto!(solution(state), x)
-    _copyto!(gradient(state), gradient_array(cache(opt)))
+    # `latest_gradient` and not `gradient_array`: the gradient at `x`, which `solver_step!` has just
+    # refreshed, and not the one the step was built from, so `g` and `ḡ` belong to `x` and `x̄`
+    # (issue A10). Nothing reads `gradient(state)` to build a step.
+    _copyto!(gradient(state), latest_gradient(cache(opt)))
     state.f = f
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
         advance_state!(state, cache(opt), algorithm(opt))

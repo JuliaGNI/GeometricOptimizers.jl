@@ -58,7 +58,7 @@ struct NewtonOptimizerCache{T, AT, HT, GS} <: OptimizerCache{T}
     end
 end
 
-function OptimizerCache(::Union{Newton, QuasiNewtonOptimizerMethod}, x::OptimizerSolution)
+function OptimizerCache(::Newton, x::OptimizerSolution)
     NewtonOptimizerCache(x)
 end
 
@@ -82,39 +82,12 @@ const _NEWTON_SCOPE = "Newton optimizes an AbstractVector only. It builds the ex
 OptimizerCache(::Newton, ::Manifold) = throw(ArgumentError(_NEWTON_SCOPE))
 OptimizerCache(::Newton, ::NetworkParameters) = throw(ArgumentError(_NEWTON_SCOPE))
 
-section(cache::NewtonOptimizerCache) = cache.section
-
 """
     rhs(cache)
 
 Return the right hand side of an instance of [`NewtonOptimizerCache`](@ref)
 """
 rhs(cache::NewtonOptimizerCache) = cache.rhs
-
-"""
-    gradient(::NewtonOptimizerCache)
-
-Return the stored gradient (array) of an instance of [`NewtonOptimizerCache`](@ref)
-"""
-gradient(cache::NewtonOptimizerCache) = cache.g
-gradient_array(cache::NewtonOptimizerCache) = gradient(cache)
-latest_gradient(cache::NewtonOptimizerCache) = cache.g̃
-function refresh_latest_gradient!(cache::NewtonOptimizerCache, g::Gradient)
-    _refresh_latest_gradient!(cache, g)
-end
-function latest_gradient_is_current(cache::NewtonOptimizerCache, state::OptimizerState, x::OptimizerSolution)
-    _latest_gradient_is_current(cache, state, x)
-end
-function invalidate_latest_gradient!(cache::NewtonOptimizerCache)
-    _invalidate_latest_gradient!(cache)
-end
-# `∇f(x_{k+1}) - ∇f(x_k)`, from the two gradients the cache holds. The default differences against
-# `state.ḡ`, and for `Newton` that is *the same gradient* `cache.g` holds: `solver_step!` calls
-# `update!(state, gradient(opt), x)` at the top of the step, at the iterate the cache takes its
-# gradient at, so the difference the status printed was structurally zero. See `gradient_difference!`.
-function gradient_difference!(cache::NewtonOptimizerCache, ::OptimizerState)
-    _latest_gradient_difference!(cache)
-end
 
 """
     direction(cache)
@@ -124,8 +97,6 @@ Return the direction of the gradient step (i.e. `Δx`) of an instance of [`Newto
 direction(cache::NewtonOptimizerCache) = cache.Δx
 
 hessian(cache::NewtonOptimizerCache) = cache.H
-
-solution(cache::NewtonOptimizerCache) = cache.x
 
 @doc raw"""
     update!(cache::NewtonOptimizerCache, x, g, hes)

@@ -5,8 +5,8 @@
 #
 #     julia --project=. scripts/cache_type_cost.jl
 #
-# `_flat_scratch` (`src/optimizers/iterative_hessians/iterative_hessians.jl`) gives `BFGSCache` and
-# `DFPCache` four `NeuralNetworkParameters.FlatParameters` buffers, and `FlatParameters{T,DT,LT}` carries
+# `_flat_scratch` (`src/optimizers/iterative_hessians/iterative_hessians.jl`) gives
+# `QuasiNewtonCache` four `NeuralNetworkParameters.FlatParameters` buffers, and `FlatParameters{T,DT,LT}` carries
 # its `ParameterLayout` as `LT`. So the layout type is a type parameter of the cache itself, by way of
 # `flat::FT`, and whatever the layout type holds the cache's signature holds too.
 #
@@ -17,7 +17,7 @@
 #
 # ## It measures `_flat_scratch` and not a whole cache, deliberately
 #
-# A `BFGSCache` holds seven ``n \\times n`` matrices, where ``n`` is `flatlength(_zero(x))`. The two
+# A `QuasiNewtonCache` holds seven ``n \\times n`` matrices, where ``n`` is `flatlength(_zero(x))`. The two
 # interesting parameter sets here are a *wide* one (369 leaves, where a per-leaf type parameter shows up
 # in the type) and a *big* one (one 400 × 400 leaf, where a retained reference shows up in the bytes) —
 # and those are ``n = 5904`` and ``n = 160400``, i.e. 2 GB and 1.6 TB of `Q`. An earlier version of this
@@ -76,7 +76,7 @@ function report(label, ps)
         " | over floor ", lpad(total - floor_bytes, 9))
 end
 
-println("`_flat_scratch`, i.e. `FT` on BFGSCache/DFPCache. Floor is 4 × flatlength × ", sizeof(T), " B.")
+println("`_flat_scratch`, i.e. `FT` on QuasiNewtonCache. Floor is 4 × flatlength × ", sizeof(T), " B.")
 println()
 # Every row is wrapped, because `_zero` takes a `NetworkParameters` and a whole set of parameters
 # reaches this package no other way. There is no bare/wrapped axis to sweep here: the wrap shares the

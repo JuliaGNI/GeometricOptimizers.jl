@@ -327,8 +327,8 @@ end
 
 @testset "$(nameof(TT)) leaves its type parameters unbounded" for TT in (
     GeometricOptimizers.GradientCache, GeometricOptimizers.MomentumCache,
-    GeometricOptimizers.AdamCache, GeometricOptimizers.BFGSCache,
-    GeometricOptimizers.DFPCache, GeometricOptimizers.NewtonOptimizerCache,
+    GeometricOptimizers.AdamCache, GeometricOptimizers.QuasiNewtonCache,
+    GeometricOptimizers.NewtonOptimizerCache,
     GradientState, MomentumState, AdamState,
     BFGSState, NewtonState)
     @test _all_parameters_unbounded(TT)
@@ -345,9 +345,9 @@ end
     ps = initial_parameters(Float64)
     @test OptimizerCache(Adam(), ps) isa GeometricOptimizers.AdamCache{Float64}
     @test OptimizerState(Adam(), ps) isa AdamState{Float64}
-    @test OptimizerCache(BFGS(), ps) isa GeometricOptimizers.BFGSCache{Float64}
+    @test OptimizerCache(BFGS(), ps) isa GeometricOptimizers.QuasiNewtonCache{Float64, BFGS}
     @test OptimizerState(BFGS(), ps) isa BFGSState{Float64}
-    @test OptimizerCache(DFP(), ps) isa GeometricOptimizers.DFPCache{Float64}
+    @test OptimizerCache(DFP(), ps) isa GeometricOptimizers.QuasiNewtonCache{Float64, DFP}
     @test OptimizerCache(Newton(), zeros(3)) isa
           GeometricOptimizers.NewtonOptimizerCache{Float64}
     @test OptimizerState(Newton(), zeros(3)) isa NewtonState{Float64}
