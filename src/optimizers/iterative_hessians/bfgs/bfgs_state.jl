@@ -58,25 +58,21 @@ BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 # where the horizontal lift has only 2 free parameters, and the cache and the state then disagree
 # about how big `Q` is.
 #
-# A function of this package's own and not a method of `SimpleSolvers.alloc_h`: `SimpleSolvers`'
-# `alloc_h(::NetworkParameters)` sizes by `mapparameters(zero, ·)`, and `zero` of a manifold point is
-# the point's own shape and not its lift (issue #21), so it would size `Q` by the dense storage. On a
-# plain vector the parameters are the flat coordinates, and `SimpleSolvers`' method is right, and it
-# keeps the vector's array type, so a device vector gets a device `Q`.
-_alloc_q(x::Union{AbstractVector, Manifold}) = alloc_h(x)
-
-# `Manifold` is this package's type, so this method is this package's to own (issue #16).
-function alloc_h(x::Manifold{T}) where {T}
-    # `_zero(x)` for the reason `QuasiNewtonCache` gives: the lift's dimension, not the dense one
-    n = flatlength(_zero(x))
-    fill(T(NaN), n, n)
-end
+# `_alloc_q` sizes `Q` for a manifold and for a parameter set alike. It is not `SimpleSolvers`'
+# `alloc_h(::NetworkParameters)`, which sizes by `mapparameters(zero, ·)`, and `zero` of a manifold
+# point is the point's own shape and not its lift (issue #21). On a plain vector the parameters are
+# the flat coordinates, and `SimpleSolvers`' method is right, and it keeps the vector's array type,
+# so a device vector gets a device `Q`.
+_alloc_q(x::AbstractVector) = alloc_h(x)
 
 function _alloc_q(x::OptimizerSolution{T}) where {T}
     # `_zero(x)` for the reason `QuasiNewtonCache` gives: the lift's dimension, not the dense one
     n = flatlength(_zero(x))
     fill(T(NaN), n, n)
 end
+
+# `Manifold` is this package's type, so this method is this package's to own (issue #16).
+alloc_h(x::Manifold) = _alloc_q(x)
 
 OptimizerState(::BFGS, x_args...) = BFGSState(x_args...)
 
