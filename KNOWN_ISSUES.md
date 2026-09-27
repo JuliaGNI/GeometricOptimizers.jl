@@ -551,7 +551,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - location: `src/optimizers/optimizer.jl`
 - kind: defect
 - found: 2026-09-27; for GD, Momentum and Adam it holds on `origin/main` too, and for BFGS and DFP
-  it follows from the approved removal of the `INITIAL_BFGS_F` sentinel, which gave `f − 0.23456`
+  it follows from the approved removal of the `INITIAL_BFGS_F` sentinel; on `origin/main` it is
+  `f − 0.23456`
 - evidence: with `max_iterations = 1`, `status.Δf` is `NaN` for GD, Momentum, Adam, BFGS and DFP and
   `-88.5` for Newton: only `initialize_state!(::NewtonState, opt, x, f)` records `f(x₀)`, and the
   other methods drop the `f` that `solve!` passes.
