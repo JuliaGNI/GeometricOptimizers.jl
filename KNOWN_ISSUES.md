@@ -546,6 +546,25 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   reused state runs fewer iterations than a fresh one, and reused BFGS, DFP, GradientMethod and Adam
   states do not reproduce a fresh state's iterates (on `origin/main` too).
 
+### A34 · `Δf` on the first iteration is `NaN` for every method but `Newton`
+
+- location: `src/optimizers/optimizer.jl`
+- kind: defect
+- found: 2026-09-27; for GD, Momentum and Adam it holds on `origin/main` too, and for BFGS and DFP
+  it follows from the approved removal of the `INITIAL_BFGS_F` sentinel, which gave `f − 0.23456`
+- evidence: with `max_iterations = 1`, `status.Δf` is `NaN` for GD, Momentum, Adam, BFGS and DFP and
+  `-88.5` for Newton: only `initialize_state!(::NewtonState, opt, x, f)` records `f(x₀)`, and the
+  other methods drop the `f` that `solve!` passes.
+
+### A36 · The two `zero_tangent` bodies differ only in the lift type
+
+- location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`
+- kind: found late
+- found: 2026-09-27
+- evidence: `zero_tangent(::StiefelManifold)` and `zero_tangent(::GrassmannManifold)` are the same
+  three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
+  type would serve both.
+
 ### A37 · No test checks that a device vector gets a device `Q`
 
 - location: `src/optimizers/iterative_hessians/bfgs/bfgs_state.jl:64-66`
@@ -557,24 +576,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `device_copyto.jl`. The behaviour is right: `OptimizerState(BFGS(), JLArray(rand(T, 5))).Q` is a
   `JLArray{T, 2}`. A test would be `@test OptimizerState(BFGS(), JLArray(rand(T, 5))).Q isa
   JLArray{T, 2}` for both precisions.
-
-### A34 · `Δf` on the first iteration is `NaN` for every method but `Newton`
-
-- location: `src/optimizers/optimizer.jl`
-- kind: defect
-- found: 2026-09-27
-- evidence: with `max_iterations = 1`, `status.Δf` is `NaN` for GD, Momentum, Adam, BFGS and DFP and
-  `-88.5` for Newton: only `initialize_state!(::NewtonState, opt, x, f)` records `f(x₀)`, and the
-  other methods drop the `f` that `solve!` passes.
-
-### A36 · Scope and size notes from the G5 review
-
-- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl`, `bfgs_state.jl`
-- kind: scope / size
-- found: 2026-09-27
-- evidence: the part also closed A13 (the `NewtonState` rework), which §G5 does not
-  name. `_alloc_q(x::AbstractVector) = alloc_h(x)` duplicates the generic method for a host vector,
-  and the two `zero_tangent` bodies differ only in the lift type.
 
 ## B. This package — observability
 

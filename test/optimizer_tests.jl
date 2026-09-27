@@ -336,11 +336,10 @@ end
 end
 
 @testset "the gradient difference is the one the status prints" begin
-    # `rgₐ` is `|g(x) - g(x')|`, i.e. the change over the step just taken. For the first-order caches
-    # the generic `gradient_difference!` did not produce that: `state.ḡ` is two iterates behind
-    # `cache.g` for them, so `rgₐ` was `‖∇f(xₖ) - ∇f(xₖ₋₂)‖` -- on the objective below, `4.976` where
-    # the successive difference is `0.295` -- and on the first iteration it differenced against
-    # `_similar` memory that `MomentumState` never writes. See `gradient_difference!`.
+    # `rgₐ` is `|g(x) - g(x')|`, i.e. the change over the step just taken. `gradient_difference!`
+    # takes it from the two gradients the cache holds, `latest_gradient` and `gradient`, and needs no
+    # `state.ḡ`. On the objective below the two-step difference `‖∇f(xₖ) - ∇f(xₖ₋₂)‖` is `4.976`
+    # where the successive difference is `0.295`. See `gradient_difference!`.
     #
     # The (quasi-)Newton caches are covered too: the `γ` of the quasi-Newton secant pair is one step
     # behind the `rg` next to it, so it is not the difference the status prints.

@@ -68,7 +68,8 @@ Write the gradient difference `∇f(xᵏ) - ∇f(xᵏ⁻¹)` into `cache.Δg`, f
 This is the difference of the two gradients the cache holds itself, `latest_gradient` at
 ``x_{k+1}`` and `gradient` at ``x_k``, which is the successive difference the status prints and
 needs no `state.ḡ`. It is not the `γ` of the quasi-Newton secant pair, which is one step behind the
-`rg` reported next to it. So the two `g` rows of a status are about one step; see [`convergence_measures`](@ref) for which iterate `rg` belongs to.
+`rg` reported next to it. So the two `g` rows of a status are about one step; see
+[`convergence_measures`](@ref) for which iterate `rg` belongs to.
 """
 function gradient_difference!(cache::OptimizerCache, ::OptimizerState)
     _difference!(cache.Δg, latest_gradient(cache), gradient(cache))
@@ -96,8 +97,8 @@ function OptimizerStatus(state::OST, cache::OCT, f::T;
     gradient_difference!(cache, state)
 
     rgₐ = l2norm(cache.Δg)
-    # `latest_gradient` and not `cache.g`: for the caches that refresh it, this is `∇f` at the iterate
-    # the step ended at rather than at the one it started from. See `convergence_measures`.
+    # `latest_gradient` and not `cache.g`: this is `∇f` at the iterate the step ended at rather than
+    # at the one it started from. See `convergence_measures`.
     rg = l2norm(latest_gradient(cache))
 
     # `f > f̄` and not `abs(f) > abs(f̄)`: the question is whether the objective went up, and for an
@@ -105,8 +106,8 @@ function OptimizerStatus(state::OST, cache::OCT, f::T;
     # and reads as an increase through `abs`. That was tolerable while nothing acted on the flag;
     # `convergence_measures` now does.
     #
-    # On the first iteration of the first-order methods, `BFGS` and `DFP` the previous objective is
-    # `NaN`, and `f > NaN` is `false`.
+    # On the first iteration of `BFGS` and `DFP`, and of a first-order method from a fresh state, the
+    # previous objective is `NaN`, and `f > NaN` is `false`.
     f_increased = f > previous_value(state)
 
     x_nonfinite = contains_nonfinite(cache.x)

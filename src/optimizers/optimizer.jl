@@ -669,7 +669,8 @@ initialize_state!(state::BFGSState) = _poison!(state)
 # `NewtonState` is built `NaN`-filled, and its section is the base the first step retracts from, so
 # it starts at `x`.
 function initialize_state!(state::NewtonState, opt::Optimizer, x::AbstractVector, f)
-    initialize!(state, x, gradient(opt)(x), f)
+    gradient(opt)(state.g, x)
+    initialize!(state, x, state.g, f)
 end
 
 function warn_iteration_number(state::OptimizerState, config::Options)

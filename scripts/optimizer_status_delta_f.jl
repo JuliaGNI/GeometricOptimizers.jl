@@ -4,9 +4,9 @@
 #
 #     julia --startup-file=no --project=. scripts/optimizer_status_delta_f.jl
 #
-# This is the check behind issue A24 in `KNOWN_ISSUES.md` and its fix in the 0.9 `CHANGELOG.md`. It
-# needs no warm-up and no cold process: every figure it prints is an exact equality between two
-# stored numbers, not a timing. `test/optimizer_state_semantics.jl` asserts the same equality.
+# This is the check behind the fix of issue A24, which `CHANGELOG.md` records. It needs no warm-up
+# and no cold process: every figure it prints is an exact equality between two stored numbers, not a
+# timing. `test/optimizer_state_semantics.jl` asserts the same equality.
 #
 # ## What it compares
 #

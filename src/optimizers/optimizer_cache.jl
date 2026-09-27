@@ -65,8 +65,9 @@ function refresh_latest_gradient!(cache::OptimizerCache, g::Gradient)
     cache
 end
 
-# This is the same expression `update!(::GradientCache, ...)` builds `cache.g` from: `section(cache)` and
-# `solution(cache)` are both at the accepted iterate by the time `solver_step!` gets here.
+# `_refresh_latest_gradient!` evaluates the same expression `update!(::GradientCache, ...)` builds
+# `cache.g` from: `section(cache)` and `solution(cache)` are both at the accepted iterate by the time
+# `solver_step!` gets here.
 #
 # It splits on the parameters for the same reason `trial_slope` does, and the split is the same one:
 # `global_rep` maps an ambient gradient to the horizontal lift on a `Manifold`, and on a plain array
@@ -88,21 +89,21 @@ Whether [`latest_gradient`](@ref) already holds ``\mathrm{global\_rep}(\mathrm{s
 \nabla{}f(x))``, i.e. exactly what [`store_gradient!`](@ref) would otherwise evaluate.
 """
 function latest_gradient_is_current(cache::OptimizerCache, state::OptimizerState, x::OptimizerSolution)
+    # `g̃_is_current` says the pairing "`latest_gradient` is `∇f` at `solution(cache)`, in the frame
+    # of `section(cache)`" was established -- only `refresh_latest_gradient!` sets it and only
+    # `store_gradient!` clears it, so every intermediate move of `solution(cache)`, in
+    # `solver_step!`'s `NaN` loop and throughout the line search, is covered. The two comparisons
+    # then say that the pairing is about the `x` and the frame *this* `update!` is being asked for,
+    # which is what makes a caller that moves the iterate between steps fall back to a fresh
+    # evaluation instead of silently reusing a stale one. Both are `O(n)` against a gradient
+    # evaluation that is not, and `update_section!` on a manifold is `O(N³)` where the comparison is
+    # `O(N²)`.
+    #
+    # The flag is not redundant with the comparisons: on Euclidean parameters the cache's and the
+    # state's sections both start life as a copy of `x₀` with `λ = nothing`, so before the first
+    # step they compare *equal*, and without the flag the `NaN`-filled scratch would be reused.
     cache.g̃_is_current[] && solution(cache) == x && section(cache) == section(state)
 end
-
-# `g̃_is_current` says the pairing "`latest_gradient`
-# is `∇f` at `solution(cache)`, in the frame of `section(cache)`" was established -- only
-# `refresh_latest_gradient!` sets it and only `store_gradient!` clears it, so every intermediate move
-# of `solution(cache)`, in `solver_step!`'s `NaN` loop and throughout the line search, is covered. The
-# two comparisons then say that the pairing is about the `x` and the frame *this* `update!` is being
-# asked for, which is what makes a caller that moves the iterate between steps fall back to a fresh
-# evaluation instead of silently reusing a stale one. Both are `O(n)` against a gradient evaluation
-# that is not, and `update_section!` on a manifold is `O(N³)` where the comparison is `O(N²)`.
-#
-# The flag is not redundant with the comparisons: on Euclidean parameters the cache's and the state's
-# sections both start life as a copy of `x₀` with `λ = nothing`, so before the first step they compare
-# *equal*, and without the flag the `NaN`-filled scratch would be reused.
 
 """
     invalidate_latest_gradient!(cache)

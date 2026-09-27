@@ -16,7 +16,7 @@ Random.seed!(1234)
 
 # What a state holds once `solve!` returns, and what the status it returns compares. Every figure
 # here is an equality between two stored numbers, so every comparison is `==` and none is `≈`: a
-# match is the same pair of numbers or it is not. See issue #108 and `KNOWN_ISSUES.md` A24.
+# match is the same pair of numbers or it is not. See issue #108 and issue A24 in `CHANGELOG.md`.
 
 objective(x) = sum(x .^ 4) + sum(x .^ 2)
 
