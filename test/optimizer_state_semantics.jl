@@ -78,16 +78,19 @@ end
 # that neither the gradient nor the step is zero inside the window.
 @testset "`Newton` reuses the refreshed gradient" begin
     rosenbrock(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
-    x = [-1.2, 1.0]
-    state = OptimizerState(Newton(), x)
-    opt = Optimizer(x, rosenbrock; algorithm = Newton())
-    for k in 1:6
-        increase_iteration_number!(state)
-        @test latest_gradient_is_current(cache(opt), state, x) == (k > 1)
-        solver_step!(x, state, opt)
-        update!(state, opt, x, rosenbrock(x))
+    for T in (Float32, Float64)
+        x = T[-1.2, 1.0]
+        state = OptimizerState(Newton(), x)
+        opt = Optimizer(x, rosenbrock; algorithm = Newton())
+        for k in 1:6
+            increase_iteration_number!(state)
+            @test latest_gradient_is_current(cache(opt), state, x) == (k > 1)
+            solver_step!(x, state, opt)
+            update!(state, opt, x, rosenbrock(x))
+        end
+        @test rosenbrock(x) isa T
+        @test rosenbrock(x) > 1e-8
     end
-    @test rosenbrock(x) > 1e-8
 end
 
 # `zero` of a point is not a tangent vector: issue #21. `zero_tangent` is the internal name for the
@@ -128,9 +131,14 @@ end
 end
 
 @testset "an iteration-count warning is a log record" begin
-    x = [1.0, 2.0, 3.0]
-    state = OptimizerState(GradientMethod(), x)
-    opt = Optimizer(x, objective; algorithm = GradientMethod(), max_iterations = 3,
-        warn_iterations = 1)
-    @test_logs (:warn, r"iterations") match_mode=:any solve!(x, state, opt)
+    for T in (Float32, Float64),
+        x₀ in (() -> T[1, 2, 3], () -> rand(StiefelManifold{T}, 5, 3))
+
+        x = x₀()
+        state = OptimizerState(GradientMethod(), x)
+        opt = Optimizer(x, objective; algorithm = GradientMethod(), max_iterations = 3,
+            warn_iterations = 1)
+        result = @test_logs (:warn, r"iterations") match_mode=:any solve!(x, state, opt)
+        @test minimum(result) isa T
+    end
 end

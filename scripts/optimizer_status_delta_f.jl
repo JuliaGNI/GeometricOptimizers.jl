@@ -21,9 +21,7 @@
 # ## Why every method spans one step
 #
 # Every state holds a pair, and `solve!` advances it to the new iterate before it builds the status,
-# so `previous_value(state)` is the objective one step back. Before 0.9 `solve!` advanced the state
-# after the stop check: the first-order states then spanned two steps, and `Newton` spanned one only
-# because `solver_step!` called `update!` on its state a second time.
+# so `previous_value(state)` is the objective one step back.
 
 using GeometricOptimizers
 using GeometricOptimizers: trace, status

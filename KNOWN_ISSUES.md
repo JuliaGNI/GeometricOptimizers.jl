@@ -534,6 +534,84 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
   points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
 
+### A30 · `SimpleSolvers.alloc_h` sizes a manifold by its dense storage
+
+- location: `src/optimizers/iterative_hessians/bfgs/bfgs_state.jl`
+- kind: defect (upstream seam)
+- found: G5 critic round 1
+- evidence:
+
+  `Base.zero` of a Stiefel or Grassmann point is no longer its lift (#21), and the owned
+  `alloc_h(::Manifold)` went with the move to `_alloc_q`. `alloc_h(St(6,3))` is `(12, 12)` on
+  `origin/main` and `(6, 6)` on the G5 branch; `SimpleSolvers`' `alloc_h(NetworkParameters((a =
+  St(6,3),)))`, which sizes by `mapparameters(zero, ·)`, is `(12, 12)` against `(18, 18)`. This
+  package's own `Q` stays `(12, 12)` through `_alloc_q`. `docs/src/linesearch_on_manifolds.md:291`
+  still names "`alloc_h` for a `Manifold`". Probe: `alloc_h_and_zero_backend.jl` in the round-1a
+  critic probes.
+
+### A31 · `zero` of a device point returns a host matrix
+
+- location: `src/manifolds/stiefel_manifold.jl`
+- kind: defect
+- found: G5 critic round 1
+- evidence: with `StiefelManifold(JLArray(…))`, `get_backend(zero(Y))` is `CPU` on the G5 branch and
+  the JLArray backend on `origin/main`: `zero(Y)` falls back to `Base`'s, which allocates on the host.
+  A `Base.zero(Y::Manifold) = zero(Y.A)` would keep the backend.
+
+### A32 · The decided resets of `initialize_state!` have no test
+
+- location: `src/optimizers/optimizer.jl`
+- kind: missing test
+- found: G5 critic round 1
+- evidence: the mutants `initialize_state!(state::BFGSState) = state` and the Newton
+  `initialize_state!` returning `state` both survive every unit (1825–1875 tests). The
+  first-iteration status of `1 + ‖x‖²` from `0` (`f_increased = false, x_converged = true`) is in no
+  test. A reused state is reset in `s`, `ḡ`, `f`, `f̄` and `Q` only: `iterations` is not reset, so a
+  reused state runs fewer iterations than a fresh one, and reused BFGS, DFP, GradientMethod and Adam
+  states do not reproduce a fresh state's iterates (on `origin/main` too).
+
+### A33 · The default `gradient(::OptimizerState)` cannot answer `BFGSState`
+
+- location: `src/optimizers/optimizer_state.jl`
+- kind: defect
+- found: G5 critic round 1
+- evidence: `BFGSState` has no field `g`, so `gradient(state)` raises a `FieldError`, where a
+  `MethodError` said the state has no current gradient.
+
+### A34 · `Δf` on the first iteration is `NaN` for every method but `Newton`
+
+- location: `src/optimizers/optimizer.jl`
+- kind: defect
+- found: G5 critic round 1
+- evidence: with `max_iterations = 1`, `status.Δf` is `NaN` for GD, Momentum, Adam, BFGS and DFP and
+  `-88.5` for Newton: only `initialize_state!(::NewtonState, opt, x, f)` records `f(x₀)`, and the
+  other methods drop the `f` that `solve!` passes.
+
+### A35 · Stale names and claims in comments and the changelog after G5
+
+- location: several
+- kind: docs
+- found: G5 critic round 1
+- evidence: `src/manifold_optimizers/scalar_moment_adam_optimizer.jl:73-74` says
+  "`Base.zero(::StiefelManifold)` already returns the zero of `𝔤ʰᵒʳ`", no longer true.
+  `test/flat_buffer_allocations.jl:18`, `test/device_orthonormalization.jl:67`,
+  `test/optimizer_tests.jl:347` and this file name `BFGSCache`/`DFPCache`/`bfgs_cache.jl`. In
+  `CHANGELOG.md` the Unreleased entry on `update!(state, opt, x, f)` still says `NewtonState`
+  evaluates the objective again; "each `solve!` starts from a reset state" overstates it (see A32);
+  and "only the status of `1 + ‖x‖²` moves" holds for the final status only — the quartic's
+  iteration-1 `f_increased` also changes.
+
+### A36 · Scope and size notes from the G5 review
+
+- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl`, `bfgs_state.jl`
+- kind: scope / size
+- found: G5 critic round 1
+- evidence: `BFGS`/`DFP` keep the `NoHessian` placeholder in the optimizer's Hessian slot, where the
+  §G5 item says the placeholder "for these methods" goes; the slot is typed `Hessian{T}`, so removing
+  it changes `Optimizer`. The part also closed A13 (the `NewtonState` rework), which §G5 does not
+  name. `_alloc_q(x::AbstractVector) = alloc_h(x)` duplicates the generic method for a host vector,
+  and the two `zero_tangent` bodies differ only in the lift type.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status

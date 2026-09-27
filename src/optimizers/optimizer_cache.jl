@@ -13,6 +13,13 @@ abstract type OptimizerCache{T} end
 # The accessors every cache in this package answers, on the fields they all name alike. `direction`
 # and `rhs` are not among them: the caches store those under different names.
 solution(cache::OptimizerCache) = cache.x
+
+"""
+    gradient(cache)
+
+Return the stored gradient (array) of an [`OptimizerCache`](@ref): ``\\nabla{}f(x_k)`` at the iterate
+the step is built from.
+"""
 gradient(cache::OptimizerCache) = cache.g
 section(cache::OptimizerCache) = cache.section
 # the array `store_gradient!` writes the gradient the direction is built from into

@@ -61,15 +61,17 @@ end
 # `BFGSState` holds a pair, as every other state does. `DFPState` is an alias for it, so both
 # methods are the same method.
 @testset "`BFGSState` reports both objective values and both iterates" begin
-    for state in (BFGSState([0.0, 0.0]), DFPState([0.0, 0.0]))
-        state.x .= [1.0, 2.0]
-        state.x̄ .= [3.0, 4.0]
-        state.f = 3.5
-        state.f̄ = 7.25
+    for T in (Float32, Float64), state in (BFGSState(zeros(T, 2)), DFPState(zeros(T, 2)))
 
-        @test value(state) === 3.5
-        @test previous_value(state) === 7.25
-        @test solution(state) == [1.0, 2.0]
-        @test previous_solution(state) == [3.0, 4.0]
+        state.x .= T[1, 2]
+        state.x̄ .= T[3, 4]
+        state.f = T(3.5)
+        state.f̄ = T(7.25)
+
+        @test value(state) === T(3.5)
+        @test previous_value(state) === T(7.25)
+        @test solution(state) == T[1, 2]
+        @test previous_solution(state) == T[3, 4]
+        @test eltype(solution(state)) == T
     end
 end

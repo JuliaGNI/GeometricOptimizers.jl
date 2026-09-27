@@ -67,23 +67,8 @@ Write the gradient difference `∇f(xᵏ) - ∇f(xᵏ⁻¹)` into `cache.Δg`, f
 
 This is the difference of the two gradients the cache holds itself, `latest_gradient` at
 ``x_{k+1}`` and `gradient` at ``x_k``, which is the successive difference the status prints and
-needs no `state.ḡ`. The method it replaced -- `cache.g` against `state.ḡ` -- was wrong for each cache
-in a different way:
-
-- for the three first-order caches, `update!(::MomentumState, ...)` runs *after* the step and copies
-  the cache's *pre-step* gradient into `state.g`, shifting the one before it into `state.ḡ`, so
-  `state.ḡ` ends up two iterates behind `cache.g` rather than one: on
-  ``f(x) = \\sum(x^2 + 0.1x^4)`` from `[1.5, -0.8, 0.4]` with `MomentumMethod` + `Bisection`,
-  iteration three reported `rgₐ = 4.976` where ``\\|\\nabla{}f(x_k) - \\nabla{}f(x_{k-1})\\| = 0.295``.
-  On the first iteration it differenced against the `_similar` memory `MomentumState` never writes.
-- for the quasi-Newton cache it was the `γ` of the secant pair, ``\\nabla{}f(x_k) -
-  \\nabla{}f(x_{k-1})``, which those form inside `update!(cache, ...)` and which is one step behind
-  the `rg` reported next to it.
-- for `NewtonOptimizerCache` it was *structurally zero*: [`solver_step!`](@ref) advances `state.ḡ` at
-  the same iterate the cache takes its gradient at, so the difference could only ever be `0`.
-
-In all three cases the two `g` rows of a status are now about one step rather than about two
-different ones; see [`convergence_measures`](@ref) for which iterate `rg` belongs to.
+needs no `state.ḡ`. It is not the `γ` of the quasi-Newton secant pair, which is one step behind the
+`rg` reported next to it. So the two `g` rows of a status are about one step; see [`convergence_measures`](@ref) for which iterate `rg` belongs to.
 """
 function gradient_difference!(cache::OptimizerCache, ::OptimizerState)
     _difference!(cache.Δg, latest_gradient(cache), gradient(cache))
