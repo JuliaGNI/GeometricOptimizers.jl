@@ -5,7 +5,7 @@ import Random
 
 Random.seed!(123)
 
-include("../grassmann_test_help.jl")
+include("../helpers/grassmann_test_help.jl")
 
 function stiefel_Ω(N::Integer, n::Integer, T::Type = Float32)
     Y = rand(StiefelManifold{T}, N, n)

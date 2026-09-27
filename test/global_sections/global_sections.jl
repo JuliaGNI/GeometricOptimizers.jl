@@ -6,7 +6,7 @@ import Random
 
 Random.seed!(123)
 
-include("../grassmann_test_help.jl")
+include("../helpers/grassmann_test_help.jl")
 
 function grassmann_global_section(N::Integer, n::Integer, T::DataType)
     Y = rand(GrassmannManifold{T}, N, n)

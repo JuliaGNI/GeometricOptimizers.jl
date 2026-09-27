@@ -9,7 +9,7 @@ Random.seed!(1234)
 
 # The matrix lives in its own file so that `scripts/retraction_accuracy.jl`, which regenerates the
 # tables below, measures the same problem by construction rather than by a copied literal.
-A = include("svd_matrix.jl")
+A = include("../helpers/svd_matrix.jl")
 
 # named `objective` and not `error`, which is what it used to be called: that shadows `Base.error`
 # for the whole file, so a genuine `error("...")` anywhere in it would have been a `MethodError`

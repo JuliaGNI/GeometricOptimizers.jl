@@ -2,7 +2,10 @@ using GeometricOptimizers: StiefelProjection
 using JLArrays: JLArray
 using KernelAbstractions: CPU, KernelAbstractions
 using LinearAlgebra: I, transpose
+import Random
 using Test
+
+Random.seed!(123)
 
 # `N` and `n` were declared `::Integer`, which are the package's only abstract fields. Nothing
 # downstream of them lost its concrete return type -- `lift_factors`, `geodesic`, `cayley` and
