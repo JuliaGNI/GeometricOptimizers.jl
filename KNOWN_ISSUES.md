@@ -546,6 +546,18 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   reused state runs fewer iterations than a fresh one, and reused BFGS, DFP, GradientMethod and Adam
   states do not reproduce a fresh state's iterates (on `origin/main` too).
 
+### A37 · No test checks that a device vector gets a device `Q`
+
+- location: `src/optimizers/iterative_hessians/bfgs/bfgs_state.jl:64-66`
+- kind: missing test
+- found: 2026-09-27
+- evidence: deleting `_alloc_q(x::AbstractVector) = alloc_h(x)` makes a vector fall to the generic
+  `fill(T(NaN), n, n)`, a host `Matrix`, and the mutant survives `optimizer_state_semantics.jl`,
+  `network_parameters_optimizer.jl`, `descent_direction_tests.jl`, `similar_backend.jl` and
+  `device_copyto.jl`. The behaviour is right: `OptimizerState(BFGS(), JLArray(rand(T, 5))).Q` is a
+  `JLArray{T, 2}`. A test would be `@test OptimizerState(BFGS(), JLArray(rand(T, 5))).Q isa
+  JLArray{T, 2}` for both precisions.
+
 ### A34 · `Δf` on the first iteration is `NaN` for every method but `Newton`
 
 - location: `src/optimizers/optimizer.jl`
