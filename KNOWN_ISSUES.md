@@ -991,16 +991,16 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C13 · `MANIFOLD_TOLERANCE` is defined three times
 
-- location: `test/verification/svd_optim.jl:19`
+- location: `test/verification/svd_optim.jl:20`
 - kind: defect
 - found: #44
 - evidence:
 
   **Severity: low**, and the one on this list with a way to go wrong quietly. From the review of [#44].
 
-  `const MANIFOLD_TOLERANCE = 1e-12` appears in `test/verification/svd_optim.jl:19`,
-  `test/manifold_linesearch_tests.jl:45` and — added with the step ceiling —
-  `scripts/retraction_accuracy.jl:184`. Three copies of one number with no import path between them: a
+  `const MANIFOLD_TOLERANCE = 1e-12` appears in `test/verification/svd_optim.jl:20`,
+  `test/manifold_linesearch_tests.jl:48` and — added with the step ceiling —
+  `scripts/retraction_accuracy.jl:270`. Three copies of one number with no import path between them: a
   script cannot `include` a test file that runs a suite as a side effect, and the constant is a property
   of the tests rather than of the package, so it does not belong in `src/`.
 
