@@ -5,7 +5,7 @@ using GeometricOptimizers: Cayley, Geodesic, StiefelManifold, check, iteration_n
 using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew
 using GeometricOptimizers: linesearch_problem, retraction_differential, retraction,
                            initialize!,
-                           cache, gradient, hessian, problem, StiefelProjection
+                           cache, gradient, problem, StiefelProjection
 using GeometricOptimizers: step_αmax, _manifold_αmax, linesearch_parameters, _caller_αmax,
                            step_ceiling, DEFAULT_STEP_CEILING, linesearch_rejected,
                            OptimizerCache, GradientMethod, direction, StiefelLieAlgHorMatrix

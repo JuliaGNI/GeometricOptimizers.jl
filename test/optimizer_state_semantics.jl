@@ -1,6 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: value, previous_value, solution, previous_solution, trace,
-                           status,
+using GeometricOptimizers: value, previous_value, solution, trace, status,
                            gradient, cache, solver_step!, update!,
                            increase_iteration_number!,
                            latest_gradient_is_current,
