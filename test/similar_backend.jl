@@ -95,7 +95,7 @@ end
             # which is the type the cache blocks then are; `zero` is not (issue #21).
             @test_throws ErrorException similar(Y)
 
-            for allocate in (_zero, _copy, copy)
+            for allocate in (zero, _zero, _copy, copy)
                 @test KernelAbstractions.get_backend(allocate(Y)) == device
             end
             @test _zero(Y) isa GeometricOptimizers.AbstractLieAlgHorMatrix

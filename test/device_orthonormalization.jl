@@ -64,7 +64,7 @@ end
 
 @testset "GlobalSection is constructible on a device-backed point" begin
     # this is the call that raised `Cannot access the contents of a private buffer` on `Metal` and a
-    # `MethodError` on `JLArrays`, and with it everything that holds one: `BFGSCache`, `DFPCache`,
+    # `MethodError` on `JLArrays`, and with it everything that holds one: `QuasiNewtonCache`,
     # `NewtonOptimizerCache`, and `geodesic`/`cayley` of a point and a tangent vector
     N, n = 8, 3
     Y = rand(device, StiefelManifold, N, n)

@@ -103,6 +103,8 @@ end
         @test iszero(zero_tangent(Y))
         @test get_backend(zero_tangent(Y).B) == get_backend(Y.A)
         @test _zero(Y) isa StiefelLieAlgHorMatrix{T}
+        # `alloc_h` of a point is sized by the lift, 12 for `St(6, 3)`, not by the dense storage
+        @test size(GeometricOptimizers.alloc_h(Y)) == (12, 12)
 
         Z = rand(GrassmannManifold{T}, 6, 3)
         @test !(zero(Z) isa AbstractLieAlgHorMatrix)

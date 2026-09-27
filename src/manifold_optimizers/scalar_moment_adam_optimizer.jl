@@ -70,8 +70,8 @@ end
 
 function ScalarMomentAdamCache(x::StiefelManifold{T}) where {T}
     sec = GlobalSection(x)
-    # `_zero(x)` and not `global_rep(sec, zero(x.A))`: `Base.zero(::StiefelManifold)` already returns
-    # the zero of `𝔤ʰᵒʳ` for that manifold, so lifting a zero matrix through the section is a matrix
+    # `_zero(x)` and not `global_rep(sec, zero(x.A))`: `_zero(::StiefelManifold)` already returns the
+    # zero of `𝔤ʰᵒʳ` for that manifold (through `zero_tangent`), so lifting a zero matrix through the section is a matrix
     # product whose answer is the array `_zero` hands back for free. `OptimizerCache(::Adam{T}, x)`
     # passes `_zero(x)` for the same reason.
     g = _zero(x)
@@ -159,6 +159,12 @@ end
 # The state update `solve!` makes after each step, one for the four first-order states: record the
 # iterate, its gradient and its objective value `f`, then advance the state as a training step does.
 # `solve!` passes the `f` it has already evaluated at `x`.
+# The current gradient, for the states that hold one: the first file where all of them exist.
+function gradient(state::Union{
+        GradientState, MomentumState, AdamState, ScalarMomentAdamState, NewtonState})
+    state.g
+end
+
 function update!(
         state::Union{GradientState, MomentumState, AdamState, ScalarMomentAdamState},
         opt::Optimizer, x::OptimizerSolution, f)

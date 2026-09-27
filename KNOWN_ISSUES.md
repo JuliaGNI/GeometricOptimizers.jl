@@ -534,35 +534,11 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
   points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
 
-### A30 · `SimpleSolvers.alloc_h` sizes a manifold by its dense storage
-
-- location: `src/optimizers/iterative_hessians/bfgs/bfgs_state.jl`
-- kind: defect (upstream seam)
-- found: G5 critic round 1
-- evidence:
-
-  `Base.zero` of a Stiefel or Grassmann point is no longer its lift (#21), and the owned
-  `alloc_h(::Manifold)` went with the move to `_alloc_q`. `alloc_h(St(6,3))` is `(12, 12)` on
-  `origin/main` and `(6, 6)` on the G5 branch; `SimpleSolvers`' `alloc_h(NetworkParameters((a =
-  St(6,3),)))`, which sizes by `mapparameters(zero, ·)`, is `(12, 12)` against `(18, 18)`. This
-  package's own `Q` stays `(12, 12)` through `_alloc_q`. `docs/src/linesearch_on_manifolds.md:291`
-  still names "`alloc_h` for a `Manifold`". Probe: `alloc_h_and_zero_backend.jl` in the round-1a
-  critic probes.
-
-### A31 · `zero` of a device point returns a host matrix
-
-- location: `src/manifolds/stiefel_manifold.jl`
-- kind: defect
-- found: G5 critic round 1
-- evidence: with `StiefelManifold(JLArray(…))`, `get_backend(zero(Y))` is `CPU` on the G5 branch and
-  the JLArray backend on `origin/main`: `zero(Y)` falls back to `Base`'s, which allocates on the host.
-  A `Base.zero(Y::Manifold) = zero(Y.A)` would keep the backend.
-
 ### A32 · The decided resets of `initialize_state!` have no test
 
 - location: `src/optimizers/optimizer.jl`
 - kind: missing test
-- found: G5 critic round 1
+- found: 2026-09-27
 - evidence: the mutants `initialize_state!(state::BFGSState) = state` and the Newton
   `initialize_state!` returning `state` both survive every unit (1825–1875 tests). The
   first-iteration status of `1 + ‖x‖²` from `0` (`f_increased = false, x_converged = true`) is in no
@@ -570,45 +546,21 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   reused state runs fewer iterations than a fresh one, and reused BFGS, DFP, GradientMethod and Adam
   states do not reproduce a fresh state's iterates (on `origin/main` too).
 
-### A33 · The default `gradient(::OptimizerState)` cannot answer `BFGSState`
-
-- location: `src/optimizers/optimizer_state.jl`
-- kind: defect
-- found: G5 critic round 1
-- evidence: `BFGSState` has no field `g`, so `gradient(state)` raises a `FieldError`, where a
-  `MethodError` said the state has no current gradient.
-
 ### A34 · `Δf` on the first iteration is `NaN` for every method but `Newton`
 
 - location: `src/optimizers/optimizer.jl`
 - kind: defect
-- found: G5 critic round 1
+- found: 2026-09-27
 - evidence: with `max_iterations = 1`, `status.Δf` is `NaN` for GD, Momentum, Adam, BFGS and DFP and
   `-88.5` for Newton: only `initialize_state!(::NewtonState, opt, x, f)` records `f(x₀)`, and the
   other methods drop the `f` that `solve!` passes.
-
-### A35 · Stale names and claims in comments and the changelog after G5
-
-- location: several
-- kind: docs
-- found: G5 critic round 1
-- evidence: `src/manifold_optimizers/scalar_moment_adam_optimizer.jl:73-74` says
-  "`Base.zero(::StiefelManifold)` already returns the zero of `𝔤ʰᵒʳ`", no longer true.
-  `test/flat_buffer_allocations.jl:18`, `test/device_orthonormalization.jl:67`,
-  `test/optimizer_tests.jl:347` and this file name `BFGSCache`/`DFPCache`/`bfgs_cache.jl`. In
-  `CHANGELOG.md` the Unreleased entry on `update!(state, opt, x, f)` still says `NewtonState`
-  evaluates the objective again; "each `solve!` starts from a reset state" overstates it (see A32);
-  and "only the status of `1 + ‖x‖²` moves" holds for the final status only — the quartic's
-  iteration-1 `f_increased` also changes.
 
 ### A36 · Scope and size notes from the G5 review
 
 - location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl`, `bfgs_state.jl`
 - kind: scope / size
-- found: G5 critic round 1
-- evidence: `BFGS`/`DFP` keep the `NoHessian` placeholder in the optimizer's Hessian slot, where the
-  §G5 item says the placeholder "for these methods" goes; the slot is typed `Hessian{T}`, so removing
-  it changes `Optimizer`. The part also closed A13 (the `NewtonState` rework), which §G5 does not
+- found: 2026-09-27
+- evidence: the part also closed A13 (the `NewtonState` rework), which §G5 does not
   name. `_alloc_q(x::AbstractVector) = alloc_h(x)` duplicates the generic method for a host vector,
   and the two `zero_tangent` bodies differ only in the lift type.
 
@@ -701,7 +653,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `src/optimizers/iterative_hessians/iterative_hessians_direction.jl:1-3` defines
   `compute_direction!(opt, ::Union{BFGSState,DFPState})`. There is no call site (verified: the only
   live callers are the `Newton` methods in `newton_optimizer_direction.jl`). The direction is formed
-  inline at the end of the cache `update!` instead — `bfgs_cache.jl`, `dfp_cache.jl`.
+  inline at the end of the cache `update!` instead — `quasi_newton_cache.jl`.
 
   **What to do**: delete the file and its `include`. The alternative — routing
   `solver_step!` through `compute_direction!` for symmetry with `Newton` — is a refactor with no
@@ -999,8 +951,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `AdamCache`/`AdamState` had been unbound. That test drives `Adam`, so those six are the whole of what
   it exercises.
 
-  `BFGSCache`, `BFGSState`, `DFPCache`, `NewtonOptimizerCache`, `NewtonOptimizerState` and the `VT` of
-  `OptimizerResult` were unbound afterwards on the strength of their *inferred types* — for the
+  `BFGSCache`, `BFGSState`, `DFPCache` (now one `QuasiNewtonCache`), `NewtonOptimizerCache`,
+  `NewtonOptimizerState` and the `VT` of `OptimizerResult` were unbound afterwards on the strength of their *inferred types* — for the
   quasi-Newton three, `Base.return_types` showed the same coupled shape the six had, and worse for
   `BFGSState`, which carried a free `T` across four parameters and the three-parameter `GlobalSection`
   `UnionAll` under a `Vararg`; after, all five parameters are independent. That is a sound argument from
@@ -1244,6 +1196,17 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   exist — so that an upstream docs rebuild cannot break this build again. The second is worth doing
   regardless: relying on a fetched inventory means a docs build that passes today can fail tomorrow with
   no commit here.
+
+### D9 · `SimpleSolvers.alloc_h(::NetworkParameters)` sizes a manifold leaf by its dense storage
+
+- location: SimpleSolvers `ext/SimpleSolversNeuralNetworkParametersExt.jl`, `alloc_h(ps::NetworkParameters)`
+- kind: upstream
+- found: 2026-09-27
+- evidence: it sizes by `mapparameters(zero, ·)`, and `zero` of a Stiefel or Grassmann point is the
+  point's own shape, not its lift (#21). For `NetworkParameters((a = St(6,3),)))` it returns
+  `(18, 18)` where the intrinsic dimension is 12 (`origin/main` gave `(12, 12)`). This package does not
+  call it for a non-vector: `BFGSState` sizes `Q` through `_alloc_q`, and `alloc_h(::Manifold)` is this
+  package's own. The fix is upstream: size by the zero tangent, as `_alloc_q` does.
 
 ## F. Loose ends from the geodesic-retraction review
 

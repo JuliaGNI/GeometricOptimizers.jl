@@ -46,7 +46,7 @@ struct QuasiNewtonCache{T, M, VT, GT, MT, GS, FT} <: OptimizerCache{T}
         # is the horizontal lift, whose free-parameter count is the intrinsic dimension and not the
         # size of the dense storage. For a `StiefelManifold(6, 3)` that is 12 against 18, and `Q` has
         # to be the former -- it multiplies gradients, which are lifts. `flatlength` then counts
-        # without building the flat vector, which is what this used to allocate and discard.
+        # without building the flat vector.
         n = flatlength(_zero(x))
         q = zeros(T, n, n)
         section = GlobalSection(x)
@@ -154,10 +154,9 @@ function update!(cache::QuasiNewtonCache{T}, state::BFGSState{T},
     _update_inverse_hessian!(cache.method, cache, state, ΔxΔg)
 
     # `ḡ` has to still hold the gradient at the *previous* iterate while `Δg` is formed above, so it
-    # is advanced here, right after it has been used. It used to be advanced in
-    # `update!(::BFGSState, …)` at the end of the iteration instead -- which runs at the very iterate
-    # the next `Δg` is computed at, so `Δg` was identically zero, `ΔxΔg` was zero with it, and the
-    # guard in `_update_inverse_hessian!` skipped the `Q` update on every single iteration.
+    # is advanced here, right after it has been used, and not in `update!(::BFGSState, …)` at the end
+    # of the iteration: that runs at the very iterate the next `Δg` is formed at, which would make
+    # `Δg` identically zero and the guard in `_update_inverse_hessian!` skip every update.
     _copyto!(state.ḡ, gradient(cache))
 
     _flat_mul!(direction(cache), inverse_hessian(state), rhs(cache), cache.flat)

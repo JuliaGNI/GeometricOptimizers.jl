@@ -20,8 +20,7 @@ test_optim = OptimizerTest{Float64}()
 test_x = zeros(3)
 test_obj = OptimizerProblem(F, test_x)
 
-# `gradient` has a default on `OptimizerState`, which reads the field `g` that this state lacks
-@test_throws (VERSION ≥ v"1.12" ? FieldError : ErrorException) gradient(test_optim)
+@test_throws MethodError gradient(test_optim)
 @test_throws MethodError hessian(test_optim)
 @test_throws MethodError linesearch(test_optim)
 @test_throws MethodError problem(test_optim)
@@ -343,10 +342,8 @@ end
     # the successive difference is `0.295` -- and on the first iteration it differenced against
     # `_similar` memory that `MomentumState` never writes. See `gradient_difference!`.
     #
-    # The (quasi-)Newton caches had the same row wrong in their own way and are covered here now:
-    # `BFGSCache` and `DFPCache` reported the `γ` of their secant pair, which is one step behind the
-    # `rg` next to it, and for `NewtonOptimizerCache` the difference was *structurally zero* --
-    # `solver_step!` advances `state.ḡ` at the very iterate the cache takes its gradient at.
+    # The (quasi-)Newton caches are covered too: the `γ` of the quasi-Newton secant pair is one step
+    # behind the `rg` next to it, so it is not the difference the status prints.
     f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4)
     ∇f(x) = 2 .* x .+ 0.4 .* x .^ 3
     ∇f!(g, x) = (g .= ∇f(x))

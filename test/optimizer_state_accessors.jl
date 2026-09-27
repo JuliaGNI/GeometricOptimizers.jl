@@ -73,5 +73,7 @@ end
         @test solution(state) == T[1, 2]
         @test previous_solution(state) == T[3, 4]
         @test eltype(solution(state)) == T
+        # no current gradient to report: the quasi-Newton cache holds it
+        @test_throws MethodError gradient(state)
     end
 end

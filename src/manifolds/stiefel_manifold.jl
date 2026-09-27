@@ -164,3 +164,7 @@ function zero_tangent(Y::StiefelManifold{T}) where {T}
     backend = KernelAbstractions.get_backend(Y.A)
     zeros(backend, StiefelLieAlgHorMatrix{T}, N, n)
 end
+
+# The zero matrix of the point's own shape, on the point's backend: `Base`'s fallback would allocate
+# it on the host.
+Base.zero(Y::StiefelManifold) = zero(Y.A)

@@ -90,3 +90,6 @@ function zero_tangent(Y::GrassmannManifold{T}) where {T}
     backend = KernelAbstractions.get_backend(Y.A)
     zeros(backend, GrassmannLieAlgHorMatrix{T}, N, n)
 end
+
+# See `Base.zero(::StiefelManifold)`.
+Base.zero(Y::GrassmannManifold) = zero(Y.A)
