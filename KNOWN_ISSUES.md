@@ -534,17 +534,15 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
   points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
 
-### K5 · The decided resets of `initialize_state!` have no test
+### K11 · A state reused for a second `solve!` does not reproduce a fresh state's solve
 
 - location: `src/optimizers/optimizer.jl`
-- kind: missing test
+- kind: defect
 - found: 2026-09-27
-- evidence: the mutants `initialize_state!(state::BFGSState) = state` and the Newton
-  `initialize_state!` returning `state` both survive every unit (1825–1875 tests). The
-  first-iteration status of `1 + ‖x‖²` from `0` (`f_increased = false, x_converged = true`) is in no
-  test. A reused state is reset in `s`, `ḡ`, `f`, `f̄` and `Q` only: `iterations` is not reset, so a
-  reused state runs fewer iterations than a fresh one, and reused BFGS, DFP, GradientMethod and Adam
-  states do not reproduce a fresh state's iterates (on `origin/main` too).
+- evidence: `initialize_state!` resets a `BFGSState` in `s`, `ḡ`, `f`, `f̄` and `Q` only, and a
+  first-order state not at all: `iterations` is not reset, so a reused state runs fewer iterations
+  than a fresh one, and reused BFGS, DFP, GradientMethod and Adam states do not reproduce a fresh
+  state's iterates (on `origin/main` too).
 
 ### K6 · `Δf` on the first iteration is `NaN` for every method but `Newton`
 
@@ -565,18 +563,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence: `zero_tangent(::StiefelManifold)` and `zero_tangent(::GrassmannManifold)` are the same
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
-
-### K8 · No test checks that a device vector gets a device `Q`
-
-- location: `src/optimizers/iterative_hessians/bfgs/bfgs_state.jl:64-66`
-- kind: missing test
-- found: 2026-09-27
-- evidence: deleting `_alloc_q(x::AbstractVector) = alloc_h(x)` makes a vector fall to the generic
-  `fill(T(NaN), n, n)`, a host `Matrix`, and the mutant survives `optimizer_state_semantics.jl`,
-  `network_parameters_optimizer.jl`, `descent_direction_tests.jl`, `similar_backend.jl` and
-  `device_copyto.jl`. The behaviour is right: `OptimizerState(BFGS(), JLArray(rand(T, 5))).Q` is a
-  `JLArray{T, 2}`. A test would be `@test OptimizerState(BFGS(), JLArray(rand(T, 5))).Q isa
-  JLArray{T, 2}` for both precisions.
 
 ### K9 · The default gradient gate `f_reltol = √eps` sits at the noise floor of `‖∇f‖`
 
@@ -978,7 +964,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `AdamCache`/`AdamState` had been unbound. That test drives `Adam`, so those six are the whole of what
   it exercises.
 
-  `BFGSCache`, `BFGSState`, `DFPCache` (now one `QuasiNewtonCache`), `NewtonOptimizerCache`,
+  `BFGSCache`, `BFGSState`, `DFPCache` (`QuasiNewtonCache` replaces the two caches), `NewtonOptimizerCache`,
   `NewtonOptimizerState` and the `VT` of `OptimizerResult` were unbound afterwards on the strength of their *inferred types* — for the
   quasi-Newton three, `Base.return_types` showed the same coupled shape the six had, and worse for
   `BFGSState`, which carried a free `T` across four parameters and the three-parameter `GlobalSection`

@@ -547,7 +547,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
 
     # `rg` is measured at the iterate this step *ended* at, not at the one it started from; see
     # `refresh_latest_gradient!` and the note on `convergence_measures`. Costs one gradient
-    # evaluation per iteration, and only for the caches that implement it.
+    # evaluation per iteration.
     refresh_latest_gradient!(cache(opt), gradient(opt))
 
     x

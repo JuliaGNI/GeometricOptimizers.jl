@@ -4,7 +4,8 @@ using GeometricOptimizers: value, previous_value, solution, trace, status,
                            increase_iteration_number!,
                            latest_gradient_is_current,
                            AbstractLieAlgHorMatrix, StiefelLieAlgHorMatrix,
-                           GrassmannLieAlgHorMatrix, _fill!, _zero
+                           GrassmannLieAlgHorMatrix, _fill!, _zero, initialize_state!
+using JLArrays: JLArray
 using Test
 
 # qualified and not imported, so that this file loads on a tree that lacks either
@@ -142,5 +143,56 @@ end
             warn_iterations = 1)
         result = @test_logs (:warn, r"iterations") match_mode=:any solve!(x, state, opt)
         @test minimum(result) isa T
+    end
+end
+
+# `initialize_state!` resets a quasi-Newton state that a solve has written, so a reused state carries
+# no secant pair and no `Q` into the next solve, and starts a `NewtonState` at the starting point.
+@testset "`initialize_state!` resets a quasi-Newton state and starts a Newton state at x₀" begin
+    for T in (Float32, Float64)
+        for method in (BFGS(), DFP())
+            x = T[1, 2, 3]
+            state, _, opt = solve_for(method, x)
+            @test !isnan(previous_value(state))
+            @test state.Q != one(state.Q)
+            initialize_state!(state, opt, x, objective(x))
+            @test isnan(value(state))
+            @test isnan(previous_value(state))
+            @test all(isnan, state.s)
+            @test all(isnan, state.ḡ)
+            @test state.Q == one(state.Q)
+        end
+
+        x = T[1, 2, 3]
+        state = OptimizerState(Newton(), x)
+        opt = Optimizer(x, objective; algorithm = Newton())
+        initialize_state!(state, opt, x, objective(x))
+        @test solution(state) == x
+        @test value(state) == objective(x)
+        @test gradient(state) == gradient(opt)(x)
+        @test GeometricOptimizers.section(state).Y == x
+    end
+end
+
+# The first iteration compares against a `NaN` objective and not against a sentinel, so a solve that
+# starts at the minimiser reports no increase and converges in `x`.
+@testset "a quasi-Newton solve from the minimiser does not read as an increase" begin
+    shifted(x) = 1 + sum(abs2, x)
+    for T in (Float32, Float64), method in (BFGS(), DFP())
+
+        x = zeros(T, 3)
+        state = OptimizerState(method, x)
+        opt = Optimizer(
+            x, shifted; algorithm = method, max_iterations = 1, warn_iterations = 0)
+        result = solve!(x, state, opt)
+        @test !status(result).f_increased
+        @test status(result).x_converged
+    end
+end
+
+# `_alloc_q` keeps the array type of a plain vector, so a device vector gets a device `Q`.
+@testset "a device vector gets a device `Q`" begin
+    for T in (Float32, Float64)
+        @test OptimizerState(BFGS(), JLArray(rand(T, 5))).Q isa JLArray{T, 2}
     end
 end
