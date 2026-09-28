@@ -76,7 +76,7 @@
 #   2. `Base`-only, specialising on the type parameters, function-typed field — no gap.
 #   3. real `Optimizer` + `solve!`, one algorithm — no gap.
 #   4. real `Optimizer` + `solve!`, looping over three algorithm types and two retractions in one body,
-#      which is what `test/optimizer_convergence/svd_optim.jl:223-234` does and what its comment says
+#      which is what `test/verification/svd_optim.jl:223-234` does and what its comment says
 #      the loop exists for — no gap.
 #
 # A bug report needs a reproducer and four independent negatives are not one. What these *do* establish

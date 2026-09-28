@@ -1,7 +1,10 @@
 using GeometricOptimizers
 using GeometricOptimizers: gradient, value
+import Random
 import SimpleSolvers
 using Test
+
+Random.seed!(123)
 
 function F(x)
     1 + sum(x .^ 2)

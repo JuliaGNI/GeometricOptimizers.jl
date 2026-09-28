@@ -28,7 +28,9 @@ using Test
 # `test_piracies`, plural: Aqua 0.8 defines no `Aqua.test_piracy`.
 Aqua.test_piracies(GeometricOptimizers)
 
-# Every dependency, weak dependency and test extra carries a `[compat]` bound. The same argument as
+# Every dependency and weak dependency carries a `[compat]` bound. `test_deps_compat` reads the root
+# `Project.toml` only (its `[deps]`, `[weakdeps]` and `julia`); the test dependencies are in
+# `test/Project.toml`, which Aqua does not read. The same argument as
 # for piracy above: a missing bound is invisible until a resolve picks a version the package was
 # never built against, and a list of the entries goes stale where a check does not.
 Aqua.test_deps_compat(GeometricOptimizers)

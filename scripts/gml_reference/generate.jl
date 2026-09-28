@@ -8,7 +8,7 @@
 #
 # Format the output with JuliaFormatter afterwards, as every `.jl` file in the repository is.
 #
-# The output is `test/data/gml_reference.jl`. Each entry holds, for one model, one element type and
+# The output is `test/helpers/gml_reference.jl`. Each entry holds, for one model, one element type and
 # one method, the initial parameters, the gradients, the parameters after every step, and the
 # `completions`: the random orthonormal completion `λ` of each manifold leaf's `GlobalSection` in the
 # optimizer state, `nothing` for the other leaves.
@@ -112,4 +112,4 @@ function main(path)
     end
 end
 
-main(joinpath(@__DIR__, "..", "..", "test", "data", "gml_reference.jl"))
+main(joinpath(@__DIR__, "..", "..", "test", "helpers", "gml_reference.jl"))

@@ -315,7 +315,7 @@ end
 # `N × n` point allocates now comes from the `2n × 2n` `inv`, so the same lift shape at two very
 # different ambient dimensions has to cost the same. A reintroduced `N × N` or `N × 2n` temporary
 # makes the two diverge whatever its size, where a ceiling on either would have to be loose enough
-# to hide it. This is the argument `test/aqua_tests.jl` makes for piracy and `test/ambiguities.jl`
+# to hide it. This is the argument `test/quality/aqua.jl` makes for piracy and `test/ambiguities.jl`
 # for ambiguities, one file over.
 #
 # `Geodesic` is asserted the other way round, as an identity, because `𝔄` allocates a

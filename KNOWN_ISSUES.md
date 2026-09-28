@@ -534,7 +534,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
   points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
 
-### A32 · The decided resets of `initialize_state!` have no test
+### K5 · The decided resets of `initialize_state!` have no test
 
 - location: `src/optimizers/optimizer.jl`
 - kind: missing test
@@ -546,7 +546,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   reused state runs fewer iterations than a fresh one, and reused BFGS, DFP, GradientMethod and Adam
   states do not reproduce a fresh state's iterates (on `origin/main` too).
 
-### A34 · `Δf` on the first iteration is `NaN` for every method but `Newton`
+### K6 · `Δf` on the first iteration is `NaN` for every method but `Newton`
 
 - location: `src/optimizers/optimizer.jl`
 - kind: defect
@@ -557,7 +557,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `-88.5` for Newton: only `initialize_state!(::NewtonState, opt, x, f)` records `f(x₀)`, and the
   other methods drop the `f` that `solve!` passes.
 
-### A36 · The two `zero_tangent` bodies differ only in the lift type
+### K7 · The two `zero_tangent` bodies differ only in the lift type
 
 - location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`
 - kind: found late
@@ -566,7 +566,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
 
-### A37 · No test checks that a device vector gets a device `Q`
+### K8 · No test checks that a device vector gets a device `Q`
 
 - location: `src/optimizers/iterative_hessians/bfgs/bfgs_state.jl:64-66`
 - kind: missing test
@@ -578,7 +578,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `JLArray{T, 2}`. A test would be `@test OptimizerState(BFGS(), JLArray(rand(T, 5))).Q isa
   JLArray{T, 2}` for both precisions.
 
-### A38 · The default gradient gate `f_reltol = √eps` sits at the noise floor of `‖∇f‖`
+### K9 · The default gradient gate `f_reltol = √eps` sits at the noise floor of `‖∇f‖`
 
 - location: `src/optimizers/optimizer_status.jl:385`
 - kind: defect
@@ -689,12 +689,12 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C5 · `_DFP` + `Backtracking(expand = true)` is documented rather than run, on stale grounds
 
-- location: `test/optimizer_convergence/svd_optim.jl`
+- location: `test/verification/svd_optim.jl`
 - kind: missing test
 - found: 2026-08-14
 - evidence:
 
-  `test/optimizer_convergence/svd_optim.jl` excludes that pair because its iteration count ranged
+  `test/verification/svd_optim.jl` excludes that pair because its iteration count ranged
   `512..77_890` over eight starting points. The curvature condition in PR #35 brings that to
   `385..1_118` (`Geodesic`) and `466..1_177` (`Cayley`), comfortably inside the 5 000 cap the file
   already uses, so the stated reason no longer holds. Left out only because there is no CI measurement
@@ -905,16 +905,16 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C13 · `MANIFOLD_TOLERANCE` is defined three times
 
-- location: `test/optimizer_convergence/svd_optim.jl:19`
+- location: `test/verification/svd_optim.jl:20`
 - kind: defect
 - found: #44
 - evidence:
 
   **Severity: low**, and the one on this list with a way to go wrong quietly. From the review of [#44].
 
-  `const MANIFOLD_TOLERANCE = 1e-12` appears in `test/optimizer_convergence/svd_optim.jl:19`,
-  `test/manifold_linesearch_tests.jl:45` and — added with the step ceiling —
-  `scripts/retraction_accuracy.jl:184`. Three copies of one number with no import path between them: a
+  `const MANIFOLD_TOLERANCE = 1e-12` appears in `test/verification/svd_optim.jl:20`,
+  `test/manifold_linesearch_tests.jl:48` and — added with the step ceiling —
+  `scripts/retraction_accuracy.jl:270`. Three copies of one number with no import path between them: a
   script cannot `include` a test file that runs a suite as a side effect, and the constant is a property
   of the tests rather than of the package, so it does not belong in `src/`.
 
@@ -926,7 +926,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   **What to do**: one `test/manifold_tolerance.jl` holding the constant and a comment, `include`d by all
   three. That the script reaches into `test/` is already true — it takes its matrix from
-  `test/optimizer_convergence/svd_matrix.jl` — so this adds no new coupling, only removes two copies.
+  `test/helpers/svd_matrix.jl` — so this adds no new coupling, only removes two copies.
 
 ### C14 · `geodesic` and `𝔄exp` assemble the same product independently
 
@@ -1224,7 +1224,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   regardless: relying on a fetched inventory means a docs build that passes today can fail tomorrow with
   no commit here.
 
-### D9 · `SimpleSolvers.alloc_h(::NetworkParameters)` sizes a manifold leaf by its dense storage
+### K10 · `SimpleSolvers.alloc_h(::NetworkParameters)` sizes a manifold leaf by its dense storage
 
 - location: SimpleSolvers `ext/SimpleSolversNeuralNetworkParametersExt.jl`, `alloc_h(ps::NetworkParameters)`
 - kind: upstream

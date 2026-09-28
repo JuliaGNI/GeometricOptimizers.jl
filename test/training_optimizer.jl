@@ -14,7 +14,7 @@ const PRECISIONS = (Float32, Float64)
 
 # The iterates of GeometricMachineLearning 0.8's `optimization_step!`; see
 # `scripts/gml_reference/generate.jl`.
-include(joinpath(@__DIR__, "data", "gml_reference.jl"))
+include(joinpath(@__DIR__, "helpers", "gml_reference.jl"))
 
 _flat(x::NetworkParameters) = flatten(x)[1]
 _flat(x::AbstractArray) = vec(Matrix(x))

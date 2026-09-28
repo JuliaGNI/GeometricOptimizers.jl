@@ -6,7 +6,7 @@ import Random
 
 Random.seed!(123)
 
-include("../grassmann_test_help.jl")
+include("../helpers/grassmann_test_help.jl")
 
 # Every one of these takes a step of `Δ / 1000`, so they say nothing about a retraction's behaviour
 # at a step of any size — which is how bugs.md A1 survived. The `check` assertion is the one that
