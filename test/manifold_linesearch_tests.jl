@@ -271,12 +271,14 @@ const NT_LINESEARCHES = (
         ps = ps₀()
         state = OptimizerState(method, ps)
         opt = Optimizer(ps, two_spheres; algorithm = method, linesearch = linesearch,
-            retraction = retraction, max_iterations = 1000)
+            retraction = retraction, max_iterations = 1000, f_reltol = 1e-7)
 
         solve!(ps, state, opt)
 
-        # 64 is the worst of the 28, and it is a `Static` one: every searching line search here is
-        # under 25
+        # 60 is the worst of the 28, and it is a `Static` one: every searching line search here
+        # takes at most 17. `f_reltol = 1e-7` because the default gradient gate `√eps` sits at the
+        # noise floor of `‖∇f‖` here, and a solve at the minimiser can run to `max_iterations`
+        # (KNOWN_ISSUES.md, A38)
         @test iteration_number(state) < 100                     # terminates on a criterion ...
         @test isapprox(ps.w₁, MINIMIZER; atol = 1e-6)             # ... at the minimiser ...
         @test isapprox(ps.w₂, MINIMIZER₂; atol = 1e-6)
@@ -290,7 +292,7 @@ end
     # `Adam` is in this file's coverage but not in the loop above, and the reason is the one the
     # `DecayingStatic` testset states: its direction has magnitude ≈1 per component whatever the
     # gradient is, so with a step that does not shrink it circles the minimiser at that distance. It
-    # needs 251-331 iterations here where the two methods above need 9-64, which is why
+    # needs 251-331 iterations here where the two methods above need 8-60, which is why
     # `default_linesearch` keeps `Static` for `AdamFamily` -- the searching alternatives cost an
     # order of magnitude and buy nothing.
     #

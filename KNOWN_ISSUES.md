@@ -578,6 +578,19 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `JLArray{T, 2}`. A test would be `@test OptimizerState(BFGS(), JLArray(rand(T, 5))).Q isa
   JLArray{T, 2}` for both precisions.
 
+### A38 · The default gradient gate `f_reltol = √eps` sits at the noise floor of `‖∇f‖`
+
+- location: `src/optimizers/optimizer_status.jl:385`
+- kind: defect
+- found: PR #133
+- evidence: `GradientMethod` + `BierlaireQuadratic(Float64)` + `Cayley()` on the two-sphere problem
+  of `test/manifold_linesearch_tests.jl`, default tolerances, Julia 1.11.9 aarch64, runs to
+  `max_iterations = 1000` at the minimiser. From iteration 20 the iterate is in a round-off 2-cycle:
+  `rg` (`‖∇f‖`) alternates between `2.62e-8` and `1.31e-7`, both above the gate `f_reltol =
+  1.49e-8`, and the one-step `rfr` is `2.06e-15`, above `f_suctol = 4.44e-16`. No criterion can
+  fire. On Julia 1.13.1 the same case stops at 36. With `f_reltol = 1e-7` all 28 cases of that
+  testset stop, at 8–60 iterations, on both versions.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
