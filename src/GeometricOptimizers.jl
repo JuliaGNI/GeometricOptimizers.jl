@@ -58,7 +58,7 @@ using KernelAbstractions: KernelAbstractions, @index, @kernel, CPU, GPU
 using Random: Random, AbstractRNG, rand!, randn!
 using LinearAlgebra: Adjoint, Transpose, qr, norm, I, mul!, rmul!, dot
 using LinearAlgebra: cholesky, issuccess, Symmetric
-using LinearAlgebra: Diagonal, Hermitian, eigen
+using LinearAlgebra: Hermitian, eigen
 import LinearAlgebra
 import ChainRulesCore
 using ChainRulesCore: ProjectTo

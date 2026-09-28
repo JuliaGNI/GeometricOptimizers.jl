@@ -93,7 +93,7 @@ end
         objective = x -> (objective_calls[] += 1; sum(abs2, x))
         x = [1.0, -2.0]
         method = GradientMethod()
-        optimizer = Optimizer(x, objective; (∇F!) = (g, x) -> (g .= 2 .* x),
+        optimizer = Optimizer(x, objective; ∇F! = (g, x) -> (g .= 2 .* x),
             algorithm = method, linesearch = Static(0.01), max_iterations = 1,
             store_trace = store_trace, observer = observer)
         objective_calls[] = 0

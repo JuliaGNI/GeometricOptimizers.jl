@@ -6,6 +6,7 @@ if "core" in GROUPS
     @safetestset "Exports                      " include("exports.jl")
     @safetestset "Public surface               " include("public_surface.jl")
     @safetestset "Aqua: piracy and compat      " include("quality/aqua.jl")
+    @safetestset "ExplicitImports" include("quality/explicit_imports.jl")
     @safetestset "Own-vs-own ambiguities       " include("ambiguities.jl")
     @safetestset "Container/section copies     " include("container_section_copy.jl")
     @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")

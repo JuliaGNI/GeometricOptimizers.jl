@@ -165,7 +165,7 @@ Fsmooth(x) = sum(sqrt.(1 .+ x .^ 2))
                 x = ones(T, 3)
                 state = OptimizerState(method, x)
                 opt = Optimizer(
-                    x, obj; (∇F!) = ∇obj!, algorithm = method, linesearch = _linesearch,
+                    x, obj; ∇F! = ∇obj!, algorithm = method, linesearch = _linesearch,
                     max_iterations = 1000)
 
                 solve!(x, state, opt)
@@ -197,7 +197,7 @@ end
         x = [1.5, -0.8, 0.4]
         method = MomentumMethod(; α)
         state = OptimizerState(method, x)
-        opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = method, linesearch = _linesearch)
+        opt = Optimizer(x, f; ∇F! = ∇f!, algorithm = method, linesearch = _linesearch)
         g = similar(x)
 
         for _ in 1:8
@@ -262,7 +262,7 @@ end
 
         x = [1.5, -0.8, 0.4]
         state = OptimizerState(method, x)
-        opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = method, linesearch = _linesearch)
+        opt = Optimizer(x, f; ∇F! = ∇f!, algorithm = method, linesearch = _linesearch)
         g = similar(x)
 
         for k in 1:8
@@ -292,7 +292,7 @@ end
     for _linesearch in (Static(0.1), Backtracking(; expand = true), Bisection())
         x = [1.5, -0.8, 0.4]
         state = OptimizerState(Newton(), x)
-        opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = Newton(), linesearch = _linesearch)
+        opt = Optimizer(x, f; ∇F! = ∇f!, algorithm = Newton(), linesearch = _linesearch)
         g = similar(x)
 
         # not current on the first iteration, where nothing has written the scratch array yet
@@ -360,7 +360,7 @@ end
 
         x = [1.5, -0.8, 0.4]
         state = OptimizerState(method, x)
-        opt = Optimizer(x, f; (∇F!) = ∇f!, algorithm = method, linesearch = _linesearch)
+        opt = Optimizer(x, f; ∇F! = ∇f!, algorithm = method, linesearch = _linesearch)
 
         for _ in 1:5
             increase_iteration_number!(state)
