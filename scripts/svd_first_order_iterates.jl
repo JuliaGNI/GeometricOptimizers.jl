@@ -1,5 +1,5 @@
 # The iterates `solve!` produces for the three first-order methods on the SVD problem of
-# `test/optimizer_convergence/svd_optim.jl`, as bit patterns.
+# `test/verification/svd_optim.jl`, as bit patterns.
 #
 # Run it on two trees and compare the output: equal lines mean `solve!` took the same steps to the
 # last bit. The training step (`optimization_step!`) shares its state updates with `solve!`, so this is
@@ -12,7 +12,7 @@ using LinearAlgebra: norm
 import Random
 
 const A = include(joinpath(
-    @__DIR__, "..", "test", "optimizer_convergence", "svd_matrix.jl"))
+    @__DIR__, "..", "test", "helpers", "svd_matrix.jl"))
 objective(ps::NetworkParameters) = norm(A - ps.w₁ * ps.w₂' * A)
 
 function starting_point(n)

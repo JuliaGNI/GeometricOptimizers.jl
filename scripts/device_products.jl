@@ -8,9 +8,9 @@
 # with `seed`, for the retraction rows; a caller that needs its own stream reseeds after it.
 #
 #     using JLArrays; device_products(JLArray)     # what `test/device_products.jl` asserts
-#     using Metal;    device_products(MtlArray)    # what `test/metal.jl` asserts
+#     using Metal;    device_products(MtlArray)    # what `test/devices/metal.jl` asserts
 #
-# `test/metal.jl` runs on every Apple-silicon Mac. Inside a sandbox it skips itself, because Metal
+# `test/devices/metal.jl` runs in the `metal` test group. Inside a sandbox it fails, because Metal
 # can see only a null device there; run it through a Kaimon session instead.
 #
 # `Float32` throughout, because Metal has no `Float64`. The symplectic SR factor `Sfac` is absent:

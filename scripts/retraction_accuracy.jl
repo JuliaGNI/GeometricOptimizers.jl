@@ -13,7 +13,7 @@
 #     tables when the documentation is built, from the same seed and the same `SCALES`, so this
 #     script and that page print the same rows.
 #   * `svd_tables()` — iterations, objective evaluations, `‖∇f‖` and `check` for every (method, line
-#     search, retraction) combination of `test/optimizer_convergence/svd_optim.jl`, on the seed that
+#     search, retraction) combination of `test/verification/svd_optim.jl`, on the seed that
 #     file uses and across eight starting points. Feeds the tables in that file and in
 #     `default_linesearch`'s docstring. Its `max_iterations` is the cap those tables report against,
 #     so it belongs here and not at a call site: `BFGS` with either polynomial search does not
@@ -204,11 +204,11 @@ function exponential_tables(; N::Integer = 20, n::Integer = 3)
 end
 
 # ---------------------------------------------------------------------------------------------
-# The SVD problem of `test/optimizer_convergence/svd_optim.jl`, which is where every iteration and
+# The SVD problem of `test/verification/svd_optim.jl`, which is where every iteration and
 # evaluation count this package quotes comes from.
 
 const A = include(joinpath(
-    @__DIR__, "..", "test", "optimizer_convergence", "svd_matrix.jl"))
+    @__DIR__, "..", "test", "helpers", "svd_matrix.jl"))
 
 const COMBINATIONS = (
     ("BFGS  Backtracking(expand)", BFGS(), () -> Backtracking(Float64; expand = true)),
@@ -264,7 +264,7 @@ function solve_once(algorithm, linesearch, retraction, seed::Integer;
         error = abs((objective(ps) - err_best) / err_best))
 end
 
-# The tolerance `test/optimizer_convergence/svd_optim.jl` and `test/manifold_linesearch_tests.jl` both
+# The tolerance `test/verification/svd_optim.jl` and `test/manifold_linesearch_tests.jl` both
 # use for "still on the manifold". Both iterates stay on `St(N, 3)` when a solve behaves, so this is a
 # round-off bound and nothing else; the values observed are of the order of `1e-14`.
 const MANIFOLD_TOLERANCE = 1e-12

@@ -44,7 +44,7 @@ end
 # `check` measures the deviation from `St(3, 1)`. A line search puts several retractions into every
 # iteration, so it accumulates more round-off than the one-retraction-per-step loop does, and a
 # quasi-Newton run of 17-27 iterations accumulates more again. This is the tolerance
-# `optimizer_convergence/svd_optim.jl` uses for the same reason.
+# `verification/svd_optim.jl` uses for the same reason.
 const MANIFOLD_TOLERANCE = 1e-12
 
 # `trial_slope` used to pair the gradient with the direction `B` itself. That is `φ'(α)` only where
@@ -207,7 +207,7 @@ end
 end
 
 @testset "the quasi-Newton methods converge on a manifold NamedTuple" begin
-    # This is the SVD problem of `optimizer_convergence/svd_optim.jl`, which no algorithm could
+    # This is the SVD problem of `verification/svd_optim.jl`, which no algorithm could
     # converge before: with `Static(0.01)` the three first-order methods exhaust 1000 iterations at
     # a relative error of 1e-2 and a gradient of 8e-2, seven orders of magnitude off the gate.
     # `BFGS` needs a searching line search, so it could not be used on a manifold at all.
