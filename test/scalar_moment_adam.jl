@@ -46,7 +46,7 @@ end
     @test_throws ArgumentError ScalarMomentAdam(; β₂ = -0.1)
     @test_throws ArgumentError ScalarMomentAdam(; δ = -1.0)
     @test_throws ArgumentError ScalarMomentAdam(; β₂ = 1.0)
-    @test method.ambient_norm == false
+    @test !method.ambient_norm
     @test ScalarMomentAdam(; ambient_norm = true).ambient_norm
 
     @test_throws ArgumentError OptimizerState(method, rand(3))
