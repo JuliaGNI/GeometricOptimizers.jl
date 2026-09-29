@@ -375,7 +375,7 @@ manifold_constructor(x::Manifold) = Base.typename(typeof(x)).wrapper
 # No `Manifold` defines `setindex!`, so the generic `AbstractArray` `copyto!` — which routes through
 # it — is not available to any of them. This method existed for `StiefelManifold` alone, which is why
 # a `NamedTuple` holding a `GrassmannManifold` died with a `CanonicalIndexError` in
-# `update!(::BFGSCache, …)`; see issue A11. It returns `A` and not `nothing`: that is the `copyto!`
+# `update!(::QuasiNewtonCache, …)`; see issue A11. It returns `A` and not `nothing`: that is the `copyto!`
 # contract, and it is what `copyto!(::GrassmannLieAlgHorMatrix, …)` and
 # `copyto!(::GlobalSection, …)` next to it already do.
 #

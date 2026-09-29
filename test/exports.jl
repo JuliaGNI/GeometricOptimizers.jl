@@ -27,7 +27,7 @@ end
     # scratch, and nothing outside a step should be reading one. `GeometricMachineLearning`
     # re-exported the three first-order ones until 0.5, which is the only reason exporting them was
     # ever considered; it reaches them qualified now.
-    for name in (:BFGSCache, :DFPCache, :NewtonOptimizerCache,
+    for name in (:QuasiNewtonCache, :NewtonOptimizerCache,
         :GradientCache, :MomentumCache, :AdamCache, :ScalarMomentAdamCache, :OptimizerCache)
         @test isdefined(GeometricOptimizers, name)
         @test !(name in names(GeometricOptimizers))

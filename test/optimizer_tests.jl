@@ -282,13 +282,8 @@ end
         end
     end
 
-    # `Newton` is the one method that does not reliably get the reuse, and it is the state's section
-    # that denies it: `update!(::NewtonState, opt, x)` advances `state.section` by the
-    # *gradient* rather than by the direction, so the two frames differ by `∇f - δ` and the guard
-    # falls back to a fresh evaluation. That is the gradient evaluation per iteration the refresh
-    # costs for `Newton` and for nothing else. It comes back once the solve has converged, where both
-    # the gradient and the step have gone to zero and the frames agree again -- which is why what is
-    # asserted here is the gradient the direction is built from and not the branch taken to get it.
+    # `Newton`, on its own loop because it needs the exact Hessian: what is asserted is the gradient
+    # the direction is built from, whichever branch `store_gradient!` took to get it.
     for _linesearch in (Static(0.1), Backtracking(; expand = true), Bisection())
         x = [1.5, -0.8, 0.4]
         state = OptimizerState(Newton(), x)
@@ -341,16 +336,13 @@ end
 end
 
 @testset "the gradient difference is the one the status prints" begin
-    # `rgₐ` is `|g(x) - g(x')|`, i.e. the change over the step just taken. For the first-order caches
-    # the generic `gradient_difference!` did not produce that: `state.ḡ` is two iterates behind
-    # `cache.g` for them, so `rgₐ` was `‖∇f(xₖ) - ∇f(xₖ₋₂)‖` -- on the objective below, `4.976` where
-    # the successive difference is `0.295` -- and on the first iteration it differenced against
-    # `_similar` memory that `MomentumState` never writes. See `gradient_difference!`.
+    # `rgₐ` is `|g(x) - g(x')|`, i.e. the change over the step just taken. `gradient_difference!`
+    # takes it from the two gradients the cache holds, `latest_gradient` and `gradient`, and needs no
+    # `state.ḡ`. On the objective below the two-step difference `‖∇f(xₖ) - ∇f(xₖ₋₂)‖` is `4.976`
+    # where the successive difference is `0.295`. See `gradient_difference!`.
     #
-    # The (quasi-)Newton caches had the same row wrong in their own way and are covered here now:
-    # `BFGSCache` and `DFPCache` reported the `γ` of their secant pair, which is one step behind the
-    # `rg` next to it, and for `NewtonOptimizerCache` the difference was *structurally zero* --
-    # `solver_step!` advances `state.ḡ` at the very iterate the cache takes its gradient at.
+    # The (quasi-)Newton caches are covered too: the `γ` of the quasi-Newton secant pair is one step
+    # behind the `rg` next to it, so it is not the difference the status prints.
     f(x) = sum(x .^ 2 .+ 0.1 .* x .^ 4)
     ∇f(x) = 2 .* x .+ 0.4 .* x .^ 3
     ∇f!(g, x) = (g .= ∇f(x))

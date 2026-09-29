@@ -41,6 +41,7 @@ if "core" in GROUPS
     @safetestset "Grassmann Optimizers         " include("grassmann_optimizer_tests.jl")
     @safetestset "Optimizer State Init         " include("optimizer_state_initialization.jl")
     @safetestset "Optimizer State Accessors    " include("optimizer_state_accessors.jl")
+    @safetestset "Optimizer State Semantics    " include("optimizer_state_semantics.jl")
     @safetestset "Optimizer Step Formulas      " include("optimizer_step_formulas.jl")
     @safetestset "Adam + Euclidean decay       " include("adam_with_euclidean_decay.jl")
     @safetestset "Adam + decaying step         " include("adam_optimizer_with_decay.jl")

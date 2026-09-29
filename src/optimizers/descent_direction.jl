@@ -159,6 +159,12 @@ function linesearch_rejected(status::LinesearchStatus, αmax)
         !(outcome(status) == LINESEARCH_FLOOR && steplength(status) ≥ αmax)
 end
 
+# Whether a search rejected its direction because the merit resolves no decrease along it, and not
+# because of the ceiling `αmax`; see `solver_step!`.
+function at_round_off_floor(status::LinesearchStatus, αmax)
+    outcome(status) == LINESEARCH_FLOOR && linesearch_rejected(status, αmax)
+end
+
 @doc raw"""
     steepest_descent!(cache)
 

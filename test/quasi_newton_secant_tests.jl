@@ -112,7 +112,7 @@ end
     γ = [2.0, 1.0, 1.0]           # δᵀγ = 3 > 0, so the update is well defined
     x = [0.1, 0.2, 0.3]
 
-    cache = GeometricOptimizers.DFPCache(x)
+    cache = GeometricOptimizers.QuasiNewtonCache(DFP(), x)
     state = OptimizerState(DFP(), x)
     inverse_hessian(state) .= one(inverse_hessian(state))
     state.s .= δ
@@ -139,7 +139,7 @@ end
     γ = [2.0, 1.0, 1.0]
     x = [0.1, 0.2, 0.3]
 
-    cache = GeometricOptimizers.BFGSCache(x)
+    cache = GeometricOptimizers.QuasiNewtonCache(BFGS(), x)
     state = OptimizerState(BFGS(), x)
     inverse_hessian(state) .= one(inverse_hessian(state))
     state.s .= δ

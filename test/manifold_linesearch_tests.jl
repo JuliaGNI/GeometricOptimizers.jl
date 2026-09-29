@@ -5,7 +5,7 @@ using GeometricOptimizers: Cayley, Geodesic, StiefelManifold, check, iteration_n
 using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew
 using GeometricOptimizers: linesearch_problem, retraction_differential, retraction,
                            initialize!,
-                           cache, gradient, hessian, problem, StiefelProjection
+                           cache, gradient, problem, StiefelProjection
 using GeometricOptimizers: step_αmax, _manifold_αmax, linesearch_parameters, _caller_αmax,
                            step_ceiling, DEFAULT_STEP_CEILING, linesearch_rejected,
                            OptimizerCache, GradientMethod, direction, StiefelLieAlgHorMatrix
@@ -79,7 +79,7 @@ function slope_errors(ps, F, retraction, αs; h = 1e-6)
     state = OptimizerState(BFGS(), ps)
     c = cache(opt)
     initialize!(c, ps)
-    update!(c, state, gradient(opt), hessian(opt), ps)
+    update!(c, state, gradient(opt), GeometricOptimizers._direction_rule(opt), ps)
 
     ls = linesearch_problem(problem(opt), gradient(opt), c, retraction)
     params = (x = ps, state = state)
@@ -275,8 +275,8 @@ const NT_LINESEARCHES = (
 
         solve!(ps, state, opt)
 
-        # 64 is the worst of the 28, and it is a `Static` one: every searching line search here is
-        # under 25
+        # 63 is the worst of the 28, and it is a `Static` one: every searching line search here
+        # takes at most 19
         @test iteration_number(state) < 100                     # terminates on a criterion ...
         @test isapprox(ps.w₁, MINIMIZER; atol = 1e-6)             # ... at the minimiser ...
         @test isapprox(ps.w₂, MINIMIZER₂; atol = 1e-6)
@@ -290,7 +290,7 @@ end
     # `Adam` is in this file's coverage but not in the loop above, and the reason is the one the
     # `DecayingStatic` testset states: its direction has magnitude ≈1 per component whatever the
     # gradient is, so with a step that does not shrink it circles the minimiser at that distance. It
-    # needs 251-331 iterations here where the two methods above need 9-64, which is why
+    # needs 251-331 iterations here where the two methods above need 8-60, which is why
     # `default_linesearch` keeps `Static` for `AdamFamily` -- the searching alternatives cost an
     # order of magnitude and buy nothing.
     #
@@ -503,7 +503,8 @@ end
         opt = Optimizer(x, f; algorithm = algorithm)
         # the same two calls `slope_errors` above makes to get a cache holding a real direction
         initialize!(cache(opt), x)
-        update!(cache(opt), state, gradient(opt), hessian(opt), x)
+        update!(
+            cache(opt), state, gradient(opt), GeometricOptimizers._direction_rule(opt), x)
 
         params = linesearch_parameters(cache(opt), x, state, DEFAULT_STEP_CEILING)
         @test hasproperty(params, :αmax)
@@ -517,7 +518,8 @@ end
         state = OptimizerState(algorithm, ps)
         opt = Optimizer(ps, two_spheres; algorithm = algorithm)
         initialize!(cache(opt), ps)
-        update!(cache(opt), state, gradient(opt), hessian(opt), ps)
+        update!(
+            cache(opt), state, gradient(opt), GeometricOptimizers._direction_rule(opt), ps)
 
         params = linesearch_parameters(cache(opt), ps, state, DEFAULT_STEP_CEILING)
         @test params.αmax ==

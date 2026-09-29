@@ -65,31 +65,14 @@ Write the gradient difference `∇f(xᵏ) - ∇f(xᵏ⁻¹)` into `cache.Δg`, f
 
 # Implementation
 
-Every cache in this package overrides this with the difference of the two gradients it holds itself,
-`latest_gradient` at ``x_{k+1}`` and `gradient` at ``x_k``, which is the successive difference the
-status prints and needs no `state.ḡ`. The default -- `cache.g` against `state.ḡ` -- was wrong for
-each of them in a different way:
-
-- for the three first-order caches, `update!(::MomentumState, ...)` runs *after* the step and copies
-  the cache's *pre-step* gradient into `state.g`, shifting the one before it into `state.ḡ`, so
-  `state.ḡ` ends up two iterates behind `cache.g` rather than one: on
-  ``f(x) = \\sum(x^2 + 0.1x^4)`` from `[1.5, -0.8, 0.4]` with `MomentumMethod` + `Bisection`,
-  iteration three reported `rgₐ = 4.976` where ``\\|\\nabla{}f(x_k) - \\nabla{}f(x_{k-1})\\| = 0.295``.
-  On the first iteration it differenced against the `_similar` memory `MomentumState` never writes.
-- for `BFGSCache` and `DFPCache` it was the `γ` of the secant pair, ``\\nabla{}f(x_k) -
-  \\nabla{}f(x_{k-1})``, which those form inside `update!(cache, ...)` and which is one step behind
-  the `rg` reported next to it.
-- for `NewtonOptimizerCache` it was *structurally zero*: [`solver_step!`](@ref) advances `state.ḡ` at
-  the same iterate the cache takes its gradient at, so the difference could only ever be `0`.
-
-In all three cases the two `g` rows of a status are now about one step rather than about two
-different ones; see [`convergence_measures`](@ref) for which iterate `rg` belongs to.
-
-`state.ḡ` is still two iterates behind for the first-order methods, and `Δf̃` above still reads it.
-That is recorded as open issue A10 in `CHANGELOG.md`.
+This is the difference of the two gradients the cache holds itself, `latest_gradient` at
+``x_{k+1}`` and `gradient` at ``x_k``, which is the successive difference the status prints and
+needs no `state.ḡ`. It is not the `γ` of the quasi-Newton secant pair, which is one step behind the
+`rg` reported next to it. So the two `g` rows of a status are about one step; see
+[`convergence_measures`](@ref) for which iterate `rg` belongs to.
 """
-function gradient_difference!(cache::OptimizerCache, state::OptimizerState)
-    _difference!(cache.Δg, cache.g, state.ḡ)
+function gradient_difference!(cache::OptimizerCache, ::OptimizerState)
+    _difference!(cache.Δg, latest_gradient(cache), gradient(cache))
 end
 
 function OptimizerStatus(state::OST, cache::OCT, f::T;
@@ -100,11 +83,13 @@ function OptimizerStatus(state::OST, cache::OCT, f::T;
     # rather than that the problem has a large scale. See `solution_scale` and `convergence_measures`.
     rxᵣ = rxₐ / solution_scale(cache.x)
 
-    Δf = f - state.f̄
+    # `solve!` has advanced `state` to `x` before it builds this, so `previous_value(state)` is the
+    # objective one step back and `previous_gradient(state)` the gradient the step was built from.
+    Δf = f - previous_value(state)
     # `_dot`, not `⋅`: this is the decrease in `f` the step predicts to first order, so it has to be
     # comparable with `Δf` above. On a manifold both operands are horizontal lifts, and `⋅` on those is
     # the ambient product, which is twice the intrinsic one. See `_dot`.
-    Δf̃ = _dot(state.ḡ, direction(cache))
+    Δf̃ = _dot(previous_gradient(state), direction(cache))
 
     rfₐ = norm(Δf)
     rfᵣ = rfₐ / norm(f)
@@ -112,22 +97,16 @@ function OptimizerStatus(state::OST, cache::OCT, f::T;
     gradient_difference!(cache, state)
 
     rgₐ = l2norm(cache.Δg)
-    # `latest_gradient` and not `cache.g`: for the caches that refresh it, this is `∇f` at the iterate
-    # the step ended at rather than at the one it started from. See `convergence_measures`.
+    # `latest_gradient` and not `cache.g`: this is `∇f` at the iterate the step ended at rather than
+    # at the one it started from. See `convergence_measures`.
     rg = l2norm(latest_gradient(cache))
 
     # `f > f̄` and not `abs(f) > abs(f̄)`: the question is whether the objective went up, and for an
     # objective that takes negative values the two are different questions -- `-5 → -6` is a decrease
-    # and reads as an increase through `abs`. That was tolerable while nothing acted on the flag;
-    # `convergence_measures` now does.
+    # and reads as an increase through `abs`.
     #
-    # On the *first* iteration of `BFGS` and `DFP` this compares against `INITIAL_BFGS_F`, the
-    # sentinel `initialize_state!` seeds `f̄` with, so it is not a statement about the objective at
-    # all: minimising `f(x) = 1 + ‖x‖²` from `x = 0` -- already the minimiser -- reports
-    # `f_increased = true`, and `x_converged` is suppressed with it. `g_converged` still fires there,
-    # and every other state starts `f̄` at `NaN`, where `f > NaN` is `false`. Changing the sentinel
-    # would move `rfₐ` and `rfᵣ` on the first iteration of every quasi-Newton solve, so it stands.
-    f_increased = f > state.f̄
+    # On the first iteration the previous objective is `f(x₀)`, which `initialize_state!` records.
+    f_increased = f > previous_value(state)
 
     x_nonfinite = contains_nonfinite(cache.x)
     f_nonfinite = contains_nonfinite(f)

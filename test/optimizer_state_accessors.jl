@@ -58,21 +58,22 @@ end
     @test previous_gradient(state) == [7.0, 8.0]
 end
 
-# `BFGSState` holds one iterate and one objective, not a pair: `update!` writes `x̄` and `f̄` at the
-# end of the iteration, and the next iteration reads them as the previous ones. `DFPState` is an
-# alias for it, so both methods are the same method.
-@testset "`BFGSState` reports the one objective it holds" begin
-    state = BFGSState([1.0, 2.0])
-    state.f̄ = 7.25
+# `BFGSState` holds a pair, as every other state does. `DFPState` is an alias for it, so both
+# methods are the same method.
+@testset "`BFGSState` reports both objective values and both iterates" begin
+    for T in (Float32, Float64), state in (BFGSState(zeros(T, 2)), DFPState(zeros(T, 2)))
 
-    @test previous_value(state) === 7.25
+        state.x .= T[1, 2]
+        state.x̄ .= T[3, 4]
+        state.f = T(3.5)
+        state.f̄ = T(7.25)
 
-    dfp = DFPState([1.0, 2.0])
-    dfp.f̄ = 1.5
-    @test previous_value(dfp) === 1.5
-
-    # And there is no current objective to report, because the solve loop owns it. The method table
-    # and not `applicable`: a narrower `value(::BFGSState{Float32})` leaves `!applicable` passing on
-    # this `Float64` state, so it would not catch the method coming back.
-    @test isempty(methods(value, Tuple{BFGSState}))
+        @test value(state) === T(3.5)
+        @test previous_value(state) === T(7.25)
+        @test solution(state) == T[1, 2]
+        @test previous_solution(state) == T[3, 4]
+        @test eltype(solution(state)) == T
+        # no current gradient to report: the quasi-Newton cache holds it
+        @test_throws MethodError gradient(state)
+    end
 end

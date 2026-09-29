@@ -1,11 +1,3 @@
-"""
-    IterativeHessian <: Hessian
-
-An abstract type derived from [`SimpleSolvers.Hessian`](@extref).
-Its main purpose is defining a supertype that encompasses [`HessianBFGS`](@ref) and [`HessianDFP`](@ref) for dispatch.
-"""
-abstract type IterativeHessian{T} <: Hessian{T} end
-
 @doc raw"""
     _flat_scratch(T, g)
 
@@ -25,7 +17,7 @@ one `similar` each, with no `parameterlayout` call written anywhere below this l
 `similar`s buy is that it happens once per cache rather than once per `_mul!`.
 
 That layout then goes into the cache's own type, as `FlatParameters`' third type parameter and so as
-`BFGSCache`/`DFPCache`'s `FT`. Until `NeuralNetworkParameters` 0.2.3 that meant every leaf's *concrete
+`QuasiNewtonCache`'s `FT`. Until `NeuralNetworkParameters` 0.2.3 that meant every leaf's *concrete
 array type* came with it, `LeafLayout` having carried a `prototype` field nothing read — and a live
 reference to every leaf array besides, so a cache retained the set its buffers were sized from.
 `LeafLayout{N}` is the shape alone now, and neither is true. See the 0.6.0 changelog.

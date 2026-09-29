@@ -157,8 +157,14 @@ function _complement_columns(Y::AbstractMatrix{T}) where {T}
     something(_cholesky_qr2(λ - Y * (Y' * λ)))
 end
 
-function Base.zero(Y::StiefelManifold{T}) where {T}
+# The zero horizontal lift at `Y`, on the backend of `Y`: the zero tangent vector the optimizer
+# caches are sized by. Not `Base.zero`, which is a point's own shape and not a tangent (issue #21).
+function zero_tangent(Y::StiefelManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y.A)
     zeros(backend, StiefelLieAlgHorMatrix{T}, N, n)
 end
+
+# The zero matrix of the point's own shape, on the point's backend: `Base`'s fallback would allocate
+# it on the host.
+Base.zero(Y::StiefelManifold) = zero(Y.A)

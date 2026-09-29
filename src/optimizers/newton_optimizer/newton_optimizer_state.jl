@@ -44,14 +44,14 @@ mutable struct NewtonState{T, AT, GT, GS} <: OptimizerState{T}
         x̄ .= T(NaN)
         g .= T(NaN)
         ḡ .= T(NaN)
-        section = GlobalSection(x)
+        # from `X` and not from the `NaN`-filled `x`: the section is the base the first step retracts
+        # from, as it is for every other state
+        section = GlobalSection(X)
         new{T, AT, GT, typeof(section)}(0, x, x̄, g, ḡ, T(NaN), T(NaN), section)
     end
 
     NewtonState(x) = NewtonState(x, x)
 end
-
-section(state::NewtonState) = state.section
 
 OptimizerState(::Newton, x_args...) = NewtonState(x_args...)
 
@@ -64,17 +64,6 @@ OptimizerState(::Newton, x_args...) = NewtonState(x_args...)
 OptimizerState(::Newton, ::Manifold, args...) = throw(ArgumentError(_NEWTON_SCOPE))
 OptimizerState(::Newton, ::NetworkParameters, args...) = throw(ArgumentError(_NEWTON_SCOPE))
 
-function initialize!(state::NewtonState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
-    state.iterations = 0
-    state.x .= x
-    state.g .= g
-    state.f = f
-    state.x̄ .= T(NaN)
-    state.ḡ .= T(NaN)
-    state.f̄ = T(NaN)
-    section(state).Y .= x
-end
-
 function update!(state::NewtonState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
     state.x̄ .= state.x
     state.ḡ .= state.g
@@ -84,16 +73,6 @@ function update!(state::NewtonState{T}, x::AbstractVector{T}, g::AbstractVector{
     state.f = f
     section(state).Y .= x
 end
-
-# The unbarred field is the current iterate's, which is what the unbarred accessor name means on
-# every other `OptimizerState`. `NewtonOptimizerCache` is a separate type whose `x` means something
-# else, so `solution(::NewtonOptimizerCache)` is `cache.x` and does not carry over to the state.
-solution(state::NewtonState) = state.x
-previous_solution(state::NewtonState) = state.x̄
-gradient(state::NewtonState) = state.g
-previous_gradient(state::NewtonState) = state.ḡ
-value(state::NewtonState) = state.f
-previous_value(state::NewtonState) = state.f̄
 
 """
     update!(state::NewtonState, gradient, x)

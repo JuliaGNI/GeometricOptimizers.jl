@@ -15,7 +15,7 @@
 #   * `_dot` needs no buffer at all. `dot` of two flattenings is the sum of the per-leaf `dot`s, so
 #     the sum can be taken without the vectors -- which is what matters most, `_dot` being the hottest
 #     of the sites (once per line-search trial slope, once per `OptimizerStatus`).
-#   * `outer!` and `_mul!` genuinely need the flat form, so `BFGSCache` and `DFPCache` carry buffers
+#   * `outer!` and `_mul!` genuinely need the flat form, so `QuasiNewtonCache` carries buffers
 #     to write into. See `_flat_scratch`.
 #
 # `@allocated` is **inside** each `_measured_*` function throughout, never in the `@testset` body, and

@@ -5,11 +5,12 @@ function Hessian(::GradientMethod, ::OptimizerProblem, ::OptimizerSolution{T}) w
     NoHessian{T}()
 end
 
+# The placeholder of every method that builds no Hessian: the first-order methods, `BFGS` and `DFP`.
 struct NoHessian{T} <: Hessian{T} end
 
-# The other half of the owned `Hessian` functor error; see the note on
-# `(::IterativeHessian)(::AbstractMatrix, ::OptimizerSolution)` in
-# `optimizers/iterative_hessians/bfgs/hessian_bfgs.jl` for why the two are split.
+# On this package's own `NoHessian` and not on `SimpleSolvers.Hessian`: `OptimizerSolution` is an
+# alias for a union of types this package does not own, so a method on `Hessian` would own neither
+# side of its signature. See issue #16.
 function (hes::NoHessian)(::AbstractMatrix, ::OptimizerSolution)
     error("This has to be called together with a cache.")
 end
@@ -78,29 +79,8 @@ function GradientCache(x::OptimizerSolution{T}) where {T}
     GradientCache(x, g)
 end
 
-solution(cache::GradientCache) = cache.x
-# `gradient` and `gradient_array` are the same array here, as they are on `NewtonOptimizerCache`.
-# Only `gradient` was missing, and `trial_slope`'s `AbstractVector` branch calls it, so the three
-# first-order methods used to throw a `MethodError` on any line search that evaluates `φ'`.
-gradient(cache::GradientCache) = cache.g
-gradient_array(cache::GradientCache) = gradient(cache)
-latest_gradient(cache::GradientCache) = cache.g̃
-function refresh_latest_gradient!(cache::GradientCache, g::Gradient)
-    _refresh_latest_gradient!(cache, g)
-end
-function latest_gradient_is_current(cache::GradientCache, state::OptimizerState, x::OptimizerSolution)
-    _latest_gradient_is_current(cache, state, x)
-end
-invalidate_latest_gradient!(cache::GradientCache) = _invalidate_latest_gradient!(cache)
-# `∇f(x_{k+1}) - ∇f(x_k)`, the successive difference `OptimizerStatus` prints as `|g(x) - g(x')|`,
-# from the two gradients the cache holds rather than from a `state.ḡ` that is two iterates behind
-# here. See `gradient_difference!`.
-function gradient_difference!(cache::GradientCache, ::OptimizerState)
-    _latest_gradient_difference!(cache)
-end
 direction(cache::GradientCache) = cache.δ
 rhs(cache::GradientCache) = direction(cache)
-section(cache::GradientCache) = cache.section
 
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
 # The invariant is enforced by the outer constructors below.
@@ -120,15 +100,6 @@ mutable struct GradientState{T, OT, GS, VT} <: OptimizerState{T}
     f::T
     f̄::T
 end
-
-solution(state::GradientState) = state.x
-previous_solution(state::GradientState) = state.x̄
-gradient(state::GradientState) = state.g
-previous_gradient(state::GradientState) = state.ḡ
-value(state::GradientState) = state.f
-previous_value(state::GradientState) = state.f̄
-
-section(state::GradientState) = state.section
 
 function GradientState(x::OST, g::GradientStorage{T}) where {T, OST <: OptimizerSolution{T}}
     _x = _copy(x)

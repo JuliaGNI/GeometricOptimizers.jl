@@ -74,100 +74,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `NativePade`, added in [#54], takes `s` from ``\|X\|_1`` in exactly the same way and inherits the
   whole of this, so the entry now covers two algorithms and a fix would apply to both at once.
 
-### A10 · `state.ḡ` is two iterates behind for the three first-order states
-
-- location: `test/optimizer_state_initialization.jl`
-- kind: defect
-- found: #38
-- evidence:
-
-  **Severity: low** — everything it still reaches is reported and not acted on. Found in the review of
-  [#38], which fixes the half of it that had become visible and leaves the rest. **Pre-existing on
-  `main`.**
-
-  `GradientState`, `MomentumState` and `AdamState` are advanced by `update!(state, opt, x)`, which runs
-  *after* the step. It writes the *post*-step iterate into `state.x` and the cache's *pre*-step gradient
-  into `state.g`, shifting the one before that into `state.ḡ`:
-
-  ```
-  after update! at the end of step k:   state.x = xₖ   state.g = ∇f(xₖ₋₁)   state.ḡ = ∇f(xₖ₋₂)
-  ```
-
-  So `state.g` does not belong to `state.x`, and `state.ḡ` is two iterates behind `cache.g` rather than
-  one. The quasi-Newton states do not have this: `update!(::BFGSCache, …)` advances `state.ḡ` itself,
-  inside the step, right after forming `γ` from it.
-
-  Two consumers, both in `OptimizerStatus`:
-
-  - `rgₐ = ‖cache.Δg‖`. **Fixed in [#38]**: the first-order caches now override `gradient_difference!`
-    and take `latest_gradient - gradient`, which is the successive difference the status prints and
-    needs no `state.ḡ`. On `f(x) = Σ(x² + 0.1x⁴)` from `[1.5, -0.8, 0.4]` with `MomentumMethod` +
-    `Bisection` the old value was `4.976` at iteration three where the successive difference is
-    `0.295`; on iteration one it differenced against the `_similar` memory these states never write,
-    which is the same defect `test/optimizer_state_initialization.jl` exists to catch for the `Adam`
-    moments.
-  - `Δf̃ = ⟨state.ḡ, δ⟩` (`optimizer_status.jl:82`), the first-order predicted decrease. **Not fixed.**
-    It is a two-step-stale gradient paired with the current direction, so the prediction it makes is
-    not one. Its only reader is `f_converged_strong`, which C1 records as computed and discarded — so
-    whichever way C1 goes, this has to be settled with it, and settling it separately would be
-    measuring a number nothing looks at.
-
-  The honest fix is upstream of both: `update!(state, opt, x)` should store the gradient that belongs
-  to the `x` it is storing. `latest_gradient` is exactly that gradient and is already in the cache. The
-  obstacle is that the same call site feeds the momentum recursion `p ← αp + ∇f(xₖ)`, which needs the
-  *pre*-step gradient and must keep getting `gradient_array(cache)` — so the two uses have to be
-  separated first, and `update!(::MomentumState, …)`'s argument list says they currently are not.
-
-### A24 · `Δf` spans two iterations for the three first-order states
-
-- location: `optimizer_status.jl:103`
-- kind: defect
-- found: 2026-09-21
-- evidence:
-
-  **Severity: low** — it moves when convergence fires, not whether a solve is correct. Found in the
-  review of the `value`/`previous_value` work in 0.6.0, and it is the `f̄` half of A10: same states,
-  same root cause, `update!(state, opt, x)` running after the step. **Pre-existing on `main`.**
-
-  `OptimizerStatus` computes `Δf = f - state.f̄` (`optimizer_status.jl:103`), reading the field and not
-  the accessor. `scripts/optimizer_status_delta_f.jl` asks, per optimizer method, whether that `Δf`
-  equals the one-step difference `f[end] - f[end-1]` or the two-step difference `f[end] - f[end-2]`,
-  taking the objective values from a stored trace. Exact equality, so there is no tolerance to tune.
-  On `f(x) = Σ(x⁴ + x²)` from `[1.0, 2.0, 3.0]`, six iterations:
-
-  | method | `Δf` spans |
-  |:--|:--|
-  | `GradientMethod` | **two steps** |
-  | `MomentumMethod` | **two steps** |
-  | `Adam` | **two steps** |
-  | `BFGS` | one step |
-  | `DFP` | one step |
-  | `Newton` | one step |
-
-  Two consumers, both stale for the first three:
-
-  - `rfₐ = norm(Δf)` and `rfᵣ = rfₐ / norm(f)` (`optimizer_status.jl:109-110`), which are what
-    `f_converged` tests (`:397`). During monotone descent a two-step `Δf` overstates the decrease, so
-    `f_converged` fires late rather than early — the safe direction, which is why this is low and not
-    medium.
-  - `f_increased = f > state.f̄` (`:130`), which reads the same stale field and is one of the two
-    guards on `x_converged` (`:391`). Here the comparison is against an objective two iterations old,
-    so an iterate that rose against its immediate predecessor can still read as a decrease.
-
-  `BFGSState` holds one iterate and one objective rather than a pair, which is why it spans one step
-  and why it gains `previous_value` and no `value` in 0.6.0. `NewtonOptimizerState` holds a pair and
-  shifts like the first-order states, and still spans one step only because `optimizer.jl:431` calls
-  `update!` a second time inside `solver_step!` and re-synchronises `f̄` before the status reads it.
-  That line carries the comment `# this will have to be removed later`; removing it moves `Newton`
-  into the two-step column, and the script is what would catch that.
-
-  **What to do.** The fix is the one A10 names, one level up: `update!(state, opt, x)` should store the
-  objective and the gradient that belong to the `x` it is storing. It cannot be taken for `f̄` alone,
-  because `f_increased` and `Δf` read the same field and would move together, and because
-  `INITIAL_BFGS_F` — the first-iteration sentinel `optimizer_status.jl:124-129` describes — is
-  calibrated against the present ordering. Settle it with A10 and with issue #108, which is the third
-  face of the same ordering: a state read after `solve!` returns lags the returned iterate by one.
-
 ### A12 · The `Cayley` differential is recomputed per `φ'`, and its cost is unmeasured
 
 - location: `svd_optim.jl`
@@ -197,53 +103,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   ``\bar{B}`` — so one line search evaluation factors the same lift twice. Fusing them would need
   `trial_iterate!` to hand its factors on, which is a wider change to that interface than a cost
   nobody has measured justifies.
-
-### A13 · `Newton`'s state advances its frame by the gradient, not by the step
-
-- location: `src/optimizers/optimizer.jl`
-- kind: defect
-- found: 2026-08-14
-- evidence:
-
-  **Severity: low** — it costs an evaluation and not an answer. Found while fixing A8, which is what
-  made the difference visible: with the gradient reuse in place, `Newton` is the one method that cannot
-  have it.
-
-  `update!(state::NewtonOptimizerState, opt, x)` (`src/optimizers/optimizer.jl`, the line already
-  marked "this will have to be removed later") ends with
-
-  ```julia
-  update_section!(state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
-  ```
-
-  i.e. it advances the state's `GlobalSection` by ``\nabla{}f`` where every other state
-  advances it by the direction the step was taken along. For Euclidean parameters `update_section!` is
-  ``\Lambda^t.Y \gets \Lambda^{t-1}.Y + B``, so this is not a formality: after a step the cache's frame
-  holds ``Y + \delta`` and the state's holds ``Y + \nabla{}f``.
-
-  Two consequences, both of them about `store_gradient!`'s reuse guard, which requires
-  `section(cache) == section(state)`:
-
-  - **`Newton` pays one gradient evaluation per iteration that `_BFGS` and `_DFP` do not.** The frames
-    do not match, so the guard declines the reuse and the cache evaluates ``\nabla{}f`` afresh at the
-    point `refresh_latest_gradient!` has just evaluated it at. Measured on Rosenbrock from
-    ``(-1.2, 1)`` with `Backtracking(expand)`: 103 gradient evaluations over 26 iterations before A8,
-    124 over 25 after.
-  - **The reuse comes back by accident once the iteration has nowhere left to go.** Once ``\nabla{}f``
-    and ``\delta`` have both gone to zero the two frames agree again and the guard fires. That is
-    *correct* — on Euclidean parameters `global_rep` is the identity, so the value depends only on
-    `solution(cache) == x`, which the guard also checks — but it means the branch taken is not a
-    property anything should assert on. `test/optimizer_tests.jl` asserts on the gradient the direction
-    is built from instead, and says so. Measured by calling `latest_gradient_is_current` at the top of
-    each of 30 forced `solver_step!`s: the guard fires on 3 of the 30 on Rosenbrock — all of them past
-    the iteration the solve stops at, which is why the evaluation count above does not move — and on 28
-    of the 30 on ``\sum{}x^2``, where `Newton` reaches the minimiser in one step and both quantities are
-    zero from then on.
-
-  The fix is to advance the state's section by `direction(cache(opt))` like every other state, after
-  which the reuse is available to `Newton` too and the extra evaluation goes away. It needs a
-  re-measurement of the `Newton` rows and nothing else — `NewtonOptimizerCache` is `AbstractArray`-only,
-  so no manifold path reaches this.
 
 ### A14 · `x_converged` still cannot see a Euclidean solve that diverges downhill
 
@@ -675,6 +534,15 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
   points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
 
+### K7 · The two `zero_tangent` bodies differ only in the lift type
+
+- location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`
+- kind: found late
+- found: 2026-09-27
+- evidence: `zero_tangent(::StiefelManifold)` and `zero_tangent(::GrassmannManifold)` are the same
+  three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
+  type would serve both.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
@@ -744,10 +612,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
   and `Options.f_stall_window` were meant to drive — both of which are also unread here.
 
-  Whichever way this goes, it has to be settled together with A10: `Δf̃` is its only input, and for the
-  three first-order methods that is a two-step-stale gradient paired with the current direction. Using
-  `f_converged_strong` without fixing A10 would be acting on a prediction that is not one; deleting it
-  retires A10's second consumer along with it.
+  `Δf̃` is its only input, and it pairs `previous_gradient(state)`, the gradient the step was built
+  from, with the direction of that step, for every method.
 
   **What to do**: either *use* it as the stall detector `Options.max_stalls` and
   `Options.f_stall_window` were meant to drive — count consecutive iterations that fail it, stop after
@@ -766,7 +632,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `src/optimizers/iterative_hessians/iterative_hessians_direction.jl:1-3` defines
   `compute_direction!(opt, ::Union{BFGSState,DFPState})`. There is no call site (verified: the only
   live callers are the `Newton` methods in `newton_optimizer_direction.jl`). The direction is formed
-  inline at the end of the cache `update!` instead — `bfgs_cache.jl`, `dfp_cache.jl`.
+  inline at the end of the cache `update!` instead — `quasi_newton_cache.jl`.
 
   **What to do**: delete the file and its `include`. The alternative — routing
   `solver_step!` through `compute_direction!` for symmetry with `Newton` — is a refactor with no
@@ -1064,8 +930,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `AdamCache`/`AdamState` had been unbound. That test drives `Adam`, so those six are the whole of what
   it exercises.
 
-  `BFGSCache`, `BFGSState`, `DFPCache`, `NewtonOptimizerCache`, `NewtonOptimizerState` and the `VT` of
-  `OptimizerResult` were unbound afterwards on the strength of their *inferred types* — for the
+  `BFGSCache`, `BFGSState`, `DFPCache` (`QuasiNewtonCache` replaces the two caches), `NewtonOptimizerCache`,
+  `NewtonOptimizerState` and the `VT` of `OptimizerResult` were unbound afterwards on the strength of their *inferred types* — for the
   quasi-Newton three, `Base.return_types` showed the same coupled shape the six had, and worse for
   `BFGSState`, which carried a free `T` across four parameters and the three-parameter `GlobalSection`
   `UnionAll` under a `Vararg`; after, all five parameters are independent. That is a sound argument from
@@ -1309,6 +1175,17 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   exist — so that an upstream docs rebuild cannot break this build again. The second is worth doing
   regardless: relying on a fetched inventory means a docs build that passes today can fail tomorrow with
   no commit here.
+
+### K10 · `SimpleSolvers.alloc_h(::NetworkParameters)` sizes a manifold leaf by its dense storage
+
+- location: SimpleSolvers `ext/SimpleSolversNeuralNetworkParametersExt.jl`, `alloc_h(ps::NetworkParameters)`
+- kind: upstream
+- found: 2026-09-27
+- evidence: it sizes by `mapparameters(zero, ·)`, and `zero` of a Stiefel or Grassmann point is the
+  point's own shape, not its lift (#21). For `NetworkParameters((a = St(6,3),)))` it returns
+  `(18, 18)` where the intrinsic dimension is 12 (`origin/main` gave `(12, 12)`). This package does not
+  call it for a non-vector: `BFGSState` sizes `Q` through `_alloc_q`, and `alloc_h(::Manifold)` is this
+  package's own. The fix is upstream: size by the zero tangent, as `_alloc_q` does.
 
 ## F. Loose ends from the geodesic-retraction review
 

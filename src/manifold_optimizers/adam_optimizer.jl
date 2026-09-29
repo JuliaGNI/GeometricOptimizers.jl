@@ -83,25 +83,10 @@ function AdamCache(x::OptimizerSolution{T}) where {T}
     AdamCache(x, g)
 end
 
-solution(cache::AdamCache) = cache.x
-gradient(cache::AdamCache) = cache.g
-gradient_array(cache::AdamCache) = gradient(cache)
-latest_gradient(cache::AdamCache) = cache.g̃
-function refresh_latest_gradient!(cache::AdamCache, g::Gradient)
-    _refresh_latest_gradient!(cache, g)
-end
-function latest_gradient_is_current(cache::AdamCache, state::OptimizerState, x::OptimizerSolution)
-    _latest_gradient_is_current(cache, state, x)
-end
-invalidate_latest_gradient!(cache::AdamCache) = _invalidate_latest_gradient!(cache)
-function gradient_difference!(cache::AdamCache, ::OptimizerState)
-    _latest_gradient_difference!(cache)
-end
 direction(cache::AdamCache) = cache.δ
 rhs(cache::AdamCache) = direction(cache)
 # As for `MomentumCache`: `rhs` aliases the direction, which is `-m₁/(√m₂ + δ)` and not `-∇f`.
 steepest_descent!(cache::AdamCache) = _steepest_descent_from_gradient!(cache)
-section(cache::AdamCache) = cache.section
 
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
 # The invariant is enforced by the outer constructors below.
@@ -125,17 +110,9 @@ mutable struct AdamState{T, OT, GS, VT} <: OptimizerState{T}
     f̄::T
 end
 
-solution(state::AdamState) = state.x
-previous_solution(state::AdamState) = state.x̄
-gradient(state::AdamState) = state.g
-previous_gradient(state::AdamState) = state.ḡ
-value(state::AdamState) = state.f
-previous_value(state::AdamState) = state.f̄
 first_moment(state::AdamState) = state.m₁
 second_moment(state::AdamState) = state.m₂
 _second_moment(state::AdamState) = state.m̃₂
-
-section(state::AdamState) = state.section
 
 function AdamState(x::OST, g::GradientStorage{T}) where {T, OST <: OptimizerSolution{T}}
     _x = _copy(x)
@@ -152,6 +129,15 @@ end
 AdamState(x::OptimizerSolution) = AdamState(x, _zero(x))
 
 OptimizerState(::Adam, x...) = AdamState(x...)
+
+# The first step weighs the stored moments by `(β - β¹)/(1 - β¹) = 0`, which does not clear a moment
+# that an earlier solve left non-finite, since `0 ⋅ Inf` is `NaN`.
+function initialize_state!(state::AdamState{T}) where {T}
+    _fill!(first_moment(state), zero(T))
+    _fill!(second_moment(state), zero(T))
+    _fill!(_second_moment(state), zero(T))
+    state
+end
 
 # `AdamWithEuclideanDecay` shares the cache and the state, and its moments are `Adam`'s.
 function advance_state!(

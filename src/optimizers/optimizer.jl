@@ -350,10 +350,13 @@ gradient(opt::Optimizer) = opt.gradient
 step_ceiling(opt::Optimizer) = opt.step_ceiling
 retraction_workspace(opt::Optimizer) = opt.retraction_workspace
 
-# What `update!(cache, state, gradient, ·, x)` forms the direction from: the Hessian for the
-# (quasi-)Newton methods, and the method itself for the first-order methods, which have none.
+# What `update!(cache, state, gradient, ·, x)` forms the direction from: the Hessian for `Newton`,
+# and the method itself for the first-order and the quasi-Newton methods, which build none.
 _direction_rule(opt::Optimizer) = hessian(opt)
-_direction_rule(opt::Optimizer{T, <:FirstOrderMethod}) where {T} = algorithm(opt)
+function _direction_rule(opt::Optimizer{
+        T, <:Union{FirstOrderMethod, QuasiNewtonOptimizerMethod}}) where {T}
+    algorithm(opt)
+end
 
 """
     step_observer(opt::Optimizer)
@@ -454,7 +457,6 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
     # rhs is -g
     update!(cache(opt), state, gradient(opt), _direction_rule(opt), x)
     ensure_descent!(cache(opt), algorithm(opt), config(opt))
-    typeof(algorithm(opt)) <: Newton && update!(state, gradient(opt), x) # this will have to be removed later
 
     for _ in 1:config(opt).nan_max_iterations
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
@@ -523,16 +525,19 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
         end
         # rebuilt rather than reused: `steepest_descent!` has just replaced the direction, so `‖δ‖`
         # and with it the ceiling are not what they were for the first search.
-        ls_status = solve_with_status(linesearch(opt), one(T),
-            linesearch_parameters(cache(opt), x, state, step_ceiling(opt)))
+        ls_params = linesearch_parameters(cache(opt), x, state, step_ceiling(opt))
+        ls_status = solve_with_status(linesearch(opt), one(T), ls_params)
     end
 
-    # Whatever the second search reports, its step is taken. Substituting `α = 0` instead -- "if even
-    # steepest descent cannot decrease the merit, do not move" -- reads as the safer choice and is
-    # not: a zero step makes `rxₐ` vanish, `x_converged` fires, and the solve reports convergence at
-    # a point where `‖∇f‖` is still of order one. That is what `test/descent_direction_tests.jl`
-    # catches, on three of its forty-eight combinations.
-    α = steplength(ls_status)
+    # A second search that reports `LINESEARCH_FLOOR` says that the merit resolves no decrease along
+    # steepest descent either: the solve is at the round-off floor of `f`, and the step is zero, so
+    # `x_converged` stops the solve. Taking the `α = 1` that such a search returns untouched instead
+    # overshoots the minimiser, and the next step comes back: a 2-cycle in which no criterion fires.
+    # The other two rejections, `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT`, say nothing
+    # about the floor, and their step is taken: a zero step there reports convergence where `‖∇f‖` is
+    # of order one, which `test/descent_direction_tests.jl` catches.
+    α = at_round_off_floor(ls_status, _caller_αmax(T, ls_params)) ? zero(T) :
+        steplength(ls_status)
     _rmul!(direction(cache(opt)), α)
 
     # compute new minimizer
@@ -545,7 +550,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
 
     # `rg` is measured at the iterate this step *ended* at, not at the one it started from; see
     # `refresh_latest_gradient!` and the note on `convergence_measures`. Costs one gradient
-    # evaluation per iteration, and only for the caches that implement it.
+    # evaluation per iteration.
     refresh_latest_gradient!(cache(opt), gradient(opt))
 
     x
@@ -603,7 +608,6 @@ difference it printed could not be anything else. See [`gradient_difference!`](@
 Also see [`solver_step!`](@ref).
 """
 function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T}) where {T}
-    initialize_state!(state)
     observer = step_observer(opt)
 
     # `status` below is computed on every iteration regardless, so recording it costs one `Bool` test
@@ -611,23 +615,27 @@ function solve!(x::OptimizerSolution{T}, state::OptimizerState, opt::Optimizer{T
     f = observe_optimizer_phase(observer, :objective) do
         value(problem(opt), x)
     end
+    initialize_state!(state, opt, x, f)
     tracing = config(opt).store_trace
     _trace = OptimizerTraceEntry{typeof(f), T}[]
 
     while true
         increase_iteration_number!(state)
         solver_step!(x, state, opt)
-        # One objective evaluation per iterate, reused for the status, the trace entry and the state
-        # update: all three read the same `x`, and with an observer installed a second call would
-        # also emit a second `:objective` pair for a step that only ever evaluated once.
+        # One objective evaluation per iterate, reused for the state update, the status and the trace
+        # entry: all three read the same `x`, and with an observer installed a second call would also
+        # emit a second `:objective` pair for a step that only ever evaluated once.
         f = observe_optimizer_phase(observer, :objective) do
             value(problem(opt), x)
         end
+        # The state advances *before* the stop check, so that the state `solve!` returns holds the
+        # iterate it returns (issue #108), and the status reads `f` against the objective one step
+        # back, `previous_value(state)` (issue A24).
+        update!(state, opt, x, f)
         status = OptimizerStatus(state, cache(opt), f; config = config(opt))
         tracing && push!(_trace,
             OptimizerTraceEntry(iteration_number(state), f, g_residual(status)))
         meets_stopping_criteria(status, opt, state) && break
-        update!(state, opt, x, f)
     end
 
     f = observe_optimizer_phase(observer, :objective) do
@@ -650,35 +658,45 @@ function update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution, f)
     update!(state, opt, x)
 end
 
-function initialize_state!(state::OptimizerState)
+# What `solve!` does to `state` before its first step, with the starting point `x` and its objective
+# `f`: no iteration is taken, the iterate and the section are at `x`, and the method's own memory is
+# reset. So a state used for a second solve repeats the solve of a fresh state, and the first status
+# compares `f` against `f(x)`.
+function initialize_state!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution, f)
+    initialize_state!(state, opt, x)
+    state.iterations = 0
+    _copyto!(solution(state), x)
+    _start_section!(section(state), x)
+    state.f = f
     state
 end
 
-const INITIAL_BFGS_X = 0.12345
-const INITIAL_BFGS_G = 0.54321
-const INITIAL_BFGS_F = 0.23456
+# The memory a method keeps between steps, as its constructor builds it. The momentum and moment
+# states have their method beside their constructor.
+function initialize_state!(state::OptimizerState, ::Optimizer, ::OptimizerSolution)
+    initialize_state!(state)
+end
 
-function initialize_state!(state::Union{BFGSState{T}, DFPState{T}}) where {T}
-    _fill!(state.x̄, T(INITIAL_BFGS_X))
-    _fill!(state.ḡ, T(INITIAL_BFGS_G))
-    state.f̄ = T(INITIAL_BFGS_F)
-    state.Q .= one(state.Q)
+initialize_state!(state::OptimizerState) = state
 
+# The secant pair and `Q`.
+initialize_state!(state::BFGSState) = _poison!(state)
+
+# The gradient at the iterate, which `NewtonState` holds.
+function initialize_state!(state::NewtonState, opt::Optimizer, x::AbstractVector)
+    gradient(opt)(state.g, x)
     state
 end
 
 function warn_iteration_number(state::OptimizerState, config::Options)
     if config.warn_iterations > 0 && iteration_number(state) ≥ config.warn_iterations
-        println("WARNING: Optimizer took ", iteration_number(state), " iterations.")
+        @warn "Optimizer took $(iteration_number(state)) iterations."
     end
 end
 
-# put this somewhere else eventually!
-function update!(state::NewtonState, opt::Optimizer, x::AbstractVector)
-    update!(state, gradient(opt), x)
-    observe_optimizer_phase(step_observer(opt), :retraction_application) do
-        update_section!(
-            state.section, gradient_array(cache(opt)), x -> retraction(opt.retraction, x))
-    end
+# `update!(state, x, g, f)` moves the section to `x`, which is the base the next step retracts from.
+# `latest_gradient` is `∇f(x)`, which `solver_step!` has just refreshed, so nothing is evaluated.
+function update!(state::NewtonState, opt::Optimizer, x::AbstractVector, f)
+    update!(state, x, latest_gradient(cache(opt)), f)
     state
 end
