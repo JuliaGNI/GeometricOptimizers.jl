@@ -130,6 +130,15 @@ AdamState(x::OptimizerSolution) = AdamState(x, _zero(x))
 
 OptimizerState(::Adam, x...) = AdamState(x...)
 
+# The first step weighs the stored moments by `(β - β¹)/(1 - β¹) = 0`, which does not clear a moment
+# that an earlier solve left non-finite, since `0 ⋅ Inf` is `NaN`.
+function initialize_state!(state::AdamState{T}) where {T}
+    _fill!(first_moment(state), zero(T))
+    _fill!(second_moment(state), zero(T))
+    _fill!(_second_moment(state), zero(T))
+    state
+end
+
 # `AdamWithEuclideanDecay` shares the cache and the state, and its moments are `Adam`'s.
 function advance_state!(
         state::AdamState, cache::AdamCache, ::Union{Adam, AdamWithEuclideanDecay})

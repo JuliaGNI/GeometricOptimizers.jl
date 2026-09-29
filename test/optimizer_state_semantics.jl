@@ -213,6 +213,19 @@ end
     end
 end
 
+# A first solve that overflows leaves Adam's second moment at `Inf`, which the zero weight of the
+# next solve's first step does not clear (`0 ⋅ Inf` is `NaN`), so the reset has to.
+@testset "a state that an overflowing solve left non-finite repeats a fresh state's solve" begin
+    state, _, opt = solve_for(Adam(), Float32[1.0f7, 2.0f7, 3.0f7])
+    @test any(!isfinite, GeometricOptimizers.second_moment(state))
+    x = Float32[1, 2, 3]
+    result = solve!(x, state, opt)
+    x_fresh = Float32[1, 2, 3]
+    _, result_fresh = solve_for(Adam(), x_fresh)
+    @test x == x_fresh
+    @test trace(result) == trace(result_fresh)
+end
+
 # On a manifold the section of a state that starts elsewhere gets the frame of its new anchor. A
 # state that starts where it was built keeps its frame, so a fresh state's solve draws no random
 # number.

@@ -671,9 +671,8 @@ function initialize_state!(state::OptimizerState, opt::Optimizer, x::OptimizerSo
     state
 end
 
-# The memory a method keeps between steps, as its constructor builds it. `MomentumState` has its
-# method beside its constructor. The Adam states need none: step `t` weighs the stored moments by
-# `(β - βᵗ)/(1 - βᵗ)`, which is `0` at `t = 1`.
+# The memory a method keeps between steps, as its constructor builds it. The momentum and moment
+# states have their method beside their constructor.
 function initialize_state!(state::OptimizerState, ::Optimizer, ::OptimizerSolution)
     initialize_state!(state)
 end

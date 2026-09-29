@@ -145,7 +145,7 @@ function _start_section!(Λ::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing}, x
 end
 
 function _start_section!(Λ::GlobalSection{T, <:Manifold, <:AbstractArray}, x::Manifold) where {T}
-    if Λ.Y != x
+    if parent(Λ.Y) != parent(x)
         copyto!(Λ.Y, x)
         copyto!(Λ.λ, global_section(x))
     end

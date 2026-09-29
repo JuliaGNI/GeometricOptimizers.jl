@@ -148,6 +148,13 @@ end
 first_moment(state::ScalarMomentAdamState) = state.m₁
 second_moment(state::ScalarMomentAdamState) = state.m₂
 
+# As for `AdamState`: a non-finite moment survives the zero weight of the first step.
+function initialize_state!(state::ScalarMomentAdamState{T}) where {T}
+    _fill!(first_moment(state), zero(T))
+    state.m₂ = zero(T)
+    state
+end
+
 function advance_state!(
         state::ScalarMomentAdamState, cache::ScalarMomentAdamCache, ::ScalarMomentAdam)
     _copyto!(section(state), section(cache))
