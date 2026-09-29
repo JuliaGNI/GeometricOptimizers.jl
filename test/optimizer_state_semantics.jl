@@ -4,7 +4,8 @@ using GeometricOptimizers: value, previous_value, solution, trace, status,
                            increase_iteration_number!,
                            latest_gradient_is_current,
                            AbstractLieAlgHorMatrix, StiefelLieAlgHorMatrix,
-                           GrassmannLieAlgHorMatrix, _fill!, _zero, initialize_state!
+                           GrassmannLieAlgHorMatrix, _fill!, _zero, initialize_state!,
+                           iteration_number, section
 using JLArrays: JLArray
 using Test
 
@@ -70,6 +71,23 @@ end
             @test length(entries) ≥ 2
             @test status(result).Δf == entries[end].f - entries[end - 1].f
             @test previous_value(state) == entries[end - 1].f
+        end
+    end
+end
+
+# The first status compares against the objective at the start, which `solve!` records in the state.
+@testset "the first `Δf` is `f(x₁) - f(x₀)`" begin
+    for T in (Float32, Float64), method in vector_methods()
+
+        x = T[1, 2, 3]
+        f₀ = objective(x)
+        state = OptimizerState(method, x)
+        opt = Optimizer(x, objective; algorithm = method, max_iterations = 1,
+            warn_iterations = 0)
+        result = solve!(x, state, opt)
+        @testset "$(nameof(typeof(method))), $(T)" begin
+            @test status(result).Δf == objective(x) - f₀
+            @test previous_value(state) == f₀
         end
     end
 end
@@ -156,7 +174,7 @@ end
             @test !isnan(previous_value(state))
             @test state.Q != one(state.Q)
             initialize_state!(state, opt, x, objective(x))
-            @test isnan(value(state))
+            @test value(state) == objective(x)
             @test isnan(previous_value(state))
             @test all(isnan, state.s)
             @test all(isnan, state.ḡ)
@@ -174,8 +192,50 @@ end
     end
 end
 
-# The first iteration compares against a `NaN` objective and not against a sentinel, so a solve that
-# starts at the minimiser reports no increase and converges in `x`.
+# A state used for a second `solve!` repeats the solve of a fresh state from the same start: the
+# iteration count, the iterate, the section, the objective and the method's own memory start again.
+@testset "a state used for a second solve repeats a fresh state's solve" begin
+    for T in (Float32, Float64), method in vector_methods()
+
+        state, _, opt = solve_for(method, T[1, 2, 3])
+        x = T[-0.5, 0.25, -1.5]
+        result = solve!(x, state, opt)
+
+        x_fresh = T[-0.5, 0.25, -1.5]
+        state_fresh, result_fresh = solve_for(method, x_fresh)
+        @testset "$(nameof(typeof(method))), $(T)" begin
+            @test iteration_number(state) == iteration_number(state_fresh)
+            @test x == x_fresh
+            @test minimum(result) == minimum(result_fresh)
+            @test value(state) == value(state_fresh)
+            @test trace(result) == trace(result_fresh)
+        end
+    end
+end
+
+# On a manifold the section of a state that starts elsewhere gets the frame of its new anchor. A
+# state that starts where it was built keeps its frame, so a fresh state's solve draws no random
+# number.
+@testset "`initialize_state!` gives a manifold section the frame of its start" begin
+    for T in (Float32, Float64), method in stiefel_methods()
+
+        Y = rand(StiefelManifold{T}, 5, 3)
+        state = OptimizerState(method, Y)
+        opt = Optimizer(Y, objective; algorithm = method)
+        λ = copy(section(state).λ)
+        initialize_state!(state, opt, Y, objective(Y))
+        @test section(state).λ == λ
+
+        Z = rand(StiefelManifold{T}, 5, 3)
+        initialize_state!(state, opt, Z, objective(Z))
+        @test section(state).Y == Z
+        frame = Matrix(section(state))
+        @test frame' * frame ≈ one(frame' * frame) atol=10eps(T)
+    end
+end
+
+# The first iteration compares against `f(x₀)` and not against a sentinel, so a solve that starts
+# at the minimiser reports no increase and converges in `x`.
 @testset "a quasi-Newton solve from the minimiser does not read as an increase" begin
     shifted(x) = 1 + sum(abs2, x)
     for T in (Float32, Float64), method in (BFGS(), DFP())

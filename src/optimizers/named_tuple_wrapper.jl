@@ -136,6 +136,27 @@ function _copyto!(Λ::GlobalSection{T, <:Manifold, <:AbstractArray}, x::Manifold
     copyto!(Λ, x)
 end
 
+# The section of a state that starts a solve at `x`; see `initialize_state!`. Unlike `copyto!` above,
+# this gives a manifold section the frame of its new anchor, because the frame of another point does
+# not complete `x`. A section already anchored at `x` keeps its frame, so the solve of a fresh state
+# draws no random number.
+function _start_section!(Λ::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing}, x) where {T}
+    copyto!(Λ, x)
+end
+
+function _start_section!(Λ::GlobalSection{T, <:Manifold, <:AbstractArray}, x::Manifold) where {T}
+    if Λ.Y != x
+        copyto!(Λ.Y, x)
+        copyto!(Λ.λ, global_section(x))
+    end
+    Λ
+end
+
+function _start_section!(Λ::NamedTuple, x::NetworkParameters)
+    mapparameters!(_start_section!, Λ, x)
+    Λ
+end
+
 function _copyto!(x::NetworkParameters, Λ::GlobalSectionNamedTuple)
     mapparameters!(copyto!, x, Λ)
     x

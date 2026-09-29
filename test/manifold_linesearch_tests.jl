@@ -271,14 +271,12 @@ const NT_LINESEARCHES = (
         ps = ps₀()
         state = OptimizerState(method, ps)
         opt = Optimizer(ps, two_spheres; algorithm = method, linesearch = linesearch,
-            retraction = retraction, max_iterations = 1000, f_reltol = 1e-7)
+            retraction = retraction, max_iterations = 1000)
 
         solve!(ps, state, opt)
 
-        # 60 is the worst of the 28, and it is a `Static` one: every searching line search here
-        # takes at most 17. `f_reltol = 1e-7` because the default gradient gate `√eps` sits at the
-        # noise floor of `‖∇f‖` here, and a solve at the minimiser can run to `max_iterations`
-        # (KNOWN_ISSUES.md, K9)
+        # 63 is the worst of the 28, and it is a `Static` one: every searching line search here
+        # takes at most 19
         @test iteration_number(state) < 100                     # terminates on a criterion ...
         @test isapprox(ps.w₁, MINIMIZER; atol = 1e-6)             # ... at the minimiser ...
         @test isapprox(ps.w₂, MINIMIZER₂; atol = 1e-6)

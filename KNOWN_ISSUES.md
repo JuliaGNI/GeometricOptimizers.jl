@@ -534,27 +534,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
   points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
 
-### K11 · A state reused for a second `solve!` does not reproduce a fresh state's solve
-
-- location: `src/optimizers/optimizer.jl`
-- kind: defect
-- found: 2026-09-27
-- evidence: `initialize_state!` resets a `BFGSState` in `s`, `ḡ`, `f`, `f̄` and `Q` only, and a
-  first-order state not at all: `iterations` is not reset, so a reused state runs fewer iterations
-  than a fresh one, and reused BFGS, DFP, GradientMethod and Adam states do not reproduce a fresh
-  state's iterates (on `origin/main` too).
-
-### K6 · `Δf` on the first iteration is `NaN` for every method but `Newton`
-
-- location: `src/optimizers/optimizer.jl`
-- kind: defect
-- found: 2026-09-27; for GD, Momentum and Adam it holds on `origin/main` too, and for BFGS and DFP
-  it follows from the approved removal of the `INITIAL_BFGS_F` sentinel; on `origin/main` it is
-  `f − 0.23456`
-- evidence: with `max_iterations = 1`, `status.Δf` is `NaN` for GD, Momentum, Adam, BFGS and DFP and
-  `-88.5` for Newton: only `initialize_state!(::NewtonState, opt, x, f)` records `f(x₀)`, and the
-  other methods drop the `f` that `solve!` passes.
-
 ### K7 · The two `zero_tangent` bodies differ only in the lift type
 
 - location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`
@@ -563,19 +542,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence: `zero_tangent(::StiefelManifold)` and `zero_tangent(::GrassmannManifold)` are the same
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
-
-### K9 · The default gradient gate `f_reltol = √eps` sits at the noise floor of `‖∇f‖`
-
-- location: `src/optimizers/optimizer_status.jl:385`
-- kind: defect
-- found: PR #133
-- evidence: `GradientMethod` + `BierlaireQuadratic(Float64)` + `Cayley()` on the two-sphere problem
-  of `test/manifold_linesearch_tests.jl`, default tolerances, Julia 1.11.9 aarch64, runs to
-  `max_iterations = 1000` at the minimiser. From iteration 20 the iterate is in a round-off 2-cycle:
-  `rg` (`‖∇f‖`) alternates between `2.62e-8` and `1.31e-7`, both above the gate `f_reltol =
-  1.49e-8`, and the one-step `rfr` is `2.06e-15`, above `f_suctol = 4.44e-16`. No criterion can
-  fire. On Julia 1.13.1 the same case stops at 36. With `f_reltol = 1e-7` all 28 cases of that
-  testset stop, at 8–60 iterations, on both versions.
 
 ## B. This package — observability
 

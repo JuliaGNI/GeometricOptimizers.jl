@@ -100,6 +100,11 @@ MomentumState(x::OptimizerSolution) = MomentumState(x, _zero(x))
 
 OptimizerState(::MomentumMethod, x...) = MomentumState(x...)
 
+function initialize_state!(state::MomentumState{T}) where {T}
+    _fill!(momentum(state), zero(T))
+    state
+end
+
 function advance_state!(state::MomentumState{T}, cache::MomentumCache{T},
         method::MomentumMethod{T}) where {T}
     _copyto!(section(state), section(cache))

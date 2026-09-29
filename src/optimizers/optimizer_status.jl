@@ -103,11 +103,9 @@ function OptimizerStatus(state::OST, cache::OCT, f::T;
 
     # `f > f̄` and not `abs(f) > abs(f̄)`: the question is whether the objective went up, and for an
     # objective that takes negative values the two are different questions -- `-5 → -6` is a decrease
-    # and reads as an increase through `abs`. That was tolerable while nothing acted on the flag;
-    # `convergence_measures` now does.
+    # and reads as an increase through `abs`.
     #
-    # On the first iteration of `BFGS` and `DFP`, and of a first-order method from a fresh state, the
-    # previous objective is `NaN`, and `f > NaN` is `false`.
+    # On the first iteration the previous objective is `f(x₀)`, which `initialize_state!` records.
     f_increased = f > previous_value(state)
 
     x_nonfinite = contains_nonfinite(cache.x)

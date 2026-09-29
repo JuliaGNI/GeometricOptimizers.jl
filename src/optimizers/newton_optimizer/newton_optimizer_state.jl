@@ -64,17 +64,6 @@ OptimizerState(::Newton, x_args...) = NewtonState(x_args...)
 OptimizerState(::Newton, ::Manifold, args...) = throw(ArgumentError(_NEWTON_SCOPE))
 OptimizerState(::Newton, ::NetworkParameters, args...) = throw(ArgumentError(_NEWTON_SCOPE))
 
-function initialize!(state::NewtonState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
-    state.iterations = 0
-    state.x .= x
-    state.g .= g
-    state.f = f
-    state.x̄ .= T(NaN)
-    state.ḡ .= T(NaN)
-    state.f̄ = T(NaN)
-    section(state).Y .= x
-end
-
 function update!(state::NewtonState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
     state.x̄ .= state.x
     state.ḡ .= state.g

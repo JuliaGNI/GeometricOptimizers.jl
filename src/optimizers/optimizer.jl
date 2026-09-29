@@ -525,16 +525,19 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
         end
         # rebuilt rather than reused: `steepest_descent!` has just replaced the direction, so `‖δ‖`
         # and with it the ceiling are not what they were for the first search.
-        ls_status = solve_with_status(linesearch(opt), one(T),
-            linesearch_parameters(cache(opt), x, state, step_ceiling(opt)))
+        ls_params = linesearch_parameters(cache(opt), x, state, step_ceiling(opt))
+        ls_status = solve_with_status(linesearch(opt), one(T), ls_params)
     end
 
-    # Whatever the second search reports, its step is taken. Substituting `α = 0` instead -- "if even
-    # steepest descent cannot decrease the merit, do not move" -- reads as the safer choice and is
-    # not: a zero step makes `rxₐ` vanish, `x_converged` fires, and the solve reports convergence at
-    # a point where `‖∇f‖` is still of order one. That is what `test/descent_direction_tests.jl`
-    # catches, on three of its forty-eight combinations.
-    α = steplength(ls_status)
+    # A second search that reports `LINESEARCH_FLOOR` says that the merit resolves no decrease along
+    # steepest descent either: the solve is at the round-off floor of `f`, and the step is zero, so
+    # `x_converged` stops the solve. Taking the `α = 1` that such a search returns untouched instead
+    # overshoots the minimiser, and the next step comes back: a 2-cycle in which no criterion fires.
+    # The other two rejections, `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT`, say nothing
+    # about the floor, and their step is taken: a zero step there reports convergence where `‖∇f‖` is
+    # of order one, which `test/descent_direction_tests.jl` catches.
+    α = at_round_off_floor(ls_status, _caller_αmax(T, ls_params)) ? zero(T) :
+        steplength(ls_status)
     _rmul!(direction(cache(opt)), α)
 
     # compute new minimizer
@@ -656,21 +659,34 @@ function update!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution, f)
 end
 
 # What `solve!` does to `state` before its first step, with the starting point `x` and its objective
-# `f`. The first-order states are built from `x` and need nothing.
-function initialize_state!(state::OptimizerState, ::Optimizer, ::OptimizerSolution, _)
+# `f`: no iteration is taken, the iterate and the section are at `x`, and the method's own memory is
+# reset. So a state used for a second solve repeats the solve of a fresh state, and the first status
+# compares `f` against `f(x)`.
+function initialize_state!(state::OptimizerState, opt::Optimizer, x::OptimizerSolution, f)
+    initialize_state!(state, opt, x)
+    state.iterations = 0
+    _copyto!(solution(state), x)
+    _start_section!(section(state), x)
+    state.f = f
+    state
+end
+
+# The memory a method keeps between steps, as its constructor builds it. `MomentumState` has its
+# method beside its constructor. The Adam states need none: step `t` weighs the stored moments by
+# `(β - βᵗ)/(1 - βᵗ)`, which is `0` at `t = 1`.
+function initialize_state!(state::OptimizerState, ::Optimizer, ::OptimizerSolution)
     initialize_state!(state)
 end
 
 initialize_state!(state::OptimizerState) = state
 
-# A reset, so that a state reused for a second solve cannot carry a stale secant pair into it.
+# The secant pair and `Q`.
 initialize_state!(state::BFGSState) = _poison!(state)
 
-# `NewtonState` is built `NaN`-filled, and its section is the base the first step retracts from, so
-# it starts at `x`.
-function initialize_state!(state::NewtonState, opt::Optimizer, x::AbstractVector, f)
+# The gradient at the iterate, which `NewtonState` holds.
+function initialize_state!(state::NewtonState, opt::Optimizer, x::AbstractVector)
     gradient(opt)(state.g, x)
-    initialize!(state, x, state.g, f)
+    state
 end
 
 function warn_iteration_number(state::OptimizerState, config::Options)
