@@ -159,7 +159,7 @@ end
 The error of the best rank-`n` approximation of `A`, i.e. what `LinearAlgebra.svd` gives.
 """
 function best_rank_n_error(n)
-    U, Σ, Vt = svd(A)
+    U, _, _ = svd(A)
     U_result = U[:, 1:n]
     norm(A - U_result * U_result' * A)
 end
