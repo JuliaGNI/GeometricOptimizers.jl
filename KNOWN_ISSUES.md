@@ -1187,6 +1187,33 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   call it for a non-vector: `BFGSState` sizes `Q` through `_alloc_q`, and `alloc_h(::Manifold)` is this
   package's own. The fix is upstream: size by the zero tangent, as `_alloc_q` does.
 
+### K12 · Revise prints EMFILE errors in the test log
+
+- location: `test/quality/jet.jl:17` (`using JET`)
+- kind: upstream
+- found: 2026-10-01
+- evidence: JET 0.12 loads Revise, and Revise's file watcher runs out of file handles. Each
+  failure prints an `UNHANDLED TASK ERROR: IOError: FolderMonitor: too many open files (EMFILE)`
+  block into the log; no test fails and the totals do not change. A run of
+  `test/quality/jet.jl` alone (`run-tests.jl <repository> quality/jet.jl`, Julia 1.13.1, JET
+  0.12.2) prints 5 such blocks and passes 82 of 82. `origin/main` loads no JET.
+
+### K13 · `test/quality/jet.jl` does not see an instability whose dispatch lands in a fold of `NeuralNetworkParameters`
+
+- location: `test/quality/jet.jl`
+- kind: missing test
+- found: 2026-10-01
+- evidence: each line keeps the reports of frames in `GeometricOptimizers` (`target_modules`). A
+  value that is not inferred, passed to a function of another package with one method, makes no
+  dynamic dispatch in a frame of this package: the dispatch happens in the callee. Two mutants of
+  `mutate.jl` on the branch show it, and both SURVIVED `quality/jet.jl`:
+  `foldstorage(_dot_leaf, Base.inferencebarrier(zero(T)), a, b)` in `_dot`
+  (`src/optimizers/named_tuple_wrapper.jl`), and `Base.inferencebarrier(T(Inf)), y, δ)` as the
+  initial value of `foldparameters` in `_manifold_αmax` (`src/optimizers/linesearch_problem.jl`).
+  The same barrier inside the closures that this package passes to the fold
+  (`dot(Base.inferencebarrier(x), y)` in `_dot_leaf`, `min(Base.inferencebarrier(acc), …)` in
+  `_manifold_αmax`) is CAUGHT.
+
 ## F. Loose ends from the geodesic-retraction review
 
 Not a defect in the code; a thing a later reader would otherwise have to rediscover.
