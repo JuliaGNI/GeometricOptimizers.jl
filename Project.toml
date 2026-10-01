@@ -21,9 +21,9 @@ AbstractNeuralNetworksExt = "AbstractNeuralNetworks"
 
 [compat]
 AbstractNeuralNetworks = "0.8"
-ChainRulesCore = "1"
+ChainRulesCore = "1.9"
 GeometricBase = "0.14.9"
-KernelAbstractions = "0.9"
+KernelAbstractions = "0.9.38"
 LinearAlgebra = "1"
 NeuralNetworkParameters = "0.3"
 Printf = "1"
