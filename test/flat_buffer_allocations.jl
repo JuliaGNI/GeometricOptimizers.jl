@@ -34,11 +34,11 @@ using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update
                            solver_step!,
                            increase_iteration_number!, gradient, inverse_hessian, cache,
                            direction, rhs,
-                           OptimizerCache, _flat_mul!, outer!, DottableSet,
+                           OptimizerCache, _flat_mul!, _flat_secant, outer!, DottableSet,
                            GlobalSection, update_section!, lift_factors!,
                            retraction_matrix!, retraction_workspace, initialize_state!,
                            OptimizerStatus, config, problem, value, 𝔄
-using NeuralNetworkParameters: NetworkParameters, flatten, flatten!
+using NeuralNetworkParameters: NetworkParameters, flatten
 using SimpleSolvers: Static
 using LinearAlgebra: dot
 using Test
@@ -307,12 +307,9 @@ vector_problem() = (randn(Random.Xoshiro(3), 12), v -> sum(abs2, v))
 # branch is then skipped both times and the figure is the cost of not running it. The end-to-end
 # figure, taken over a whole `solve!` where the branch does fire, is in the CHANGELOG.
 
-# the secant pair in `Q`'s coordinates, as `QuasiNewtonCache`'s `update!` forms it
-function _secant(c)
-    c.flat === nothing ? (c.Δx, c.Δg) :
-    (flatten!(c.flat.δ, c.Δx), flatten!(c.flat.γ, c.Δg))
-end
-_measured_secant!(c) = (_secant(c); @allocated _secant(c))
+_measured_secant!(c) = (_flat_secant(c); @allocated _flat_secant(c))
+# the first half of the cache's `update!`, which refreshes the flat mirror of `δ` and forms `δδᵀ`
+_measured_update!(c, state, x) = (update!(c, state, x); @allocated update!(c, state, x))
 _measured_outer!(m, a, b) = (outer!(m, a, b); @allocated outer!(m, a, b))
 _measured_quad(γ, Q) = (dot(γ, Q, γ); @allocated dot(γ, Q, γ))
 function _measured_mul!(c, A, b, scratch)
@@ -329,10 +326,12 @@ end
         state = OptimizerState(algorithm, x)
         Q = inverse_hessian(state)
 
-        # filling the flat mirrors of the secant pair
+        # filling the flat mirrors of the secant pair, in the quasi-Newton update and in the
+        # cache's `update!` at an iterate
         @test _measured_secant!(c) == 0
+        @test _measured_update!(c, state, x) == 0
 
-        δ, γ = _secant(c)
+        δ, γ = _flat_secant(c)
 
         # `outer!`, which used to flatten both of its arguments on every call
         m = zeros(Float64, length(δ), length(γ))
@@ -341,8 +340,7 @@ end
         # `γᵀQγ`, which used to materialise `Q * γ`
         @test _measured_quad(γ, Q) == 0
 
-        # the product with `Q`, which used to allocate a flat vector for `b`, one for the result,
-        # and a `ParameterLayout` besides
+        # the product with `Q`, which flattens `b` and the result into the cache's buffers
         @test _measured_mul!(direction(c), Q, rhs(c), c.flat) == 0
     end
 end

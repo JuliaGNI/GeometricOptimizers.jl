@@ -109,6 +109,57 @@ end
     @test Y == Z
 end
 
+# `_copyto!` calls each leaf's own `copyto!`, so it keeps that method's refusals: a point or a
+# structured matrix of another kind or size, bare and inside a parameter set.
+@testset "_copyto! refuses a leaf of another kind or size, $T" for T in (Float32, Float64)
+    @test_throws ArgumentError _copyto!(rand(StrictlyLowerTriangular{T}, 3),
+        rand(StrictlyUpperTriangular{T}, 3))
+    @test_throws ArgumentError _copyto!(rand(StiefelManifold{T}, 6, 2),
+        rand(GrassmannManifold{T}, 6, 2))
+    @test_throws ArgumentError _copyto!(rand(GrassmannManifold{T}, 5, 2),
+        rand(StiefelManifold{T}, 5, 2))
+    @test_throws AssertionError _copyto!(rand(StiefelManifold{T}, 6, 2),
+        rand(StiefelManifold{T}, 5, 2))
+    @test_throws AssertionError _copyto!(rand(StiefelManifold{T}, 6, 2),
+        rand(StiefelManifold{T}, 4, 3))
+    @test_throws AssertionError _copyto!(rand(SymmetricMatrix{T}, 3), rand(SymmetricMatrix{T}, 2))
+    @test_throws AssertionError _copyto!(rand(SkewSymMatrix{T}, 4), rand(SkewSymMatrix{T}, 3))
+    @test_throws Exception _copyto!(rand(SkewSymMatrix{T}, 4), rand(SymmetricMatrix{T}, 3))
+    @test_throws ArgumentError _copyto!(
+        NetworkParameters((L = rand(StrictlyLowerTriangular{T}, 3),)),
+        NetworkParameters((L = rand(StrictlyUpperTriangular{T}, 3),)))
+    @test_throws ArgumentError _copyto!(
+        NetworkParameters((Y = rand(StiefelManifold{T}, 6, 2),)),
+        NetworkParameters((Y = rand(GrassmannManifold{T}, 6, 2),)))
+    @test_throws AssertionError _copyto!(
+        NetworkParameters((Y = rand(StiefelManifold{T}, 6, 2),)),
+        NetworkParameters((Y = rand(StiefelManifold{T}, 4, 3),)))
+end
+
+# The arithmetic primitives refuse a structured leaf of another kind or size, also where the two
+# storage vectors have the same length; and `_difference!` and `_div!` assert the axes of arrays.
+@testset "the arithmetic primitives refuse a leaf of another kind or size, $T" for T in (
+    Float32, Float64)
+    K, S = rand(SkewSymMatrix{T}, 4), rand(SymmetricMatrix{T}, 3)   # 6 numbers each
+    L, U = rand(StrictlyLowerTriangular{T}, 3), rand(StrictlyUpperTriangular{T}, 3)
+    Y, Z = rand(StiefelManifold{T}, 5, 2), rand(GrassmannManifold{T}, 5, 2)
+    small, large = rand(StiefelLieAlgHorMatrix{T}, 5, 2),
+    rand(StiefelLieAlgHorMatrix{T}, 6, 2)
+    for (x, y) in ((K, S), (L, U), (Y, Z), (small, large))
+        @test_throws ArgumentError _difference!(_copy(x), x, y)
+        @test_throws ArgumentError _add!(_copy(x), y)
+        @test_throws ArgumentError _rac!(_copy(x), y)
+        @test_throws ArgumentError _div!(_copy(x), x, y)
+        @test_throws ArgumentError _square!(_copy(x), y)
+    end
+    @test_throws ArgumentError _add!(NetworkParameters((A = _copy(L),)),
+        NetworkParameters((A = U,)))
+
+    a, b = rand(T, 3), rand(T, 4)
+    @test_throws AssertionError _difference!(_copy(a), a, b)
+    @test_throws AssertionError _div!(_copy(a), a, b)
+end
+
 # A hot path: every `update!` and every `OptimizerStatus` runs these, so they infer, in both
 # precisions. That they allocate nothing is asserted in `test/flat_buffer_allocations.jl`.
 @testset "the primitives infer, $T" for T in (Float32, Float64)

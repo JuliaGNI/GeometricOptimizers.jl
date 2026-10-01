@@ -83,14 +83,40 @@ _similar(a::NetworkParameters) = mapparameters(_similar, a)
 
 _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
 
-# The elementwise primitives. Each walks a leaf, or a whole parameter set, down to the free
-# parameters with `mapstorage!` and applies one elementwise operation there, so a structured matrix
-# and a horizontal lift need no method of their own: `freeparameters` is the storage vector of a
-# `VectorStorageMatrix` and the tuple of blocks of a lift. `mapstorage!` skips a `nothing` in a
-# source set and allocates nothing. The signatures bind one element type where the operation needs
-# it. Only `_copyto!` writes a manifold point; the others do not guard one.
+# The elementwise primitives. Each walks a leaf, or a whole parameter set, to its leaves, checks that
+# a structured leaf meets a leaf of its own kind and size, and applies one elementwise operation to
+# the free parameters with `mapstorage!`. So a structured matrix and a horizontal lift need no method
+# of their own: `freeparameters` is the storage vector of a `VectorStorageMatrix` and the tuple of
+# blocks of a lift. Both walks skip a `nothing` in a source set and allocate nothing. The signatures
+# bind one element type where the operation needs it. Only `_copyto!` writes a manifold point, and it
+# calls each leaf's own `copyto!`, with its checks; the others do not guard a point.
 function _copyto!(a::GradientStorage{T}, b::GradientStorage{T}) where {T}
-    mapstorage!(copyto!, a, b)
+    mapparameters!(copyto!, a, b)
+end
+
+const _StructuredLeaf = Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix}
+
+_check_leaves(x, ys::Vararg{Any, N}) where {N} = nothing
+function _check_leaves(x::_StructuredLeaf, ys::Vararg{Any, N}) where {N}
+    foreach(y -> _check_leaf_pair(x, y), ys)
+end
+function _check_leaf_pair(x, y)
+    Base.typename(typeof(x)) === Base.typename(typeof(y)) && size(x) == size(y) ||
+        throw(ArgumentError(string("an elementwise primitive pairs a `", nameof(typeof(x)),
+            "` of size ", size(x), " with a `", nameof(typeof(y)), "` of size ", size(y))))
+    nothing
+end
+
+struct _StorageStep{F} <: Function
+    f::F
+end
+function (step::_StorageStep)(dest, srcs::Vararg{Any, N}) where {N}
+    _check_leaves(dest, srcs...)
+    mapstorage!(step.f, dest, srcs...)
+end
+function _storagewise!(f::F, dest, srcs::Vararg{Any, N}) where {F, N}
+    mapparameters!(
+        _StorageStep(f), dest, srcs...)
 end
 
 # These come in pairs, and the second of each pair is what a *nested* container needs.
@@ -202,13 +228,13 @@ end
 
 function _difference!(c::GradientStorage{T}, a::GradientStorage{T},
         b::GradientStorage{T}) where {T}
-    mapstorage!(c, a, b) do c, a, b
+    _storagewise!(c, a, b) do c, a, b
         @assert axes(a) == axes(b) == axes(c)
         c .= a .- b
     end
 end
 
-_rmul!(a::GradientStorage, b) = mapstorage!(a -> rmul!(a, b), a)
+_rmul!(a::GradientStorage, b) = _storagewise!(a -> rmul!(a, b), a)
 
 function _mul(α::T, a::GradientStorage{T}) where {T}
     b = _copy(a)
@@ -283,17 +309,17 @@ function _dot(a::DottableSet, b::DottableSet)
 end
 
 function _add!(a::GradientStorage{T}, b::GradientStorage{T}) where {T}
-    mapstorage!((a, b) -> a .+= b, a, b)
+    _storagewise!((a, b) -> a .+= b, a, b)
 end
 
-_add!(a::GradientStorage{T}, b::T) where {T} = mapstorage!(a -> a .+= b, a)
+_add!(a::GradientStorage{T}, b::T) where {T} = _storagewise!(a -> a .+= b, a)
 
 """
     _rac!(B, A)
 
 Compute the element-wise square-root of `A`.
 """
-_rac!(B::GradientStorage, A::GradientStorage) = mapstorage!((B, A) -> B .= sqrt.(A), B, A)
+_rac!(B::GradientStorage, A::GradientStorage) = _storagewise!((B, A) -> B .= sqrt.(A), B, A)
 
 """
     _div!(C, A, B)
@@ -301,7 +327,7 @@ _rac!(B::GradientStorage, A::GradientStorage) = mapstorage!((B, A) -> B .= sqrt.
 Divide `A` by `B` (elment-wise)
 """
 function _div!(C::GradientStorage, A::GradientStorage, B::GradientStorage)
-    mapstorage!(C, A, B) do C, A, B
+    _storagewise!(C, A, B) do C, A, B
         @assert axes(A) == axes(B) == axes(C)
         C .= A ./ B
     end
@@ -311,7 +337,9 @@ end
     _square!(B, A)
 
 """
-_square!(B::GradientStorage, A::GradientStorage) = mapstorage!((B, A) -> B .= A .^ 2, B, A)
+function _square!(B::GradientStorage, A::GradientStorage)
+    _storagewise!((B, A) -> B .= A .^ 2, B, A)
+end
 
 function _square(a)
     b = _copy(a)

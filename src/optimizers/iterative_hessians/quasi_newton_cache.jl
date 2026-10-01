@@ -86,6 +86,13 @@ Return the direction of the gradient step (i.e. `Δx`) of an instance of [`Quasi
 """
 direction(cache::QuasiNewtonCache) = cache.Δx
 
+# The secant pair `(δ, γ)` in the coordinates `Q` lives in: the flat mirrors, refreshed from `Δx`
+# and `Δg`, or those two unchanged where the solution is already flat. See `_flat_scratch`.
+function _flat_secant(cache::QuasiNewtonCache)
+    cache.flat === nothing ? (cache.Δx, cache.Δg) :
+    (flatten!(cache.flat.δ, cache.Δx), flatten!(cache.flat.γ, cache.Δg))
+end
+
 function update!(cache::QuasiNewtonCache, state::OptimizerState, x::OptimizerSolution)
     _copyto!(cache.x, x)
     _copyto!(direction(cache), state.s)
@@ -167,8 +174,7 @@ function _update_inverse_hessian!(::BFGS, cache::QuasiNewtonCache{T}, state::BFG
     if curvature_is_usable(ΔxΔg, cache.Δx, cache.Δg)
         # the secant pair in `Q`'s coordinates, written into the cache's buffers rather than into two
         # fresh vectors per `outer!` and a third for `γ`; see `_flat_scratch`
-        δ, γ = cache.flat === nothing ? (cache.Δx, cache.Δg) :
-               (flatten!(cache.flat.δ, cache.Δx), flatten!(cache.flat.γ, cache.Δg))
+        δ, γ = _flat_secant(cache)
         outer!(cache.ΔxΔx, δ, δ)
         outer!(cache.ΔxΔg, δ, γ)
         mul!(cache.T1, cache.ΔxΔg, inverse_hessian(state))
@@ -186,8 +192,7 @@ function _update_inverse_hessian!(::DFP, cache::QuasiNewtonCache{T}, state::BFGS
         ΔxΔg::T) where {T}
     # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too -- in the
     # cache's buffers, and through the three-argument `dot`, which materialises no `Q * γ`
-    δ, γ = cache.flat === nothing ? (cache.Δx, cache.Δg) :
-           (flatten!(cache.flat.δ, cache.Δx), flatten!(cache.flat.γ, cache.Δg))
+    δ, γ = _flat_secant(cache)
     γQγ = dot(γ, state.Q, γ)
 
     # `curvature_is_usable` is the curvature condition that keeps `Q` positive definite; see the BFGS
