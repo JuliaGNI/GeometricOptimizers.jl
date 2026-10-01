@@ -933,6 +933,23 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   close [#52]'s first acceptance criterion. Whichever, it belongs with A19: one session that runs the
   thing on a GPU and settles a bound is two of these entries.
 
+### K11 · No allocation assertion covers `_update_inverse_hessian!` itself
+
+- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl:177`
+- kind: not verified
+- found: 2026-10-01
+- evidence:
+
+  `test/flat_buffer_allocations.jl` measures `_flat_secant(cache)`, the three-argument
+  `update!(cache, state, x)`, `outer!`, `dot(γ, Q, γ)` and `_flat_mul!` one at a time, but not the
+  BFGS or DFP `_update_inverse_hessian!` that calls them. An edit to that method that forms the
+  secant pair without `_flat_secant`, and allocates, is not caught there. This is the coverage the
+  file had before, when it measured `_flat_δ!` and `_flat_γ!`. From the round-2 review of part G6.
+
+  **What to do**: measure `_update_inverse_hessian!(method, cache, state, ΔxΔg)` on the flat path
+  through a barrier, with a `Δx` and a `Δg` for which `curvature_is_usable` holds, so that the branch
+  runs on both calls.
+
 ## D. Upstream
 
 ### D1 · Julia 1.12: nested `kwargs...` feeding a call in the same inferred body
