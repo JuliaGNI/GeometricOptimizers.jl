@@ -1,9 +1,9 @@
-# What is left of the methods that existed only to raise an error.
+# The guards that raise an error by design, and the calls that have no method.
 #
-# Two guards stay: `similar` and `fill!` on a `Manifold`, because without them `Base`'s generic
-# methods build an array of the point's shape that is not a point. So does `Newton`'s scope check,
-# because without it `Newton` runs on a `Manifold` in the ambient space with no error. The others are
-# gone, and a call that reached one now gets `Base`'s `MethodError`.
+# Two guards are on a `Manifold`, `similar` and `fill!`, because without them `Base`'s generic methods
+# build an array of the point's shape that is not a point. `Newton`'s scope check is the third: without
+# it `Newton` on a `Manifold` or a parameter set fails with an error that does not state the scope.
+# The other refusals below are calls with no method, which raise `Base`'s `MethodError`.
 using GeometricOptimizers
 using GeometricOptimizers: NoHessian, OptimizerCache, hessian, inverse_hessian,
                            OptimizerMethod

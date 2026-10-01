@@ -59,8 +59,8 @@ OptimizerState(::Newton, x_args...) = NewtonState(x_args...)
 # `solve!(x, OptimizerState(method, x), opt)` is the documented pattern, so this is the entry point a
 # manifold user reaches first. Without this method a `Manifold` reaches a `convert` that cannot turn
 # a lift back into a point, and a parameter set finds no `NewtonState` method at all.
-# `Tuple{Newton, Manifold, Vararg}` is strictly more specific than `Tuple{Newton, Vararg}`, so this
-# method is not ambiguous with the one above.
+# `Tuple{Newton, Union{Manifold, NetworkParameters}, Vararg}` is strictly more specific than
+# `Tuple{Newton, Vararg}`, so this method is not ambiguous with the one above.
 function OptimizerState(::Newton, ::Union{Manifold, NetworkParameters}, args...)
     throw(ArgumentError(_NEWTON_SCOPE))
 end

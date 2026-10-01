@@ -943,8 +943,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `test/flat_buffer_allocations.jl` measures `_flat_secant(cache)`, the three-argument
   `update!(cache, state, x)`, `outer!`, `dot(γ, Q, γ)` and `_flat_mul!` one at a time, but not the
   BFGS or DFP `_update_inverse_hessian!` that calls them. An edit to that method that forms the
-  secant pair without `_flat_secant`, and allocates, is not caught there. This is the coverage the
-  file had before, when it measured `_flat_δ!` and `_flat_γ!`. From the round-2 review of part G6.
+  secant pair without `_flat_secant`, and allocates, is not caught there. The gap does not come from
+  `_flat_secant`: the helpers it replaces were measured at the same seam.
 
   **What to do**: measure `_update_inverse_hessian!(method, cache, state, ΔxΔg)` on the flat path
   through a barrier, with a `Δx` and a `Δg` for which `curvature_is_usable` holds, so that the branch
