@@ -26,8 +26,8 @@ import Random
 # through another function has no line: `𝔄(B̂, B̄, algorithm)` is reached in `Float32` only through
 # a `Float32` geodesic, and `_dot` of a `Float32` and a `Float64` set takes another method. The
 # launchers are internal, and no test calls them directly; their element types are those at which
-# the tests reach them. `dot(γ, Q, γ)` and `outer!` are measured too, and are methods of
-# `LinearAlgebra` and `SimpleSolvers`.
+# the tests reach them. `dot(γ, Q, γ)`, `outer!` and `l2norm` of a `NetworkParameters` are measured
+# too, and are methods of `LinearAlgebra`, `SimpleSolvers` and `GeometricBase`.
 const GO = (GeometricOptimizers,)
 
 Random.seed!(1234)
@@ -132,8 +132,9 @@ end
         end
 
         # the functions that launch a kernel; the backend arm of `unit_matrix`,
-        # `_poisson_tensor` and `StiefelProjection` is reached on a JLArray only, because a `CPU`
-        # takes a host arm that launches nothing
+        # `_poisson_tensor` and `StiefelProjection` is analysed on a JLArray, because a `CPU`
+        # dispatches to a host arm that launches nothing (one test reaches the `StiefelProjection`
+        # backend arm on a `CPU` through `invoke`, at the same element types)
         @test isempty(JET.get_reports(JET.report_opt(
             _poisson_tensor, (JLBackend, Type{Float32}, Int); target_modules = GO)))
         for T in (Float32, Float64)
