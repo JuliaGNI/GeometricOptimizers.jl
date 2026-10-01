@@ -3,8 +3,9 @@
 #
 # Run it on two trees and compare the output: equal lines mean `solve!` took the same steps to the
 # last bit. Each line names a solve and gives its iteration count and a hash of the bits of the final
-# iterate and of the objective at every iteration (`store_trace = true`). A hash is only comparable
-# with one taken on the same Julia and the same machine.
+# iterate, of the objective at every iteration (`store_trace = true`) and of the parameters at every
+# evaluation of the objective. A hash is only comparable with one taken on the same Julia and the
+# same machine.
 #
 #     julia --startup-file=no --project=. scripts/svd_optim_iterates.jl
 using GeometricOptimizers
@@ -22,9 +23,22 @@ bits(v::AbstractVector{Float32}) = reinterpret(UInt32, v)
 flat(x::AbstractVector) = x
 flat(x) = flatten(x)[1]
 
-function record(label, x, state, result)
+# The trace holds no parameters, so the objective is wrapped to hash them at every call: `solve!`
+# evaluates it at each trial point of the line search and at each iterate. A call at another element
+# type, such as one of automatic differentiation, is skipped.
+struct Recorded{F} <: Function
+    f::F
+    hashes::Vector{UInt}
+end
+function (r::Recorded)(x)
+    v = flat(x)
+    eltype(v) <: Union{Float32, Float64} && push!(r.hashes, hash(bits(v)))
+    r.f(x)
+end
+
+function record(label, x, state, result, recorded)
     fs = [entry.f for entry in trace(result)]
-    h = hash((bits(flat(x)), bits(fs)))
+    h = hash((bits(flat(x)), bits(fs), recorded.hashes))
     println(rpad(label, 64), "iterations = ", lpad(iteration_number(state), 5),
         "  bits = ", string(h; base = 16))
 end
@@ -32,10 +46,11 @@ end
 function run!(label, x, objective, algorithm, linesearch, max_iterations;
         retraction = Cayley())
     state = OptimizerState(algorithm, x)
-    optimizer = Optimizer(x, objective; retraction = retraction, algorithm = algorithm,
+    recorded = Recorded(objective, UInt[])
+    optimizer = Optimizer(x, recorded; retraction = retraction, algorithm = algorithm,
         linesearch = linesearch, max_iterations = max_iterations, warn_iterations = 0,
         store_trace = true)
-    record(label, x, state, solve!(x, state, optimizer))
+    record(label, x, state, solve!(x, state, optimizer), recorded)
 end
 
 # The SVD problem, as `test/verification/svd_optim.jl` poses it, in `T`.

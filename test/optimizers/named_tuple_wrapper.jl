@@ -145,7 +145,12 @@ end
     Y, Z = rand(StiefelManifold{T}, 5, 2), rand(GrassmannManifold{T}, 5, 2)
     small, large = rand(StiefelLieAlgHorMatrix{T}, 5, 2),
     rand(StiefelLieAlgHorMatrix{T}, 6, 2)
-    for (x, y) in ((K, S), (L, U), (Y, Z), (small, large))
+    # the same `N` and another `n`: both report `size == (N, N)`
+    narrow, wide = rand(StiefelLieAlgHorMatrix{T}, 5, 2),
+    rand(StiefelLieAlgHorMatrix{T}, 5, 3)
+    gnarrow, gwide = rand(GrassmannLieAlgHorMatrix{T}, 5, 2),
+    rand(GrassmannLieAlgHorMatrix{T}, 5, 3)
+    for (x, y) in ((K, S), (L, U), (Y, Z), (small, large), (narrow, wide), (gnarrow, gwide))
         @test_throws ArgumentError _difference!(_copy(x), x, y)
         @test_throws ArgumentError _add!(_copy(x), y)
         @test_throws ArgumentError _rac!(_copy(x), y)

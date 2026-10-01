@@ -100,10 +100,16 @@ _check_leaves(x, ys::Vararg{Any, N}) where {N} = nothing
 function _check_leaves(x::_StructuredLeaf, ys::Vararg{Any, N}) where {N}
     foreach(y -> _check_leaf_pair(x, y), ys)
 end
+# a horizontal lift reports `(N, N)` whatever its `n`, so `n` is part of its shape
+_leaf_shape(x) = size(x)
+_leaf_shape(x::AbstractLieAlgHorMatrix) = (size(x)..., x.n)
+
 function _check_leaf_pair(x, y)
-    Base.typename(typeof(x)) === Base.typename(typeof(y)) && size(x) == size(y) ||
+    Base.typename(typeof(x)) === Base.typename(typeof(y)) &&
+    _leaf_shape(x) == _leaf_shape(y) ||
         throw(ArgumentError(string("an elementwise primitive pairs a `", nameof(typeof(x)),
-            "` of size ", size(x), " with a `", nameof(typeof(y)), "` of size ", size(y))))
+            "` of shape ", _leaf_shape(x), " with a `", nameof(typeof(y)), "` of shape ",
+            _leaf_shape(y))))
     nothing
 end
 
