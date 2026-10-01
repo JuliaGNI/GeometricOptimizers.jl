@@ -1150,6 +1150,18 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   call it for a non-vector: `BFGSState` sizes `Q` through `_alloc_q`, and `alloc_h(::Manifold)` is this
   package's own. The fix is upstream: size by the zero tangent, as `_alloc_q` does.
 
+### K12 · Revise prints EMFILE errors in the test log
+
+- location: `test/quality/jet.jl:17` (`using JET`)
+- kind: upstream
+- found: 2026-10-01
+- evidence: JET 0.12 loads Revise, and Revise's file watcher runs out of file handles. Each
+  failure prints an `UNHANDLED TASK ERROR: IOError: FolderMonitor: too many open files (EMFILE)`
+  block into the log; no test fails and the totals do not change. A full run
+  (`Pkg.test()`, Julia 1.13.1, JET 0.12.2) prints 7 such blocks and passes
+  16343 tests; the same full run at `f353f10`, which has no JET testset, prints 0 and passes 16261,
+  and the difference is the 82 tests of the JET testset.
+
 ## F. Loose ends from the geodesic-retraction review
 
 Not a defect in the code; a thing a later reader would otherwise have to rediscover.
@@ -1202,6 +1214,46 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - found: 2026-09-26
 - evidence: `[0.8.0]`, `[0.6.1]` and `[B]` (`CHANGELOG.md:71`, `:1091`, `:1235`, `:1996`) have no
   `[label]: url` line, and `[Unreleased]` compares `v0.6.0...main`.
+
+## H. The test suite
+
+### K13 · `test/quality/jet.jl` does not see an instability whose dynamic dispatch JET does not attribute to a frame of this package
+
+- location: `test/quality/jet.jl`
+- kind: missing test
+- found: 2026-10-01
+- evidence: each launcher line and each line of an `@allocated` function keeps the reports of
+  frames in `GeometricOptimizers` (`target_modules`), and JET 0.12.2 skips a kernel statement with
+  two line entries. A value that is not inferred then gives no report in four cases, each shown by
+  a mutant of `src/` that SURVIVED `test/quality/jet.jl` (Julia 1.13.1):
+  - passed to a function of another package with one method, where the dispatch happens in the
+    callee: `foldstorage(_dot_leaf, Base.inferencebarrier(zero(T)), a, b)` in `_dot`
+    (`src/optimizers/named_tuple_wrapper.jl`), and `Base.inferencebarrier(T(Inf))` as the initial
+    value of `foldparameters` in `_manifold_αmax` (`src/optimizers/linesearch_problem.jl`);
+  - inside a closure of this package that inlines into the fold of `NeuralNetworkParameters`:
+    `min(acc, _block_αmax(Base.inferencebarrier(yᵢ), δᵢ, c))` in `_manifold_αmax` gives 0
+    reports, where `min(Base.inferencebarrier(acc), …)` gives 1;
+  - an argument of a kernel launch on a `CPU`, where the launch is one varargs method of
+    KernelAbstractions: a barrier on a launch argument in `map_to_lo`, `map_to_up`, `map_to_S`,
+    `map_to_Skew`, the triangular, symmetric and skew `_lmul_into!`, and `_ladd`; on a JLArray, a
+    barrier on the `Int` argument `n` of `_poisson_tensor`'s launch;
+  - the written array in a kernel body: a barrier on `matrix` in `write_ones_kernel!` and on `A`
+    in `assign_ones_for_stiefel_projection_kernel!` gives 0 reports, where a barrier on the stored
+    value gives 1.
+
+  A barrier on a value inside each kernel body, and inside the closures that this package passes
+  to a fold (`dot(Base.inferencebarrier(x), y)` in `_dot_leaf`), is CAUGHT.
+
+### K14 · The `_manifold_αmax` lines of `test/quality/jet.jl` do not reach the manifold arm
+
+- location: `test/quality/jet.jl:109`
+- kind: missing test
+- found: 2026-10-01
+- evidence: the lines take the argument types of the `@allocated` calls in
+  `test/flat_buffer_allocations.jl`, whose sets have no `Manifold` leaf, so
+  `_block_αmax(::Manifold, δ, c)` and `step_αmax` are not analysed. A barrier on `δᵢ` in the
+  closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/network_parameters_optimizer.jl:157`
+  calls `_manifold_αmax` on a set with a Stiefel leaf and `c::Float64`, and no line has its types.
 
 [#14]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/14
 [#24]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/24
