@@ -464,7 +464,6 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
                 opt.retraction, retraction_workspace(opt))
             _copyto!(solution(cache(opt)), section(cache(opt)))
         end
-        # compute_new_iterate!(solution(cache(opt)), x, one(T), direction(cache(opt)), cache(opt), opt.retraction)
         f = observe_optimizer_phase(step_observer(opt), :objective) do
             value(problem(opt), solution(cache(opt)))
         end

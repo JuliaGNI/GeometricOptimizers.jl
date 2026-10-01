@@ -27,8 +27,9 @@ single array every other `parent` this package defines returns.
 
 Every operation on a lift that is elementwise *in the free parameters* — as opposed to in the ambient
 ``N\times{}N`` matrix, which has no `setindex!` and counts each off-diagonal block twice — is written
-once over this tuple rather than once per lift type. That is the four methods below, and `l2norm`,
-and the `_difference!` / `_add!` / `_rac!` / `_div!` / `_square!` family in `named_tuple_wrapper.jl`.
+once over this tuple rather than once per lift type. That is `assign!` below, and `l2norm`, and the
+`_difference!` / `_add!` / `_rac!` / `_div!` / `_square!` family in `named_tuple_wrapper.jl`, which
+reaches the tuple through `freeparameters`.
 They used to exist for the Stiefel lift alone, which is half of why a [`GrassmannManifold`](@ref)
 could not be driven through an [`Optimizer`](@ref) at all (issue A11).
 
@@ -38,10 +39,6 @@ each of which returns the single array it wraps, and a signature-less docstring 
 general meaning of `parent` for all of them.
 """
 Base.parent(::AbstractLieAlgHorMatrix)
-
-function _add!(A::AbstractLieAlgHorMatrix{T}, B::AbstractLieAlgHorMatrix{T}) where {T}
-    (foreach(_add!, parent(A), parent(B)); A)
-end
 
 function assign!(B::AbstractLieAlgHorMatrix{T}, C::AbstractLieAlgHorMatrix{T}) where {T}
     (foreach(assign!, parent(B), parent(C)); nothing)

@@ -57,12 +57,13 @@ OptimizerState(::Newton, x_args...) = NewtonState(x_args...)
 
 # The same scope check as on `OptimizerCache`, repeated here because `OptimizerState` is exported and
 # `solve!(x, OptimizerState(method, x), opt)` is the documented pattern, so this is the entry point a
-# manifold user reaches first. Without these two methods a `Manifold` reaches a `convert` that cannot
-# turn a lift back into a point, and a parameter set finds no `NewtonState` method at all.
-# `Tuple{Newton, Manifold, Vararg}` is strictly more specific than `Tuple{Newton, Vararg}`, so
-# neither method is ambiguous with the one above.
-OptimizerState(::Newton, ::Manifold, args...) = throw(ArgumentError(_NEWTON_SCOPE))
-OptimizerState(::Newton, ::NetworkParameters, args...) = throw(ArgumentError(_NEWTON_SCOPE))
+# manifold user reaches first. Without this method a `Manifold` reaches a `convert` that cannot turn
+# a lift back into a point, and a parameter set finds no `NewtonState` method at all.
+# `Tuple{Newton, Manifold, Vararg}` is strictly more specific than `Tuple{Newton, Vararg}`, so this
+# method is not ambiguous with the one above.
+function OptimizerState(::Newton, ::Union{Manifold, NetworkParameters}, args...)
+    throw(ArgumentError(_NEWTON_SCOPE))
+end
 
 function update!(state::NewtonState{T}, x::AbstractVector{T}, g::AbstractVector{T}, f::T) where {T}
     state.x̄ .= state.x

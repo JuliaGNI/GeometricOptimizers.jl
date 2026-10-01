@@ -202,7 +202,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `map` is the *obviously* correct version and is why it was not done: it builds a `NamedTuple`
   of per-block ceilings, i.e. an allocation on every line-search call, to compute one scalar.
 
-### A18 · `𝔄` and `𝔄exp` accept an `AbstractExponentialAlgorithm` they cannot serve
+### A18 · `𝔄` accepts an `AbstractExponentialAlgorithm` it cannot serve
 
 - location: `docs/src/retractions.md`
 - kind: defect
@@ -210,7 +210,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence:
 
   **Severity: low**, and a signature that is wider than the implementation rather than a wrong answer.
-  From the review of [#45], where `𝔄exp` was added.
+  From the review of [#45].
 
   `𝔄(X, algorithm)` is implemented for [`TaylorSeries`](@ref), [`ScaledSquaring`](@ref) and
   [`AugmentedPade`](@ref). [`ProjectedSkew`](@ref) is the fourth `AbstractExponentialAlgorithm` and has
@@ -219,17 +219,16 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   paragraph on `docs/src/retractions.md`, which already tells readers that `𝔄(X, ProjectedSkew())` does
   not exist.
 
-  The signatures `𝔄(B̂, B̄, ::AbstractExponentialAlgorithm)` and `𝔄exp(B̂, B̄, ::AbstractExponentialAlgorithm)`
-  nevertheless accept it, so `𝔄exp(B̂, B̄, ProjectedSkew())` dispatches, forwards, and dies one frame in
-  with a `MethodError` naming `𝔄` — not the function that was called, and not the fact that this
-  algorithm lives a level up. `𝔄exp` inherits the hole rather than adding one, and narrowing only
-  `𝔄exp` would put the two out of step, which is why it was left as it is.
+  The signature `𝔄(B̂, B̄, ::AbstractExponentialAlgorithm)` nevertheless accepts it, so
+  `𝔄(B̂, B̄, ProjectedSkew())` dispatches, forwards, and dies one frame in with a `MethodError`
+  naming the two-argument `𝔄` — not the method that was called, and not the fact that this
+  algorithm lives a level up.
 
   **What to do**: either give `𝔄` a `ProjectedSkew` method that errors with the explanation — that it
-  is a `geodesic`-level algorithm, and to call `geodesic(B, ProjectedSkew())` — which fixes both
-  entry points at once and costs one method; or introduce the subtype of `AbstractExponentialAlgorithm`
-  that the three ``\mathfrak{A}``-level algorithms share and narrow both signatures to it, which makes
-  it a `MethodError` at the call site instead of a frame in. The first is cheaper and says more; the
+  is a `geodesic`-level algorithm, and to call `geodesic(B, ProjectedSkew())` — which costs one
+  method; or introduce the subtype of `AbstractExponentialAlgorithm` that the three
+  ``\mathfrak{A}``-level algorithms share and narrow the signature to it, which makes it a
+  `MethodError` at the call site instead of a frame in. The first is cheaper and says more; the
   second is the one that makes the type hierarchy match what is implemented.
 
 ### A19 · `ScaledSquaring`'s GPU claim is untested here
@@ -282,8 +281,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Metal backend, with `NativePade` alongside it. The identity half of this is done — `𝔄` builds it the
   way `one(::AbstractLieAlgHorMatrix)` does, through the shared `unit_matrix` — so what is left is the
   transcript, which is worth having given that three documentation passages depend on it and that the
-  one thing already found here was found by reading rather than by running. Do it together with C14,
-  which decides where the identity is assembled.
+  one thing already found here was found by reading rather than by running.
 
 ### A20 · `default_gradient` has no `Manifold` method and silently takes the `AbstractArray` one
 
@@ -622,23 +620,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   more but is a behaviour change that needs its own measurement over the eight starting points, so it
   must not ride along in an observability PR; split it out if that is the choice.
 
-### C2 · `compute_direction!` for the quasi-Newton methods is dead
-
-- location: `src/optimizers/iterative_hessians/iterative_hessians_direction.jl:1-3`
-- kind: dead code
-- found: 2026-08-14
-- evidence:
-
-  `src/optimizers/iterative_hessians/iterative_hessians_direction.jl:1-3` defines
-  `compute_direction!(opt, ::Union{BFGSState,DFPState})`. There is no call site (verified: the only
-  live callers are the `Newton` methods in `newton_optimizer_direction.jl`). The direction is formed
-  inline at the end of the cache `update!` instead — `quasi_newton_cache.jl`.
-
-  **What to do**: delete the file and its `include`. The alternative — routing
-  `solver_step!` through `compute_direction!` for symmetry with `Newton` — is a refactor with no
-  behavioural gain, and the inline form is what the `ḡ`-ordering fix depends on. Deleting is the
-  smaller and clearer change.
-
 ### C5 · `_DFP` + `Backtracking(expand = true)` is documented rather than run, on stale grounds
 
 - location: `test/verification/svd_optim.jl`
@@ -879,41 +860,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   **What to do**: one `test/manifold_tolerance.jl` holding the constant and a comment, `include`d by all
   three. That the script reaches into `test/` is already true — it takes its matrix from
   `test/helpers/svd_matrix.jl` — so this adds no new coupling, only removes two copies.
-
-### C14 · `geodesic` and `𝔄exp` assemble the same product independently
-
-- location: `retractions.jl:128`
-- kind: dead code
-- found: #45
-- evidence:
-
-  **Severity: low**, and a duplication that was created deliberately rather than found. From the review
-  of [#45], where `𝔄exp` was added.
-
-  Both compute ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T``:
-
-  ```julia
-  geodesic(B, algorithm) = manifold_type(B)(one(B) + B̂ * 𝔄(B̂, B̄, algorithm) * B̄')   # retractions.jl:128
-  𝔄exp(B̂, B̄, algorithm) = I + B̂ * 𝔄(B̂, B̄, algorithm) * B̄'                          # modified_exponential.jl
-  ```
-
-  `𝔄exp` was added as a name for what `geodesic` already did, not as a replacement for the inline
-  expression, on the grounds that `geodesic` also takes the lift apart and wraps the result. Both of
-  those are one call each, so `manifold_type(B)(𝔄exp(lift_factors(B)..., algorithm))` is the whole of
-  it, and the reason not to fold them is thinner than it looked when the two lines were written a
-  commit apart.
-
-  Two things now live in two places rather than one. The **default algorithm** is the first: both say
-  `ScaledSquaring`, and they have to, because a lift retracted through `geodesic` and the same lift
-  exponentiated through `𝔄exp` are meant to agree — a testset asserts exactly that, which is a test
-  existing to catch a duplication rather than a defect. The **identity** is the second, and the two do
-  not spell it the same way: `geodesic` uses `one(B)`, the KernelAbstractions kernel on
-  `StiefelLieAlgHorMatrix`, and `𝔄exp` uses `I + …`, whose `LinearAlgebra` method writes the diagonal
-  by scalar indexing. Whether that difference costs anything is A19's question.
-
-  **What to do**: decide A19 first, since it decides how the identity should be built, then have
-  `geodesic` call `𝔄exp` and delete the inline expression. The default then has one home, and the
-  testset that pins the two together can go with it.
 
 ### C15 · The compile-time figures cover the first-order caches only
 

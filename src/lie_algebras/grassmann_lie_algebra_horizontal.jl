@@ -163,21 +163,6 @@ function Base.similar(A::GrassmannLieAlgHorMatrix)
     zeros(KernelAbstractions.get_backend(A), GrassmannLieAlgHorMatrix{eltype(A)}, A.N, A.n)
 end
 
-function scalar_add(A::GrassmannLieAlgHorMatrix, δ::Real)
-    GrassmannLieAlgHorMatrix(A.B .+ δ, A.N, A.n)
-end
-
-#define these functions more generally! (maybe make a fallback script!!)
-function ⊙²(A::GrassmannLieAlgHorMatrix)
-    GrassmannLieAlgHorMatrix(A.B .^ 2, A.N, A.n)
-end
-function racᵉˡᵉ(A::GrassmannLieAlgHorMatrix)
-    GrassmannLieAlgHorMatrix(sqrt.(A.B), A.N, A.n)
-end
-function /ᵉˡᵉ(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
-    GrassmannLieAlgHorMatrix(A.B ./ B.B, A.N, A.n)
-end
-
 function LinearAlgebra.mul!(C::GrassmannLieAlgHorMatrix, A::GrassmannLieAlgHorMatrix, α::Real)
     mul!(C.B, A.B, α)
     C

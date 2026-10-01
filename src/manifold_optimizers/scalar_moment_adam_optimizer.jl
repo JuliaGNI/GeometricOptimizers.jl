@@ -22,14 +22,8 @@
 # Sherman-Morrison-Woodbury, or any other [`AbstractRetraction`](@ref)) and bounds the step for an
 # unrelated reason, [`step_αmax`](@ref).
 
-const _SCALAR_MOMENT_ADAM_SCOPE = "ScalarMomentAdam supports exactly one StiefelManifold solution; " *
-                                  "ordinary arrays, Grassmann solutions, NamedTuples and mixed parameter trees are unsupported"
-
-# The scope check, as an error rather than a `MethodError`, for an `AbstractVector`, a parameter set
-# and a `GrassmannManifold` alike. `test/scalar_moment_adam.jl` pins all three.
-function OptimizerCache(::ScalarMomentAdam, ::OptimizerSolution)
-    throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
-end
+# The scope is the signatures: a single `StiefelManifold`, and anything else is a `MethodError`.
+# `test/scalar_moment_adam.jl` pins an `AbstractVector`, a parameter set and a `GrassmannManifold`.
 OptimizerCache(::ScalarMomentAdam, x::StiefelManifold) = ScalarMomentAdamCache(x)
 function Hessian(::ScalarMomentAdam, ::OptimizerProblem, ::StiefelManifold{T}) where {T}
     NoHessian{T}()
@@ -111,9 +105,7 @@ mutable struct ScalarMomentAdamState{T, OT, GS, VT} <: OptimizerState{T}
     f̄::T
 end
 
-function ScalarMomentAdamState(x::StiefelManifold{T}, g::GradientStorage{T}) where {T}
-    g isa StiefelLieAlgHorMatrix ||
-        throw(ArgumentError("ScalarMomentAdam requires a single Stiefel gradient"))
+function ScalarMomentAdamState(x::StiefelManifold{T}, g::StiefelLieAlgHorMatrix{T}) where {T}
     _g = _copy(g)
     _x = _copy(x)
     gs = GlobalSection(_x)
@@ -131,19 +123,12 @@ end
 # `AdamState(x) = AdamState(x, _zero(x))`.
 ScalarMomentAdamState(x::StiefelManifold{T}) where {T} = ScalarMomentAdamState(x, _zero(x))
 
-# The scope is what this method is narrow about, so it is *said* rather than left to a `MethodError`.
 # `Adam`'s `OptimizerState(::Adam, x...)` is permissive here and `ScalarMomentAdam` is deliberately
 # not: `Adam` accepts every `OptimizerSolution` there is, this one a single `StiefelManifold`.
 OptimizerState(::ScalarMomentAdam, x::StiefelManifold) = ScalarMomentAdamState(x)
 # The gradient-supplying form, as [`Adam`](@ref) has through its `OptimizerState(::Adam, x...)`, for
 # [`ScalarMomentAdamState`](@ref)'s two-argument constructor.
 OptimizerState(::ScalarMomentAdam, x::StiefelManifold, g) = ScalarMomentAdamState(x, g)
-# `x, args...` and not just `x`: the gradient-supplying form has to reject an unsupported `x` with
-# the scope message too, and a `Vararg` tail is less specific than both `StiefelManifold` methods
-# above, so it catches exactly what they do not.
-function OptimizerState(::ScalarMomentAdam, x, args...)
-    throw(ArgumentError(_SCALAR_MOMENT_ADAM_SCOPE))
-end
 
 first_moment(state::ScalarMomentAdamState) = state.m₁
 second_moment(state::ScalarMomentAdamState) = state.m₂

@@ -26,27 +26,6 @@ See [`NewtonState`](@ref) for a `struct` that was derived from `OptimizerState`.
 """
 abstract type OptimizerState{T} <: AbstractSolverState end
 
-function OptimizerState(alg::OptimizerMethod, args...; kwargs...)
-    error("OptimizerState not implemented for $(typeof(alg))")
-end
-
-"""
-    isaOptimizerState(alg)
-
-Verify if an object implements the [`OptimizerState`](@ref) interface.
-"""
-function isaOptimizerState(alg)
-    x = rand(3)
-
-    applicable(gradient, alg) &&
-        applicable(hessian, alg) &&
-        applicable(linesearch, alg) &&
-        applicable(problem, alg) &&
-        applicable(initialize!, alg, x) &&
-        applicable(update!, alg, x) &&
-        applicable(solver_step!, x, alg)
-end
-
 iteration_number(state::OptimizerState) = state.iterations
 
 # The accessors every state in this package answers, on the fields they all name alike: the unbarred

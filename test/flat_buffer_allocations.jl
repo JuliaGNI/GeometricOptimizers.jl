@@ -8,14 +8,15 @@
 # the length of the flattening, `outer!` forms its outer products there, `_dot` pairs there -- while
 # the parameters themselves are a `NamedTuple`, a container, or a horizontal lift of the ambient
 # shape. Until 0.6.0 every crossing between the two built a fresh flat vector: two per `_dot`, two per
-# `outer!`, one plus a `ParameterLayout` per `_mul!`, and one more for the `γ` of each `update!`.
+# `outer!`, one plus a `ParameterLayout` per product with `Q`, and one more for the `γ` of each
+# `update!`.
 #
 # Two different fixes, and this file pins both.
 #
 #   * `_dot` needs no buffer at all. `dot` of two flattenings is the sum of the per-leaf `dot`s, so
 #     the sum can be taken without the vectors -- which is what matters most, `_dot` being the hottest
 #     of the sites (once per line-search trial slope, once per `OptimizerStatus`).
-#   * `outer!` and `_mul!` genuinely need the flat form, so `QuasiNewtonCache` carries buffers
+#   * `outer!` and `_flat_mul!` genuinely need the flat form, so `QuasiNewtonCache` carries buffers
 #     to write into. See `_flat_scratch`.
 #
 # `@allocated` is **inside** each `_measured_*` function throughout, never in the `@testset` body, and
@@ -29,14 +30,15 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update!,
+                           _difference!, _rmul!, _add!, _rac!, _div!, _square!, _copyto!,
                            solver_step!,
                            increase_iteration_number!, gradient, inverse_hessian, cache,
                            direction, rhs,
-                           OptimizerCache, _flat_δ!, _flat_γ!, _flat_mul!, outer!,
+                           OptimizerCache, _flat_mul!, outer!, DottableSet,
                            GlobalSection, update_section!, lift_factors!,
                            retraction_matrix!, retraction_workspace, initialize_state!,
                            OptimizerStatus, config, problem, value, 𝔄
-using NeuralNetworkParameters: NetworkParameters, flatten
+using NeuralNetworkParameters: NetworkParameters, flatten, flatten!
 using SimpleSolvers: Static
 using LinearAlgebra: dot
 using Test
@@ -82,9 +84,9 @@ flat_container(seed) = NetworkParameters(flat_set(seed))
 # it holds exactly these leaves.
 const WIDE_ENTRIES = 369
 
-function wide_set(seed)
+function wide_set(seed, ::Type{T} = Float32) where {T}
     NamedTuple{ntuple(i -> Symbol(:p, i), WIDE_ENTRIES)}(
-        ntuple(i -> randn(Random.Xoshiro(seed * 1000 + i), Float32, 4, 4), WIDE_ENTRIES))
+        ntuple(i -> randn(Random.Xoshiro(seed * 1000 + i), T, 4, 4), WIDE_ENTRIES))
 end
 
 function nested_bare(seed)
@@ -203,12 +205,53 @@ _measured_dot(a, b) = (_dot(a, b); @allocated _dot(a, b))
     end
 end
 
+# The two `_dot` methods: a set whose leaves share one element type takes the method that reads `T`
+# off the signature, and the method for the other pairs gives the same value on it.
+@testset "a wide set takes the `_dot` that binds T, and both methods agree, $T" for T in (
+    Float32, Float64)
+    a, b = NetworkParameters(wide_set(1, T)), NetworkParameters(wide_set(2, T))
+    @test which(_dot, Tuple{typeof(a), typeof(b)}) !==
+          which(_dot, Tuple{DottableSet, DottableSet})
+    @test _dot(a, b) == invoke(_dot, Tuple{DottableSet, DottableSet}, a, b)
+    @test _dot(a, b) isa T
+    @test _measured_dot(a, b) == 0
+end
+
 # `l2norm` is zero for every shape as of 0.6.0, and it was not before. It used to allow "one 32-byte
 # `vec` wrapper per matrix leaf", because `l2norm(a::AbstractMatrix)` was `l2norm(vec(a))` here -- one
 # of the two pirated methods of issue #16 group 1 -- and `vec` of a `Matrix` allocates the reshape
 # wrapper. `GeometricBase` 0.14.9 takes `L2norm(x::AbstractArray)` where it had `AbstractVector`, so
 # both pirated methods are deleted and no `vec` is taken. The exact zero is the point of asserting it.
 _measured_norm(a) = (l2norm(a); @allocated l2norm(a))
+
+# The elementwise primitives, which every `update!` and every `OptimizerStatus` runs. Each walks the
+# set down to the free parameters with `mapstorage!`; one that took the flattening instead would
+# allocate two flat vectors per call. A barrier of fixed arity per call shape, and not a `Vararg`
+# splat, which Julia 1.11 boxes.
+_measured2(f::F, a, b) where {F} = (f(a, b); @allocated f(a, b))
+_measured3(f::F, a, b, c) where {F} = (f(a, b, c); @allocated f(a, b, c))
+
+function primitive_set(::Type{T}, seed) where {T}
+    rng = Random.Xoshiro(seed)
+    NetworkParameters((
+        L1 = (A = rand(rng, StiefelLieAlgHorMatrix{T}, N, n),
+            S = rand(rng, SymmetricMatrix{T}, n)),
+        L2 = (W = rand(rng, T, 3, 4) .+ one(T), b = rand(rng, T, 5) .+ one(T))))
+end
+
+@testset "the elementwise primitives allocate nothing, $T" for T in (Float32, Float64)
+    a, b, c = primitive_set(T, 1), primitive_set(T, 2), primitive_set(T, 3)
+    @test _measured2(_rmul!, c, T(2)) == 0
+    @test _measured2(_add!, c, b) == 0
+    @test _measured2(_add!, c, T(2)) == 0
+    @test _measured2(_square!, c, a) == 0
+    @test _measured2(_rac!, c, a) == 0
+    @test _measured2(_copyto!, c, a) == 0
+    @test _measured3(_difference!, c, a, b) == 0
+    @test _measured3(_div!, c, a, b) == 0
+    # the control: the barrier sees an allocation where there is one
+    @test _measured2((x, y) -> flatten(x), a, b) > 0
+end
 
 @testset "l2norm allocates nothing, for every shape" begin
     for a in (lift(1), flat_container(1), container(1),
@@ -264,11 +307,12 @@ vector_problem() = (randn(Random.Xoshiro(3), 12), v -> sum(abs2, v))
 # branch is then skipped both times and the figure is the cost of not running it. The end-to-end
 # figure, taken over a whole `solve!` where the branch does fire, is in the CHANGELOG.
 
-_measured_secant!(c) = (_flat_δ!(c); _flat_γ!(c);
-    @allocated begin
-        _flat_δ!(c)
-        _flat_γ!(c)
-    end)
+# the secant pair in `Q`'s coordinates, as `QuasiNewtonCache`'s `update!` forms it
+function _secant(c)
+    c.flat === nothing ? (c.Δx, c.Δg) :
+    (flatten!(c.flat.δ, c.Δx), flatten!(c.flat.γ, c.Δg))
+end
+_measured_secant!(c) = (_secant(c); @allocated _secant(c))
 _measured_outer!(m, a, b) = (outer!(m, a, b); @allocated outer!(m, a, b))
 _measured_quad(γ, Q) = (dot(γ, Q, γ); @allocated dot(γ, Q, γ))
 function _measured_mul!(c, A, b, scratch)
@@ -288,7 +332,7 @@ end
         # filling the flat mirrors of the secant pair
         @test _measured_secant!(c) == 0
 
-        δ, γ = _flat_δ!(c), _flat_γ!(c)
+        δ, γ = _secant(c)
 
         # `outer!`, which used to flatten both of its arguments on every call
         m = zeros(Float64, length(δ), length(γ))
@@ -297,8 +341,8 @@ end
         # `γᵀQγ`, which used to materialise `Q * γ`
         @test _measured_quad(γ, Q) == 0
 
-        # `_mul!`, which used to allocate a flat vector for `b`, one for the result, and a
-        # `ParameterLayout` besides
+        # the product with `Q`, which used to allocate a flat vector for `b`, one for the result,
+        # and a `ParameterLayout` besides
         @test _measured_mul!(direction(c), Q, rhs(c), c.flat) == 0
     end
 end

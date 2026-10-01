@@ -8,13 +8,6 @@ end
 # The placeholder of every method that builds no Hessian: the first-order methods, `BFGS` and `DFP`.
 struct NoHessian{T} <: Hessian{T} end
 
-# On this package's own `NoHessian` and not on `SimpleSolvers.Hessian`: `OptimizerSolution` is an
-# alias for a union of types this package does not own, so a method on `Hessian` would own neither
-# side of its signature. See issue #16.
-function (hes::NoHessian)(::AbstractMatrix, ::OptimizerSolution)
-    error("This has to be called together with a cache.")
-end
-
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
 # The invariant is enforced by the outer constructors below.
 """
@@ -135,10 +128,6 @@ end
 
 # `solve!`'s `update!(state, opt, x, f)` for the four first-order states is in
 # `scalar_moment_adam_optimizer.jl`, the first file where all four state types exist.
-
-# function compute_direction!(opt::Optimizer{T,OM}, ::GradientState) where {T,OM<:GradientMethod}
-#     direction(opt) .= rhs(opt)
-# end
 
 function update!(cache::GradientCache{T}, state::GradientState{T},
         gradient::Gradient{T}, ::GradientMethod, x::OptimizerSolution{T}) where {T}

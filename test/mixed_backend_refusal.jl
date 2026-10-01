@@ -9,7 +9,7 @@
 # `Scalar indexing is disallowed`, which names neither operand.
 #
 # The check sits in the entry methods of `*`, `+`, `-` and `mul!` in `src/ambiguities.jl`, in
-# `add!`, and in the triangular `/ᵉˡᵉ` and scalar `mul!`, which have testsets of their own below. So
+# `add!`, and in the triangular scalar `mul!`, which has a testset of its own below. So
 # the first testset calls every entry with every owned type in the slot the entry names, a host
 # operand against a device one; a type that is left out of the unions there, or an entry that loses
 # its check, fails it.
@@ -160,24 +160,6 @@ end
     @test parent(destination) isa SubArray
     @test LinearAlgebra.mul!(destination, source, T(2)) isa StrictlyLowerTriangular
     @test parent(destination) ≈ 2 .* parent(source)
-end
-
-# `/ᵉˡᵉ` binds a type variable per argument, as `+`, `-`, `add!` and `mul!` do, so a same-species
-# pair whose storage types differ reaches it rather than a `MethodError`. It refuses a mixed species
-# rather than falling back to a dense path, because an element-wise quotient of a lower by an upper
-# divides by the zeros each keeps outside its own triangle.
-@testset "`/ᵉˡᵉ` checks species, backend and storage" begin
-    host_lo = StrictlyLowerTriangular(rand(T, N, N) .+ one(T))
-    host_up = StrictlyUpperTriangular(rand(T, N, N) .+ one(T))
-    dev_lo = StrictlyLowerTriangular(JLArray(rand(T, N, N) .+ one(T)))
-
-    @test_throws ArgumentError GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, host_up)
-    @test_throws ArgumentError GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, dev_lo)
-
-    other = StrictlyLowerTriangular(view(collect(host_lo.S), :), N)
-    quotient = GeometricOptimizers.:(/ᵉˡᵉ)(host_lo, other)
-    @test quotient isa StrictlyLowerTriangular
-    @test parent(quotient) ≈ parent(host_lo) ./ parent(other)
 end
 
 # Two independent arguments and no species check would read one species' storage into the other's

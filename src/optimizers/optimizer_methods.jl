@@ -208,7 +208,7 @@ whole matrix instead of one per coordinate. That is a reproduction of a publishe
 straw man — on some objectives it will beat [`Adam`](@ref).
 
 Only a single `StiefelManifold{T}` solution is supported; ordinary arrays, `NamedTuple`s, Grassmann
-solutions and mixed parameter trees throw an `ArgumentError`. As for [`Adam`](@ref), the
+solutions and mixed parameter trees throw a `MethodError`. As for [`Adam`](@ref), the
 coefficients carry no element type of the parameters, and [`Optimizer`](@ref) converts them.
 
 !!! info "The Cayley transform is the retraction here, and it is exact"
@@ -323,10 +323,9 @@ keeps Stiefel weights next to unconstrained ones — and on a *bare* [`Manifold`
 [`Adam`](@ref), for every ``\lambda``. Passing a nonzero `λ` together with parameters that are
 entirely manifolds is therefore warned about rather than silently ignored.
 
-The derivation, the Grassmann case and why the name `AdamW` is held in reserve for a
-*Riemannian* decay instead (see
-[issue #28](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28)) are in the
-[Weight Decay on Manifolds](@ref) page.
+The derivation and the Grassmann case are in the [Weight Decay on Manifolds](@ref) page. Whether
+a *Riemannian* decay is called for is
+[issue #28](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28).
 
 # Arguments
 
@@ -364,27 +363,6 @@ function AdamWithEuclideanDecay(;
         β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8, λ = DEFAULT_WEIGHT_DECAY)
     β₁, β₂, δ, λ = promote(float(β₁), float(β₂), float(δ), float(λ))
     AdamWithEuclideanDecay{typeof(δ)}(β₁, β₂, δ, λ)
-end
-
-"""
-    AdamW(args...)
-
-Deliberately undefined; use [`AdamWithEuclideanDecay`](@ref).
-
-The decoupled weight decay of AdamW is the Euclidean ``λx``, whose Riemannian gradient vanishes
-identically on every manifold of this package, so a method called `AdamW` here would be `Adam`
-under a second name for anyone optimizing on a manifold — and would say so nowhere. Rather than
-let that be discovered at run time, the name errors and points at the one that describes what it
-does. It is kept free for a *Riemannian* weight decay, should
-[issue #28](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28) conclude that one is
-called for.
-"""
-function AdamW(args...; kwargs...)
-    error("`AdamW` is deliberately not defined: its weight decay is the Euclidean `λx`, which " *
-          "is identically zero on a `Manifold` weight (`rgrad(Y, λY) = 𝕆`), so a method by that " *
-          "name would silently be `Adam` on a manifold. Use `AdamWithEuclideanDecay`, which " *
-          "decays the unconstrained weights and says so, or `Adam` for no decay at all. See " *
-          "https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28.")
 end
 
 """

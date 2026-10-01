@@ -173,8 +173,8 @@ Stiefel manifold — as a homogeneous quotient and as an embedded matrix manifol
     [`GeometricOptimizers.step_αmax`](@ref); consequently any [`AbstractRetraction`](@ref) may be used.
 
 The source's algorithm is Stiefel-only and so is this: the method accepts exactly one
-`StiefelManifold`, and ordinary arrays, parameter sets, Grassmann solutions and mixed trees throw an
-`ArgumentError`.
+`StiefelManifold`, and ordinary arrays, parameter sets, Grassmann solutions and mixed trees throw a
+`MethodError`.
 
 #### The source's Algorithm 2, symbol by symbol
 

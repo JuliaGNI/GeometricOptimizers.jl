@@ -49,10 +49,11 @@ end
     @test !method.ambient_norm
     @test ScalarMomentAdam(; ambient_norm = true).ambient_norm
 
-    @test_throws ArgumentError OptimizerState(method, rand(3))
-    @test_throws ArgumentError OptimizerState(method, (
+    # the scope is the signature: a single `StiefelManifold`
+    @test_throws MethodError OptimizerState(method, rand(3))
+    @test_throws MethodError OptimizerState(method, (
         Y = rand(StiefelManifold, 4, 2), z = rand(3)))
-    @test_throws ArgumentError OptimizerState(method, rand(GrassmannManifold{Float32}, 4, 2))
+    @test_throws MethodError OptimizerState(method, rand(GrassmannManifold{Float32}, 4, 2))
 
     # The state carries a gradient too, as `Adam` does through `OptimizerState(::Adam, x...)`.
     Y = rand(StiefelManifold, 4, 2)
@@ -67,13 +68,13 @@ end
     @test iszero(second_moment(state))
 end
 
-# The scope check is an `ArgumentError` on every path a caller reaches it by, and not a `MethodError`.
+# The scope is a `MethodError` on every path a caller reaches it by.
 @testset "ScalarMomentAdam rejects unsupported parameters through Optimizer" begin
     f(x) = sum(abs2, x)
     for x in (rand(3),
         NetworkParameters((Y = rand(StiefelManifold, 4, 2), z = rand(3))),
         rand(GrassmannManifold, 4, 2))
-        @test_throws ArgumentError Optimizer(x, f; algorithm = ScalarMomentAdam())
+        @test_throws MethodError Optimizer(x, f; algorithm = ScalarMomentAdam())
     end
 
     # A `Float32` Stiefel manifold is in scope: the method carries no element type, and `Optimizer`
@@ -84,9 +85,8 @@ end
     Ḡ32 = global_rep(GlobalSection(Y32), rgrad(Y32, randn(Float32, 4, 2)))
     @test OptimizerState(ScalarMomentAdam(), Y32) isa ScalarMomentAdamState{Float32}
     @test OptimizerState(ScalarMomentAdam(), Y32, Ḡ32) isa ScalarMomentAdamState{Float32}
-    # the scope message when `x` is not a Stiefel manifold at all, on the gradient-supplying arity
-    # as well
-    @test_throws ArgumentError OptimizerState(ScalarMomentAdam(), rand(3), rand(3))
+    # and when `x` is not a Stiefel manifold at all, on the gradient-supplying arity as well
+    @test_throws MethodError OptimizerState(ScalarMomentAdam(), rand(3), rand(3))
 end
 
 # `ScalarMomentAdam` joins `AdamFamily`, which is what `default_linesearch` dispatches the fixed

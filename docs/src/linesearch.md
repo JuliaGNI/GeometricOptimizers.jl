@@ -38,7 +38,7 @@ We hence use [`linesearch_problem`](@ref) not for a [`SimpleSolvers.NewtonSolver
 
 ```@example quadratic
 using GeometricOptimizers # hide
-using GeometricOptimizers: NewtonOptimizerCache, initialize!, gradient, compute_direction!, linesearch_problem, Cayley, rhs # hide
+using GeometricOptimizers: NewtonOptimizerCache, initialize!, gradient, linesearch_problem, Cayley, rhs # hide
 using SimpleSolvers: direction # hide
 using LinearAlgebra: dot # hide
 # `f` has an inflection point at `x ≈ .75`; the starting point lies to the right of it, so the

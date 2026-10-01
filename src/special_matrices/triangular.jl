@@ -62,31 +62,6 @@ end
 
 Base.:*(α::Real, A::AT) where {AT <: AbstractTriangular} = A * α
 
-# these are Adam operations:
-function scalar_add(A::AT, δ::Real) where {T, AT <: AbstractTriangular{T}}
-    AT(A.S .+ δ, A.n)
-end
-
-#element-wise squares and square root (for Adam)
-function ⊙²(A::AT) where {AT <: AbstractTriangular}
-    AT(A.S .^ 2, A.n)
-end
-function racᵉˡᵉ(A::AT) where {AT <: AbstractTriangular}
-    AT(sqrt.(A.S), A.n)
-end
-# Two independent arguments, for the reason `+` above gives. This one refuses a mixed species rather
-# than falling back to a dense path, as `add!` does and for the same reason: an element-wise quotient
-# of a lower by an upper divides by the zeros each keeps outside its own triangle, so there is no
-# dense answer to fall back to.
-function /ᵉˡᵉ(A::AbstractTriangular, B::AbstractTriangular)
-    @assert A.n == B.n
-    AT = _triangular_species(A)
-    AT === _triangular_species(B) ||
-        throw(ArgumentError("/ᵉˡᵉ needs both arguments to be the same triangular species"))
-    _check_same_backend(A, B)
-    AT(A.S ./ B.S, A.n)
-end
-
 # Two independent arguments, for the reason `+` above gives: bound as `(C::AT, A::AT)` a destination
 # and a source whose storage arrays differ are already different concrete types, so `AT` cannot bind
 # both and the call reaches `LinearAlgebra`'s generic `mul!`, which reaches `setindex!` on a type

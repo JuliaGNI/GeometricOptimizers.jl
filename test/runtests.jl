@@ -24,6 +24,8 @@ if "core" in GROUPS
     @safetestset "Triangular Matrices          " include("special_matrices/triangular.jl")
     @safetestset "Mutating Return Values       " include("special_matrices/scalar_mul_return_value.jl")
     @safetestset "Optimizer Primitives         " include("special_matrices/optimizer_primitives.jl")
+    @safetestset "Elementwise primitives       " include("optimizers/named_tuple_wrapper.jl")
+    @safetestset "Error-only methods           " include("error_only_methods.jl")
     @safetestset "Grassmann Lie Alg Hor        " include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
     @safetestset "Stiefel Lie Alg Hor          " include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
     @safetestset "Retractions                  " include("retractions/retractions.jl")
