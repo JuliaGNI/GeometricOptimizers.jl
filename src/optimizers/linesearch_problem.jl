@@ -33,15 +33,15 @@ function _trial_iterate!(
     compute_new_iterate!(solution(cache), params.x, α, direction(cache))
 end
 
-@noinline _no_state_error() = error("a trial step on a manifold retracts from `section(params.state)`, so the line search " *
-                                    "parameters have to carry the `state`; `solver_step!` passes it, a bare `(x = x,)` does not.")
-
 function _trial_iterate!(
         ::Union{Manifold, NetworkParameters}, cache::OptimizerCache, params, α, retraction,
         workspace)
     # `params` is a concrete `NamedTuple` here, so this is constant-folded away rather than checked on
     # every merit evaluation. Without it a missing `state` surfaces as `has no field state`.
-    hasproperty(params, :state) || _no_state_error()
+    hasproperty(params, :state) ||
+        error("a trial step on a manifold retracts from `section(params.state)`, so the line " *
+              "search parameters have to carry the `state`; `solver_step!` passes it, a bare " *
+              "`(x = x,)` does not.")
     # `_mul` allocates a scaled copy because `direction(cache)` has to stay intact for the next trial
     # step; `solver_step!` can afford the in-place `_rmul!` only because it scales exactly once, by
     # the `α` the line search has already settled on.

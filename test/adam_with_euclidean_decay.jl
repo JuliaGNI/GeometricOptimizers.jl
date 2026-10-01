@@ -326,18 +326,3 @@ end
         NetworkParameters((w = deepcopy(Y), b = randn(3))), named_tuple_error;
         algorithm = AdamWithEuclideanDecay(; λ = λ), linesearch = Static(η))
 end
-
-# `AdamW` is the name a user coming from `torch.optim` will reach for, and on a manifold it would
-# be `Adam` with extra steps. It is defined so that reaching for it says so.
-@testset "the name `AdamW` is reserved and explains itself" begin
-    @test_throws ErrorException AdamW()
-    @test_throws ErrorException AdamW(Float32; λ = 0.5)
-
-    message = try
-        AdamW()
-    catch e
-        sprint(showerror, e)
-    end
-    @test occursin("AdamWithEuclideanDecay", message)
-    @test occursin("issues/28", message)
-end

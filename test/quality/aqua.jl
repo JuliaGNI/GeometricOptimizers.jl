@@ -101,10 +101,6 @@ end
     # A plain vector, likewise.
     optv = Optimizer(ones(3), F; algorithm = GradientMethod())
     @test optv.gradient isa GradientAutodiff
-
-    # And the Hessian functor's error, on this package's own `NoHessian`, which every method but
-    # `Newton` builds: a method on `SimpleSolvers.Hessian` would be piracy.
-    @test_throws ErrorException GeometricOptimizers.NoHessian{Float64}()(zeros(3, 3), ones(3))
 end
 
 # `Optimizer` never builds this one, because a plain `Matrix` is not an `OptimizerSolution` -- the

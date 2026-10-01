@@ -12,7 +12,7 @@ module GeometricOptimizers
 using Base: Callable
 using GeometricBase: AbstractProblem, SolverMethod, AbstractSolver, AbstractSolverState
 using SimpleSolvers: Options
-using SimpleSolvers: Linesearch, LinesearchMethod, LinesearchProblem, LU
+using SimpleSolvers: Linesearch, LinesearchMethod, LinesearchProblem
 import SimpleSolvers: outer!
 using SimpleSolvers: x_abstol, x_reltol, f_abstol, f_reltol, f_suctol, f_mindec
 import SimpleSolvers: Gradient, GradientAutodiff, GradientFiniteDifferences
@@ -75,7 +75,7 @@ using NeuralNetworkParameters: NetworkParameters, params,
                                flatlength,
                                flatten, flatten!, unflatten, unflatten!,
                                FlatParameters,
-                               mapparameters, mapparameters!,
+                               mapparameters, mapparameters!, mapstorage!,
                                foldparameters, foldstorage,
                                parameter_eltype,
                                register_parameter_type!
@@ -174,7 +174,7 @@ export Optimizer,
        OptimizerProblem,
        OptimizerMethod,
        OptimizerSolution,
-       OptimizerState, isaOptimizerState,
+       OptimizerState,
        NewtonState,
        HessianAutodiff
 export EventLog, PhaseTimer, NoStepObserver, observe_optimizer_phase, step_observer
@@ -214,8 +214,6 @@ include("optimizers/iterative_hessians/quasi_newton_cache.jl")
 include("utils.jl")
 
 include("optimizers/optimizer.jl")
-include("optimizers/iterative_hessians/iterative_hessians_direction.jl")
-include("optimizers/newton_optimizer/newton_optimizer_direction.jl")
 
 include("optimizers/named_tuple_wrapper.jl")
 
@@ -223,9 +221,8 @@ export GradientMethod, GradientState
 export MomentumMethod, MomentumState
 export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # `AdamWithEuclideanDecay` shares `Adam`'s cache and state, so there is no state to export
-# alongside it; `AdamW` is exported so that the name errors with an explanation instead of an
-# `UndefVarError` (see its docstring)
-export AdamWithEuclideanDecay, AdamW
+# alongside it
+export AdamWithEuclideanDecay
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")

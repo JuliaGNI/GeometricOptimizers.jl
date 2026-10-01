@@ -71,7 +71,7 @@ const _NEWTON_SCOPE = "Newton optimizes an AbstractVector only. It builds the ex
 
 # The scope check, as an error rather than as whatever the first unsupported operation happens to
 # raise. Written on `OptimizerCache` and not on `Hessian(::Newton, …)`: `_optimizer` calls this one
-# first, so a rejection there would never be reached. Without these two methods a `Manifold` reaches
+# first, so a rejection there would never be reached. Without this method a `Manifold` reaches
 # `similar`, which these types answer with "The function `similar` does not make sense in this
 # context", and a parameter set finds no `NewtonOptimizerCache` method at all — both fail here
 # either way, and neither message names `Newton` or the restriction.
@@ -79,8 +79,9 @@ const _NEWTON_SCOPE = "Newton optimizes an AbstractVector only. It builds the ex
 # `Manifold` and not the two concrete manifolds, unlike [`_is_decayable`](@ref): what rules `Newton`
 # out is the absence of a Riemannian Hessian, which is a property of every manifold here and not of
 # compactness, so a manifold added later inherits the right answer rather than a wrong one.
-OptimizerCache(::Newton, ::Manifold) = throw(ArgumentError(_NEWTON_SCOPE))
-OptimizerCache(::Newton, ::NetworkParameters) = throw(ArgumentError(_NEWTON_SCOPE))
+function OptimizerCache(::Newton, ::Union{Manifold, NetworkParameters})
+    throw(ArgumentError(_NEWTON_SCOPE))
+end
 
 """
     rhs(cache)

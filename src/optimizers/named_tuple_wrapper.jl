@@ -83,9 +83,46 @@ _similar(a::NetworkParameters) = mapparameters(_similar, a)
 
 _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
 
-_copyto!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = copyto!(a, b)
-function _copyto!(a::NetworkParameters{T}, b::NetworkParameters{T}) where {T}
-    mapparameters!(_copyto!, a, b)
+# The elementwise primitives. Each walks a leaf, or a whole parameter set, to its leaves, checks that
+# a structured leaf meets a leaf of its own kind and size, and applies one elementwise operation to
+# the free parameters with `mapstorage!`. So a structured matrix and a horizontal lift need no method
+# of their own: `freeparameters` is the storage vector of a `VectorStorageMatrix` and the tuple of
+# blocks of a lift. Both walks skip a `nothing` in a source set and allocate nothing. The signatures
+# bind one element type where the operation needs it. Only `_copyto!` writes a manifold point, and it
+# calls each leaf's own `copyto!`, with its checks; the others do not guard a point.
+function _copyto!(a::GradientStorage{T}, b::GradientStorage{T}) where {T}
+    mapparameters!(copyto!, a, b)
+end
+
+const _StructuredLeaf = Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix}
+
+_check_leaves(x, ys::Vararg{Any, N}) where {N} = nothing
+function _check_leaves(x::_StructuredLeaf, ys::Vararg{Any, N}) where {N}
+    foreach(y -> _check_leaf_pair(x, y), ys)
+end
+# a horizontal lift reports `(N, N)` whatever its `n`, so `n` is part of its shape
+_leaf_shape(x) = size(x)
+_leaf_shape(x::AbstractLieAlgHorMatrix) = (size(x)..., x.n)
+
+function _check_leaf_pair(x, y)
+    Base.typename(typeof(x)) === Base.typename(typeof(y)) &&
+    _leaf_shape(x) == _leaf_shape(y) ||
+        throw(ArgumentError(string("an elementwise primitive pairs a `", nameof(typeof(x)),
+            "` of shape ", _leaf_shape(x), " with a `", nameof(typeof(y)), "` of shape ",
+            _leaf_shape(y))))
+    nothing
+end
+
+struct _StorageStep{F} <: Function
+    f::F
+end
+function (step::_StorageStep)(dest, srcs::Vararg{Any, N}) where {N}
+    _check_leaves(dest, srcs...)
+    mapstorage!(step.f, dest, srcs...)
+end
+function _storagewise!(f::F, dest, srcs::Vararg{Any, N}) where {F, N}
+    mapparameters!(
+        _StorageStep(f), dest, srcs...)
 end
 
 # These come in pairs, and the second of each pair is what a *nested* container needs.
@@ -195,57 +232,15 @@ function _fill!(a::NetworkParameters{T}, b::T) where {T}
     a
 end
 
-function _difference!(c::AbstractArray{T}, a::AbstractArray{T}, b::AbstractArray{T}) where {T}
-    @assert axes(a) == axes(b) == axes(c)
-    c .= a .- b
+function _difference!(c::GradientStorage{T}, a::GradientStorage{T},
+        b::GradientStorage{T}) where {T}
+    _storagewise!(c, a, b) do c, a, b
+        @assert axes(a) == axes(b) == axes(c)
+        c .= a .- b
+    end
 end
 
-function _difference!(c::MT, a::MT, b::MT) where {MT <: VectorStorageMatrix}
-    _difference!(parent(c), parent(a), parent(b))
-    c
-end
-
-# The elementwise helpers on a horizontal lift act on its *free parameters* and not on the ambient
-# `N × N` matrix, which has no `setindex!` and would count each off-diagonal block twice besides.
-# `Base.parent` is the tuple of those blocks — `(A, B)` for `StiefelLieAlgHorMatrix`, `(B,)` for
-# `GrassmannLieAlgHorMatrix` — so one method over it covers both lifts and whatever is added next.
-# These used to be written out for the Stiefel lift only, which is half of why a `GrassmannManifold`
-# could not be optimized over (issue A11); the Stiefel bodies were exactly this `foreach`, so nothing
-# about that path changes. The Stiefel `A` block still routes through the method above.
-function _difference!(c::AbstractLieAlgHorMatrix, a::AbstractLieAlgHorMatrix, b::AbstractLieAlgHorMatrix)
-    foreach(_difference!, parent(c), parent(a), parent(b))
-    c
-end
-
-function _difference!(c::NetworkParameters{T}, a::NetworkParameters{T}, b::NetworkParameters{T}) where {T}
-    mapparameters!(_difference!, c, a, b)
-end
-
-_rmul!(a::AbstractArray, b) = rmul!(a, b)
-
-# `LinearAlgebra.rmul!` writes back through `setindex!`, which three of these four do not have;
-# scaling the free parameters is the same operation and is what the matrix they represent scales by.
-function _rmul!(a::VectorStorageMatrix, b)
-    rmul!(parent(a), b)
-    a
-end
-
-function _rmul!(a::NetworkParameters, b)
-    rmul_closure!(a) = _rmul!(a, b)
-    mapparameters!(rmul_closure!, a)
-    a
-end
-
-function _mul!(c::AbstractVecOrMat, a::AbstractMatrix, b::AbstractVecOrMat)
-    mul!(c, a, b)
-end
-
-# Two more `_mul!` methods stood here until 0.6.0, one for a container destination and one for a bare
-# lift, each flattening `b`, allocating a result vector and unflattening it back. `_flat_mul!` does that
-# through the cache's buffers now, so neither had a caller left. See [`_flat_scratch`](@ref).
-#
-# `_mul!(c::NetworkParameters, a::NetworkParameters, b::NetworkParameters)` -- the *elementwise*
-# product, three parameter sets -- is gone with them, and had no caller before this release either.
+_rmul!(a::GradientStorage, b) = _storagewise!(a -> rmul!(a, b), a)
 
 function _mul(α::T, a::GradientStorage{T}) where {T}
     b = _copy(a)
@@ -294,164 +289,63 @@ measured ``\Delta f``, and by [`ensure_descent!`](@ref)'s descent test, for the 
 """
 _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 
-# `foldstorage` and not `foldparameters`: down to the free parameters and no further, exactly as
-# `flatten` goes. `dot` of a lift is the *ambient* Frobenius product, and `dot` of a
-# [`VectorStorageMatrix`](@ref) reads a dense interface that has neither the right length nor, for
-# three of the four, any way to be read at all. `foldstorage` descends through `freeparameters` until a
-# leaf is terminal, which is the same protocol `flatten` walks — so the two agree leaf for leaf by
-# construction rather than by two implementations happening to concur.
-#
-# A named method and not a closure, so that nothing here depends on how `op` is specialised. Upstream
-# does not annotate its `op` and says why: the obligation is the caller's, discharged either by a
-# closure (which is its own type) or by a literal like this one. What must not come between the two is a
-# function boundary that only *passes* `op` along — `foldstorage` is `@inline` and folds into the body
-# below, where `_dot_leaf` is a constant, but behind a `@noinline` the same fold costs 6 160 bytes at
-# arity two on a 369-leaf set.
+# `foldstorage` walks down to the free parameters, as `flatten` does, so the two agree leaf for
+# leaf. A named function and not a closure, so that the fold takes it as a constant.
 _dot_leaf(acc, x, y) = acc + dot(x, y)
 
 const LiftOrParameters{T} = Union{AbstractLieAlgHorMatrix{T}, NetworkParameters{T}}
 
-# Everything `_dot` accepts, with the element type left off, so this reaches the pair whose element
-# types *differ* — that binds no `T` and so misses the alias above.
-#
-# **The lift is in this union to fix a wrong number, not to widen anything**, and it is the one member
-# whose old behaviour was silent. An [`AbstractLieAlgHorMatrix`](@ref) is an `AbstractMatrix`, so a pair
-# of lifts whose element types *differ* did not miss the alias above and raise — it fell through to
-# `_dot(::AbstractVecOrMat, ::AbstractVecOrMat)` and came back with the *ambient* Frobenius product,
-# which is twice the pairing of the free parameters. Measured on `St(6,3)`, `Float32` against `Float64`:
-# 5.504356027190567 before, 2.7521780135952834 here, and the second is `dot(flatten(a), flatten(b))`.
-# That is the factor of two `docs/src/linesearch_on_manifolds.md` gives a section to — it reaches
-# [`trial_slope`](@ref), the quasi-Newton denominator and the predicted decrease. Same-eltype pairs
-# always took the method above, which is why nothing caught it.
-#
-# It works because `parameter_eltype` recurses: its `AbstractArray` method asks `freeparameters` first
-# and only falls back to `eltype` for a terminal leaf, so a lift answers with the promotion over its
-# blocks rather than with the union's `Union{}` catch-all. Nothing had to be added upstream for that.
+# Everything `_dot` accepts, with the element type left off: the pair whose element types differ. A
+# pair of lifts of two element types reaches this and not the `AbstractVecOrMat` method above, whose
+# ambient Frobenius product is twice the intrinsic one.
 const DottableSet = Union{AbstractLieAlgHorMatrix, NetworkParameters}
 
-# `zero(T)` and not the strong zero `false`. Upstream's fold is a **left** fold where the recursion this
-# replaced was a right one, so `false` would take its type from the *first* leaf in `flatten` order:
-# a mixed-precision set would accumulate its narrow prefix in the narrow type, losing significant
-# figures of the small terms and depending on where in the set the widest leaf happens to sit. `T` here
-# is a *promotion* over the leaves rather than a guarantee about each of them, which is exactly what an
-# accumulator wants -- and it is why the old form named `T` on the result, `T(_dot_leaves(a, b))`,
-# converting after pairing. Accumulating in it subsumes that conversion.
+# The accumulator starts at `zero(T)`, the promotion over the leaves, and not at the strong zero
+# `false`, which would take the type of the first leaf of the left fold.
 function _dot(a::LiftOrParameters{T}, b::LiftOrParameters{T}) where {T}
     foldstorage(_dot_leaf, zero(T), a, b)
 end
 
-# The widened shape, and the pair whose element types differ, neither of which binds a `T` on the
-# signature. `parameter_eltype` is upstream's promotion over the leaves — the same quantity
-# `NetworkParameters{T}` derives at construction — so this agrees with the method above wherever both
-# would apply, and that one is strictly more specific, so it wins whenever it does.
-#
-# It is a separate method and not one widened signature because **`parameter_eltype` is not free on a
-# wide bare `NamedTuple`**: upstream's `_promote_eltypes` is a `@generated` `promote_type` chain, and at
-# 369 children in one branch it costs 6 144 bytes a call even though it infers to `Type{Float32}`. That
-# is the flat MNIST shape and `trial_slope` is the hottest caller there is, so it must not land on that
-# path. Written as one method it did. Above, `T` comes off the signature and costs nothing; here the
-# shapes that reach it are the nested ones, whose branches are narrow enough for the chain to be
-# cheap. Measured in `test/flat_buffer_allocations.jl`, which pins both paths at zero.
+# The pair whose element types differ, which binds no `T`; `parameter_eltype` is the promotion over
+# the leaves. The method above is strictly more specific, so it takes every pair of one element
+# type.
 function _dot(a::DottableSet, b::DottableSet)
     foldstorage(
         _dot_leaf, zero(promote_type(parameter_eltype(a), parameter_eltype(b))), a, b)
 end
 
-_add!(a::AbstractArray{T}, b::AbstractArray{T}) where {T} = a .+= b
-
-function _add!(a::MT, b::MT) where {MT <: VectorStorageMatrix}
-    _add!(parent(a), parent(b))
-    a
+function _add!(a::GradientStorage{T}, b::GradientStorage{T}) where {T}
+    _storagewise!((a, b) -> a .+= b, a, b)
 end
 
-function _add!(a::NetworkParameters{T}, b::NetworkParameters{T}) where {T}
-    mapparameters!(_add!, a, b)
-    a
-end
-
-_add!(a::AbstractArray{T}, b::T) where {T} = a .+= b
-
-function _add!(a::VectorStorageMatrix{T}, b::T) where {T}
-    _add!(parent(a), b)
-    a
-end
-
-function _add!(a::AbstractLieAlgHorMatrix{T}, b::T) where {T}
-    foreach(aᵢ -> _add!(aᵢ, b), parent(a))
-    a
-end
-
-function _add!(a::NetworkParameters{T}, b::T) where {T}
-    closure(a) = _add!(a, b)
-    mapparameters!(closure, a)
-    a
-end
+_add!(a::GradientStorage{T}, b::T) where {T} = _storagewise!(a -> a .+= b, a)
 
 """
     _rac!(B, A)
 
 Compute the element-wise square-root of `A`.
 """
-_rac!(B::AbstractArray, A::AbstractArray) = B .= sqrt.(A)
-
-function _rac!(B::MT, A::MT) where {MT <: VectorStorageMatrix}
-    _rac!(parent(B), parent(A))
-    B
-end
-
-function _rac!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
-    foreach(_rac!, parent(B), parent(A))
-    B
-end
-
-_rac!(b::NetworkParameters, a::NetworkParameters) = mapparameters!(_rac!, b, a)
-
-_rac!(a) = _rac!(a, a)
+_rac!(B::GradientStorage, A::GradientStorage) = _storagewise!((B, A) -> B .= sqrt.(A), B, A)
 
 """
     _div!(C, A, B)
 
 Divide `A` by `B` (elment-wise)
 """
-function _div!(C::AbstractArray, A::AbstractArray, B::AbstractArray)
-    @assert axes(A) == axes(B) == axes(C)
-    C .= A ./ B
+function _div!(C::GradientStorage, A::GradientStorage, B::GradientStorage)
+    _storagewise!(C, A, B) do C, A, B
+        @assert axes(A) == axes(B) == axes(C)
+        C .= A ./ B
+    end
 end
-
-function _div!(C::MT, A::MT, B::MT) where {MT <: VectorStorageMatrix}
-    _div!(parent(C), parent(A), parent(B))
-    C
-end
-
-function _div!(C::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix, B::AbstractLieAlgHorMatrix)
-    foreach(_div!, parent(C), parent(A), parent(B))
-    C
-end
-
-function _div!(C::NetworkParameters, A::NetworkParameters, B::NetworkParameters)
-    mapparameters!(_div!, C, A, B)
-    C
-end
-
-_div!(a, b) = _div!(a, a, b)
 
 """
     _square!(B, A)
 
 """
-_square!(B::AbstractArray, A::AbstractArray) = B .= A .^ 2
-
-function _square!(B::MT, A::MT) where {MT <: VectorStorageMatrix}
-    _square!(parent(B), parent(A))
-    B
+function _square!(B::GradientStorage, A::GradientStorage)
+    _storagewise!((B, A) -> B .= A .^ 2, B, A)
 end
-
-function _square!(B::AbstractLieAlgHorMatrix, A::AbstractLieAlgHorMatrix)
-    foreach(_square!, parent(B), parent(A))
-    B
-end
-
-_square!(b::NetworkParameters, a::NetworkParameters) = mapparameters!(_square!, b, a)
 
 function _square(a)
     b = _copy(a)

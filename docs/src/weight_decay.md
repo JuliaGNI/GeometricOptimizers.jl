@@ -134,9 +134,7 @@ iterate, rather than a projection wrapped around an essentially unconstrained so
 is kept down in the retraction instead — [`cayley`](@ref) needs only a ``2n\times{}2n`` solve, not
 an SVD or a QR decomposition of the full weight.
 
-## Why the name is not `AdamW`
-
-On a bare manifold, `AdamWithEuclideanDecay` is [`Adam`](@ref) for every ``\lambda``. Calling it `AdamW` would make the familiar name silently denote a no-op. The package therefore reserves `AdamW` and defines it only to raise an explanatory error pointing to [`AdamWithEuclideanDecay`](@ref) and [issue #28](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28).
+## The name
 
 The qualifier in `AdamWithEuclideanDecay` describes the decay, ``\lambda{}x``; the method itself is the manifold optimizer. A reference-point regularizer or decay of lifted coordinates would be a different method, not standard AdamW.
 

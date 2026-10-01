@@ -391,8 +391,8 @@ end
 @testset "the quasi-Newton methods run on a bare Manifold" begin
     # `Q` is sized by the *intrinsic* dimension -- the length of the flattening, 2 for `St(3, 1)` --
     # while the gradient and the direction are horizontal lifts of the ambient shape, `3 × 3`. Four
-    # methods that the `NamedTuple` case had and the bare case did not (`outer!`, `_mul!`, `alloc_h`
-    # and `_copyto!` for a section) sat on that boundary; without them `BFGS` on a bare `Manifold`
+    # methods that the `NamedTuple` case had and the bare case did not (`outer!`, the product with
+    # `Q`, `alloc_h` and `_copyto!` for a section) sat on that boundary; without them `BFGS` on a bare `Manifold`
     # died in `outer!` with `AssertionError: axes(O, 1) == axes(x, 1)`.
     for algorithm in (BFGS(), DFP()),
         linesearch in (Backtracking(Float64), Bisection(Float64))

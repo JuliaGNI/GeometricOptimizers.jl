@@ -190,23 +190,6 @@ function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
     SymmetricMatrix(_rand(rng, backend, T, n*(n+1)÷2), n)
 end
 
-#these are Adam operations:
-function scalar_add(A::SymmetricMatrix, δ::Real)
-    SymmetricMatrix(A.S .+ δ, A.n)
-end
-
-#element-wise squares and square root (for Adam)
-function ⊙²(A::SymmetricMatrix)
-    SymmetricMatrix(A.S .^ 2, A.n)
-end
-function racᵉˡᵉ(A::SymmetricMatrix)
-    SymmetricMatrix(sqrt.(A.S), A.n)
-end
-function /ᵉˡᵉ(A::SymmetricMatrix, B::SymmetricMatrix)
-    @assert A.n == B.n
-    SymmetricMatrix(A.S ./ B.S, A.n)
-end
-
 function LinearAlgebra.mul!(C::SymmetricMatrix, A::SymmetricMatrix, α::Real)
     mul!(C.S, A.S, α)
     C

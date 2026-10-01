@@ -175,12 +175,12 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     # `m̃₂ = √m₂ + δ`; note that the square root must not be applied to `m₂` in place, as
     # `advance_state!` stores `m₂` in the state afterwards.
     _copyto!(_second_moment(cache), second_moment(cache))
-    _rac!(_second_moment(cache))
+    _rac!(_second_moment(cache), _second_moment(cache))
     _add!(_second_moment(cache), δ)
     # the direction is `-m₁/(√m₂ + δ)`, which is *not* scaled by a learning rate: that is the
     # line search's `α` (see [`default_linesearch`](@ref)).
     _copyto!(direction(cache), first_moment(cache))
-    _div!(direction(cache), _second_moment(cache))
+    _div!(direction(cache), direction(cache), _second_moment(cache))
     _rmul!(direction(cache), -1)
 
     cache

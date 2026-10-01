@@ -228,21 +228,6 @@ function Base.similar(A::StiefelLieAlgHorMatrix)
     zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, A.N, A.n)
 end
 
-function scalar_add(A::StiefelLieAlgHorMatrix, δ::Real)
-    StiefelLieAlgHorMatrix(scalar_add(A.A, δ), A.B .+ δ, A.N, A.n)
-end
-
-#define these functions more generally! (maybe make a fallback script!!)
-function ⊙²(A::StiefelLieAlgHorMatrix)
-    StiefelLieAlgHorMatrix(⊙²(A.A), A.B .^ 2, A.N, A.n)
-end
-function racᵉˡᵉ(A::StiefelLieAlgHorMatrix)
-    StiefelLieAlgHorMatrix(racᵉˡᵉ(A.A), sqrt.(A.B), A.N, A.n)
-end
-function /ᵉˡᵉ(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    StiefelLieAlgHorMatrix(/ᵉˡᵉ(A.A, B.A), A.B ./ B.B, A.N, A.n)
-end
-
 function LinearAlgebra.mul!(C::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix, α::Real)
     mul!(C.A, A.A, α)
     mul!(C.B, A.B, α)

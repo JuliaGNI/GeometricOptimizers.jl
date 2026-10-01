@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, _flat_δ!, _flat_γ!,
+using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, _flat_secant,
                            _flat_mul!, retraction_matrix!, lift_factors!, update_section!,
                            retraction_workspace, GlobalSection, 𝔄, OptimizerCache,
                            inverse_hessian, direction, rhs, increase_iteration_number!,
@@ -110,8 +110,7 @@ end
             _manifold_αmax, (Container64, Container64, Float32); target_modules = GO)))
         @test isempty(JET.get_reports(JET.report_opt(
             _manifold_αmax, (Wide32, Wide32, Float32); target_modules = GO)))
-        @test isempty(JET.get_reports(JET.report_opt(_flat_δ!, (QN.cache,); target_modules = GO)))
-        @test isempty(JET.get_reports(JET.report_opt(_flat_γ!, (QN.cache,); target_modules = GO)))
+        @test isempty(JET.get_reports(JET.report_opt(_flat_secant, (QN.cache,); target_modules = GO)))
         @test isempty(JET.get_reports(JET.report_opt(
             _flat_mul!, (QN.direction, QN.Q, QN.rhs, QN.flat); target_modules = GO)))
         @test isempty(JET.get_reports(JET.report_opt(

@@ -210,7 +210,7 @@ end
     end
 end
 
-# The quasi-Newton methods are the ones that exercise `outer!`, `_mul!`, `alloc_h` and
+# The quasi-Newton methods are the ones that exercise `outer!`, `_flat_mul!`, `alloc_h` and
 # `flatlength(_zero(x))` — every one of which is sized by the *intrinsic* dimension of the parameters
 # and not by `length`. `Newton` is not among them, and that is scope rather than an omission: it
 # builds the exact Hessian, and that Hessian is not built over the flattening, so `Optimizer` and

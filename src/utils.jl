@@ -202,25 +202,4 @@ end
 _riemannian_gradient(grad::Gradient, ::Union{AbstractVector, Manifold}) = grad
 _riemannian_gradient(grad::Gradient, ::NetworkParameters) = RiemannianGradient(grad)
 
-function compute_new_iterate!(
-        xₖ₁::Manifold{T}, xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T},
-        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
-    _retraction(x) = retraction(retraction_type, x)
-    update_section!(section(cache), α * pₖ, _retraction)
-    apply_section!(xₖ₁, section(cache), xₖ)
-end
-
-function compute_new_iterate!(xₖ::Manifold{T}, α::T, pₖ::AbstractLieAlgHorMatrix{T},
-        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
-    compute_new_iterate!(xₖ, xₖ, α, pₖ, cache, retraction_type)
-end
-
-function compute_new_iterate!(
-        xₖ::AbstractVector{T}, x::AbstractVector{T}, α::T, pₖ::AbstractVector{T},
-        cache::OptimizerCache{T}, retraction_type::AbstractRetraction) where {T}
-    _retraction(x) = retraction(retraction_type, x)
-    update_section!(section(cache), α * pₖ, _retraction)
-    apply_section!(xₖ, section(cache), x)
-end
-
 global_section(::AbstractVecOrMat) = nothing

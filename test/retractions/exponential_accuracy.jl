@@ -3,7 +3,7 @@ using JLArrays: JLArray
 using GPUArraysCore: allowscalar
 using LinearAlgebra: norm, opnorm, I
 using GeometricOptimizers
-using GeometricOptimizers: geodesic, check, rgrad, 𝔄, 𝔄exp, opnorm₁, unit_matrix, Geodesic,
+using GeometricOptimizers: geodesic, check, rgrad, 𝔄, opnorm₁, unit_matrix, Geodesic,
                            retraction
 using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew,
                            TaylorSeries
@@ -243,11 +243,15 @@ end
 # arguments down to 1×1 and pins the element type of the result, which a doctest printing `true`
 # cannot.
 #
-# `𝔄exp` and this sweep both come from GeometricMachineLearning, which carried the one-line wrapper
-# and tested it here. It was replicated GeometricOptimizers functionality and moved over when GML
-# went onto this package (GeometricMachineLearning#230).
+# `𝔄exp` is the oracle of these sweeps and nothing in the package calls it, so it is defined here.
+# The sweep comes from GeometricMachineLearning, which carried the one-line wrapper and tested it
+# (GeometricMachineLearning#230). The default is `ScaledSquaring`, as `geodesic`'s is.
 #
 # No nested `@testset` in the loop — see the note on RNG state at the top of this file.
+function 𝔄exp(B̂::AbstractMatrix, B̄::AbstractMatrix, algorithm = ScaledSquaring())
+    I + B̂ * 𝔄(B̂, B̄, algorithm) * B̄'
+end
+
 @testset "𝔄exp recovers the exponential across shapes and element types" begin
     for T in (Float32, Float64), N in 1:10, n in 1:N
         A = T(0.1) * rand(T, N, n)

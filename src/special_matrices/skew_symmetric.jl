@@ -129,8 +129,8 @@ function add!(C::SkewSymMatrix, A::SkewSymMatrix, B::SkewSymMatrix)
     add!(C.S, A.S, B.S)
 end
 
-# `_add!` and the other optimizer primitives for this type are generic over `VectorStorageMatrix`,
-# next to the rest of them in `optimizers/named_tuple_wrapper.jl`.
+# `_add!` and the other optimizer primitives act on `parent` of this type through `freeparameters`;
+# they are in `optimizers/named_tuple_wrapper.jl`.
 
 function _owned_sub(A::SkewSymMatrix, B::SkewSymMatrix)
     @assert A.n == B.n
@@ -157,23 +157,6 @@ end
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{SkewSymMatrix{T}}, n::Integer) where {T}
     SkewSymMatrix(_rand(rng, backend, T, n * (n - 1) ÷ 2), n)
-end
-
-#these are Adam operations:
-function scalar_add(A::SkewSymMatrix, δ::Real)
-    SkewSymMatrix(A.S .+ δ, A.n)
-end
-
-#element-wise squares and square root (for Adam)
-function ⊙²(A::SkewSymMatrix)
-    SkewSymMatrix(A.S .^ 2, A.n)
-end
-function racᵉˡᵉ(A::SkewSymMatrix)
-    SkewSymMatrix(sqrt.(A.S), A.n)
-end
-function /ᵉˡᵉ(A::SkewSymMatrix, B::SkewSymMatrix)
-    @assert A.n == B.n
-    SkewSymMatrix(A.S ./ B.S, A.n)
 end
 
 function LinearAlgebra.mul!(C::SkewSymMatrix, A::SkewSymMatrix, α::Real)
