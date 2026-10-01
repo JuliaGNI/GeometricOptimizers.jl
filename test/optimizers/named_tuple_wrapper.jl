@@ -7,8 +7,9 @@
 # after another, so an elementwise formula commutes with it, and `==` is what catches a primitive that
 # computes the same quantity in another order (`x * inv(y)` for `x / y`).
 #
-# A manifold point is a leaf of `_copyto!` only here. The arithmetic primitives act on gradients,
-# directions and moments, which are lifts, arrays and the structured matrices.
+# The arithmetic primitives act on gradients, directions and moments, which are lifts, arrays and the
+# structured matrices. On a manifold point they compute on its storage and do not guard it; only
+# `_copyto!` is meant to write a point. A testset at the end pins that.
 using GeometricOptimizers
 using GeometricOptimizers: _difference!, _rmul!, _add!, _rac!, _div!, _square!, _copyto!,
                            _zero,
@@ -235,5 +236,56 @@ end
         _copyto!(direction(cache), _zero(x))
         update!(cache, state, x)
         @test all(isnan, flat(direction(cache)))
+    end
+end
+
+# The internal primitives do not guard a manifold point: they compute on its storage, so the result
+# is in general not a point. No path in the package applies them to one. A structured leaf of
+# another element type is computed on its storage too, as a `Vector` is.
+@testset "the internal primitives do not guard a manifold point, $T" for T in (Float32, Float64)
+    for P in (StiefelManifold, GrassmannManifold)
+        a, b = rand(P{T}, 5, 2), rand(P{T}, 5, 2)
+        A, B = parent(a), parent(b)
+        x = _copy(a)
+        @test _difference!(x, a, b) === x
+        @test parent(x) == A .- B
+        x = _copy(a)
+        @test _rmul!(x, T(2)) === x
+        @test parent(x) == A .* T(2)
+        x = _copy(a)
+        @test _add!(x, b) === x
+        @test parent(x) == A .+ B
+        x = _copy(a)
+        @test _add!(x, T(0.5)) === x
+        @test parent(x) == A .+ T(0.5)
+        x = _copy(a)
+        @test _square!(x, a) === x
+        @test parent(x) == A .^ 2
+        @test _rac!(x, x) === x
+        @test parent(x) == sqrt.(A .^ 2)
+        x = _copy(a)
+        @test _div!(x, a, b) === x
+        @test parent(x) == A ./ B
+    end
+end
+
+@testset "a structured leaf of another element type is computed on its storage" begin
+    for (narrow, wide) in ((
+        rand(SkewSymMatrix{Float32}, 3), rand(SkewSymMatrix{Float64}, 3)),
+        (rand(SymmetricMatrix{Float32}, 3), rand(SymmetricMatrix{Float64}, 3)),
+        (rand(StrictlyLowerTriangular{Float32}, 3),
+        rand(StrictlyLowerTriangular{Float64}, 3)),
+        (rand(StiefelLieAlgHorMatrix{Float32}, 5, 2),
+        rand(StiefelLieAlgHorMatrix{Float64}, 5, 2)))
+        A, B = flat(narrow), flat(wide)
+        x = _copy(narrow)
+        @test _rac!(x, wide) === x
+        @test flat(x) == Float32.(sqrt.(B))
+        x = _copy(narrow)
+        @test _div!(x, narrow, wide) === x
+        @test flat(x) == Float32.(A ./ B)
+        x = _copy(narrow)
+        @test _square!(x, wide) === x
+        @test flat(x) == Float32.(B .^ 2)
     end
 end

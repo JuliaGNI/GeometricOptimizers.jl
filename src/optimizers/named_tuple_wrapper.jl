@@ -88,7 +88,7 @@ _fill!(a::AbstractArray{T}, b::T) where {T} = fill!(a, b)
 # and a horizontal lift need no method of their own: `freeparameters` is the storage vector of a
 # `VectorStorageMatrix` and the tuple of blocks of a lift. `mapstorage!` skips a `nothing` in a
 # source set and allocates nothing. The signatures bind one element type where the operation needs
-# it.
+# it. Only `_copyto!` writes a manifold point; the others do not guard one.
 function _copyto!(a::GradientStorage{T}, b::GradientStorage{T}) where {T}
     mapstorage!(copyto!, a, b)
 end
