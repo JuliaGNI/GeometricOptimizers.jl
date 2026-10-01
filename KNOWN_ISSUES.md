@@ -1195,9 +1195,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence: JET 0.12 loads Revise, and Revise's file watcher runs out of file handles. Each
   failure prints an `UNHANDLED TASK ERROR: IOError: FolderMonitor: too many open files (EMFILE)`
   block into the log; no test fails and the totals do not change. A full run
-  (`run-tests.jl <repository> full`, Julia 1.13.1, JET 0.12.2) prints 7 such blocks and passes
-  16343 tests; the same full run of `origin/main` prints 0 and passes 16261, and the difference is
-  the 82 tests of the JET testset.
+  (`Pkg.test()`, Julia 1.13.1, JET 0.12.2) prints 7 such blocks and passes
+  16343 tests; the same full run at `f353f10`, which has no JET testset, prints 0 and passes 16261,
+  and the difference is the 82 tests of the JET testset.
 
 ## F. Loose ends from the geodesic-retraction review
 
@@ -1262,7 +1262,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - evidence: each launcher line and each line of an `@allocated` function keeps the reports of
   frames in `GeometricOptimizers` (`target_modules`), and JET 0.12.2 skips a kernel statement with
   two line entries. A value that is not inferred then gives no report in four cases, each shown by
-  a `quality/jet.jl` mutant that SURVIVED `mutate.jl` (Julia 1.13.1):
+  a mutant of `src/` that SURVIVED `test/quality/jet.jl` (Julia 1.13.1):
   - passed to a function of another package with one method, where the dispatch happens in the
     callee: `foldstorage(_dot_leaf, Base.inferencebarrier(zero(T)), a, b)` in `_dot`
     (`src/optimizers/named_tuple_wrapper.jl`), and `Base.inferencebarrier(T(Inf))` as the initial
