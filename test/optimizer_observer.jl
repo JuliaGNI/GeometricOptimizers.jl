@@ -144,7 +144,7 @@ end
     objective(ps) = sum(abs2, ps.w)
     gradient!(g, x) = (g .= 2 .* x; g)
     method = GradientMethod()
-    optimizer = Optimizer(ps, objective; (∇F!) = gradient!, algorithm = method,
+    optimizer = Optimizer(ps, objective; ∇F! = gradient!, algorithm = method,
         linesearch = Static(0.1), observer = observer)
     observed_gradient = gradient(optimizer)
     @test observed_gradient isa RiemannianGradient

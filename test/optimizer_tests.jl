@@ -315,7 +315,7 @@ end
     x = [1.5, -0.8, 0.4]
     state = OptimizerState(GradientMethod(), x)
     opt = Optimizer(
-        x, f; (∇F!) = ∇f!, algorithm = GradientMethod(), linesearch = Bisection())
+        x, f; ∇F! = ∇f!, algorithm = GradientMethod(), linesearch = Bisection())
     g = similar(x)
 
     for _ in 1:4
