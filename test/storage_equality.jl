@@ -87,6 +87,20 @@ end
     end
 end
 
+# every block of a lift decides `==`: a `C` that differs from `A` in one block only is not equal
+# to it, whichever block that is
+@testset "== of two lifts reads every block: $(nameof(typeof(A))), $T" for T in (Float32, Float64),
+    A in pairs_of(T)[7:8]
+
+    for k in eachindex(parent(A))
+        C = mapstorage(copy, A)
+        GeometricOptimizers.freeparameters(parent(C)[k]) .+= one(T)
+        @test A != C
+        @test (A == C) == (Matrix(A) == Matrix(C))
+        @test mapstorage(JLArray, A) != mapstorage(JLArray, C)
+    end
+end
+
 @testset "two families compare their entries, $T" for T in (Float32, Float64)
     S, K, L, U, Y, G, H, R = pairs_of(T)
     zero_stiefel_lift, zero_grassmann_lift = mapstorage(zero, H), mapstorage(zero, R)
