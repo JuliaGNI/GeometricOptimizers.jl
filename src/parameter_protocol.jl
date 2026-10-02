@@ -44,6 +44,92 @@ function rebuild(A::StiefelLieAlgHorMatrix, data)
 end
 rebuild(A::GrassmannLieAlgHorMatrix, data) = GrassmannLieAlgHorMatrix(data[1], A.N, A.n)
 
+# The storage gradient `∂L/∂S` from a cotangent `G` of the dense interface; see
+# `NeuralNetworkParameters.storage_gradient`. AD pairs `G` with the interface, and a stored number
+# can appear at two places in it. A `SymmetricMatrix` holds `S_ij` at `(i, j)` and `(j, i)`, so
+# `∂L/∂S_ij = G_ij + G_ji` off the diagonal and `G_ii` on it; a `SkewSymMatrix` holds `S_ij` at
+# `(i, j)` and `-S_ij` at `(j, i)`, so `∂L/∂S_ij = G_ij - G_ji`. Without this a flat gradient read off
+# the cotangent's own storage is half the gradient off the diagonal (issue A27). Both are one
+# addition per entry, so exact wherever that addition is.
+#
+# One kernel each, so a dense `G`, an `Adjoint` and a device array take one path, and the result is
+# on `G`'s backend. A cotangent of the leaf's own type is the dense matrix it represents, so its
+# storage gradient doubles the off-diagonal storage. A structural tangent, which a loss that reads the
+# storage field directly produces, holds `∂L/∂S` already and takes the identity that
+# `NeuralNetworkParameters` defines. The triangular types store each number once and need no method.
+@kernel function symmetric_storage_gradient_kernel!(S, G)
+    i, j = @index(Global, NTuple)
+    if i ≥ j
+        S[i * (i - 1) ÷ 2 + j] = i == j ? G[i, i] : G[i, j] + G[j, i]
+    end
+end
+
+@kernel function skew_storage_gradient_kernel!(S, G)
+    i, j = @index(Global, NTuple)
+    if i > j
+        S[(i - 2) * (i - 1) ÷ 2 + j] = G[i, j] - G[j, i]
+    end
+end
+
+@kernel function symmetric_storage_doubling_kernel!(S, S_G)
+    i, j = @index(Global, NTuple)
+    if i ≥ j
+        k = i * (i - 1) ÷ 2 + j
+        S[k] = i == j ? S_G[k] : S_G[k] + S_G[k]
+    end
+end
+
+# `kernel!` writes each of the `len` storage entries once over an `n × n` index range, from `G`: the
+# dense cotangent, or the storage of a cotangent of the leaf's own type
+function _launch_storage_gradient(kernel!, len::Integer, n::Integer, G)
+    backend = KernelAbstractions.get_backend(G)
+    S = KernelAbstractions.allocate(backend, eltype(G), len)
+    kernel!(backend)(S, G; ndrange = (n, n))
+    S
+end
+
+function storage_gradient(A::SymmetricMatrix, G::AbstractMatrix)
+    @assert size(G) == (A.n, A.n)
+    S = _launch_storage_gradient(
+        symmetric_storage_gradient_kernel!, A.n * (A.n + 1) ÷ 2, A.n, G)
+    SymmetricMatrix(S, A.n)
+end
+
+function storage_gradient(A::SymmetricMatrix, G::SymmetricMatrix)
+    @assert G.n == A.n
+    S = _launch_storage_gradient(
+        symmetric_storage_doubling_kernel!, length(G.S), A.n, G.S)
+    SymmetricMatrix(S, A.n)
+end
+
+function storage_gradient(A::SkewSymMatrix, G::AbstractMatrix)
+    @assert size(G) == (A.n, A.n)
+    SkewSymMatrix(
+        _launch_storage_gradient(skew_storage_gradient_kernel!, A.n * (A.n - 1) ÷ 2, A.n, G),
+        A.n)
+end
+
+function storage_gradient(A::SkewSymMatrix, G::SkewSymMatrix)
+    @assert G.n == A.n
+    SkewSymMatrix(G.S .+ G.S, A.n)
+end
+
+# A horizontal lift stores its blocks once each in the dense `[A -Bᵀ; B 0]` (`[0 -Bᵀ; B 0]` for the
+# Grassmann lift), so `∂L/∂B` is the `B` block of `G` less the transpose of its `-Bᵀ` block, and the
+# `A` block is a `SkewSymMatrix` cotangent. Zygote gives a lift a dense cotangent.
+function storage_gradient(A::StiefelLieAlgHorMatrix, G::AbstractMatrix)
+    N, n = A.N, A.n
+    StiefelLieAlgHorMatrix(
+        storage_gradient(A.A, G[1:n, 1:n]), _lift_block_gradient(G, N, n),
+        N, n)
+end
+
+function storage_gradient(A::GrassmannLieAlgHorMatrix, G::AbstractMatrix)
+    GrassmannLieAlgHorMatrix(_lift_block_gradient(G, A.N, A.n), A.N, A.n)
+end
+
+_lift_block_gradient(G, N, n) = G[(n + 1):N, 1:n] - transpose(G[1:n, (n + 1):N])
+
 # What `rebuild` takes from its prototype and a file has no prototype to take it from. `n` does
 # follow from `length(S)` for the storage matrices, but only by solving a quadratic that differs per
 # family, so it is cheaper and less brittle to write it down. A manifold element needs nothing: its

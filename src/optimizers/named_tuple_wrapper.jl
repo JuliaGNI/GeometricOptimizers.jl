@@ -12,8 +12,11 @@
 # This pairs `ps` with the unflattened gradient leaf by leaf, so both trees have to hold arrays of one
 # element type for `rgrad` to have a method at every position -- which a container guarantees and a
 # loose pairing would not.
+#
+# The flat vector is on the backend of the leaves, so the gradient computed from it is too, and every
+# leaf it unflattens to is on the backend of its parameter leaf. See `_flatten_on_backend`.
 function (grad::RiemannianGradient{T})(ps::NetworkParameters{T}) where {T}
-    v, layout = flatten(ps)
+    v, layout = _flatten_on_backend(T, ps)
     # `rgrad` takes the *whole* leaf, not its storage: it is the Riemannian projection and needs the
     # point it projects at, so this walks whole leaves rather than their storage.
     mapparameters(rgrad, ps, unflatten(layout, grad.gradient(v)))

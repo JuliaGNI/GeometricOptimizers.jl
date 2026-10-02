@@ -34,3 +34,12 @@ long before the primitives are.
 """
 const VectorStorageMatrix{T} = Union{
     SkewSymMatrix{T}, SymmetricMatrix{T}, AbstractTriangular{T}}
+
+# The entries, as `Base`'s `==` for two arrays compares them, but through the storage where both
+# matrices are of one family and one size, so that the stored numbers decide every entry. The generic
+# method reads both one entry at a time, which a device refuses. A pair of two families keeps it.
+function Base.:(==)(A::VectorStorageMatrix, B::VectorStorageMatrix)
+    Base.typename(typeof(A)) === Base.typename(typeof(B)) && size(A) == size(B) ||
+        return invoke(==, Tuple{AbstractMatrix, AbstractMatrix}, A, B)
+    parent(A) == parent(B)
+end

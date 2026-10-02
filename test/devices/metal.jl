@@ -19,10 +19,24 @@ using Test
 
 if Metal.functional()
     include(joinpath(@__DIR__, "..", "..", "scripts", "device_products.jl"))
+    include(joinpath(@__DIR__, "..", "..", "scripts", "device_solve.jl"))
 
     @testset "every product and sum runs on Metal and matches the host" begin
         @info "Metal device" Metal.device()
         for (name, status) in device_products(MtlArray)
+            @testset "$name" begin
+                @test status === :pass
+            end
+        end
+    end
+
+    # Metal draws its random numbers from a generator of its own, so the `Adam` rows of (b) and (c)
+    # see another global section than the host twin and are compared by a property; see
+    # `UNMATCHED_ADAM_RTOL` in `device_solve.jl`. Metal supplies an `lu`, so `Cayley()` runs too.
+    @testset "solve! runs on Metal and matches the host twin, $(nameof(typeof(retraction)))" for retraction in (
+        Cayley(), Geodesic())
+        for (name, status) in device_solve(MtlArray, Float32; retraction = retraction,
+            matched_rng = false)
             @testset "$name" begin
                 @test status === :pass
             end

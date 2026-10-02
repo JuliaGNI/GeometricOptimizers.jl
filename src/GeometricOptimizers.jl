@@ -77,9 +77,10 @@ using NeuralNetworkParameters: NetworkParameters, params,
                                FlatParameters,
                                mapparameters, mapparameters!, mapstorage!,
                                foldparameters, foldstorage,
-                               parameter_eltype,
+                               parameter_eltype, parameterlayout,
                                register_parameter_type!
-import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata
+import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata,
+                                storage_gradient
 
 # `NetworkParameters` *is* re-exported, and it is the one exception to the paragraph above. It is the
 # only shape in which a whole set of parameters enters this package -- see [`OptimizerSolution`](@ref)

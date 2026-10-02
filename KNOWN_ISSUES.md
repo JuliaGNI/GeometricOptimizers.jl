@@ -283,69 +283,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   transcript, which is worth having given that three documentation passages depend on it and that the
   one thing already found here was found by reading rather than by running.
 
-### A20 · `default_gradient` has no `Manifold` method and silently takes the `AbstractArray` one
-
-- location: `src/optimizers/optimizer.jl:175-176`
-- kind: defect
-- found: #46
-- evidence:
-
-  **Severity: medium**, and narrow — it is unreachable through the constructor anyone actually calls.
-  From the review of [#46], found by checking that PR's claim about what it left open against merged
-  `main` instead of against the wording of [#27]. Pre-existing; [#46] neither causes nor fixes it.
-
-  `default_gradient` has two methods (`src/optimizers/optimizer.jl:175-176`):
-
-  ```julia
-  default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
-  default_gradient(problem::OptimizerProblem, x::ArrayNamedTuple) = GradientAutodiff(problem.F, x)
-  ```
-
-  `Manifold <: AbstractMatrix`, so a bare manifold takes the first. That builds the gradient from the
-  *length* and composes `problem.F` with a flat vector, where the point of `GradientAutodiff(F, ::Manifold)`
-  — added in [0.2.2](#022) at `src/utils.jl:30` — is that it rebuilds the manifold before
-  calling `F`. The `NamedTuple` method is already the delegating form, and the reason it exists is
-  recorded in `default_gradient`'s own docstring one screen up: a `Gradient` for a `NamedTuple` "has to
-  be constructed from `x` itself". A bare manifold is the same argument and did not get the same
-  treatment.
-
-  It does not raise where it is built. It raises at the first gradient evaluation, and only on an
-  objective that names its argument type — so an `F(Y) = -tr(Y'MY)` written without the annotation
-  computes something plausible off the flattened vector and never says anything. Reproduced on `main`
-  at 6166479:
-
-  ```julia
-  F(Y::GrassmannManifold) = -tr(Y' * M * Y)
-  x = rand(GrassmannManifold{Float64}, 3, 1)
-
-  default_gradient(OptimizerProblem(F, x), x)(x)
-  # MethodError: no method matching F(::Vector{ForwardDiff.Dual{…}})
-
-  GradientAutodiff(F, x)(x)          # the method [#46] added, for comparison
-  # [-0.28344900891714625; -0.660038737272924; -0.4099740609429401;;]
-  ```
-
-  The same on a `StiefelManifold`, which is why this is not a Grassmann entry: it is the half of [#27]'s
-  second bullet that survived A11.
-
-  Nothing in the test suite reaches it. `Optimizer(x, F; …)` builds its own gradient at
-  `src/optimizers/optimizer.jl:244` and never consults `default_gradient`; the constructor that does is
-  the lower-level `Optimizer(algorithm, problem, hessian, cache, linesearch; gradient = default_gradient(problem, cache.x), …)`
-  at `:156`, and `_optimizer` at `:201`. So the gap is real and unreachable by the documented entry
-  point at the same time, which is the reason it outlived a PR that fixed everything around it.
-
-  **What to do**: one method,
-
-  ```julia
-  default_gradient(problem::OptimizerProblem, x::Manifold) = GradientAutodiff(problem.F, x)
-  ```
-
-  next to the two above, and a test that goes through the `:156` constructor with an objective that
-  annotates its argument — the annotation is the part that matters, since without it the wrong gradient
-  is silent rather than loud. Worth doing together with the other half of [#27], `mode = :finitediff`
-  (`:246`), which has no `Manifold` method either and no `NamedTuple` one ([#24]); the three are one
-  subject, which is "every entry point that builds a gradient should agree about what a manifold is".
-
 ### A22 · The symplectic SR decomposition is not backward stable, and fails three ways
 
 - location: `src/decompositions/symplectic_sr.jl`
@@ -482,43 +419,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   **What to do**: Write a complex-valued algorithm that computes the sign correctly,
   or replace both with a method that accepts only real input by type constraint.
-
-### A27 · `ProjectTo` is pinned as the Frobenius projection, and the storage gradient is not yet derived from it
-
-- location: —
-- kind: defect
-- found: #111
-- evidence:
-
-  **Severity: medium.** Found in the review of [#111], in investigation of why a
-  code path that reads a `ProjectTo` cotangent's storage as `∂L/∂S` gives the wrong
-  gradient.
-
-  `ProjectTo` on a `SymmetricMatrix` or `SkewSymMatrix` gives the natural cotangent
-  (the Frobenius projection `½(Ā ± Āᵀ)` of a dense cotangent). A new test holds it to
-  that: its pairing with every storage direction matches a central difference, and a
-  weight used twice (two cotangents added, then projected again) gets the projection of
-  the sum. That representation is kept because AD can add and re-project it.
-
-  Returning `∂L/∂S` from `ProjectTo` instead was tried and rejected: Zygote adds the
-  two cotangents of a weight used twice as dense matrices and projects the sum again,
-  which doubled the off-diagonal entries (ratio 2.0 against finite differences), and a
-  dense Zygote-native cotangent mixed in gave ratios from −1.6 to 3.2.
-
-  A caller that forms the flat gradient of a parameter set through Zygote and passes
-  its storage as `∂L/∂S` gets half of each off-diagonal entry: the ratio of the storage
-  gradient, by finite differences, to the storage of the Zygote cotangent is 1 on the
-  diagonal and 2 off it for a `SymmetricMatrix`, and 2 for every entry of a
-  `SkewSymMatrix`, whose storage holds only off-diagonal entries (n = 3, Zygote 0.7.13).
-  A `GradientMethod` or `MomentumMethod` step taken on that storage therefore moves
-  those entries by half; this follows from the cotangent and was not measured through
-  an optimizer step. The conversion to `∂L/∂S` (the lower triangle of
-  `G + Gᵀ` with the diagonal counted once, or of `G − Gᵀ`) belongs where an AD
-  cotangent becomes a parameter gradient, not in `ProjectTo` itself.
-
-  **What to do**: The mechanism is a step in the optimizer's parameter update after
-  Zygote adds cotangents, and before the gradient is applied. Which package owns it
-  (GeometricOptimizers or NeuralNetworkParameters) is a design decision.
 
 ### A28 · `SymplecticStiefelManifold` has no `rebuild`, so `changebackend` refuses it
 
@@ -1179,6 +1079,19 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `device()`; after one run of the same command outside the sandbox it gave `Broken 1`. The fix is
   upstream: a workload that skips the kernel compilation where no device exists.
 
+### K16 · A horizontal lift as a parameter leaf raises a `CanonicalIndexError` at the first step
+
+- location: `src/global_sections/global_sections.jl:357`
+- kind: defect
+- found: 2026-10-02
+- evidence: a `NetworkParameters` with a `StiefelLieAlgHorMatrix` leaf, solved on the host with
+  `GradientMethod()` and a supplied `∇F!`, raises
+  `CanonicalIndexError: setindex! not defined for StiefelLieAlgHorMatrix{Float64, …}` from
+  `update_section!(::GlobalSection{T, <:StiefelLieAlgHorMatrix, Nothing}, …)`, which broadcasts
+  into the leaf. The lifts are tangent vectors and have a parameter protocol (`freeparameters`,
+  `rebuild`), but the Euclidean section update does not walk their storage. Found while writing
+  the parameter set of `scripts/device_solve.jl`, which therefore holds no lift leaf.
+
 ## F. Loose ends from the geodesic-retraction review
 
 Not a defect in the code; a thing a later reader would otherwise have to rediscover.
@@ -1273,13 +1186,10 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   calls `_manifold_αmax` on a set with a Stiefel leaf and `c::Float64`, and no line has its types.
 
 [#14]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/14
-[#24]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/24
-[#27]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/27
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
 [#45]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/45
-[#46]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/46
 [#52]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52
 [#54]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/54
 [#111]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/111

@@ -18,6 +18,7 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 SimpleSolvers = "36b790f5-6434-4fbe-b711-1f64a1e2f6a2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [sources]
 GeometricOptimizers = {path = ".."}
@@ -32,3 +33,4 @@ Metal = "1.10"
 NaNMath = "1"
 SafeTestsets = "0.1"
 Test = "1"
+Zygote = "0.7"

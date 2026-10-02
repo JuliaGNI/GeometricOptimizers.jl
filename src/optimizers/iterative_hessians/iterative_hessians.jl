@@ -13,7 +13,7 @@ instead, through `NeuralNetworkParameters`' allocation-free `flatten!` and `unfl
 A `NeuralNetworkParameters.FlatParameters` rather than a bare `Vector`, because it carries its own
 `ParameterLayout` and keeps it through `similar` — so δ is built once and the other three buffers are
 one `similar` each, with no `parameterlayout` call written anywhere below this line. One is still
-*made*: `FlatParameters(T, g)` is `flatten(T, g)`, whose first act is to build the layout. What the
+*made*: δ is the flattening of `g` on its backend, whose first act is to build the layout. What the
 `similar`s buy is that it happens once per cache rather than once per product with ``Q``.
 
 That layout then goes into the cache's own type, as `FlatParameters`' third type parameter and so as
@@ -48,8 +48,10 @@ would add a copy per iteration and buy nothing. `_flat_mul!` and the secant pair
 """
 _flat_scratch(::Type{T}, ::AbstractVector) where {T} = nothing
 
+# On the backend of `g`, as `Q` is, so that the products with `Q` stay there; see
+# `_flatten_on_backend`.
 function _flat_scratch(::Type{T}, g) where {T}
-    δ = FlatParameters(T, g)
+    δ = FlatParameters(_flatten_on_backend(T, g)...)
     (δ = δ, γ = similar(δ), rhs = similar(δ), direction = similar(δ))
 end
 

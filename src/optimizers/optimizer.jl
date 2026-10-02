@@ -203,13 +203,42 @@ number of *layers* rather than the length of the flattening — used to make the
 It wraps in a [`RiemannianGradient`](@ref), which is what projects the result leaf by leaf. `Optimizer`
 would wrap it anyway, and the wrap is idempotent; doing it here as well keeps this function's own
 return value the thing `Optimizer` will actually store.
+
+The [`Manifold`](@ref) method is `GradientAutodiff(problem.F, x)` for the same reason: it rebuilds the
+point before it calls `problem.F`, where the `AbstractArray` method would hand `problem.F` the flat
+vector (issue A20).
+
+On a device there is no default gradient, and every method throws an `ArgumentError` that names
+`∇F!`: `ForwardDiff` and finite differences compute on the host.
 """
 function default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T}
+    _refuse_default_gradient(x)
     GradientAutodiff{T}(problem.F, length(x))
 end
+function default_gradient(problem::OptimizerProblem, x::Manifold)
+    _refuse_default_gradient(x)
+    GradientAutodiff(problem.F, x)
+end
 function default_gradient(problem::OptimizerProblem, x::NetworkParameters)
+    _refuse_default_gradient(x)
     RiemannianGradient(GradientAutodiff(problem.F, x))
 end
+
+# The gradient `Optimizer(x, F)` builds without a `∇F!`: `mode` selects automatic differentiation or
+# central differences, and anything else is refused rather than read as one of them. A plain vector
+# needs `GradientFiniteDifferences`' length constructor, because `SimpleSolvers` has no method for a
+# vector; a `Manifold` and a parameter set have one each.
+function _default_gradient(F, x, mode)
+    mode === :autodiff || mode === :finitediff ||
+        throw(ArgumentError("`mode` is `:autodiff` or `:finitediff`, not `$(repr(mode))`"))
+    _refuse_default_gradient(x)
+    mode === :autodiff ? GradientAutodiff(F, x) : _finite_differences(F, x)
+end
+
+function _finite_differences(F, x::AbstractVector{T}) where {T}
+    GradientFiniteDifferences{T}(F, length(x))
+end
+_finite_differences(F, x) = GradientFiniteDifferences(F, x)
 
 """
     _optimizer(x, problem, algorithm, linesearch, gradient, retraction, config)
@@ -225,6 +254,8 @@ function _optimizer(
         linesearch::Union{LinesearchMethod, Real}, gradient::Gradient{T},
         retraction::AbstractRetraction, config::Options{T}, step_ceiling::Real,
         observer) where {T}
+    # a parameter set with leaves on two backends raises the "mixed backends" error here
+    _solution_backend(x)
     method = change_precision(T, algorithm)
     cache = OptimizerCache(method, x)
     hes = Hessian(method, problem, x)
@@ -318,11 +349,7 @@ function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = :autodiff,
     # `T` comes from the `OptimizerSolution{T}` bound and not from `eltype(x)`: for a `NamedTuple` of
     # manifolds the latter is `StiefelManifold{Float64, Matrix{Float64}}` rather than `Float64`.
     _G = if (ismissing(∇F!) | isnothing(∇F!))
-        if mode == :autodiff
-            GradientAutodiff(F, x)
-        else
-            GradientFiniteDifferences(F, x)
-        end
+        _default_gradient(F, x, mode)
     else
         GradientFunction(F, ∇F!, x)
     end
