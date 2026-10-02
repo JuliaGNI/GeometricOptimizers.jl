@@ -1,5 +1,5 @@
 # The device sweep on Metal: construction, the manifold operations, every product and sum, the
-# retractions and `solve!`, each against a host twin, under `Metal.allowscalar(false)`. It prints
+# retractions and `solve!`, each against a host twin, under `allowscalar(false)`. It prints
 # PASS or FAIL per row and returns the rows.
 #
 # Run it by hand through a Kaimon session: Metal is unreachable from a sandboxed shell, where
@@ -84,8 +84,9 @@ function manifold_rows(todevice; seed = 1234)
         push!(rows,
             check_row("geodesic(60 * lift, $(nameof(typeof(algorithm))))",
                 () -> let B = 60 * rand(rng, StiefelLieAlgHorMatrix{Float32}, 20, 3)
-                    E = geodesic(todev(todevice, B), algorithm)
-                    get_backend(E) == backend && Array(E) ≈ geodesic(B, algorithm)
+                    Y = geodesic(todev(todevice, B), algorithm)
+                    get_backend(parent(Y)) == backend &&
+                        Array(parent(Y)) ≈ parent(geodesic(B, algorithm))
                 end))
     end
     rows
@@ -107,4 +108,4 @@ function device_check(todevice; adam_rtol = UNMATCHED_ADAM_RTOL, matched_rng = f
     rows
 end
 
-metal_check(; kwargs...) = (Metal.allowscalar(false); device_check(MtlArray; kwargs...))
+metal_check(; kwargs...) = device_check(MtlArray; kwargs...)

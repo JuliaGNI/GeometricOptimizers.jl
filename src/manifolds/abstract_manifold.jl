@@ -36,6 +36,14 @@ size tried.
 1.9e-3 at ``N = 400``, against 7.1e-7 and 7.7e-6 after the second — and the manifold tests assert
 `check(Y) < 1e-14` in `Float64`.
 
+**On a device this keeps the point there; it is not the faster route.** Measured by
+`scripts/orthonormalization_device_cost.jl` on an M4 Max (Julia 1.13.1, Metal 1.11.1) in `Float32`
+at the ``N\times(N-3)`` shape [`global_section`](@ref) uses — a cold session, one warm-up, the median
+of five runs, `Metal.synchronize()` in the timed region and the host on one BLAS thread: at
+``N = 20`` this takes 7.3 ms on Metal, against 46 μs for a host `qr!` and 0.60 ms for the round trip
+that downloads `A`, factorizes it on the host and uploads ``Q``; at ``N = 400``, 29 ms against 12 ms
+and 19 ms. At these sizes the device time is mostly launch and synchronisation latency.
+
 **Forming ``A^TA`` squares the condition number**, which is what the `nothing` is for. `cholesky`
 with `check = false` reports a Gram matrix that is no longer positive definite rather than throwing,
 and at this shape in `Float32` an ordinary Gaussian draw reaches that about once in a hundred and

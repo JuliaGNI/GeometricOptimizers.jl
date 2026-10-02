@@ -5,7 +5,7 @@
 # The shape is the one `global_section` factorizes, `N × (N - n)` with `n = 3`, at `N = 20` and
 # `N = 400`, in `Float32`, because Metal has no `Float64`. Each figure is the median of five timed
 # runs after one warm-up, and a device run ends in `Metal.synchronize()` inside the timed region, so
-# the time is the computation's and not the launch's.
+# the time is the computation's and not the launch's. The host runs on one BLAS thread.
 #
 # Run it by hand through a cold Kaimon session, in a scratch environment that develops this tree
 # (Metal is unreachable from a sandboxed shell), and quote the machine and the versions it prints:
@@ -14,7 +14,7 @@
 #     orthonormalization_device_cost()
 
 using GeometricOptimizers: _cholesky_qr2
-using LinearAlgebra: qr!
+using LinearAlgebra: BLAS, qr!
 using Metal: Metal, MtlArray
 using Random
 using Statistics: median
@@ -29,6 +29,9 @@ end
 host_qr(A) = Matrix(qr!(copy(A)).Q)
 
 function orthonormalization_device_cost(; sizes = (20, 400), n = 3, seed = 1234)
+    # the host factorization on one BLAS thread, so that the host figures do not depend on what
+    # else the machine is running
+    BLAS.set_num_threads(1)
     rng = Random.Xoshiro(seed)
     rows = map(sizes) do N
         A = randn(rng, Float32, N, N - n)
@@ -39,5 +42,5 @@ function orthonormalization_device_cost(; sizes = (20, 400), n = 3, seed = 1234)
         (N = N, cholesky_qr2_device = device, qr_host = host, qr_round_trip = round_trip)
     end
     (machine = Sys.cpu_info()[1].model, julia = VERSION, metal = pkgversion(Metal),
-        device = string(Metal.device()), rows = rows)
+        device = string(Metal.device()), blas_threads = BLAS.get_num_threads(), rows = rows)
 end
