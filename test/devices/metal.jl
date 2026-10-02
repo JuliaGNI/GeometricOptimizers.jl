@@ -2,11 +2,14 @@
 # `JLArrays` stand-in. `runtests.jl` runs this file in the `metal` group, which a default run on
 # Apple silicon includes and `Pkg.test(test_args = ["metal"])` selects anywhere.
 #
-# Where `Metal.functional()` is `true` the file runs the sweep. Where it is `false` the file runs
-# no test and records one visible skip: on a Mac without a usable device, and inside a sandbox,
-# where `Metal.devices()` is empty although the hardware is present. The skip does not
-# fail the run, so `.github/workflows/Metal.yml` keeps the guarantee instead: a step before the
-# tests fails that job where Metal is not functional, so it cannot pass without having run the sweep.
+# Where `Metal.functional()` is `true` the file runs the sweep. Where Metal loads and
+# `Metal.functional()` is `false` the file runs no test and records one visible skip: on a Mac
+# without a usable device, and inside a sandbox, where `Metal.devices()` is empty although the
+# hardware is present. On Apple silicon with no device and no Metal cache for the flags of the
+# run, `using Metal` fails at the Metal precompile before the skip (K15 in `KNOWN_ISSUES.md`).
+# The skip does not fail the run, so `.github/workflows/Metal.yml` keeps the guarantee instead: a
+# step before the tests fails that job where Metal is not functional, so it cannot pass without
+# having run the sweep.
 #
 # Metal supplies the `lu` that `JLArrays` lacks, so the two `cayley` rows that are gaps in
 # `device_products.jl` pass here and every row is asserted to pass.
