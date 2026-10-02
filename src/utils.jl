@@ -62,8 +62,8 @@ function _refuse_default_gradient(x)
 end
 
 # A flat vector of `ps` on the backend of its leaves, and its layout. The host arm is `flatten`, so
-# a host iterate is flattened exactly as before; a device one is written into a vector allocated on
-# the device, where `flatten` would allocate a host `Vector` and the gradient computed from it
+# a host iterate is flattened as `flatten` does it; a device one is written into a vector allocated
+# on the device, where `flatten` would allocate a host `Vector` and the gradient computed from it
 # would come back on the host.
 _flatten_on_backend(::Type{T}, ps) where {T} = _flatten_on(_solution_backend(ps), T, ps)
 

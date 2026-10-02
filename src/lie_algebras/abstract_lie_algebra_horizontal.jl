@@ -43,6 +43,16 @@ function assign!(B::AbstractLieAlgHorMatrix{T}, C::AbstractLieAlgHorMatrix{T}) w
     (foreach(assign!, parent(B), parent(C)); nothing)
 end
 
+# The entries, as `Base`'s `==` for two arrays compares them, but block by block where both lifts
+# are of one type, so that the stored blocks decide every entry and their sizes decide the size. The
+# generic method reads both one entry at a time, which a device refuses. A pair of two types keeps
+# it.
+function Base.:(==)(A::AbstractLieAlgHorMatrix, B::AbstractLieAlgHorMatrix)
+    Base.typename(typeof(A)) === Base.typename(typeof(B)) ||
+        return invoke(==, Tuple{AbstractMatrix, AbstractMatrix}, A, B)
+    parent(A) == parent(B)
+end
+
 @doc raw"""
     one(B::AbstractLieAlgHorMatrix)
 

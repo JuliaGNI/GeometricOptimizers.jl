@@ -49,7 +49,7 @@ rebuild(A::GrassmannLieAlgHorMatrix, data) = GrassmannLieAlgHorMatrix(data[1], A
 # can appear at two places in it. A `SymmetricMatrix` holds `S_ij` at `(i, j)` and `(j, i)`, so
 # `∂L/∂S_ij = G_ij + G_ji` off the diagonal and `G_ii` on it; a `SkewSymMatrix` holds `S_ij` at
 # `(i, j)` and `-S_ij` at `(j, i)`, so `∂L/∂S_ij = G_ij - G_ji`. Without this a flat gradient read off
-# the cotangent's own storage is half the gradient off the diagonal (issue A27). Both are one
+# the cotangent's own storage is half the gradient off the diagonal. Both are one
 # addition per entry, so exact wherever that addition is.
 #
 # One kernel each, so a dense `G`, an `Adjoint` and a device array take one path, and the result is

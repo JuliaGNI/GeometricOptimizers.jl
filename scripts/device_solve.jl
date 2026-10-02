@@ -14,8 +14,8 @@
 # - (a) a plain device vector;
 # - (b) a bare `StiefelManifold` whose storage is on the device;
 # - (c) a `NetworkParameters` with a `StiefelManifold` leaf, a `GrassmannManifold` leaf, one leaf of
-#   each `VectorStorageMatrix` type and one plain matrix, every leaf on the device. It holds no
-#   horizontal lift, which cannot be a parameter leaf even on the host (K16 in `KNOWN_ISSUES.md`).
+#   each `VectorStorageMatrix` type, one leaf of each horizontal lift and one plain matrix, every
+#   leaf on the device.
 #
 # Each run takes `STEPS` iterations, no more and no fewer, and a row checks, in this order: every
 # leaf of the result is on the device and of its starting array type (`:off_device`), every value is
@@ -98,6 +98,8 @@ function parameters_problem(rng, ::Type{T}, todevice) where {T}
         K = rand(rng, SkewSymMatrix{T}, n),
         L = rand(rng, StrictlyLowerTriangular{T}, n),
         U = rand(rng, StrictlyUpperTriangular{T}, n),
+        H = rand(rng, StiefelLieAlgHorMatrix{T}, N, n),
+        R = rand(rng, GrassmannLieAlgHorMatrix{T}, N, n),
         W = randn(rng, T, n, 2)))
     v, layout = flatten(host)
     c, w = randn(rng, T, length(v)), T(1) .+ rand(rng, T, length(v))

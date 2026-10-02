@@ -1,4 +1,5 @@
-# `==` of two manifold points, and of two structured matrices of one family, compares the storage.
+# `==` of two manifold points, of two structured matrices of one family, and of two horizontal lifts
+# of one type, compares the storage.
 #
 # The answer is `Base`'s for two arrays: equal entries. The generic method reads both one entry at a
 # time, which a device refuses, and the optimizer compares iterates with `==` on every step
@@ -9,7 +10,7 @@ using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
 using LinearAlgebra: qr
-using NeuralNetworkParameters: mapstorage
+using NeuralNetworkParameters: NetworkParameters, mapstorage
 using Random
 using Test
 
@@ -22,7 +23,17 @@ function pairs_of(::Type{T}) where {T}
     point = Matrix{T}(qr(randn(rng, T, 2n, n)).Q)[:, 1:n]
     (rand(rng, SymmetricMatrix{T}, n), rand(rng, SkewSymMatrix{T}, n),
         rand(rng, StrictlyLowerTriangular{T}, n), rand(rng, StrictlyUpperTriangular{T}, n),
-        StiefelManifold(point), GrassmannManifold(copy(point)))
+        StiefelManifold(point), GrassmannManifold(copy(point)),
+        rand(rng, StiefelLieAlgHorMatrix{T}, 2n, n), rand(rng, GrassmannLieAlgHorMatrix{T}, 2n, n))
+end
+
+# Two sizes can share a storage length: a `SkewSymMatrix` or a strictly triangular matrix of size
+# 0 and of size 1 both store nothing, so the storage alone would call them equal
+@testset "== tells two sizes of one family apart, $T" for T in (Float32, Float64)
+    for M in (SkewSymMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular)
+        @test M(T[], 0) != M(T[], 1)
+        @test M(T[], 1) == M(T[], 1)
+    end
 end
 
 @testset "== compares the entries through the storage: $(nameof(typeof(A))), $T" for T in (Float32, Float64),
@@ -58,8 +69,29 @@ allocations(f::F, a::A, b::B) where {F, A, B} = (f(a, b); @allocated f(a, b))
     @test allocations(collect, A) > 0
 end
 
+# one non-finite storage entry is found, in a leaf and in a set of leaves, on the host and on a
+# device
+@testset "contains_nonfinite finds a $bad entry: $(nameof(typeof(A))), $T" for T in (
+        Float32, Float64),
+    A in pairs_of(T), bad in (T(NaN), T(Inf), -T(Inf))
+    poisoned = mapstorage(s -> (s = copy(s); s[1] = bad; s), A)
+    rest = (; W = randn(Random.Xoshiro(5), T, 2, 3))
+    for todevice in (identity, JLArray)
+        @test GeometricOptimizers.contains_nonfinite(mapstorage(todevice, poisoned)) ===
+              true
+        @test GeometricOptimizers.contains_nonfinite(mapstorage(todevice, A)) === false
+        set(x) = NetworkParameters((; rest..., A = x))
+        @test GeometricOptimizers.contains_nonfinite(mapstorage(todevice, set(poisoned))) ===
+              true
+        @test GeometricOptimizers.contains_nonfinite(mapstorage(todevice, set(A))) === false
+    end
+end
+
 @testset "two families compare their entries, $T" for T in (Float32, Float64)
-    S, K, L, U, Y, G = pairs_of(T)
+    S, K, L, U, Y, G, H, R = pairs_of(T)
+    zero_stiefel_lift, zero_grassmann_lift = mapstorage(zero, H), mapstorage(zero, R)
+    @test zero_stiefel_lift == zero_grassmann_lift
+    @test (H == R) == (Matrix(H) == Matrix(R))
     zero_sym, zero_skew = zero(S), zero(K)
     @test (zero_sym == zero_skew) == (Matrix(zero_sym) == Matrix(zero_skew))
     @test zero_sym == zero_skew

@@ -95,8 +95,7 @@ direction(cache::QuasiNewtonCache) = cache.Δx
 # time on a device.
 function _flat_secant(cache::QuasiNewtonCache)
     cache.flat === nothing ? (cache.Δx, cache.Δg) :
-    (_flat_data(flatten!(cache.flat.δ, cache.Δx)),
-        _flat_data(flatten!(cache.flat.γ, cache.Δg)))
+    (parent(flatten!(cache.flat.δ, cache.Δx)), parent(flatten!(cache.flat.γ, cache.Δg)))
 end
 
 function update!(cache::QuasiNewtonCache, state::OptimizerState, x::OptimizerSolution)
@@ -104,14 +103,14 @@ function update!(cache::QuasiNewtonCache, state::OptimizerState, x::OptimizerSol
     _copyto!(direction(cache), state.s)
     # `direction(cache)` *is* `cache.Δx`, so this is `δ`, refreshed into its flat mirror; see
     # `_flat_scratch`
-    δ = cache.flat === nothing ? cache.Δx : _flat_data(flatten!(cache.flat.δ, cache.Δx))
+    δ = cache.flat === nothing ? cache.Δx : parent(flatten!(cache.flat.δ, cache.Δx))
     outer!(cache.ΔxΔx, δ, δ)
     cache
 end
 
 # No `outer!` method of this package's own is needed here, and that is a property of
-# [`_flat_scratch`](@ref) rather than an omission. It hands `outer!` a `FlatParameters`, which
-# `SimpleSolvers.outer!` can index against `axes(m)` directly, so a parameter set or an
+# [`_flat_scratch`](@ref) rather than an omission. It hands `outer!` the data vector of a
+# `FlatParameters`, a plain array of the backend's type, so a parameter set or an
 # `AbstractLieAlgHorMatrix` never reaches that generic unflattened. Writing one here would also be type
 # piracy: `outer!` is `SimpleSolvers`' and neither argument type would be this package's.
 #
@@ -198,8 +197,6 @@ end
 _quadratic_form(γ, Q) = _quadratic_form(KernelAbstractions.get_backend(Q), γ, Q)
 _quadratic_form(::CPU, γ, Q) = dot(γ, Q, γ)
 _quadratic_form(::KernelAbstractions.Backend, γ, Q) = dot(γ, Q * γ)
-
-_flat_data(γ::FlatParameters) = parent(γ)
 
 function _update_inverse_hessian!(::DFP, cache::QuasiNewtonCache{T}, state::BFGSState{T},
         ΔxΔg::T) where {T}

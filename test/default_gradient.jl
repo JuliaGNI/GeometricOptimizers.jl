@@ -102,9 +102,7 @@ end
 # `MethodError` instead of differentiating. `F` is quadratic in the storage, so a central difference
 # has no truncation error, and its rounding error, `eps(T) * |F| / ϵ`, is small at the minimum, where
 # `|F|` is: two solves that differ only in the gradient then agree to well within `√eps(T)`. Over
-# eight seeds the relative distance was below `3e-3 √eps(T)` in both precisions. The Brockett
-# function was tried first: its `|F|` near the minimum is about 20, and in `Float32` the two
-# solutions differed by up to `5.3 √eps(T)`.
+# eight seeds the relative distance was below `3e-3 √eps(T)` in both precisions.
 function procrustes(::Type{T}) where {T}
     rng = Random.Xoshiro(3)
     C = stiefel_point(rng, T) + randn(rng, T, N, n) / 10
@@ -115,7 +113,7 @@ end
 @testset "a bare Stiefel point: the default gradient rebuilds the point, $T" for T in (Float32, Float64)
     F, riemannian_gradient, Y = procrustes(T)
 
-    # through the lower-level constructor's `default_gradient` (issue A20)
+    # through the lower-level constructor's `default_gradient`
     autodiff = default_gradient(OptimizerProblem(F, Y), Y)
     @test autodiff isa GradientAutodiff{T}
     @test autodiff(Y) ≈ riemannian_gradient(Y) rtol = √eps(T)

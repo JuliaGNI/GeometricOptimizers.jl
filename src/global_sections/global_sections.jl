@@ -370,6 +370,19 @@ function update_section!(Λᵗ::GlobalSection{T, AT, Nothing}, Λ⁽ᵗ⁻¹⁾:
     Λᵗ
 end
 
+# A horizontal lift as a vector-space parameter: the same addition, block by block on the free
+# parameters. `parent` gives the blocks, `(A, B)` or `(B,)`, and the `SkewSymMatrix` block `A` has no
+# `setindex!`, so each block is written through its own `freeparameters`.
+function update_section!(Λᵗ::GlobalSection{T, AT, Nothing}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, AT},
+        B⁽ᵗ⁻¹⁾::AT, retraction, workspace = nothing) where {
+        T, AT <: AbstractLieAlgHorMatrix{T}}
+    foreach(parent(Λᵗ.Y), parent(Λ⁽ᵗ⁻¹⁾.Y), parent(B⁽ᵗ⁻¹⁾)) do y, y₀, b
+        freeparameters(y) .= freeparameters(y₀) .+ freeparameters(b)
+    end
+
+    Λᵗ
+end
+
 # The direction `B⁽ᵗ⁻¹⁾` is of the parameters' shape and the two sections are plain `NamedTuple`s, so
 # this is the mixed-shape walk: `mapparameters!` takes the section as its first argument and
 # normalises the direction, whichever of the two shapes it arrived in.

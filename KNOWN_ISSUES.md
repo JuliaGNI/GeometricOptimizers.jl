@@ -333,6 +333,37 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
 
+### K17 · `storage_gradient` of a `Float32` structured leaf and a `Float64` cotangent returns a `Float64` leaf
+
+- location: `src/parameter_protocol.jl`
+- kind: found late
+- found: 2026-10-02
+- evidence: `storage_gradient(A::SymmetricMatrix{Float32}, G::Matrix{Float64})` returns
+  `SymmetricMatrix{Float64, Vector{Float64}}` (a session probe of the G7 critic). The docstring of
+  NeuralNetworkParameters' hook (`leaves.jl:127`) asks for "a leaf of the same type". The kernels
+  allocate the result with `G`'s element type. No test has a cotangent of another precision than
+  its leaf.
+
+### K18 · No check compares the host BFGS iterates of a parameter set before and after `_flat_secant` returns plain vectors
+
+- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl:96`
+- kind: not verified
+- found: 2026-10-02
+- evidence: `_flat_secant` hands `outer!` and `_quadratic_form` the data vectors of the flat
+  mirrors, where `origin/main` (`fd8a48a`) handed them the `FlatParameters`. The arithmetic is the
+  same, but no run compared the hashes of `scripts/svd_optim_iterates.jl` on the two trees, because
+  they resolve different NeuralNetworkParameters and SimpleSolvers versions.
+
+### K19 · Building a BFGS `Optimizer` on a host parameter set allocates about 3.8 KB more than on `origin/main`
+
+- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl`
+- kind: not verified
+- found: 2026-10-02
+- evidence: measured once per tree, cold, one BLAS thread, by the G7 critic: 34968 against
+  31192 bytes in `Float32` and 59544 against 55576 in `Float64`. The allocation of 5 and of 10
+  iterations is the same on both trees (207248/346368 and 428368/718128 bytes). One run per tree
+  is not a measurement; the cost of construction is G8's ground.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
@@ -970,19 +1001,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `BoundsError: attempt to access 0-element Vector{Metal.MTL.MTLDevice} at index [1]` from
   `device()`; after one run of the same command outside the sandbox it gave `Broken 1`. The fix is
   upstream: a workload that skips the kernel compilation where no device exists.
-
-### K16 · A horizontal lift as a parameter leaf raises a `CanonicalIndexError` at the first step
-
-- location: `src/global_sections/global_sections.jl:357`
-- kind: defect
-- found: 2026-10-02
-- evidence: a `NetworkParameters` with a `StiefelLieAlgHorMatrix` leaf, solved on the host with
-  `GradientMethod()` and a supplied `∇F!`, raises
-  `CanonicalIndexError: setindex! not defined for StiefelLieAlgHorMatrix{Float64, …}` from
-  `update_section!(::GlobalSection{T, <:StiefelLieAlgHorMatrix, Nothing}, …)`, which broadcasts
-  into the leaf. The lifts are tangent vectors and have a parameter protocol (`freeparameters`,
-  `rebuild`), but the Euclidean section update does not walk their storage. Found while writing
-  the parameter set of `scripts/device_solve.jl`, which therefore holds no lift leaf.
 
 ## F. Loose ends from the geodesic-retraction review
 

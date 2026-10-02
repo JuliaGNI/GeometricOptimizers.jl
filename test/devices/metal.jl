@@ -1,5 +1,5 @@
-# The device sweep of `device_products.jl` on a real Apple GPU, with `MtlArray` in place of the
-# `JLArrays` stand-in. `runtests.jl` runs this file in the `metal` group, which a default run on
+# The device sweeps of `device_products.jl` and `device_solve.jl` on a real Apple GPU, with
+# `MtlArray` in place of the `JLArrays` stand-in. `runtests.jl` runs this file in the `metal` group, which a default run on
 # Apple silicon includes and `Pkg.test(test_args = ["metal"])` selects anywhere.
 #
 # Where `Metal.functional()` is `true` the file runs the sweep. Where Metal loads and
@@ -9,7 +9,7 @@
 # run, `using Metal` fails at the Metal precompile before the skip (K15 in `KNOWN_ISSUES.md`).
 # The skip does not fail the run, so `.github/workflows/Metal.yml` keeps the guarantee instead: a
 # step before the tests fails that job where Metal is not functional, so it cannot pass without
-# having run the sweep.
+# having run the sweeps.
 #
 # Metal supplies the `lu` that `JLArrays` lacks, so the two `cayley` rows that are gaps in
 # `device_products.jl` pass here and every row is asserted to pass.

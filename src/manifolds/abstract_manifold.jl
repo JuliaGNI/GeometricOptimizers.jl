@@ -368,10 +368,9 @@ to make a bare one a `MethodError` at [`Optimizer`](@ref) construction (issue A1
 
 Its callers are `GeometricOptimizers._similar(::Manifold)`, `copyto!(::Manifold, ::Manifold)` and the
 reconstruction that `GradientAutodiff(F, ::Manifold)` and `GradientFiniteDifferences(F, ::Manifold)`
-compose `F` with. It used to have another: the flattening reconstructed a manifold
-through this, and hardcoding `StiefelManifold` there turned a [`GrassmannManifold`](@ref) into a
-[`StiefelManifold`](@ref) on every round trip. `NeuralNetworkParameters.rebuild` takes a *prototype*
-rather than a type, so that bug class is gone from the flat path rather than guarded against.
+compose `F` with. The flattening does not call it: `NeuralNetworkParameters.rebuild` takes a
+*prototype* rather than a type, so a round trip keeps a [`GrassmannManifold`](@ref) a
+`GrassmannManifold`.
 """
 manifold_constructor(x::Manifold) = Base.typename(typeof(x)).wrapper
 

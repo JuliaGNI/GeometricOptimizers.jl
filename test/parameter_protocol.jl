@@ -6,12 +6,12 @@
 # diagonal entry `G_ii`; a `SkewSymMatrix` stores `S_ij` at `(i, j)` and `-S_ij` at `(j, i)`, so its
 # storage gradient is `G_ij - G_ji`. Read as storage without this, `G` is half the gradient off the
 # diagonal: the ratio of a central difference to the Zygote cotangent was `[1, 2, 1, 2, 2, 1]` for a
-# 3 × 3 symmetric leaf and `[2, 2, 2]` for a skew one (issue A27).
+# 3 × 3 symmetric leaf and `[2, 2, 2]` for a skew one.
 #
 # The reference is a central difference on the flat storage, in `Float64`, so it shares no formula
 # with the conversion. One loss uses every leaf once; the other two use every leaf twice, or mix in
 # a loss that reads the leaf as a dense array, because that is where Zygote adds two cotangents as
-# dense matrices and where a conversion inside `ProjectTo` went wrong.
+# dense matrices and where `ProjectTo` converts the sum back to the leaf's type.
 
 using GeometricOptimizers
 using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular

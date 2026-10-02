@@ -206,7 +206,7 @@ return value the thing `Optimizer` will actually store.
 
 The [`Manifold`](@ref) method is `GradientAutodiff(problem.F, x)` for the same reason: it rebuilds the
 point before it calls `problem.F`, where the `AbstractArray` method would hand `problem.F` the flat
-vector (issue A20).
+vector.
 
 On a device there is no default gradient, and every method throws an `ArgumentError` that names
 `∇F!`: `ForwardDiff` and finite differences compute on the host.
