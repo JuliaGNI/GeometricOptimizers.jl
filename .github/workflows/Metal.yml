@@ -7,10 +7,12 @@
 #
 # WHAT THIS ADDS TO CI.yml.
 #
-# CI.yml's `macOS-latest` entry already runs the Metal testset, because `test/runtests.jl` includes
-# it on every Apple-silicon Mac. It skips there if the device is not functional. This job runs the
-# testset alone (`test_args: metal`), on macOS 15 rather than on whatever `macos-latest` points to,
-# and fails if Metal is not functional, so it cannot pass without having run the sweep.
+# CI.yml's `macOS-latest` entry already runs the `metal` group, because the default GROUPS of
+# `test/runtests.jl` include it on every Apple-silicon Mac. Those jobs are required status checks,
+# so a failing row of the sweep there blocks a merge. There `test/devices/metal.jl` records a skip
+# and passes if the device is not functional. This job runs the group alone
+# (`test_args: metal`), on macOS 15 rather than on whatever `macos-latest` points to, and a step
+# before the tests fails it if Metal is not functional, so it cannot pass without having run the sweep.
 #
 # The runner's GPU is Apple's paravirtual device. Metal.jl supports it from 1.10 and on macOS 15 or
 # later only; on `macos-14` Metal is not functional. It is good for correctness and for nothing
@@ -55,6 +57,18 @@ jobs:
                   version: ${{ matrix.version }}
             - uses: julia-actions/cache@v3
             - uses: julia-actions/julia-buildpkg@v1
+            # The test environment is not instantiated here, so the check adds Metal, at the bound
+            # of test/Project.toml, to a temporary environment.
+            - name: Check that Metal is functional
+              shell: julia --color=yes {0}
+              run: |
+                  import Pkg, TOML
+                  bound = TOML.parsefile("test/Project.toml")["compat"]["Metal"]
+                  Pkg.activate(; temp = true)
+                  Pkg.add(Pkg.PackageSpec(name = "Metal", version = Pkg.Types.semver_spec(bound)))
+                  using Metal
+                  Metal.functional() || error("Metal is not functional on this runner, so the metal group would only skip")
+                  println("Metal device: ", Metal.device())
             - uses: julia-actions/julia-runtest@v1
               with:
                   test_args: metal

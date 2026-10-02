@@ -36,9 +36,10 @@
 # ## It skips itself where there is no device
 #
 # `Metal.functional()` is `false` on Linux, on Windows, on a Mac without Apple silicon and on a
-# macOS runner older than 15, and `Metal.device()` can return a null device inside a sandbox even
-# where the hardware is present. The script says so and exits 0 rather than failing, so it is safe
-# to run anywhere.
+# macOS runner older than 15. Where Metal loads but is not functional, the script says so and exits
+# 0 rather than failing. In a macOS sandbox that hides the GPU, `Metal.devices()` is empty even where
+# the hardware is present, and with no Metal cache for its flags `using Metal` fails at the
+# precompile before the check runs (K15 in `KNOWN_ISSUES.md`).
 
 using GeometricOptimizers
 using GeometricOptimizers: StrictlyLowerTriangular, StiefelProjection, add!
