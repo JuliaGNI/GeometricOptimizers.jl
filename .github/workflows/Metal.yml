@@ -62,9 +62,9 @@ jobs:
               shell: julia --color=yes {0}
               run: |
                   import Pkg, TOML
+                  bound = TOML.parsefile("test/Project.toml")["compat"]["Metal"]
                   Pkg.activate(; temp = true)
-                  Pkg.add("Metal")
-                  Pkg.compat("Metal", TOML.parsefile("test/Project.toml")["compat"]["Metal"])
+                  Pkg.add(Pkg.PackageSpec(name = "Metal", version = Pkg.Types.semver_spec(bound)))
                   using Metal
                   Metal.functional() || error("Metal is not functional on this runner, so the metal group would only skip")
                   println("Metal device: ", Metal.device())

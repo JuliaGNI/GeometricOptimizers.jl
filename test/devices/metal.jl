@@ -4,7 +4,7 @@
 #
 # Where `Metal.functional()` is `true` the file runs the sweep. Where it is `false` the file runs
 # no test and records one visible skip: on a Mac without a usable device, and inside a sandbox,
-# where `Metal.device()` can be a null device although the hardware is present. The skip does not
+# where `Metal.devices()` is empty although the hardware is present. The skip does not
 # fail the run, so `.github/workflows/Metal.yml` keeps the guarantee instead: a step before the
 # tests fails that job where Metal is not functional, so it cannot pass without having run the sweep.
 #
