@@ -1164,7 +1164,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### K15 · A sandboxed run with no matching Metal cache fails at the Metal precompile instead of skipping
 
-- location: `test/devices/metal.jl:14` (`using Metal`)
+- location: `test/devices/metal.jl:17` (`using Metal`)
 - kind: upstream
 - found: 2026-10-02
 - evidence: Metal.jl 1.11.1's precompile workload (`src/precompile.jl:18`) calls
