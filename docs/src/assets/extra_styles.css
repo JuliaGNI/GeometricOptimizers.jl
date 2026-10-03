@@ -8,10 +8,7 @@
  * The two `display-*-only` classes are for the same distinction spelled out by hand, in a `@raw
  * html` block that has more than an image in it. They key on Documenter's own
  * `theme--documenter-dark` class rather than on `prefers-color-scheme`, so they follow the in-page
- * theme switcher. Nothing uses them yet.
- *
- * This came here from `GeometricMachineLearning`'s `docs/src/assets/extra_styles.css` with the
- * chapters whose figures need it. */
+ * theme switcher. Nothing uses them yet. */
 
 .display-light-only {
     display: block;
