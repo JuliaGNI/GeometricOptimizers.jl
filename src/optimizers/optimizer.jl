@@ -262,8 +262,8 @@ function _optimizer(
         config, gradient, retraction, step_ceiling, observer)
 end
 
-# A parameter set with leaves on two backends raises the "mixed backends" error before its cache is
-# built. A quasi-Newton cache allocates its matrices on the backend of the set and raises it there,
+# For a method other than quasi-Newton, a parameter set with leaves on two backends raises the "mixed
+# backends" error before its cache is built. A quasi-Newton cache allocates its matrices on the backend of the set and raises it there,
 # so this checks only for the other methods: a second check in `_optimizer` stops the keyword body
 # of `Optimizer(x, F)` from inlining, and a caller that keeps a BFGS `Optimizer` of a two-leaf host
 # set pays 576 bytes (`Float32`) or 640 bytes (`Float64`) more per construction for it.

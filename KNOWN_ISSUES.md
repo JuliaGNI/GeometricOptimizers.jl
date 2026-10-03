@@ -333,6 +333,32 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
 
+### K20 · `storage_gradient` of a Stiefel lift raises a `MethodError` for a cotangent of the lift's own type
+
+- location: `src/parameter_protocol.jl`, `storage_gradient(A::StiefelLieAlgHorMatrix, G::AbstractMatrix)`
+- kind: found late
+- found: 2026-10-03
+- evidence: the method reads `G[1:n, 1:n]`, and `getindex(::StiefelLieAlgHorMatrix, i, j)`
+  (`src/lie_algebras/stiefel_lie_algebra_horizontal.jl`) takes integer indices only. So a
+  `StiefelLieAlgHorMatrix` cotangent raises
+  `MethodError: no method matching isless(::UnitRange{Int64}, ::Int64)`, at the leaf's own precision
+  and at another one. Zygote gives a lift a dense cotangent, so a training run may never reach this
+  method with a lift. Reproducer (Julia 1.13.1; `S = Float32` and `S = Float64` both raise the error):
+
+  ```julia
+  using GeometricOptimizers, Test
+  using NeuralNetworkParameters: storage_gradient
+
+  @testset "lift-typed cotangent, $S" for S in (Float32, Float64)
+      A = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Float32, 3), 3), rand(Float32, 2, 3), 5, 3)
+      G = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(S, 3), 3), rand(S, 2, 3), 5, 3)
+      @test storage_gradient(A, G) isa StiefelLieAlgHorMatrix{Float32}
+  end
+  ```
+
+  The fix is a method `storage_gradient(A::StiefelLieAlgHorMatrix, G::StiefelLieAlgHorMatrix)` that
+  works on the blocks.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
