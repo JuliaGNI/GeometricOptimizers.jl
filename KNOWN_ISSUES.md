@@ -333,16 +333,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
 
-### K19 · Building a BFGS `Optimizer` on a host parameter set allocates about 3.8 KB more than at commit `fd8a48a`
-
-- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl`
-- kind: not verified
-- found: 2026-10-02
-- evidence: measured once per tree, cold, one BLAS thread: 34968 against
-  31192 bytes in `Float32` and 59544 against 55576 in `Float64`. The allocation of 5 and of 10
-  iterations is the same on both trees (207248/346368 and 428368/718128 bytes). One run per tree
-  is not a measurement.
-
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status

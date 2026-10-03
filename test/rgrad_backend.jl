@@ -104,6 +104,13 @@ end
     F(ps) = sum(abs2, parent(ps.Y)) + sum(abs2, ps.W)
     ∇F!(g, v) = (g .= 2 .* v; g)
 
-    @test_throws "mixed backends" Optimizer(mixed, F; (∇F!) = ∇F!, algorithm = GradientMethod())
-    @test Optimizer(ps, F; (∇F!) = ∇F!, algorithm = GradientMethod()) isa Optimizer
+    # every method that takes a parameter set, and not only the quasi-Newton ones, whose cache
+    # allocates on the backend of the set
+    @testset "$(nameof(typeof(method)))" for method in (GradientMethod(), MomentumMethod(),
+        Adam(), AdamWithEuclideanDecay(), BFGS(), DFP())
+        @test_throws "mixed backends" Optimizer(mixed, F; (∇F!) = ∇F!, algorithm = method)
+        @test_throws "mixed backends" Optimizer(mixed, OptimizerProblem(F, ∇F!, mixed);
+            gradient = GradientFunction(F, ∇F!, mixed), algorithm = method)
+        @test Optimizer(ps, F; (∇F!) = ∇F!, algorithm = method) isa Optimizer
+    end
 end
