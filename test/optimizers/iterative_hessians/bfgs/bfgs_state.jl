@@ -59,11 +59,12 @@ end
         if N == 40
             @test section(s.state).λ == expected.λ
         else
-            # The workspace adds the second product into the first with a five-argument `mul!`;
-            # without one the two products are summed after. In `Float64` OpenBLAS splits the inner
-            # dimension `N - n = 397` into blocks, and the two forms then round differently, by one
-            # addition per block and entry: `100eps(T)` relative. Below about `N = 300` they agree to
-            # the bit, as at `N = 40` above.
+            # The cause is the five-argument `mul!`: the workspace adds the second product into the
+            # first, and without one the two products are summed after. Where the BLAS splits the
+            # inner dimension `N - n = 397` into blocks, the two forms round differently, by one
+            # addition per block and entry: `100eps(T)` relative, in both precisions. Where it fits
+            # in one block, as `N - n = 37` above, they agree to the bit; the block size depends on
+            # the BLAS and the CPU.
             @test isapprox(section(s.state).λ, expected.λ; rtol = 100eps(T))
         end
     end

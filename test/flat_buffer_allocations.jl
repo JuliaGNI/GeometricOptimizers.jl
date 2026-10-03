@@ -443,8 +443,11 @@ end
 
 # The workspace may not change the answer, and nothing else in the suite compares the two paths --
 # every other retraction test goes through whichever one the `Optimizer` chose. `==` and not `≈`:
-# the two write the same products in the same order into different arrays, so they agree bit for bit,
-# and `≈` would pass on a swapped block.
+# the two take the same products into different arrays, and at these shapes, whose inner dimension
+# `2n` fits in one BLAS block, they agree bit for bit; `≈` would pass on a swapped block. That is a
+# property of the shapes, not of the two paths: where an inner dimension spans several blocks, as the
+# `N - n` of `update_section!`'s transport does at `N = 400`, a five-argument `mul!` and a sum of two
+# products round differently.
 @testset "the workspace retraction is the allocating one, for a $LT" for LT in LIFT_TYPES
     for (N, n) in ((6, 3), (6, 1), (6, 6), (20, 4))
         f = retraction_fixture(LT, N, n)
