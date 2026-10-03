@@ -771,6 +771,39 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   through a barrier, with a `Δx` and a `Δg` for which `curvature_is_usable` holds, so that the branch
   runs on both calls.
 
+### K21 · The Metal `Adam` row of (b) fails about one run in 40, because Metal's section draw is not seeded
+
+- location: `scripts/device_solve.jl:170` (`UNMATCHED_ADAM_RTOL`), run by `test/devices/metal.jl:42`
+- kind: defect
+- found: 2026-10-03
+- evidence:
+
+  The `metal` group run of the G8 branch failed one test, `(b) Stiefel, Adam` under `Geodesic()`,
+  with `Evaluated: mismatch === pass`, 846 of 847 passing. `Random.seed!(seed)` in `run_solve`
+  does not seed `Metal.default_rng()`. Metal 1.11.1 makes that generator once per task
+  (`src/random.jl:17`) and seeds it from `Random.RandomDevice()` (GPUArrays, `src/host/random.jl:315`).
+  So the device run draws another global section on every run, also for the same seed, and its
+  final objective is a random draw around the host twin's.
+
+  The row was repeated 40 times at seed 1234 in one process per tree, with `T = Float32`, ten steps,
+  and the problem, `run_solve` and the check of `solve_row` from `scripts/device_solve.jl`. The
+  relative distance of the device objective from the host twin's was:
+
+  | tree | retraction | median | max | above 0.03 | above 0.05 |
+  |---|---|---|---|---|---|
+  | `origin/main` at `4051410` | `Geodesic()` | 0.015 | 0.054 | 16 | 1 |
+  | `origin/main` at `4051410` | `Cayley()` | 0.018 | 0.043 | 11 | 0 |
+  | G8 branch | `Geodesic()` | 0.018 | 0.063 | 10 | 1 |
+  | G8 branch | `Cayley()` | 0.011 | 0.049 | 9 | 0 |
+
+  The two trees fail at the same rate, so the failure is not caused by a change to the device path.
+  The comment above `UNMATCHED_ADAM_RTOL` says the device run of (b) is up to 1.5 % from its host
+  twin over 6 seeds; 40 draws at one seed reach 6.3 %.
+
+  **What to do**: seed `Metal.default_rng()` in `run_solve` when `matched_rng = false`, so that a
+  run of the group is reproducible, and calibrate `UNMATCHED_ADAM_RTOL` on the tail of many device
+  draws and not on 6 seeds.
+
 ## D. Upstream
 
 ### D1 · Julia 1.12: nested `kwargs...` feeding a call in the same inferred body

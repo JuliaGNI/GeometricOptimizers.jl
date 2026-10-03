@@ -66,7 +66,10 @@ end
 # workspace and differential to `trial_slope`, and a problem that passed no workspace would take the
 # allocating differential, which allocates at `α = 0.5` and not at `α = 0`. `φ'` first moves the
 # iterate, and the `Cayley` retraction allocates at `α = 0.5` what it does not at `α = 0`, so the
-# equality is of what `φ'` allocates beyond that move, measured alone in the same workspace.
+# equality is of what `φ'` allocates beyond that move, measured alone in the same workspace. And
+# at `α = 0.5` all that `φ'` allocates is that move and the slope, each measured alone in the
+# optimizer's workspace: a `φ'` that moved the iterate without the workspace would allocate the
+# retraction's buffers on top.
 function _measured_derivative(D, α, params)
     D(α, params)
     @allocated D(α, params)
@@ -89,6 +92,8 @@ end
     f = slope_fixture(lift, T)
     D = linesearch(f.opt).problem.D
     @test beyond_move(f, D, T(0.5)) == beyond_move(f, D, zero(T))
+    @test _measured_derivative(D, T(0.5), f.params) ==
+          _measured_move(f.cache, f.params, T(0.5), f.workspace) + measured_slope(f, T(0.5))
     @test D(T(0.5), f.params) isa T
 end
 
