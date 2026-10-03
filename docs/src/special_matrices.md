@@ -112,8 +112,8 @@ L = StrictlyLowerTriangular(M)
 
 The following image demonstrates how a skew-symmetric matrix is stored in `GeometricOptimizers`:
 
-![The elements of a skew-symmetric matrix (and other special matrices) are stored as a vector. The elements of the big vector are the entries on the lower left of the matrix, stored row-wise.](tikz/skew_sym_visualization_light.png)
-![The elements of a skew-symmetric matrix (and other special matrices) are stored as a vector. The elements of the big vector are the entries on the lower left of the matrix, stored row-wise.](tikz/skew_sym_visualization_dark.png)
+![The elements of a skew-symmetric matrix (and other special matrices) are stored as a vector. The elements of the big vector are the entries on the lower left of the matrix, stored row-wise.](https://juliagni.github.io/GeometricFigures.jl/figures/manifolds/skew-sym-visualization/skew-sym-visualization_light.svg)
+![The elements of a skew-symmetric matrix (and other special matrices) are stored as a vector. The elements of the big vector are the entries on the lower left of the matrix, stored row-wise.](https://juliagni.github.io/GeometricFigures.jl/figures/manifolds/skew-sym-visualization/skew-sym-visualization_dark.svg)
 
 So what is stored internally is a vector of size ``n(n-1)/2`` for the skew-symmetric matrix and the triangular matrices, and a vector of size ``n(n+1)/2`` for the symmetric matrix. 
 
