@@ -74,7 +74,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `NativePade`, added in [#54], takes `s` from ``\|X\|_1`` in exactly the same way and inherits the
   whole of this, so the entry now covers two algorithms and a fix would apply to both at once.
 
-### A12 · The `Cayley` differential is recomputed per `φ'`, and its cost is unmeasured
+### A12 · The `Cayley` differential is recomputed per `φ'`, and its cost in a solve is unmeasured
 
 - location: `svd_optim.jl`
 - kind: not verified
@@ -84,13 +84,15 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   **Severity: low**, and not a defect — a cost this release introduced and did not measure. Found in
   the review of [#40], where `retraction_differential` was added.
 
-  Under `Cayley`, `trial_slope` now calls `retraction_differential` on every evaluation of ``\varphi'``.
-  That is `lift_factors`, a `StiefelProjection`, two ``2n\times{}2n`` solves and about six allocations —
-  ``O(Nn^2 + n^3)``, the same order as the retraction itself — where before it was a `_dot` against an
-  array the cache already held. `Geodesic` returns ``\bar{B}`` untouched at every ``\alpha`` and
-  `Cayley` does at ``\alpha = 0``, so every `Geodesic` solve and the `Backtracking` default pay nothing;
-  what is unmeasured is a search that evaluates ``\varphi'`` many times per iteration, which on this
-  problem is `Bisection` at ≈580 objective evaluations per iteration.
+  Under `Cayley`, `trial_slope` calls `retraction_differential!` on every evaluation of ``\varphi'``.
+  That is `lift_factors!` and two ``2n\times{}2n`` solves in the optimizer's workspace —
+  ``O(Nn^2 + n^3)``, the same order as the retraction itself, and no allocation on a host `Matrix` —
+  where before it was a `_dot` against an array the cache already held. On `St(6, 3)` at
+  ``\alpha = 0.5`` one call takes about 1.1 μs (`scripts/in_place_retraction_cost.jl`). `Geodesic`
+  copies ``\bar{B}`` at every ``\alpha`` and `Cayley` does at ``\alpha = 0``, so every `Geodesic` solve
+  and the `Backtracking` default pay a copy and no solve; what is unmeasured is a search that
+  evaluates ``\varphi'`` many times per iteration, which on this problem is `Bisection` at ≈580
+  objective evaluations per iteration.
 
   **The iteration and evaluation counts in `svd_optim.jl` do not answer this.** They moved under the
   change — `_BFGS + Bisection` under `Cayley` from 92 to 114 iterations — but they moved because the

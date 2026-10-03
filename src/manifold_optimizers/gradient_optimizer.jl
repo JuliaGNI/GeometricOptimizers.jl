@@ -146,7 +146,7 @@ end
 function update!(
         state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}, f) where {T}
     update!(state, direction(cache(opt)), gradient(opt), x, f, opt.retraction,
-        step_observer(opt))
+        step_observer(opt), retraction_workspace(opt))
 end
 
 function update!(state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}) where {T}

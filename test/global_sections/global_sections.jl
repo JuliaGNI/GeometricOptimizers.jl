@@ -72,3 +72,53 @@ end
         @test maximum(_ -> norm(Y.A' * global_section(Y)), 1:draws) < tol
     end
 end
+
+# `apply_section!` with no workspace. Into a destination that shares no memory with an input it is
+# two `mul!`s and allocates nothing at any `N`; the second adds its product into the first, so it
+# rounds differently from the sum of two materialised products, by the rounding of one more addition
+# per entry: `100eps(T)` relative. Into its own input -- `Y === Y₂`, which `update_section!` passes
+# when it has no workspace -- the products are materialised as before, and the answer is the old one
+# to the bit. The old answer is written out here as the old body computed it.
+old_apply_section(λY, A₂, n, N) = λY.Y * A₂[1:n, :] .+ λY.λ * A₂[(n + 1):N, :]
+
+function _measured_apply_section!(Y, λY, Y₂)
+    (apply_section!(Y, λY, Y₂); @allocated apply_section!(Y, λY, Y₂))
+end
+
+function section_fixture(M, ::Type{T}, N, n, columns) where {T}
+    λY = GlobalSection(rand(Random.Xoshiro(N), M{T}, N, n))
+    Y₂ = rand(Random.Xoshiro(N + 1), M{T}, N, columns)
+    (λY = λY, Y₂ = Y₂, Y = M(zeros(T, N, columns)))
+end
+
+@testset "apply_section! into a separate destination allocates nothing, $(nameof(M)){$T}" for M in (StiefelManifold,
+        GrassmannManifold),
+    T in (Float32, Float64)
+
+    for N in (40, 400), columns in (3, N)
+
+        f = section_fixture(M, T, N, 3, columns)
+        @test _measured_apply_section!(f.Y, f.λY, f.Y₂) == 0
+        @test (@inferred apply_section!(f.Y, f.λY, f.Y₂)) === f.Y
+    end
+end
+
+@testset "apply_section! agrees with the old products, $(nameof(M)){$T}" for M in (StiefelManifold,
+        GrassmannManifold),
+    T in (Float32, Float64)
+
+    for N in (40, 400), columns in (3, N)
+
+        f = section_fixture(M, T, N, 3, columns)
+        old = old_apply_section(f.λY, f.Y₂.A, 3, N)
+
+        @test apply_section!(f.Y, f.λY, f.Y₂) === f.Y
+        @test eltype(f.Y) == T
+        @test isapprox(f.Y.A, old; rtol = 100eps(T))
+
+        # the alias `update_section!` passes
+        aliased = M(copy(f.Y₂.A))
+        apply_section!(aliased, f.λY, aliased)
+        @test aliased.A == old
+    end
+end

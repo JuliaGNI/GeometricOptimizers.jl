@@ -37,7 +37,7 @@ using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update
                            OptimizerCache, _flat_mul!, _flat_secant, outer!, DottableSet,
                            GlobalSection, update_section!, lift_factors!,
                            retraction_matrix!, retraction_workspace, initialize_state!,
-                           OptimizerStatus, config, problem, value, 𝔄
+                           OptimizerStatus, config, problem, value
 using NeuralNetworkParameters: NetworkParameters, flatten
 using SimpleSolvers: Static
 using LinearAlgebra: dot
@@ -360,8 +360,9 @@ end
 # to hide it. This is the argument `test/quality/aqua.jl` makes for piracy and `test/ambiguities.jl`
 # for ambiguities, one file over.
 #
-# `Geodesic` is asserted the other way round, as an identity, because `𝔄` allocates a
-# `N`-dependent amount that no workspace reaches. See the comment at that assertion.
+# `Geodesic` is asserted as an identity instead: its `𝔄` is evaluated in the workspace and allocates
+# nothing, so the whole retraction costs what `lift_factors!` costs. See the comment at that
+# assertion.
 #
 # No assertion is made on the bytes of a whole `solver_step!`. The figure is a function of how many
 # trials the line search takes, which is a property of the problem and not of this package: the same
@@ -397,11 +398,6 @@ function _measured_update_section(Λ₂, Λ, B, R, ws)
     @allocated update_section!(Λ₂, Λ, B, R, ws)
 end
 
-function _measured_𝔄(ws, algorithm)
-    𝔄(ws.B̂, ws.B̄ᵗ', algorithm)
-    @allocated 𝔄(ws.B̂, ws.B̄ᵗ', algorithm)
-end
-
 # The difference across `N` and not an equality, and the tolerance is the part to read.
 #
 # The figure is not bit-reproducible on every platform. On Windows the same `Cayley` call at the two
@@ -420,18 +416,11 @@ const N_INDEPENDENCE_TOLERANCE = 1024
 
 n_independent(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
 
-# The same tolerance, for an identity between readings taken at one shape rather than across two
-# `N`. It carries the tolerance for the same reason: a byte count is not bit-reproducible across
-# platforms, so an exact equality between three separate `@allocated` readings claims more than the
-# identity it is there to assert. It costs nothing for the same reason too -- the smallest term
-# that could break the identity is an `N × 2n` temporary, 9 600 bytes at `N = 200`.
-agrees_within_quantisation(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
-
 @testset "the retraction of a $LT does not grow with N" for LT in LIFT_TYPES
     small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 200, 3)
 
-    # `lift_factors!` writes into buffers it was handed, so what it costs is the kernel launch that
-    # densifies the lift's `A` block and nothing else -- zero for a Grassmann lift, which has none.
+    # `lift_factors!` writes into buffers it was handed, and on the host it densifies the lift's `A`
+    # block with a broadcast rather than a kernel launch, so it costs nothing at all.
     @test n_independent(_measured_lift_factors(small.ws, small.B),
         _measured_lift_factors(large.ws, large.B))
 
@@ -442,17 +431,13 @@ agrees_within_quantisation(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
         _measured_update_section(small.Λ₂, small.Λ, small.B, Cayley(), small.ws),
         _measured_update_section(large.Λ₂, large.Λ, large.B, Cayley(), large.ws))
 
-    # The geodesic is asserted as an identity and not as N-independence, and the difference is the
-    # point: `𝔄`'s own cost *does* grow with N, because `ScaledSquaring` takes its number of
-    # squarings from the norm of the lift and a random lift's norm grows with the ambient dimension.
-    # Measured at N = 6, 60 and 200: 7 040, 13 184 and 16 256 bytes, which is `log`-like rather than
-    # `N`-like and is the same at both lift types. That is the exponential's business and not the
-    # workspace's, so what is asserted is that the workspace adds nothing to it.
-    algorithm = Geodesic().algorithm
+    # The geodesic evaluates its `𝔄` in the workspace too (issue #77), so it adds nothing to what
+    # writing the lift's factors costs: an exact equality of two readings in one process, at both
+    # ambient dimensions. The number of squarings still grows with the norm of the lift, and so with
+    # `N` for a random lift; each squaring now writes into the same two buffers.
     for f in (small, large)
-        lift_factors!(f.ws, f.B)
-        @test agrees_within_quantisation(_measured_retraction(f.ws, Geodesic(), f.B),
-            _measured_lift_factors(f.ws, f.B) + _measured_𝔄(f.ws, algorithm))
+        @test _measured_retraction(f.ws, Geodesic(), f.B) ==
+              _measured_lift_factors(f.ws, f.B)
     end
 end
 

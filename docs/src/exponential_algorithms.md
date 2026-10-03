@@ -1061,12 +1061,10 @@ kernels, though not about the framework they have in common. Its accuracy is ind
 [Agreeing with the exponential](@ref).
 
 **Disadvantages.** Its fixed rational evaluation does more small matrix products than
-[`ScaledSquaring`](@ref) — around `1.8×` the ``\mathfrak{A}`` call in [What they cost](@ref), still
-below [`AugmentedPade`](@ref) — and it allocates the most of the three algorithms that evaluate
-``\mathfrak{A}`` directly. An allocation count is the figure least likely to stay a constant factor on
-a backend where allocating can cost a synchronisation rather than a `malloc`, and the ordering of the
-three is itself unexplained; both are
-[#77](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/77).
+[`ScaledSquaring`](@ref), though the ``\mathfrak{A}`` call in [What they cost](@ref) is within about
+`10%` of [`ScaledSquaring`](@ref)'s and well below [`AugmentedPade`](@ref)'s. It allocates exactly
+what [`ScaledSquaring`](@ref) does: nothing in the workspace an optimizer holds, and the same scratch
+where `𝔄` is called on its own.
 
 The `Float64` indifference does not carry to `Float32`, where it has the worst `check` of the three
 while its *forward* error there is no outlier at all. What degrades is the orthogonality of the
@@ -1104,15 +1102,14 @@ two sections above against a textbook implementation.
 **Advantages.** It introduces no package-specific approximation at all. Everything delicate is done by
 the most heavily exercised matrix-exponential implementation available, which is why it is the
 reference every accuracy table on this page is measured against. Its accuracy matches
-[`ScaledSquaring`](@ref)'s throughout [Agreeing with the exponential](@ref), and it is, unexpectedly,
-the *lightest* allocator of the three algorithms that evaluate ``\mathfrak{A}`` — see
-[What they cost](@ref) — because `Base.exp` works in a few reused buffers where both native algorithms
-produce a fresh ``2n\times{}2n`` temporary per operation.
+[`ScaledSquaring`](@ref)'s throughout [Agreeing with the exponential](@ref).
 
 **Disadvantages.** It exponentiates a matrix four times the size needed and discards three quarters of
 the result, which makes the ``\mathfrak{A}`` call the most expensive of the three, though much less so
-once the ``N\times{}N`` assembly around it is counted. And `Base.exp` on a dense matrix needs LAPACK,
-so it does not run on a GPU backend.
+once the ``N\times{}N`` assembly around it is counted. It is also the heaviest allocator of the three:
+in the workspace an optimizer holds, it allocates what `Base.exp` of the ``4n\times{}4n`` matrix
+allocates, where the two native algorithms allocate nothing. And `Base.exp` on a dense matrix needs
+LAPACK, so it does not run on a GPU backend.
 
 !!! note "A reference, not a normal choice"
     `AugmentedPade` is constructible and supported, and it is documented here because it is the
@@ -1419,62 +1416,68 @@ in this section comes from one run of it. They are illustrative, and the only so
 to remeasure on the target hardware.
 
 The ``\mathfrak{A}`` call on its own, at ``N = 200``, ``n = 10``, is what separates the three
-algorithms that evaluate it:
+algorithms that evaluate it. The first two rows call the allocating `𝔄`; the last two call
+[`GeometricOptimizers.𝔄!`](@ref) in a [`RetractionWorkspace`](@ref), which is what a geodesic step of
+[`solve!`](@ref) pays:
 
 | | `ScaledSquaring` | `NativePade` | `AugmentedPade` |
 |---|---|---|---|
-| runtime | `0.021 ms` | `0.037 ms` | `0.053 ms` |
-| allocated | `201 KiB` | `330 KiB` | `114 KiB` |
+| runtime, `𝔄` | `0.020 ms` | `0.022 ms` | `0.054 ms` |
+| allocated, `𝔄` | `36.0 KiB` | `36.0 KiB` | `114.0 KiB` |
+| runtime, `𝔄!` | `0.018 ms` | `0.019 ms` | `0.056 ms` |
+| allocated, `𝔄!` | `0` | `0` | `85.4 KiB` |
 
-The allocation row is the one figure here that is *not* machine-dependent — `@allocated` is exact —
-and it does not rank the three the way runtime does. [`AugmentedPade`](@ref), which builds a
-``4n\times{}4n`` matrix and discards three quarters of the result, allocates the least, because
-`Base.exp` works in a few reused buffers where both native algorithms produce a fresh
-``2n\times{}2n`` temporary per operation. On a CPU that is a detail. On a backend where an allocation
-costs a synchronisation it may not be, which is worth knowing about the algorithm whose whole purpose
-is to be portable. Neither native algorithm reuses buffers, and both could; that is
-[#77](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/77).
+The allocation rows are the figures here that are *not* machine-dependent — `@allocated` is exact.
+Both native algorithms work in a fixed set of ``2n\times{}2n`` buffers: the allocating call
+allocates those buffers once, and the call in a workspace allocates nothing.
+[`AugmentedPade`](@ref) builds a ``4n\times{}4n`` matrix and discards three quarters of the result;
+in a workspace that matrix is the workspace's, and what remains is the allocation of `Base.exp`
+itself. That is the order in `Float32` too: in a workspace, on a ``20\times{}20`` argument,
+`ScaledSquaring` and `NativePade` allocate nothing and `AugmentedPade` allocates 44 224 bytes in
+`Float32` and 87 472 in `Float64`, which `scripts/in_place_retraction_cost.jl` measures. On a backend
+where an allocation costs a synchronisation rather than a `malloc`, that is worth knowing about the
+two algorithms whose whole purpose is to be portable.
 
-One whole retraction, which adds the ``N\times{}N`` assembly they all share, in milliseconds:
+One whole allocating [`geodesic`](@ref), which adds the ``N\times{}N`` assembly they all share, in
+milliseconds:
 
 | ``N``, ``n`` | 10, 2 | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 500, 50 | 1000, 20 |
 |---|---|---|---|---|---|---|---|---|
-| `Geodesic(ScaledSquaring())` | 0.003 | 0.005 | 0.014 | 0.023 | 0.087 | 0.396 | 3.03 | 2.51 |
-| `Geodesic(NativePade())` | 0.004 | 0.005 | 0.013 | 0.023 | 0.091 | 0.410 | 3.33 | 2.57 |
-| `Geodesic(AugmentedPade())` | 0.003 | 0.006 | 0.016 | 0.027 | 0.120 | 0.464 | 5.98 | 2.72 |
-| `Geodesic(ProjectedSkew())` | 0.004 | 0.008 | 0.023 | 0.028 | 0.130 | 0.464 | 4.04 | 2.89 |
-| `Geodesic(TaylorSeries())` | 0.003 | 0.006 | 0.019 | 0.033 | 0.149 | 0.505 | 14.1 | 3.49 |
-| `Cayley()` | 0.002 | 0.004 | 0.016 | 0.056 | 0.361 | 4.87 | 6.24 | 38.8 |
+| `Geodesic(ScaledSquaring())` | 0.002 | 0.003 | 0.009 | 0.015 | 0.111 | 0.275 | 3.03 | 1.95 |
+| `Geodesic(NativePade())` | 0.002 | 0.004 | 0.009 | 0.018 | 0.107 | 0.273 | 3.33 | 1.96 |
+| `Geodesic(AugmentedPade())` | 0.003 | 0.005 | 0.016 | 0.024 | 0.137 | 0.310 | 6.12 | 2.22 |
+| `Geodesic(ProjectedSkew())` | 0.004 | 0.007 | 0.020 | 0.031 | 0.152 | 0.371 | 4.10 | 2.44 |
+| `Geodesic(TaylorSeries())` | 0.002 | 0.005 | 0.015 | 0.023 | 0.173 | 0.372 | 14.2 | 2.93 |
+| `Cayley()` | 0.001 | 0.002 | 0.006 | 0.014 | 0.087 | 0.258 | 1.61 | 1.83 |
 
 and the same in KiB allocated:
 
 | ``N``, ``n`` | 10, 2 | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 500, 50 | 1000, 20 |
 |---|---|---|---|---|---|---|---|---|
-| `Geodesic(ScaledSquaring())` | 13.1 | 33.1 | 130 | 338 | 1354 | 6653 | 13813 | 26419 |
-| `Geodesic(NativePade())` | 19.8 | 45.9 | 162 | 370 | 1480 | 6782 | 16776 | 26940 |
-| `Geodesic(AugmentedPade())` | 12.0 | 29.6 | 117 | 322 | 1278 | 6552 | 11011 | 25982 |
-| `Geodesic(ProjectedSkew())` | 15.1 | 33.3 | 122 | 335 | 1315 | 6685 | 10769 | 26417 |
-| `Geodesic(TaylorSeries())` | 12.2 | 31.1 | 131 | 345 | 1483 | 6893 | 27586 | 28615 |
-| `Cayley()` | 12.9 | 32.9 | 144 | 475 | 1881 | 10546 | 13383 | 41694 |
+| `Geodesic(ScaledSquaring())` | 5.1 | 11.6 | 43.5 | 116 | 459 | 2251 | 4095 | 8951 |
+| `Geodesic(NativePade())` | 5.1 | 11.6 | 43.5 | 116 | 459 | 2251 | 4095 | 8951 |
+| `Geodesic(AugmentedPade())` | 8.4 | 18.7 | 63.7 | 136 | 536 | 2329 | 5858 | 9316 |
+| `Geodesic(ProjectedSkew())` | 12.0 | 23.7 | 73.5 | 158 | 609 | 2545 | 6096 | 10085 |
+| `Geodesic(TaylorSeries())` | 3.6 | 8.8 | 36.9 | 109 | 433 | 2226 | 3534 | 8852 |
+| `Cayley()` | 5.3 | 11.3 | 40.3 | 112 | 436 | 2229 | 3439 | 8844 |
 
 [`ScaledSquaring`](@ref) and [`NativePade`](@ref) are level on runtime to within the run-to-run noise
-at every size but one; the isolated call above is where the extra rational work shows. The exception is
-``n = 50``, the one column where the ``2n\times{}2n`` argument is large enough for the difference to
-survive the assembly: `3.33` against `3.03`, with [`AugmentedPade`](@ref)'s `5.98` as it pays for the
-``4n\times{}4n`` embedding. Allocations separate them everywhere and by more, up to `1.5×` at
-``n = 50``, since that is the metric the shared assembly dilutes least at small ``N``.
-[`ProjectedSkew`](@ref) stays close on both — a QR and an eigendecomposition of a ``2n\times{}2n``
-matrix are not expensive things, and it is the *lightest* of the five at ``n = 50``. [`Cayley`](@ref)
-is level with the exponential up to ``N \approx 50`` and loses by a factor of 15 by ``N = 1000``,
-which is the ``O(N^3)`` against ``O(N^2n)`` of the [Retractions](@ref) page.
+at every size but one, and allocate the same everywhere. The exception is ``n = 50``, the one column
+where the ``2n\times{}2n`` argument is large enough for the difference to survive the assembly: `3.33`
+against `3.03`, with [`AugmentedPade`](@ref)'s `6.12` as it pays for the ``4n\times{}4n`` embedding.
+[`ProjectedSkew`](@ref) stays within about `1.4×` of them from ``N = 200`` on — a QR and an
+eigendecomposition of a ``2n\times{}2n`` matrix are not expensive things. [`Cayley`](@ref) is the
+cheapest of the six at every size in this table, and within `10%` of the exponential at
+``N = 1000``. Every column allocates the ``N\times{}N`` result, which is the bulk of it from
+``N = 100`` on; inside [`solve!`](@ref) that result is written into the workspace instead.
 
 ## Choosing one
 
 [`Cayley`](@ref) remains the package default. It requires only a small linear solve and is robust for
 large steps. [`Geodesic`](@ref) computes the exponential map and has the one-parameter subgroup
-property. In the measurements above it also becomes cheaper once the ambient dimension is large
-relative to the manifold dimension. Choose between them according to which map the algorithm needs,
-then benchmark representative problem sizes if cost matters.
+property. In the measurements above it costs no less than [`Cayley`](@ref) at any size. Choose between
+them according to which map the algorithm needs, then benchmark representative problem sizes if cost
+matters.
 
 For the algorithm: **[`ScaledSquaring`](@ref), i.e. the default, unless one of the alternatives has
 the property you specifically need.**
@@ -1482,9 +1485,9 @@ the property you specifically need.**
 | | choose it when | at the price of |
 |---|---|---|
 | [`ScaledSquaring`](@ref) | almost always; it is the default | `check` drifting up with the size of the lift |
-| [`NativePade`](@ref) | you want an independent direct calculation on a backend that forbids scalar indexing | `1.8×` the isolated ``\mathfrak{A}`` runtime and `1.6×` its allocations, the same accuracy in `Float64`, the worst `check` of the three in `Float32`, and `θ` bounded by `1/2` |
-| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | `1.1×`–`1.6×` the cost, the largest forward error in either format, not on Metal |
-| [`AugmentedPade`](@ref) | you want a second opinion from an implementation that introduces no numerics of its own | roughly `2.5×` the cost of the ``\mathfrak{A}`` call, no better than [`ScaledSquaring`](@ref) on accuracy, CPU only |
+| [`NativePade`](@ref) | you want an independent direct calculation on a backend that forbids scalar indexing | about `1.1×` the isolated ``\mathfrak{A}`` runtime and the same allocations, the same accuracy in `Float64`, the worst `check` of the three in `Float32`, and `θ` bounded by `1/2` |
+| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | `1.2×`–`2.2×` the cost, the largest forward error in either format, not on Metal |
+| [`AugmentedPade`](@ref) | you want a second opinion from an implementation that introduces no numerics of its own | roughly `3×` the cost of the ``\mathfrak{A}`` call and the allocations of `exp` in a workspace, no better than [`ScaledSquaring`](@ref) on accuracy, CPU only |
 | [`TaylorSeries`](@ref) | never; it exists so the pre-0.2.0 regression stays reproducible | leaving the manifold silently above ``\Vert\bar{B}\Vert \approx 50`` |
 
 [`ScaledSquaring`](@ref), [`NativePade`](@ref) and [`TaylorSeries`](@ref) avoid dense LAPACK and scalar

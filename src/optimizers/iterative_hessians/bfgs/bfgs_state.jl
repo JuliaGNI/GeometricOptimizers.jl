@@ -138,7 +138,7 @@ end
 
 function update!(state::BFGSState{T}, direction::GradientStorage{T}, gradient::Gradient,
         x::XT, f::T, retraction,
-        observer = NoStepObserver()) where {
+        observer = NoStepObserver(), workspace = nothing) where {
         T, XT <: OptimizerSolution{T}}
     _copyto!(state.x̄, state.x)
     _copyto!(state.x, x)
@@ -151,7 +151,7 @@ function update!(state::BFGSState{T}, direction::GradientStorage{T}, gradient::G
 
     _copyto!(state.s, direction)
     observe_optimizer_phase(observer, :retraction_application) do
-        update_section!(section(state), state.s, retraction)
+        update_section!(section(state), state.s, retraction, workspace)
     end
     _copyto!(state.section, x)
 

@@ -22,11 +22,20 @@ from.
 The element type and the backend come from the point, so a workspace is on the same backend as the
 solve it belongs to and no method here names either.
 
-**What this does not remove**: the ``2n\times{}2n`` `inv` in [`cayley`](@ref), and whatever
-[`GeometricOptimizers.𝔄`](@ref) allocates for [`geodesic`](@ref). Both are ``O(n^2)`` and neither
-grows with ``N``. `inv` stays an `inv` because `lu!` and `rdiv!` would take it in place on the host
-only, and a `KernelAbstractions` backend is under no obligation to supply either — `inv` is what
-`cayley` already runs on Metal through.
+The workspace also holds the scratch of [`GeometricOptimizers.𝔄!`](@ref), which a
+[`geodesic`](@ref) step evaluates its ``\mathfrak{A}`` with, and of
+[`retraction_differential!`](@ref). In it, the ``\mathfrak{A}`` of [`ScaledSquaring`](@ref) and
+[`NativePade`](@ref) allocates nothing, and that of [`AugmentedPade`](@ref) allocates what `Base.exp`
+of its ``4n\times{}4n`` matrix allocates — on a ``20\times{}20`` argument 87 472 bytes in `Float64` and
+44 224 in `Float32`. So in both precisions the two native algorithms are the lighter, and
+`AugmentedPade` the heavier by exactly its `exp`. The figures are those of
+`scripts/in_place_retraction_cost.jl`.
+
+**What this does not remove**: the ``2n\times{}2n`` `inv` in [`cayley`](@ref) and the `exp` of
+[`AugmentedPade`](@ref). Neither grows with ``N``. `inv` stays an `inv` because `lu!` and `rdiv!`
+would take it in place on the host only, and a `KernelAbstractions` backend is under no obligation to
+supply either — `inv` is what `cayley` already runs on Metal through. [`ProjectedSkew`](@ref) takes
+its allocating [`geodesic`](@ref) and copies the answer in.
 
 A solve whose parameters are not on a manifold has no workspace: see
 [`GeometricOptimizers.retraction_workspace`](@ref).
@@ -44,27 +53,56 @@ struct RetractionWorkspace{T, AT <: AbstractMatrix{T}}
     𝕀_big::AT
     retracted::AT
     product::AT
+    # The scratch of `𝔄!`: its argument `X`, its result `𝔄X`, the column sums of its norm, eight
+    # `2n × 2n` temporaries, and the `4n × 4n` matrix `AugmentedPade` exponentiates.
+    X::AT
+    𝔄X::AT
+    colsum::AT
+    s₁::AT
+    s₂::AT
+    s₃::AT
+    s₄::AT
+    s₅::AT
+    s₆::AT
+    s₇::AT
+    s₈::AT
+    augmented::AT
+    # The scratch of `retraction_differential!`: a `2n × n` right-hand side, two `N × n` columns,
+    # and the pivots of the `2n × 2n` LU factorisation it takes in `s₁`.
+    rhs::AT
+    w₁::AT
+    w₂::AT
+    ipiv::Vector{LinearAlgebra.BlasInt}
 
     function RetractionWorkspace(
             backend::KernelAbstractions.Backend, ::Type{T}, N::Integer, n::Integer) where {T}
         unit = unit_matrix(backend, T, n)
         B̂ = KernelAbstractions.zeros(backend, T, N, 2n)
         B̄ᵗ = KernelAbstractions.zeros(backend, T, 2n, N)
+        𝕀_small2 = unit_matrix(backend, T, 2n)
+        augmented = KernelAbstractions.zeros(backend, T, 4n, 4n)
 
         # The constant half of the factorisation, written once. `lift_factors!` writes the other
         # half and leaves these alone, which is why it may not be handed a workspace of another
-        # shape.
+        # shape. `augmented` is `[X 𝕀; 𝕆 𝕆]`, and `𝔄!` writes only its `X` block.
         @views begin
             B̂[1:n, (n + 1):(2n)] .= unit
             B̄ᵗ[1:n, 1:n] .= unit
+            augmented[1:(2n), (2n + 1):(4n)] .= 𝕀_small2
         end
 
+        small() = KernelAbstractions.zeros(backend, T, 2n, 2n)
         new{T, typeof(unit)}(N, n, unit,
             KernelAbstractions.zeros(backend, T, n, n), B̂, B̄ᵗ,
-            unit_matrix(backend, T, 2n), KernelAbstractions.zeros(backend, T, 2n, 2n),
+            𝕀_small2, small(),
             KernelAbstractions.zeros(backend, T, N, 2n), unit_matrix(backend, T, N),
             KernelAbstractions.zeros(backend, T, N, N),
-            KernelAbstractions.zeros(backend, T, N, N))
+            KernelAbstractions.zeros(backend, T, N, N),
+            small(), small(), KernelAbstractions.zeros(backend, T, 1, 2n),
+            small(), small(), small(), small(), small(), small(), small(), small(), augmented,
+            KernelAbstractions.zeros(backend, T, 2n, n),
+            KernelAbstractions.zeros(backend, T, N, n), KernelAbstractions.zeros(backend, T, N, n),
+            zeros(LinearAlgebra.BlasInt, 2n))
     end
 end
 
@@ -133,7 +171,7 @@ was built. `ws` has to have been built for `B`'s shape.
 function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T}) where {T}
     N, n = B.N, B.n
     @assert (ws.N, ws.n) == (N, n)
-    mul!(ws.A_mat, B.A, ws.unit)
+    _dense_skew!(ws.A_mat, B.A, ws.unit)
 
     # `transpose` and not `adjoint`, for the reason `lift_factors` gives at the same block.
     @views begin
@@ -145,6 +183,14 @@ function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T})
 
     nothing
 end
+
+# The dense form of a skew block. On the host a broadcast reads it entry by entry and allocates
+# nothing; anywhere else the product with the identity runs the backend's kernel, whose launch is
+# the 128 bytes the host form saves. The two write the same matrix.
+function _dense_skew!(C::Matrix{T}, A::SkewSymMatrix{T, Vector{T}}, ::AbstractMatrix) where {T}
+    (C .= A)
+end
+_dense_skew!(C::AbstractMatrix, A::SkewSymMatrix, unit::AbstractMatrix) = mul!(C, A, unit)
 
 function lift_factors!(ws::RetractionWorkspace{T}, B::GrassmannLieAlgHorMatrix{T}) where {T}
     N, n = B.N, B.n
@@ -208,7 +254,9 @@ end
 function _geodesic_matrix!(ws::RetractionWorkspace{T}, B::AbstractLieAlgHorMatrix{T},
         algorithm::AbstractExponentialAlgorithm) where {T}
     lift_factors!(ws, B)
-    mul!(ws.B̂C, ws.B̂, 𝔄(ws.B̂, ws.B̄ᵗ', algorithm))
+    # `B̄ᵗB̂` is the argument `𝔄(B̂, B̄, algorithm)` forms, and `𝔄!` evaluates it in the workspace.
+    mul!(ws.X, ws.B̄ᵗ, ws.B̂)
+    mul!(ws.B̂C, ws.B̂, 𝔄!(ws, ws.X, algorithm))
     copyto!(ws.retracted, ws.𝕀_big)
     mul!(ws.retracted, ws.B̂C, ws.B̄ᵗ, one(T), one(T))
 
@@ -248,4 +296,53 @@ function _update_section!(ws::RetractionWorkspace{T}, Λᵗ::GlobalSection,
     end
 
     nothing
+end
+
+# The in-place `Cayley` arm of `retraction_differential!`, here and not in `retractions.jl` for the
+# reason the arm above gives. The steps are `retraction_differential`'s, with `G = B̄ᵗB̂` in `ws.X`:
+#
+#     w₁ = E + B̂((𝕀 - aG) \ (aB̄ᵗE))     # M E
+#     w₂ = B̂(B̄ᵗw₁)                      # B̄ M E
+#     V  = w₂ - B̂((𝕀 + aG) \ (aB̄ᵗw₂))   # Mᵀ B̄ M E
+#
+# `B̄ᵗE` is the first `n` columns of `B̄ᵗ`, and adding `E` adds the identity to the top `n` rows. Each
+# solve is factorised in `s₁` with the pivots in `ipiv`, and the right-hand side `rhs` is overwritten
+# with the solution. `getrf!` checks its matrix for `Inf` and `NaN`, as the `lu` of `\` does.
+function retraction_differential!(
+        D::AbstractLieAlgHorMatrix{T}, ws::RetractionWorkspace{T, Matrix{T}}, ::Cayley,
+        B::AbstractLieAlgHorMatrix{T}, α) where {T <: LinearAlgebra.BlasFloat}
+    if iszero(α)
+        _copyto!(D, B)
+        return D
+    end
+
+    n = B.n
+    a = T(α) / 2
+    G, M, rhs = ws.X, ws.s₁, ws.rhs
+    lift_factors!(ws, B)
+    mul!(G, ws.B̄ᵗ, ws.B̂)
+
+    @views rhs .= a .* ws.B̄ᵗ[:, 1:n]
+    M .= ws.𝕀_small2 .- a .* G
+    _lu_solve!(M, ws.ipiv, rhs)
+    mul!(ws.w₁, ws.B̂, rhs)
+    @views ws.w₁[1:n, :] .+= ws.unit
+
+    mul!(rhs, ws.B̄ᵗ, ws.w₁)
+    mul!(ws.w₂, ws.B̂, rhs)
+
+    mul!(rhs, ws.B̄ᵗ, ws.w₂)
+    rhs .= a .* rhs
+    M .= ws.𝕀_small2 .+ a .* G
+    _lu_solve!(M, ws.ipiv, rhs)
+    mul!(ws.w₁, ws.B̂, rhs)
+    ws.w₂ .-= ws.w₁
+
+    lift_from_columns!(D, ws.w₂)
+end
+
+function _lu_solve!(M::Matrix{T}, ipiv::Vector{LinearAlgebra.BlasInt},
+        rhs::Matrix{T}) where {T <: LinearAlgebra.BlasFloat}
+    LinearAlgebra.LAPACK.getrf!(M, ipiv)
+    LinearAlgebra.LAPACK.getrs!('N', M, ipiv, rhs)
 end

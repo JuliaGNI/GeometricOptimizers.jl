@@ -204,11 +204,13 @@ function _caller_αmax(::Type{T}, params) where {T}
 end
 
 @doc raw"""
-    trial_slope(gradient_instance, cache, retraction, α)
+    trial_slope(gradient_instance, cache, retraction, α, differential, workspace)
 
 Return ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), D(\alpha)\rangle`` at the iterate currently
 held in `solution(cache)`, for the derivative of the line search's merit. ``D(\alpha)`` is
-[`retraction_differential`](@ref)`(retraction, direction(cache), α)`.
+[`retraction_differential`](@ref)`(retraction, direction(cache), α)`, written into `differential`
+by [`retraction_differential!`](@ref) in `workspace`; [`linesearch_problem`](@ref) builds
+`differential` once, in the shape of the direction.
 
 # Implementation
 
@@ -244,10 +246,13 @@ exact for both retractions at every ``\alpha``.
     not the slope, and [`DEFAULT_STEP_CEILING`](@ref) is what closed it. See the CHANGELOG entry for
     issue A1b; this differential remains worth having on its own account.
 
-    `α = 0` still returns `B` untouched, so the `Backtracking` default costs nothing for this.
+    At `α = 0` the differential is still `B`, copied into `differential`, so the `Backtracking`
+    default pays a copy and no solve for this.
 """
-trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction, α) = _trial_slope(
-    solution(cache), gradient_instance, cache, retraction, α)
+trial_slope(
+    gradient_instance::Gradient, cache::OptimizerCache, retraction, α, differential,
+    workspace) = _trial_slope(
+    solution(cache), gradient_instance, cache, retraction, α, differential, workspace)
 
 # These two differ in one respect worth knowing about: the `AbstractVector` method evaluates *into* an
 # array of the cache — that is what makes it allocation-free — and so leaves the gradient at the last
@@ -264,15 +269,15 @@ trial_slope(gradient_instance::Gradient, cache::OptimizerCache, retraction, α) 
 # iterate the solve returns, which is issue A8. `Backtracking` is exact for both, and only because it
 # evaluates `φ'` once, at `α = 0`, where the trial gradient *is* `∇f(xₖ)`.
 function _trial_slope(::AbstractVector, gradient_instance::Gradient,
-        cache::OptimizerCache, ::AbstractRetraction, α)
+        cache::OptimizerCache, ::AbstractRetraction, α, _, _)
     gradient_instance(latest_gradient(cache), solution(cache))
     _dot(latest_gradient(cache), direction(cache))
 end
 
 function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::Gradient,
-        cache::OptimizerCache, retraction::AbstractRetraction, α)
+        cache::OptimizerCache, retraction::AbstractRetraction, α, differential, workspace)
     _dot(global_rep(section(cache), gradient_instance(solution(cache))),
-        retraction_differential(retraction, direction(cache), α))
+        retraction_differential!(differential, workspace, retraction, direction(cache), α))
 end
 
 @doc raw"""
@@ -326,6 +331,9 @@ julia> ls_obj.D(0., params)
 function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gradient,
         cache::OptimizerCache{T}, retraction::AbstractRetraction,
         observer = NoStepObserver(), workspace = nothing) where {T}
+    # the lift `trial_slope` writes the retraction's differential into, built once per problem
+    differential = _similar(direction(cache))
+
     function f(α, params)
         observe_optimizer_phase(observer, :retraction_application) do
             trial_iterate!(cache, params, α, retraction, workspace)
@@ -340,7 +348,7 @@ function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gra
             trial_iterate!(cache, params, α, retraction, workspace)
         end
         observe_optimizer_phase(observer, :retraction_application) do
-            trial_slope(gradient_instance, cache, retraction, α)
+            trial_slope(gradient_instance, cache, retraction, α, differential, workspace)
         end
     end
 
