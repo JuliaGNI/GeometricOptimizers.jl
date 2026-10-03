@@ -1,5 +1,5 @@
-# The allocating `𝔄` algorithms and the `Cayley` differential as `src/` wrote them before they were
-# given in-place forms, copied verbatim apart from the names. The in-place forms promise the same
+# The allocating bodies of the `𝔄` algorithms and of the `Cayley` differential, with no workspace,
+# that the in-place forms of `src/` must reproduce. The in-place forms promise the same
 # answer to the bit wherever they keep the product order, and a test that compared them with the
 # allocating methods of `src/` would compare one implementation with itself once those delegate to
 # the in-place forms. These do not move.

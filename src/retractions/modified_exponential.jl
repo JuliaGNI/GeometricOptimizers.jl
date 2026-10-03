@@ -169,10 +169,10 @@ end
 
 @doc raw"""
     _native_pade_polynomials(X, 𝕀)
-    _native_pade_polynomials!(p, q, X, 𝕀, X², X⁴, inner, product)
 
 Evaluate the degree-6 numerator ``p_6(X)`` and denominator ``q_6(X)`` used by [`NativePade`](@ref).
-The second form writes them into `p` and `q`, with the other four arrays as scratch.
+It allocates its result and scratch and calls `_native_pade_polynomials!`, which writes into
+given arrays.
 
 If ``P^{\exp}_7/Q^{\exp}_6`` is the ``[7/6]`` Padé approximant of the exponential, then
 

@@ -43,7 +43,7 @@ function _measured_differential(R, B, α)
     @allocated retraction_differential(R, B, α)
 end
 
-# `geodesic` as `src/` wrote it before `𝔄!`, on the copied `𝔄`
+# the allocating `geodesic`, with no workspace, on the reference `𝔄`
 function reference_geodesic(B, algorithm)
     T = eltype(B)
     B̂, B̄ = lift_factors(B)

@@ -434,7 +434,7 @@ n_independent(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
     # The geodesic evaluates its `𝔄` in the workspace too (issue #77), so it adds nothing to what
     # writing the lift's factors costs: an exact equality of two readings in one process, at both
     # ambient dimensions. The number of squarings still grows with the norm of the lift, and so with
-    # `N` for a random lift; each squaring now writes into the same two buffers.
+    # `N` for a random lift; each squaring writes into the same two buffers.
     for f in (small, large)
         @test _measured_retraction(f.ws, Geodesic(), f.B) ==
               _measured_lift_factors(f.ws, f.B)

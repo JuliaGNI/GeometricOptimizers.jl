@@ -56,9 +56,12 @@ end
         expected = deepcopy(before)
         update_section!(expected, s.state.s, retraction, nothing)
         @test eltype(section(s.state).λ) == T
+        @test eltype(section(s.state).Y) == T
         if N == 40
+            @test section(s.state).Y.A == expected.Y.A
             @test section(s.state).λ == expected.λ
         else
+            @test isapprox(section(s.state).Y.A, expected.Y.A; rtol = 100eps(T))
             # The cause is the five-argument `mul!`: the workspace adds the second product into the
             # first, and without one the two products are summed after. Where the BLAS splits the
             # inner dimension `N - n = 397` into blocks, the two forms round differently, by one

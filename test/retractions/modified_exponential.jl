@@ -100,9 +100,10 @@ end
 end
 
 # The portable algorithms on a device array, with scalar indexing an error. JLArrays multiplies with
-# a generic loop and not with BLAS, so the sums are taken in another order and the two agree to
-# round-off, not to the bit: `√eps(T)` relative, which the recovery chain of `s = 7` steps stays well
-# inside. `TaylorSeries` only at the small argument, where its sum does not cancel.
+# a generic loop and not with BLAS, so a BLAS may take the sums in another order. On OpenBLAS 0.3.30
+# arm64 the two agree to the bit in every row; the test allows `100eps(T)` relative, the rounding of
+# a product chain taken in another order. `TaylorSeries` only at the small argument, where its sum
+# does not cancel.
 @testset "𝔄! runs on a JLArray without scalar indexing, $T" for T in (Float32, Float64)
     JLArrays.allowscalar(false)
     for (algorithm, nrm) in ((ScaledSquaring(), 0.1), (ScaledSquaring(), 40.0),
@@ -111,6 +112,6 @@ end
         ws = RetractionWorkspace(JLBackend(), T, 6, 3)
         result = 𝔄!(ws, JLArray(X), algorithm)
         @test result isa JLArray{T}
-        @test isapprox(Array(result), reference(X, algorithm); rtol = sqrt(eps(T)))
+        @test isapprox(Array(result), reference(X, algorithm); rtol = 100eps(T))
     end
 end

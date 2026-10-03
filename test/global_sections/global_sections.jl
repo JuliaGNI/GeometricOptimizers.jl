@@ -77,9 +77,9 @@ end
 # two `mul!`s and allocates nothing at any `N`; the second adds its product into the first, so it
 # rounds differently from the sum of two materialised products, by the rounding of one more addition
 # per entry: `100eps(T)` relative. Into its own input -- `Y === Y₂`, which `update_section!` passes
-# when it has no workspace -- the products are materialised as before, and the answer is the old one
-# to the bit. The old answer is written out here as the old body computed it.
-old_apply_section(λY, A₂, n, N) = λY.Y * A₂[1:n, :] .+ λY.λ * A₂[(n + 1):N, :]
+# when it has no workspace -- the products are materialised, and the answer is the reference's to
+# the bit. The reference is the sum of the two materialised products.
+reference_apply_section(λY, A₂, n, N) = λY.Y * A₂[1:n, :] .+ λY.λ * A₂[(n + 1):N, :]
 
 function _measured_apply_section!(Y, λY, Y₂)
     (apply_section!(Y, λY, Y₂); @allocated apply_section!(Y, λY, Y₂))
@@ -103,22 +103,39 @@ end
     end
 end
 
-@testset "apply_section! agrees with the old products, $(nameof(M)){$T}" for M in (StiefelManifold,
+@testset "apply_section! agrees with the materialised products, $(nameof(M)){$T}" for M in (
+        StiefelManifold,
         GrassmannManifold),
     T in (Float32, Float64)
 
     for N in (40, 400), columns in (3, N)
 
         f = section_fixture(M, T, N, 3, columns)
-        old = old_apply_section(f.λY, f.Y₂.A, 3, N)
+        reference = reference_apply_section(f.λY, f.Y₂.A, 3, N)
 
         @test apply_section!(f.Y, f.λY, f.Y₂) === f.Y
         @test eltype(f.Y) == T
-        @test isapprox(f.Y.A, old; rtol = 100eps(T))
+        @test isapprox(f.Y.A, reference; rtol = 100eps(T))
 
         # the alias `update_section!` passes
         aliased = M(copy(f.Y₂.A))
         apply_section!(aliased, f.λY, aliased)
-        @test aliased.A == old
+        @test aliased.A == reference
+    end
+end
+
+# A destination that is the section's own frame `λY.Y` is an input of the first product, so it
+# takes the materialised branch too.
+@testset "apply_section! into the section's frame, $(nameof(M)){$T}" for M in (StiefelManifold,
+        GrassmannManifold),
+    T in (Float32, Float64)
+
+    for N in (40, 400)
+        f = section_fixture(M, T, N, 3, 3)
+        reference = reference_apply_section(f.λY, f.Y₂.A, 3, N)
+
+        @test apply_section!(f.λY.Y, f.λY, f.Y₂) === f.λY.Y
+        @test eltype(f.λY.Y) == T
+        @test f.λY.Y.A == reference
     end
 end

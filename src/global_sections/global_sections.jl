@@ -149,8 +149,6 @@ end
 
 function apply_section!(Y::AT, λY::GlobalSection{T, AT},
         Y₂::MT) where {T, AT <: GrassmannManifold{T}, MT <: GrassmannManifold{T}}
-    # Into `Y.A`, as in the Stiefel method above: assigning the field replaced `Y`'s array on every
-    # solver step rather than writing into it, and returned that array instead of `Y`.
     _apply_section!(Y.A, λY, Y₂.A)
 
     Y

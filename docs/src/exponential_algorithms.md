@@ -1486,7 +1486,7 @@ the property you specifically need.**
 |---|---|---|
 | [`ScaledSquaring`](@ref) | almost always; it is the default | `check` drifting up with the size of the lift |
 | [`NativePade`](@ref) | you want an independent direct calculation on a backend that forbids scalar indexing | about `1.1×` the isolated ``\mathfrak{A}`` runtime and the same allocations, the same accuracy in `Float64`, the worst `check` of the three in `Float32`, and `θ` bounded by `1/2` |
-| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | `1.2×`–`2.2×` the cost, the largest forward error in either format, not on Metal |
+| [`ProjectedSkew`](@ref) | staying on the manifold matters more than the last bit of the exponential — a long `Float32` run, where `check` accumulates over thousands of steps | `1.2×`–`2.3×` the cost, the largest forward error in either format, not on Metal |
 | [`AugmentedPade`](@ref) | you want a second opinion from an implementation that introduces no numerics of its own | roughly `3×` the cost of the ``\mathfrak{A}`` call and the allocations of `exp` in a workspace, no better than [`ScaledSquaring`](@ref) on accuracy, CPU only |
 | [`TaylorSeries`](@ref) | never; it exists so the pre-0.2.0 regression stays reproducible | leaving the manifold silently above ``\Vert\bar{B}\Vert \approx 50`` |
 

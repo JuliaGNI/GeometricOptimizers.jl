@@ -8,7 +8,9 @@ using GeometricOptimizers: trial_slope, trial_iterate!, retraction_workspace, in
                            cache,
                            gradient, update!, direction, section, solution, global_rep,
                            _dot,
-                           _similar, _direction_rule
+                           _similar, _direction_rule, linesearch,
+                           retraction_differential
+using NeuralNetworkParameters: NetworkParameters
 using Test
 import Random
 
@@ -58,6 +60,65 @@ end
     @test (@inferred trial_slope(
         gradient(f.opt), f.cache, Cayley(), T(0.5), f.differential,
         f.workspace)) isa T
+end
+
+# The same equality through `φ'` of the line search the `Optimizer` built: the problem passes its own
+# workspace and differential to `trial_slope`, and a problem that passed no workspace would take the
+# allocating differential, which allocates at `α = 0.5` and not at `α = 0`. `φ'` first moves the
+# iterate, and the `Cayley` retraction allocates at `α = 0.5` what it does not at `α = 0`, so the
+# equality is of what `φ'` allocates beyond that move, measured alone in the same workspace.
+function _measured_derivative(D, α, params)
+    D(α, params)
+    @allocated D(α, params)
+end
+
+function _measured_move(cache, params, α, workspace)
+    trial_iterate!(cache, params, α, Cayley(), workspace)
+    @allocated trial_iterate!(cache, params, α, Cayley(), workspace)
+end
+
+function beyond_move(f, D, α)
+    _measured_derivative(D, α, f.params) -
+    _measured_move(f.cache, f.params, α, f.workspace)
+end
+
+@testset "φ' of the optimizer's line search allocates as much at α = 0.5 as at α = 0, $lift, $T" for lift in (
+        :Stiefel, :Grassmann),
+    T in (Float32, Float64)
+
+    f = slope_fixture(lift, T)
+    D = linesearch(f.opt).problem.D
+    @test beyond_move(f, D, T(0.5)) == beyond_move(f, D, zero(T))
+    @test D(T(0.5), f.params) isa T
+end
+
+# A parameter set that mixes a manifold leaf with an ordinary array, through `φ'` of the line search
+# the `Optimizer` built: the `NetworkParameters` method of `retraction_differential!` walks the
+# leaves with the optimizer's tree of workspaces, and its slope is the allocating differential's.
+function mixed_fixture(lift, ::Type{T}) where {T}
+    Random.seed!(7)
+    ps = NetworkParameters((w = rand(manifold(Val(lift)){T}, 6, 3), b = randn(T, 4)))
+    F(p) = sum(abs2, p.w .- T(0.3)) + sum(sin.(p.w)) + sum(abs2, p.b) + sum(p.b)
+    opt = Optimizer(ps, F; algorithm = BFGS(), retraction = Cayley())
+    state = OptimizerState(BFGS(), ps)
+    c = cache(opt)
+    initialize!(c, ps)
+    update!(c, state, gradient(opt), _direction_rule(opt), ps)
+    (opt = opt, cache = c, params = (x = ps, state = state))
+end
+
+@testset "φ' on a mixed parameter set is the slope of the allocating differential, $lift, $T" for lift in (
+        :Stiefel, :Grassmann),
+    T in (Float32, Float64)
+
+    f = mixed_fixture(lift, T)
+    D = linesearch(f.opt).problem.D
+    for α in T.((0, 0.25, 0.5, 2))
+        slope = D(α, f.params)
+        g = global_rep(section(f.cache), gradient(f.opt)(solution(f.cache)))
+        @test slope isa T
+        @test slope == _dot(g, retraction_differential(Cayley(), direction(f.cache), α))
+    end
 end
 
 @testset "trial_slope is the slope of the allocating differential, $lift, $T" for lift in (:Stiefel,
