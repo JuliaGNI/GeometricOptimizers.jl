@@ -424,11 +424,12 @@ shape, and returned.
 
 `workspace` is the [`RetractionWorkspace`](@ref) of `B`'s point, the tree of them a parameter set
 has, or `nothing`. A [`Cayley`](@ref) lift at ``\alpha \neq 0`` with a workspace on a host `Matrix`
-of `Float32` or `Float64` is evaluated in that workspace and allocates nothing: its two solves are
-`LAPACK.getrf!` and `LAPACK.getrs!` on workspace buffers, which are the two calls `\` makes, so the
-answer is the allocating method's to the bit. Every other case copies the allocating method's answer
-into `D` — at ``\alpha = 0``, under [`Geodesic`](@ref) and for an ordinary array that is a copy of
-`B` — including a workspace on any other array type, where `\` stays.
+of a LAPACK element type, `Float32`, `Float64` or their complex types, is evaluated in that
+workspace and allocates nothing: its two solves are `LAPACK.getrf!` and `LAPACK.getrs!` on workspace
+buffers, which are the two calls `\` makes, so the answer is the allocating method's to the bit.
+Every other case copies the allocating method's answer into `D` — at ``\alpha = 0``, under
+[`Geodesic`](@ref) and for an ordinary array that is a copy of `B` — including a workspace on any
+other array type, where `\` stays.
 """
 function retraction_differential!(D, workspace, R::AbstractRetraction, B, α)
     _copyto!(D, retraction_differential(R, B, α))
