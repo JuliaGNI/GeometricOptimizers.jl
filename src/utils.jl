@@ -17,9 +17,7 @@
 # difference between an answer computed somewhere the caller did not choose and no answer.
 #
 # `copyto!`, `assign!` and `changebackend` are exempt and must stay exempt — a transfer's whole
-# purpose is to cross backends, which is the rule `Base` already sets for `copyto!`. `_match_backend`
-# in `abstract_manifold.jl` is the third exemption and is deliberate: `rgrad` moves the gradient onto
-# the point's backend rather than refusing, because the point is the parameter.
+# purpose is to cross backends, which is the rule `Base` already sets for `copyto!`.
 #
 # Both reads fold away for concrete array types, so a same-backend call pays nothing. An array that
 # `KernelAbstractions.get_backend` cannot place raises that function's own `ArgumentError`.
@@ -33,6 +31,48 @@ end
 
 # The destination of a `mul!` or an `add!` is the third array on the backend.
 _check_same_backend(A, B, C) = (_check_same_backend(A, B); _check_same_backend(A, C))
+
+# The backend of a solution, which is the backend of its storage: of the vector itself, of a
+# manifold point's matrix, and of every storage array of a parameter set, which must be one. A set
+# with leaves on two backends raises the "mixed backends" error above. A solution is on a device
+# where this is a `GPU`.
+_solution_backend(x::AbstractVector) = KernelAbstractions.get_backend(x)
+function _solution_backend(x)
+    storage = foldstorage(_first_storage_on_one_backend, nothing, x)
+    storage === nothing ? CPU() : KernelAbstractions.get_backend(storage)
+end
+
+_first_storage_on_one_backend(::Nothing, storage) = storage
+function _first_storage_on_one_backend(first_storage, storage)
+    _check_same_backend(first_storage, storage)
+    first_storage
+end
+
+# No default gradient on a device. `GradientAutodiff` runs `ForwardDiff` with a host
+# configuration, and `GradientFiniteDifferences` indexes `x[j]` and keeps host buffers, so either
+# would fail at its first evaluation, far from the cause, or take the iterate off the device. Every
+# route that builds a default gradient calls this first.
+function _refuse_default_gradient(x)
+    backend = _solution_backend(x)
+    backend isa GPU && throw(ArgumentError(string(
+        "no default gradient for parameters on ", backend, ": `mode = :autodiff` and ",
+        "`mode = :finitediff` both compute on the host. Supply the gradient: `∇F!` to ",
+        "`Optimizer(x, F; ∇F! = …)`, or `gradient` to `Optimizer(x, problem; gradient = …)`.")))
+    nothing
+end
+
+# A flat vector of `ps` on the backend of its leaves, and its layout. The host arm is `flatten`, so
+# a host iterate is flattened as `flatten` does it; a device one is written into a vector allocated
+# on the device, where `flatten` would allocate a host `Vector` and the gradient computed from it
+# would come back on the host.
+_flatten_on_backend(::Type{T}, ps) where {T} = _flatten_on(_solution_backend(ps), T, ps)
+
+_flatten_on(::CPU, ::Type{T}, ps) where {T} = flatten(T, ps)
+function _flatten_on(backend, ::Type{T}, ps) where {T}
+    layout = parameterlayout(ps)
+    v = KernelAbstractions.allocate(backend, T, flatlength(layout))
+    flatten!(v, ps, layout), layout
+end
 
 # Writes the diagonal of an identity matrix. `unit_matrix` below is the only caller; a kernel is what
 # it takes to write a diagonal without scalar indexing, and that docstring says why that matters.
@@ -112,22 +152,38 @@ end
 # this release went out of its way to keep. Deleted rather than widened, since widening dead code only
 # makes it harder to notice.
 
-(grad::Gradient{T})(x::Manifold{T}) where {T} = rgrad(x, reshape(grad(vec(x)), size(x)...))
+# The gradient of a bare manifold point is evaluated on its dense storage, flattened column-major,
+# and projected with `rgrad`. `vec(parent(x))` and not `vec(x)`: the latter is a lazy reshape of the
+# manifold, which reads it entry by entry and so raises on a device.
+function (grad::Gradient{T})(x::Manifold{T}) where {T}
+    rgrad(x, reshape(grad(vec(parent(x))), size(x)...))
+end
 
+# The three gradients of a bare manifold point. Each is called on the flat storage, as the functor
+# above calls it: `GradientAutodiff` and `GradientFiniteDifferences` differentiate `F` composed with
+# the reconstruction of the point, and `GradientFunction`'s `∇F!(g, v)` gets the flat storage `v`
+# and writes the Euclidean gradient into `g`.
+#
 # `Manifold` and not `StiefelManifold`: hardcoding the latter is what made a bare
 # `GrassmannManifold` a `MethodError` at `Optimizer` construction (issue A11). The manifold is
 # rebuilt with `manifold_constructor` and not with `typeof(x)`, for the reason that function gives:
-# the argument this closure is called on is a vector of `ForwardDiff.Dual`s, whose element type is
-# not `x`'s.
+# under `GradientAutodiff` the argument this closure is called on is a vector of `ForwardDiff.Dual`s,
+# whose element type is not `x`'s.
 #
-# Both of these dispatch on `Manifold`, which is this package's type, so neither is type piracy; the
+# These dispatch on `Manifold`, which is this package's type, so none is type piracy; the
 # `Matrix` pair that used to stand below them was. `GradientAutodiff(F, ::AbstractMatrix)` is
 # `SimpleSolvers`' own method as of 0.13.2 -- the same body with the `Manifold` reconstruction taken
 # out -- and this one takes precedence over it for a manifold. The functor is [`RiemannianGradient`](@ref)
 # below.
-function GradientAutodiff(F, x::Manifold)
-    GradientAutodiff(_x -> F(manifold_constructor(x)(reshape(_x, size(x)...))), vec(x))
+_on_storage(F, x::Manifold) = _x -> F(manifold_constructor(x)(reshape(_x, size(x)...)))
+
+GradientAutodiff(F, x::Manifold) = GradientAutodiff(_on_storage(F, x), vec(parent(x)))
+
+function GradientFiniteDifferences(F, x::Manifold{T}; kwargs...) where {T}
+    GradientFiniteDifferences{T}(_on_storage(F, x), length(x); kwargs...)
 end
+
+GradientFunction(F, ∇F!, x::Manifold{T}) where {T} = GradientFunction{T}(F, ∇F!, length(x))
 
 @doc raw"""
     RiemannianGradient(gradient) <: SimpleSolvers.Gradient

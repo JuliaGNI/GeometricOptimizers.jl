@@ -17,7 +17,7 @@
 #
 # `allowscalar(false)` is what makes this a test rather than a description: without it a scalar
 # index on a `JLArray` merely warns. `JLArrays` stands in for the device, as it does in
-# `similar_backend.jl` and `gradient_backend.jl`.
+# `similar_backend.jl` and `rgrad_backend.jl`.
 #
 # The file holds two kinds of assertion, and they are not interchangeable. The seven "runs on the
 # device" testsets each assert a product that the methods under test make reachable: strip those

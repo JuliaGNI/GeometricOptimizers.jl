@@ -5,26 +5,17 @@ A manifold in `GeometricOptimizers` is a subtype of `AbstractMatrix`. All manifo
 """
 abstract type Manifold{T} <: AbstractMatrix{T} end
 
-# TEMPORARY. A shim for a defect that is not in this package: the ambient gradient is an *input* to
-# `rgrad`, so a caller holding its parameters on a device and its gradients on the host is broken
-# wherever those gradients are allocated. Matching them here hides that, and pays a host-to-device
-# transfer per manifold leaf per step, inside the region `PhaseTimer` attributes to the step. Remove
-# this function, its two call sites and `test/gradient_backend.jl` once
-# JuliaGNI/GeometricMachineLearning.jl#258 and JuliaGNI/AbstractNeuralNetworks.jl#39 are closed.
+# The entry guard of `rgrad`: at a point on a device, the ambient gradient is on the point's
+# backend, or the "mixed backends" `ArgumentError` names both. A host gradient at a device point is
+# a defect of whatever allocated it, and copying it over would hide that and pay a transfer per leaf
+# per step.
 #
-# The point's backend and not the gradient's, because the point is the parameter: it is what the
-# caller chose to put on a device and what the retraction has to write back to. A point that is not
-# on a device returns `∇L` untouched, without asking it for a backend — which is what keeps a
-# gradient `KernelAbstractions` cannot place on the host path it was always on. A
-# `ForwardDiff.Dual` matrix is not such a gradient: it is a plain `Array` and
-# `KernelAbstractions.get_backend` answers `CPU(false)` for it. What it does keep off that path is a
-# lazy wrapper for which `get_backend` raises.
-function _match_backend(Y::Manifold, ∇L::AbstractMatrix)
-    backend = KernelAbstractions.get_backend(Y)
-    backend isa GPU || return ∇L
-    KernelAbstractions.get_backend(∇L) == backend && return ∇L
-
-    copyto!(KernelAbstractions.allocate(backend, eltype(∇L), size(∇L)...), ∇L)
+# The point's backend decides, because the point is the parameter. A host point never asks the
+# gradient for its backend, which keeps a gradient `KernelAbstractions` cannot place, such as a lazy
+# wrapper, on the host path. A device gradient at a host point is not refused here.
+function _check_gradient_backend(Y::Manifold, ∇L::AbstractMatrix)
+    KernelAbstractions.get_backend(Y) isa GPU && _check_same_backend(Y.A, ∇L)
+    nothing
 end
 
 @doc raw"""
@@ -44,6 +35,14 @@ size tried.
 [`global_section`](@ref) uses, ``\|Q^TQ - \mathbb{I}\|`` after one pass is 9.7e-6 at ``N = 20`` and
 1.9e-3 at ``N = 400``, against 7.1e-7 and 7.7e-6 after the second — and the manifold tests assert
 `check(Y) < 1e-14` in `Float64`.
+
+**On a device this keeps the point there; it is not the faster route.** Measured by
+`scripts/orthonormalization_device_cost.jl` on an M4 Max (Julia 1.13.1, Metal 1.11.1) in `Float32`
+at the ``N\times(N-3)`` shape [`global_section`](@ref) uses — a cold session, one warm-up, the median
+of five runs, `Metal.synchronize()` in the timed region and the host on one BLAS thread: at
+``N = 20`` this takes 7.3 ms on Metal, against 46 μs for a host `qr!` and 0.60 ms for the round trip
+that downloads `A`, factorizes it on the host and uploads ``Q``; at ``N = 400``, 29 ms against 12 ms
+and 19 ms. At these sizes the device time is mostly launch and synchronisation latency.
 
 **Forming ``A^TA`` squares the condition number**, which is what the `nothing` is for. `cholesky`
 with `check = false` reports a Gram matrix that is no longer positive definite rather than throwing,
@@ -352,6 +351,9 @@ Base.size(A::Manifold) = size(A.A)
 Base.parent(A::Manifold) = A.A
 Base.getindex(A::Manifold, i::Int, j::Int) = A.A[i, j]
 Base.copy(A::MT) where {MT <: Manifold} = MT(copy(A.A))
+# the entries, as `Base`'s `==` for two arrays compares them, but through the storage: the generic
+# method reads a manifold one entry at a time, which a device refuses
+Base.:(==)(A::Manifold, B::Manifold) = parent(A) == parent(B)
 
 @doc raw"""
     manifold_constructor(x::Manifold)
@@ -364,11 +366,11 @@ element type from `x`'s: the closure `GradientAutodiff` differentiates is handed
 `ForwardDiff.Dual`s. And `x`'s manifold rather than a hardcoded `StiefelManifold`, which is what used
 to make a bare one a `MethodError` at [`Optimizer`](@ref) construction (issue A11).
 
-Its two callers are `GeometricOptimizers._similar(::Manifold)` and
-`GradientAutodiff(F, ::Manifold)`. It used to have a third: the flattening reconstructed a manifold
-through this, and hardcoding `StiefelManifold` there turned a [`GrassmannManifold`](@ref) into a
-[`StiefelManifold`](@ref) on every round trip. `NeuralNetworkParameters.rebuild` takes a *prototype*
-rather than a type, so that bug class is gone from the flat path rather than guarded against.
+Its callers are `GeometricOptimizers._similar(::Manifold)`, `copyto!(::Manifold, ::Manifold)` and the
+reconstruction that `GradientAutodiff(F, ::Manifold)` and `GradientFiniteDifferences(F, ::Manifold)`
+compose `F` with. The flattening does not call it: `NeuralNetworkParameters.rebuild` takes a
+*prototype* rather than a type, so a round trip keeps a [`GrassmannManifold`](@ref) a
+`GrassmannManifold`.
 """
 manifold_constructor(x::Manifold) = Base.typename(typeof(x)).wrapper
 

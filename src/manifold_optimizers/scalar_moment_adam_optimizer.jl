@@ -194,8 +194,9 @@ The `‖·‖²` that [`ScalarMomentAdam`](@ref)'s second moment accumulates, se
 `false` — the default — squares the horizontal lift already in the cache; `true` squares
 [li2020efficient](@cite)'s own ambient Euclidean gradient, at one extra gradient evaluation per step.
 `Gradient` applied to a [`Manifold`](@ref) returns `rgrad(Y, ∇L)` and the ambient `∇L` is not part of
-the optimizer protocol, so `true` recovers it from the flattened closure
-`GradientAutodiff(F, ::Manifold)` builds — which is what `gradient(vec(x))` is. `store_gradient!`'s
+the optimizer protocol, so `true` recovers it by calling the gradient on the flat storage, as
+`GradientAutodiff(F, ::Manifold)` and the other `Manifold` gradients are built for — which is what
+`gradient(vec(parent(x)))` is. `store_gradient!`'s
 reuse does not help, because what it caches is the lift.
 
 The two are not interchangeable up to a constant, and which to reach for when is on the
@@ -203,7 +204,8 @@ The two are not interchangeable up to a constant, and which to reach for when is
 """
 function _squared_gradient_norm(method::ScalarMomentAdam, cache::ScalarMomentAdamCache,
         gradient::Gradient, x::StiefelManifold)
-    method.ambient_norm ? sum(abs2, gradient(vec(x))) : l2norm(gradient_array(cache))^2
+    method.ambient_norm ? sum(abs2, gradient(vec(parent(x)))) :
+    l2norm(gradient_array(cache))^2
 end
 
 function update!(cache::ScalarMomentAdamCache{T},

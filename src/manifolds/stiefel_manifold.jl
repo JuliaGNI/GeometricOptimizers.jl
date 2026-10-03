@@ -50,7 +50,7 @@ rgrad(Y, Δ)
 ```
 """
 function rgrad(Y::StiefelManifold, ∇L::AbstractMatrix)
-    ∇L = _match_backend(Y, ∇L) # TEMPORARY, see `_match_backend`
+    _check_gradient_backend(Y, ∇L)
     ∇L - Y.A * (∇L' * Y.A)
 end
 

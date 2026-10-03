@@ -271,7 +271,11 @@ iterations.
 [`convergence_measures`](@ref) for the one that does.
 """
 contains_nonfinite(a::Real) = !isfinite(a)
-contains_nonfinite(a) = any(contains_nonfinite, a)
+# over the storage of every leaf, which holds the same values as the dense interface does: the
+# interface of a manifold point or a structured matrix is read entry by entry, which a device
+# refuses, while `any` over a storage array is a reduction on its backend
+contains_nonfinite(a) = foldstorage(_any_nonfinite, false, a)
+_any_nonfinite(acc, storage) = acc || any(!isfinite, storage)
 
 function Base.show(io::IO, s::OptimizerStatus)
     @printf io " * Convergence measures\n"

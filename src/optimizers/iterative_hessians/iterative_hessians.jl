@@ -13,7 +13,7 @@ instead, through `NeuralNetworkParameters`' allocation-free `flatten!` and `unfl
 A `NeuralNetworkParameters.FlatParameters` rather than a bare `Vector`, because it carries its own
 `ParameterLayout` and keeps it through `similar` — so δ is built once and the other three buffers are
 one `similar` each, with no `parameterlayout` call written anywhere below this line. One is still
-*made*: `FlatParameters(T, g)` is `flatten(T, g)`, whose first act is to build the layout. What the
+*made*: δ is the flattening of `g` on its backend, whose first act is to build the layout. What the
 `similar`s buy is that it happens once per cache rather than once per product with ``Q``.
 
 That layout then goes into the cache's own type, as `FlatParameters`' third type parameter and so as
@@ -33,9 +33,10 @@ This is where the distinction the quasi-Newton methods turn on is written down, 
 the `outer!` methods 0.6.0 deleted. ``Q`` is sized by the *intrinsic* dimension of the parameters — the
 length of their flattening — while the direction and the gradient are handed around in the *ambient*
 representation. For a bare `StiefelManifold` of size ``(3, 1)`` those are 2 and ``3 \times 3``
-respectively, so `SimpleSolvers.outer!`, which indexes its arguments linearly against `axes(m)`, would
-assert on the mismatch. Flattening first is what makes `BFGS` and `DFP` run on a bare `Manifold` at
-all, and the buffers below hold the flat form once per cache rather than once per call.
+respectively, so `SimpleSolvers.outer!`, which checks the axes of its arguments against those of its
+destination, would throw a `DimensionMismatch`. Flattening first is what makes `BFGS` and `DFP` run
+on a bare `Manifold` at all, and the buffers below hold the flat form once per cache rather than
+once per call.
 
 Built from `g`, which callers pass as `_zero(x)` and not `x`, for the reason the `flatlength(_zero(x))`
 beside it gives: on a manifold the flattening of the *lift* is the intrinsic dimension, 12 against 18
@@ -48,8 +49,10 @@ would add a copy per iteration and buy nothing. `_flat_mul!` and the secant pair
 """
 _flat_scratch(::Type{T}, ::AbstractVector) where {T} = nothing
 
+# On the backend of `g`, as `Q` is, so that the products with `Q` stay there; see
+# `_flatten_on_backend`.
 function _flat_scratch(::Type{T}, g) where {T}
-    δ = FlatParameters(T, g)
+    δ = FlatParameters(_flatten_on_backend(T, g)...)
     (δ = δ, γ = similar(δ), rhs = similar(δ), direction = similar(δ))
 end
 

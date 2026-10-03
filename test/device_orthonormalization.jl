@@ -11,7 +11,7 @@
 # index on a `JLArray` merely warns, and the whole point is that nothing here reaches one.
 #
 # `JLArrays` stands in for the device, as it does in `similar_backend.jl` and
-# `gradient_backend.jl`. `Metal` is Apple-only and CI runs a matrix, so real device hardware is
+# `rgrad_backend.jl`. `Metal` is Apple-only and CI runs a matrix, so real device hardware is
 # what this file cannot assert on.
 
 using GeometricOptimizers

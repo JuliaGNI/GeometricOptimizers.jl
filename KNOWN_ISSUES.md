@@ -231,121 +231,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `MethodError` at the call site instead of a frame in. The first is cheaper and says more; the
   second is the one that makes the type hierarchy match what is implemented.
 
-### A19 · `ScaledSquaring`'s GPU claim is untested here
-
-- location: `docs/src/retractions.md`
-- kind: not verified
-- found: #45
-- evidence:
-
-  **Severity: unknown, which is the point.** From the review of [#45]. **Half of it is fixed** — see
-  *Fixed* under [0.4.2](#042) — and this is the half that is not.
-
-  The documentation states the property in three places and rests the default on it:
-  `docs/src/retractions.md` calls [`ScaledSquaring`](@ref) one of the two usable algorithms that run
-  unchanged on a `KernelAbstractions` GPU backend and the default because it is the cheaper of them,
-  and `docs/src/manifold_optimizers.md` repeats it. `GeometricOptimizers.opnorm₁` exists solely to keep
-  it: its docstring says `LinearAlgebra.opnorm(X, 1)` "is a scalar-indexing double loop, and scalar
-  indexing is exactly what a GPU array cannot serve."
-
-  Two things sat against that, both verified by reading. The first turned out to be a defect rather
-  than a doubt, and is fixed:
-
-  - `𝔄(A)` — the series `ScaledSquaring` sums, on the ``2n\times{}2n`` argument — opened with
-    `Aⁿ = one(A)` and `𝔄A = one(A)`. `Base.one(::AbstractMatrix)` is `Base._one` in
-    `base/abstractarray.jl`, which does `similar`, `fill!` and then **a scalar-indexed loop over the
-    diagonal**. So the path was not "nothing but matrix products and norms"; it reached the same
-    construct `opnorm₁` was written to avoid, one level down. `AbstractLieAlgHorMatrix` had a
-    `Base.one` of its own that is a KernelAbstractions kernel precisely to avoid this — but `𝔄`'s
-    argument is a bare matrix, so that method did not apply to it. (It was written for
-    `StiefelLieAlgHorMatrix` alone and moved to the abstract type in [0.2.2](#022), which is why the
-    Grassmann retraction was on the scalar-indexed path as well until then; that was *a piece of* this
-    entry and not a fix for it.) **Fixed in [#54]**, which is where the claim also stopped being
-    untested against an array type that errors on scalar indexing. What remains is the second bullet,
-    and a `JLArray` does not settle it — it reproduces the *failure mode* of a GPU backend, not the
-    backend.
-  - **No run in this repository exercises it**, and there is no GPU code left here to change that:
-    `mnist_cuda.jl`, `mnist_metal.jl`, `mnist_metal_short.jl` and `metal_memory_probe.jl` were all of
-    it, and they moved to [GMLDatasets.jl](https://github.com/JuliaGNI/GMLDatasets.jl) with the rest of
-    the MNIST material. None of the five MNIST scripts passed `retraction`, so all of them took the
-    `Optimizer` default, which is `Cayley()` — the same fact recorded under F below. The 6 h 53 min
-    RTX 4090 run whose figures that package's documentation carries therefore never called `geodesic`,
-    `𝔄` or `ScaledSquaring` at all.
-
-  What is *not* established is whether this actually breaks. CUDA.jl and Metal.jl error on disallowed
-  scalar indexing, which would make it a hard failure rather than a slow one, but no GPU was available
-  to the review and the claim is not being called false — only unverified, with a specific reason to
-  doubt it and a one-line way to find out.
-
-  **What to do**: run `geodesic(60 * rand(StiefelLieAlgHorMatrix{Float32}, 20, 3) |> gpu)` on a CUDA or
-  Metal backend, with `NativePade` alongside it. The identity half of this is done — `𝔄` builds it the
-  way `one(::AbstractLieAlgHorMatrix)` does, through the shared `unit_matrix` — so what is left is the
-  transcript, which is worth having given that three documentation passages depend on it and that the
-  one thing already found here was found by reading rather than by running.
-
-### A20 · `default_gradient` has no `Manifold` method and silently takes the `AbstractArray` one
-
-- location: `src/optimizers/optimizer.jl:175-176`
-- kind: defect
-- found: #46
-- evidence:
-
-  **Severity: medium**, and narrow — it is unreachable through the constructor anyone actually calls.
-  From the review of [#46], found by checking that PR's claim about what it left open against merged
-  `main` instead of against the wording of [#27]. Pre-existing; [#46] neither causes nor fixes it.
-
-  `default_gradient` has two methods (`src/optimizers/optimizer.jl:175-176`):
-
-  ```julia
-  default_gradient(problem::OptimizerProblem{T}, x::AbstractArray) where {T} = GradientAutodiff{T}(problem.F, length(x))
-  default_gradient(problem::OptimizerProblem, x::ArrayNamedTuple) = GradientAutodiff(problem.F, x)
-  ```
-
-  `Manifold <: AbstractMatrix`, so a bare manifold takes the first. That builds the gradient from the
-  *length* and composes `problem.F` with a flat vector, where the point of `GradientAutodiff(F, ::Manifold)`
-  — added in [0.2.2](#022) at `src/utils.jl:30` — is that it rebuilds the manifold before
-  calling `F`. The `NamedTuple` method is already the delegating form, and the reason it exists is
-  recorded in `default_gradient`'s own docstring one screen up: a `Gradient` for a `NamedTuple` "has to
-  be constructed from `x` itself". A bare manifold is the same argument and did not get the same
-  treatment.
-
-  It does not raise where it is built. It raises at the first gradient evaluation, and only on an
-  objective that names its argument type — so an `F(Y) = -tr(Y'MY)` written without the annotation
-  computes something plausible off the flattened vector and never says anything. Reproduced on `main`
-  at 6166479:
-
-  ```julia
-  F(Y::GrassmannManifold) = -tr(Y' * M * Y)
-  x = rand(GrassmannManifold{Float64}, 3, 1)
-
-  default_gradient(OptimizerProblem(F, x), x)(x)
-  # MethodError: no method matching F(::Vector{ForwardDiff.Dual{…}})
-
-  GradientAutodiff(F, x)(x)          # the method [#46] added, for comparison
-  # [-0.28344900891714625; -0.660038737272924; -0.4099740609429401;;]
-  ```
-
-  The same on a `StiefelManifold`, which is why this is not a Grassmann entry: it is the half of [#27]'s
-  second bullet that survived A11.
-
-  Nothing in the test suite reaches it. `Optimizer(x, F; …)` builds its own gradient at
-  `src/optimizers/optimizer.jl:244` and never consults `default_gradient`; the constructor that does is
-  the lower-level `Optimizer(algorithm, problem, hessian, cache, linesearch; gradient = default_gradient(problem, cache.x), …)`
-  at `:156`, and `_optimizer` at `:201`. So the gap is real and unreachable by the documented entry
-  point at the same time, which is the reason it outlived a PR that fixed everything around it.
-
-  **What to do**: one method,
-
-  ```julia
-  default_gradient(problem::OptimizerProblem, x::Manifold) = GradientAutodiff(problem.F, x)
-  ```
-
-  next to the two above, and a test that goes through the `:156` constructor with an objective that
-  annotates its argument — the annotation is the part that matters, since without it the wrong gradient
-  is silent rather than loud. Worth doing together with the other half of [#27], `mode = :finitediff`
-  (`:246`), which has no `Manifold` method either and no `NamedTuple` one ([#24]); the three are one
-  subject, which is "every entry point that builds a gradient should agree about what a manifold is".
-
 ### A22 · The symplectic SR decomposition is not backward stable, and fails three ways
 
 - location: `src/decompositions/symplectic_sr.jl`
@@ -408,62 +293,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Until this closes, the type is a geometric object with a metric, a Riemannian gradient and a global
   section — not an optimization target.
 
-### A21 · The optimizer interface cannot hold GPU arrays
-
-- location: `MNIST_PORT.md`
-- kind: defect
-- found: #14
-- evidence:
-
-  **Severity: medium**, and a regression rather than a gap: `GeometricMachineLearning`'s optimizers ran
-  on `CUDABackend()`, and the port of [#14] could not keep that. Found by that port, recorded in the
-  `MNIST_PORT.md` it wrote, and moved here when the MNIST material left (see [0.3.1](#031)
-  above) — this entry is that file's finding restated against current `src/`, not a new measurement.
-
-  **This entry loses the sharpest half of its first bullet in
-  [0.5.0](#050).** The scalar-indexing fallback it described was
-  `ParameterHandling`'s, and that dependency is gone: `NeuralNetworkParameters.flatten!` writes each leaf
-  with one `copyto!(v, doffs, x, firstindex(x), n)` over a range the layout already knows, and indexes no
-  element, so there is nothing left for a device array to fall through *to*. What is restated below is
-  what survives, which is a transfer per step rather than an error.
-
-  The parameters of a GPU run stay on the host. Two independent things put them there:
-
-  - **The per-step flattening, now as a transfer rather than a scalar-indexing fallback.**
-    `(grad::Gradient{T})(nt::ArrayNamedTuple{T})` (`src/optimizers/named_tuple_wrapper.jl:21`) flattens
-    on *every* gradient evaluation, and `flatten` allocates its destination as a
-    `Vector{T}(undef, length(layout))` — a **host** vector, whatever the leaves are. `unflatten` is the
-    same boundary in reverse: it slices `v[l.range]`, reshapes, and hands `rebuild` a host array, so the
-    parameter set it returns is host-resident even if the one it was built from was not. A device run
-    therefore pays a download and an upload of the whole parameter set per step, which is the cost
-    measured below — a transfer that works rather than scalar indexing that does not, but the parameters
-    still do not stay resident.
-  - **The state.** `_similar(a::Manifold{T}) = rand(manifold_constructor(a){T}, size(a)...)` at `:46`
-    goes to `rand(manifold_type, N, n)` (`src/manifolds/abstract_manifold.jl:110`) and from there to
-    `rand(CPU(), …)` at `:43` — always the host, whatever `a` is. It backs `x̄` and the `BFGS`/`DFP`
-    caches, so even a flattening that stayed on the device would leave the state mixing host and device
-    arrays. Untouched by the dependency change.
-
-  What this cost the run it was found in is small: the optimizer touches only the parameters — 154938
-  of them, 620 kB in `Float32`, so ≈1.2 MB uploaded and downloaded per step — against ≈3 GB of
-  device-side activations in the forward and backward passes, which stayed on the device throughout.
-  That is why the port left it, and it is a statement about that network and not about the interface.
-  A parameter set large enough to be worth keeping resident would pay the transfer on every step.
-
-  The rest of `src/` is written against `KernelAbstractions` and *looks* backend-agnostic; whether it
-  is has not been established, and A19 above is one specific reason to doubt it.
-
-  **What to do**: the flattening is now `NeuralNetworkParameters`' to fix rather than this package's —
-  what it needs is a `flatten` that allocates its destination on the backend of the parameters, and a
-  `FlatParameters` that keeps it there, which is an upstream request and not a method here. On this side
-  what is left is to thread the backend through `_similar` —
-  `rand(backend, MT{T}, N, n)` already exists (`src/manifolds/abstract_manifold.jl:70`, allocating
-  through `KernelAbstractions` at `:28`), and `KernelAbstractions.get_backend` is how `global_section`
-  and `Base.zero` already find the backend of a point they are given
-  (`src/manifolds/stiefel_manifold.jl:128,143`). Neither is large, and neither is worth doing blind:
-  the check is a GPU run of the optimizer, which nothing in this repository does any more, so this
-  should be closed together with A19 — one backend, one session, both claims settled.
-
 ### A26 · `symplectic_normalize` and `symplectic_gram_schmidt!` are real-only by construction
 
 - location: —
@@ -482,43 +311,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   **What to do**: Write a complex-valued algorithm that computes the sign correctly,
   or replace both with a method that accepts only real input by type constraint.
-
-### A27 · `ProjectTo` is pinned as the Frobenius projection, and the storage gradient is not yet derived from it
-
-- location: —
-- kind: defect
-- found: #111
-- evidence:
-
-  **Severity: medium.** Found in the review of [#111], in investigation of why a
-  code path that reads a `ProjectTo` cotangent's storage as `∂L/∂S` gives the wrong
-  gradient.
-
-  `ProjectTo` on a `SymmetricMatrix` or `SkewSymMatrix` gives the natural cotangent
-  (the Frobenius projection `½(Ā ± Āᵀ)` of a dense cotangent). A new test holds it to
-  that: its pairing with every storage direction matches a central difference, and a
-  weight used twice (two cotangents added, then projected again) gets the projection of
-  the sum. That representation is kept because AD can add and re-project it.
-
-  Returning `∂L/∂S` from `ProjectTo` instead was tried and rejected: Zygote adds the
-  two cotangents of a weight used twice as dense matrices and projects the sum again,
-  which doubled the off-diagonal entries (ratio 2.0 against finite differences), and a
-  dense Zygote-native cotangent mixed in gave ratios from −1.6 to 3.2.
-
-  A caller that forms the flat gradient of a parameter set through Zygote and passes
-  its storage as `∂L/∂S` gets half of each off-diagonal entry: the ratio of the storage
-  gradient, by finite differences, to the storage of the Zygote cotangent is 1 on the
-  diagonal and 2 off it for a `SymmetricMatrix`, and 2 for every entry of a
-  `SkewSymMatrix`, whose storage holds only off-diagonal entries (n = 3, Zygote 0.7.13).
-  A `GradientMethod` or `MomentumMethod` step taken on that storage therefore moves
-  those entries by half; this follows from the cotangent and was not measured through
-  an optimizer step. The conversion to `∂L/∂S` (the lower triangle of
-  `G + Gᵀ` with the diagonal counted once, or of `G − Gᵀ`) belongs where an AD
-  cotangent becomes a parameter gradient, not in `ProjectTo` itself.
-
-  **What to do**: The mechanism is a step in the optimizer's parameter update after
-  Zygote adds cotangents, and before the gradient is applied. Which package owns it
-  (GeometricOptimizers or NeuralNetworkParameters) is a design decision.
 
 ### A28 · `SymplecticStiefelManifold` has no `rebuild`, so `changebackend` refuses it
 
@@ -540,6 +332,33 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence: `zero_tangent(::StiefelManifold)` and `zero_tangent(::GrassmannManifold)` are the same
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
+
+### K20 · `storage_gradient` of a Stiefel lift raises a `MethodError` for a cotangent of the lift's own type
+
+- location: `src/parameter_protocol.jl`, `storage_gradient(A::StiefelLieAlgHorMatrix, G::AbstractMatrix)`
+- kind: found late
+- found: 2026-10-03
+- evidence: the method reads `G[1:n, 1:n]`, and `getindex(::StiefelLieAlgHorMatrix, i, j)`
+  (`src/lie_algebras/stiefel_lie_algebra_horizontal.jl`) takes integer indices only. So a
+  `StiefelLieAlgHorMatrix` cotangent raises
+  `MethodError: no method matching isless(::UnitRange{Int64}, ::Int64)`, at the leaf's own precision
+  and at another one. Zygote gives a lift a dense cotangent, so a training run may never pass this
+  method a cotangent of the lift's own type. Reproducer (Julia 1.13.1; `S = Float32` and
+  `S = Float64` both raise the error):
+
+  ```julia
+  using GeometricOptimizers, Test
+  using NeuralNetworkParameters: storage_gradient
+
+  @testset "lift-typed cotangent, $S" for S in (Float32, Float64)
+      A = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Float32, 3), 3), rand(Float32, 2, 3), 5, 3)
+      G = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(S, 3), 3), rand(S, 2, 3), 5, 3)
+      @test storage_gradient(A, G) isa StiefelLieAlgHorMatrix{Float32}
+  end
+  ```
+
+  The fix is a method `storage_gradient(A::StiefelLieAlgHorMatrix, G::StiefelLieAlgHorMatrix)` that
+  works on the blocks.
 
 ## B. This package — observability
 
@@ -730,8 +549,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
     reports iterations and evaluations and not time, so the step-ceiling round regenerated every other
     figure in that docstring and left these four untouched. They now say so in place, which is the
     minimum this entry asks for and not a fix.
-  - **the MNIST run**, as of [0.3.1](#031) above: the 6 h 53 min RTX 4090 figures that A19
-    and A21 rest on, the ``\sqrt{1.8} \approx 1.342`` plateau and the per-configuration losses are
+  - **the MNIST run**: the 6 h 53 min RTX 4090 figures, the
+    ``\sqrt{1.8} \approx 1.342`` plateau and the per-configuration losses are
     still quoted here, while `distill_mnist_results.jl` and the five scripts that produced them are now
     in GMLDatasets.jl. This is the one entry on the list whose harness *exists* and is merely elsewhere,
     which makes it the mildest case and the easiest to get wrong: a figure quoted in this repository
@@ -923,15 +742,15 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `NativePade` against `AugmentedPade` on cost, allocations, `check` and forward error — but the
   theoretical comparison of direct ``\varphi_1`` evaluation against the low-rank and augmented
   alternatives was not written; option (a) was chosen on the argument that it needs no solve, which is a
-  portability argument rather than a numerical one. And no *actual* GPU backend has been exercised: the
-  `JLArray` test settles scalar-index freedom, which is the failure mode, but A19 above is still open
-  for the backend itself.
+  portability argument rather than a numerical one. On a GPU backend, `scripts/metal_check.jl` runs
+  `geodesic` with `NativePade` and with `ScaledSquaring` on Metal, on
+  `60 * rand(StiefelLieAlgHorMatrix{Float32}, 20, 3)`, and matches the host; no other GPU backend
+  has been exercised.
 
   **What to do**: derive a ``\varphi_1`` backward-error bound for a non-normal argument, or state
   plainly in the docstring that no such bound is claimed and that the threshold is a measured one — the
   latter is what is written today, and it is enough to use the algorithm honestly but not enough to
-  close [#52]'s first acceptance criterion. Whichever, it belongs with A19: one session that runs the
-  thing on a GPU and settles a bound is two of these entries.
+  close [#52]'s first acceptance criterion.
 
 ### K11 · No allocation assertion covers `_update_inverse_hessian!` itself
 
@@ -1272,14 +1091,10 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/network_parameters_optimizer.jl:157`
   calls `_manifold_αmax` on a set with a Stiefel leaf and `c::Float64`, and no line has its types.
 
-[#14]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/14
-[#24]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/24
-[#27]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/27
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
 [#45]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/45
-[#46]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/46
 [#52]: https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/52
 [#54]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/54
 [#111]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/111

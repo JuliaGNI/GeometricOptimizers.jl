@@ -48,7 +48,8 @@ struct QuasiNewtonCache{T, M, VT, GT, MT, GS, FT} <: OptimizerCache{T}
         # to be the former -- it multiplies gradients, which are lifts. `flatlength` then counts
         # without building the flat vector.
         n = flatlength(_zero(x))
-        q = zeros(T, n, n)
+        # on the backend of `x`, as every buffer of the cache is
+        q = _zeros(_solution_backend(x), T, n, n)
         section = GlobalSection(x)
         g = _zero(x)
         # from the same `_zero(x)` as `n` above, and for the same reason
@@ -88,9 +89,13 @@ direction(cache::QuasiNewtonCache) = cache.Δx
 
 # The secant pair `(δ, γ)` in the coordinates `Q` lives in: the flat mirrors, refreshed from `Δx`
 # and `Δg`, or those two unchanged where the solution is already flat. See `_flat_scratch`.
+#
+# The flat mirrors are returned as their data vectors, which have the backend's own array type: a
+# broadcast or a product over a `FlatParameters` takes its generic path, which reads one entry at a
+# time on a device.
 function _flat_secant(cache::QuasiNewtonCache)
     cache.flat === nothing ? (cache.Δx, cache.Δg) :
-    (flatten!(cache.flat.δ, cache.Δx), flatten!(cache.flat.γ, cache.Δg))
+    (parent(flatten!(cache.flat.δ, cache.Δx)), parent(flatten!(cache.flat.γ, cache.Δg)))
 end
 
 function update!(cache::QuasiNewtonCache, state::OptimizerState, x::OptimizerSolution)
@@ -98,14 +103,14 @@ function update!(cache::QuasiNewtonCache, state::OptimizerState, x::OptimizerSol
     _copyto!(direction(cache), state.s)
     # `direction(cache)` *is* `cache.Δx`, so this is `δ`, refreshed into its flat mirror; see
     # `_flat_scratch`
-    δ = cache.flat === nothing ? cache.Δx : flatten!(cache.flat.δ, cache.Δx)
+    δ = cache.flat === nothing ? cache.Δx : parent(flatten!(cache.flat.δ, cache.Δx))
     outer!(cache.ΔxΔx, δ, δ)
     cache
 end
 
 # No `outer!` method of this package's own is needed here, and that is a property of
-# [`_flat_scratch`](@ref) rather than an omission. It hands `outer!` a `FlatParameters`, which
-# `SimpleSolvers.outer!` can index against `axes(m)` directly, so a parameter set or an
+# [`_flat_scratch`](@ref) rather than an omission. It hands `outer!` the data vector of a
+# `FlatParameters`, a plain array of the backend's type, so a parameter set or an
 # `AbstractLieAlgHorMatrix` never reaches that generic unflattened. Writing one here would also be type
 # piracy: `outer!` is `SimpleSolvers`' and neither argument type would be this package's.
 #
@@ -179,8 +184,7 @@ function _update_inverse_hessian!(::BFGS, cache::QuasiNewtonCache{T}, state::BFG
         outer!(cache.ΔxΔg, δ, γ)
         mul!(cache.T1, cache.ΔxΔg, inverse_hessian(state))
         mul!(cache.T2, inverse_hessian(state), cache.ΔxΔg')
-        # `dot(γ, Q, γ)` and not `γ' * Q * γ`, which materialises `Q * γ`
-        γQγ = dot(γ, inverse_hessian(state), γ)
+        γQγ = _quadratic_form(γ, inverse_hessian(state))
         cache.T3 .= (one(T) .+ γQγ ./ ΔxΔg) .* cache.ΔxΔx
         inverse_hessian(state) .-= (cache.T1 .+ cache.T2 .- cache.T3) ./ ΔxΔg
     end
@@ -188,12 +192,18 @@ function _update_inverse_hessian!(::BFGS, cache::QuasiNewtonCache{T}, state::BFG
     state
 end
 
+# `γᵀQγ`. On the host `dot(γ, Q, γ)` and not `γ' * Q * γ`, which materialises `Q * γ`; on a device
+# the three-argument `dot` reads one entry at a time, so the product is formed there.
+_quadratic_form(γ, Q) = _quadratic_form(KernelAbstractions.get_backend(Q), γ, Q)
+_quadratic_form(::CPU, γ, Q) = dot(γ, Q, γ)
+_quadratic_form(::KernelAbstractions.Backend, γ, Q) = dot(γ, Q * γ)
+
 function _update_inverse_hessian!(::DFP, cache::QuasiNewtonCache{T}, state::BFGSState{T},
         ΔxΔg::T) where {T}
     # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too -- in the
-    # cache's buffers, and through the three-argument `dot`, which materialises no `Q * γ`
+    # cache's buffers, and through `_quadratic_form`; see the BFGS method above
     δ, γ = _flat_secant(cache)
-    γQγ = dot(γ, state.Q, γ)
+    γQγ = _quadratic_form(γ, state.Q)
 
     # `curvature_is_usable` is the curvature condition that keeps `Q` positive definite; see the BFGS
     # method above

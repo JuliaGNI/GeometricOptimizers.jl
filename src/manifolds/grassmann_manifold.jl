@@ -44,7 +44,7 @@ rgrad(Y, Δ)
 ```
 """
 function rgrad(Y::GrassmannManifold, ∇L::AbstractMatrix)
-    ∇L = _match_backend(Y, ∇L) # TEMPORARY, see `_match_backend`
+    _check_gradient_backend(Y, ∇L)
 
     # Through the representative, as `rgrad(::StiefelManifold, …)` also does.
     ∇L - Y.A * (Y.A' * ∇L)

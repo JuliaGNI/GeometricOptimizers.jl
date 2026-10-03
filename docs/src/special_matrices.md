@@ -244,6 +244,12 @@ parameter vector and forward-mode differentiation give. An off-diagonal entry of
 [`SkewSymMatrix`](@ref) every storage entry is ``\bar{A}_{ij} - \bar{A}_{ji}``, again twice the
 natural cotangent. The triangular types store each entry once, so the two forms agree.
 
+This package converts the one to the other where a cotangent becomes a parameter gradient, through
+the `storage_gradient` hook of `NeuralNetworkParameters`. So `Zygote.gradient(L, ps)` for a
+parameter set `ps` gives the storage gradient at every leaf, and the flat gradient of a parameter
+set is ``\partial L/\partial S`` — however often the loss uses a leaf, and whether or not it also
+reads the leaf as a dense matrix. The horizontal lifts get the same conversion for their blocks.
+
 ## Element types
 
 These matrices, and the package as a whole, support real element types only. The storage of a

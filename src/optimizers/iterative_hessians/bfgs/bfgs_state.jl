@@ -68,7 +68,8 @@ _alloc_q(x::AbstractVector) = alloc_h(x)
 function _alloc_q(x::OptimizerSolution{T}) where {T}
     # `_zero(x)` for the reason `QuasiNewtonCache` gives: the lift's dimension, not the dense one
     n = flatlength(_zero(x))
-    fill(T(NaN), n, n)
+    # on the backend of `x`, as `QuasiNewtonCache`'s buffers are
+    fill!(KernelAbstractions.allocate(_solution_backend(x), T, n, n), T(NaN))
 end
 
 # `Manifold` is this package's type, so this method is this package's to own (issue #16).
@@ -96,9 +97,13 @@ decrease the merit — see [`linesearch_rejected`](@ref).
     negative for the rest of the solve. Discarding ``Q`` is what actually recovers.
 """
 function restart!(state::BFGSState)
-    inverse_hessian(state) .= one(inverse_hessian(state))
+    _identity!(inverse_hessian(state))
     state
 end
+
+# `unit_matrix` and not `Base.one`, whose diagonal loop indexes one entry at a time and so raises on a
+# device; see `unit_matrix`.
+_identity!(Q::AbstractMatrix) = (Q .= unit_matrix(Q); Q)
 
 # The one initialisation, which the constructor and `initialize_state!` share: the tangents and the
 # objectives read `NaN` until a step writes them, and `Q` starts at the identity. The points are not
@@ -109,7 +114,7 @@ function _poison!(state::BFGSState{T}) where {T}
     _fill!(state.ḡ, T(NaN))
     state.f = T(NaN)
     state.f̄ = T(NaN)
-    inverse_hessian(state) .= one(inverse_hessian(state))
+    _identity!(inverse_hessian(state))
 
     state
 end
