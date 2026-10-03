@@ -781,7 +781,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   The `metal` group run of the G8 branch failed one test, `(b) Stiefel, Adam` under `Geodesic()`,
   with `Evaluated: mismatch === pass`, 846 of 847 passing. `Random.seed!(seed)` in `run_solve`
   does not seed `Metal.default_rng()`. Metal 1.11.1 makes that generator once per task
-  (`src/random.jl:17`) and seeds it from `Random.RandomDevice()` (GPUArrays, `src/host/random.jl:315`).
+  (`src/random.jl:18-30`) and seeds it from `Random.RandomDevice()` (GPUArrays, `src/host/random.jl:315`).
   So the device run draws another global section on every run, also for the same seed, and its
   final objective is a random draw around the host twin's.
 
