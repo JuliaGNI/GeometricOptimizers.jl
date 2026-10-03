@@ -33,9 +33,9 @@ This is where the distinction the quasi-Newton methods turn on is written down, 
 the `outer!` methods 0.6.0 deleted. ``Q`` is sized by the *intrinsic* dimension of the parameters — the
 length of their flattening — while the direction and the gradient are handed around in the *ambient*
 representation. For a bare `StiefelManifold` of size ``(3, 1)`` those are 2 and ``3 \times 3``
-respectively, so `SimpleSolvers.outer!`, which indexes its arguments linearly against `axes(m)`, would
-assert on the mismatch. Flattening first is what makes `BFGS` and `DFP` run on a bare `Manifold` at
-all, and the buffers below hold the flat form once per cache rather than once per call.
+respectively, so `SimpleSolvers.outer!`, which checks the axes of its arguments against those of its
+destination, would throw a `DimensionMismatch`. Flattening first is what makes `BFGS` and `DFP` run
+on a bare `Manifold` at all, and the buffers below hold the flat form once per cache rather than once per call.
 
 Built from `g`, which callers pass as `_zero(x)` and not `x`, for the reason the `flatlength(_zero(x))`
 beside it gives: on a manifold the flattening of the *lift* is the intrinsic dimension, 12 against 18

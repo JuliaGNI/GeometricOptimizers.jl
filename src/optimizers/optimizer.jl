@@ -204,7 +204,7 @@ It wraps in a [`RiemannianGradient`](@ref), which is what projects the result le
 would wrap it anyway, and the wrap is idempotent; doing it here as well keeps this function's own
 return value the thing `Optimizer` will actually store.
 
-The [`Manifold`](@ref) method is `GradientAutodiff(problem.F, x)` for the same reason: it rebuilds the
+The [`Manifold`](@ref) method is also built from `x`: `GradientAutodiff(problem.F, x)` rebuilds the
 point before it calls `problem.F`, where the `AbstractArray` method would hand `problem.F` the flat
 vector.
 

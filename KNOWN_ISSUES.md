@@ -339,30 +339,20 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - kind: found late
 - found: 2026-10-02
 - evidence: `storage_gradient(A::SymmetricMatrix{Float32}, G::Matrix{Float64})` returns
-  `SymmetricMatrix{Float64, Vector{Float64}}` (a session probe of the G7 critic). The docstring of
+  `SymmetricMatrix{Float64, Vector{Float64}}` (a session probe). The docstring of
   NeuralNetworkParameters' hook (`leaves.jl:127`) asks for "a leaf of the same type". The kernels
   allocate the result with `G`'s element type. No test has a cotangent of another precision than
   its leaf.
 
-### K18 · No check compares the host BFGS iterates of a parameter set before and after `_flat_secant` returns plain vectors
-
-- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl:96`
-- kind: not verified
-- found: 2026-10-02
-- evidence: `_flat_secant` hands `outer!` and `_quadratic_form` the data vectors of the flat
-  mirrors, where `origin/main` (`fd8a48a`) handed them the `FlatParameters`. The arithmetic is the
-  same, but no run compared the hashes of `scripts/svd_optim_iterates.jl` on the two trees, because
-  they resolve different NeuralNetworkParameters and SimpleSolvers versions.
-
-### K19 · Building a BFGS `Optimizer` on a host parameter set allocates about 3.8 KB more than on `origin/main`
+### K19 · Building a BFGS `Optimizer` on a host parameter set allocates about 3.8 KB more than at commit `fd8a48a`
 
 - location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl`
 - kind: not verified
 - found: 2026-10-02
-- evidence: measured once per tree, cold, one BLAS thread, by the G7 critic: 34968 against
+- evidence: measured once per tree, cold, one BLAS thread: 34968 against
   31192 bytes in `Float32` and 59544 against 55576 in `Float64`. The allocation of 5 and of 10
   iterations is the same on both trees (207248/346368 and 428368/718128 bytes). One run per tree
-  is not a measurement; the cost of construction is G8's ground.
+  is not a measurement.
 
 ## B. This package — observability
 
@@ -553,7 +543,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
     reports iterations and evaluations and not time, so the step-ceiling round regenerated every other
     figure in that docstring and left these four untouched. They now say so in place, which is the
     minimum this entry asks for and not a fix.
-  - **the MNIST run**, as of [0.3.1](#031) above: the 6 h 53 min RTX 4090 figures, the
+  - **the MNIST run**: the 6 h 53 min RTX 4090 figures, the
     ``\sqrt{1.8} \approx 1.342`` plateau and the per-configuration losses are
     still quoted here, while `distill_mnist_results.jl` and the five scripts that produced them are now
     in GMLDatasets.jl. This is the one entry on the list whose harness *exists* and is merely elsewhere,

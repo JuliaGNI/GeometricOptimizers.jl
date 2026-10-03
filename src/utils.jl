@@ -48,7 +48,7 @@ function _first_storage_on_one_backend(first_storage, storage)
     first_storage
 end
 
-# Decision 14: no default gradient on a device. `GradientAutodiff` runs `ForwardDiff` with a host
+# No default gradient on a device. `GradientAutodiff` runs `ForwardDiff` with a host
 # configuration, and `GradientFiniteDifferences` indexes `x[j]` and keeps host buffers, so either
 # would fail at its first evaluation, far from the cause, or take the iterate off the device. Every
 # route that builds a default gradient calls this first.
@@ -167,8 +167,8 @@ end
 # `Manifold` and not `StiefelManifold`: hardcoding the latter is what made a bare
 # `GrassmannManifold` a `MethodError` at `Optimizer` construction (issue A11). The manifold is
 # rebuilt with `manifold_constructor` and not with `typeof(x)`, for the reason that function gives:
-# the argument this closure is called on is a vector of `ForwardDiff.Dual`s, whose element type is
-# not `x`'s.
+# under `GradientAutodiff` the argument this closure is called on is a vector of `ForwardDiff.Dual`s,
+# whose element type is not `x`'s.
 #
 # These dispatch on `Manifold`, which is this package's type, so none is type piracy; the
 # `Matrix` pair that used to stand below them was. `GradientAutodiff(F, ::AbstractMatrix)` is

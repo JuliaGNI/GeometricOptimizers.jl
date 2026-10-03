@@ -1,6 +1,7 @@
 # The device sweeps of `device_products.jl` and `device_solve.jl` on a real Apple GPU, with
-# `MtlArray` in place of the `JLArrays` stand-in. `runtests.jl` runs this file in the `metal` group, which a default run on
-# Apple silicon includes and `Pkg.test(test_args = ["metal"])` selects anywhere.
+# `MtlArray` in place of the `JLArrays` stand-in. `runtests.jl` runs this file in the `metal`
+# group, which a default run on Apple silicon includes and `Pkg.test(test_args = ["metal"])`
+# selects anywhere.
 #
 # Where `Metal.functional()` is `true` the file runs the sweep. Where Metal loads and
 # `Metal.functional()` is `false` the file runs no test and records one visible skip: on a Mac
