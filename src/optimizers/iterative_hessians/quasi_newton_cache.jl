@@ -201,9 +201,9 @@ _quadratic_form(::KernelAbstractions.Backend, γ, Q) = dot(γ, Q * γ)
 function _update_inverse_hessian!(::DFP, cache::QuasiNewtonCache{T}, state::BFGSState{T},
         ΔxΔg::T) where {T}
     # `Q` lives in the flattened coordinates, so the quadratic form has to be taken there too -- in the
-    # cache's buffers, and through the three-argument `dot`, which materialises no `Q * γ`
+    # cache's buffers, and through `_quadratic_form`; see the BFGS method above
     δ, γ = _flat_secant(cache)
-    γQγ = dot(γ, state.Q, γ)
+    γQγ = _quadratic_form(γ, state.Q)
 
     # `curvature_is_usable` is the curvature condition that keeps `Q` positive definite; see the BFGS
     # method above

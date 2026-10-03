@@ -151,6 +151,46 @@ end
                       (n - 2) * (n - 1) ÷ 2 + 1])
 end
 
+# `NeuralNetworkParameters.storage_gradient` asks for a leaf of the parameter leaf's type, so a
+# cotangent of another precision gives a leaf of the parameter's element type. Integer-valued entries
+# make the result exact in both precisions, so the reference is the same-precision call.
+function mixed_leaves(::Type{T}, todevice) where {T}
+    rng = Random.Xoshiro(10)
+    draw(dims...) = todevice(T.(rand(rng, -9:9, dims...)))
+    (SymmetricMatrix(draw(n * (n + 1) ÷ 2), n), SkewSymMatrix(draw(n * (n - 1) ÷ 2), n),
+        StiefelLieAlgHorMatrix(SkewSymMatrix(draw(n * (n - 1) ÷ 2), n), draw(N - n, n), N, n),
+        GrassmannLieAlgHorMatrix(draw(N - n, n), N, n))
+end
+
+# the storage of a leaf, on the host, in the order `flatten` writes it
+hostflat(A) = first(flatten(mapstorage(Array, NetworkParameters((A = A,)))))
+
+@testset "the storage gradient of a $T leaf and a $S cotangent is a $T leaf, $(nameof(todevice))" for (
+        T, S) in (
+        (Float32, Float64), (Float64, Float32)),
+    todevice in (identity, JLArray)
+
+    rng = Random.Xoshiro(11)
+    for A in mixed_leaves(T, todevice)
+        m = size(A, 1)
+        G = T.(rand(rng, -9:9, m, m))
+        expected = storage_gradient(A, todevice(G))
+        for cotangent in (todevice(S.(G)), todevice(copy(S.(G)'))')
+            g = storage_gradient(A, cotangent)
+            @test typeof(g) == typeof(A)
+            @test hostflat(g) == hostflat(expected)
+        end
+    end
+    # a cotangent of the leaf's own type, in the other precision
+    for X in (SymmetricMatrix, SkewSymMatrix)
+        A = X(todevice(parent(leaf(X, T, n))), n)
+        C = rand(rng, -9:9, length(parent(A)))
+        g = storage_gradient(A, X(todevice(S.(C)), n))
+        @test typeof(g) == typeof(A)
+        @test Array(parent(g)) == T.(expected_storage(X, Matrix(X(C, n))))
+    end
+end
+
 @testset "the smallest leaves: $T" for T in (Float32, Float64)
     # a 1 × 1 skew-symmetric matrix stores nothing, and a 1 × 1 symmetric one stores its entry
     skew = storage_gradient(SkewSymMatrix(T[], 1), fill(T(3), 1, 1))

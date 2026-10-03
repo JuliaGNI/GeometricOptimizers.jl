@@ -333,17 +333,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
 
-### K17 · `storage_gradient` of a `Float32` structured leaf and a `Float64` cotangent returns a `Float64` leaf
-
-- location: `src/parameter_protocol.jl`
-- kind: found late
-- found: 2026-10-02
-- evidence: `storage_gradient(A::SymmetricMatrix{Float32}, G::Matrix{Float64})` returns
-  `SymmetricMatrix{Float64, Vector{Float64}}` (a session probe). The docstring of
-  NeuralNetworkParameters' hook (`leaves.jl:127`) asks for "a leaf of the same type". The kernels
-  allocate the result with `G`'s element type. No test has a cotangent of another precision than
-  its leaf.
-
 ### K19 · Building a BFGS `Optimizer` on a host parameter set allocates about 3.8 KB more than at commit `fd8a48a`
 
 - location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl`

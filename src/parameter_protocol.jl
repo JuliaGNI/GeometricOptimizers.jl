@@ -80,10 +80,12 @@ end
 end
 
 # `kernel!` writes each of the `len` storage entries once over an `n × n` index range, from `G`: the
-# dense cotangent, or the storage of a cotangent of the leaf's own type
-function _launch_storage_gradient(kernel!, len::Integer, n::Integer, G)
+# dense cotangent, or the storage of a cotangent of the leaf's own type. The result has the element
+# type of the leaf `A`, which `NeuralNetworkParameters.storage_gradient` asks for, whatever the
+# precision of `G`.
+function _launch_storage_gradient(kernel!, A, len::Integer, n::Integer, G)
     backend = KernelAbstractions.get_backend(G)
-    S = KernelAbstractions.allocate(backend, eltype(G), len)
+    S = KernelAbstractions.allocate(backend, eltype(A), len)
     kernel!(backend)(S, G; ndrange = (n, n))
     S
 end
@@ -91,27 +93,30 @@ end
 function storage_gradient(A::SymmetricMatrix, G::AbstractMatrix)
     @assert size(G) == (A.n, A.n)
     S = _launch_storage_gradient(
-        symmetric_storage_gradient_kernel!, A.n * (A.n + 1) ÷ 2, A.n, G)
+        symmetric_storage_gradient_kernel!, A, A.n * (A.n + 1) ÷ 2, A.n, G)
     SymmetricMatrix(S, A.n)
 end
 
 function storage_gradient(A::SymmetricMatrix, G::SymmetricMatrix)
     @assert G.n == A.n
     S = _launch_storage_gradient(
-        symmetric_storage_doubling_kernel!, length(G.S), A.n, G.S)
+        symmetric_storage_doubling_kernel!, A, length(G.S), A.n, G.S)
     SymmetricMatrix(S, A.n)
 end
 
 function storage_gradient(A::SkewSymMatrix, G::AbstractMatrix)
     @assert size(G) == (A.n, A.n)
     SkewSymMatrix(
-        _launch_storage_gradient(skew_storage_gradient_kernel!, A.n * (A.n - 1) ÷ 2, A.n, G),
+        _launch_storage_gradient(
+            skew_storage_gradient_kernel!, A, A.n * (A.n - 1) ÷ 2, A.n, G),
         A.n)
 end
 
 function storage_gradient(A::SkewSymMatrix, G::SkewSymMatrix)
     @assert G.n == A.n
-    SkewSymMatrix(G.S .+ G.S, A.n)
+    S = similar(G.S, eltype(A))
+    S .= G.S .+ G.S
+    SkewSymMatrix(S, A.n)
 end
 
 # A horizontal lift stores its blocks once each in the dense `[A -Bᵀ; B 0]` (`[0 -Bᵀ; B 0]` for the
@@ -120,15 +125,19 @@ end
 function storage_gradient(A::StiefelLieAlgHorMatrix, G::AbstractMatrix)
     N, n = A.N, A.n
     StiefelLieAlgHorMatrix(
-        storage_gradient(A.A, G[1:n, 1:n]), _lift_block_gradient(G, N, n),
+        storage_gradient(A.A, G[1:n, 1:n]), _lift_block_gradient(A, G, N, n),
         N, n)
 end
 
 function storage_gradient(A::GrassmannLieAlgHorMatrix, G::AbstractMatrix)
-    GrassmannLieAlgHorMatrix(_lift_block_gradient(G, A.N, A.n), A.N, A.n)
+    GrassmannLieAlgHorMatrix(_lift_block_gradient(A, G, A.N, A.n), A.N, A.n)
 end
 
-_lift_block_gradient(G, N, n) = G[(n + 1):N, 1:n] - transpose(G[1:n, (n + 1):N])
+# in the element type of the lift `A`, as `_launch_storage_gradient`
+function _lift_block_gradient(A, G, N, n)
+    B = similar(G, eltype(A), N - n, n)
+    B .= G[(n + 1):N, 1:n] .- transpose(G[1:n, (n + 1):N])
+end
 
 # What `rebuild` takes from its prototype and a file has no prototype to take it from. `n` does
 # follow from `length(S)` for the storage matrices, but only by solving a quadratic that differs per

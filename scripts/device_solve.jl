@@ -8,8 +8,8 @@
 #     using JLArrays; device_solve(JLArray, Float64)                # what `test/device_solve.jl` asserts
 #     using Metal;    device_solve(MtlArray, Float32; retraction = Cayley(), matched_rng = false)
 #
-# The runs are `GradientMethod`, `MomentumMethod`, `Adam` and `BFGS`, each with a supplied `∇F!`, on
-# three iterates:
+# The runs are `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and `DFP`, each with a supplied
+# `∇F!`, on three iterates:
 #
 # - (a) a plain device vector;
 # - (b) a bare `StiefelManifold` whose storage is on the device;
@@ -118,9 +118,9 @@ end
 # A fixed step for the first-order methods. A searching line search decides by comparing objective
 # values, and a device sum that differs from the host's in the last bit can flip one such decision:
 # measured on (a) with `GradientMethod` and the default `Backtracking`, the twins agree to 1e-15 for
-# four steps and differ by 1e-2 after the fifth. `BFGS` keeps its default line search.
+# four steps and differ by 1e-2 after the fifth. `BFGS` and `DFP` keep their default line search.
 step_rule(::Type{T}, ::Union{GradientMethod, MomentumMethod, Adam}) where {T} = T(1) / 50
-function step_rule(::Type{T}, method::BFGS) where {T}
+function step_rule(::Type{T}, method::Union{BFGS, DFP}) where {T}
     GeometricOptimizers.default_linesearch(T, method)
 end
 
@@ -177,7 +177,7 @@ function device_solve(todevice, ::Type{T}; retraction = Geodesic(), matched_rng 
     cases = (("(a) vector", vector_problem), ("(b) Stiefel", stiefel_problem),
         ("(c) parameters", parameters_problem))
     for (case, make_problem) in cases
-        for method in (GradientMethod(), MomentumMethod(), Adam(), BFGS())
+        for method in (GradientMethod(), MomentumMethod(), Adam(), BFGS(), DFP())
             problem = make_problem(Random.Xoshiro(seed), T, todevice)
             property = !matched_rng && method isa Adam && case != "(a) vector"
             push!(rows,
