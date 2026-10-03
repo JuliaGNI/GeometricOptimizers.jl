@@ -137,9 +137,14 @@ makedocs(;
         prettyurls = get(ENV, "CI", "false") == "true",
         canonical = "https://JuliaGNI.github.io/GeometricOptimizers.jl",
         edit_link = "main",
-        # The moved chapters include each of their figures twice, once per theme; without this
-        # stylesheet both variants render, stacked. See `docs/src/assets/extra_styles.css`.
-        assets = ["assets/extra_styles.css"],
+        # The moved chapters include each of their figures twice, once per theme; without
+        # GeometricFigures' `figures.css` both variants render, stacked. It hides the `_light`/`_dark`
+        # image that does not belong to the active theme, the TikZ figures linked from
+        # GeometricFigures and the CairoMakie pairs drawn by `@example` blocks alike.
+        assets = [
+            "assets/extra_styles.css",
+            asset("https://juliagni.github.io/GeometricFigures.jl/figures.css"; islocal = false)
+        ],
         # `api.md` is one catch-all `@autodocs` over the whole package, so it is large by design.
         # `size_threshold_warn` is left at its default: the warning it prints for that one page is
         # the reminder that the docstrings are still not distributed over the chapters that explain
