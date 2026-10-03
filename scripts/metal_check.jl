@@ -21,7 +21,7 @@
 # in `device_solve.jl`.
 #
 # `device_check(todevice)` is the same sweep for another array type: `device_check(JLArray)` runs it
-# on the reference backend, where the two `cayley` rows of `device_products` and the eight manifold
+# on the reference backend, where the two `cayley` rows of `device_products` and the ten manifold
 # rows of `solve!` under `Cayley()` fail for want of an `lu`.
 
 using GeometricOptimizers

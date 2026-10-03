@@ -342,8 +342,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   (`src/lie_algebras/stiefel_lie_algebra_horizontal.jl`) takes integer indices only. So a
   `StiefelLieAlgHorMatrix` cotangent raises
   `MethodError: no method matching isless(::UnitRange{Int64}, ::Int64)`, at the leaf's own precision
-  and at another one. Zygote gives a lift a dense cotangent, so a training run may never reach this
-  method with a lift. Reproducer (Julia 1.13.1; `S = Float32` and `S = Float64` both raise the error):
+  and at another one. Zygote gives a lift a dense cotangent, so a training run may never pass this
+  method a cotangent of the lift's own type. Reproducer (Julia 1.13.1; `S = Float32` and
+  `S = Float64` both raise the error):
 
   ```julia
   using GeometricOptimizers, Test

@@ -5,7 +5,7 @@
 # The shape is the one `global_section` factorizes, `N × (N - n)` with `n = 3`, at `N = 20` and
 # `N = 400`, in `Float32`, because Metal has no `Float64`. Each figure is the median of five timed
 # runs after one warm-up, and a device run ends in `Metal.synchronize()` inside the timed region, so
-# the time is the computation's and not the launch's. The host runs on one BLAS thread.
+# the time includes the computation and not only the launch. The host runs on one BLAS thread.
 #
 # Run it by hand through a cold Kaimon session, in a scratch environment that develops this tree
 # (Metal is unreachable from a sandboxed shell), and quote the machine and the versions it prints:

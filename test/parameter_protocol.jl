@@ -5,8 +5,8 @@
 # `SymmetricMatrix` appears twice in the interface, so its storage gradient is `G_ij + G_ji`, and a
 # diagonal entry `G_ii`; a `SkewSymMatrix` stores `S_ij` at `(i, j)` and `-S_ij` at `(j, i)`, so its
 # storage gradient is `G_ij - G_ji`. Read as storage without this, `G` is half the gradient off the
-# diagonal: the ratio of a central difference to the Zygote cotangent was `[1, 2, 1, 2, 2, 1]` for a
-# 3 × 3 symmetric leaf and `[2, 2, 2]` for a skew one.
+# diagonal: the ratio of a central difference to the storage of the natural cotangent that
+# `ProjectTo` gives is `[1, 2, 1, 2, 2, 1]` for a 3 × 3 symmetric leaf and `[2, 2, 2]` for a skew one.
 #
 # The reference is a central difference on the flat storage, in `Float64`, so it shares no formula
 # with the conversion. One loss uses every leaf once; the other two use every leaf twice, or mix in
