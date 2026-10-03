@@ -94,7 +94,7 @@ breaking release).
 
 - **`contains_nonfinite` and `==` between two manifold points, two structured matrices of one family (`SymmetricMatrix`, `SkewSymMatrix`, the triangulars), or two horizontal lifts of one type compare through the storage or block by block.** The values are those of the entry-wise comparison, which reads one entry at a time and which a device refuses. `==` between two lifts of one type compares their blocks, and the blocks' sizes decide the size. On the host both comparisons infer and allocate nothing (`test/storage_equality.jl`, measured cold: 0 bytes in Float32 and Float64). The test also checks `contains_nonfinite` finding a NaN or ±Inf storage entry in a leaf and in a `NetworkParameters` on the host and on a JLArray.
 
-- **Compat: `GeometricBase = "0.15"`, `NeuralNetworkParameters = "0.4.2"`, `SimpleSolvers = "0.14.1"` (the first release whose `outer!` is a broadcast; 0.14.0's is a scalar loop, and a resolve with 0.14.0 is now refused), `AbstractNeuralNetworks = "0.9"` (weak). `julia = "1.11"` stays. Zygote (`"0.7"`) is a new test dependency.**
+- **Compat: `ChainRulesCore = "1.25.1"`, `GeometricBase = "0.15"`, `NeuralNetworkParameters = "0.4.2"`, `SimpleSolvers = "0.14.1"` (the first release whose `outer!` is a broadcast; 0.14.0's is a scalar loop, and a resolve with 0.14.0 is now refused), `AbstractNeuralNetworks = "0.9"` (weak). `julia = "1.11"` stays. Zygote (`"0.7"`) is a new test dependency; the `ChainRulesCore` floor is raised to 1.25.1 to support it.**
 
 ### Breaking Changes
 

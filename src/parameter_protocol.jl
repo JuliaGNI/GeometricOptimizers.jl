@@ -124,12 +124,14 @@ end
 # `A` block is a `SkewSymMatrix` cotangent. Zygote gives a lift a dense cotangent.
 function storage_gradient(A::StiefelLieAlgHorMatrix, G::AbstractMatrix)
     N, n = A.N, A.n
+    @assert size(G) == (N, N)
     StiefelLieAlgHorMatrix(
         storage_gradient(A.A, G[1:n, 1:n]), _lift_block_gradient(A, G, N, n),
         N, n)
 end
 
 function storage_gradient(A::GrassmannLieAlgHorMatrix, G::AbstractMatrix)
+    @assert size(G) == (A.N, A.N)
     GrassmannLieAlgHorMatrix(_lift_block_gradient(A, G, A.N, A.n), A.N, A.n)
 end
 
