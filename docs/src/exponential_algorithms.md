@@ -590,8 +590,8 @@ reason in the note below.
 
 [^3]: "Only matrix products, norms and a kernel-written identity" is a portability requirement rather
       than a stylistic preference, and it is why two apparently redundant helpers exist. A
-      `KernelAbstractions` array cannot serve a scalar index, so the norm is taken by
-      [`GeometricOptimizers.opnorm₁`](@ref) as a reduction rather than by
+      `KernelAbstractions` array cannot serve a scalar index, so the norm is taken as the
+      reduction [`GeometricOptimizers.opnorm₁`](@ref) describes rather than by
       `LinearAlgebra.opnorm(X, 1)`, whose `LinearAlgebra.opnorm1` is a double loop over `X[i, j]`, and
       identities come from [`GeometricOptimizers.unit_matrix`](@ref) rather than from `Base.one`, whose
       diagonal write is the same hazard one level down. One such call anywhere in the algorithm would
