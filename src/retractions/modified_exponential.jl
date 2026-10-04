@@ -18,10 +18,19 @@ in place, so the loop allocates nothing.
     you know the argument is small.
 """
 function 𝔄(A::AbstractMatrix)
+    # the identity is the first term, so it is handed in as both `𝕀` and `term`
+    𝕀 = unit_matrix(A)
+    _taylor_𝔄!(similar(A), A, 𝕀, 𝕀, similar(A))
+end
+
+# The partial sum of `𝔄(A)`, written into `𝔄A` with `term` and `next` as scratch; `𝕀` is the
+# identity of `A`'s size, and is read only before `term` is first written, so the two may be one
+# array. `𝔄(A)` above hands in fresh arrays, `𝔄!` the workspace's.
+function _taylor_𝔄!(𝔄A, A, 𝕀, term, next)
     T = eltype(A)
-    term = unit_matrix(A)
-    next = zero(A)
-    𝔄A = copy(term)
+    copyto!(term, 𝕀)
+    fill!(next, zero(T))
+    copyto!(𝔄A, term)
     n = 2
     while norm(term) > eps(real(T))
         LinearAlgebra.mul!(next, term, A, T(inv(n)), zero(T))
@@ -44,10 +53,15 @@ a GPU backend cannot serve, and being free of it is why [`ScaledSquaring`](@ref)
 expressible as `sum` and `maximum`. Accelerator execution still depends on the array backend's support
 for those reductions.
 
-The two agree to a few `eps`, not bitwise: `opnorm1` accumulates each column sequentially in at
-least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. The value is only ever
-used to pick the number of halvings `s = ⌈log₂(‖X‖₁/θ)⌉`, so a difference of an ulp can at most
-shift `s` by one, and only for an argument that lands exactly on a power of two.
+The two algorithms do not call `opnorm₁`: [`GeometricOptimizers.𝔄!`](@ref) takes the same reduction
+with the column sums written into its scratch, and uses the value only to pick the number of halvings
+`s = ⌈log₂(‖X‖₁/θ)⌉`. On a real `X` that value is `opnorm₁`'s to the bit; on a complex `X` the two
+can differ in the last bit.
+
+`opnorm₁` and `opnorm1` agree to a few `eps`, not bitwise: `opnorm1` accumulates each column
+sequentially in at least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. So a
+difference of an ulp can at most shift `s` by one, and only for an argument that lands exactly on a
+power of two.
 """
 opnorm₁(X::AbstractMatrix) = isempty(X) ? zero(real(eltype(X))) :
                              maximum(sum(abs, X; dims = 1))
@@ -86,27 +100,76 @@ true
 𝔄(X::AbstractMatrix, ::TaylorSeries) = 𝔄(X)
 
 @doc raw"""
-    _scaled_kernel(X, algorithm)
+    _scaled_kernel!(scratch, X, algorithm)
 
-Evaluate ``\mathfrak{A}(X)`` for ``\|X\|_1 \leq θ``, i.e. the small-argument kernel that
-[`ScaledSquaring`](@ref) and [`NativePade`](@ref) differ in.
+Evaluate ``\mathfrak{A}(X)`` for ``\|X\|_1 \leq θ`` into `scratch.𝔄X`, i.e. the small-argument
+kernel that [`ScaledSquaring`](@ref) and [`NativePade`](@ref) differ in.
 
 [`ScaledSquaring`](@ref) sums the Taylor series, [`NativePade`](@ref) evaluates the ``[6/6]`` Padé
 approximant. Everything else the two algorithms do — choosing the number of halvings, and undoing
-them — is the shared framework in `𝔄(::AbstractMatrix, ::ScaledAlgorithm)` below.
+them — is the shared framework in `𝔄!(::Any, ::AbstractMatrix, ::ScaledAlgorithm)` below. `scratch`
+is as there.
 """
-_scaled_kernel(X::AbstractMatrix, ::ScaledSquaring) = 𝔄(X)
+function _scaled_kernel!(scratch, X::AbstractMatrix, ::ScaledSquaring)
+    _taylor_𝔄!(scratch.𝔄X, X, scratch.𝕀_small2, scratch.s₂, scratch.s₃)
+end
 
 @doc raw"""
     ScaledAlgorithm
 
 The [`AbstractExponentialAlgorithm`](@ref)s built as a small-argument kernel inside scaling and
 modified squaring, i.e. [`ScaledSquaring`](@ref) and [`NativePade`](@ref). They share the `θ` field
-and the `𝔄` method below, and differ only in their [`_scaled_kernel`](@ref).
+and the `𝔄!` method below, and differ only in their [`_scaled_kernel!`](@ref).
 """
 const ScaledAlgorithm = Union{ScaledSquaring, NativePade}
 
+# The arrays `𝔄!` writes into, for a call that has no `RetractionWorkspace`: the fields of that type
+# that `algorithm` reads, fresh. `ScaledSquaring` reads the temporaries `s₁` to `s₃`, and `NativePade`
+# `s₁` to `s₈`. `similar` with an element type and a size, so a structured `X` gets a dense array of
+# its backend.
+function _𝔄_scratch(X::AbstractMatrix{T}, ::ScaledSquaring) where {T}
+    m = size(X, 1)
+    fresh() = similar(X, T, (m, m))
+    (𝔄X = fresh(), 𝕀_small2 = unit_matrix(X), colsum = similar(X, T, (1, m)),
+        s₁ = fresh(), s₂ = fresh(), s₃ = fresh())
+end
+
+function _𝔄_scratch(X::AbstractMatrix{T}, ::NativePade) where {T}
+    m = size(X, 1)
+    fresh() = similar(X, T, (m, m))
+    (𝔄X = fresh(), 𝕀_small2 = unit_matrix(X), colsum = similar(X, T, (1, m)),
+        s₁ = fresh(), s₂ = fresh(), s₃ = fresh(), s₄ = fresh(), s₅ = fresh(), s₆ = fresh(),
+        s₇ = fresh(), s₈ = fresh())
+end
+
 function 𝔄(X::AbstractMatrix, algorithm::ScaledAlgorithm)
+    𝔄!(_𝔄_scratch(X, algorithm), X, algorithm)
+end
+
+# The fields of a `RetractionWorkspace` that `𝔄!` reads for `algorithm`, for that type to build: the
+# argument `X`, the result `𝔄X`, the column sums `colsum`, the number of temporaries from `s₁` on, and
+# the `4n × 4n` matrix `augmented`. A field this does not name is not read. `ProjectedSkew` reads none,
+# because its `_geodesic_matrix!` does not call `𝔄!`, and an algorithm with no method here reads only
+# `X` and `𝔄X`, because its `𝔄!` copies the allocating answer in.
+_𝔄_uses(::AbstractExponentialAlgorithm) = (X = true, 𝔄X = true)
+_𝔄_uses(::ProjectedSkew) = (;)
+_𝔄_uses(::ScaledSquaring) = (X = true, 𝔄X = true, colsum = true, temporaries = 3)
+_𝔄_uses(::NativePade) = (X = true, 𝔄X = true, colsum = true, temporaries = 8)
+_𝔄_uses(::TaylorSeries) = (X = true, 𝔄X = true, temporaries = 2)
+_𝔄_uses(::AugmentedPade) = (X = true, 𝔄X = true, augmented = true)
+
+# `opnorm₁` with the column sums written into `colsum`, a `1 × m` array, rather than a fresh one.
+# On a real `X`, `sum!` and the `dims = 1` reduction of `opnorm₁` are the same reduction, so the two
+# agree bit for bit, and with them the halving count. `colsum` has the element type of `X`, so on a
+# complex `X` the sums are complex with a zero imaginary part, and the norm is the largest real part.
+# There Base sums into a complex array in another order than into the real array of `opnorm₁`, the
+# two can differ in the last bit, and at a norm on a threshold the halving count can shift by one, as
+# the `opnorm₁` docstring says of `opnorm1`.
+function _opnorm₁!(colsum::AbstractMatrix, X::AbstractMatrix)
+    isempty(X) ? zero(real(eltype(X))) : maximum(real, sum!(abs, colsum, X))
+end
+
+function 𝔄!(scratch, X::AbstractMatrix, algorithm::ScaledAlgorithm)
     # `X` is halved `s` times so that the kernel sees an argument of norm ≤ θ, where it is accurate.
     # Initially `exp(B̂B̄ᵗ/2^s) = I + B̂(𝔄(X/2^s)/2^s)B̄ᵗ`. Squaring this represented exponential stays
     # low-rank:
@@ -115,13 +178,21 @@ function 𝔄(X::AbstractMatrix, algorithm::ScaledAlgorithm)
     #
     # so each recovery step is `W ↦ 2W + WXW` at 2n × 2n, with the original `X`. After `s` steps
     # `W = 𝔄(X)`. Nothing is ever squared at N × N.
-    nrm = opnorm₁(X)
+    #
+    # `s₁` holds the scaled argument and `𝔄X` is `W`; the kernel uses `s₂` and `s₃` (`ScaledSquaring`)
+    # or `s₂` to `s₈` (`NativePade`), and the recovery step `s₂` and `s₃` again. `WXW` is `(WX)W`,
+    # the order `W * X * W` takes for three square matrices of one size.
+    nrm = _opnorm₁!(scratch.colsum, X)
     s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
     scale = eltype(X)(2)^s
 
-    W = _scaled_kernel(X / scale, algorithm) / scale
+    scratch.s₁ .= X ./ scale
+    W = _scaled_kernel!(scratch, scratch.s₁, algorithm)
+    W ./= scale
     for _ in 1:s
-        W = 2 * W + W * X * W
+        LinearAlgebra.mul!(scratch.s₂, W, X)
+        LinearAlgebra.mul!(scratch.s₃, scratch.s₂, W)
+        W .= 2 .* W .+ scratch.s₃
     end
 
     W
@@ -131,6 +202,8 @@ end
     _native_pade_polynomials(X, 𝕀)
 
 Evaluate the degree-6 numerator ``p_6(X)`` and denominator ``q_6(X)`` used by [`NativePade`](@ref).
+It allocates its result and scratch and calls `_native_pade_polynomials!`, which writes into
+given arrays.
 
 If ``P^{\exp}_7/Q^{\exp}_6`` is the ``[7/6]`` Padé approximant of the exponential, then
 
@@ -149,23 +222,45 @@ This is an internal kernel; [`NativePade`](@ref) supplies scaling, applies the d
 the scaling with modified squaring.
 """
 function _native_pade_polynomials(X::AbstractMatrix, 𝕀::AbstractMatrix)
-    T = eltype(X)
-    X² = X * X
-    X⁴ = X² * X²
+    _native_pade_polynomials!(
+        similar(X), similar(X), X, 𝕀, similar(X), similar(X), similar(X),
+        similar(X))
+end
 
-    p = 𝕀 + T(1 // 26) * X +
-        X² * (T(5 // 156) * 𝕀 + T(1 // 858) * X) +
-        X⁴ * (T(1 // 5720) * 𝕀 + T(1 // 205920) * X + T(1 // 8648640) * X²)
-    q = 𝕀 - T(6 // 13) * X +
-        X² * (T(5 // 52) * 𝕀 - T(5 // 429) * X) +
-        X⁴ * (T(1 // 1144) * 𝕀 - T(1 // 25740) * X + T(1 // 1235520) * X²)
+# Each sum is one broadcast, and a broadcast of `a .+ b .+ c .+ d` adds left to right, as the sum of
+# four arrays does; the products are the same products. So this is `p` and `q` as the closed
+# expressions
+#
+#     p = 𝕀 + c₁X + X²(c₂𝕀 + c₃X) + X⁴(c₄𝕀 + c₅X + c₆X²)
+#
+# and its `q` counterpart write them, to the bit. `p` holds the `X⁴` product until the last sum reads
+# it, and `q` likewise.
+function _native_pade_polynomials!(
+        p, q, X::AbstractMatrix, 𝕀::AbstractMatrix, X², X⁴, inner,
+        product)
+    T = eltype(X)
+    LinearAlgebra.mul!(X², X, X)
+    LinearAlgebra.mul!(X⁴, X², X²)
+
+    inner .= T(5 // 156) .* 𝕀 .+ T(1 // 858) .* X
+    LinearAlgebra.mul!(product, X², inner)
+    inner .= T(1 // 5720) .* 𝕀 .+ T(1 // 205920) .* X .+ T(1 // 8648640) .* X²
+    LinearAlgebra.mul!(p, X⁴, inner)
+    p .= 𝕀 .+ T(1 // 26) .* X .+ product .+ p
+
+    inner .= T(5 // 52) .* 𝕀 .- T(5 // 429) .* X
+    LinearAlgebra.mul!(product, X², inner)
+    inner .= T(1 // 1144) .* 𝕀 .- T(1 // 25740) .* X .+ T(1 // 1235520) .* X²
+    LinearAlgebra.mul!(q, X⁴, inner)
+    q .= 𝕀 .- T(6 // 13) .* X .+ product .+ q
 
     p, q
 end
 
-function _scaled_kernel(X::AbstractMatrix, ::NativePade)
-    𝕀 = unit_matrix(X)
-    p, q = _native_pade_polynomials(X, 𝕀)
+function _scaled_kernel!(scratch, X::AbstractMatrix, ::NativePade)
+    𝕀 = scratch.𝕀_small2
+    p, q = _native_pade_polynomials!(
+        scratch.s₆, scratch.s₇, X, 𝕀, scratch.s₂, scratch.s₃, scratch.s₄, scratch.s₅)
 
     # `q₆` differs from the identity by at most `Σ|qₖ|θᵏ = 0.2563… < 0.257` in one-norm, which is
     # what the constructor's bound `θ ≤ 1/2` buys, so the dense solve `q⁻¹p` can be a Newton--Schulz
@@ -173,12 +268,19 @@ function _scaled_kernel(X::AbstractMatrix, ::NativePade)
     # `q⁻¹ = 𝕀` the first step is just `2𝕀 - q`, and four more take the residual to `(𝕀 - q)³²` —
     # `1.3e-19`, below `Float64` round-off. Matrix products only, so this is the part that stays
     # portable where a dense solve would not.
-    q⁻¹ = 2 * 𝕀 - q
+    #
+    # `s₄` and `s₅` were the polynomials' scratch and are free again: `s₄` holds `2𝕀 - q·q⁻¹`, and
+    # `q⁻¹` alternates between `s₈` and `s₅`.
+    q⁻¹, next, residual = scratch.s₈, scratch.s₅, scratch.s₄
+    q⁻¹ .= 2 .* 𝕀 .- q
     for _ in 1:4
-        q⁻¹ = q⁻¹ * (2 * 𝕀 - q * q⁻¹)
+        LinearAlgebra.mul!(residual, q, q⁻¹)
+        residual .= 2 .* 𝕀 .- residual
+        LinearAlgebra.mul!(next, q⁻¹, residual)
+        q⁻¹, next = next, q⁻¹
     end
 
-    q⁻¹ * p
+    LinearAlgebra.mul!(scratch.𝔄X, q⁻¹, p)
 end
 
 function 𝔄(X::AbstractMatrix, ::AugmentedPade)
@@ -190,6 +292,38 @@ function 𝔄(X::AbstractMatrix, ::AugmentedPade)
     augmented = [X one(X); zeros(T, m, m) zeros(T, m, m)]
 
     exp(augmented)[1:m, (m + 1):(2m)]
+end
+
+@doc raw"""
+    𝔄!(ws, X, algorithm)
+
+[`GeometricOptimizers.𝔄`](@ref)`(X, algorithm)` written into `ws.𝔄X`, and returned, with the
+scratch of the [`RetractionWorkspace`](@ref) `ws` in place of fresh temporaries.
+
+`X` is ``2n\times{}2n`` for the ``n`` that `ws` was built for, and is not one of the buffers the
+algorithm writes; `ws.X` is the buffer meant for it. `ws` holds the scratch of `algorithm` if it was
+built for `Geodesic(algorithm)` or for no retraction. Every step and every product is the one the
+allocating method takes, in the same order, so the two agree bit for bit.
+
+[`ScaledSquaring`](@ref), [`NativePade`](@ref) and [`TaylorSeries`](@ref) then allocate nothing,
+with `mul!` and broadcasts only, so no scalar indexing either. [`AugmentedPade`](@ref) writes `X` into
+the ``4n\times{}4n`` `ws.augmented`, whose identity and zero blocks were written when `ws` was built,
+and calls `Base.exp` on it: it allocates what that `exp` allocates, and nothing besides. Any other
+algorithm falls back to the allocating `𝔄` and copies the answer in.
+"""
+function 𝔄!(ws, X::AbstractMatrix, algorithm::AbstractExponentialAlgorithm)
+    copyto!(ws.𝔄X, 𝔄(X, algorithm))
+end
+
+𝔄!(ws, X::AbstractMatrix, ::TaylorSeries) = _taylor_𝔄!(ws.𝔄X, X, ws.𝕀_small2, ws.s₁, ws.s₂)
+
+function 𝔄!(ws, X::AbstractMatrix, ::AugmentedPade)
+    @assert size(X) == size(ws.𝔄X)
+    m = size(X, 1)
+    @views begin
+        ws.augmented[1:m, 1:m] .= X
+        copyto!(ws.𝔄X, exp(ws.augmented)[1:m, (m + 1):(2m)])
+    end
 end
 
 @doc raw"""

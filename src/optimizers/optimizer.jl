@@ -161,7 +161,7 @@ struct Optimizer{T,
             step_ceiling::Real = DEFAULT_STEP_CEILING,
             observer = NoStepObserver()) where {T}
         observed_gradient = _observed_gradient(gradient, observer)
-        workspace = retraction_workspace(cache.x)
+        workspace = retraction_workspace(cache.x, retraction)
         ls_problem = linesearch_problem(
             problem, observed_gradient, cache, retraction, observer, workspace)
         ls = Linesearch(ls_problem, linesearch)

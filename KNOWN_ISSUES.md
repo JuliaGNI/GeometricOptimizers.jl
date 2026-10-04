@@ -74,7 +74,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `NativePade`, added in [#54], takes `s` from ``\|X\|_1`` in exactly the same way and inherits the
   whole of this, so the entry now covers two algorithms and a fix would apply to both at once.
 
-### A12 · The `Cayley` differential is recomputed per `φ'`, and its cost is unmeasured
+### A12 · The `Cayley` differential is recomputed per `φ'`, and its cost in a solve is unmeasured
 
 - location: `svd_optim.jl`
 - kind: not verified
@@ -84,13 +84,15 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   **Severity: low**, and not a defect — a cost this release introduced and did not measure. Found in
   the review of [#40], where `retraction_differential` was added.
 
-  Under `Cayley`, `trial_slope` now calls `retraction_differential` on every evaluation of ``\varphi'``.
-  That is `lift_factors`, a `StiefelProjection`, two ``2n\times{}2n`` solves and about six allocations —
-  ``O(Nn^2 + n^3)``, the same order as the retraction itself — where before it was a `_dot` against an
-  array the cache already held. `Geodesic` returns ``\bar{B}`` untouched at every ``\alpha`` and
-  `Cayley` does at ``\alpha = 0``, so every `Geodesic` solve and the `Backtracking` default pay nothing;
-  what is unmeasured is a search that evaluates ``\varphi'`` many times per iteration, which on this
-  problem is `Bisection` at ≈580 objective evaluations per iteration.
+  Under `Cayley`, `trial_slope` calls `retraction_differential!` on every evaluation of ``\varphi'``.
+  That is `lift_factors!` and two ``2n\times{}2n`` solves in the optimizer's workspace —
+  ``O(Nn^2 + n^3)``, the same order as the retraction itself, and no allocation on a host `Matrix` —
+  where before it was a `_dot` against an array the cache already held. On `St(6, 3)` at
+  ``\alpha = 0.5`` one call takes about 1.1 μs (`scripts/in_place_retraction_cost.jl`). `Geodesic`
+  copies ``\bar{B}`` at every ``\alpha`` and `Cayley` does at ``\alpha = 0``, so every `Geodesic` solve
+  and the `Backtracking` default pay a copy and no solve; what is unmeasured is a search that
+  evaluates ``\varphi'`` many times per iteration, which on this problem is `Bisection` at ≈580
+  objective evaluations per iteration.
 
   **The iteration and evaluation counts in `svd_optim.jl` do not answer this.** They moved under the
   change — `_BFGS + Bisection` under `Cayley` from 92 to 114 iterations — but they moved because the
@@ -99,7 +101,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   The obvious remedy if it does turn out to matter is not a cache but a shared factorisation:
   `linesearch_problem`'s `d(α, params)` calls `trial_iterate!` and then `trial_slope` with the *same*
-  ``\alpha``, and both go through `lift_factors` — the first on ``\alpha\bar{B}`` and the second on
+  ``\alpha``, and both go through `lift_factors!` — the first on ``\alpha\bar{B}`` and the second on
   ``\bar{B}`` — so one line search evaluation factors the same lift twice. Fusing them would need
   `trial_iterate!` to hand its factors on, which is a wider change to that interface than a cost
   nobody has measured justifies.
@@ -768,6 +770,39 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   **What to do**: measure `_update_inverse_hessian!(method, cache, state, ΔxΔg)` on the flat path
   through a barrier, with a `Δx` and a `Δg` for which `curvature_is_usable` holds, so that the branch
   runs on both calls.
+
+### K21 · The Metal `Adam` row of (b) fails about one run in 40, because Metal's section draw is not seeded
+
+- location: `scripts/device_solve.jl:170` (`UNMATCHED_ADAM_RTOL`), run by `test/devices/metal.jl:42`
+- kind: defect
+- found: 2026-10-03
+- evidence:
+
+  The `metal` group run of the G8 branch failed one test, `(b) Stiefel, Adam` under `Geodesic()`,
+  with `Evaluated: mismatch === pass`, 846 of 847 passing. `Random.seed!(seed)` in `run_solve`
+  does not seed `Metal.default_rng()`. Metal 1.11.1 makes that generator once per task
+  (`src/random.jl:18-30`) and seeds it from `Random.RandomDevice()` (GPUArrays, `src/host/random.jl:315`).
+  So the device run draws another global section on every run, also for the same seed, and its
+  final objective is a random draw around the host twin's.
+
+  The row was repeated 40 times at seed 1234 in one process per tree, with `T = Float32`, ten steps,
+  and the problem, `run_solve` and the check of `solve_row` from `scripts/device_solve.jl`. The
+  relative distance of the device objective from the host twin's was:
+
+  | tree | retraction | median | max | above 0.03 | above 0.05 |
+  |---|---|---|---|---|---|
+  | `origin/main` at `4051410` | `Geodesic()` | 0.015 | 0.054 | 16 | 1 |
+  | `origin/main` at `4051410` | `Cayley()` | 0.018 | 0.043 | 11 | 0 |
+  | G8 branch | `Geodesic()` | 0.018 | 0.063 | 10 | 1 |
+  | G8 branch | `Cayley()` | 0.011 | 0.049 | 9 | 0 |
+
+  The two trees fail at the same rate, so the failure is not caused by a change to the device path.
+  The comment above `UNMATCHED_ADAM_RTOL` says the device run of (b) is up to 1.5 % from its host
+  twin over 6 seeds; 40 draws at one seed reach 6.3 %.
+
+  **What to do**: seed `Metal.default_rng()` in `run_solve` when `matched_rng = false`, so that a
+  run of the group is reproducible, and calibrate `UNMATCHED_ADAM_RTOL` on the tail of many device
+  draws and not on 6 seeds.
 
 ## D. Upstream
 

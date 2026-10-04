@@ -97,15 +97,36 @@ This is the inplace version of [`apply_section`](@ref).
 """
 function apply_section!(Y::AT, λY::GlobalSection{T, AT},
         Y₂::MT) where {T, AT <: StiefelManifold{T}, MT <: StiefelManifold{T}}
-    N, n = size(λY.Y)
-
-    @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n + 1):N, :]
+    _apply_section!(Y.A, λY, Y₂.A)
 
     Y
 end
 
-# This one is `StiefelManifold`-only and stays so: it has no live caller — the only `apply_section!`
-# call sites in the package are the two in `src/utils.jl` — and the commented-out `update_section!`
+# The product `λY.Y Y₂[1:n, :] + λY.λ Y₂[n+1:N, :]` into `A`, shared by the Stiefel and the
+# Grassmann method.
+#
+# Two `mul!`s into `A` where it shares no memory with an input, which allocates nothing. Where it
+# does, the two products are materialised before the broadcast writes `A`: `update_section!` without
+# a workspace passes `Y === Y₂`, and an in-place product would read the rows of `Y₂` it has already
+# overwritten. The second `mul!` adds its product into the first, so the two forms round differently
+# and agree to `eps` rather than to the bit.
+function _apply_section!(A::AbstractMatrix{T}, λY::GlobalSection, A₂::AbstractMatrix{T}) where {T}
+    N, n = size(λY.Y)
+
+    if Base.mightalias(A, A₂) || Base.mightalias(A, λY.Y.A) || Base.mightalias(A, λY.λ)
+        @views A .= λY.Y * A₂[1:n, :] .+ λY.λ * A₂[(n + 1):N, :]
+    else
+        @views begin
+            mul!(A, λY.Y.A, A₂[1:n, :])
+            mul!(A, λY.λ, A₂[(n + 1):N, :], one(T), one(T))
+        end
+    end
+
+    A
+end
+
+# This one is `StiefelManifold`-only and stays so: it has no live caller — every `apply_section!` call
+# in the package writes into a point, not into a section — and the commented-out `update_section!`
 # below is what it was written for. Widening it to `Manifold` would be widening dead code.
 function apply_section!(Λᵗ::GlobalSection{T, MT}, λY::GlobalSection{T, MT},
         Y₂::MT) where {T, MT <: StiefelManifold{T}}
@@ -128,13 +149,7 @@ end
 
 function apply_section!(Y::AT, λY::GlobalSection{T, AT},
         Y₂::MT) where {T, AT <: GrassmannManifold{T}, MT <: GrassmannManifold{T}}
-    N, n = size(λY.Y)
-
-    # `.=` and not `=`, as in the Stiefel method above: assigning the field replaced `Y`'s array on
-    # every solver step rather than writing into it, and returned that array instead of `Y`. Safe
-    # where `Y === Y₂`, which `update_section!` relies on -- the two products are materialised before
-    # the broadcast assignment.
-    @views Y.A .= λY.Y * Y₂.A[1:n, :] .+ λY.λ * Y₂.A[(n + 1):N, :]
+    _apply_section!(Y.A, λY, Y₂.A)
 
     Y
 end

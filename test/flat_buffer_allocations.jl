@@ -37,7 +37,7 @@ using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update
                            OptimizerCache, _flat_mul!, _flat_secant, outer!, DottableSet,
                            GlobalSection, update_section!, lift_factors!,
                            retraction_matrix!, retraction_workspace, initialize_state!,
-                           OptimizerStatus, config, problem, value, 𝔄
+                           OptimizerStatus, config, problem, value
 using NeuralNetworkParameters: NetworkParameters, flatten
 using SimpleSolvers: Static
 using LinearAlgebra: dot
@@ -360,8 +360,9 @@ end
 # to hide it. This is the argument `test/quality/aqua.jl` makes for piracy and `test/ambiguities.jl`
 # for ambiguities, one file over.
 #
-# `Geodesic` is asserted the other way round, as an identity, because `𝔄` allocates a
-# `N`-dependent amount that no workspace reaches. See the comment at that assertion.
+# `Geodesic` is asserted as an identity instead: its `𝔄` is evaluated in the workspace and allocates
+# nothing, so the whole retraction costs what `lift_factors!` costs. See the comment at that
+# assertion.
 #
 # No assertion is made on the bytes of a whole `solver_step!`. The figure is a function of how many
 # trials the line search takes, which is a property of the problem and not of this package: the same
@@ -397,41 +398,21 @@ function _measured_update_section(Λ₂, Λ, B, R, ws)
     @allocated update_section!(Λ₂, Λ, B, R, ws)
 end
 
-function _measured_𝔄(ws, algorithm)
-    𝔄(ws.B̂, ws.B̄ᵗ', algorithm)
-    @allocated 𝔄(ws.B̂, ws.B̄ᵗ', algorithm)
-end
-
-# The difference across `N` and not an equality, and the tolerance is the part to read.
-#
-# The figure is not bit-reproducible on every platform. On Windows the same `Cayley` call at the two
-# sizes came back 3 671 and 3 719 bytes, and `update_section!` 3 831 and 3 815 -- 48 and 16 apart,
-# in *both* directions, so it is quantisation inside `inv`'s own allocation and not a term that
-# grows with `N`. Linux and macOS give the two sizes byte for byte. An exact equality is therefore
-# a platform lottery, which is the same lesson bit equality of generated code teaches one domain
-# over.
+# The difference across `N` and not an equality, and the tolerance is the part to read: see
+# `test/helpers/allocations.jl` for why a byte count is compared under a tolerance.
 #
 # **The tolerance does not weaken what is asserted**, because of the size the `large` fixture is:
 # one reintroduced `N × N` `Float64` temporary at `N = 200` is 320 000 bytes, and one `N × 2n` is
 # 9 600. The gap between those and 1 024 is what makes this a property and not a ceiling -- a
 # ceiling on the absolute figure would have to sit above 3 792 and so could hide an `N × 2n`
 # temporary entirely.
-const N_INDEPENDENCE_TOLERANCE = 1024
-
-n_independent(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
-
-# The same tolerance, for an identity between readings taken at one shape rather than across two
-# `N`. It carries the tolerance for the same reason: a byte count is not bit-reproducible across
-# platforms, so an exact equality between three separate `@allocated` readings claims more than the
-# identity it is there to assert. It costs nothing for the same reason too -- the smallest term
-# that could break the identity is an `N × 2n` temporary, 9 600 bytes at `N = 200`.
-agrees_within_quantisation(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
+include("helpers/allocations.jl")
 
 @testset "the retraction of a $LT does not grow with N" for LT in LIFT_TYPES
     small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 200, 3)
 
-    # `lift_factors!` writes into buffers it was handed, so what it costs is the kernel launch that
-    # densifies the lift's `A` block and nothing else -- zero for a Grassmann lift, which has none.
+    # `lift_factors!` writes into buffers it was handed, and on the host it densifies the lift's `A`
+    # block with a broadcast rather than a kernel launch, so it costs nothing at all.
     @test n_independent(_measured_lift_factors(small.ws, small.B),
         _measured_lift_factors(large.ws, large.B))
 
@@ -442,24 +423,23 @@ agrees_within_quantisation(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
         _measured_update_section(small.Λ₂, small.Λ, small.B, Cayley(), small.ws),
         _measured_update_section(large.Λ₂, large.Λ, large.B, Cayley(), large.ws))
 
-    # The geodesic is asserted as an identity and not as N-independence, and the difference is the
-    # point: `𝔄`'s own cost *does* grow with N, because `ScaledSquaring` takes its number of
-    # squarings from the norm of the lift and a random lift's norm grows with the ambient dimension.
-    # Measured at N = 6, 60 and 200: 7 040, 13 184 and 16 256 bytes, which is `log`-like rather than
-    # `N`-like and is the same at both lift types. That is the exponential's business and not the
-    # workspace's, so what is asserted is that the workspace adds nothing to it.
-    algorithm = Geodesic().algorithm
+    # The geodesic evaluates its `𝔄` in the workspace too (issue #77), so it adds nothing to what
+    # writing the lift's factors costs, at both ambient dimensions. The number of squarings still
+    # grows with the norm of the lift, and so with `N` for a random lift; each squaring writes into
+    # the same two buffers.
     for f in (small, large)
-        lift_factors!(f.ws, f.B)
-        @test agrees_within_quantisation(_measured_retraction(f.ws, Geodesic(), f.B),
-            _measured_lift_factors(f.ws, f.B) + _measured_𝔄(f.ws, algorithm))
+        @test n_independent(_measured_retraction(f.ws, Geodesic(), f.B),
+            _measured_lift_factors(f.ws, f.B))
     end
 end
 
 # The workspace may not change the answer, and nothing else in the suite compares the two paths --
 # every other retraction test goes through whichever one the `Optimizer` chose. `==` and not `≈`:
-# the two write the same products in the same order into different arrays, so they agree bit for bit,
-# and `≈` would pass on a swapped block.
+# the two take the same products into different arrays, and at these shapes, whose inner dimension
+# `2n` fits in one BLAS block, they agree bit for bit; `≈` would pass on a swapped block. That is a
+# property of the shapes, not of the two paths: where an inner dimension spans several blocks, as the
+# `N - n` of `update_section!`'s transport does at `N = 400`, a five-argument `mul!` and a sum of two
+# products round differently.
 @testset "the workspace retraction is the allocating one, for a $LT" for LT in LIFT_TYPES
     for (N, n) in ((6, 3), (6, 1), (6, 6), (20, 4))
         f = retraction_fixture(LT, N, n)

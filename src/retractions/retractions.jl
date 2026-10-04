@@ -417,6 +417,32 @@ function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) wh
 end
 
 @doc raw"""
+    retraction_differential!(D, workspace, retraction, B, α)
+
+[`retraction_differential`](@ref)`(retraction, B, α)` written into `D`, which has `B`'s type and
+shape, and returned.
+
+`workspace` is the [`RetractionWorkspace`](@ref) of `B`'s point, the tree of them a parameter set
+has, or `nothing`. A [`Cayley`](@ref) lift at ``\alpha \neq 0`` with a workspace on a host `Matrix`
+of a LAPACK element type, `Float32`, `Float64` or their complex types, is evaluated in that
+workspace and allocates nothing: its two solves are `LAPACK.getrf!` and `LAPACK.getrs!` on workspace
+buffers, which are the two calls `\` makes, so the answer is the allocating method's to the bit.
+Every other case copies the allocating method's answer into `D` — at ``\alpha = 0``, under
+[`Geodesic`](@ref) and for an ordinary array that is a copy of `B` — including a workspace on any
+other array type, where `\` stays.
+"""
+function retraction_differential!(D, workspace, R::AbstractRetraction, B, α)
+    _copyto!(D, retraction_differential(R, B, α))
+    D
+end
+
+function retraction_differential!(
+        D::NetworkParameters, workspace::NamedTuple, R::Cayley, B::NetworkParameters, α)
+    mapparameters!((Dᵢ, Bᵢ, wsᵢ) -> retraction_differential!(Dᵢ, wsᵢ, R, Bᵢ, α), D, B, workspace)
+    D
+end
+
+@doc raw"""
     lift_from_columns(B, V)
 
 Rebuild a lift of the same type as `B` from the ``N\times{}n`` block `V`, i.e. from the first ``n``
@@ -432,6 +458,24 @@ lift_from_columns(B::StiefelLieAlgHorMatrix, V::AbstractMatrix) = StiefelLieAlgH
 
 function lift_from_columns(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix)
     GrassmannLieAlgHorMatrix(V[(B.n + 1):(B.N), :], B.N, B.n)
+end
+
+# `lift_from_columns(D, V)` written into `D`. The skew block is `SkewSymMatrix`'s projection
+# `(V₁ - V₁ᵀ)/2` of the top `n × n` block, entry by entry into its packed storage, in the order and
+# with the arithmetic `map_to_Skew` uses.
+function lift_from_columns!(D::StiefelLieAlgHorMatrix{T}, V::AbstractMatrix{T}) where {T}
+    S = D.A.S
+    for i in 2:(D.n), j in 1:(i - 1)
+
+        S[(i - 2) * (i - 1) ÷ 2 + j] = T(0.5) * (V[i, j] - V[j, i])
+    end
+    @views D.B .= V[(D.n + 1):(D.N), :]
+    D
+end
+
+function lift_from_columns!(D::GrassmannLieAlgHorMatrix{T}, V::AbstractMatrix{T}) where {T}
+    @views D.B .= V[(D.n + 1):(D.N), :]
+    D
 end
 
 @doc raw"""

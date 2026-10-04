@@ -26,7 +26,9 @@
 # picture that transfers between machines.
 
 using GeometricOptimizers
-using GeometricOptimizers: geodesic, cayley, check, 𝔄, lift_factors, Geodesic, Cayley
+using GeometricOptimizers: geodesic, cayley, check, 𝔄, 𝔄!, lift_factors, Geodesic, Cayley,
+                           RetractionWorkspace
+using KernelAbstractions: CPU
 using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew,
                            TaylorSeries
 using GeometricOptimizers: iteration_number, status
@@ -68,9 +70,9 @@ end
 What one call to `f` allocates, in KiB, after one warm-up call.
 
 Reported alongside the timings because it is the figure that does *not* transfer from a CPU to a GPU
-backend the way a runtime ratio roughly does: none of these algorithms works in place, so each one's
-count is a count of `2n × 2n` temporaries, and on a backend where an allocation costs a
-synchronisation rather than a `malloc` that is the number that decides the cost.
+backend the way a runtime ratio roughly does: an allocating `𝔄` counts its `2n × 2n` temporaries,
+and on a backend where an allocation costs a synchronisation rather than a `malloc` that is the
+number that decides the cost. `𝔄!` takes them from a workspace instead.
 """
 function bytes(f)
     f()
@@ -173,6 +175,20 @@ function exponential_tables(; N::Integer = 20, n::Integer = 3)
     print(rpad("KiB", 10))
     for (_, algorithm) in 𝔄_ALGORITHMS
         @printf("%16.1f", bytes(() -> 𝔄(X, algorithm)))
+    end
+    println()
+
+    # The same call in place, in the `RetractionWorkspace` an optimizer holds: what a geodesic step
+    # of `solve!` pays for its `𝔄`.
+    ws = RetractionWorkspace(CPU(), Float64, 200, 10)
+    print(rpad("ms, 𝔄!", 10))
+    for (_, algorithm) in 𝔄_ALGORITHMS
+        @printf("%16.3f", best(() -> 𝔄!(ws, X, algorithm), 50))
+    end
+    println()
+    print(rpad("KiB, 𝔄!", 10))
+    for (_, algorithm) in 𝔄_ALGORITHMS
+        @printf("%16.1f", bytes(() -> 𝔄!(ws, X, algorithm)))
     end
     println()
 

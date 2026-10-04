@@ -118,8 +118,9 @@ update in [`optimization_step!`](@ref). [`solve!`](@ref)'s `update!(state, opt, 
 after it has recorded the iterate, its gradient and its objective value.
 
 `section(cache)` is `update_section!(section(state), direction, retraction)` once the step is taken,
-so it is copied and not retracted a second time; a retraction on a manifold is ``O(N^3)`` where the
-copy is ``O(N^2)``.
+so it is copied and not retracted a second time. On a manifold the retraction is ``O(N^2n)``, and
+`update_section!` then transports the ``N\times{}(N-n)`` block of the section by an
+``(N-n)\times{}N`` product, which is ``O(N^3)``, where the copy is ``O(N^2)``.
 """
 function advance_state!(state::GradientState, cache::GradientCache, ::GradientMethod)
     _copyto!(section(state), section(cache))
@@ -146,7 +147,7 @@ end
 function update!(
         state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}, f) where {T}
     update!(state, direction(cache(opt)), gradient(opt), x, f, opt.retraction,
-        step_observer(opt))
+        step_observer(opt), retraction_workspace(opt))
 end
 
 function update!(state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}) where {T}
