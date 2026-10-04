@@ -94,7 +94,7 @@ it resolves silently to the wrong page.)
     Testing the merit directly — "reject the step only if it actually made things worse" — is the
     narrower condition, and it does fix the divergence described in [`solver_step!`](@ref). It is
     not enough, though: measured over the eight starting points of
-    `test/optimizer_convergence/svd_optim.jl`, restarting only on a genuine increase leaves the
+    `test/verification/svd_optim.jl`, restarting only on a genuine increase leaves the
     terminal gradient residual at `1.8e-5`, where restarting on the outcome brings it to `2.9e-7`.
     A search that ends on the floor has stopped making progress along *this* direction, and the
     cheapest thing to do about it is to pick a different one.
@@ -221,7 +221,7 @@ Both the BFGS and the DFP update divide by ``\delta^T\gamma`` and preserve posit
 ``Q`` only for ``\delta^T\gamma > 0`` [nocedal2006numerical](@cite). The guard this replaced was
 `!iszero(ΔxΔg) && !isnan(ΔxΔg)`, which admits both signs and, more importantly, admits denominators
 that are zero to within round-off: on the SVD problem of
-`test/optimizer_convergence/svd_optim.jl`, ``\delta^T\gamma`` took the values `-12.8`, `-4.5e-16`
+`test/verification/svd_optim.jl`, ``\delta^T\gamma`` took the values `-12.8`, `-4.5e-16`
 and `+1.5e-15` on consecutive iterations, all three of which `!iszero` accepts. Dividing a rank-two
 correction by `1.5e-15` is what drove ``\lambda_\mathrm{max}(Q)`` from 3 to 442 there, and
 ``\lambda_\mathrm{min}(Q)`` to `-398` from another starting point.

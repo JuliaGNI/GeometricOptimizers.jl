@@ -8,8 +8,7 @@ import Random
 # The headline feature of the unified interface: a *bare* `Manifold` can be handed to
 # `Optimizer` as the set of parameters, exactly like a `Vector` or a `NamedTuple`.
 # `test/integration/flat_parameters.jl` covers the `NamedTuple` case; this file covers the bare
-# manifold, which is the one the old `optimization_step!` interface used to handle
-# separately.
+# manifold.
 #
 # The problem is the smallest one that still has a manifold in it: minimize the distance to
 # `[0, 0, 1.2]` over `St(3, 1)`, i.e. over the unit sphere in R³. The minimizer is the

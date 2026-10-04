@@ -668,7 +668,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   `const MANIFOLD_TOLERANCE = 1e-12` appears in `test/verification/svd_optim.jl:20`,
   `test/integration/manifold_linesearch_tests.jl:48` and — added with the step ceiling —
-  `scripts/retraction_accuracy.jl:270`. Three copies of one number with no import path between them: a
+  `scripts/retraction_accuracy.jl:286`. Three copies of one number with no import path between them: a
   script cannot `include` a test file that runs a suite as a side effect, and the constant is a property
   of the tests rather than of the package, so it does not belong in `src/`.
 
@@ -678,7 +678,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   on the manifold and nothing will say so — the sweep is not run in CI (see C10), so the disagreement
   would surface as a table that no longer matches a passing suite.
 
-  **What to do**: one `test/manifold_tolerance.jl` holding the constant and a comment, `include`d by all
+  **What to do**: one `test/helpers/manifold_tolerance.jl` holding the constant and a comment, `include`d by all
   three. That the script reaches into `test/` is already true — it takes its matrix from
   `test/helpers/svd_matrix.jl` — so this adds no new coupling, only removes two copies.
 
@@ -1080,10 +1080,10 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K4 · Three reference links in `CHANGELOG.md` have no definition
 
-- location: `CHANGELOG.md:71`
+- location: `CHANGELOG.md:164`
 - kind: docs
 - found: 2026-09-26
-- evidence: `[0.8.0]`, `[0.6.1]` and `[B]` (`CHANGELOG.md:71`, `:1091`, `:1235`, `:1996`) have no
+- evidence: `[0.8.0]`, `[0.6.1]` and `[B]` (`CHANGELOG.md:164`, `:1184`, `:1328`, `:2089`) have no
   `[label]: url` line, and `[Unreleased]` compares `v0.6.0...main`.
 
 ## H. The test suite
