@@ -88,16 +88,29 @@ end
 # that complex `colsum` in another order than `opnorm₁` sums into a real array, so the two norms can
 # differ in the last bit, and at a norm on a threshold `θ ⋅ 2ˢ` the halving count by one. The answer
 # then differs at round-off: at most `3eps` relative in 20 such `ComplexF32` draws for either
-# algorithm. The tests allow `10eps`.
+# algorithm. The tests allow `10eps`, and check the norm against `opnorm₁` to `2eps`.
+#
+# The purely imaginary argument has real parts zero, so a norm of the real parts alone is 0 there:
+# it halves nothing, and the kernel then sees an argument of norm 40.
 const COMPLEX = (ComplexF32, ComplexF64)
 
+# a purely imaginary `2n × 2n` argument with one-norm `nrm`
+function imaginary_argument(::Type{T}, n, nrm, seed) where {T}
+    X = T.(im .* randn(Random.Xoshiro(seed), real(T), 2n, 2n))
+    X .*= real(T)(nrm) / opnorm₁(X)
+    X
+end
+
+complex_norm(X) = GeometricOptimizers._opnorm₁!(similar(X, (1, size(X, 2))), X)
+
 @testset "𝔄! is the allocating 𝔄 on a complex argument, $T" for T in COMPLEX
-    for algorithm in (ScaledSquaring(), NativePade()), (k, nrm) in enumerate(NORMS)
+    for algorithm in (ScaledSquaring(), NativePade()),
+        X in (argument(T, 3, 0.1, 401), argument(T, 3, 40, 402), imaginary_argument(T, 3, 40, 403))
 
         ws = workspace(T, 3)
-        X = argument(T, 3, nrm, 400 + k)
         result = 𝔄!(ws, X, algorithm)
 
+        @test isapprox(complex_norm(X), opnorm₁(X); rtol = 2eps(real(T)))
         @test eltype(result) == T
         @test isapprox(result, reference(X, algorithm); rtol = 10eps(real(T)))
         # the allocating method of `src/` runs `𝔄!` in fresh scratch, with the same norm
@@ -115,6 +128,7 @@ end
         X = argument(T, 3, algorithm.θ * 8, seed)
         result = 𝔄!(ws, X, algorithm)
 
+        @test isapprox(complex_norm(X), opnorm₁(X); rtol = 2eps(real(T)))
         @test eltype(result) == T
         @test isapprox(result, reference(X, algorithm); rtol = 10eps(real(T)))
         @test result == 𝔄(X, algorithm)
