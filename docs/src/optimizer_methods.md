@@ -100,8 +100,8 @@ where the last addition has to be replaced with appropriate operations when deal
 
 In the following we show a schematic update that Adam performs for the case when no elements are on manifolds (also compare this figure with the [general optimization framework](@ref "Generalization to Homogeneous Spaces")):
 
-![Schematic representation of the Adam optimizer. The first Adam step updates the first and second moments, and the second Adam step outputs the final velocity.](tikz/adam_optimizer_light.png)
-![Schematic representation of the Adam optimizer. The first Adam step updates the first and second moments, and the second Adam step outputs the final velocity.](tikz/adam_optimizer_dark.png)
+![Schematic representation of the Adam optimizer. The first Adam step updates the first and second moments, and the second Adam step outputs the final velocity.](https://juliagni.github.io/GeometricFigures.jl/figures/optimizers/adam-optimizer/adam-optimizer_light.svg)
+![Schematic representation of the Adam optimizer. The first Adam step updates the first and second moments, and the second Adam step outputs the final velocity.](https://juliagni.github.io/GeometricFigures.jl/figures/optimizers/adam-optimizer/adam-optimizer_dark.svg)
 
 We demonstrate the Adam state on the same example from before. Note the spelling: ``\rho_1`` and
 ``\rho_2`` above are `β₁` and `β₂` here, as everywhere else in this package.
