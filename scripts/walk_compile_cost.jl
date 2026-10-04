@@ -71,13 +71,13 @@
 #
 # ## The third axis is the Julia version, and one row used to swing 50× across it
 #
-# **Run this on all three supported versions**, and this is the row that made that necessary rather than
-# merely thorough. The four folds over a parameter set — `l2norm`, `solution_scale`, `_dot`, `αmax` —
-# were `Base.tail` recursions this package wrote for itself, because upstream's `foldparameters` walked
-# one tree. At flat 369 the first three cost about 0.65, 0.65 and 1.47 s on 1.11.9 and **26, 26 and
-# 57 s** on 1.12.7 and **35, 35 and 71 s** on 1.13.0-rc3, while the *nested* set of the same leaf count
-# cost 0.2–1.4 s on every one of them. That was issue #70: the width of one branch, with 1.11 the only
-# version that was cheap.
+# **Run this on every supported version, and on 1.11 for the first column below**; this row made
+# that necessary rather than merely thorough. The four folds over a parameter set — `l2norm`,
+# `solution_scale`, `_dot`, `αmax` — were `Base.tail` recursions this package wrote for itself,
+# because upstream's `foldparameters` walked one tree. At flat 369 the first three cost about 0.65,
+# 0.65 and 1.47 s on 1.11.9 and **26, 26 and 57 s** on 1.12.7 and **35, 35 and 71 s** on 1.13.0-rc3,
+# while the *nested* set of the same leaf count cost 0.2–1.4 s on every one of them. That was issue
+# #70: the width of one branch, with 1.11 the only version that was cheap.
 #
 # `NeuralNetworkParameters` 0.2.4 added the zipped fold and all four are upstream's now. Measured, flat
 # 369, seconds, and the columns agree — which is the point:
