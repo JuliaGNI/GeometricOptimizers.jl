@@ -132,9 +132,12 @@ end
 𝔄(X::AbstractMatrix, algorithm::ScaledAlgorithm) = 𝔄!(_𝔄_scratch(X), X, algorithm)
 
 # `opnorm₁` with the column sums written into `colsum`, a `1 × m` array, rather than a fresh one.
-# `sum!` and the `dims = 1` reduction of `opnorm₁` are the same reduction, so the two agree bit for
-# bit, and with them the halving count. `colsum` has the element type of `X`, so on a complex `X` the
-# sums are complex with a zero imaginary part, and the norm is the largest real part.
+# On a real `X`, `sum!` and the `dims = 1` reduction of `opnorm₁` are the same reduction, so the two
+# agree bit for bit, and with them the halving count. `colsum` has the element type of `X`, so on a
+# complex `X` the sums are complex with a zero imaginary part, and the norm is the largest real part.
+# There Base sums into a complex array in another order than into the real array of `opnorm₁`, the
+# two can differ in the last bit, and at a norm on a threshold the halving count can shift by one, as
+# the `opnorm₁` docstring says of `opnorm1`.
 function _opnorm₁!(colsum::AbstractMatrix, X::AbstractMatrix)
     isempty(X) ? zero(real(eltype(X))) : maximum(real, sum!(abs, colsum, X))
 end

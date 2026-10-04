@@ -9,7 +9,10 @@
 #     of issue #77;
 #   * `AugmentedPade` allocates what `exp` of its `4n × 4n` matrix allocates, and nothing besides.
 #
-# The first holds on a complex argument as well, for `ScaledSquaring` and `NativePade`, and
+# The first holds on a real argument. On a complex argument `ScaledSquaring` and `NativePade` agree
+# with the reference copy to `rtol = 10eps`, not to the bit: the norm that picks the halving count
+# can differ in the last bit there, so at a norm on a threshold the count can shift by one. They
+# still agree to the bit with the allocating `𝔄` of `src/`, which runs `𝔄!` in fresh scratch.
 # `geodesic` of a complex lift with either is `exp` of the lift.
 #
 # `@allocated` is inside a function whose arguments are its parameters, and the call is made once
@@ -81,10 +84,14 @@ end
 end
 
 # A complex argument: its column sums of `abs` are real, but `colsum` has the element type of `X`, so
-# the norm is the largest real part. `isless` has no method on two complex numbers.
+# the norm is the largest real part. `isless` has no method on two complex numbers. Base sums into
+# that complex `colsum` in another order than `opnorm₁` sums into a real array, so the two norms can
+# differ in the last bit, and at a norm on a threshold `θ ⋅ 2ˢ` the halving count by one. The answer
+# then differs at round-off: at most `3eps` relative in 20 such `ComplexF32` draws for either
+# algorithm. The tests allow `10eps`.
 const COMPLEX = (ComplexF32, ComplexF64)
 
-@testset "𝔄! is the allocating 𝔄 to the bit on a complex argument, $T" for T in COMPLEX
+@testset "𝔄! is the allocating 𝔄 on a complex argument, $T" for T in COMPLEX
     for algorithm in (ScaledSquaring(), NativePade()), (k, nrm) in enumerate(NORMS)
 
         ws = workspace(T, 3)
@@ -92,7 +99,24 @@ const COMPLEX = (ComplexF32, ComplexF64)
         result = 𝔄!(ws, X, algorithm)
 
         @test eltype(result) == T
-        @test result == reference(X, algorithm)
+        @test isapprox(result, reference(X, algorithm); rtol = 10eps(real(T)))
+        # the allocating method of `src/` runs `𝔄!` in fresh scratch, with the same norm
+        @test result == 𝔄(X, algorithm)
+    end
+end
+
+# The norm on the threshold `θ ⋅ 2³`, where the halving count of `𝔄!` and of the reference can differ.
+# On Julia 1.13 the count differs in 10 of the 200 `ComplexF32` draws, the first at seed 11, and in
+# none of the `ComplexF64` draws.
+@testset "𝔄! is the allocating 𝔄 on a complex argument at a threshold norm, $T" for T in COMPLEX
+    for algorithm in (ScaledSquaring(), NativePade()), seed in 1:200
+
+        ws = workspace(T, 3)
+        X = argument(T, 3, algorithm.θ * 8, seed)
+        result = 𝔄!(ws, X, algorithm)
+
+        @test eltype(result) == T
+        @test isapprox(result, reference(X, algorithm); rtol = 10eps(real(T)))
         @test result == 𝔄(X, algorithm)
     end
 end
