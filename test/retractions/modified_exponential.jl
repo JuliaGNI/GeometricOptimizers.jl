@@ -86,9 +86,9 @@ end
 # A complex argument: its column sums of `abs` are real, but `colsum` has the element type of `X`, so
 # the norm is the largest real part. `isless` has no method on two complex numbers. Base sums into
 # that complex `colsum` in another order than `opnorm₁` sums into a real array, so the two norms can
-# differ in the last bit, and at a norm on a threshold `θ ⋅ 2ˢ` the halving count by one. The answer
-# then differs at round-off: at most `3eps` relative in 20 such `ComplexF32` draws for either
-# algorithm. The tests allow `10eps`, and check the norm against `opnorm₁` to `2eps`.
+# differ in the last bit, and at a norm on a threshold `θ ⋅ 2ˢ` the halving count can shift by one.
+# The answer then differs at round-off: at most `3eps` relative in 20 such `ComplexF32` draws for
+# either algorithm. The tests allow `10eps`, and check the norm against `opnorm₁` to `2eps`.
 #
 # The purely imaginary argument has real parts zero, so a norm of the real parts alone is 0 there:
 # it halves nothing, and the kernel then sees an argument of norm 40.
