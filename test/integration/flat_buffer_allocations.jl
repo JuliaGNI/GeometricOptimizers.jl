@@ -406,7 +406,7 @@ end
 # 9 600. The gap between those and 1 024 is what makes this a property and not a ceiling -- a
 # ceiling on the absolute figure would have to sit above 3 792 and so could hide an `N × 2n`
 # temporary entirely.
-include("helpers/allocations.jl")
+include("../helpers/allocations.jl")
 
 @testset "the retraction of a $LT does not grow with N" for LT in LIFT_TYPES
     small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 200, 3)

@@ -85,7 +85,7 @@ quantity it would have to be corrected by — the Riemannian gradient of
 ``\frac{\lambda}{2}||x||^2`` — is zero. It asserts [`_is_decayable`](@ref) rather than restating
 why, so that the no-op holds only for the manifolds on which that has been established; see
 [issue #28](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28) for what a decay that
-did something here would have to look like. `test/adam_with_euclidean_decay.jl` checks that
+did something here would have to look like. `test/manifold_optimizers/adam_with_euclidean_decay_optimizer.jl` checks that
 `rgrad(Y, λY)` really does vanish rather than taking it on trust.
 """
 function _weight_decay!(δ::AbstractArray{T}, x::AbstractArray{T}, λ::T) where {T}

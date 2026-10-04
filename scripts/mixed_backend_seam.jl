@@ -9,7 +9,7 @@
 # the cases answer anyway; on a tree with it, how many are refused by name. Nothing here is timed, so
 # no warm-up and no cold process are needed.
 #
-# `JLArrays` is the device stand-in, as it is in `test/device_multiply.jl`. It matters that it is a
+# `JLArrays` is the device stand-in, as it is in `test/integration/device_multiply.jl`. It matters that it is a
 # *host-backed* device: it can fall back to the host, which is exactly what lets an unguarded
 # operation return an answer instead of failing. A real device fails the whole set instead — on Metal
 # inside `GPU compilation of MethodInstance for …broadcast_linear…` — so the counts below are

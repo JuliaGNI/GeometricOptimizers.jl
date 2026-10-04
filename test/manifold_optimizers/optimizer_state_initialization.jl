@@ -55,7 +55,7 @@ end
 # `increase_iteration_number!` has to be called before the step, exactly as `solve!` does it —
 # this testset used to be the only loop in the suite that left it out, which is how the
 # off-by-one in the bias correction (`_t = t + 1`, so `t = 2` in the first step) survived: it
-# is the one call sequence in which `t + 1` gives the right answer. `test/optimizer_step_formulas.jl`
+# is the one call sequence in which `t + 1` gives the right answer. `test/manifold_optimizers/optimizer_step_formulas.jl`
 # pins the resulting step size.
 @testset "the first Adam step" begin
     x = NetworkParameters((w = rand(StiefelManifold, 5, 3), b = randn(3)))

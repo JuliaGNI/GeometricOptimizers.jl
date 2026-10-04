@@ -11,7 +11,7 @@
 #     first-order caches are handed their gradient in already, and there is nothing to implement for
 #     them. What the paper needs them for -- re-projecting the momentum onto the tangent space at the
 #     new iterate -- is what `update_section!` does here instead. The derivation is on that page, and
-#     `test/scalar_moment_adam.jl` pins it against a literal transcription of the source's formula.
+#     `test/manifold_optimizers/scalar_moment_adam_optimizer.jl` pins it against a literal transcription of the source's formula.
 #
 #   * `v` is a *scalar*: a squared gradient norm rather than a squared gradient. That single number is
 #     the whole of the difference from `Adam`, and it is what the method is named for.
@@ -23,7 +23,7 @@
 # unrelated reason, [`step_αmax`](@ref).
 
 # The scope is the signatures: a single `StiefelManifold`, and anything else is a `MethodError`.
-# `test/scalar_moment_adam.jl` pins an `AbstractVector`, a parameter set and a `GrassmannManifold`.
+# `test/manifold_optimizers/scalar_moment_adam_optimizer.jl` pins an `AbstractVector`, a parameter set and a `GrassmannManifold`.
 OptimizerCache(::ScalarMomentAdam, x::StiefelManifold) = ScalarMomentAdamCache(x)
 function Hessian(::ScalarMomentAdam, ::OptimizerProblem, ::StiefelManifold{T}) where {T}
     NoHessian{T}()

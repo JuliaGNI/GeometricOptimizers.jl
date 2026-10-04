@@ -667,7 +667,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   **Severity: low**, and the one on this list with a way to go wrong quietly. From the review of [#44].
 
   `const MANIFOLD_TOLERANCE = 1e-12` appears in `test/verification/svd_optim.jl:20`,
-  `test/manifold_linesearch_tests.jl:48` and — added with the step ceiling —
+  `test/integration/manifold_linesearch_tests.jl:48` and — added with the step ceiling —
   `scripts/retraction_accuracy.jl:270`. Three copies of one number with no import path between them: a
   script cannot `include` a test file that runs a suite as a side effect, and the constant is a property
   of the tests rather than of the package, so it does not belong in `src/`.
@@ -761,7 +761,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - found: 2026-10-01
 - evidence:
 
-  `test/flat_buffer_allocations.jl` measures `_flat_secant(cache)`, the three-argument
+  `test/integration/flat_buffer_allocations.jl` measures `_flat_secant(cache)`, the three-argument
   `update!(cache, state, x)`, `outer!`, `dot(γ, Q, γ)` and `_flat_mul!` one at a time, but not the
   BFGS or DFP `_update_inverse_hessian!` that calls them. An edit to that method that forms the
   secant pair without `_flat_secant`, and allocates, is not caught there. The gap does not come from
@@ -1121,9 +1121,9 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - kind: missing test
 - found: 2026-10-01
 - evidence: the lines take the argument types of the `@allocated` calls in
-  `test/flat_buffer_allocations.jl`, whose sets have no `Manifold` leaf, so
+  `test/integration/flat_buffer_allocations.jl`, whose sets have no `Manifold` leaf, so
   `_block_αmax(::Manifold, δ, c)` and `step_αmax` are not analysed. A barrier on `δᵢ` in the
-  closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/network_parameters_optimizer.jl:157`
+  closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/optimizers/network_parameters_optimizer.jl:157`
   calls `_manifold_αmax` on a set with a Stiefel leaf and `c::Float64`, and no line has its types.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38

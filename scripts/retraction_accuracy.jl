@@ -280,7 +280,7 @@ function solve_once(algorithm, linesearch, retraction, seed::Integer;
         error = abs((objective(ps) - err_best) / err_best))
 end
 
-# The tolerance `test/verification/svd_optim.jl` and `test/manifold_linesearch_tests.jl` both
+# The tolerance `test/verification/svd_optim.jl` and `test/integration/manifold_linesearch_tests.jl` both
 # use for "still on the manifold". Both iterates stay on `St(N, 3)` when a solve behaves, so this is a
 # round-off bound and nothing else; the values observed are of the order of `1e-14`.
 const MANIFOLD_TOLERANCE = 1e-12

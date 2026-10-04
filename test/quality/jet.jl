@@ -19,7 +19,7 @@ using Test
 import Random
 
 # The entry points are the functions of `src/` under `@allocated` in
-# `test/flat_buffer_allocations.jl` and the functions that launch a kernel. Each has one line per
+# `test/integration/flat_buffer_allocations.jl` and the functions that launch a kernel. Each has one line per
 # element type at which a test in `test/` outside `test/quality/` calls the method that the
 # `@allocated` call or the kernel launch reaches, at the argument types of one such call; another
 # container type at the same element type has no line. An element type that reaches the method only
@@ -49,7 +49,7 @@ const GrassmannLift32 = typeof(rand(GrassmannLieAlgHorMatrix{Float32}, N, n))
 const Container64 = typeof(container(Float64))
 const Wide32 = typeof(wide())
 
-# the body of `solve!`'s loop, as `test/flat_buffer_allocations.jl` measures it
+# the body of `solve!`'s loop, as `test/integration/flat_buffer_allocations.jl` measures it
 function _step!(x, state, opt)
     increase_iteration_number!(state)
     solver_step!(x, state, opt)
@@ -98,7 +98,7 @@ end
 
 @testset "JET" begin
     if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
-        # the functions under `@allocated` in test/flat_buffer_allocations.jl
+        # the functions under `@allocated` in test/integration/flat_buffer_allocations.jl
         @test isempty(JET.get_reports(JET.report_opt(_dot, (Lift64, Lift64); target_modules = GO)))
         @test isempty(JET.get_reports(JET.report_opt(_dot, (Wide32, Wide32); target_modules = GO)))
         @test isempty(JET.get_reports(JET.report_opt(l2norm, (Lift64,); target_modules = GO)))

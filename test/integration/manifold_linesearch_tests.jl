@@ -119,7 +119,7 @@ end
 #
 # It was written this way because a `GrassmannManifold` could not be driven through an `Optimizer` at
 # all (issue A11, the concrete content of issue #27). That is fixed, and
-# `test/grassmann_optimizer_tests.jl` now covers the end-to-end solve — but the direct check is worth
+# `test/integration/grassmann_optimizer_tests.jl` now covers the end-to-end solve — but the direct check is worth
 # keeping for the independence above, so it stays.
 struct UncoveredRetraction <: GeometricOptimizers.AbstractRetraction end
 

@@ -17,7 +17,7 @@
 # `geodesic` of a complex lift with either is `exp` of the lift.
 #
 # `@allocated` is inside a function whose arguments are its parameters, and the call is made once
-# before it is measured, for the reason the head of `test/flat_buffer_allocations.jl` gives.
+# before it is measured, for the reason the head of `test/integration/flat_buffer_allocations.jl` gives.
 
 using GeometricOptimizers
 using GeometricOptimizers: 𝔄, 𝔄!, RetractionWorkspace, ScaledSquaring, NativePade,

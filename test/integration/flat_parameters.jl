@@ -14,7 +14,7 @@ import Random
 # matters for all of them: the `StiefelManifold` entries have to *stay* on the manifold over the
 # course of the optimization (this is what `check` measures).
 #
-# `test/network_parameters_optimizer.jl` is the nested counterpart, and the difference between the
+# `test/optimizers/network_parameters_optimizer.jl` is the nested counterpart, and the difference between the
 # two is not cosmetic: a nested container's leaves sit one level below what `Base.map` reaches, and a
 # flat one's do not. Both shapes have to work and each catches what the other cannot.
 #

@@ -12,7 +12,7 @@ using Test
 using Random
 Random.seed!(123)
 
-include("helpers/optimizers_problems.jl")
+include("../helpers/optimizers_problems.jl")
 
 struct OptimizerTest{T} <: OptimizerState{T} end
 

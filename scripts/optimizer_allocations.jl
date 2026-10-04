@@ -17,7 +17,7 @@
 # is untouched by that release — the gradient evaluation, and the parameter trees that `global_rep`,
 # `retraction_differential` and the elementwise walks build per line-search evaluation.
 #
-# `test/flat_buffer_allocations.jl` is the complement: it pins the individual sites at exactly zero,
+# `test/integration/flat_buffer_allocations.jl` is the complement: it pins the individual sites at exactly zero,
 # which is the claim being made, where this script says what that is worth end to end.
 
 using GeometricOptimizers

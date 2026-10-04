@@ -27,7 +27,7 @@
 # triangulars, the two horizontal lifts, the three manifolds, `SkewSymMatrix`, `SymmetricMatrix` and
 # `StiefelProjection` — so a type added to that union and not to `TYPES` below shows up as a sweep
 # that no longer covers the guard it measures.
-# `JLArrays` is the device stand-in, as it is in `test/mixed_backend_refusal.jl`, and it
+# `JLArrays` is the device stand-in, as it is in `test/integration/mixed_backend_refusal.jl`, and it
 # matters that it is a *host-backed* device: it can fall back to the host, which is what lets an
 # unguarded operation return an answer instead of failing. `allowscalar(false)` is what makes this a
 # measurement rather than a description.

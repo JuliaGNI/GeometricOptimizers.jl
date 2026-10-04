@@ -90,7 +90,7 @@ true
 ```
 
 Only `b` is decayed; `w` is left to [`Adam`](@ref) alone. The
-[test file](https://github.com/JuliaGNI/GeometricOptimizers.jl/blob/main/test/adam_with_euclidean_decay.jl)
+[test file](https://github.com/JuliaGNI/GeometricOptimizers.jl/blob/main/test/manifold_optimizers/adam_with_euclidean_decay_optimizer.jl)
 pins both halves of that, including that `b` moves by exactly ``-\eta\lambda{}b`` more than it does
 under [`Adam`](@ref) on the first step.
 

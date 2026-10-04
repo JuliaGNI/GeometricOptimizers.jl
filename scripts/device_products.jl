@@ -7,7 +7,7 @@
 # for the rows to mean anything, and the function turns it off. It also reseeds the global generator
 # with `seed`, for the retraction rows; a caller that needs its own stream reseeds after it.
 #
-#     using JLArrays; device_products(JLArray)     # what `test/device_products.jl` asserts
+#     using JLArrays; device_products(JLArray)     # what `test/integration/device_products.jl` asserts
 #     using Metal;    device_products(MtlArray)    # what `test/devices/metal.jl` asserts
 #
 # `test/devices/metal.jl` runs in the `metal` test group, which a default run on Apple silicon

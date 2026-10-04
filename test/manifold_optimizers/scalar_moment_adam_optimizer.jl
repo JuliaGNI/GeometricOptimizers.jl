@@ -13,7 +13,7 @@ import Random
 # The `GlobalSection` every testset below builds is drawn at random, and so are the iterates and the
 # objectives' coefficients. An unseeded `@testset` takes a fresh stream on every run — Julia reports
 # "RNG of the outermost testset" on failure for exactly this reason — so without this line the file is
-# a different test each time it runs. `test/optimizer_state_initialization.jl` fixes its seed for the
+# a different test each time it runs. `test/manifold_optimizers/optimizer_state_initialization.jl` fixes its seed for the
 # same reason.
 Random.seed!(1234)
 
@@ -25,7 +25,7 @@ Random.seed!(1234)
 # too, on the `Optimizer` path and not only on `OptimizerState`; see the testset for why.
 #
 # The objective is linear, so `∇L = C` at every iterate, which is what makes the recursion checkable
-# in closed form. See `test/optimizer_step_formulas.jl`, which does the same for `Adam`.
+# in closed form. See `test/manifold_optimizers/optimizer_step_formulas.jl`, which does the same for `Adam`.
 function linear_stiefel_objective(C)
     Y -> sum(C .* Y.A)
 end
@@ -62,7 +62,7 @@ end
     @test Matrix(gradient(OptimizerState(ScalarMomentAdam(), Y, Ḡ))) ≈ Matrix(Ḡ)
 
     # The moments are read in the first `update!` before they are written to, so they have to start at
-    # zero -- the same invariant `test/optimizer_state_initialization.jl` pins for `AdamState`.
+    # zero -- the same invariant `test/manifold_optimizers/optimizer_state_initialization.jl` pins for `AdamState`.
     state = OptimizerState(ScalarMomentAdam(), Y)
     @test all(iszero, Matrix(first_moment(state)))
     @test iszero(second_moment(state))
@@ -91,7 +91,7 @@ end
 
 # `ScalarMomentAdam` joins `AdamFamily`, which is what `default_linesearch` dispatches the fixed
 # `Static` on -- its direction is a moving average and is deliberately allowed not to descend on an
-# individual step, so a sufficient-decrease search has nothing to work with. `test/optimizer_tests.jl`
+# individual step, so a sufficient-decrease search has nothing to work with. `test/integration/optimizer_tests.jl`
 # makes this assertion for `Adam` and `AdamWithEuclideanDecay` but cannot make it here: it builds its
 # optimizer on `ones(T, 3)`, which this method rejects.
 @testset "ScalarMomentAdam keeps AdamFamily's fixed Static" begin

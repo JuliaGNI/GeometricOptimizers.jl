@@ -98,7 +98,7 @@ That last part is what this function exists for. The ceiling used to be
 quadrature — so a `NamedTuple` of *ordinary arrays* was bounded by a rotation that does not exist in
 its problem (measured: a Euclidean `NamedTuple` solve took 3 184 iterations against 1 for the same
 problem written as a vector), and in a mixed `NamedTuple` the Euclidean blocks tightened the manifold
-blocks' bound for no reason (measured on the mixed problem of `test/flat_parameters.jl`:
+blocks' bound for no reason (measured on the mixed problem of `test/integration/flat_parameters.jl`:
 ``\|\delta_Y\| = 2.5\times10^{-16}`` against a total of `3.9`, bounding ``\alpha`` at `1.6` where the
 geometry of the manifold block permits ``2.6\times10^{16}``). That was catalogued as issue A15 and is
 what this closes.

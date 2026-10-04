@@ -569,7 +569,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
     # overshoots the minimiser, and the next step comes back: a 2-cycle in which no criterion fires.
     # The other two rejections, `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT`, say nothing
     # about the floor, and their step is taken: a zero step there reports convergence where `‖∇f‖` is
-    # of order one, which `test/descent_direction_tests.jl` catches.
+    # of order one, which `test/optimizers/descent_direction_tests.jl` catches.
     α = at_round_off_floor(ls_status, _caller_αmax(T, ls_params)) ? zero(T) :
         steplength(ls_status)
     _rmul!(direction(cache(opt)), α)

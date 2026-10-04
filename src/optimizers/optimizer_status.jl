@@ -246,7 +246,7 @@ a compile cost on the very walk #70 was about.
 `f` is annotated `::F where {F}`, which is now belt and braces rather than load-bearing. It used to be
 the latter: two of the four methods only *passed `f` along*, and Julia does not specialise on a function
 argument it never sees called, so without the annotation `f` arrived boxed and each leaf cost a dynamic
-dispatch — 128 bytes against 64 on the mixed set of `test/flat_buffer_allocations.jl`, which is the test
+dispatch — 128 bytes against 64 on the mixed set of `test/integration/flat_buffer_allocations.jl`, which is the test
 that caught it. The single method below closes over `f` instead, and a closure is a `new`, which counts
 as a use, so measured the annotation changes nothing on any shape. It is kept because the obligation it
 discharges is real for whoever hands an `op` on: upstream's `foldparameters` docstring says so, and its

@@ -1,5 +1,5 @@
 # Reference iterates of GeometricMachineLearning 0.8's `optimization_step!`, for
-# `test/training_optimizer.jl`.
+# `test/optimizers/training_optimizer.jl`.
 #
 # GML 0.8 requires GeometricOptimizers 0.8, so it cannot be a test dependency of this package. This
 # script runs in its own environment, next to it, and writes the iterates as Julia literals:

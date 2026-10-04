@@ -14,7 +14,7 @@ import Random
 # issue #27. Every `GrassmannManifold` test in the suite exercised the manifold, its lift, its
 # retraction and its `check`; none exercised a solve, because none could.
 #
-# `test/manifold_optimizers_with_new_interface.jl` is the same file for the `StiefelManifold` and its
+# `test/integration/manifold_optimizers_with_new_interface.jl` is the same file for the `StiefelManifold` and its
 # problem cannot be reused. It minimizes the distance to a target point, which is not a function on
 # the Grassmann manifold at all: `Y` and `-Y` are the same point of `Gr(1, 3)` and are at different
 # distances from `[0, 0, 1.2]`. **Everything here is invariant under `Y ↦ YO`** — the objective by

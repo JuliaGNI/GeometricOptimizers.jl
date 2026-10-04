@@ -7,7 +7,7 @@
 #
 # This is the harness behind the CHANGELOG entry on `RetractionWorkspace`, and it exists for the
 # reason the *Open Issues* preamble states: a number is reproducible only where the harness that
-# produced it is named. `test/flat_buffer_allocations.jl` is the complement — it asserts the
+# produced it is named. `test/integration/flat_buffer_allocations.jl` is the complement — it asserts the
 # *property* the second table shows, that a retraction taken in a workspace costs the same at every
 # ambient dimension, where this says what that is worth.
 #
@@ -22,7 +22,7 @@
 #
 #   * **Compilation.** Every call is made once at every size before anything is recorded, and the
 #     `@allocated` is inside a function with its arguments passed in. A `@allocated` written in a
-#     loop at top level boxes its loop variables and reports the box; `test/flat_buffer_allocations.jl`
+#     loop at top level boxes its loop variables and reports the box; `test/integration/flat_buffer_allocations.jl`
 #     has the measurement of what that costs.
 #   * **BLAS threads.** Pinned to one. They do not move a byte count, but every other script here
 #     pins them and a script that does not invites its figures to be compared with one that does.

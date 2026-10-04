@@ -1,6 +1,6 @@
 # A `NeuralNetworkParameters.NetworkParameters` as the solution of an optimizer.
 #
-# `test/flat_parameters.jl` covers the *flat* shape — the one the MNIST scripts of GMLDatasets.jl
+# `test/integration/flat_parameters.jl` covers the *flat* shape — the one the MNIST scripts of GMLDatasets.jl
 # keep a transformer's parameters in. This file covers the **nested** one: a container is a tree of
 # layers, so its leaves are one level below what `Base.map` reaches, and that is the whole difference
 # between the two. Every elementwise primitive is walked with `mapparameters` for that reason, and
@@ -69,7 +69,7 @@ Take `steps` steps and return the parameters, `check` of the manifold block afte
 and the objective before and after each.
 
 The seed is fixed per run because the [`GlobalSection`](@ref) is drawn at random and the iterates
-depend on it — the same reason `test/flat_parameters.jl` gives.
+depend on it — the same reason `test/integration/flat_parameters.jl` gives.
 """
 function optimize(ps, F, algorithm; steps = 20, η = 0.1, retraction = Cayley())
     T = typeof(F(ps))
@@ -94,7 +94,7 @@ end
 algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(; α = T(0.1)), Adam())
 retractions() = (Geodesic(), Cayley())
 
-# see the note on `MANIFOLD_TOLERANCE_IN_EPS` in `test/flat_parameters.jl`: a round-off
+# see the note on `MANIFOLD_TOLERANCE_IN_EPS` in `test/integration/flat_parameters.jl`: a round-off
 # tolerance with a factor of ten in hand, where leaving the manifold is an error of the step size
 const MANIFOLD_TOLERANCE_IN_EPS = 100
 
@@ -214,7 +214,7 @@ end
 # `flatlength(_zero(x))` — every one of which is sized by the *intrinsic* dimension of the parameters
 # and not by `length`. `Newton` is not among them, and that is scope rather than an omission: it
 # builds the exact Hessian, and that Hessian is not built over the flattening, so `Optimizer` and
-# `OptimizerState` both reject it here with a message saying so. `test/optimizer_tests.jl` pins that.
+# `OptimizerState` both reject it here with a message saying so. `test/integration/optimizer_tests.jl` pins that.
 @testset "$(nameof(typeof(algorithm))) runs on a container" for algorithm in (BFGS(), DFP())
     T = Float64
     Random.seed!(1234)

@@ -5,7 +5,7 @@
 # Every allocation assertion is an exact zero, or two measurements in one process compared under the
 # tolerance of `test/helpers/allocations.jl`. `@allocated` is inside a function whose arguments are
 # its parameters, and the call is made once before it is measured, for the reason the head of
-# `test/flat_buffer_allocations.jl` gives.
+# `test/integration/flat_buffer_allocations.jl` gives.
 
 using GeometricOptimizers
 using GeometricOptimizers: 𝔄, RetractionWorkspace, ScaledSquaring, NativePade,
