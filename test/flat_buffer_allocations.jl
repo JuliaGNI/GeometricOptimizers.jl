@@ -398,23 +398,15 @@ function _measured_update_section(Λ₂, Λ, B, R, ws)
     @allocated update_section!(Λ₂, Λ, B, R, ws)
 end
 
-# The difference across `N` and not an equality, and the tolerance is the part to read.
-#
-# The figure is not bit-reproducible on every platform. On Windows the same `Cayley` call at the two
-# sizes came back 3 671 and 3 719 bytes, and `update_section!` 3 831 and 3 815 -- 48 and 16 apart,
-# in *both* directions, so it is quantisation inside `inv`'s own allocation and not a term that
-# grows with `N`. Linux and macOS give the two sizes byte for byte. An exact equality is therefore
-# a platform lottery, which is the same lesson bit equality of generated code teaches one domain
-# over.
+# The difference across `N` and not an equality, and the tolerance is the part to read: see
+# `test/helpers/allocations.jl` for why a byte count is compared under a tolerance.
 #
 # **The tolerance does not weaken what is asserted**, because of the size the `large` fixture is:
 # one reintroduced `N × N` `Float64` temporary at `N = 200` is 320 000 bytes, and one `N × 2n` is
 # 9 600. The gap between those and 1 024 is what makes this a property and not a ceiling -- a
 # ceiling on the absolute figure would have to sit above 3 792 and so could hide an `N × 2n`
 # temporary entirely.
-const N_INDEPENDENCE_TOLERANCE = 1024
-
-n_independent(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
+include("helpers/allocations.jl")
 
 @testset "the retraction of a $LT does not grow with N" for LT in LIFT_TYPES
     small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 200, 3)
@@ -432,12 +424,12 @@ n_independent(a, b) = abs(a - b) < N_INDEPENDENCE_TOLERANCE
         _measured_update_section(large.Λ₂, large.Λ, large.B, Cayley(), large.ws))
 
     # The geodesic evaluates its `𝔄` in the workspace too (issue #77), so it adds nothing to what
-    # writing the lift's factors costs: an exact equality of two readings in one process, at both
-    # ambient dimensions. The number of squarings still grows with the norm of the lift, and so with
-    # `N` for a random lift; each squaring writes into the same two buffers.
+    # writing the lift's factors costs, at both ambient dimensions. The number of squarings still
+    # grows with the norm of the lift, and so with `N` for a random lift; each squaring writes into
+    # the same two buffers.
     for f in (small, large)
-        @test _measured_retraction(f.ws, Geodesic(), f.B) ==
-              _measured_lift_factors(f.ws, f.B)
+        @test n_independent(_measured_retraction(f.ws, Geodesic(), f.B),
+            _measured_lift_factors(f.ws, f.B))
     end
 end
 

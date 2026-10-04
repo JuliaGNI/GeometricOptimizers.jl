@@ -12,6 +12,8 @@ using GeometricOptimizers: update!, solver_step!, increase_iteration_number!,
 using Test
 import Random
 
+include("../../../helpers/allocations.jl")
+
 manifold(::Val{:Stiefel}) = StiefelManifold
 manifold(::Val{:Grassmann}) = GrassmannManifold
 
@@ -36,10 +38,12 @@ end
         :Grassmann),
     T in (Float32, Float64)
 
+    # under the tolerance of `test/helpers/allocations.jl`; one `N × N` buffer at `N = 40` is
+    # 6 400 bytes in `Float32`, well above it
     for retraction in (Cayley(), Geodesic())
         small, large = stepped(lift, T, 40, retraction), stepped(lift, T, 400, retraction)
-        @test _measured_update!(small.state, small.opt, small.x, small.f) ==
-              _measured_update!(large.state, large.opt, large.x, large.f)
+        @test n_independent(_measured_update!(small.state, small.opt, small.x, small.f),
+            _measured_update!(large.state, large.opt, large.x, large.f))
     end
 end
 

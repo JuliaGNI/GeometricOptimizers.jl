@@ -7,7 +7,8 @@
 #     at one that needs several (`s ≥ 1`), where the recovery step runs;
 #   * `ScaledSquaring`, `NativePade` and `TaylorSeries` allocate nothing, on the `20 × 20` argument
 #     of issue #77;
-#   * `AugmentedPade` allocates what `exp` of its `4n × 4n` matrix allocates, and nothing besides.
+#   * `AugmentedPade` allocates what `exp` of its `4n × 4n` matrix allocates, and nothing besides, to
+#     a tolerance far below one extra buffer.
 #
 # The first holds on a real argument. On a complex argument `ScaledSquaring` and `NativePade` agree
 # with the reference copy to `rtol = 10eps`, not to the bit: the norm that picks the halving count
@@ -29,6 +30,7 @@ using Test
 import Random
 
 include("../helpers/reference_retractions.jl")
+include("../helpers/allocations.jl")
 
 # a `2n × 2n` argument with one-norm `nrm`
 function argument(::Type{T}, n, nrm, seed) where {T}
@@ -161,12 +163,15 @@ end
     @test _measured_𝔄(argument(T, 10, 0.1, 7), algorithm) > 0
 end
 
+# Under a tolerance, for the reason `test/helpers/allocations.jl` gives: on Windows the two readings
+# are up to 96 bytes apart. 256 bytes is well below one extra `20 × 20` buffer, 1 600 bytes in
+# `Float32`.
 @testset "AugmentedPade allocates what exp allocates, $T" for T in (Float32, Float64)
     ws = workspace(T, 10)
     for nrm in NORMS
         X = argument(T, 10, nrm, 8)
         measured = _measured_𝔄!(ws, X, AugmentedPade())
-        @test measured == _measured_exp(ws.augmented)
+        @test n_independent(measured, _measured_exp(ws.augmented); tolerance = 256)
         @test measured > 0
     end
 end

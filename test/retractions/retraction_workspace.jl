@@ -2,9 +2,10 @@
 # allocating methods answer: the geodesic through `𝔄!` (issue #77), and the `Cayley` differential
 # through `retraction_differential!` (issue #73).
 #
-# Every allocation assertion is an exact zero or an equality between two measurements in one
-# process. `@allocated` is inside a function whose arguments are its parameters, and the call is made
-# once before it is measured, for the reason the head of `test/flat_buffer_allocations.jl` gives.
+# Every allocation assertion is an exact zero, or two measurements in one process compared under the
+# tolerance of `test/helpers/allocations.jl`. `@allocated` is inside a function whose arguments are
+# its parameters, and the call is made once before it is measured, for the reason the head of
+# `test/flat_buffer_allocations.jl` gives.
 
 using GeometricOptimizers
 using GeometricOptimizers: 𝔄, RetractionWorkspace, ScaledSquaring, NativePade,
@@ -18,6 +19,7 @@ using Test
 import Random
 
 include("../helpers/reference_retractions.jl")
+include("../helpers/allocations.jl")
 
 const LIFT_TYPES = (StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix)
 manifold(::Type{StiefelLieAlgHorMatrix}) = StiefelManifold
@@ -74,15 +76,16 @@ end
 end
 
 # A geodesic adds nothing to what writing the lift's factors costs, which is zero: the `𝔄` it
-# evaluates is `𝔄!`, in the workspace.
+# evaluates is `𝔄!`, in the workspace. One extra `20 × 20` `Float32` buffer is 1 600 bytes, above
+# the tolerance.
 @testset "a geodesic in a workspace allocates what lift_factors! does, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
     T in (Float32, Float64)
 
     for algorithm in (ScaledSquaring(), NativePade(), TaylorSeries()), scale in (0.01, 3)
 
         f = fixture(LT, T, 20, 10; scale = scale)
-        @test _measured_retraction(f.ws, Geodesic(algorithm), f.B) ==
-              _measured_lift_factors(f.ws, f.B)
+        @test n_independent(_measured_retraction(f.ws, Geodesic(algorithm), f.B),
+            _measured_lift_factors(f.ws, f.B))
         @test (@inferred retraction_matrix!(f.ws, Geodesic(algorithm), f.B)) ===
               f.ws.retracted
     end

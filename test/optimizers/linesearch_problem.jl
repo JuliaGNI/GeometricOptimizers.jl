@@ -15,14 +15,15 @@ using Test
 import Random
 
 include("../helpers/reference_retractions.jl")
+include("../helpers/allocations.jl")
 
 manifold(::Val{:Stiefel}) = StiefelManifold
 manifold(::Val{:Grassmann}) = GrassmannManifold
 
 # a BFGS optimizer on the point, its cache warmed through one `update!`
-function slope_fixture(lift, ::Type{T}) where {T}
+function slope_fixture(lift, ::Type{T}; N = 6) where {T}
     Random.seed!(1234)
-    Y = rand(manifold(Val(lift)){T}, 6, 3)
+    Y = rand(manifold(Val(lift)){T}, N, 3)
     F(Z) = sum(abs2, Z .- T(0.3)) + sum(sin.(Z))
     opt = Optimizer(Y, F; algorithm = BFGS(), retraction = Cayley())
     state = OptimizerState(BFGS(), Y)
@@ -56,7 +57,9 @@ end
     at_half = measured_slope(f, T(0.5))
     trial_iterate!(f.cache, f.params, zero(T), Cayley(), f.workspace)
     at_zero = measured_slope(f, zero(T))
-    @test at_half == at_zero
+    # under the tolerance of `test/helpers/allocations.jl`; the allocating differential at `α = 0.5`
+    # is 4 848 bytes and more (Grassmann, `Float32`), well above it
+    @test n_independent(at_half, at_zero)
     @test (@inferred trial_slope(
         gradient(f.opt), f.cache, Cayley(), T(0.5), f.differential,
         f.workspace)) isa T
@@ -69,7 +72,9 @@ end
 # equality is of what `φ'` allocates beyond that move, measured alone in the same workspace. And
 # at `α = 0.5` all that `φ'` allocates is that move and the slope, each measured alone in the
 # optimizer's workspace: a `φ'` that moved the iterate without the workspace would allocate the
-# retraction's buffers on top.
+# retraction's buffers on top. The readings are compared under the tolerance of
+# `test/helpers/allocations.jl`, so the fixture is at `N = 40`, where one of those `N × N` buffers is
+# 6 400 bytes in `Float32`; at `N = 6` it would be 144, below the tolerance.
 function _measured_derivative(D, α, params)
     D(α, params)
     @allocated D(α, params)
@@ -89,11 +94,11 @@ end
         :Stiefel, :Grassmann),
     T in (Float32, Float64)
 
-    f = slope_fixture(lift, T)
+    f = slope_fixture(lift, T; N = 40)
     D = linesearch(f.opt).problem.D
-    @test beyond_move(f, D, T(0.5)) == beyond_move(f, D, zero(T))
-    @test _measured_derivative(D, T(0.5), f.params) ==
-          _measured_move(f.cache, f.params, T(0.5), f.workspace) + measured_slope(f, T(0.5))
+    @test n_independent(beyond_move(f, D, T(0.5)), beyond_move(f, D, zero(T)))
+    @test n_independent(_measured_derivative(D, T(0.5), f.params),
+        _measured_move(f.cache, f.params, T(0.5), f.workspace) + measured_slope(f, T(0.5)))
     @test D(T(0.5), f.params) isa T
 end
 
