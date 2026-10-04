@@ -307,7 +307,8 @@ end
 #
 # `B̄ᵗE` is the first `n` columns of `B̄ᵗ`, and adding `E` adds the identity to the top `n` rows. Each
 # solve is factorised in `s₁` with the pivots in `ipiv`, and the right-hand side `rhs` is overwritten
-# with the solution. `getrf!` checks its matrix for `Inf` and `NaN`, as the `lu` of `\` does.
+# with the solution. `getrf!` checks its matrix for `Inf` and `NaN`, as the `lu` of `\` does, and a
+# zero pivot in its `info` raises `SingularException`, as `\` does.
 function retraction_differential!(
         D::AbstractLieAlgHorMatrix{T}, ws::RetractionWorkspace{T, Matrix{T}}, ::Cayley,
         B::AbstractLieAlgHorMatrix{T}, α) where {T <: LinearAlgebra.BlasFloat}
@@ -343,6 +344,7 @@ end
 
 function _lu_solve!(M::Matrix{T}, ipiv::Vector{LinearAlgebra.BlasInt},
         rhs::Matrix{T}) where {T <: LinearAlgebra.BlasFloat}
-    LinearAlgebra.LAPACK.getrf!(M, ipiv)
+    _, _, info = LinearAlgebra.LAPACK.getrf!(M, ipiv)
+    info > 0 && throw(LinearAlgebra.SingularException(info))
     LinearAlgebra.LAPACK.getrs!('N', M, ipiv, rhs)
 end

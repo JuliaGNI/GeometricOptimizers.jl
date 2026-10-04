@@ -13,7 +13,7 @@ using GeometricOptimizers: 𝔄, RetractionWorkspace, ScaledSquaring, NativePade
                            retraction_differential, retraction_differential!,
                            retraction_workspace,
                            _similar
-using LinearAlgebra: I, mul!
+using LinearAlgebra: LinearAlgebra, I, mul!
 using Test
 import Random
 
@@ -149,6 +149,21 @@ end
     nonfinite.B[1, 1] = T(NaN)
     @test_throws ArgumentError reference_cayley_differential(nonfinite, 0.5)
     @test_throws ArgumentError retraction_differential!(D, f.ws, Cayley(), nonfinite, 0.5)
+end
+
+# `\` raises `SingularException` on a singular matrix, through the `checknonsingular` of its `lu`; the
+# in-place solve raises it from the `info` of `getrf!`. A real lift cannot reach it, since
+# `det(𝕀 - aB̄ᵗB̂) = det(𝕀 - aB)` and a real skew `B` has no real eigenvalue but zero. A complex
+# lift can: the lift of `b = 2im` at `N = 2`, `n = 1` has the eigenvalues `±2`, so at `α = 1`,
+# where `a = 1/2`, both `𝕀 ∓ aB̄ᵗB̂` are singular.
+@testset "a singular solve raises as `\\` does, for a StiefelLieAlgHorMatrix{$T}" for T in (
+    ComplexF32, ComplexF64)
+    B = StiefelLieAlgHorMatrix(SkewSymMatrix(zeros(T, 1, 1)), T[2im;;], 2, 1)
+    ws = retraction_workspace(StiefelManifold(T[1; 0;;]))
+    D = _similar(B)
+    @test_throws LinearAlgebra.SingularException reference_cayley_differential(B, 1)
+    @test_throws LinearAlgebra.SingularException retraction_differential!(
+        D, ws, Cayley(), B, 1)
 end
 
 @testset "retraction_differential! allocates nothing, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
