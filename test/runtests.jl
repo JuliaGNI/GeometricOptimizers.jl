@@ -47,7 +47,7 @@ if "core" in GROUPS
     @safetestset "Manifold Line Search         " include("integration/manifold_linesearch_tests.jl")
     @safetestset "Trial slope in a workspace   " include("optimizers/linesearch_problem.jl")
     @safetestset "BFGS state update            " include("optimizers/iterative_hessians/bfgs/bfgs_state.jl")
-    @safetestset "Manifold Optimizers       " include("integration/manifold_optimizers_with_new_interface.jl")
+    @safetestset "Manifold Optimizers          " include("integration/manifold_optimizers_with_new_interface.jl")
     @safetestset "Grassmann Optimizers         " include("integration/grassmann_optimizer_tests.jl")
     @safetestset "Optimizer State Init         " include("manifold_optimizers/optimizer_state_initialization.jl")
     @safetestset "Optimizer State Accessors    " include("integration/optimizer_state_accessors.jl")
