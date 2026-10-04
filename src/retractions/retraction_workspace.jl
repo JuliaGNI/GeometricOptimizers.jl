@@ -1,6 +1,6 @@
 @doc raw"""
-    RetractionWorkspace(x::Manifold)
-    RetractionWorkspace(backend, T, N, n)
+    RetractionWorkspace(x::Manifold, retraction = nothing)
+    RetractionWorkspace(backend, T, N, n, retraction = nothing)
 
 The buffers [`update_section!`](@ref) retracts a horizontal lift into, held for the life of an
 [`Optimizer`](@ref) rather than rebuilt per call.
@@ -24,7 +24,14 @@ solve it belongs to and no method here names either.
 
 The workspace also holds the scratch of [`GeometricOptimizers.𝔄!`](@ref), which a
 [`geodesic`](@ref) step evaluates its ``\mathfrak{A}`` with, and of
-[`retraction_differential!`](@ref). In it, the ``\mathfrak{A}`` of [`ScaledSquaring`](@ref) and
+[`retraction_differential!`](@ref), as much of it as `retraction` reads: the `𝔄!` scratch of its
+algorithm for a [`Geodesic`](@ref), and that of the differential for [`Cayley`](@ref) on a host
+`Matrix` of a LAPACK element type. Every other scratch array is `0 × 0`, so the type of a workspace
+does not depend on its retraction. A workspace built for one retraction serves that retraction only;
+one built with `retraction = nothing` holds all the scratch and serves every retraction.
+[`Optimizer`](@ref) builds its workspace for its own retraction.
+
+In a workspace, the ``\mathfrak{A}`` of [`ScaledSquaring`](@ref) and
 [`NativePade`](@ref) allocates nothing, and that of [`AugmentedPade`](@ref) allocates what `Base.exp`
 of its ``4n\times{}4n`` matrix allocates — on a ``20\times{}20`` argument 87 472 bytes in `Float64` and
 44 224 in `Float32`. So in both precisions the two native algorithms are the lighter, and
@@ -53,8 +60,9 @@ struct RetractionWorkspace{T, AT <: AbstractMatrix{T}}
     𝕀_big::AT
     retracted::AT
     product::AT
-    # The scratch of `𝔄!`: its argument `X`, its result `𝔄X`, the column sums of its norm, eight
-    # `2n × 2n` temporaries, and the `4n × 4n` matrix `AugmentedPade` exponentiates.
+    # The scratch of `𝔄!`: its argument `X`, its result `𝔄X`, the column sums of its norm, up to eight
+    # `2n × 2n` temporaries, and the `4n × 4n` matrix `AugmentedPade` exponentiates. Each of these and
+    # of the four below is `0 × 0` where the retraction does not read it; see `_scratch_uses`.
     X::AT
     𝔄X::AT
     colsum::AT
@@ -75,12 +83,19 @@ struct RetractionWorkspace{T, AT <: AbstractMatrix{T}}
     ipiv::Vector{LinearAlgebra.BlasInt}
 
     function RetractionWorkspace(
-            backend::KernelAbstractions.Backend, ::Type{T}, N::Integer, n::Integer) where {T}
+            backend::KernelAbstractions.Backend, ::Type{T}, N::Integer, n::Integer,
+            retraction = nothing) where {T}
         unit = unit_matrix(backend, T, n)
         B̂ = KernelAbstractions.zeros(backend, T, N, 2n)
         B̄ᵗ = KernelAbstractions.zeros(backend, T, 2n, N)
         𝕀_small2 = unit_matrix(backend, T, 2n)
-        augmented = KernelAbstractions.zeros(backend, T, 4n, 4n)
+
+        uses = _scratch_uses(retraction, typeof(unit))
+        function sized(use, rows, cols)
+            KernelAbstractions.zeros(backend, T, use ? rows : 0, use ? cols : 0)
+        end
+        temporary(i) = sized(i ≤ uses.temporaries, 2n, 2n)
+        augmented = sized(uses.augmented, 4n, 4n)
 
         # The constant half of the factorisation, written once. `lift_factors!` writes the other
         # half and leaves these alone, which is why it may not be handed a workspace of another
@@ -88,8 +103,8 @@ struct RetractionWorkspace{T, AT <: AbstractMatrix{T}}
         @views begin
             B̂[1:n, (n + 1):(2n)] .= unit
             B̄ᵗ[1:n, 1:n] .= unit
-            augmented[1:(2n), (2n + 1):(4n)] .= 𝕀_small2
         end
+        uses.augmented && @views augmented[1:(2n), (2n + 1):(4n)] .= 𝕀_small2
 
         small() = KernelAbstractions.zeros(backend, T, 2n, 2n)
         new{T, typeof(unit)}(N, n, unit,
@@ -98,17 +113,40 @@ struct RetractionWorkspace{T, AT <: AbstractMatrix{T}}
             KernelAbstractions.zeros(backend, T, N, 2n), unit_matrix(backend, T, N),
             KernelAbstractions.zeros(backend, T, N, N),
             KernelAbstractions.zeros(backend, T, N, N),
-            small(), small(), KernelAbstractions.zeros(backend, T, 1, 2n),
-            small(), small(), small(), small(), small(), small(), small(), small(), augmented,
-            KernelAbstractions.zeros(backend, T, 2n, n),
-            KernelAbstractions.zeros(backend, T, N, n), KernelAbstractions.zeros(backend, T, N, n),
-            zeros(LinearAlgebra.BlasInt, 2n))
+            sized(uses.X, 2n, 2n), sized(uses.𝔄X, 2n, 2n), sized(uses.colsum, 1, 2n),
+            temporary(1), temporary(2), temporary(3), temporary(4), temporary(5), temporary(6),
+            temporary(7), temporary(8), augmented,
+            sized(uses.differential, 2n, n),
+            sized(uses.differential, N, n), sized(uses.differential, N, n),
+            zeros(LinearAlgebra.BlasInt, uses.differential ? 2n : 0))
     end
 end
 
-function RetractionWorkspace(Y::Manifold{T}) where {T}
+function RetractionWorkspace(Y::Manifold{T}, retraction = nothing) where {T}
     N, n = size(Y)
-    RetractionWorkspace(KernelAbstractions.get_backend(Y.A), T, N, n)
+    RetractionWorkspace(KernelAbstractions.get_backend(Y.A), T, N, n, retraction)
+end
+
+# The scratch fields of a `RetractionWorkspace` that `retraction` reads, given the type `AT` of the
+# workspace's arrays: the `𝔄!` fields of `_𝔄_uses` for a `Geodesic`, and for `Cayley` the fields of
+# the in-place differential, `X`, `s₁`, `rhs`, `w₁`, `w₂` and `ipiv`, which `retraction_differential!`
+# reads on a host `Matrix` of a LAPACK element type only. A retraction this package does not ship reads
+# none, and `nothing` stands for every retraction.
+const _NO_SCRATCH = (
+    X = false, 𝔄X = false, colsum = false, temporaries = 0, augmented = false,
+    differential = false)
+
+_scratch_uses(::AbstractRetraction, ::Type) = _NO_SCRATCH
+_scratch_uses(R::Geodesic, ::Type) = merge(_NO_SCRATCH, _𝔄_uses(R.algorithm))
+
+function _scratch_uses(::Cayley, AT::Type)
+    in_place = AT <: Matrix{<:LinearAlgebra.BlasFloat}
+    merge(_NO_SCRATCH, (X = in_place, temporaries = Int(in_place), differential = in_place))
+end
+
+function _scratch_uses(::Nothing, ::Type)
+    (X = true, 𝔄X = true, colsum = true, temporaries = 8,
+        augmented = true, differential = true)
 end
 
 @doc raw"""
@@ -138,14 +176,14 @@ than a dead link, and `mapparameters!` is not one of the names this package alre
 struct NoWorkspace end
 
 @doc raw"""
-    retraction_workspace(x)
+    retraction_workspace(x, retraction = nothing)
     retraction_workspace(opt::Optimizer)
 
-The [`RetractionWorkspace`](@ref) a solve over `x` needs, or [`NoWorkspace`](@ref) where `x` carries
-no manifold. On an [`Optimizer`](@ref) it is the accessor instead, returning the workspace that
-optimizer was built with.
+The [`RetractionWorkspace`](@ref) a solve over `x` with `retraction` needs, or [`NoWorkspace`](@ref)
+where `x` carries no manifold. On an [`Optimizer`](@ref) it is the accessor instead, returning the
+workspace that optimizer was built with.
 
-[`Optimizer`](@ref) builds one of these at construction and hands it to every
+[`Optimizer`](@ref) builds one of these for its retraction at construction and hands it to every
 [`update_section!`](@ref) on the step path. A parameter set gets a tree of them in the shape its
 section tree has, a `NoWorkspace` at every leaf that is an ordinary array — the extended retraction
 on a vector space is addition, which allocates nothing to begin with.
@@ -153,10 +191,10 @@ on a vector space is addition, which allocates nothing to begin with.
 The two meanings share a name and cannot collide: `Optimizer` is not a member of
 `OptimizerSolution`, which is what the building methods dispatch on.
 """
-retraction_workspace(::AbstractVecOrMat) = NoWorkspace()
-retraction_workspace(Y::Manifold) = RetractionWorkspace(Y)
-function retraction_workspace(ps::NetworkParameters)
-    mapparameters(retraction_workspace, params(ps))
+retraction_workspace(::AbstractVecOrMat, retraction = nothing) = NoWorkspace()
+retraction_workspace(Y::Manifold, retraction = nothing) = RetractionWorkspace(Y, retraction)
+function retraction_workspace(ps::NetworkParameters, retraction = nothing)
+    mapparameters(x -> retraction_workspace(x, retraction), params(ps))
 end
 
 @doc raw"""

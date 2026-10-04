@@ -125,8 +125,8 @@ function _apply_section!(A::AbstractMatrix{T}, λY::GlobalSection, A₂::Abstrac
     A
 end
 
-# This one is `StiefelManifold`-only and stays so: it has no live caller — the only `apply_section!`
-# call sites in the package are the two in `src/utils.jl` — and the commented-out `update_section!`
+# This one is `StiefelManifold`-only and stays so: it has no live caller — every `apply_section!` call
+# in the package writes into a point, not into a section — and the commented-out `update_section!`
 # below is what it was written for. Widening it to `Manifold` would be widening dead code.
 function apply_section!(Λᵗ::GlobalSection{T, MT}, λY::GlobalSection{T, MT},
         Y₂::MT) where {T, MT <: StiefelManifold{T}}

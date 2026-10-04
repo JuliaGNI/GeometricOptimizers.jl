@@ -85,7 +85,7 @@ function TrainingOptimizer(x::OptimizerSolution{T}; algorithm::FirstOrderMethod 
     cache = OptimizerCache(method, x)
     state = OptimizerState(method, x)
     TrainingOptimizer(method, cache, state, _training_step_size(T, linesearch), retraction,
-        retraction_workspace(x))
+        retraction_workspace(x, retraction))
 end
 
 @doc raw"""

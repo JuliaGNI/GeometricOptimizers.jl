@@ -53,10 +53,15 @@ a GPU backend cannot serve, and being free of it is why [`ScaledSquaring`](@ref)
 expressible as `sum` and `maximum`. Accelerator execution still depends on the array backend's support
 for those reductions.
 
-The two agree to a few `eps`, not bitwise: `opnorm1` accumulates each column sequentially in at
-least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. The value is only ever
-used to pick the number of halvings `s = ⌈log₂(‖X‖₁/θ)⌉`, so a difference of an ulp can at most
-shift `s` by one, and only for an argument that lands exactly on a power of two.
+The two algorithms do not call `opnorm₁`: [`GeometricOptimizers.𝔄!`](@ref) takes the same reduction
+with the column sums written into its scratch, and uses the value only to pick the number of halvings
+`s = ⌈log₂(‖X‖₁/θ)⌉`. On a real `X` that value is `opnorm₁`'s to the bit; on a complex `X` the two
+can differ in the last bit.
+
+`opnorm₁` and `opnorm1` agree to a few `eps`, not bitwise: `opnorm1` accumulates each column
+sequentially in at least `Float64`, whereas `sum` is pairwise and accumulates in `eltype(X)`. So a
+difference of an ulp can at most shift `s` by one, and only for an argument that lands exactly on a
+power of two.
 """
 opnorm₁(X::AbstractMatrix) = isempty(X) ? zero(real(eltype(X))) :
                              maximum(sum(abs, X; dims = 1))
@@ -118,10 +123,18 @@ and the `𝔄!` method below, and differ only in their [`_scaled_kernel!`](@ref)
 """
 const ScaledAlgorithm = Union{ScaledSquaring, NativePade}
 
-# The arrays `𝔄!` writes into, for a call that has no `RetractionWorkspace`: the same names as that
-# type's fields, fresh. `similar` with an element type and a size, so a structured `X` gets a dense
-# array of its backend.
-function _𝔄_scratch(X::AbstractMatrix{T}) where {T}
+# The arrays `𝔄!` writes into, for a call that has no `RetractionWorkspace`: the fields of that type
+# that `algorithm` reads, fresh. `ScaledSquaring` reads the temporaries `s₁` to `s₃`, and `NativePade`
+# `s₁` to `s₈`. `similar` with an element type and a size, so a structured `X` gets a dense array of
+# its backend.
+function _𝔄_scratch(X::AbstractMatrix{T}, ::ScaledSquaring) where {T}
+    m = size(X, 1)
+    fresh() = similar(X, T, (m, m))
+    (𝔄X = fresh(), 𝕀_small2 = unit_matrix(X), colsum = similar(X, T, (1, m)),
+        s₁ = fresh(), s₂ = fresh(), s₃ = fresh())
+end
+
+function _𝔄_scratch(X::AbstractMatrix{T}, ::NativePade) where {T}
     m = size(X, 1)
     fresh() = similar(X, T, (m, m))
     (𝔄X = fresh(), 𝕀_small2 = unit_matrix(X), colsum = similar(X, T, (1, m)),
@@ -129,7 +142,21 @@ function _𝔄_scratch(X::AbstractMatrix{T}) where {T}
         s₇ = fresh(), s₈ = fresh())
 end
 
-𝔄(X::AbstractMatrix, algorithm::ScaledAlgorithm) = 𝔄!(_𝔄_scratch(X), X, algorithm)
+function 𝔄(X::AbstractMatrix, algorithm::ScaledAlgorithm)
+    𝔄!(_𝔄_scratch(X, algorithm), X, algorithm)
+end
+
+# The fields of a `RetractionWorkspace` that `𝔄!` reads for `algorithm`, for that type to build: the
+# argument `X`, the result `𝔄X`, the column sums `colsum`, the number of temporaries from `s₁` on, and
+# the `4n × 4n` matrix `augmented`. A field this does not name is not read. `ProjectedSkew` reads none,
+# because its `_geodesic_matrix!` does not call `𝔄!`, and an algorithm with no method here reads only
+# `X` and `𝔄X`, because its `𝔄!` copies the allocating answer in.
+_𝔄_uses(::AbstractExponentialAlgorithm) = (X = true, 𝔄X = true)
+_𝔄_uses(::ProjectedSkew) = (;)
+_𝔄_uses(::ScaledSquaring) = (X = true, 𝔄X = true, colsum = true, temporaries = 3)
+_𝔄_uses(::NativePade) = (X = true, 𝔄X = true, colsum = true, temporaries = 8)
+_𝔄_uses(::TaylorSeries) = (X = true, 𝔄X = true, temporaries = 2)
+_𝔄_uses(::AugmentedPade) = (X = true, 𝔄X = true, augmented = true)
 
 # `opnorm₁` with the column sums written into `colsum`, a `1 × m` array, rather than a fresh one.
 # On a real `X`, `sum!` and the `dims = 1` reduction of `opnorm₁` are the same reduction, so the two
@@ -152,9 +179,9 @@ function 𝔄!(scratch, X::AbstractMatrix, algorithm::ScaledAlgorithm)
     # so each recovery step is `W ↦ 2W + WXW` at 2n × 2n, with the original `X`. After `s` steps
     # `W = 𝔄(X)`. Nothing is ever squared at N × N.
     #
-    # `s₁` holds the scaled argument and `𝔄X` is `W`; the kernel uses `s₂` to `s₈`, and the recovery
-    # step `s₂` and `s₃` again. `WXW` is `(WX)W`, the order `W * X * W` takes for three square
-    # matrices of one size.
+    # `s₁` holds the scaled argument and `𝔄X` is `W`; the kernel uses `s₂` and `s₃` (`ScaledSquaring`)
+    # or `s₂` to `s₈` (`NativePade`), and the recovery step `s₂` and `s₃` again. `WXW` is `(WX)W`,
+    # the order `W * X * W` takes for three square matrices of one size.
     nrm = _opnorm₁!(scratch.colsum, X)
     s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
     scale = eltype(X)(2)^s
@@ -274,7 +301,8 @@ end
 scratch of the [`RetractionWorkspace`](@ref) `ws` in place of fresh temporaries.
 
 `X` is ``2n\times{}2n`` for the ``n`` that `ws` was built for, and is not one of the buffers the
-algorithm writes; `ws.X` is the buffer meant for it. Every step and every product is the one the
+algorithm writes; `ws.X` is the buffer meant for it. `ws` holds the scratch of `algorithm` if it was
+built for `Geodesic(algorithm)` or for no retraction. Every step and every product is the one the
 allocating method takes, in the same order, so the two agree bit for bit.
 
 [`ScaledSquaring`](@ref), [`NativePade`](@ref) and [`TaylorSeries`](@ref) then allocate nothing,
@@ -287,7 +315,7 @@ function 𝔄!(ws, X::AbstractMatrix, algorithm::AbstractExponentialAlgorithm)
     copyto!(ws.𝔄X, 𝔄(X, algorithm))
 end
 
-𝔄!(ws, X::AbstractMatrix, ::TaylorSeries) = _taylor_𝔄!(ws.𝔄X, X, ws.𝕀_small2, ws.s₂, ws.s₃)
+𝔄!(ws, X::AbstractMatrix, ::TaylorSeries) = _taylor_𝔄!(ws.𝔄X, X, ws.𝕀_small2, ws.s₁, ws.s₂)
 
 function 𝔄!(ws, X::AbstractMatrix, ::AugmentedPade)
     @assert size(X) == size(ws.𝔄X)

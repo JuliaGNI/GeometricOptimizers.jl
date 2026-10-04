@@ -9,7 +9,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: 𝔄, RetractionWorkspace, ScaledSquaring, NativePade,
-                           AugmentedPade,
+                           AugmentedPade, ProjectedSkew,
                            TaylorSeries, lift_factors, lift_factors!, retraction_matrix!,
                            retraction_differential, retraction_differential!,
                            retraction_workspace,
@@ -73,6 +73,32 @@ end
         @test eltype(result) == T
         @test result == reference_geodesic(f.B, algorithm)
     end
+end
+
+# A workspace built for a retraction holds only the scratch that retraction reads, and answers what
+# the workspace that holds all of it answers. Its arrays keep their type, so the type of the
+# workspace does not depend on the retraction.
+@testset "a workspace built for its retraction, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
+    T in (Float32, Float64)
+
+    Y = rand(Random.Xoshiro(1), manifold(LT){T}, 20, 10)
+    B = T(3) * rand(Random.Xoshiro(2), LT{T}, 20, 10)
+    full = retraction_workspace(Y)
+    for R in (Cayley(), Geodesic(ScaledSquaring()), Geodesic(NativePade()),
+        Geodesic(AugmentedPade()), Geodesic(TaylorSeries()), Geodesic(ProjectedSkew()))
+        own = retraction_workspace(Y, R)
+        @test typeof(own) == typeof(full)
+        @test Base.summarysize(own) < Base.summarysize(full)
+        @test retraction_matrix!(own, R, B) == retraction_matrix!(full, R, B)
+    end
+
+    own = retraction_workspace(Y, Cayley())
+    D, D_full = _similar(B), _similar(B)
+    @test retraction_differential!(D, own, Cayley(), B, 0.5) ==
+          retraction_differential!(D_full, full, Cayley(), B, 0.5)
+    @test _measured_differential!(D, own, Cayley(), B, 0.5) == 0
+    # a `Cayley` workspace has no `𝔄!` scratch, and a geodesic in it raises
+    @test_throws DimensionMismatch retraction_matrix!(own, Geodesic(), B)
 end
 
 # A geodesic adds nothing to what writing the lift's factors costs, which is zero: the `𝔄` it

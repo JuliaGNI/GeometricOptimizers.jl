@@ -33,21 +33,15 @@ the manifold to round-off. [`cayley`](@ref) never forms the ``N\times{}N`` inver
 ``B = B'(B'')^T`` into two ``N\times{}2n`` matrices with [`lift_factors`](@ref) and inverts a
 ``2n\times{}2n`` matrix instead.
 
-!!! note "Cost depends on the matrix dimensions"
-    `cayley` finishes with a product of two ``N\times{}N`` matrices, which is ``O(N^3)``, whereas
-    `geodesic` assembles ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` at ``O(N^2n)``. One benchmark of
-    `ScaledSquaring` against `Cayley` gives:
-
-    | ``N``, ``n`` | 20, 3 | 50, 5 | 100, 5 | 200, 10 | 500, 10 | 1000, 20 |
-    |---|---|---|---|---|---|---|
-    | `Geodesic` | `0.005 ms` | `0.014 ms` | `0.023 ms` | `0.087 ms` | `0.40 ms` | `2.5 ms` |
-    | `Cayley` | `0.004 ms` | `0.016 ms` | `0.056 ms` | `0.36 ms` | `4.9 ms` | `39 ms` |
-
-    The two are comparable at the smaller sizes in this table, while the dense product in `Cayley`
-    dominates at larger `N` — a factor of 15 by ``N = 1000``. Timings are machine-dependent; see
-    [What they cost](@ref) for the setup and the full table. `Cayley` remains useful — it is
-    unconditionally stable and needs no matrix function at all — but cost is no longer a reason to
-    prefer it.
+!!! note "Cost"
+    `cayley` and `geodesic` assemble the ``N\times{}N`` result the same way, as
+    ``\mathbb{I} + B'C(B'')^T`` from the two ``N\times{}2n`` factors of [`lift_factors`](@ref), so both
+    are ``O(N^2n)``. They differ only in the ``2n\times{}2n`` matrix ``C``: an inverse for `Cayley`,
+    ``\mathfrak{A}(X)`` for `Geodesic`. In the measurements of [What they cost](@ref), from
+    ``N = 10`` to ``N = 1000``, `Cayley` is the faster of the two at every size and with every
+    algorithm, and within `10%` of `Geodesic()` at ``N = 1000``. Timings are machine-dependent.
+    Choose between the two by the map the algorithm needs; `Cayley` is unconditionally stable and
+    needs no matrix function at all.
 
 # Examples
 
@@ -92,9 +86,9 @@ one-parameter subgroup: it follows the geodesic through the point in the directi
 is the property [`Cayley`](@ref) lacks, and the reason a derivative-based line search is exact here.
 
 [`geodesic`](@ref) exploits the sparsity of a horizontal lift rather than exponentiating the full
-``N\times{}N`` matrix: the only matrix function it evaluates is on a ``2n\times{}2n`` argument. Since
-0.2.0 that also makes it the cheaper of the two for ``N \gtrsim 50`` — see the note on
-[`Cayley`](@ref).
+``N\times{}N`` matrix: the only matrix function it evaluates is on a ``2n\times{}2n`` argument.
+[`cayley`](@ref) is built the same way, so the two cost the same order, ``O(N^2n)``; see the note on
+[`Cayley`](@ref) for the measured difference.
 
 `algorithm` selects how the exponential is evaluated. All of them compute the same map — the choice
 is one of accuracy at a large lift, cost, and backend support — and the default

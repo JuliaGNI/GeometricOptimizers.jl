@@ -210,7 +210,8 @@ Return ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), D(\alpha)\rangle`` at t
 held in `solution(cache)`, for the derivative of the line search's merit. ``D(\alpha)`` is
 [`retraction_differential`](@ref)`(retraction, direction(cache), α)`, written into `differential`
 by [`retraction_differential!`](@ref) in `workspace`; [`linesearch_problem`](@ref) builds
-`differential` once, in the shape of the direction.
+`differential` once, in the shape of the direction. On a vector the pairing is with the direction
+itself, and `differential` is not read.
 
 # Implementation
 
@@ -280,6 +281,11 @@ function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::G
         retraction_differential!(differential, workspace, retraction, direction(cache), α))
 end
 
+# The lift `trial_slope` writes the retraction's differential into, dispatched as `_trial_slope` is:
+# the `AbstractVector` method pairs the gradient with the direction itself and reads no lift.
+_differential_buffer(::AbstractVector, direction) = nothing
+_differential_buffer(::Union{Manifold, NetworkParameters}, direction) = _similar(direction)
+
 @doc raw"""
     linesearch_problem(problem, gradient, cache, retraction, observer = NoStepObserver(),
         workspace = nothing)
@@ -331,8 +337,8 @@ julia> ls_obj.D(0., params)
 function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gradient,
         cache::OptimizerCache{T}, retraction::AbstractRetraction,
         observer = NoStepObserver(), workspace = nothing) where {T}
-    # the lift `trial_slope` writes the retraction's differential into, built once per problem
-    differential = _similar(direction(cache))
+    # built once per problem, and `nothing` for a vector-space problem
+    differential = _differential_buffer(solution(cache), direction(cache))
 
     function f(α, params)
         observe_optimizer_phase(observer, :retraction_application) do
