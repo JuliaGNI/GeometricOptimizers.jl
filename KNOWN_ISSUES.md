@@ -101,7 +101,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   The obvious remedy if it does turn out to matter is not a cache but a shared factorisation:
   `linesearch_problem`'s `d(α, params)` calls `trial_iterate!` and then `trial_slope` with the *same*
-  ``\alpha``, and both go through `lift_factors` — the first on ``\alpha\bar{B}`` and the second on
+  ``\alpha``, and both go through `lift_factors!` — the first on ``\alpha\bar{B}`` and the second on
   ``\bar{B}`` — so one line search evaluation factors the same lift twice. Fusing them would need
   `trial_iterate!` to hand its factors on, which is a wider change to that interface than a cost
   nobody has measured justifies.
