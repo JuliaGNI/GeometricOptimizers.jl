@@ -290,6 +290,7 @@ end
 𝔄!(ws, X::AbstractMatrix, ::TaylorSeries) = _taylor_𝔄!(ws.𝔄X, X, ws.𝕀_small2, ws.s₂, ws.s₃)
 
 function 𝔄!(ws, X::AbstractMatrix, ::AugmentedPade)
+    @assert size(X) == size(ws.𝔄X)
     m = size(X, 1)
     @views begin
         ws.augmented[1:m, 1:m] .= X

@@ -1427,7 +1427,8 @@ algorithms that evaluate it. The first two rows call the allocating `𝔄`; the 
 | runtime, `𝔄!` | `0.018 ms` | `0.019 ms` | `0.056 ms` |
 | allocated, `𝔄!` | `0` | `0` | `85.4 KiB` |
 
-The allocation rows are the figures here that are *not* machine-dependent — `@allocated` is exact.
+The allocation rows are machine-dependent too, though less than the timings: the bytes `Base.exp`
+allocates differ between platforms, and on Windows by tens of bytes between calls.
 Both native algorithms work in a fixed set of ``2n\times{}2n`` buffers: the allocating call
 allocates those buffers once, and the call in a workspace allocates nothing.
 [`AugmentedPade`](@ref) builds a ``4n\times{}4n`` matrix and discards three quarters of the result;
