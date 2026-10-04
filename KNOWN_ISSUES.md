@@ -1123,7 +1123,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - evidence: the lines take the argument types of the `@allocated` calls in
   `test/integration/flat_buffer_allocations.jl`, whose sets have no `Manifold` leaf, so
   `_block_αmax(::Manifold, δ, c)` and `step_αmax` are not analysed. A barrier on `δᵢ` in the
-  closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/optimizers/network_parameters_optimizer.jl:157`
+  closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/integration/network_parameters_optimizer.jl:157`
   calls `_manifold_αmax` on a set with a Stiefel leaf and `c::Float64`, and no line has its types.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
