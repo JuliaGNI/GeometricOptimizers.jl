@@ -9,12 +9,16 @@
 #     of issue #77;
 #   * `AugmentedPade` allocates what `exp` of its `4n × 4n` matrix allocates, and nothing besides.
 #
+# The first holds on a complex argument as well, for `ScaledSquaring` and `NativePade`, and
+# `geodesic` of a complex lift with either is `exp` of the lift.
+#
 # `@allocated` is inside a function whose arguments are its parameters, and the call is made once
 # before it is measured, for the reason the head of `test/flat_buffer_allocations.jl` gives.
 
 using GeometricOptimizers
 using GeometricOptimizers: 𝔄, 𝔄!, RetractionWorkspace, ScaledSquaring, NativePade,
-                           AugmentedPade, TaylorSeries, opnorm₁
+                           AugmentedPade, TaylorSeries, opnorm₁, geodesic,
+                           StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SkewSymMatrix
 using KernelAbstractions: CPU
 using JLArrays: JLArray, JLBackend
 import JLArrays
@@ -73,6 +77,36 @@ end
         large, small = argument(T, 3, 40, 1), argument(T, 3, 0.1, 2)
         𝔄!(ws, large, algorithm)
         @test 𝔄!(ws, small, algorithm) == reference(small, algorithm)
+    end
+end
+
+# A complex argument: its column sums of `abs` are real, but `colsum` has the element type of `X`, so
+# the norm is the largest real part. `isless` has no method on two complex numbers.
+const COMPLEX = (ComplexF32, ComplexF64)
+
+@testset "𝔄! is the allocating 𝔄 to the bit on a complex argument, $T" for T in COMPLEX
+    for algorithm in (ScaledSquaring(), NativePade()), (k, nrm) in enumerate(NORMS)
+
+        ws = workspace(T, 3)
+        X = argument(T, 3, nrm, 400 + k)
+        result = 𝔄!(ws, X, algorithm)
+
+        @test eltype(result) == T
+        @test result == reference(X, algorithm)
+        @test result == 𝔄(X, algorithm)
+    end
+end
+
+# `geodesic` of a complex lift runs `𝔄` through the norm above. The answer is `exp` of the lift.
+@testset "geodesic of a complex lift with $(nameof(typeof(algorithm))), $T" for T in COMPLEX,
+    algorithm in (ScaledSquaring(), NativePade())
+
+    rng = Random.Xoshiro(500)
+    for C in (StiefelLieAlgHorMatrix(SkewSymMatrix(randn(rng, T, 3, 3)), randn(rng, T, 5, 3), 8, 3),
+        GrassmannLieAlgHorMatrix(randn(rng, T, 5, 3), 8, 3))
+        Y = geodesic(C, algorithm)
+        @test eltype(Y) == T
+        @test Matrix(Y) ≈ exp(Matrix(C))
     end
 end
 

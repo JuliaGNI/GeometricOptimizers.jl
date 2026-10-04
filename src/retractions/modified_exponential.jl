@@ -133,9 +133,10 @@ end
 
 # `opnorm₁` with the column sums written into `colsum`, a `1 × m` array, rather than a fresh one.
 # `sum!` and the `dims = 1` reduction of `opnorm₁` are the same reduction, so the two agree bit for
-# bit, and with them the halving count.
+# bit, and with them the halving count. `colsum` has the element type of `X`, so on a complex `X` the
+# sums are complex with a zero imaginary part, and the norm is the largest real part.
 function _opnorm₁!(colsum::AbstractMatrix, X::AbstractMatrix)
-    isempty(X) ? zero(real(eltype(X))) : maximum(sum!(abs, colsum, X))
+    isempty(X) ? zero(real(eltype(X))) : maximum(real, sum!(abs, colsum, X))
 end
 
 function 𝔄!(scratch, X::AbstractMatrix, algorithm::ScaledAlgorithm)
