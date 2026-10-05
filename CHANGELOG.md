@@ -10,6 +10,15 @@ breaking release).
 
 ### Fixed
 
+- **A file that tags a leaf `LowerTriangular` or `UpperTriangular` loads again.** G3 renamed the two
+  types `StrictlyLowerTriangular` and `StrictlyUpperTriangular` and registered only the new names
+  with `NeuralNetworkParameters.register_parameter_type!`. A file carries the name its leaf's type had
+  when it was written, so every file that 0.8, or `GeometricMachineLearning` 0.8 and earlier, wrote
+  for one of them raised "the file contains a parameter of type `LowerTriangular`, which is not
+  registered" — a saved `VolumePreservingFeedForward` network among them. The old names are now
+  registered as well, and rebuild the renamed types. `test/integration/neural_network_parameters_protocol.jl`
+  retags a file both ways, in `parameter_type` and in `GeometricMachineLearning`'s old `gml_type`.
+
 - **The `[compat]` floors of `KernelAbstractions` and `ChainRulesCore` name versions that cannot be installed with the rest of the package.** `KernelAbstractions = "0.9"` allowed 0.9.0, which needs Adapt below 4, while `GPUArraysCore` 0.2 needs Adapt 4 and Metal 1.10 needs `KernelAbstractions` 0.9.38 or later. `ChainRulesCore = "1"` allowed 1.0.0, while `AbstractNeuralNetworks` 0.8 needs `ZygoteRules` 0.2.7, which needs `ChainRulesCore` 1.9 or later. The floors are now `0.9.38` and `1.9`. The Downgrade job failed to resolve at the old floors. A resolve of the test environment with every direct dependency at its floor succeeds with the new ones; whether the suite passes there is checked by the Downgrade job.
 
 - **`AdamWithEuclideanDecay` steps a `SkewSymMatrix`, `StrictlyLowerTriangular` or `StrictlyUpperTriangular` leaf.** The decay broadcast into the matrix, and these types define no `setindex!`, so the step raised a `CanonicalIndexError`. The decay now acts on the storage of every structured matrix, `SymmetricMatrix` included; the matrices are linear in their storage, so the step is Adam's step minus `ηλ` times the leaf.

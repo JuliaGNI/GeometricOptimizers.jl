@@ -250,6 +250,13 @@ function __init__()
         S, md) -> StrictlyLowerTriangular(_vector(S, md)...))
     register_parameter_type!("StrictlyUpperTriangular", (
         S, md) -> StrictlyUpperTriangular(_vector(S, md)...))
+    # The names the two types had until 0.9. A file is tagged with the name its leaf's type had when
+    # it was written, so every file 0.8 or GeometricMachineLearning 0.8 wrote for one of them says
+    # `LowerTriangular` or `UpperTriangular`, and would no longer load without these.
+    register_parameter_type!("LowerTriangular", (
+        S, md) -> StrictlyLowerTriangular(_vector(S, md)...))
+    register_parameter_type!("UpperTriangular", (
+        S, md) -> StrictlyUpperTriangular(_vector(S, md)...))
     # These two index positionally where the six above go by name, because they can: the older layout
     # covered five types and never a lift, so their `storage` is only ever the `Tuple` this protocol
     # wrote, in the order `parent` returned. A `NamedTuple` from that layout records no key order, so
