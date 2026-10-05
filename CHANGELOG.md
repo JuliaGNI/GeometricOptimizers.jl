@@ -207,6 +207,36 @@ own entry further down, where the evidence is.
 
 ### Added
 
+- Added **`CompositeMethod`**, one first-order method per *leaf* of a mixed parameter set, chosen by
+  a selector. `CompositeMethod(; manifold, array)` selects by leaf type through the `public`
+  `LeafTypeSelector`, which reads `manifold` for a `Manifold` leaf and `array` for every other, and
+  `CompositeMethod(f)` takes an arbitrary selector function.
+
+  The case that forces it is `ScalarMomentAdam`, which steps a single `StiefelManifold` on purpose:
+  a *scalar* second moment is a statement about one manifold and means nothing pooled across a set.
+  A transformer with Stiefel attention projections beside ordinary arrays, or a symplectic
+  autoencoder with Stiefel PSD layers beside Euclidean SympNet layers, has no single method that
+  covers it, and `GeometricMachineLearning` had been assembling the choice by hand, in two different
+  ways.
+
+  `TrainingOptimizer(ps; algorithm = composite)` builds **one cache and one state per leaf**, each
+  for the method the selector chooses for that leaf and converted to the element type of `ps`. The
+  new exported `CompositeState` holds the leaves' states in a tree of the shape of `ps`.
+  `optimization_step!` steps every leaf with its own method, cache and state, at the one step size
+  the schedule gives for the step. Nothing is pooled across leaves, so every leaf moves exactly as
+  under a `TrainingOptimizer` of its own: `test/optimizers/composite_method.jl` pins this to the
+  bit, and pins a composite of `Adam` on every leaf against `Adam` on the whole set. The walk over
+  the leaves allocates nothing beyond what the leaves' own steps allocate. On a single leaf the
+  composite is the method it selects for it.
+
+  The selected methods are `GradientMethod`, `MomentumMethod` and the `AdamFamily`. A quasi-Newton
+  method, `Newton` or a nested composite is refused by the `public` `leafmethod(method, x)` with a
+  message naming it, and so is a parameter set in place of a leaf. `default_step_size` of a
+  `LeafTypeSelector` composite is its methods' default when they agree, and otherwise an
+  `ArgumentError` asking for `linesearch`. A selector function has no default. `Optimizer` and
+  `solve!` refuse a composite with an `ArgumentError`: their line search chooses one step length for
+  the direction of the whole set, and a composite has no such direction.
+
 - Added the **symplectic Stiefel manifold** `SymplecticStiefelManifold`, the set of ``2N\times2n``
   matrices with ``U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}``, with `rand`, `rgrad`, `metric`, `check`
   and `global_section`. It joins the Stiefel and Grassmann manifolds as a third case of the
