@@ -295,6 +295,44 @@ end
     end
 end
 
+@testset "a file written before the triangular types were renamed still loads" begin
+    # Until 0.9 the two types were `LowerTriangular` and `UpperTriangular`, and a file carries the
+    # name its leaf's type had when it was written: in `parameter_type` for this protocol's own
+    # layout, in `gml_type` for GeometricMachineLearning's old one. Each is written here as it is
+    # now, then retagged with the old name.
+    lower, upper = leaves.lower, leaves.upper
+    for attribute in ("parameter_type", "gml_type")
+        withtempfile() do file
+            if attribute == "parameter_type"
+                save(file, NetworkParameters((L1 = (L = lower, U = upper),)))
+            else
+                h5open(file, "w") do h5
+                    g = HDF5.create_group(h5, "L1")
+                    for (key, A) in (("L", lower), ("U", upper))
+                        gA = HDF5.create_group(g, key)
+                        HDF5.attributes(gA)["gml_type"] = ""
+                        gA["S"] = Array(A.S)
+                        gA["n"] = A.n
+                    end
+                end
+            end
+            h5open(file, "r+") do h5
+                for (key, old) in (("L", "LowerTriangular"), ("U", "UpperTriangular"))
+                    HDF5.delete_attribute(h5["L1"][key], attribute)
+                    HDF5.attributes(h5["L1"][key])[attribute] = old
+                end
+            end
+
+            read_back = load(NetworkParameters, file)
+
+            @test read_back.L1.L isa StrictlyLowerTriangular
+            @test read_back.L1.L ≈ lower
+            @test read_back.L1.U isa StrictlyUpperTriangular
+            @test read_back.L1.U ≈ upper
+        end
+    end
+end
+
 @testset "a parameter set is an OptimizerSolution and binds its element type" begin
     # this is the reason `NeuralNetworkParameters` 0.2 carries the element type on the type. Every
     # cache and state constructor, both `Optimizer` constructors and the `BFGSState` `update!` methods
