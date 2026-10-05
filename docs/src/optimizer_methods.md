@@ -298,43 +298,50 @@ state = OptimizerState(pairing.algorithm, weight)
 typeof(GeometricOptimizers.first_moment(state).A)
 ```
 
-## Composing methods over a mixed tree
+## Composing methods over a mixed parameter set
 
-A method is a statement about the geometry of the thing it steps, and a parameter tree can hold more
-than one geometry. [`ScalarMomentAdam`](@ref) is the case that forces the point: its scope is a
-single [`StiefelManifold`](@ref), deliberately, because a *scalar* second moment is a statement about
-one manifold and means nothing pooled across a tree. A transformer whose attention projections are
+A method is a statement about the geometry of the thing it steps, and a parameter set can hold more
+than one geometry. [`ScalarMomentAdam`](@ref) is the case that forces the point: it steps a single
+[`StiefelManifold`](@ref), deliberately, because a *scalar* second moment is a statement about one
+manifold and means nothing pooled across a set. A transformer whose attention projections are
 Stiefel and whose residual blocks are ordinary arrays therefore has no single method that covers it.
 
-[`CompositeMethod`](@ref) is the choice of method per leaf, and nothing else:
+[`CompositeMethod`](@ref) chooses a method per leaf, and [`leafmethod`](@ref) reads the choice:
 
 ```@example optimizer_methods
 composite = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
 
-(leafmethod(composite, rand(StiefelManifold, 4, 2)), leafmethod(composite, rand(3)))
+(GeometricOptimizers.leafmethod(composite, rand(StiefelManifold, 4, 2)),
+    GeometricOptimizers.leafmethod(composite, rand(3)))
 ```
 
-[`leafmethod`](@ref) is the one question a caller asks, and it answers for an ordinary method too —
-`leafmethod(Adam(), x)` is `Adam()` — so a loop that walks a tree asks it unconditionally and needs
-no test for whether a composite is in play. Every other call forwards through it, so a leaf stepped
-under a composite is bit-for-bit a leaf stepped under the method selected for it: there is no
-composite cache and no composite state.
+A [`TrainingOptimizer`](@ref) on a parameter set builds one cache and one state per leaf, each for
+the method chosen for that leaf, and [`optimization_step!`](@ref) steps every leaf with its own:
 
-What it is *not* is an optimizer over the whole tree. Nothing pools a moment, a section or a step
-across leaves, and nothing here walks a tree — the walk belongs to whoever owns the tree.
+```@example optimizer_methods
+ps = NetworkParameters((L1 = (weight = rand(StiefelManifold, 6, 2),),
+    L2 = (W = rand(3, 2), b = zeros(3))))
+opt = TrainingOptimizer(ps; algorithm = composite)
+optimization_step!(ps, opt, NetworkParameters((L1 = (weight = randn(6, 2),),
+    L2 = (W = randn(3, 2), b = randn(3)))))
 
-Two further seams go with it, both for a package that does own one. [`accepts_parameter_set`](@ref)
-says whether a method takes a whole container or only a single leaf, which is `ScalarMomentAdam`'s
-scope stated once rather than as a list of type names kept elsewhere. [`sync_state!`](@ref) copies the
-per-method carry out of a cache and into a state, for a training loop that drives a cache directly
-instead of going through [`solve!`](@ref) — without it the moments restart from zero on every step.
+(nameof(typeof(opt.state.states.L1.weight)), nameof(typeof(opt.state.states.L2.b)))
+```
+
+Nothing is pooled across leaves — no moment, no section, no step length — so every leaf moves
+exactly as it would under a `TrainingOptimizer` of its own, and the Stiefel weight's scalar second
+moment is its own. What the leaves share is the iteration number and the step size the schedule gives
+for it, so a composite takes a default step size only when its methods agree on one.
+
+[`solve!`](@ref) takes no composite: its line search chooses one step length for the direction of
+the whole set, and a composite has no such direction.
 
 ## Library functions
 
 [`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref),
 [`CompositeMethod`](@ref), [`LeafTypeSelector`](@ref), [`leafmethod`](@ref),
-[`accepts_parameter_set`](@ref), [`sync_state!`](@ref), [`AdamOptimizerWithDecay`](@ref),
-[`DecayingStatic`](@ref) and [`OptimizerState`](@ref). Their
+[`CompositeState`](@ref), [`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and
+[`OptimizerState`](@ref). Their
 docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the
 package is rendered once; the names above link to them.
 

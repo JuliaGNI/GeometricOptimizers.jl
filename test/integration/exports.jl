@@ -19,7 +19,7 @@ end
     for name in (:Newton, :BFGS, :DFP,
         :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam, :CompositeMethod,
         :NewtonState, :BFGSState, :DFPState,
-        :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState)
+        :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState, :CompositeState)
         @test name in names(GeometricOptimizers)
     end
 
@@ -60,10 +60,15 @@ end
     # the optimizer types a caller dispatches on
         :OptimizerMethod, :OptimizerState, :OptimizerSolution,
     # opt-in phase observation
-        :EventLog, :PhaseTimer, :NoStepObserver, :observe_optimizer_phase, :step_observer,
-    # the seams a package that walks its own parameter tree asks this one about a method
-        :CompositeMethod, :LeafTypeSelector, :leafmethod, :accepts_parameter_set, :sync_state!)
+        :EventLog, :PhaseTimer, :NoStepObserver, :observe_optimizer_phase, :step_observer)
         @test name in names(GeometricOptimizers)
+    end
+
+    # What a composite is made of and what it answers for a leaf are read rather than called by a
+    # training loop, so they are public without being brought into `Main`.
+    for name in (:LeafTypeSelector, :leafmethod)
+        @test Base.ispublic(GeometricOptimizers, name)
+        @test !Base.isexported(GeometricOptimizers, name)
     end
 
     # The breakdown path behind `orthonormal_columns` is the half that stays internal: it answers

@@ -75,7 +75,7 @@ using NeuralNetworkParameters: NetworkParameters, params,
                                flatlength,
                                flatten, flatten!, unflatten, unflatten!,
                                FlatParameters,
-                               mapparameters, mapparameters!, mapstorage!,
+                               mapparameters, mapparameters!, mapstorage!, foreachparameters,
                                foldparameters, foldstorage,
                                parameter_eltype, parameterlayout,
                                register_parameter_type!
@@ -224,10 +224,11 @@ export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # `AdamWithEuclideanDecay` shares `Adam`'s cache and state, so there is no state to export
 # alongside it
 export AdamWithEuclideanDecay
-# `CompositeMethod` is a method like the others and is exported with them. `leafmethod`,
-# `accepts_parameter_set` and `sync_state!` go with it: they are the three questions a package that
-# walks its own parameter tree has to ask this one, and `GeometricMachineLearning` asks all three.
-export CompositeMethod, LeafTypeSelector, leafmethod, accepts_parameter_set, sync_state!
+# `CompositeMethod` is a method a caller constructs, as the others are, and `CompositeState` is its
+# state. `LeafTypeSelector` and `leafmethod` are `public`: what a composite is made of and what it
+# answers for a leaf, which a caller reads rather than calls.
+export CompositeMethod, CompositeState
+public LeafTypeSelector, leafmethod
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")
@@ -241,7 +242,7 @@ export TrainingOptimizer, optimization_step!
 public PrecomputedGradient, step_size, default_step_size
 include("optimizers/training_optimizer.jl")
 
-# The forwarding half of `CompositeMethod`, which needs the three first-order states above.
+# The per-leaf cache, state and training step of `CompositeMethod`, which need everything above.
 include("optimizers/composite_method.jl")
 
 # Teach `NeuralNetworkParameters.load` how to rebuild each of these types from a file, which has no

@@ -255,21 +255,23 @@ function _optimizer(
         retraction::AbstractRetraction, config::Options{T}, step_ceiling::Real,
         observer) where {T}
     method = change_precision(T, algorithm)
-    _check_one_backend(method, x)
+    _check_method(method, x)
     cache = OptimizerCache(method, x)
     hes = Hessian(method, problem, x)
     Optimizer(method, problem, hes, cache, _linesearch_method(T, linesearch),
         config, gradient, retraction, step_ceiling, observer)
 end
 
-# For a method other than quasi-Newton, a parameter set with leaves on two backends raises the "mixed
-# backends" error before its cache is built. A quasi-Newton cache allocates its matrices on the
-# backend of the set and raises it there, so this checks only for the other methods: a second check
+# The one look `_optimizer` takes at the method before its cache is built. A `CompositeMethod` is
+# refused here (see `optimizers/composite_method.jl`). For a method other than quasi-Newton, a
+# parameter set with leaves on two backends raises the "mixed backends" error here. A quasi-Newton
+# cache allocates its matrices on the backend of the set and raises it there, so this checks only
+# for the other methods: a second check
 # in `_optimizer` stops the keyword body of `Optimizer(x, F)` from inlining, and a caller that keeps
 # a BFGS `Optimizer` of a two-leaf host set pays 576 bytes (`Float32`) or 640 bytes (`Float64`) more
 # per construction for it.
-_check_one_backend(::QuasiNewtonOptimizerMethod, x) = nothing
-_check_one_backend(::OptimizerMethod, x) = (_solution_backend(x); nothing)
+_check_method(::QuasiNewtonOptimizerMethod, x) = nothing
+_check_method(::OptimizerMethod, x) = (_solution_backend(x); nothing)
 
 # A number is a fixed step size, and a `Static` or a `DecayingStatic` is converted to the element type
 # of the parameters, as the method is. A searching line search is taken as it is.
