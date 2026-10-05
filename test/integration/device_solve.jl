@@ -11,7 +11,7 @@
 using JLArrays: JLArray
 using Test
 
-include(joinpath(@__DIR__, "..", "scripts", "device_solve.jl"))
+include(joinpath(@__DIR__, "..", "..", "scripts", "device_solve.jl"))
 
 # The host twin above runs the same `update_section!` as the device, so a wrong update of a
 # horizontal lift passes there on both twins. Here the update is checked against the sum of the

@@ -1,5 +1,5 @@
 # The iteration count at which each first-order solve of the two-sphere problem of
-# `test/manifold_linesearch_tests.jl` stops, under the default tolerances, and the stop measures of
+# `test/integration/manifold_linesearch_tests.jl` stops, under the default tolerances, and the stop measures of
 # its last iterations. Run it on two trees to compare where a change to the stopping logic moves the
 # stop.
 #

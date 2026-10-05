@@ -129,7 +129,7 @@ states, `update!(state, opt, x)` copies `section(cache)` into the state through
 `solver_step!`.
 
 Without the reuse the refresh doubles the gradient evaluations of a first-order step: on the SVD
-problem of `test/optimizer_convergence/svd_optim.jl`, `Adam` + `Static` over 2 000 iterations costs
+problem of `test/verification/svd_optim.jl`, `Adam` + `Static` over 2 000 iterations costs
 124 ms without the refresh, 167 ms with it and 128 ms with it reused — one trajectory throughout. With
 the reuse, the refresh *is* the step's gradient evaluation.
 

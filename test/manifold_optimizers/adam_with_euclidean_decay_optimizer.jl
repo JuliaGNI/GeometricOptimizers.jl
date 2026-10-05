@@ -171,12 +171,9 @@ end
     end
 end
 
-# The same run on a `GrassmannManifold`, which this file used to record as impossible: a bare one had
-# no `GradientAutodiff` method and a `NamedTuple` holding one died in `_similar`. That was issue A11
-# — the concrete content of issue #27 — and it is closed; see `test/grassmann_optimizer_tests.jl`,
-# which covers the solve itself. What this testset adds is that the *weight-decay* claim above holds
-# on the second manifold and not only on the first, which is what the `rgrad` identity two testsets
-# up predicts and what could not be checked end to end before.
+# The same run on a `GrassmannManifold`. `test/integration/grassmann_optimizer_tests.jl` covers the
+# solve itself. What this testset adds is that the *weight-decay* claim above holds on the second
+# manifold and not only on the first, which is what the `rgrad` identity two testsets up predicts.
 #
 # The objective is the Rayleigh quotient rather than a distance to a target point: on the Grassmann
 # manifold `Y` and `YO` are the same point, and a distance is not a function of it.

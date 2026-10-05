@@ -19,7 +19,7 @@ below).
 rather than one before it. ``\eta_1`` is therefore an upper bound on the step rather than the first
 one — by a factor of ``\gamma``, which for the defaults is 0.9908. The offset is deliberate: it is
 also how `GeometricMachineLearning`'s `AdamOptimizerWithDecay` counts, which is what makes
-[`AdamOptimizerWithDecay`](@ref) reproduce it step for step (`test/adam_optimizer_with_decay.jl`
+[`AdamOptimizerWithDecay`](@ref) reproduce it step for step (`test/optimizers/decaying_static.jl`
 asserts this against a live solve).
 
 # Why this exists

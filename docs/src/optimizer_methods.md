@@ -266,7 +266,7 @@ and conjugating by the global section ``\lambda(Y) = [\,Y \mid \lambda\,]`` give
 which is exactly `global_rep(GlobalSection(Y), Z)` — for *any* ``Z``, tangent or not. So
 ``W = \lambda(Y)\bar{G}\lambda(Y)^T`` for ``\bar{G} = `` `global_rep(λY, Z)`, the source's ``W_k`` *is*
 the horizontal lift the first-order caches already receive their gradient in, and its ``\pi_{T_Y}(Z)``
-is that lift read back at ``Y``. `test/scalar_moment_adam.jl` pins the identity numerically against a
+is that lift read back at ``Y``. `test/manifold_optimizers/scalar_moment_adam_optimizer.jl` pins the identity numerically against a
 literal transcription of the source's formula, so it cannot silently stop holding.
 
 What the source needs those lines for a *second* time — re-projecting the momentum onto the tangent

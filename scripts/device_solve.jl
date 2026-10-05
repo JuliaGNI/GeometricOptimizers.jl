@@ -5,7 +5,7 @@
 # line of the error the run raised. Scalar indexing has to be off for the rows to mean anything, and
 # the function turns it off.
 #
-#     using JLArrays; device_solve(JLArray, Float64)                # what `test/device_solve.jl` asserts
+#     using JLArrays; device_solve(JLArray, Float64)                # what `test/integration/device_solve.jl` asserts
 #     using Metal;    device_solve(MtlArray, Float32; retraction = Cayley(), matched_rng = false)
 #
 # The runs are `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and `DFP`, each with a supplied

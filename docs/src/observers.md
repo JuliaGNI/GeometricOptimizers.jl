@@ -257,7 +257,7 @@ direction; a long run of `:objective` pairs is a line search that cannot find a 
 
 **Tests.** Because the protocol guarantees matched, nested pairs, an observer is a way for a test to
 assert that a code path was taken at all — which is how this package's own
-`test/optimizer_observer.jl` checks that every first-order method reports the same phase structure.
+`test/integration/optimizer_observer.jl` checks that every first-order method reports the same phase structure.
 
 ## Coverage
 

@@ -117,10 +117,8 @@ end
 # place the identity is checked against `retract` rather than against `f ∘ retract`, which is what
 # makes it independent of `global_rep` and `_dot`.
 #
-# It was written this way because a `GrassmannManifold` could not be driven through an `Optimizer` at
-# all (issue A11, the concrete content of issue #27). That is fixed, and
-# `test/grassmann_optimizer_tests.jl` now covers the end-to-end solve — but the direct check is worth
-# keeping for the independence above, so it stays.
+# `test/integration/grassmann_optimizer_tests.jl` covers the end-to-end solve; the direct check stays
+# for the independence above.
 struct UncoveredRetraction <: GeometricOptimizers.AbstractRetraction end
 
 @testset "retraction_differential is d/dα retract(αB), for both lifts" begin

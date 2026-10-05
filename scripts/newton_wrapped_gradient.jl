@@ -21,7 +21,7 @@
 # diff the tables. The figures are per step rather than per `solve!` so that a difference lands in
 # the row that caused it.
 #
-# `test/optimizer_observer.jl` is the complement. Its "second-order methods observe their state
+# `test/integration/optimizer_observer.jl` is the complement. Its "second-order methods observe their state
 # update" testset pins the wrapper matrix below at *works at all* for `Newton`, `BFGS` and `DFP`,
 # which is the assertion that was missing when nine green CI jobs said nothing about the defect;
 # this script says what the repair is worth per step and covers the caller-supplied wrapper too.

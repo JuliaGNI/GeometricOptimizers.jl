@@ -6,7 +6,7 @@
 #     julia --startup-file=no --project=. scripts/metal_backend_refusal.jl
 #
 # Every other mixed-backend figure in this repository — `scripts/mixed_backend_seam.jl`,
-# `scripts/mixed_backend_plain_matrix.jl`, `test/mixed_backend_refusal.jl` — is measured with
+# `scripts/mixed_backend_plain_matrix.jl`, `test/integration/mixed_backend_refusal.jl` — is measured with
 # `JLArrays`, which is a *host-backed* device. That is what makes it useful there: it can fall back
 # to the host, so an unguarded operation returns an answer and the defect is visible as a wrong
 # backend rather than as a crash. It also means none of those figures says what a real device does.

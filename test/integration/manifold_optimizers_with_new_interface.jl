@@ -7,9 +7,8 @@ import Random
 
 # The headline feature of the unified interface: a *bare* `Manifold` can be handed to
 # `Optimizer` as the set of parameters, exactly like a `Vector` or a `NamedTuple`.
-# `test/flat_parameters.jl` covers the `NamedTuple` case; this file covers the bare
-# manifold, which is the one the old `optimization_step!` interface used to handle
-# separately.
+# `test/integration/flat_parameters.jl` covers the `NamedTuple` case; this file covers the bare
+# manifold.
 #
 # The problem is the smallest one that still has a manifold in it: minimize the distance to
 # `[0, 0, 1.2]` over `St(3, 1)`, i.e. over the unit sphere in R³. The minimizer is the
@@ -102,7 +101,7 @@ convergence_tolerance(::Type{T}, ::Adam) where {T} = 10 * sqrt(eps(T))
 # The list below selects the stateful algorithms, which is why `BFGS` and `DFP` are absent although
 # both accept a bare manifold. `Newton` is absent for a second reason: it is out of scope on a
 # manifold, not overlooked. It builds the exact Hessian and there is no Riemannian one, so
-# `Optimizer` and `OptimizerState` both reject it there; `test/optimizer_tests.jl` pins that.
+# `Optimizer` and `OptimizerState` both reject it there; `test/integration/optimizer_tests.jl` pins that.
 @testset "the stateful algorithms accept a bare Manifold too" begin
     for T in (Float64, Float32), retraction in (Geodesic(), Cayley())
 

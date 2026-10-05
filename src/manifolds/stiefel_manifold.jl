@@ -134,7 +134,7 @@ why a redraw rather than a repair is the honest answer.
 function global_section(Y::StiefelManifold)
     λ = _complement_columns(Y.A)
 
-    # The section's storage array has to be the *point's* array type, which `test/device_copyto.jl`
+    # The section's storage array has to be the *point's* array type, which `test/integration/device_copyto.jl`
     # relies on to move a section between two of them. It already is for every `KernelAbstractions`
     # backend, and the branch folds away there; the projection above only loses the point's type for
     # a wrapper `allocate` does not know how to produce. An unconditional `typeof(Y.A)(…)` would copy

@@ -14,7 +14,7 @@ through [`linesearch_parameters`](@ref). Set per solve with `Optimizer(x, F; ste
 A line search bounds the step it returns by the merit — it stops when ``\varphi`` stops falling. On a
 **compact** manifold ``\varphi`` is *bounded*, so that test never fires: at ``\alpha = 10^9``,
 ``\varphi`` can be genuinely lower than at ``\alpha = 0``, and a search that reports a decrease there
-is telling the truth. Measured on the SVD problem of `test/optimizer_convergence/svd_optim.jl`,
+is telling the truth. Measured on the SVD problem of `test/verification/svd_optim.jl`,
 [`SimpleSolvers.Quadratic`](@extref) returned ``\alpha = 4.3\times10^7`` on a direction of norm 5.54 —
 a step of ``\|\alpha\delta\| = 2.4\times10^8`` — and did it again two steps later on a
 *steepest-descent* direction, so the behaviour belonged to the search and not to what it was handed.
@@ -446,7 +446,7 @@ julia> solver_step!(x, state, opt)
 !!! info "A line search that fails does not get its step taken"
     `SimpleSolvers.solve` returns a step length whether or not the search succeeded, so taking it
     unconditionally lets a failed search drive the iteration. On the SVD problem of
-    `test/optimizer_convergence/svd_optim.jl`, `BFGS` + `Bisection` + `Geodesic` used to diverge
+    `test/verification/svd_optim.jl`, `BFGS` + `Bisection` + `Geodesic` used to diverge
     outright on one of eight starting points, and this is the mechanism:
 
     | iteration | outcome | ``\\alpha`` | ``f`` |
@@ -569,7 +569,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
     # overshoots the minimiser, and the next step comes back: a 2-cycle in which no criterion fires.
     # The other two rejections, `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT`, say nothing
     # about the floor, and their step is taken: a zero step there reports convergence where `‖∇f‖` is
-    # of order one, which `test/descent_direction_tests.jl` catches.
+    # of order one, which `test/optimizers/descent_direction_tests.jl` catches.
     α = at_round_off_floor(ls_status, _caller_αmax(T, ls_params)) ? zero(T) :
         steplength(ls_status)
     _rmul!(direction(cache(opt)), α)

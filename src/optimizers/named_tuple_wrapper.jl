@@ -281,7 +281,7 @@ measured ``\Delta f``, and by [`ensure_descent!`](@ref)'s descent test, for the 
 
     The summation order changes with it: per leaf and then across, rather than one `dot` over the
     concatenation. Both are ``\sum_i a_ib_i``; they differ at round-off, and
-    `test/flat_buffer_allocations.jl` pins the two against each other.
+    `test/integration/flat_buffer_allocations.jl` pins the two against each other.
 
     What the *grouping* of the leaves does to that sum is nothing, and as of this release that holds by
     construction rather than by luck. `foldstorage` threads its accumulator through the nested branches,

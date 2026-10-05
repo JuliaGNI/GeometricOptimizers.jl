@@ -93,7 +93,7 @@ decrease the merit — see [`linesearch_rejected`](@ref).
     [`ensure_descent!`](@ref) already substitutes the steepest-descent direction for one step when
     ``Q`` has stopped being positive definite, but it leaves ``Q`` itself alone, so every subsequent
     direction comes from the same damaged approximation. Measured on the SVD problem of
-    `test/optimizer_convergence/svd_optim.jl`, ``\lambda_\mathrm{min}(Q)`` reached `-398` and stayed
+    `test/verification/svd_optim.jl`, ``\lambda_\mathrm{min}(Q)`` reached `-398` and stayed
     negative for the rest of the solve. Discarding ``Q`` is what actually recovers.
 """
 function restart!(state::BFGSState)

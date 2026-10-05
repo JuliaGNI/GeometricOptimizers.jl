@@ -156,7 +156,7 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     a step that does not shrink leaves `Adam` circling the minimiser at that distance rather
     than settling on it. A *searching* line search does not fix that — it picks each step from
     the merit and has no reason to drive the sequence to zero — it only makes each step a
-    better one: on the two-sphere problem of `test/manifold_linesearch_tests.jl` the searching
+    better one: on the two-sphere problem of `test/integration/manifold_linesearch_tests.jl` the searching
     options need 251–331 iterations where [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
     need 9–64. [`DecayingStatic`](@ref) is the setting under which `Adam` terminates on a
     criterion by construction, because its schedule drives the step to zero itself.
@@ -457,7 +457,7 @@ schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
     [`SimpleSolvers.Quadratic`](@extref) and [`SimpleSolvers.BierlaireQuadratic`](@extref) bracket and
     then refine a line *minimum*, which costs an order of magnitude more merit evaluations per
     iteration. Iterations are therefore the wrong unit to compare them in. Counting objective
-    evaluations instead, on the SVD problem of `test/optimizer_convergence/svd_optim.jl` (`Geodesic`;
+    evaluations instead, on the SVD problem of `test/verification/svd_optim.jl` (`Geodesic`;
     `Static` needs ≈4 evaluations per iteration, so subtract that for the search's own cost):
 
     | search | evals/iteration | `BFGS`: iters / evals | `DFP`: iters / evals |

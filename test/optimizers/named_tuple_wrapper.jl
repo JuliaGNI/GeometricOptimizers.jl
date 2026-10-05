@@ -166,7 +166,7 @@ end
 end
 
 # A hot path: every `update!` and every `OptimizerStatus` runs these, so they infer, in both
-# precisions. That they allocate nothing is asserted in `test/flat_buffer_allocations.jl`.
+# precisions. That they allocate nothing is asserted in `test/integration/flat_buffer_allocations.jl`.
 @testset "the primitives infer, $T" for T in (Float32, Float64)
     for kind in (:vector, :stiefel_lift, :set)
         a, b, c = operands(T, kind)

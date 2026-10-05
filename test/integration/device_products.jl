@@ -9,7 +9,7 @@
 using JLArrays: JLArray
 using Test
 
-include(joinpath(@__DIR__, "..", "scripts", "device_products.jl"))
+include(joinpath(@__DIR__, "..", "..", "scripts", "device_products.jl"))
 
 # `cayley` inverts a matrix with `LinearAlgebra.inv`, and `JLArrays` supplies no `lu` for it. That is
 # the reference backend's gap, pinned in `device_multiply.jl`; Metal has an `lu`, and the rows pass

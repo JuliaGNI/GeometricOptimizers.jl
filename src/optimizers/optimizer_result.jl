@@ -122,7 +122,7 @@ not converge to the minimizer, it orbits it at a distance of order ``\alpha``, s
 one iteration is a sample of an arbitrary phase on that orbit and moves with the last bits of the
 floating-point arithmetic. Averaging over a stretch of the orbit measures its radius instead, which
 is a property of ``\alpha`` and the problem — across Julia 1.10, 1.12 and 1.13 the final-iterate
-error on the problem in `test/optimizer_convergence/svd_optim.jl` spans a factor of 3.0 and the mean
+error on the problem in `test/verification/svd_optim.jl` spans a factor of 3.0 and the mean
 over the last five hundred iterations spans 1.06.
 """
 trace(result::OptimizerResult) = result.trace

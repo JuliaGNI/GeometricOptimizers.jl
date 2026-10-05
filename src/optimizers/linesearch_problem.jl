@@ -98,7 +98,7 @@ That last part is what this function exists for. The ceiling used to be
 quadrature — so a `NamedTuple` of *ordinary arrays* was bounded by a rotation that does not exist in
 its problem (measured: a Euclidean `NamedTuple` solve took 3 184 iterations against 1 for the same
 problem written as a vector), and in a mixed `NamedTuple` the Euclidean blocks tightened the manifold
-blocks' bound for no reason (measured on the mixed problem of `test/flat_parameters.jl`:
+blocks' bound for no reason (measured on the mixed problem of `test/integration/flat_parameters.jl`:
 ``\|\delta_Y\| = 2.5\times10^{-16}`` against a total of `3.9`, bounding ``\alpha`` at `1.6` where the
 geometry of the manifold block permits ``2.6\times10^{16}``). That was catalogued as issue A15 and is
 what this closes.
@@ -242,7 +242,7 @@ exact for both retractions at every ``\alpha``.
     for a sign change, [`SimpleSolvers.StrongWolfe`](@extref) compares against ``\varphi'(0)``, and
     `Backtracking` — the default — evaluates ``\varphi'`` at ``\alpha = 0`` only, where the two agree
     exactly. The two polynomial searches fit a curve to it *quantitatively*, and on the SVD problem of
-    `test/optimizer_convergence/svd_optim.jl` that took `BFGS` off the manifold altogether on two of
+    `test/verification/svd_optim.jl` that took `BFGS` off the manifold altogether on two of
     eight starting points. The exact slope did *not* fix that — the cause was the size of the step,
     not the slope, and [`DEFAULT_STEP_CEILING`](@ref) is what closed it. See the CHANGELOG entry for
     issue A1b; this differential remains worth having on its own account.

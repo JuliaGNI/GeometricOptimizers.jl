@@ -246,7 +246,7 @@ a compile cost on the very walk #70 was about.
 `f` is annotated `::F where {F}`, which is now belt and braces rather than load-bearing. It used to be
 the latter: two of the four methods only *passed `f` along*, and Julia does not specialise on a function
 argument it never sees called, so without the annotation `f` arrived boxed and each leaf cost a dynamic
-dispatch — 128 bytes against 64 on the mixed set of `test/flat_buffer_allocations.jl`, which is the test
+dispatch — 128 bytes against 64 on the mixed set of `test/integration/flat_buffer_allocations.jl`, which is the test
 that caught it. The single method below closes over `f` instead, and a closure is a `new`, which counts
 as a use, so measured the annotation changes nothing on any shape. It is kept because the obligation it
 discharges is real for whoever hands an `op` on: upstream's `foldparameters` docstring says so, and its
@@ -262,7 +262,7 @@ Whether `a` holds any value that is not finite.
 
 This was `contains_nan`, and tested `isnan` only. `NaN` is the *last* thing a diverging solve
 produces: it reaches `Inf` first, and before that every finite magnitude on the way. On the SVD
-problem of `test/optimizer_convergence/svd_optim.jl` the diverging solve passed through
+problem of `test/verification/svd_optim.jl` the diverging solve passed through
 `f = 1.2e169` and `check(Y) = 1.07e200` — both perfectly ordinary `Float64`s, neither of them `NaN`
 — and only went `NaN` on the iteration after that. By then it had been off the manifold for two
 iterations.
@@ -340,7 +340,7 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
 !!! warning "What `x_converged` is guarded against, and what it is not"
     ``\|x - x'\|/\|x'\|`` measures "the iterate stopped moving" only while ``\|x'\|`` is bounded, and
     a diverging solve is exactly the case where it is not. On the SVD problem of
-    `test/optimizer_convergence/svd_optim.jl`, `BFGS` + `Bisection` + `Geodesic` once left the
+    `test/verification/svd_optim.jl`, `BFGS` + `Bisection` + `Geodesic` once left the
     manifold on iteration 4 with an iterate of magnitude ``10^{100}``. The step that took it there
     had ``\|\delta\| = 345`` — not remotely a solve that has stopped moving — but the *relative*
     change was ``345/10^{100} \approx 10^{-98}``, far under `x_reltol`, so `x_converged` fired and
@@ -411,7 +411,7 @@ Check if the optimizer has converged.
     The last of those used to be reported and then ignored: the `@error` below fired and the loop
     carried on. Nothing an iteration does to a `NaN` iterate can recover it, so the only effect was
     to burn the whole iteration budget printing the same message. On the SVD problem of
-    `test/optimizer_convergence/svd_optim.jl` one starting point spent all 100 000 iterations of a
+    `test/verification/svd_optim.jl` one starting point spent all 100 000 iterations of a
     raised cap that way, at roughly one `@error` per iteration.
 
     A solve that stops here is *not* converged — [`isconverged`](@ref) reads the three convergence

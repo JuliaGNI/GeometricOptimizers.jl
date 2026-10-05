@@ -144,13 +144,11 @@ end
 
 # The flat ordering, pinned absolutely.
 #
-# Downstream code indexes this vector by hand -- `test/flat_parameters.jl` asserts literal
+# Downstream code indexes this vector by hand -- `test/integration/flat_parameters.jl` asserts literal
 # ranges and its `∇F!` slices with them -- so the order is part of the contract, not an implementation
-# detail. When this landed it was written as an elementwise comparison against
-# `ParameterHandling.flatten`, which was still present, and the two agreed on every leaf family; see
-# the commit that added it. With that package gone there is nothing left to compare against, so the
-# expectations are spelled out instead. Which is the better test anyway: it says what the numbers
-# *are* rather than that two implementations happen to concur.
+# detail. The expectations are spelled out rather than compared against another implementation, which
+# is the better test: it says what the numbers *are* rather than that two implementations happen to
+# concur.
 @testset "the flat ordering is the one downstream code indexes by" begin
     # a manifold flattens as its dense storage, in linear index order
     @test flatten(Float64, leaves.stiefel)[1] == vec(parent(leaves.stiefel))
