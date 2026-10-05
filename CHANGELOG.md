@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Fixed
+
+- **Files that tag a leaf `LowerTriangular` or `UpperTriangular` load, as they did before 0.9.0.** 0.9.0 renamed the two types to `StrictlyLowerTriangular` and `StrictlyUpperTriangular` and registered only the new names with `NeuralNetworkParameters.register_parameter_type!`. A file carries the name its leaf's type had when it was written, so every file that GeometricOptimizers 0.8, or GeometricMachineLearning 0.8 and earlier, wrote for one of the two types failed to load in 0.9.0 with "ArgumentError: the file contains a parameter of type `LowerTriangular`, which is not registered", a saved `VolumePreservingFeedForward` network among them. The old names are now registered as well, and rebuild the renamed types. The testset "a file written before the triangular types were renamed still loads" in `test/integration/neural_network_parameters_protocol.jl` retags a file with the old names, both in `parameter_type` and in GeometricMachineLearning's `gml_type`, and loads it; it checks the lookup, not a file that 0.8 actually wrote.
+
 ## [0.9.0]
 
 **This release makes the package the optimizer that GeometricMachineLearning trains with.**
