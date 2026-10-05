@@ -34,10 +34,12 @@ It holds the first-order `algorithm`, converted once to the element type of `x` 
 `change_precision`, its cache and its state over the whole of `x`, the step-size schedule, the
 retraction, and the buffers the retraction works in.
 
-`algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref) or a member of the
-[`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, and
-raises an `ArgumentError` for any other `x`. `linesearch` is a finite positive number, which is
-the fixed step size `Static(η)`, a [`SimpleSolvers.Static`](@extref) or a
+`algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref), a member of the
+[`AdamFamily`](@ref) or a [`CompositeMethod`](@ref); [`ScalarMomentAdam`](@ref) steps a single
+`StiefelManifold` only, and raises a `MethodError` for any other `x`. A composite on a parameter set
+gets one cache and one state per leaf, each for the method it chooses for that leaf and each
+converted to the element type of `x`; see [`CompositeMethod`](@ref). `linesearch` is a finite
+positive number, which is the fixed step size `Static(η)`, a [`SimpleSolvers.Static`](@extref) or a
 [`DecayingStatic`](@ref); the default is [`default_step_size`](@ref)`(algorithm)`. `retraction` is
 an instance of an [`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
 
@@ -80,13 +82,20 @@ end
 function TrainingOptimizer(x::OptimizerSolution{T}; algorithm::FirstOrderMethod = Adam(),
         linesearch = default_step_size(algorithm),
         retraction::AbstractRetraction = Cayley()) where {T}
-    method = change_precision(T, algorithm)
+    method = _training_method(T, algorithm, x)
     # the cache first and the state second: each draws the random completion of its `GlobalSection`
     cache = OptimizerCache(method, x)
     state = OptimizerState(method, x)
     TrainingOptimizer(method, cache, state, _training_step_size(T, linesearch), retraction,
-        retraction_workspace(x, retraction))
+        _training_workspace(method, x, retraction))
 end
+
+# The method and the retraction buffers a `TrainingOptimizer` keeps for `x`. A composite on a
+# parameter set keeps them per leaf; see `optimizers/composite_method.jl`.
+function _training_method(::Type{T}, algorithm::OptimizerMethod, x) where {T}
+    change_precision(T, algorithm)
+end
+_training_workspace(::OptimizerMethod, x, retraction) = retraction_workspace(x, retraction)
 
 @doc raw"""
     optimization_step!(x, opt::TrainingOptimizer, dp)
@@ -103,7 +112,9 @@ another number of leaves is an `ArgumentError`. Each is raised before the iterat
 The step increments the iteration number `t` of `opt.state`, reads the step size
 [`step_size`](@ref)`(opt.linesearch, t)`, forms the direction of `opt.method` from the
 [`PrecomputedGradient`](@ref) of `dp`, scales it, retracts it with `opt.retraction` and copies the
-result into `x`. [`advance_state!`](@ref) then carries the state over to the new parameters.
+result into `x`. [`advance_state!`](@ref) then carries the state over to the new parameters. A
+[`CompositeMethod`](@ref) on a parameter set does this for every leaf with the leaf's own method,
+cache and state, at the one step size `α`.
 
 For a parameter set, `dp` is a [`NeuralNetworkParameters.NetworkParameters`](@extref) of the same
 shape as `x`. See [`TrainingOptimizer`](@ref) for why this is not [`solve!`](@ref).
@@ -116,13 +127,19 @@ function optimization_step!(x::OptimizerSolution{T},
         "the gradient does not have the shape of the parameters it is a gradient of"))
     increase_iteration_number!(opt.state)
     α = step_size(opt.linesearch, iteration_number(opt.state))
-    update!(opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, x)
-    _rmul!(direction(opt.cache), α)
-    update_section!(section(opt.cache), section(opt.state), direction(opt.cache),
+    _training_step!(x, opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, α,
         opt.retraction, opt.workspace)
-    _copyto!(solution(opt.cache), section(opt.cache))
-    _copyto!(x, solution(opt.cache))
-    advance_state!(opt.state, opt.cache, opt.method)
+end
+
+# The step itself, once the count has moved and the step size is read: the whole of `x` for one
+# method, and one leaf at a time for a `CompositeMethod`.
+function _training_step!(x, cache, state, gradient, method, α, retraction, workspace)
+    update!(cache, state, gradient, method, x)
+    _rmul!(direction(cache), α)
+    update_section!(section(cache), section(state), direction(cache), retraction, workspace)
+    _copyto!(solution(cache), section(cache))
+    _copyto!(x, solution(cache))
+    advance_state!(state, cache, method)
     x
 end
 
