@@ -101,7 +101,7 @@ function optimization_step!(x::NetworkParameters{T},
         "the gradient does not have the shape of the parameters it is a gradient of"))
     increase_iteration_number!(opt.state)
     α = step_size(opt.linesearch, iteration_number(opt.state))
-    retraction = opt.retraction
+    retraction, observer = opt.retraction, step_observer(opt)
     foreachparameters(
         opt.cache.caches, opt.state.states, opt.cache.methods, opt.workspace, x,
         dp) do cache, state, method, workspace, xᵢ, dpᵢ
@@ -109,7 +109,7 @@ function optimization_step!(x::NetworkParameters{T},
         increase_iteration_number!(state)
         _training_step!(
             x̂, cache, state, PrecomputedGradient(x̂, _leaf_like(xᵢ, dpᵢ)), method, α,
-            retraction, workspace)
+            retraction, workspace, observer)
     end
     x
 end

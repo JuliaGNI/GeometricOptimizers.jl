@@ -396,10 +396,11 @@ function _direction_rule(opt::Optimizer{
 end
 
 """
-    step_observer(opt::Optimizer)
+    step_observer(opt)
 
-Return the phase observer installed on `opt`. This is a [`NoStepObserver`](@ref) when the caller did
-not supply the `observer` keyword to [`Optimizer`](@ref).
+Return the phase observer installed on `opt`, an [`Optimizer`](@ref) or a
+[`TrainingOptimizer`](@ref). This is a [`NoStepObserver`](@ref) when the caller did not supply the
+`observer` keyword.
 """
 step_observer(opt::Optimizer) = opt.observer
 
