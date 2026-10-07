@@ -142,6 +142,21 @@ end
 A caller who drives the loop itself rather than calling [`solve!`](@ref) brackets `solver_step!` and
 `update!` the same way; the outer phase does not care what is inside it.
 
+A [`TrainingOptimizer`](@ref) takes the same `observer` keyword. Its step has no objective to
+evaluate and no gradient of its own, since the caller passes the gradient in, so the one phase it
+reports is `:retraction_application`. A training loop brackets its reverse pass in `:gradient` and
+[`optimization_step!`](@ref) in a phase of its own; the time left in that phase once the nested
+retraction has subtracted itself is the cost of the direction:
+
+```julia
+observe_optimizer_phase(timer, :gradient) do
+    dp = euclidean_gradient(x, batch)
+end
+observe_optimizer_phase(timer, :direction) do
+    optimization_step!(x, opt, dp)
+end
+```
+
 [`step_observer`](@ref) reads back the observer installed on an optimizer.
 
 ## Example: the events of one iteration

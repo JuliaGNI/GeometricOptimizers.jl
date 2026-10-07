@@ -2,7 +2,7 @@
 # type, and the step-size keywords.
 
 using GeometricOptimizers
-using GeometricOptimizers: section, solution, iteration_number, step_size,
+using GeometricOptimizers: section, solution, iteration_number, step_size, step_observer,
                            default_step_size,
                            PrecomputedGradient, DecayingStatic, AdamOptimizerWithDecay
 using NeuralNetworkParameters: flatten, mapparameters, params
@@ -335,4 +335,28 @@ end
     @test Base.ispublic(GeometricOptimizers, :PrecomputedGradient)
     @test Base.ispublic(GeometricOptimizers, :default_step_size)
     @test Base.ispublic(GeometricOptimizers, :step_size)
+end
+
+@testset "the training step reports its retraction to the observer, and only that" begin
+    x = _parameters(Float32, :network)
+    dp = _gradient(x)
+    recorder = EventLog()
+    # seeded before each optimizer: each draws the random completion of its section
+    Random.seed!(3)
+    opt = TrainingOptimizer(x; algorithm = Adam(), linesearch = 1.0f-3, observer = recorder)
+    @test step_observer(opt) === recorder
+    for _ in 1:2
+        optimization_step!(x, opt, dp)
+    end
+    @test recorder.events == repeat(
+        [(:retraction_application, :enter), (:retraction_application, :exit)], 2)
+    # without the keyword nothing is observed, and the step is the same
+    y = _parameters(Float32, :network)
+    Random.seed!(3)
+    unobserved = TrainingOptimizer(y; algorithm = Adam(), linesearch = 1.0f-3)
+    @test step_observer(unobserved) isa NoStepObserver
+    for _ in 1:2
+        optimization_step!(y, unobserved, dp)
+    end
+    @test _flat(y) == _flat(x)
 end

@@ -26,7 +26,7 @@ end
 (g::PrecomputedGradient{T})(x::NetworkParameters{T}) where {T} = rgrad(x, g.dp)
 
 @doc raw"""
-    TrainingOptimizer(x; algorithm = Adam(), linesearch = default_step_size(algorithm), retraction = Cayley())
+    TrainingOptimizer(x; algorithm = Adam(), linesearch = default_step_size(algorithm), retraction = Cayley(), observer = NoStepObserver())
 
 The optimizer of a training loop: one step per minibatch, with [`optimization_step!`](@ref).
 
@@ -42,6 +42,12 @@ converted to the element type of `x`; see [`CompositeMethod`](@ref). `linesearch
 positive number, which is the fixed step size `Static(η)`, a [`SimpleSolvers.Static`](@extref) or a
 [`DecayingStatic`](@ref); the default is [`default_step_size`](@ref)`(algorithm)`. `retraction` is
 an instance of an [`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
+
+`observer` is notified of the `:retraction_application` phase of every step, as the observer of an
+[`Optimizer`](@ref) is; see [Observing the Phases of an Optimizer Step](@ref). The gradient is the caller's, so a
+caller who times it brackets its own reverse pass, and one who wants the cost of the direction
+brackets [`optimization_step!`](@ref) in a phase of its own, from which the nested retraction
+subtracts itself.
 
 # Why a training step is not `solve!`
 
@@ -70,25 +76,28 @@ optimization_step!(x, opt, Float32[2, 2, 2])
 """
 struct TrainingOptimizer{
     MT <: FirstOrderMethod, CT <: OptimizerCache, ST <: OptimizerState,
-    LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT}
+    LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT, OT}
     method::MT
     cache::CT
     state::ST
     linesearch::LT
     retraction::RT
     workspace::WT
+    observer::OT
 end
 
 function TrainingOptimizer(x::OptimizerSolution{T}; algorithm::FirstOrderMethod = Adam(),
         linesearch = default_step_size(algorithm),
-        retraction::AbstractRetraction = Cayley()) where {T}
+        retraction::AbstractRetraction = Cayley(), observer = NoStepObserver()) where {T}
     method = _training_method(T, algorithm, x)
     # the cache first and the state second: each draws the random completion of its `GlobalSection`
     cache = OptimizerCache(method, x)
     state = OptimizerState(method, x)
     TrainingOptimizer(method, cache, state, _training_step_size(T, linesearch), retraction,
-        _training_workspace(method, x, retraction))
+        _training_workspace(method, x, retraction), observer)
 end
+
+step_observer(opt::TrainingOptimizer) = opt.observer
 
 # The method and the retraction buffers a `TrainingOptimizer` keeps for `x`. A composite on a
 # parameter set keeps them per leaf; see `optimizers/composite_method.jl`.
@@ -128,18 +137,23 @@ function optimization_step!(x::OptimizerSolution{T},
     increase_iteration_number!(opt.state)
     α = step_size(opt.linesearch, iteration_number(opt.state))
     _training_step!(x, opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, α,
-        opt.retraction, opt.workspace)
+        opt.retraction, opt.workspace, step_observer(opt))
 end
 
 # The step itself, once the count has moved and the step size is read: the whole of `x` for one
 # method, and one leaf at a time for a `CompositeMethod`.
-function _training_step!(x, cache, state, gradient, method, α, retraction, workspace)
+# The phase is the one `solver_step!` reports for the same work, the retraction, the copies of the
+# retracted point and the state update after it; see the table of phases in the observers chapter.
+function _training_step!(
+        x, cache, state, gradient, method, α, retraction, workspace, observer)
     update!(cache, state, gradient, method, x)
     _rmul!(direction(cache), α)
-    update_section!(section(cache), section(state), direction(cache), retraction, workspace)
-    _copyto!(solution(cache), section(cache))
-    _copyto!(x, solution(cache))
-    advance_state!(state, cache, method)
+    observe_optimizer_phase(observer, :retraction_application) do
+        update_section!(section(cache), section(state), direction(cache), retraction, workspace)
+        _copyto!(solution(cache), section(cache))
+        _copyto!(x, solution(cache))
+        advance_state!(state, cache, method)
+    end
     x
 end
 
