@@ -1126,6 +1126,16 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/integration/network_parameters_optimizer.jl:157`
   calls `_manifold_αmax` on a set with a Stiefel leaf and `c::Float64`, and no line has its types.
 
+### K22 · Four `[Unreleased]` bullets of `CHANGELOG.md` give test paths from before the move to `test/integration/`
+
+- location: `CHANGELOG.md:31`
+- kind: docs
+- found: 2026-10-08
+- evidence: `grep -n 'test/device_solve.jl\|test/manifold_linesearch_tests.jl' CHANGELOG.md` gives
+  `:31` (`test/manifold_linesearch_tests.jl`), `:47`, `:49` and `:157` (`test/device_solve.jl`).
+  Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
+  `test/integration/device_solve.jl`. The bullets are not released, so the paths may be corrected.
+
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
