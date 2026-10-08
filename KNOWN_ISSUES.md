@@ -1080,10 +1080,10 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K4 · Three reference links in `CHANGELOG.md` have no definition
 
-- location: `CHANGELOG.md:164`
+- location: `CHANGELOG.md:166`
 - kind: docs
 - found: 2026-09-26
-- evidence: `[0.8.0]`, `[0.6.1]` and `[B]` (`CHANGELOG.md:164`, `:1184`, `:1328`, `:2089`) have no
+- evidence: `[0.8.0]`, `[0.6.1]` and `[B]` (`CHANGELOG.md:166`, `:1186`, `:1330`, `:2091`) have no
   `[label]: url` line, and `[Unreleased]` compares `v0.6.0...main`.
 
 ## H. The test suite
@@ -1126,14 +1126,14 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/integration/network_parameters_optimizer.jl:157`
   calls `_manifold_αmax` on a set with a Stiefel leaf and `c::Float64`, and no line has its types.
 
-### K22 · Four `[Unreleased]` bullets of `CHANGELOG.md` give test paths from before the move to `test/integration/`
+### K22 · Three `[Unreleased]` bullets of `CHANGELOG.md` give test paths from before the move to `test/integration/`
 
 - location: `CHANGELOG.md:31`
 - kind: docs
 - found: 2026-10-08
 - evidence: `grep -n 'test/device_solve.jl\|test/manifold_linesearch_tests.jl' CHANGELOG.md` gives
   `:31` (`test/manifold_linesearch_tests.jl`), `:47`, `:49` and `:157` (`test/device_solve.jl`),
-  and `:4342` (`test/manifold_linesearch_tests.jl`). Line 4342 is in a released 0.4.x section and
+  and `:4342` (`test/manifold_linesearch_tests.jl`). Line 4342 is in the released 0.2.0 section and
   stays. Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
   `test/integration/device_solve.jl`. The bullets are not released, so the paths may be corrected.
 
