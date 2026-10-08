@@ -43,11 +43,9 @@ if "core" in GROUPS
     @safetestset "Optimizer Status             " include("optimizers/optimizer_status_tests.jl")
     @safetestset "Descent Direction            " include("optimizers/descent_direction_tests.jl")
     @safetestset "Quasi-Newton Secant Pair     " include("optimizers/quasi_newton_secant_tests.jl")
-    @safetestset "Manifold Line Search         " include("integration/manifold_linesearch_tests.jl")
     @safetestset "Trial slope in a workspace   " include("optimizers/linesearch_problem.jl")
     @safetestset "BFGS state update            " include("optimizers/iterative_hessians/bfgs/bfgs_state.jl")
     @safetestset "Manifold Optimizers          " include("integration/manifold_optimizers_with_new_interface.jl")
-    @safetestset "Grassmann Optimizers         " include("integration/grassmann_optimizer_tests.jl")
     @safetestset "Optimizer State Init         " include("manifold_optimizers/optimizer_state_initialization.jl")
     @safetestset "Optimizer State Accessors    " include("integration/optimizer_state_accessors.jl")
     @safetestset "Optimizer State Semantics    " include("integration/optimizer_state_semantics.jl")
@@ -74,6 +72,8 @@ if "core" in GROUPS
 end
 if "slow" in GROUPS
     @safetestset "Optimizers                   " include("integration/optimizer_tests.jl")
+    @safetestset "Manifold Line Search         " include("integration/manifold_linesearch_tests.jl")
+    @safetestset "Grassmann Optimizers         " include("integration/grassmann_optimizer_tests.jl")
     @safetestset "device solve!                " include("integration/device_solve.jl")
     @safetestset "Doctests                     " include("quality/doctests.jl")
 end
