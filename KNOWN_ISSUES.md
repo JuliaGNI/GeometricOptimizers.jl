@@ -1132,8 +1132,9 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - kind: docs
 - found: 2026-10-08
 - evidence: `grep -n 'test/device_solve.jl\|test/manifold_linesearch_tests.jl' CHANGELOG.md` gives
-  `:31` (`test/manifold_linesearch_tests.jl`), `:47`, `:49` and `:157` (`test/device_solve.jl`).
-  Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
+  `:31` (`test/manifold_linesearch_tests.jl`), `:47`, `:49` and `:157` (`test/device_solve.jl`),
+  and `:4342` (`test/manifold_linesearch_tests.jl`). Line 4342 is in a released 0.4.x section and
+  stays. Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
   `test/integration/device_solve.jl`. The bullets are not released, so the paths may be corrected.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
