@@ -1137,6 +1137,27 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   stays. Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
   `test/integration/device_solve.jl`. The bullets are not released, so the paths may be corrected.
 
+### K23 · The `Downgrade` job cannot resolve the test environment: its `LLVM` and the `Metal` floor exclude each other
+
+- location: `test/Project.toml` (`Metal = "1.10"`)
+- kind: defect
+- found: 2026-10-03
+- evidence: the advisory `Downgrade - ubuntu-latest` job fails before any test runs. CI run
+  37951076527 at `2114a3b` (Julia 1.12.7):
+
+  ```
+  ERROR: LoadError: Unsatisfiable requirements detected for package LLVM [929cbde3]:
+   ├─restricted to versions 10.1.0 by an explicit requirement, leaving only versions: 10.1.0
+   └─restricted by compatibility requirements with Metal [dde4c033] to versions: 7.2.0 - 9.13.2 — no versions left
+       └─restricted to versions 1.10.0 - 1 by project [fff0a915], leaving only versions: 1.10.0 - 1.11.1
+  ```
+
+  The job pins the root dependencies to their floors and keeps that manifest
+  (`allow_reresolve: false`); the test environment then adds `Metal`, which needs an `LLVM` below
+  the `10.1.0` that the floor manifest holds. The same conflict, with `UnsafeAtomics` 0.3.3 named
+  as the package that needs `LLVM` 10, is in CI run 37122615676 at `0aa622b`. Which floor pins
+  `LLVM` at `10.1.0` is not yet measured. The required jobs resolve the newest versions and pass.
+
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
