@@ -6,16 +6,24 @@ using GeometricOptimizers: cache, default_linesearch, direction, first_moment,
                            isconverged, iteration_number, l2norm, linesearch, section,
                            solver_step!, status, update!,
                            DEFAULT_LEARNING_RATE
-using LinearAlgebra: norm
+using LinearAlgebra: norm, svd
 using Test
 import Random
 
-# The `GlobalSection` every testset below builds is drawn at random, and so are the iterates and the
-# objectives' coefficients. An unseeded `@testset` takes a fresh stream on every run — Julia reports
-# "RNG of the outermost testset" on failure for exactly this reason — so without this line the file is
-# a different test each time it runs. `test/manifold_optimizers/optimizer_state_initialization.jl` fixes its seed for the
-# same reason.
+include("../helpers/eltypes.jl")
+include("../helpers/manifold_tolerance.jl")
+
+# The `GlobalSection` every testset below builds is drawn at random from the global generator; the
+# iterates and the objectives' coefficients are drawn from a seeded generator of their own. An
+# unseeded `@testset` takes a fresh stream on every run — Julia reports "RNG of the outermost
+# testset" on failure for exactly this reason — so without this line the file is a different test
+# each time it runs. `test/manifold_optimizers/optimizer_state_initialization.jl` fixes its seed for
+# the same reason.
 Random.seed!(1234)
+
+# The integer pattern of the linear objectives below, scaled by a factor that is not a power of 2 so
+# that its entries round in `Float32`.
+pattern(::Type{T}) where {T} = T(1.3) .* T[1 2; -3 4; 2 -1; 1 0; -2 3]
 
 # `ScalarMomentAdam` is Cayley ADAM, Algorithm 2 of li2020efficient, in the global tangent space
 # representation. Its docstring and the *Optimizer Methods* manual page derive the port; what is
@@ -36,12 +44,13 @@ function paper_W(Y::AbstractMatrix, Z::AbstractMatrix)
     Ŵ - Ŵ'
 end
 
-@testset "ScalarMomentAdam constructor and scope" begin
+@testset "ScalarMomentAdam constructor and scope, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1)
     method = ScalarMomentAdam(; β₁ = 0.8, β₂ = 0.95, δ = 1.0e-6)
-    method₃₂ = GeometricOptimizers.change_precision(Float32, method)
-    @test method₃₂.β₁ === 0.8f0
-    @test method₃₂.β₂ === 0.95f0
-    @test method₃₂.δ === 1.0f-6
+    method_T = GeometricOptimizers.change_precision(T, method)
+    @test method_T.β₁ === T(0.8)
+    @test method_T.β₂ === T(0.95)
+    @test method_T.δ === T(1.0e-6)
     @test_throws ArgumentError ScalarMomentAdam(; β₁ = 1.0)
     @test_throws ArgumentError ScalarMomentAdam(; β₂ = -0.1)
     @test_throws ArgumentError ScalarMomentAdam(; δ = -1.0)
@@ -50,15 +59,17 @@ end
     @test ScalarMomentAdam(; ambient_norm = true).ambient_norm
 
     # the scope is the signature: a single `StiefelManifold`
-    @test_throws MethodError OptimizerState(method, rand(3))
-    @test_throws MethodError OptimizerState(method, (
-        Y = rand(StiefelManifold, 4, 2), z = rand(3)))
-    @test_throws MethodError OptimizerState(method, rand(GrassmannManifold{Float32}, 4, 2))
+    @test_throws MethodError OptimizerState(method, rand(rng, T, 3))
+    @test_throws MethodError OptimizerState(
+        method, (
+            Y = rand(rng, StiefelManifold{T}, 4, 2), z = rand(rng, T, 3)))
+    @test_throws MethodError OptimizerState(method, rand(rng, GrassmannManifold{T}, 4, 2))
 
     # The state carries a gradient too, as `Adam` does through `OptimizerState(::Adam, x...)`.
-    Y = rand(StiefelManifold, 4, 2)
-    Ḡ = global_rep(GlobalSection(Y), rgrad(Y, randn(4, 2)))
+    Y = rand(rng, StiefelManifold{T}, 4, 2)
+    Ḡ = global_rep(GlobalSection(Y), rgrad(Y, randn(rng, T, 4, 2)))
     @test OptimizerState(ScalarMomentAdam(), Y, Ḡ) isa ScalarMomentAdamState
+    @test eltype(gradient(OptimizerState(ScalarMomentAdam(), Y, Ḡ))) == T
     @test Matrix(gradient(OptimizerState(ScalarMomentAdam(), Y, Ḡ))) ≈ Matrix(Ḡ)
 
     # The moments are read in the first `update!` before they are written to, so they have to start at
@@ -69,24 +80,26 @@ end
 end
 
 # The scope is a `MethodError` on every path a caller reaches it by.
-@testset "ScalarMomentAdam rejects unsupported parameters through Optimizer" begin
+@testset "ScalarMomentAdam rejects unsupported parameters through Optimizer, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(2)
     f(x) = sum(abs2, x)
-    for x in (rand(3),
-        NetworkParameters((Y = rand(StiefelManifold, 4, 2), z = rand(3))),
-        rand(GrassmannManifold, 4, 2))
+    for x in (rand(rng, T, 3),
+        NetworkParameters((Y = rand(rng, StiefelManifold{T}, 4, 2), z = rand(rng, T, 3))),
+        rand(rng, GrassmannManifold{T}, 4, 2))
         @test_throws MethodError Optimizer(x, f; algorithm = ScalarMomentAdam())
     end
 
-    # A `Float32` Stiefel manifold is in scope: the method carries no element type, and `Optimizer`
-    # converts it. The state takes the element type of the parameters on both arities.
-    Y32 = rand(StiefelManifold{Float32}, 4, 2)
-    @test Optimizer(Y32, f; algorithm = ScalarMomentAdam()).algorithm isa
-          ScalarMomentAdam{Float32}
-    Ḡ32 = global_rep(GlobalSection(Y32), rgrad(Y32, randn(Float32, 4, 2)))
-    @test OptimizerState(ScalarMomentAdam(), Y32) isa ScalarMomentAdamState{Float32}
-    @test OptimizerState(ScalarMomentAdam(), Y32, Ḡ32) isa ScalarMomentAdamState{Float32}
+    # A Stiefel manifold of either element type is in scope: the method carries no element type,
+    # and `Optimizer` converts it. The state takes the element type of the parameters on both
+    # arities.
+    Y = rand(rng, StiefelManifold{T}, 4, 2)
+    @test Optimizer(Y, f; algorithm = ScalarMomentAdam()).algorithm isa ScalarMomentAdam{T}
+    Ḡ = global_rep(GlobalSection(Y), rgrad(Y, randn(rng, T, 4, 2)))
+    @test eltype(Ḡ) == T
+    @test OptimizerState(ScalarMomentAdam(), Y) isa ScalarMomentAdamState{T}
+    @test OptimizerState(ScalarMomentAdam(), Y, Ḡ) isa ScalarMomentAdamState{T}
     # and when `x` is not a Stiefel manifold at all, on the gradient-supplying arity as well
-    @test_throws MethodError OptimizerState(ScalarMomentAdam(), rand(3), rand(3))
+    @test_throws MethodError OptimizerState(ScalarMomentAdam(), rand(rng, T, 3), rand(rng, T, 3))
 end
 
 # `ScalarMomentAdam` joins `AdamFamily`, which is what `default_linesearch` dispatches the fixed
@@ -94,28 +107,29 @@ end
 # individual step, so a sufficient-decrease search has nothing to work with. `test/integration/optimizer_tests.jl`
 # makes this assertion for `Adam` and `AdamWithEuclideanDecay` but cannot make it here: it builds its
 # optimizer on `ones(T, 3)`, which this method rejects.
-@testset "ScalarMomentAdam keeps AdamFamily's fixed Static" begin
-    for T in (Float64, Float32)
-        ls = default_linesearch(T, ScalarMomentAdam())
-        @test ls isa Static{T}
-        @test ls.α == T(DEFAULT_LEARNING_RATE)
+@testset "ScalarMomentAdam keeps AdamFamily's fixed Static, $T" for T in REAL_ELTYPES
+    ls = default_linesearch(T, ScalarMomentAdam())
+    @test ls isa Static{T}
+    @test eltype(ls.α) == T
+    @test ls.α == T(DEFAULT_LEARNING_RATE)
 
-        Y = rand(StiefelManifold{T}, 5, 2)
-        opt = Optimizer(Y, Ỹ -> sum(abs2, Ỹ.A .- 1); algorithm = ScalarMomentAdam())
-        @test linesearch(opt).method isa Static{T}
-        @test linesearch(opt).method.α == T(DEFAULT_LEARNING_RATE)
-    end
+    Y = rand(Random.Xoshiro(3), StiefelManifold{T}, 5, 2)
+    opt = Optimizer(Y, Ỹ -> sum(abs2, Ỹ.A .- 1); algorithm = ScalarMomentAdam())
+    @test linesearch(opt).method isa Static{T}
+    @test linesearch(opt).method.α == T(DEFAULT_LEARNING_RATE)
 end
 
 # The identity the port rests on: the paper's auxiliary matrix, skew-symmetrized, is the horizontal
 # lift conjugated by the global section — `W = λ(Y)ᵀ⁻¹ global_rep(λ(Y), Z) λ(Y)ᵀ`. If this fails, the
 # implementation is not computing the paper's `W_k` and lines 8-10 would have to be written out.
-@testset "the paper's W is the horizontal lift" begin
-    Y = rand(StiefelManifold, 7, 3)
+@testset "the paper's W is the horizontal lift, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(4)
+    Y = rand(rng, StiefelManifold{T}, 7, 3)
     λY = GlobalSection(Y)
     λ = Matrix(λY)
-    for Z in (rgrad(Y, randn(7, 3)), randn(7, 3))
+    for Z in (rgrad(Y, randn(rng, T, 7, 3)), randn(rng, T, 7, 3))
         Ḡ = global_rep(λY, Z)
+        @test eltype(Ḡ) == T
         @test λ * Matrix(Ḡ) * λ' ≈ paper_W(Y.A, Z)
         # ... and the paper's projection `π(Z) = WY` is that lift read back at `Y`: `λᵀY` is the
         # first `n` columns of the identity, so `λḠλᵀY = λḠ[:, 1:n]`.
@@ -123,83 +137,88 @@ end
     end
 end
 
-@testset "ScalarMomentAdam moment recursion" begin
-    for T in (Float64, Float32)
-        rtol = T === Float32 ? 5.0f-5 : 1.0e-12
-        Y = rand(StiefelManifold{T}, 5, 2)
-        C = T[1 2; -3 4; 2 -1; 1 0; -2 3]
-        β₁, β₂, δ = T(0.5), T(0.25), T(0.1)
-        # converted as `Optimizer` converts it, because `update!` is called with it directly below
-        method = GeometricOptimizers.change_precision(T, ScalarMomentAdam(; β₁, β₂, δ))
-        opt = Optimizer(Y, linear_stiefel_objective(C); algorithm = method,
-            linesearch = Static(T(0.01)), retraction = Cayley())
-        state = OptimizerState(method, Y)
+@testset "ScalarMomentAdam moment recursion, $T" for T in REAL_ELTYPES
+    # a few operations per moment: measured at most 0.75 `eps(T)` relative in both precisions
+    # over 20 seeds
+    rtol = 4 * eps(T)
+    Y = rand(Random.Xoshiro(5), StiefelManifold{T}, 5, 2)
+    C = pattern(T)
+    β₁, β₂, δ = T(0.5), T(0.25), T(0.1)
+    # converted as `Optimizer` converts it, because `update!` is called with it directly below
+    method = GeometricOptimizers.change_precision(T, ScalarMomentAdam(; β₁, β₂, δ))
+    opt = Optimizer(Y, linear_stiefel_objective(C); algorithm = method,
+        linesearch = Static(T(0.01)), retraction = Cayley())
+    state = OptimizerState(method, Y)
 
-        # ---- the first update: `t = 1` makes both bias-correction factors `1` ----
-        increase_iteration_number!(state)
-        update!(cache(opt), state, gradient(opt), method, Y)
-        Ḡ = global_rep(section(state), rgrad(Y, C))
+    # ---- the first update: `t = 1` makes both bias-correction factors `1` ----
+    increase_iteration_number!(state)
+    update!(cache(opt), state, gradient(opt), method, Y)
+    Ḡ = global_rep(section(state), rgrad(Y, C))
 
-        @test Matrix(first_moment(cache(opt))) ≈ Matrix(Ḡ) rtol = rtol
-        @test first_moment(cache(opt)) isa StiefelLieAlgHorMatrix
-        # the scalar second moment: a squared gradient *norm*, not a squared gradient
-        @test second_moment(cache(opt)) isa T
-        @test second_moment(cache(opt)) ≈ l2norm(Ḡ)^2 rtol = rtol
-        # `δ` goes *inside* the root, as in the paper's line 7
-        @test _second_moment(cache(opt)) ≈ √(l2norm(Ḡ)^2 + δ) rtol = rtol
-        # the direction is `-m̂/√(v̂ + δ)` and carries no learning rate
-        @test Matrix(direction(cache(opt))) ≈ -Matrix(Ḡ) ./ √(l2norm(Ḡ)^2 + δ) rtol = rtol
+    @test eltype(first_moment(cache(opt))) == T
+    @test Matrix(first_moment(cache(opt))) ≈ Matrix(Ḡ) rtol = rtol
+    @test first_moment(cache(opt)) isa StiefelLieAlgHorMatrix
+    # the scalar second moment: a squared gradient *norm*, not a squared gradient
+    @test second_moment(cache(opt)) isa T
+    @test second_moment(cache(opt)) ≈ l2norm(Ḡ)^2 rtol = rtol
+    # `δ` goes *inside* the root, as in the paper's line 7
+    @test _second_moment(cache(opt)) ≈ √(l2norm(Ḡ)^2 + δ) rtol = rtol
+    # the direction is `-m̂/√(v̂ + δ)` and carries no learning rate
+    @test Matrix(direction(cache(opt))) ≈ -Matrix(Ḡ) ./ √(l2norm(Ḡ)^2 + δ) rtol = rtol
 
-        # ---- the second update: both factors now bite ----
-        m₁_prev = copy(Matrix(first_moment(cache(opt))))
-        m₂_prev = second_moment(cache(opt))
-        solver_step!(Y, state, opt)
-        update!(state, opt, Y)
-        # the moments the state carries into the next update are the cache's, unscaled by `α`
-        @test second_moment(state) == m₂_prev
-        @test Matrix(first_moment(state)) ≈ m₁_prev rtol = rtol
+    # ---- the second update: both factors now bite ----
+    m₁_prev = copy(Matrix(first_moment(cache(opt))))
+    m₂_prev = second_moment(cache(opt))
+    solver_step!(Y, state, opt)
+    update!(state, opt, Y)
+    # the moments the state carries into the next update are the cache's, unscaled by `α`
+    @test second_moment(state) == m₂_prev
+    @test Matrix(first_moment(state)) ≈ m₁_prev rtol = rtol
 
-        increase_iteration_number!(state)
-        @test iteration_number(state) == 2
-        update!(cache(opt), state, gradient(opt), method, Y)
-        Ḡ₂ = gradient_array(cache(opt))
-        fac₁₁, fac₁₂ = (β₁ - β₁^2) / (1 - β₁^2), (1 - β₁) / (1 - β₁^2)
-        fac₂₁, fac₂₂ = (β₂ - β₂^2) / (1 - β₂^2), (1 - β₂) / (1 - β₂^2)
+    increase_iteration_number!(state)
+    @test iteration_number(state) == 2
+    update!(cache(opt), state, gradient(opt), method, Y)
+    Ḡ₂ = gradient_array(cache(opt))
+    fac₁₁, fac₁₂ = (β₁ - β₁^2) / (1 - β₁^2), (1 - β₁) / (1 - β₁^2)
+    fac₂₁, fac₂₂ = (β₂ - β₂^2) / (1 - β₂^2), (1 - β₂) / (1 - β₂^2)
 
-        @test Matrix(first_moment(cache(opt))) ≈ fac₁₁ * m₁_prev + fac₁₂ * Matrix(Ḡ₂) rtol = rtol
-        @test second_moment(cache(opt)) ≈ fac₂₁ * m₂_prev + fac₂₂ * l2norm(Ḡ₂)^2 rtol = rtol
-    end
+    @test Matrix(first_moment(cache(opt))) ≈ fac₁₁ * m₁_prev + fac₁₂ * Matrix(Ḡ₂) rtol = rtol
+    @test second_moment(cache(opt)) ≈ fac₂₁ * m₂_prev + fac₂₂ * l2norm(Ḡ₂)^2 rtol = rtol
 end
 
 # The representation-sensitive assertion. `Adam` accumulates `Ḡ ⊙ Ḡ`, an element of `𝔤ʰᵒʳ`; this
 # method accumulates `‖Ḡ‖²`, a number. A single scalar cannot encode the componentwise second moment,
 # so the two directions are not parallel — which also rules out the port having quietly kept Adam's
 # path.
-@testset "the second moment is a scalar and the direction is not Adam's" begin
-    Y = rand(StiefelManifold, 6, 3)
-    C = randn(6, 3)
+@testset "the second moment is a scalar and the direction is not Adam's, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(6)
+    Y = rand(rng, StiefelManifold{T}, 6, 3)
+    C = randn(rng, T, 6, 3)
 
-    method = ScalarMomentAdam()
-    opt = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = method,
-        linesearch = Static(0.01), retraction = Cayley())
+    # `update!` is called with the method directly below, so it is the one `Optimizer` converted
+    opt = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = ScalarMomentAdam(),
+        linesearch = Static(T(0.01)), retraction = Cayley())
+    method = opt.algorithm
     state = OptimizerState(method, Y)
     increase_iteration_number!(state)
     update!(cache(opt), state, gradient(opt), method, Y)
 
-    adam = Adam()
-    opt_adam = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = adam,
-        linesearch = Static(0.01), retraction = Cayley())
+    opt_adam = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = Adam(),
+        linesearch = Static(T(0.01)), retraction = Cayley())
+    adam = opt_adam.algorithm
     state_adam = OptimizerState(adam, Y)
     increase_iteration_number!(state_adam)
     update!(cache(opt_adam), state_adam, gradient(opt_adam), adam, Y)
 
     δ_scalar = Matrix(direction(cache(opt)))
     δ_adam = Matrix(direction(cache(opt_adam)))
-    @test second_moment(cache(opt)) isa Real
+    @test eltype(δ_scalar) == T
+    @test eltype(δ_adam) == T
+    @test second_moment(cache(opt)) isa T
     @test second_moment(cache(opt_adam)) isa StiefelLieAlgHorMatrix
     # not parallel: `Adam`'s direction has magnitude ≈ 1 per *component*, this one has ≈ 1 overall
-    @test !isapprox(δ_scalar, δ_adam; rtol = 1e-8)
-    @test !isapprox(δ_scalar ./ norm(δ_scalar), δ_adam ./ norm(δ_adam); rtol = 1e-8)
+    @test δ_scalar ≉ δ_adam
+    @test δ_scalar ./ norm(δ_scalar) ≉ δ_adam ./ norm(δ_adam)
     # ... and that is the difference in step length the docstring warns about, in the norm that decides
     # it: `step_αmax` and `OptimizerStatus` both measure the direction with `l2norm`, which on a lift
     # is the norm of its free parameters. There are `n(n-1)/2 + (N-n)n` of them; `Adam` drives each to
@@ -233,19 +252,32 @@ end
     # honest form for something whose whole content is that limit — a tolerance on the `δ > 0` values
     # is a tolerance on the draw, which is what failed in CI. It also exercises the `δ = 0` the
     # constructors explicitly permit and nothing else covers.
-    for (δ₀_method, expected) in ((Adam(; δ = 0.0), √dim), (
-        ScalarMomentAdam(; δ = 0.0), 1.0))
+    for (δ₀_method, expected) in ((Adam(; δ = 0.0), √T(dim)), (
+        ScalarMomentAdam(; δ = 0.0), one(T)))
         opt₀ = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = δ₀_method,
-            linesearch = Static(0.01), retraction = Cayley())
-        state₀ = OptimizerState(δ₀_method, Y)
+            linesearch = Static(T(0.01)), retraction = Cayley())
+        state₀ = OptimizerState(opt₀.algorithm, Y)
         increase_iteration_number!(state₀)
-        update!(cache(opt₀), state₀, gradient(opt₀), δ₀_method, Y)
-        @test l2norm(direction(cache(opt₀))) ≈ expected rtol = 1.0e-12
+        update!(cache(opt₀), state₀, gradient(opt₀), opt₀.algorithm, Y)
+        @test eltype(l2norm(direction(cache(opt₀)))) == T
+        # the round-off of a sum of `dim` squares and a root: measured at most 1 `eps(T)` in both
+        # precisions over 20 seeds
+        @test l2norm(direction(cache(opt₀))) ≈ expected rtol = dim * eps(T)
     end
 
-    # `δ > 0` then puts both strictly *below* their ideal, for every draw
-    @test l2norm(direction(cache(opt))) < 1
-    @test l2norm(direction(cache(opt_adam))) < √dim
+    # `δ > 0` then puts both strictly *below* their ideal, for every draw, where `T` resolves `δ`
+    # against the squared gradient. The default `δ = 1e-8` is below `eps(Float32)` relative to a
+    # gradient of size 1, so the `Float32` direction rounds to the ideal itself; `δ = √eps(T)` is
+    # resolved in both precisions, and is close to the default in `Float64`.
+    for (δ₊_method, ideal) in ((Adam(; δ = √eps(T)), √T(dim)), (
+        ScalarMomentAdam(; δ = √eps(T)), one(T)))
+        opt₊ = Optimizer(copy(Y), linear_stiefel_objective(C); algorithm = δ₊_method,
+            linesearch = Static(T(0.01)), retraction = Cayley())
+        state₊ = OptimizerState(opt₊.algorithm, Y)
+        increase_iteration_number!(state₊)
+        update!(cache(opt₊), state₊, gradient(opt₊), opt₊.algorithm, Y)
+        @test l2norm(direction(cache(opt₊))) < ideal
+    end
 end
 
 # Which `‖·‖²` the second moment accumulates. `ambient_norm = false` -- the default -- squares the
@@ -253,9 +285,10 @@ end
 # objective is `C` exactly. The two are not interchangeable up to a constant: `rgrad` drops the normal
 # component, so `∇L = YS` with `S` symmetric makes the lift vanish while `‖∇L‖_F` does not, which the
 # third block below pins.
-@testset "ScalarMomentAdam: which norm the second moment squares" begin
-    Y = rand(StiefelManifold, 6, 3)
-    C = randn(6, 3)
+@testset "ScalarMomentAdam: which norm the second moment squares, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(7)
+    Y = rand(rng, StiefelManifold{T}, 6, 3)
+    C = randn(rng, T, 6, 3)
     objective = linear_stiefel_objective(C)
 
     # One `state` for both, and hence one `GlobalSection`: `B = λᵀΔ` depends on the random complement
@@ -264,13 +297,14 @@ end
     state = OptimizerState(ScalarMomentAdam(), Y)
     increase_iteration_number!(state)
     cache_lift, cache_ambient = map((false, true)) do ambient_norm
-        method = ScalarMomentAdam(; ambient_norm)
-        opt = Optimizer(copy(Y), objective; algorithm = method, linesearch = Static(0.01),
-            retraction = Cayley())
-        update!(cache(opt), state, gradient(opt), method, Y)
+        opt = Optimizer(copy(Y), objective; algorithm = ScalarMomentAdam(; ambient_norm),
+            linesearch = Static(T(0.01)), retraction = Cayley())
+        update!(cache(opt), state, gradient(opt), opt.algorithm, Y)
     end
+    δ = T(ScalarMomentAdam().δ)
 
     Ḡ = global_rep(section(state), rgrad(Y, C))
+    @test second_moment(cache_lift) isa T
     @test second_moment(cache_lift) ≈ l2norm(Ḡ)^2
     @test second_moment(cache_ambient) ≈ sum(abs2, C)
     @test second_moment(cache_lift) != second_moment(cache_ambient)
@@ -278,16 +312,16 @@ end
     @test Matrix(first_moment(cache_lift)) ≈ Matrix(first_moment(cache_ambient))
     @test Matrix(direction(cache_lift)) ≈
           Matrix(direction(cache_ambient)) *
-          √(second_moment(cache_ambient) + ScalarMomentAdam().δ) /
-          √(second_moment(cache_lift) + ScalarMomentAdam().δ)
+          √(second_moment(cache_ambient) + δ) /
+          √(second_moment(cache_lift) + δ)
 
     # `ambient_norm = true` reaches the ambient gradient through the flattened closure
     # `GradientAutodiff(F, ::Manifold)` builds, which is a path nothing else in the package takes, so
     # a whole solve is run over it: it has to stay on the manifold and it has to descend.
     for ambient_norm in (false, true)
-        Yₛ = rand(StiefelManifold, 6, 3)
+        Yₛ = rand(rng, StiefelManifold{T}, 6, 3)
         method = ScalarMomentAdam(; ambient_norm)
-        opt = Optimizer(Yₛ, objective; algorithm = method, linesearch = Static(0.01))
+        opt = Optimizer(Yₛ, objective; algorithm = method, linesearch = Static(T(0.01)))
         stateₛ = OptimizerState(method, Yₛ)
         f₀ = objective(Yₛ)
         for _ in 1:5
@@ -295,40 +329,45 @@ end
             solver_step!(Yₛ, stateₛ, opt)
             update!(stateₛ, opt, Yₛ)
         end
-        @test check(Yₛ) < 1.0e-12
+        @test eltype(Yₛ) == T
+        @test check(Yₛ) < manifold_tolerance(T)
         @test objective(Yₛ) < f₀
     end
 
     # A gradient normal to the tangent space: the lift norm is zero where the ambient one is not, so
     # no constant relates the two.
-    S = [1.0 0.5 0.0; 0.5 2.0 -1.0; 0.0 -1.0 3.0]
+    S = T[1.3 0.7 0.0; 0.7 2.1 -1.1; 0.0 -1.1 2.9]
     ∇L = Y.A * S
-    @test l2norm(global_rep(GlobalSection(Y), rgrad(Y, ∇L))) < 1.0e-12
+    # the projection of `YS` is `YS(I - YᵀY)` in exact algebra, so `‖S‖` times the round-off of
+    # `YᵀY = I`: measured at most 0.65 `eps(T)⋅‖S‖` in both precisions over 20 seeds
+    @test l2norm(global_rep(GlobalSection(Y), rgrad(Y, ∇L))) < 4 * eps(T) * norm(S)
     @test sum(abs2, ∇L) > 1
 end
 
 # The accepted step goes through the ordinary section/retraction path, so it stays on the manifold —
 # with the exact Cayley transform the paper's own retraction approximates, and with the geodesic,
 # which the paper has no version of.
-@testset "ScalarMomentAdam steps stay on the Stiefel manifold" begin
-    for T in (Float64, Float32)
-        tol = T === Float32 ? 5.0f-5 : 1.0e-12
-        for retraction in (Cayley(), Geodesic())
-            Y = rand(StiefelManifold{T}, 5, 2)
-            C = T[1 2; -3 4; 2 -1; 1 0; -2 3]
-            method = ScalarMomentAdam()
-            opt = Optimizer(Y, linear_stiefel_objective(C); algorithm = method,
-                linesearch = Static(T(0.01)), retraction = retraction)
-            state = OptimizerState(method, Y)
+@testset "ScalarMomentAdam steps stay on the Stiefel manifold, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(8)
+    # the round-off of three retractions: measured at most 3.4 `eps(T)` in both precisions over 20
+    # seeds
+    tol = 16 * eps(T)
+    for retraction in (Cayley(), Geodesic())
+        Y = rand(rng, StiefelManifold{T}, 5, 2)
+        C = pattern(T)
+        method = ScalarMomentAdam()
+        opt = Optimizer(Y, linear_stiefel_objective(C); algorithm = method,
+            linesearch = Static(T(0.01)), retraction = retraction)
+        state = OptimizerState(method, Y)
 
-            for _ in 1:3
-                increase_iteration_number!(state)
-                solver_step!(Y, state, opt)
-                update!(state, opt, Y)
-                @test check(Y) < tol
-            end
-            @test iteration_number(state) == 3
+        for _ in 1:3
+            increase_iteration_number!(state)
+            solver_step!(Y, state, opt)
+            update!(state, opt, Y)
+            @test check(Y) < tol
         end
+        @test eltype(Y) == T
+        @test iteration_number(state) == 3
     end
 end
 
@@ -340,26 +379,39 @@ end
 # none of which the manual loops touch together. Both `ambient_norm` settings go through it, the
 # `true` one because the extra gradient evaluation it makes per step is a path nothing else in the
 # package takes.
-@testset "ScalarMomentAdam solves through solve!" begin
+@testset "ScalarMomentAdam solves through solve!, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(9)
     # `‖Y - 𝟙‖²_F`, whose gradient varies with the iterate — unlike the linear objective above, whose
     # `∇L = C` everywhere — so the solve has a minimum to converge to rather than a direction to
     # follow forever.
     objective(Y) = sum(abs2, Y.A .- 1)
+    # The minimisers, by an independent route: `‖Y - J‖² = n + ‖J‖² - 2tr(YᵀJ)` with `J = 𝟙`, and
+    # `tr(YᵀJ) = σ₁ uᵀYv` for the rank-one `J = σ₁uvᵀ`, which is largest where `Yv = u`. The
+    # minimisers are a set, so the distance of `Y` to it is measured as `‖Yv - u‖`, up to the sign
+    # that the SVD leaves free.
+    F = svd(ones(T, 6, 3))
+    u, v = F.U[:, 1], F.V[:, 1]
     for ambient_norm in (false, true)
-        Y = rand(StiefelManifold, 6, 3)
+        Y = rand(rng, StiefelManifold{T}, 6, 3)
         f₀ = objective(Y)
         method = ScalarMomentAdam(; ambient_norm)
-        opt = Optimizer(Y, objective; algorithm = method, linesearch = Static(0.05),
+        opt = Optimizer(Y, objective; algorithm = method, linesearch = Static(T(0.05)),
             max_iterations = 2000)
         state = OptimizerState(method, Y)
 
         result = solve!(Y, state, opt)
 
+        @test eltype(Y) == T
+        @test minimum(result) isa T
         # it terminated on a criterion rather than on the iteration cap
         @test iteration_number(state) < 2000
         # ... at a point on the manifold, having decreased the objective
-        @test check(Y) < 1.0e-12
+        @test check(Y) < manifold_tolerance(T)
         @test objective(Y) < f₀
+        # ... at a minimiser: the solve stops on the change of the objective, so the argument is
+        # accurate to the root of its precision; measured at most 156 `√eps(T)` in `Float32` and 52
+        # in `Float64`, over 20 seeds and both settings
+        @test min(norm(Y.A * v - u), norm(Y.A * v + u)) < 512 * √eps(T)
         # the status the solve reports is about the point it returns, and it is a *criterion* that
         # stopped it rather than the cap
         @test minimum(result) ≈ objective(Y)
@@ -368,20 +420,22 @@ end
     end
 end
 
-@testset "ScalarMomentAdam differs from Adam over a solve" begin
-    Y₁ = rand(StiefelManifold, 6, 3)
+@testset "ScalarMomentAdam differs from Adam over a solve, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(10)
+    Y₁ = rand(rng, StiefelManifold{T}, 6, 3)
     Y₂ = copy(Y₁)
-    C = randn(6, 3)
+    C = randn(rng, T, 6, 3)
     objective = linear_stiefel_objective(C)
     opt₁ = Optimizer(
-        Y₁, objective; algorithm = Adam(), linesearch = Static(0.01), retraction = Cayley())
+        Y₁, objective; algorithm = Adam(), linesearch = Static(T(0.01)), retraction = Cayley())
     opt₂ = Optimizer(Y₂, objective; algorithm = ScalarMomentAdam(),
-        linesearch = Static(0.01), retraction = Cayley())
+        linesearch = Static(T(0.01)), retraction = Cayley())
     state₁ = OptimizerState(opt₁.algorithm, Y₁)
     state₂ = OptimizerState(opt₂.algorithm, Y₂)
     increase_iteration_number!(state₁)
     increase_iteration_number!(state₂)
     solver_step!(Y₁, state₁, opt₁)
     solver_step!(Y₂, state₂, opt₂)
-    @test !isapprox(Y₁.A, Y₂.A; atol = 1e-12, rtol = 1e-12)
+    @test eltype(Y₂) == T
+    @test Y₁.A ≉ Y₂.A
 end

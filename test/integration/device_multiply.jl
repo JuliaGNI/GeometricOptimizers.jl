@@ -35,10 +35,11 @@ using KernelAbstractions: KernelAbstractions
 using Random
 using Test
 
+include("../helpers/eltypes.jl")
+
 Random.seed!(2718)
 
-const T = Float32
-const device = KernelAbstractions.get_backend(JLArray(zeros(T, 1)))
+const device = KernelAbstractions.get_backend(JLArray(zeros(1)))
 const N, n = 6, 3
 
 allowscalar(false)
@@ -46,16 +47,20 @@ allowscalar(false)
 # A triangular whose storage is on the device, built by moving the packed vector rather than through
 # the matrix constructor: `StrictlyLowerTriangular(::AbstractMatrix)` runs a kernel per row and is a
 # different thing to test.
-device_triangular(MT, m) = MT(JLArray(rand(T, m * (m - 1) ÷ 2)), m)
+device_triangular(rng, MT, T, m) = MT(JLArray(randn(rng, T, m * (m - 1) ÷ 2)), m)
 
-@testset "a triangular times a matrix runs on the device" begin
+# Every product below is compared with its host twin by the default `≈`, whose `rtol` is `√eps(T)`:
+# the two sum the same `m ≤ 2N` terms in different orders, so they differ by a few `eps(T)`.
+@testset "a triangular times a matrix runs on the device, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(2718)
     for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular), m in (3, 6)
 
-        A = device_triangular(MT, m)
-        B = JLArray(rand(T, m, m))
+        A = device_triangular(rng, MT, T, m)
+        B = JLArray(randn(rng, T, m, m))
 
         C = A * B
         @test C isa JLArray{T, 2}
+        @test eltype(C) == T
         @test size(C) == (m, m)
 
         # the kernel reads the packed vector; the dense product reads the same matrix through
@@ -65,7 +70,7 @@ device_triangular(MT, m) = MT(JLArray(rand(T, m * (m - 1) ÷ 2)), m)
     end
 end
 
-@testset "a matrix times a triangular runs on the device" begin
+@testset "a matrix times a triangular runs on the device, $T" for T in REAL_ELTYPES
     # `*(::AbstractMatrix, ::AbstractTriangular)` is `(A' * B')'`, and `adjoint` on one of these is a
     # type swap onto the same storage — so this reaches the *other* subtype's kernel and is not a
     # restatement of the testset above.
@@ -74,63 +79,77 @@ end
     # `adjoint` in `(A' * B')'` is lazy. It is still on the device, which is what this file is about,
     # and it is the shape `*(::AbstractMatrix, ::SkewSymMatrix)` returns as well —
     # `parent` is therefore what to assert on.
+    rng = Random.Xoshiro(2719)
     for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular), m in (3, 6)
 
-        A = device_triangular(MT, m)
-        B = JLArray(rand(T, m, m))
+        A = device_triangular(rng, MT, T, m)
+        B = JLArray(randn(rng, T, m, m))
 
         C = B * A
         @test parent(C) isa JLArray{T, 2}
+        @test eltype(C) == T
 
         host = MT(Array(parent(A)), m)
         @test Array(C) ≈ Array(B) * Matrix{T}(host)
     end
 end
 
-@testset "a triangular times a triangular runs on the device" begin
+@testset "a triangular times a triangular runs on the device, $T" for T in REAL_ELTYPES
     # this materializes its right operand through `one`, which is `unit_matrix` and kernel-backed
+    rng = Random.Xoshiro(2720)
     for MT₁ in (StrictlyLowerTriangular, StrictlyUpperTriangular),
         MT₂ in (StrictlyLowerTriangular, StrictlyUpperTriangular)
 
-        A = device_triangular(MT₁, N)
-        B = device_triangular(MT₂, N)
+        A = device_triangular(rng, MT₁, T, N)
+        B = device_triangular(rng, MT₂, T, N)
 
         C = A * B
         @test C isa JLArray{T, 2}
+        @test eltype(C) == T
         @test Array(C) ≈
               Matrix{T}(MT₁(Array(parent(A)), N)) * Matrix{T}(MT₂(Array(parent(B)), N))
     end
 end
 
-@testset "a StiefelProjection times a matrix runs on the device" begin
+@testset "a StiefelProjection times a matrix runs on the device, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(2721)
     E = StiefelProjection(device, T, N, n)
-    B = JLArray(rand(T, n, n))
-    A = JLArray(rand(T, n, N))
+    B = JLArray(randn(rng, T, n, n))
+    A = JLArray(randn(rng, T, n, N))
 
+    @test eltype(E * B) == T
+    @test eltype(A * E) == T
     @test Array(E * B) ≈ Matrix{T}(StiefelProjection(T, N, n)) * Array(B)
     @test Array(A * E) ≈ Array(A) * Matrix{T}(StiefelProjection(T, N, n))
     @test E * B isa JLArray{T, 2}
     @test A * E isa JLArray{T, 2}
 
-    b = JLArray(rand(T, n))
+    b = JLArray(randn(rng, T, n))
+    @test eltype(E * b) == T
     @test Array(E * b) ≈ Matrix{T}(StiefelProjection(T, N, n)) * Array(b)
 end
 
-@testset "a geodesic retraction of a device-backed point runs end to end" begin
+@testset "a geodesic retraction of a device-backed point runs end to end, $T" for T in REAL_ELTYPES
     # the payoff, and the assertion this file exists for. `geodesic` takes `expB * E` with
     # `E::StiefelProjection`, and that is the one product on its path that the generic
     # `AbstractMatrix` method cannot serve on a device.
-    Y = rand(device, StiefelManifold, N, n)
-    Δ = rgrad(Y, JLArray(rand(T, N, n)))
+    rng = Random.Xoshiro(2722)
+    Y = rand(rng, device, StiefelManifold{T}, N, n)
+    Δ = rgrad(Y, JLArray(randn(rng, T, N, n)))
 
     Y₂ = geodesic(Y, Δ / 100)
 
     @test Y₂ isa StiefelManifold
     @test Y₂.A isa JLArray{T, 2}
+    @test eltype(Y₂) == T
+    # `‖Y₂ᵀY₂ - I‖` after a section, a scaled-and-squared exponential and two `N`-term products.
+    # Measured over 50 seeds: at most 5 `eps(T)` in `Float32` and 59 `eps(T)` in `Float64`, the
+    # latter from the device section's heavy tail that `device_orthonormalization.jl` describes.
+    # The bound is the one this testset had.
     @test check(Y₂) < 1000 * eps(T)
 end
 
-@testset "cayley stops one step further on, and that is JLArrays' gap and not this package's" begin
+@testset "cayley stops one step further on, and that is JLArrays' gap and not this package's, $T" for T in REAL_ELTYPES
     # `cayley` inverts a `2n × 2n` matrix with `LinearAlgebra.inv`. `JLArrays` supplies no `lu`, so
     # that falls through to the generic one, which scalar-indexes — and the retraction stops here
     # rather than on a product. `geodesic` above needs no inverse and completes on either backend.
@@ -140,8 +159,9 @@ end
     # backend's limitation, not a statement about devices — which is exactly why it is pinned here
     # instead of described in a comment somewhere. Should `JLArrays` gain an `lu`, this assertion
     # fails and says so.
-    Y = rand(device, StiefelManifold, N, n)
-    Δ = rgrad(Y, JLArray(rand(T, N, n)))
+    rng = Random.Xoshiro(2723)
+    Y = rand(rng, device, StiefelManifold{T}, N, n)
+    Δ = rgrad(Y, JLArray(randn(rng, T, N, n)))
 
     # matched on the message, not on `ErrorException`: the point of the assertion is *where* the
     # path stops, and every `error()` anywhere in `cayley` is an `ErrorException` too
@@ -151,30 +171,34 @@ end
 # A lift on a device, built the way the retractions build one: `global_rep` of a Riemannian gradient
 # at a device-backed point. The blocks then carry the point's backend, which is what the products
 # below run on.
-device_lift(Y) = global_rep(GlobalSection(Y), rgrad(Y, JLArray(rand(T, N, n))))
+function device_lift(rng, Y)
+    global_rep(GlobalSection(Y), rgrad(Y, JLArray(randn(rng, eltype(Y), N, n))))
+end
 
 # The host twin of a device lift, block by block. `Matrix(B)` would scalar-index `B`, so the dense
 # form each assertion below compares against has to be built on the host first.
 function host_lift(B::StiefelLieAlgHorMatrix)
-    Matrix{T}(StiefelLieAlgHorMatrix(
+    Matrix{eltype(B)}(StiefelLieAlgHorMatrix(
         SkewSymMatrix(Array(B.A.S), B.A.n), Array(B.B), B.N, B.n))
 end
 function host_lift(B::GrassmannLieAlgHorMatrix)
-    Matrix{T}(GrassmannLieAlgHorMatrix(
+    Matrix{eltype(B)}(GrassmannLieAlgHorMatrix(
         Array(B.B), B.N, B.n))
 end
 
-@testset "a horizontal lift times a matrix runs on the device" begin
+@testset "a horizontal lift times a matrix runs on the device, $T" for T in REAL_ELTYPES
     # This is the third wrapper meeting the same gap the two above meet: an
     # `AbstractLieAlgHorMatrix` assembles its ambient `N × N` matrix in `getindex` too. It needs no
     # kernel, unlike the triangulars — it holds ordinary blocks, and the `A` block of a Stiefel lift
     # is a `SkewSymMatrix`, which carries a kernel-backed product of its own.
-    for B in (device_lift(rand(device, StiefelManifold, N, n)),
-        GrassmannLieAlgHorMatrix(JLArray(rand(T, N - n, n)), N, n))
+    rng = Random.Xoshiro(2724)
+    for B in (device_lift(rng, rand(rng, device, StiefelManifold{T}, N, n)),
+        GrassmannLieAlgHorMatrix(JLArray(randn(rng, T, N - n, n)), N, n))
         D = host_lift(B)
-        C = JLArray(rand(T, N, n))
+        C = JLArray(randn(rng, T, N, n))
 
         @test B * C isa JLArray{T, 2}
+        @test eltype(B * C) == T
         @test size(B * C) == (N, n)
         @test Array(B * C) ≈ D * Array(C)
 
@@ -187,19 +211,21 @@ end
         @test parent(C' * B) isa JLArray{T, 2}
         @test Array(C' * B) ≈ Array(C)' * D
 
-        c = JLArray(rand(T, N))
+        c = JLArray(randn(rng, T, N))
         @test B * c isa JLArray{T, 1}
         @test Array(B * c) ≈ D * Array(c)
     end
 end
 
-@testset "a horizontal lift times a StiefelProjection runs on the device" begin
+@testset "a horizontal lift times a StiefelProjection runs on the device, $T" for T in REAL_ELTYPES
     # `B * E` unwraps the projection and hands the lift a bare array, so unwrapping alone moves the
     # scalar index one frame in rather than removing it. This is the assertion that says the gap is
     # shut and not moved.
-    B = device_lift(rand(device, StiefelManifold, N, n))
+    rng = Random.Xoshiro(2725)
+    B = device_lift(rng, rand(rng, device, StiefelManifold{T}, N, n))
     E = StiefelProjection(B)
 
     @test B * E isa JLArray{T, 2}
+    @test eltype(B * E) == T
     @test Array(B * E) ≈ host_lift(B) * Matrix{T}(StiefelProjection(T, N, n))
 end

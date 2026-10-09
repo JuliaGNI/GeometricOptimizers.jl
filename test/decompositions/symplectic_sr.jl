@@ -27,19 +27,26 @@ Random.seed!(1234)
 # the *wrong* constraint, `‖UᵀU - I‖`, measures 7.6, 38 and 295 at these three sizes, so 1e-4
 # rejects breakage by four orders and more.
 #
-# `Float32` is not tested at any size. Its median residual at 10x6 is 7.5e-5, and at 40x20 the
-# median is of order 10 with a few draws in 200 returning a non-finite value or throwing, so there
-# is no threshold that is both passing and meaningful. See *Open Issues* in `CHANGELOG.md`.
-tolerance(N2) = N2 ≤ 4 ? 1e-6 : N2 ≤ 6 ? 1e-5 : 1e-4
+# Every testset runs in `Float32` and `Float64`, at these three small sizes; at 20x10 and above the
+# `Float32` median is of order 1e-2 to 10 and a few draws in 200 return a non-finite value or throw
+# (A22 in `KNOWN_ISSUES.md`). The per-draw tolerance is `k √eps(T)`: 1e-6, 1e-5 and 1e-4 in
+# `Float64`, and 0.023, 0.23 and 2.3 in `Float32`, which is still more than 100 times under the
+# residual of the wrong constraint below.
+include("../helpers/eltypes.jl")
+
+tolerance(N2, ::Type{T}) where {T} = (N2 ≤ 4 ? 67 : N2 ≤ 6 ? 670 : 6700) * sqrt(eps(T))
 
 const SIZES = ((4, 2), (6, 4), (10, 6))
 
-@testset "SR decomposition: A = S * R" begin
+@testset "SR decomposition: A = S * R, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
     for (N2, n2) in SIZES
-        A = randn(N2, n2)
+        A = randn(T, N2, n2)
         A_before = copy(A)
         F = sr(A)
-        @test norm(Matrix(F.S) * Matrix(F.R) - A) < tolerance(N2)
+        SR = Matrix(F.S) * Matrix(F.R)
+        @test eltype(SR) == T
+        @test norm(SR - A) < tolerance(N2, T)
         # `sr` leaves its argument alone; `sr!` is the one that overwrites it with the reflectors.
         @test A == A_before
         sr!(A)
@@ -47,37 +54,42 @@ const SIZES = ((4, 2), (6, 4), (10, 6))
     end
 end
 
-@testset "SR decomposition: S is symplectic" begin
+@testset "SR decomposition: S is symplectic, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
     for (N2, _) in SIZES
-        J = _poisson_tensor(Float64, N2)
-        S = Matrix(sr(randn(N2, N2)).S)
-        @test norm(S' * J * S - J) < tolerance(N2)
+        J = _poisson_tensor(T, N2)
+        S = Matrix(sr(randn(T, N2, N2)).S)
+        @test eltype(S) == T
+        @test norm(S' * J * S - J) < tolerance(N2, T)
     end
 end
 
-@testset "SR decomposition: the S factor as an operator" begin
+@testset "SR decomposition: the S factor as an operator, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
     for (N2, _) in SIZES
-        F = sr(randn(N2, N2))
+        F = sr(randn(T, N2, N2))
         S = Matrix(F.S)
+        @test eltype(S) == T
 
         # Multiplying by the operator is the same as multiplying by the matrix it stands for. This
         # is what makes `Sfac` usable without ever forming it.
-        x = randn(N2)
-        B = randn(3, N2)
-        @test norm(F.S * x - S * x) < tolerance(N2)
-        @test norm(F.S * Matrix{Float64}(I, N2, N2) - S) < tolerance(N2)
-        @test norm(B * F.S - B * S) < tolerance(N2)
+        x = randn(T, N2)
+        B = randn(T, 3, N2)
+        @test eltype(F.S * x) == T
+        @test norm(F.S * x - S * x) < tolerance(N2, T)
+        @test norm(F.S * Matrix{T}(I, N2, N2) - S) < tolerance(N2, T)
+        @test norm(B * F.S - B * S) < tolerance(N2, T)
 
         # The inverse applies the same reflectors in the opposite order.
-        @test norm(inv(F.S) * (F.S * x) - x) < tolerance(N2)
+        @test norm(inv(F.S) * (F.S * x) - x) < tolerance(N2, T)
 
         # Right-multiplication by the inverse has its own reflector kernel, which applies the steps
         # from the last to the first with the two reflectors of a step swapped and each factor
         # negated. That is three things reversed at once, and getting any one of them wrong still
         # produces a plausible matrix, so it is checked against the inverse of the materialized
         # factor and by a round trip rather than against itself.
-        @test norm(B * inv(F.S) - B * inv(S)) < tolerance(N2)
-        @test norm((B * F.S) * inv(F.S) - B) < tolerance(N2)
+        @test norm(B * inv(F.S) - B * inv(S)) < tolerance(N2, T)
+        @test norm((B * F.S) * inv(F.S) - B) < tolerance(N2, T)
 
         # A product of two operators materializes both, which is what keeps `S * inv(S)` from
         # being an ambiguous `MethodError` — `Sfac` is an `AbstractMatrix`, so without these the
@@ -101,19 +113,21 @@ end
         # take. The reflector kernels address rows by index rather than by iterating the operand,
         # so without the check the extra rows pass through untouched and the result is a plausible
         # wrong answer rather than an error.
-        @test_throws AssertionError F.S * randn(N2 + 2, 3)
-        @test_throws AssertionError inv(F.S) * randn(N2 + 2, 3)
-        @test_throws AssertionError F.S * randn(N2 + 2)
-        @test_throws AssertionError inv(F.S) * randn(N2 + 2)
+        @test_throws AssertionError F.S * randn(T, N2 + 2, 3)
+        @test_throws AssertionError inv(F.S) * randn(T, N2 + 2, 3)
+        @test_throws AssertionError F.S * randn(T, N2 + 2)
+        @test_throws AssertionError inv(F.S) * randn(T, N2 + 2)
     end
 end
 
-@testset "SR decomposition: R has the symplectic triangular shape" begin
+@testset "SR decomposition: R has the symplectic triangular shape, $T" for T in REAL_ELTYPES
     # `R` is not upper triangular as a whole. In `2N x 2M` block form the diagonal blocks are upper
     # triangular and the lower-left block is strictly upper triangular; the lower-left block being
     # merely strictly upper triangular rather than zero is what distinguishes SR from QR.
+    Random.seed!(1234)
     for (N2, n2) in ((6, 4), (10, 6))
-        R = Matrix(sr(randn(N2, n2)).R)
+        R = Matrix(sr(randn(T, N2, n2)).R)
+        @test eltype(R) == T
         N, M = N2 ÷ 2, n2 ÷ 2
         R₁₁ = R[1:N, 1:M]
         R₂₁ = R[(N + 1):N2, 1:M]
@@ -126,31 +140,36 @@ end
     end
 end
 
-@testset "symplectic form without building J" begin
+@testset "symplectic form without building J, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
     for N2 in (4, 6, 10)
-        J = _poisson_tensor(Float64, N2)
-        a, b = randn(N2), randn(N2)
+        J = _poisson_tensor(T, N2)
+        a, b = randn(T, N2), randn(T, N2)
+        @test symplectic_form(a, b) isa T
         @test symplectic_form(a, b) ≈ a' * J * b
-        # It is antisymmetric and vanishes on a repeated argument.
+        # It is antisymmetric and vanishes on a repeated argument: `N2` products and sums, each
+        # rounded once.
         @test symplectic_form(a, b) ≈ -symplectic_form(b, a)
-        @test abs(symplectic_form(a, a)) < 1e-14
+        @test abs(symplectic_form(a, a)) ≤ N2 * eps(T) * sum(abs2, a)
     end
 end
 
-@testset "symplectic Gram-Schmidt" begin
+@testset "symplectic Gram-Schmidt, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
     for (N2, n2) in SIZES
-        J_N = _poisson_tensor(Float64, N2)
-        J_n = _poisson_tensor(Float64, n2)
-        A = randn(N2, n2)
+        J_N = _poisson_tensor(T, N2)
+        J_n = _poisson_tensor(T, n2)
+        A = randn(T, N2, n2)
         B = symplectic_gram_schmidt(A, J_N)
-        @test norm(B' * J_N * B - J_n) < tolerance(N2)
+        @test eltype(B) == T
+        @test norm(B' * J_N * B - J_n) < tolerance(N2, T)
         # The copying version leaves its argument alone.
         A_before = copy(A)
         symplectic_gram_schmidt(A, J_N)
         @test A == A_before
         # And the mutating one does not.
         symplectic_gram_schmidt!(A, J_N)
-        @test norm(A' * J_N * A - J_n) < tolerance(N2)
+        @test norm(A' * J_N * A - J_n) < tolerance(N2, T)
     end
 end
 
@@ -159,20 +178,44 @@ end
 # the rate at which the per-draw threshold is exceeded. Both are stable across seeds where a single
 # maximum is not, so this is what a change to the algorithm would have to move.
 #
-# The bounds are three orders above the medians measured over 20000 draws (1.8e-15, 3.2e-14,
-# 2.4e-12) and the rate bound is ten times the measured exceedance (1, 6 and 21 draws in 20000).
-# They still discriminate: the *wrong* constraint `‖UᵀU - I‖` measures 7.6, 38 and 295 at these
-# sizes, so a broken factorization fails the median assertion by orders, not by a margin.
-@testset "the residual distribution" begin
+# The median scales with `eps(T)`: over 20000 draws it is 8, 136 and 1.0e4 eps at 4x2, 6x4 and
+# 10x6, in `Float32` and in `Float64` alike (1.8e-15, 3.0e-14 and 2.2e-12 in `Float64`; 9.7e-7,
+# 1.6e-5 and 1.2e-3 in `Float32`). The median bound is three orders above it. The rate threshold is
+# in eps too, `4.5e9`, `4.5e10` and `4.5e11` eps, which is the per-draw tolerance in `Float64`; a
+# residual of order eps times a heavy-tailed amplification exceeds it at the same rate in either
+# precision, and in `Float32` it counts the draws that return a non-finite value, throw, or lose
+# every digit (0, 14 and 120 in 20000 at 4x2, 6x4 and 10x6). At `Float32` 10x6 that is above the
+# rate bound, which is the limitation of A22 in `KNOWN_ISSUES.md`, and the assertion is broken. The rate bound is ten times the measured exceedance in
+# `Float64` (1, 6 and 21 draws in 20000). Both still discriminate: the *wrong* constraint
+# `‖UᵀU - I‖` measures 7.6, 38 and 295 at these sizes, so a broken factorization fails the median
+# assertion by orders, not by a margin.
+const MEDIAN_IN_EPS = (8, 136, 10_000)
+
+@testset "the residual distribution, $T" for T in REAL_ELTYPES
     Random.seed!(90_2026)
-    for ((N2, _), median_bound) in zip(SIZES, (1e-12, 1e-11, 1e-9))
-        J = _poisson_tensor(Float64, N2)
+    for ((N2, _), median_in_eps) in zip(SIZES, MEDIAN_IN_EPS)
+        J = _poisson_tensor(T, N2)
+        # A draw that raises the `DomainError` of `symplectic_householder!`'s `sqrt` (A22) is one of
+        # the failures the rate counts, so it counts as an infinite residual; nothing else is caught.
         residuals = map(1:500) do _
-            S = Matrix(sr(randn(N2, N2)).S)
-            norm(S' * J * S - J)
+            try
+                S = Matrix(sr(randn(T, N2, N2)).S)
+                norm(S' * J * S - J)
+            catch err
+                err isa DomainError || rethrow()
+                T(Inf)
+            end
         end
-        @test sort(residuals)[250] < median_bound
-        @test count(>(tolerance(N2)), residuals) / 500 < 0.01
+        @test eltype(residuals) == T
+        @test sort(residuals)[250] < 1000 * median_in_eps * eps(T)
+        rate_threshold = tolerance(N2, Float64) / eps(Float64) * eps(T)
+        rate = count(r -> !(r ≤ rate_threshold), residuals) / 500
+        if T === Float32 && N2 == 10
+            # 120 of 20000 draws, and 6 of these 500, throw or return a non-finite value
+            @test_broken rate < 0.01  # issue #152, A22 in KNOWN_ISSUES.md
+        else
+            @test rate < 0.01
+        end
     end
 end
 
@@ -183,13 +226,14 @@ end
 # Both `S` and `inv(S)` run: they are separate types and so need, and have, separate kernels. This
 # compares the operator against its own dense form rather than against the manifold, so the
 # factorization's residual does not enter and the tolerance above is not needed.
-@testset "a row vector times an Sfac" begin
-    for T in (Float32, Float64), (N2, n2) in SIZES
-
+@testset "a row vector times an Sfac, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
+    for (N2, n2) in SIZES
         S = sr!(randn(T, N2, n2)).S
         v = rand(T, N2)
 
         for X in (S, inv(S))
+            @test eltype(v' * X) == T
             @test v' * X ≈ v' * Matrix(X)
             @test transpose(v) * X ≈ transpose(v) * Matrix(X)
             @test size(v' * X) == (1, N2)
@@ -199,12 +243,14 @@ end
 
 # `R` has no product kernel of its own, so against an owned matrix it is the plain operand and the
 # backend guard asks for its backend. Each answer is compared with the one for `R`'s dense form.
-@testset "the R factor against an owned matrix" begin
+@testset "the R factor against an owned matrix, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
     for (N2, n2) in SIZES
-        R = sr(randn(N2, n2)).R
-        Rsq = sr(randn(N2, N2)).R
-        A = rand(SkewSymMatrix, N2)
+        R = sr(randn(T, N2, n2)).R
+        Rsq = sr(randn(T, N2, N2)).R
+        A = rand(SkewSymMatrix{T}, N2)
 
+        @test eltype(A * R) == T
         @test A * R ≈ A * Matrix(R)
         @test Rsq * A ≈ Matrix(Rsq) * A
         @test A - Rsq ≈ A - Matrix(Rsq)
@@ -215,21 +261,23 @@ end
 # The reflectors and the symplectic form are bilinear, `aᵀJb`, so a complex operand is not
 # conjugated. The factorization itself is of a real matrix; only the operand is complex. With
 # `adjoint` in place of `transpose` the real part still agrees and the product is wrong by O(1).
-@testset "a complex operand times a real Sfac" begin
+@testset "a complex operand times a real Sfac, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
     for (N2, _) in SIZES
-        F = sr(randn(N2, N2))
-        B = randn(ComplexF64, 3, N2)
-        v = randn(ComplexF64, N2)
+        F = sr(randn(T, N2, N2))
+        B = randn(Complex{T}, 3, N2)
+        v = randn(Complex{T}, N2)
         for X in (F.S, inv(F.S))
             M = Matrix(X)
-            @test norm(B * X - B * M) < tolerance(N2)
-            @test norm(X * transpose(B) - M * transpose(B)) < tolerance(N2)
-            @test norm(X * v - M * v) < tolerance(N2)
-            @test norm(transpose(v) * X - transpose(v) * M) < tolerance(N2)
-            @test norm(v' * X - v' * M) < tolerance(N2)
+            @test eltype(B * X) == Complex{T}
+            @test norm(B * X - B * M) < tolerance(N2, T)
+            @test norm(X * transpose(B) - M * transpose(B)) < tolerance(N2, T)
+            @test norm(X * v - M * v) < tolerance(N2, T)
+            @test norm(transpose(v) * X - transpose(v) * M) < tolerance(N2, T)
+            @test norm(v' * X - v' * M) < tolerance(N2, T)
         end
-        J = _poisson_tensor(Float64, N2)
-        a, b = randn(ComplexF64, N2), randn(ComplexF64, N2)
+        J = _poisson_tensor(T, N2)
+        a, b = randn(Complex{T}, N2), randn(Complex{T}, N2)
         @test symplectic_form(a, b) ≈ transpose(a) * J * b
     end
 end

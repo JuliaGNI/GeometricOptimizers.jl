@@ -13,6 +13,8 @@ using KernelAbstractions: CPU, get_backend
 using Random: Random, Xoshiro
 using Test
 
+include("../helpers/eltypes.jl")
+
 GPUArraysCore.allowscalar(false)
 
 const jl_backend = get_backend(JLArray(zeros(Float32, 1)))
@@ -26,7 +28,7 @@ _dims(X) = X in SQUARE ? (3,) : (5, 2)
 const ARRAYS = (SQUARE..., LIFTS...)
 
 @testset "an Int32 dimension works for every owned type" begin
-    for backend in (CPU(), jl_backend), T in (Float32, Float64)
+    for backend in (CPU(), jl_backend), T in REAL_ELTYPES
 
         for X in ARRAYS
             d = Int32.(_dims(X))
@@ -69,7 +71,7 @@ end
 end
 
 @testset "the rows of the allocator table return the requested type and infer" begin
-    for T in (Float32, Float64)
+    for T in REAL_ELTYPES
         for A in (@inferred(zeros(SkewSymMatrix{T}, Int32(3))),
             @inferred(rand(SkewSymMatrix{T}, Int32(3))),
             @inferred(zeros(CPU(), SkewSymMatrix{T}, Int32(3))))
@@ -88,7 +90,7 @@ end
 end
 
 @testset "every allocator follows one convention, on the host and on a device" begin
-    for backend in (CPU(), jl_backend), X in ARRAYS, T in (Float32, Float64)
+    for backend in (CPU(), jl_backend), X in ARRAYS, T in REAL_ELTYPES
         d = _dims(X)
         for A in (@inferred(zeros(backend, X{T}, d...)),
             @inferred(rand(backend, X{T}, d...)),
@@ -102,7 +104,7 @@ end
         @test eltype(@inferred rand(Xoshiro(1), backend, X, d...)) ===
               default_eltype(backend)
     end
-    for backend in (CPU(), jl_backend), X in MANIFOLDS, T in (Float32, Float64)
+    for backend in (CPU(), jl_backend), X in MANIFOLDS, T in REAL_ELTYPES
         for Y in (@inferred(rand(backend, X{T}, 5, 2)),
             @inferred(rand(Xoshiro(1), backend, X{T}, 5, 2)))
             @test Y isa X{T}
@@ -111,7 +113,7 @@ end
         @test eltype(@inferred rand(backend, X, 5, 2)) === default_eltype(backend)
     end
     # the backendless forms, which place on the host
-    for X in ARRAYS, T in (Float32, Float64)
+    for X in ARRAYS, T in REAL_ELTYPES
 
         d = _dims(X)
         for A in (@inferred(zeros(X{T}, d...)), @inferred(rand(X{T}, d...)),
@@ -135,16 +137,16 @@ end
 end
 
 @testset "the chain supplies rng and backend consistently" begin
-    for X in ARRAYS, T in (Float32, Float64)
+    for X in ARRAYS, T in REAL_ELTYPES
 
         d = _dims(X)
         @test rand(Xoshiro(1), CPU(), X{T}, d...) == rand(Xoshiro(1), X{T}, d...)
     end
-    for X in MANIFOLDS, T in (Float32, Float64)
+    for X in MANIFOLDS, T in REAL_ELTYPES
 
         @test rand(Xoshiro(1), CPU(), X{T}, 5, 2) == rand(Xoshiro(1), X{T}, 5, 2)
     end
-    for T in (Float32, Float64)
+    for T in REAL_ELTYPES
         @test rand(Xoshiro(1), CPU(), SymplecticStiefelManifold{T}, 6, 4) ==
               rand(Xoshiro(1), SymplecticStiefelManifold{T}, 6, 4)
     end
@@ -176,7 +178,7 @@ end
 end
 
 @testset "StiefelProjection takes one argument order" begin
-    for T in (Float32, Float64)
+    for T in REAL_ELTYPES
         E = StiefelProjection(T, 6, 2)
         @test E == StiefelProjection(CPU(), T, 6, 2)
         @test eltype(E) === T && size(E) == (6, 2)
@@ -186,7 +188,7 @@ end
 end
 
 @testset "a 1 × 1 skew-symmetric matrix stores nothing" begin
-    for backend in (CPU(), jl_backend), T in (Float32, Float64)
+    for backend in (CPU(), jl_backend), T in REAL_ELTYPES
 
         A = zeros(backend, SkewSymMatrix{T}, 1)
         @test size(A) == (1, 1)

@@ -19,6 +19,8 @@ using NeuralNetworkParameters: NetworkParameters, flatten, foldstorage, mapstora
 using Random
 using Test
 
+include("../helpers/eltypes.jl")
+
 allowscalar(false)
 
 # A gradient `KernelAbstractions` cannot place: `get_backend` raises for it. It stands in for any
@@ -35,8 +37,8 @@ const device = get_backend(JLArray(zeros(1)))
 
 @test !isdefined(GeometricOptimizers, :_match_backend)
 
-@testset "rgrad and the backend of the gradient: $MT, $T" for MT in (StiefelManifold, GrassmannManifold),
-    T in (Float32, Float64)
+@testset "rgrad and the backend of the gradient: $T, $MT" for T in REAL_ELTYPES,
+    MT in (StiefelManifold, GrassmannManifold)
 
     rng = Random.Xoshiro(11)
     point = Matrix{T}(qr(randn(rng, T, N, n)).Q)[:, 1:n]
@@ -50,6 +52,7 @@ const device = get_backend(JLArray(zeros(1)))
     # a device gradient at a device point stays there and is the host answer
     Δ = rgrad(device_Y, JLArray(host_gradient))
     @test get_backend(Δ) == device
+    @test eltype(Δ) == T
     @test Array(Δ) ≈ rgrad(host_Y, host_gradient) rtol = √eps(T)
 
     # a host point never asks the gradient for its backend
@@ -77,7 +80,7 @@ end
 
 storages(ps) = foldstorage((acc, s) -> (acc..., s), (), ps)
 
-@testset "every gradient leaf is on the backend of its parameter leaf, $T" for T in (Float32, Float64)
+@testset "every gradient leaf is on the backend of its parameter leaf, $T" for T in REAL_ELTYPES
     host, ps = device_set(Random.Xoshiro(12), T)
     F(ps) = foldstorage((acc, s) -> acc + sum(abs2, s), zero(T), ps)
     ∇F!(g, v) = (g .= 2 .* v; g)
@@ -91,6 +94,7 @@ storages(ps) = foldstorage((acc, s) -> (acc..., s), (), ps)
             for s in storages(getproperty(g, k))
                 @test get_backend(s) == device
                 @test s isa JLArray{T}
+                @test eltype(s) == T
             end
             @test first(flatten(mapstorage(Array, getproperty(g, k)))) ≈
                   first(flatten(getproperty(host_g, k))) rtol = √eps(T)
@@ -98,7 +102,7 @@ storages(ps) = foldstorage((acc, s) -> (acc..., s), (), ps)
     end
 end
 
-@testset "a parameter set on two backends is refused at construction, $T" for T in (Float32, Float64)
+@testset "a parameter set on two backends is refused at construction, $T" for T in REAL_ELTYPES
     host, ps = device_set(Random.Xoshiro(13), T)
     mixed = NetworkParameters((Y = ps.Y, W = host.W))
     F(ps) = sum(abs2, parent(ps.Y)) + sum(abs2, ps.W)

@@ -10,7 +10,6 @@ if "core" in GROUPS
     @safetestset "Aqua: piracy and compat      " include("quality/aqua.jl")
     @safetestset "JET                          " include("quality/jet.jl")
     @safetestset "ExplicitImports              " include("quality/explicit_imports.jl")
-    @safetestset "Own-vs-own ambiguities       " include("ambiguities.jl")
     @safetestset "Container/section copies     " include("optimizers/container_section_copy.jl")
     @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")
     @safetestset "Grassmann Manifold           " include("manifolds/grassmann_manifold.jl")
@@ -37,7 +36,6 @@ if "core" in GROUPS
     @safetestset "Retraction workspace         " include("retractions/retraction_workspace.jl")
     @safetestset "Ω functions                  " include("global_sections/omega_functions.jl")
     @safetestset "Global global_sections       " include("global_sections/global_sections.jl")
-    @safetestset "Optimizer Convergence        " include("verification/svd_optim.jl")
     @safetestset "Optimizer phase observer     " include("integration/optimizer_observer.jl")
     @safetestset "Optimizer Problems           " include("optimizers/optimizer_problems.jl")
     @safetestset "Optimizer Status             " include("optimizers/optimizer_status_tests.jl")
@@ -75,6 +73,8 @@ if "slow" in GROUPS
     @safetestset "Manifold Line Search         " include("integration/manifold_linesearch_tests.jl")
     @safetestset "Grassmann Optimizers         " include("integration/grassmann_optimizer_tests.jl")
     @safetestset "device solve!                " include("integration/device_solve.jl")
+    @safetestset "Optimizer Convergence        " include("verification/svd_optim.jl")
+    @safetestset "Own-vs-own ambiguities       " include("ambiguities.jl")
 end
 if "doctests" in GROUPS
     @safetestset "Doctests                     " include("quality/doctests.jl")

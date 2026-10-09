@@ -15,11 +15,13 @@ using GeometricOptimizers: OptimizerCache, OptimizerSolution,
                            Cayley, Geodesic, check, increase_iteration_number!,
                            solver_step!,
                            _zero, _copy, _similar, _fill!, _manifold_αmax, l2norm,
-                           solution_scale
+                           solution_scale, isconverged
+using LinearAlgebra: norm, svdvals
 using NeuralNetworkParameters: NetworkParameters, params, flatten, unflatten, flatlength
 using SimpleSolvers: Static
 using Test
 import Random
+include("../helpers/eltypes.jl")
 
 const N, n, m = 6, 3, 4
 
@@ -98,8 +100,12 @@ retractions() = (Geodesic(), Cayley())
 # tolerance with a factor of ten in hand, where leaving the manifold is an error of the step size
 const MANIFOLD_TOLERANCE_IN_EPS = 100
 
+# The element type of a whole set of parameters: `flatten` takes it by promotion over the leaves, so a
+# single leaf built in `Float64` makes this `Float64`. `eltype` of a `NetworkParameters` is `Any`.
+flat_eltype(ps) = eltype(flatten(ps)[1])
+
 @testset "a nested container is an OptimizerSolution" begin
-    for T in (Float64, Float32)
+    for T in REAL_ELTYPES
         ps = initial_parameters(T)
         @test ps isa OptimizerSolution{T}
         @test ps isa NetworkParameters{T}
@@ -111,12 +117,12 @@ end
 # The primitives that build every cache and state. Each one used to be `map`, which on a container
 # hands the function a whole *layer* — for which `zero`, `copy` and `similar` have no method that
 # means anything — so these failed before the walk changed.
-@testset "the out-of-place primitives return a container of the same shape" begin
-    for T in (Float64, Float32), f in (_zero, _copy, _similar)
-
+@testset "the out-of-place primitives return a container of the same shape, $T" for T in REAL_ELTYPES
+    for f in (_zero, _copy, _similar)
         ps = initial_parameters(T)
         out = f(ps)
         @test out isa NetworkParameters
+        @test flat_eltype(out) == T
         @test keys(out) == keys(ps)
         @test keys(out.dense) == keys(ps.dense)
         @test size(out.dense.W) == size(ps.dense.W)
@@ -125,36 +131,35 @@ end
     # `_zero` of a manifold element is its *horizontal lift*, not a zero point, and the container must
     # not flatten that distinction away: the lift's free-parameter count is the intrinsic dimension.
     # This is what `Q` is sized by, so it is load-bearing rather than a curiosity.
-    ps = initial_parameters(Float64)
+    ps = initial_parameters(T)
     @test _zero(ps).attention.Y isa GeometricOptimizers.AbstractLieAlgHorMatrix
     @test flatlength(_zero(ps)) < flatlength(ps)
 end
 
 # `l2norm` is the norm of the flattening — every stopping criterion of `solve!` is computed from it,
 # so a container that combined its *layers* instead of its leaves would silently change all of them.
-@testset "l2norm and solution_scale reach the leaves of a nested container" begin
-    for T in (Float64, Float32)
-        ps = initial_parameters(T)
-        v, _ = flatten(ps)
-        @test l2norm(ps) ≈ l2norm(v)
-        @test l2norm(ps) ≈ l2norm(flat_parameters(T))
-        # `solution_scale` uses the *nominal* √n for the manifold block and the measured norm for the
-        # others, so it is not `l2norm` — but it has to agree between the two shapes.
-        @test solution_scale(ps) ≈ solution_scale(flat_parameters(T))
-    end
+@testset "l2norm and solution_scale reach the leaves of a nested container, $T" for T in REAL_ELTYPES
+    ps = initial_parameters(T)
+    v, _ = flatten(ps)
+    @test eltype(l2norm(ps)) == eltype(solution_scale(ps)) == T
+    @test l2norm(ps) ≈ l2norm(v)
+    @test l2norm(ps) ≈ l2norm(flat_parameters(T))
+    # `solution_scale` uses the *nominal* √n for the manifold block and the measured norm for the
+    # others, so it is not `l2norm` — but it has to agree between the two shapes.
+    @test solution_scale(ps) ≈ solution_scale(flat_parameters(T))
 end
 
 # Issue A1b's ceiling, one level down. `_block_αmax` used to answer `Inf` for anything that is not a
 # `Manifold`, and every top-level value of a container is a *layer* — so a container would have got no
 # ceiling at all for exactly the parameter shape a network has.
-@testset "a manifold block one level down still supplies a step ceiling" begin
-    T = Float64
+@testset "a manifold block one level down still supplies a step ceiling, $T" for T in REAL_ELTYPES
     ps = initial_parameters(T)
     δ = _fill!(_zero(ps), T(0.1))
     flat_ps = flat_parameters(T)
     flat_δ = _fill!(_zero(flat_ps), T(0.1))
 
     αmax = _manifold_αmax(ps, δ, one(T))
+    @test eltype(αmax) == T
     @test isfinite(αmax)
     @test αmax > zero(T)
     # the same ceiling the flat shape gets, which is the statement that nesting changes nothing
@@ -162,11 +167,14 @@ end
 end
 
 # The property the whole exercise is about, for every algorithm, retraction and element type.
-@testset "the manifold property is preserved during the optimization" begin
-    for T in (Float64, Float32), algorithm in algorithms(T), retraction in retractions()
+@testset "the manifold property is preserved during the optimization, $T" for T in REAL_ELTYPES
+    for algorithm in algorithms(T), retraction in retractions()
+
         tol = MANIFOLD_TOLERANCE_IN_EPS * eps(T)
         F = test_problem(T)
-        _, checks, losses = optimize(initial_parameters(T), F, algorithm; retraction = retraction)
+        ps, checks, losses = optimize(
+            initial_parameters(T), F, algorithm; retraction = retraction)
+        @test flat_eltype(ps) == eltype(losses) == T
         @test check(initial_parameters(T).attention.Y) < tol
         @test maximum(checks) < tol
         @test last(losses) < first(losses) / 2
@@ -175,13 +183,13 @@ end
 
 # The statement that the swap is behaviour-preserving: the nested and the flat container are the
 # same problem written two ways, so the optimizer has to take the same steps on both.
-@testset "a nested container reaches the same iterates as the equivalent flat one" begin
-    for T in (Float64, Float32), algorithm in algorithms(T)
-
+@testset "a nested container reaches the same iterates as the equivalent flat one, $T" for T in REAL_ELTYPES
+    for algorithm in algorithms(T)
         F = test_problem(T)
         psₙ, _, lossesₙ = optimize(initial_parameters(T), F, algorithm)
         psₐ, _, lossesₐ = optimize(flat_parameters(T), F, algorithm)
 
+        @test flat_eltype(psₙ) == flat_eltype(psₐ) == T
         @test psₙ.attention.Y ≈ psₐ.Y
         @test psₙ.dense.W ≈ psₐ.W
         @test psₙ.dense.b ≈ psₐ.b
@@ -191,9 +199,12 @@ end
 
 # `solve!` is the only path that builds an `OptimizerStatus`, i.e. the only one that calls `l2norm`
 # and `solution_scale` on the parameters and `_difference!` on the gradient blocks.
-@testset "solve! runs on a container" begin
-    for T in (Float64, Float32), algorithm in algorithms(T)
-
+#
+# Not a convergence test: a fixed step size does not take these to the convergence criteria within
+# the cap, and the assertions are about the status being computed on a container, not about where the
+# run ends. The quasi-Newton testset below is the one that runs to convergence.
+@testset "solve! runs on a container, $T" for T in REAL_ELTYPES
+    for algorithm in algorithms(T)
         Random.seed!(1234)
         F = test_problem(T)
         ps = initial_parameters(T)
@@ -202,6 +213,7 @@ end
             max_iterations = 100)
         result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
+        @test flat_eltype(ps) == eltype(result.f) == T
         @test result.f < f₀
         @test F(ps) == result.f
         @test check(ps.attention.Y) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)
@@ -215,12 +227,28 @@ end
 # and not by `length`. `Newton` is not among them, and that is scope rather than an omission: it
 # builds the exact Hessian, and that Hessian is not built over the flattening, so `Optimizer` and
 # `OptimizerState` both reject it here with a message saying so. `test/integration/optimizer_tests.jl` pins that.
-@testset "$(nameof(typeof(algorithm))) runs on a container" for algorithm in (BFGS(), DFP())
-    T = Float64
+#
+# These run to convergence, so they assert where they end. The minimiser is not unique in the
+# parameters -- `(YR, RᵀW, b)` for an orthogonal `R` is the same model, and `b` trades off against
+# `YW` -- so the distance is taken on what is unique, the model `YW + b1ᵀ`. Its optimum is `B` itself,
+# by an independent route: with `b` the row means of `B`, `B - b1ᵀ` has its columns centred, so its
+# rank is at most `m - 1 = n` and it is `YW` for the `Y` of its SVD. The first assertion checks that
+# rank. The distance is relative to `‖B‖` and a multiple of `√eps(T)`, the accuracy of a minimiser;
+# over the test's seeds and seven others for `Y` and `W`, the worst was `0.099 √eps(T)` (`Float32`)
+# and `0.046 √eps(T)` (`Float64`), in at most 39 iterations, so the cap of 50 is not binding.
+@testset "$(nameof(typeof(algorithm))) runs on a container, $T" for T in REAL_ELTYPES,
+    algorithm in (BFGS(), DFP())
+
     Random.seed!(1234)
     F = test_problem(T)
+    B = T.(B₀)
     ps = initial_parameters(T)
     f₀ = F(ps)
+
+    # `B - b1ᵀ` with `b` the row means is of rank `n`: its `n + 1`st singular value is round-off,
+    # `eps(T)` relative to the largest
+    σ = svdvals(B .- sum(B; dims = 2) / m)
+    @test σ[n + 1] ≤ 10 * eps(T) * σ[1]
 
     # `Q` is sized by the flattening of the *direction*, i.e. of the horizontal lift
     @test size(OptimizerState(algorithm, ps).Q) ==
@@ -229,6 +257,9 @@ end
     optimizer = Optimizer(ps, F; algorithm = algorithm, max_iterations = 50)
     result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
+    @test flat_eltype(ps) == eltype(result.f) == T
     @test result.f < f₀
     @test check(ps.attention.Y) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)
+    @test isconverged(result.status)
+    @test norm(ps.attention.Y * ps.dense.W .+ ps.dense.b .- B) ≤ √eps(T) * norm(B)
 end

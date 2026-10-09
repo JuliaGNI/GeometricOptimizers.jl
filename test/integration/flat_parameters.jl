@@ -5,6 +5,7 @@ using NeuralNetworkParameters: flatten, unflatten
 using SimpleSolvers: Static, l2norm
 using Test
 import Random
+include("../helpers/eltypes.jl")
 
 # A **flat** set of parameters -- one `NetworkParameters` whose values are leaves rather than
 # layers. It is the shape the MNIST scripts of GMLDatasets.jl
@@ -105,13 +106,17 @@ end
 algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(; α = T(0.1)), Adam())
 retractions() = (Geodesic(), Cayley())
 
+# The element type of a whole set of parameters: `flatten` takes it by promotion over the leaves, so a
+# single leaf built in `Float64` makes this `Float64`. `eltype` of a `NetworkParameters` is `Any`.
+flat_eltype(ps) = eltype(flatten(ps)[1])
+
 # `NetworkParameters{T}` derives its `T` by *promotion* over the leaves, so a set mixing a
 # `StiefelManifold` with an ordinary `Matrix` and a `Vector` is one solution of one element type. A
 # `Vararg` bound on the values cannot say that: written `Tuple{Vararg{AT}} where {AT<:AbstractArray{T}}`
 # Julia's diagonal rule makes it *homogeneous*, so a set holding three different leaf types binds no
 # `T` at all and reaches no `Optimizer` method. This is the assertion that separates the two.
 @testset "a heterogeneous set of parameters is one solution" begin
-    for T in (Float64, Float32)
+    for T in REAL_ELTYPES
         ps = initial_parameters(T)
         @test length(unique(typeof.(values(ps)))) == 3      # a manifold, a matrix and a vector
         @test ps isa NetworkParameters{T}
@@ -122,42 +127,41 @@ end
 # A one-argument `flatten` that defaults to `Float64` silently promotes `Float32` parameters, so the
 # flattened vector no longer matches the parameters. `NeuralNetworkParameters` takes the element type
 # from the parameters; this is what pins that.
-@testset "the parameters are flattened to their own element type" begin
-    for T in (Float64, Float32)
-        ps = initial_parameters(T)
-        v, layout = flatten(ps)
-        @test v isa Vector{T}
-        @test length(v) == N * n + n * m + N
-        ps′ = unflatten(layout, v)
-        @test ps′.Y ≈ ps.Y
-        @test ps′.W == ps.W
-        @test ps′.b == ps.b
-        @test typeof(ps′.Y) == typeof(ps.Y)
-    end
+@testset "the parameters are flattened to their own element type, $T" for T in REAL_ELTYPES
+    ps = initial_parameters(T)
+    v, layout = flatten(ps)
+    @test v isa Vector{T}
+    @test length(v) == N * n + n * m + N
+    ps′ = unflatten(layout, v)
+    @test flat_eltype(ps′) == T
+    @test ps′.Y ≈ ps.Y
+    @test ps′.W == ps.W
+    @test ps′.b == ps.b
+    @test typeof(ps′.Y) == typeof(ps.Y)
 end
 
 # ... and it has to come back as the manifold it went in as. The method was written as
 # `StiefelManifold(unflatten(v))` for every `Manifold`, so a `GrassmannManifold` was silently
 # turned into a `StiefelManifold` — which has a different `rgrad` and a different retraction,
 # so the optimization would have kept running and produced the wrong iterates.
-@testset "the flattening preserves the kind of manifold" begin
-    for T in (Float64, Float32), MT in (StiefelManifold, GrassmannManifold)
+@testset "the flattening preserves the kind of manifold, $T" for T in REAL_ELTYPES,
+    MT in (StiefelManifold, GrassmannManifold)
 
-        Y = rand(Random.Xoshiro(1234), MT{T}, N, n)
-        # `flatten` takes the element type from the parameters, for a bare manifold as much as for
-        # a `NamedTuple` of them, so the explicit `T` here is belt and braces rather than required
-        v, layout = flatten(T, Y)
-        @test v isa Vector{T}
-        @test length(v) == N * n
-        Y′ = unflatten(layout, v)
-        @test Y′ isa MT{T}
-        @test Y′ ≈ Y
+    Y = rand(Random.Xoshiro(1234), MT{T}, N, n)
+    # `flatten` takes the element type from the parameters, for a bare manifold as much as for
+    # a `NamedTuple` of them, so the explicit `T` here is belt and braces rather than required
+    v, layout = flatten(T, Y)
+    @test v isa Vector{T}
+    @test length(v) == N * n
+    Y′ = unflatten(layout, v)
+    @test Y′ isa MT{T}
+    @test eltype(Y′) == T
+    @test Y′ ≈ Y
 
-        # the same through a `NamedTuple`, which is how the optimizer sees it
-        ps = (Y = Y, W = zeros(T, n, m))
-        vₚ, layoutₚ = flatten(ps)
-        @test unflatten(layoutₚ, vₚ).Y isa MT{T}
-    end
+    # the same through a `NamedTuple`, which is how the optimizer sees it
+    ps = (Y = Y, W = zeros(T, n, m))
+    vₚ, layoutₚ = flatten(ps)
+    @test unflatten(layoutₚ, vₚ).Y isa MT{T}
 end
 
 # The property that the whole exercise is about: a retraction maps back onto the manifold, so
@@ -173,84 +177,89 @@ end
 # order of the step size, i.e. by `1e-1`.
 const MANIFOLD_TOLERANCE_IN_EPS = 100
 
-@testset "the manifold property is preserved during the optimization" begin
-    for T in (Float64, Float32), algorithm in algorithms(T), retraction in retractions()
-        tol = MANIFOLD_TOLERANCE_IN_EPS * eps(T)
-        _, checks, losses = optimize(T, algorithm; retraction = retraction)
-        @test check(initial_parameters(T).Y) < tol   # the starting point is on the manifold ...
-        @test maximum(checks) < tol                  # ... and so is every iterate
-        @test last(losses) < first(losses) / 2       # the optimization actually did something
-    end
+@testset "the manifold property is preserved during the optimization, $T" for T in REAL_ELTYPES,
+    algorithm in algorithms(T), retraction in retractions()
+
+    tol = MANIFOLD_TOLERANCE_IN_EPS * eps(T)
+    ps, checks, losses = optimize(T, algorithm; retraction = retraction)
+    @test flat_eltype(ps) == eltype(losses) == T
+    @test check(initial_parameters(T).Y) < tol   # the starting point is on the manifold ...
+    @test maximum(checks) < tol                  # ... and so is every iterate
+    @test last(losses) < first(losses) / 2       # the optimization actually did something
 end
 
 # Only the projections of the attention layers of the MNIST transformer are on a manifold, so
 # the ordinary entries must be updated as ordinary (Euclidean) parameters.
-@testset "the parameters that are not on a manifold are optimized as well" begin
-    for T in (Float64, Float32)
-        ps₀ = initial_parameters(T)
-        ps, _, _ = optimize(T, GradientMethod())
-        @test ps.W ≉ ps₀.W
-        @test ps.b ≉ ps₀.b
-        @test ps.Y ≉ ps₀.Y
-    end
+@testset "the parameters that are not on a manifold are optimized as well, $T" for T in REAL_ELTYPES
+    ps₀ = initial_parameters(T)
+    ps, _, _ = optimize(T, GradientMethod())
+    @test flat_eltype(ps) == T
+    @test ps.W ≉ ps₀.W
+    @test ps.b ≉ ps₀.b
+    @test ps.Y ≉ ps₀.Y
 end
 
 # `GradientFunction(F, ∇F!, ps)` is what lets the GMLDatasets.jl scripts use `Zygote`
 # instead of the default `ForwardDiff`; `∇F!` is called on the flattened parameters.
-@testset "a hand written gradient gives the same result as the default one" begin
-    for T in (Float64, Float32), algorithm in algorithms(T)
+@testset "a hand written gradient gives the same result as the default one, $T" for T in REAL_ELTYPES,
+    algorithm in algorithms(T)
 
-        ps₁, _, losses₁ = optimize(T, algorithm; hand_written_gradient = false)
-        ps₂, checks₂, losses₂ = optimize(T, algorithm; hand_written_gradient = true)
-        @test ps₁.Y ≈ ps₂.Y
-        @test ps₁.W ≈ ps₂.W
-        @test ps₁.b ≈ ps₂.b
-        @test losses₁ ≈ losses₂
-        @test maximum(checks₂) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)
-    end
+    ps₁, _, losses₁ = optimize(T, algorithm; hand_written_gradient = false)
+    ps₂, checks₂, losses₂ = optimize(T, algorithm; hand_written_gradient = true)
+    @test flat_eltype(ps₁) == flat_eltype(ps₂) == T
+    @test ps₁.Y ≈ ps₂.Y
+    @test ps₁.W ≈ ps₂.W
+    @test ps₁.b ≈ ps₂.b
+    @test losses₁ ≈ losses₂
+    @test maximum(checks₂) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)
 end
 
 # `l2norm` on a `NamedTuple` has to combine the block norms in *quadrature*: it is the ℓ² norm
 # of the parameters seen as one long vector, which is what the flattening makes them. Summing
 # the blocks instead overestimates it by up to `√k` for `k` blocks — and every stopping
 # criterion of `solve!` is computed from it.
-@testset "l2norm on a parameter set is the norm of the flattened parameters" begin
-    # the 3-4-5 triangle, so that summing (7.0) and the quadrature (5.0) are far apart
-    @test l2norm(NetworkParameters((a = [3.0, 0.0], b = [0.0, 4.0]))) ≈ 5.0
+@testset "l2norm on a parameter set is the norm of the flattened parameters, $T" for T in REAL_ELTYPES
+    # the 3-4-5 triangle, so that summing (7) and the quadrature (5) are far apart. Integer-valued on
+    # purpose: the exact answer `5` is what the identity needs, and the seeded data below is not exact.
+    triangle = l2norm(NetworkParameters((a = T[3, 0], b = T[0, 4])))
+    @test eltype(triangle) == T
+    @test triangle ≈ 5
 
-    for T in (Float64, Float32)
-        ps = initial_parameters(T)
-        v, _ = flatten(ps)
-        @test l2norm(ps) ≈ l2norm(v)
-        # ... and the sum of the blocks really is a different number here
-        @test !isapprox(sum(l2norm, values(ps)), l2norm(v))
-    end
+    ps = initial_parameters(T)
+    v, _ = flatten(ps)
+    @test eltype(l2norm(ps)) == T
+    @test l2norm(ps) ≈ l2norm(v)
+    # ... and the sum of the blocks really is a different number here
+    @test !isapprox(sum(l2norm, values(ps)), l2norm(v))
 end
 
 # `solve!` is the only path that builds an `OptimizerStatus` on a set of parameters, i.e. the only
 # one that calls the `l2norm` above and `_difference!` on the gradient blocks. The testsets further
 # up drive `solver_step!` by hand and never get there.
-@testset "solve! runs on a flat parameter set" begin
-    for T in (Float64, Float32), algorithm in algorithms(T)
+#
+# Not a convergence test: see the comment on `max_iterations`. The assertions are about the status
+# being computed on a set of parameters, not about where the run ends.
+@testset "solve! runs on a flat parameter set, $T" for T in REAL_ELTYPES,
+    algorithm in algorithms(T)
 
-        Random.seed!(1234)
-        F, _ = test_problem(T)
-        ps = initial_parameters(T)
-        f₀ = F(ps)
-        # `max_iterations` is capped because a fixed step size does not get these all the way to
-        # the convergence criteria: `GradientMethod` and `Adam` run to the iteration limit, so
-        # the default of `1000` only costs time (and prints a warning) without testing more.
-        optimizer = Optimizer(
-            ps, F; algorithm = algorithm, linesearch = Static(T(0.1)), max_iterations = 100)
-        result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
+    Random.seed!(1234)
+    F, _ = test_problem(T)
+    ps = initial_parameters(T)
+    f₀ = F(ps)
+    # `max_iterations` is capped because a fixed step size does not get these all the way to
+    # the convergence criteria: `GradientMethod` and `Adam` run to the iteration limit, so
+    # the default of `1000` only costs time (and prints a warning) without testing more.
+    optimizer = Optimizer(
+        ps, F; algorithm = algorithm, linesearch = Static(T(0.1)), max_iterations = 100)
+    result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
-        @test result.f < f₀                                          # it made progress ...
-        @test F(ps) == result.f                                      # ... and reported it
-        @test check(ps.Y) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)       # still on the manifold
-        # the convergence measures are the ones computed from the `l2norm` above
-        @test !isnan(result.status.rg)
-        @test result.status.rg ≥ 0
-    end
+    @test flat_eltype(ps) == eltype(result.f) == T
+    @test result.f < f₀                                          # it made progress ...
+    @test F(ps) == result.f                                      # ... and reported it
+    @test check(ps.Y) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)       # still on the manifold
+    # the convergence measures are the ones computed from the `l2norm` above
+    @test !isnan(result.status.rg)
+    @test result.status.rg ≥ 0
 end
 
 # The `Optimizer(x, problem)` entry point is the one that `Optimizer(x, F)` delegates to, but
@@ -258,35 +267,34 @@ end
 # a set of parameters that gradient is called on the *flattened* parameters, so sizing it
 # with `length(x)` (the number of entries, `3` here) instead of constructing it from `x` used
 # to make the very first step throw a `DimensionMismatch`.
-@testset "Optimizer(ps, OptimizerProblem(F, ps)) supplies its own gradient" begin
-    for T in (Float64, Float32)
-        Random.seed!(1234)
-        F, _ = test_problem(T)
-        ps = initial_parameters(T)
-        ps₀ = deepcopy(ps)
-        algorithm = GradientMethod()
-        optimizer = Optimizer(ps, OptimizerProblem(F, ps); algorithm = algorithm, linesearch = Static(T(0.1)))
-        state = OptimizerState(algorithm, ps)
+@testset "Optimizer(ps, OptimizerProblem(F, ps)) supplies its own gradient, $T" for T in REAL_ELTYPES
+    Random.seed!(1234)
+    F, _ = test_problem(T)
+    ps = initial_parameters(T)
+    ps₀ = deepcopy(ps)
+    algorithm = GradientMethod()
+    optimizer = Optimizer(ps, OptimizerProblem(F, ps); algorithm = algorithm, linesearch = Static(T(0.1)))
+    state = OptimizerState(algorithm, ps)
 
-        increase_iteration_number!(state)
-        solver_step!(ps, state, optimizer)
+    increase_iteration_number!(state)
+    solver_step!(ps, state, optimizer)
 
-        @test F(ps) < F(ps₀)
-        @test ps.Y ≉ ps₀.Y
-        # the same step as the one taken through `Optimizer(ps, F)`, which passes its own gradient
-        ps′, _, _ = optimize(T, algorithm; steps = 1)
-        @test ps.Y ≈ ps′.Y
-        @test ps.W ≈ ps′.W
-        @test ps.b ≈ ps′.b
-    end
+    @test flat_eltype(ps) == T
+    @test F(ps) < F(ps₀)
+    @test ps.Y ≉ ps₀.Y
+    # the same step as the one taken through `Optimizer(ps, F)`, which passes its own gradient
+    ps′, _, _ = optimize(T, algorithm; steps = 1)
+    @test ps.Y ≈ ps′.Y
+    @test ps.W ≈ ps′.W
+    @test ps.b ≈ ps′.b
 end
 
 # `Adam` carries no element type of the parameters: the `Optimizer` converts it to theirs.
-@testset "Adam() optimizes a Float32 parameter set" begin
-    ps = initial_parameters(Float32)
-    opt = Optimizer(ps, test_problem(Float32)[1]; algorithm = Adam())
-    @test opt.algorithm isa Adam{Float32}
-    @test OptimizerCache(Adam(), ps) isa GeometricOptimizers.AdamCache{Float32}
+@testset "Adam() optimizes a $T parameter set" for T in REAL_ELTYPES
+    ps = initial_parameters(T)
+    opt = Optimizer(ps, test_problem(T)[1]; algorithm = Adam())
+    @test opt.algorithm isa Adam{T}
+    @test OptimizerCache(Adam(), ps) isa GeometricOptimizers.AdamCache{T}
 end
 
 # This guards a property that no other test can see, because the bug it protects against did not
@@ -359,29 +367,30 @@ end
 # It is asserted at the door -- on `OptimizerSolution` and on the constructors -- rather than several
 # frames into a solve, which is where a set that slips past would otherwise fail. `src/
 # optimizer_solution.jl` says why a `NamedTuple` alias cannot serve as the parameter type.
-@testset "a bare NamedTuple is turned away, and wrapping is the whole conversion" begin
-    bare = (Y = rand(Random.Xoshiro(1234), StiefelManifold{Float64}, N, n),
-        W = randn(Random.Xoshiro(5678), n, m), b = zeros(N))
+@testset "a bare NamedTuple is turned away, and wrapping is the whole conversion, $T" for T in REAL_ELTYPES
+    bare = (Y = rand(Random.Xoshiro(1234), StiefelManifold{T}, N, n),
+        W = randn(Random.Xoshiro(5678), T, n, m), b = zeros(T, N))
 
     @test !(bare isa OptimizerSolution)
     @test_throws MethodError OptimizerCache(Adam(), bare)
     @test_throws MethodError OptimizerState(Adam(), bare)
-    @test_throws MethodError Optimizer(bare, test_problem(Float64)[1]; algorithm = GradientMethod())
+    @test_throws MethodError Optimizer(bare, test_problem(T)[1]; algorithm = GradientMethod())
 
     # ... and the wrap is enough, without touching the objective, the gradient or the leaves
     wrapped = NetworkParameters(bare)
-    @test wrapped isa OptimizerSolution{Float64}
+    @test wrapped isa OptimizerSolution{T}
     @test keys(wrapped) == keys(bare)
     for k in keys(bare)
         @test wrapped[k] === bare[k]        # shared, not copied
     end
 
     # so an in-place solve writes through to the arrays the caller still holds
-    F, _ = test_problem(Float64)
+    F, _ = test_problem(T)
     f₀ = F(wrapped)
     solve!(wrapped, OptimizerState(GradientMethod(), wrapped),
-        Optimizer(wrapped, F; algorithm = GradientMethod(), linesearch = Static(0.1),
+        Optimizer(wrapped, F; algorithm = GradientMethod(), linesearch = Static(T(0.1)),
             max_iterations = 10))
+    @test flat_eltype(wrapped) == T
     @test F(wrapped) < f₀
     @test wrapped.b === bare.b              # the same `Vector`, updated in place
 end

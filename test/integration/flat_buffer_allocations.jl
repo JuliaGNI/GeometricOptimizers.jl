@@ -37,36 +37,41 @@ using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update
                            OptimizerCache, _flat_mul!, _flat_secant, outer!, DottableSet,
                            GlobalSection, update_section!, lift_factors!,
                            retraction_matrix!, retraction_workspace, initialize_state!,
-                           OptimizerStatus, config, problem, value
+                           OptimizerStatus, config, problem, value,
+                           _update_inverse_hessian!, curvature_is_usable, _fill!
 using NeuralNetworkParameters: NetworkParameters, flatten
 using SimpleSolvers: Static
 using LinearAlgebra: dot
 using Test
 import Random
+include("../helpers/eltypes.jl")
 
 const N, n, m = 6, 3, 4
 
 Random.seed!(1234)
 const B = randn(N, m)
 
-function lift(seed)
-    StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Random.Xoshiro(seed), n, n)),
-        rand(Random.Xoshiro(seed + 1), N - n, n), N, n)
+# Every fixture takes the element type first, so that a testset over `REAL_ELTYPES` builds its data
+# in `T` rather than in `rand`'s default `Float64`.
+function lift(::Type{T}, seed) where {T}
+    StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Random.Xoshiro(seed), T, n, n)),
+        rand(Random.Xoshiro(seed + 1), T, N - n, n), N, n)
 end
 
-function flat_set(seed)
-    (A = lift(seed), W = rand(Random.Xoshiro(seed + 2), 3, 4),
-        b = rand(Random.Xoshiro(seed + 3), 5))
+function flat_set(::Type{T}, seed) where {T}
+    (A = lift(T, seed), W = rand(Random.Xoshiro(seed + 2), T, 3, 4),
+        b = rand(Random.Xoshiro(seed + 3), T, 5))
 end
 
-container(seed) =
-    let p = flat_set(seed)
+function container(::Type{T}, seed) where {T}
+    let p = flat_set(T, seed)
         NetworkParameters((L1 = (A = p.A,), L2 = (W = p.W, b = p.b)))
     end
+end
 
 # The same leaves, wrapped without regrouping. `container` and `flat_container` are therefore the two
 # *groupings* of one leaf list, which is what the equalities below are about.
-flat_container(seed) = NetworkParameters(flat_set(seed))
+flat_container(::Type{T}, seed) where {T} = NetworkParameters(flat_set(T, seed))
 
 # The two shapes issue #70 is about, and the one this release newly admits.
 #
@@ -84,15 +89,15 @@ flat_container(seed) = NetworkParameters(flat_set(seed))
 # it holds exactly these leaves.
 const WIDE_ENTRIES = 369
 
-function wide_set(seed, ::Type{T} = Float32) where {T}
+function wide_set(seed, ::Type{T}) where {T}
     NamedTuple{ntuple(i -> Symbol(:p, i), WIDE_ENTRIES)}(
         ntuple(i -> randn(Random.Xoshiro(seed * 1000 + i), T, 4, 4), WIDE_ENTRIES))
 end
 
-function nested_bare(seed)
-    (L1 = (A = lift(seed),),
-        L2 = (W = rand(Random.Xoshiro(seed + 2), 3, 4),
-            b = rand(Random.Xoshiro(seed + 3), 5)))
+function nested_bare(::Type{T}, seed) where {T}
+    (L1 = (A = lift(T, seed),),
+        L2 = (W = rand(Random.Xoshiro(seed + 2), T, 3, 4),
+            b = rand(Random.Xoshiro(seed + 3), T, 5)))
 end
 
 # A set whose leaves are *not* all one element type, which is what makes the accumulator's type a
@@ -119,11 +124,17 @@ _reference_norm(a) = l2norm(flatten(Float64, a)[1])
 # claim was written on and does not in general: on Julia 1.11/windows, 1.12/ubuntu and 1.13 on both,
 # the two come out `3.070431380702119` against `3.0704313807021184` -- one ULP, which is round-off and
 # is the thing this testset is about.
-@testset "_dot is the flattened inner product" begin
-    @test _dot(lift(1), lift(11)) ≈ _reference_dot(lift(1), lift(11))
-    @test _dot(flat_container(1), flat_container(11)) ≈
-          _reference_dot(flat_set(1), flat_set(11))
-    @test _dot(container(1), container(11)) ≈ _reference_dot(container(1), container(11))
+#
+# The reference is taken in `Float64` in both passes, so in the `Float32` pass it is the more accurate
+# of the two; default `≈` is `√eps(T)` relative, far above the round-off of a sum of 33 products.
+@testset "_dot is the flattened inner product, $T" for T in REAL_ELTYPES
+    @test eltype(_dot(lift(T, 1), lift(T, 11))) == T
+    @test eltype(_dot(container(T, 1), container(T, 11))) == T
+    @test _dot(lift(T, 1), lift(T, 11)) ≈ _reference_dot(lift(T, 1), lift(T, 11))
+    @test _dot(flat_container(T, 1), flat_container(T, 11)) ≈
+          _reference_dot(flat_set(T, 1), flat_set(T, 11))
+    @test _dot(container(T, 1), container(T, 11)) ≈
+          _reference_dot(container(T, 1), container(T, 11))
     # and the two shapes describing the same numbers agree with each other exactly.
     #
     # That is no longer a coincidence worth being nervous about. Upstream's fold threads its
@@ -131,7 +142,8 @@ _reference_norm(a) = l2norm(flatten(Float64, a)[1])
     # flat leaf list whatever the grouping -- where the `Base.tail` recursion this replaced was a right
     # fold that happened to align. The nested plain `NamedTuple` is the third spelling of the same
     # numbers, grouped one level deeper.
-    @test _dot(container(1), container(11)) == _dot(flat_container(1), flat_container(11))
+    @test _dot(container(T, 1), container(T, 11)) ==
+          _dot(flat_container(T, 1), flat_container(T, 11))
 end
 
 # The accumulator is `zero(T)` and not the strong zero `false`, and this is the assertion that says why.
@@ -160,27 +172,34 @@ end
 # of the lift twice and so comes out at exactly twice the pairing of the free parameters. `isa Float64`
 # would have passed on that too. So this asserts the *value*, against the flattening, which is the only
 # thing that separates the two.
-@testset "_dot of two lifts is intrinsic at every element-type pairing" begin
-    a32 = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Random.Xoshiro(8), Float32, n, n)),
-        rand(Random.Xoshiro(9), Float32, N - n, n), N, n)
-    b64 = lift(11)
-    @test _dot(a32, b64) ≈ _reference_dot(a32, b64)
+#
+# Every pairing of `REAL_ELTYPES`, the two equal ones included: the differing ones are the pairs that
+# missed the alias, the equal ones always took the method that binds `T` and are the control.
+@testset "_dot of two lifts is intrinsic, $T with $T′" for T in REAL_ELTYPES,
+    T′ in REAL_ELTYPES
+
+    a, b = lift(T, 8), lift(T′, 11)
+    @test eltype(_dot(a, b)) == promote_type(T, T′)
+    @test _dot(a, b) ≈ _reference_dot(a, b)
     # and not the ambient product, which is where it went before -- named as a number rather than as a
     # relation, so that the assertion above cannot be satisfied by both
-    @test _dot(a32, b64) ≉ dot(a32, b64)
-    @test dot(a32, b64) ≈ 2 * _reference_dot(a32, b64)
+    @test _dot(a, b) ≉ dot(a, b)
+    @test dot(a, b) ≈ 2 * _reference_dot(a, b)
     # the same-eltype pair, which always took the method that binds `T` and is here as the control
-    @test _dot(lift(1), b64) ≈ _reference_dot(lift(1), b64)
+    @test _dot(lift(T′, 1), b) ≈ _reference_dot(lift(T′, 1), b)
 end
 
-@testset "l2norm and solution_scale are the norm of the flattening" begin
-    for a in (lift(1), flat_container(1), container(1))
+@testset "l2norm and solution_scale are the norm of the flattening, $T" for T in REAL_ELTYPES
+    for a in (lift(T, 1), flat_container(T, 1), container(T, 1))
+        @test eltype(l2norm(a)) == T
         @test l2norm(a) ≈ _reference_norm(a)
     end
     # the same leaves flat and nested, which is the statement that grouping changes nothing
     flat = NetworkParameters((
-        Y = rand(Random.Xoshiro(7), StiefelManifold{Float64}, N, n), W = rand(3, 4)))
+        Y = rand(Random.Xoshiro(7), StiefelManifold{T}, N, n),
+        W = rand(Random.Xoshiro(8), T, 3, 4)))
     nested = NetworkParameters((L1 = (Y = flat.Y,), L2 = (W = flat.W,)))
+    @test eltype(solution_scale(flat)) == T
     @test solution_scale(flat) ≈ solution_scale(nested)
 end
 
@@ -190,25 +209,26 @@ end
 # cannot be written in the testset.
 _measured_dot(a, b) = (_dot(a, b); @allocated _dot(a, b))
 
-@testset "_dot allocates nothing" begin
-    for (name, a, b) in (("lift", lift(1), lift(11)),
-        ("flat container", flat_container(1), flat_container(11)),
-        ("container", container(1), container(11)),
+@testset "_dot allocates nothing, $T" for T in REAL_ELTYPES
+    for (name, a, b) in (("lift", lift(T, 1), lift(T, 11)),
+        ("flat container", flat_container(T, 1), flat_container(T, 11)),
+        ("container", container(T, 1), container(T, 11)),
     # 369 leaves in one branch, which is where a boxed `op` would show
-        ("369-wide container", NetworkParameters(wide_set(1)),
-        NetworkParameters(wide_set(2))),
+        ("369-wide container", NetworkParameters(wide_set(1, T)),
+        NetworkParameters(wide_set(2, T))),
     # the method that reaches `parameter_eltype` rather than taking its element
     # type off the signature -- see the comment on it in
-    # `src/optimizers/named_tuple_wrapper.jl`
+    # `src/optimizers/named_tuple_wrapper.jl`. Mixed by construction, so the
+    # same pair in both passes.
         ("mixed-precision container", mixed_container(1), mixed_container(11)))
+        @test eltype(_dot(a, b)) == (name == "mixed-precision container" ? Float64 : T)
         @test _measured_dot(a, b) == 0
     end
 end
 
 # The two `_dot` methods: a set whose leaves share one element type takes the method that reads `T`
 # off the signature, and the method for the other pairs gives the same value on it.
-@testset "a wide set takes the `_dot` that binds T, and both methods agree, $T" for T in (
-    Float32, Float64)
+@testset "a wide set takes the `_dot` that binds T, and both methods agree, $T" for T in REAL_ELTYPES
     a, b = NetworkParameters(wide_set(1, T)), NetworkParameters(wide_set(2, T))
     @test which(_dot, Tuple{typeof(a), typeof(b)}) !==
           which(_dot, Tuple{DottableSet, DottableSet})
@@ -230,6 +250,7 @@ _measured_norm(a) = (l2norm(a); @allocated l2norm(a))
 # splat, which Julia 1.11 boxes.
 _measured2(f::F, a, b) where {F} = (f(a, b); @allocated f(a, b))
 _measured3(f::F, a, b, c) where {F} = (f(a, b, c); @allocated f(a, b, c))
+_measured4(f::F, a, b, c, d) where {F} = (f(a, b, c, d); @allocated f(a, b, c, d))
 
 function primitive_set(::Type{T}, seed) where {T}
     rng = Random.Xoshiro(seed)
@@ -239,7 +260,7 @@ function primitive_set(::Type{T}, seed) where {T}
         L2 = (W = rand(rng, T, 3, 4) .+ one(T), b = rand(rng, T, 5) .+ one(T))))
 end
 
-@testset "the elementwise primitives allocate nothing, $T" for T in (Float32, Float64)
+@testset "the elementwise primitives allocate nothing, $T" for T in REAL_ELTYPES
     a, b, c = primitive_set(T, 1), primitive_set(T, 2), primitive_set(T, 3)
     @test _measured2(_rmul!, c, T(2)) == 0
     @test _measured2(_add!, c, b) == 0
@@ -249,13 +270,17 @@ end
     @test _measured2(_copyto!, c, a) == 0
     @test _measured3(_difference!, c, a, b) == 0
     @test _measured3(_div!, c, a, b) == 0
+    @test eltype(flatten(c)[1]) == T
     # the control: the barrier sees an allocation where there is one
     @test _measured2((x, y) -> flatten(x), a, b) > 0
 end
 
-@testset "l2norm allocates nothing, for every shape" begin
-    for a in (lift(1), flat_container(1), container(1),
-        NetworkParameters((a = rand(4), b = rand(5))), NetworkParameters(wide_set(1)))
+@testset "l2norm allocates nothing, for every shape, $T" for T in REAL_ELTYPES
+    for a in (lift(T, 1), flat_container(T, 1), container(T, 1),
+        NetworkParameters((
+        a = rand(Random.Xoshiro(9), T, 4), b = rand(Random.Xoshiro(10), T, 5))),
+        NetworkParameters(wide_set(1, T)))
+        @test eltype(l2norm(a)) == T
         @test _measured_norm(a) == 0
     end
 end
@@ -264,41 +289,49 @@ end
 # `_manifold_αmax` is the fourth of the folds this release replaced -- the one issue #70's count of
 # three omitted, and the only one on the per-iteration path. Neither was pinned here before.
 _measured_scale(a) = (solution_scale(a); @allocated solution_scale(a))
-_measured_αmax(a, b) = (_manifold_αmax(a, b, 1.0f0); @allocated _manifold_αmax(a, b, 1.0f0))
+_measured_αmax(a, b, c) = (_manifold_αmax(a, b, c); @allocated _manifold_αmax(a, b, c))
 
-@testset "the other two folds allocate nothing either" begin
-    for a in (lift(1), flat_container(1), container(1), NetworkParameters(wide_set(1)))
+@testset "the other two folds allocate nothing either, $T" for T in REAL_ELTYPES
+    for a in (lift(T, 1), flat_container(T, 1), container(T, 1),
+        NetworkParameters(wide_set(1, T)))
+        @test eltype(solution_scale(a)) == T
         @test _measured_scale(a) == 0
     end
-    for (a, b) in ((flat_container(1), flat_container(11)), (container(1), container(11)),
-        (NetworkParameters(wide_set(1)), NetworkParameters(wide_set(2))))
-        @test _measured_αmax(a, b) == 0
+    for (a, b) in ((flat_container(T, 1), flat_container(T, 11)),
+        (container(T, 1), container(T, 11)),
+        (NetworkParameters(wide_set(1, T)), NetworkParameters(wide_set(2, T))))
+        @test eltype(_manifold_αmax(a, b, one(T))) == T
+        @test _measured_αmax(a, b, one(T)) == 0
     end
 end
 
 # The three shapes of solution this package accepts, each with an objective. Used by the testset below
 # and named here so that "for every shape" is a list rather than a claim. A whole set of parameters is
 # one of the three whether it is flat or nested, because both arrive as a `NetworkParameters`.
-function manifold_problem()
-    (rand(Random.Xoshiro(4), StiefelManifold{Float64}, N, n),
-        Y -> sum(abs2, Y * ones(n, m) .- B) / 2)
+function manifold_problem(::Type{T}) where {T}
+    let B = T.(B)
+        (rand(Random.Xoshiro(4), StiefelManifold{T}, N, n),
+            Y -> sum(abs2, Y * ones(T, n, m) .- B) / 2)
+    end
 end
 
-function flat_problem()
-    (
-        NetworkParameters((Y = rand(Random.Xoshiro(1), StiefelManifold{Float64}, N, n),
-            W = randn(Random.Xoshiro(2), n, m), b = zeros(N))),
-        ps -> sum(abs2, ps.Y * ps.W .+ ps.b .- B) / 2)
+function flat_problem(::Type{T}) where {T}
+    let B = T.(B)
+        (
+            NetworkParameters((Y = rand(Random.Xoshiro(1), StiefelManifold{T}, N, n),
+                W = randn(Random.Xoshiro(2), T, n, m), b = zeros(T, N))),
+            ps -> sum(abs2, ps.Y * ps.W .+ ps.b .- B) / 2)
+    end
 end
 
-function container_problem()
-    let (ps, _) = flat_problem()
+function container_problem(::Type{T}) where {T}
+    let (ps, _) = flat_problem(T), B = T.(B)
         (NetworkParameters((L1 = (Y = ps.Y,), L2 = (W = ps.W, b = ps.b))),
             ps -> sum(abs2, ps.L1.Y * ps.L2.W .+ ps.L2.b .- B) / 2)
     end
 end
 
-vector_problem() = (randn(Random.Xoshiro(3), 12), v -> sum(abs2, v))
+vector_problem(::Type{T}) where {T} = (randn(Random.Xoshiro(3), T, 12), v -> sum(abs2, v))
 
 # The three sites, directly. Going through `update!` instead would be measuring something else: the
 # `γᵀQγ` and both `outer!`s sit inside the `curvature_is_usable` branch, and calling `update!` twice at
@@ -317,14 +350,21 @@ function _measured_mul!(c, A, b, scratch)
         @allocated _flat_mul!(c, A, b, scratch))
 end
 
-@testset "the flat sites of $(nameof(typeof(algorithm))) allocate nothing" for algorithm in (BFGS(), DFP())
-    for (name, x) in (("Vector", vector_problem()[1]),
-        ("Manifold", manifold_problem()[1]),
-        ("flat container", flat_problem()[1]),
-        ("nested container", container_problem()[1]))
+function quasi_newton_points(::Type{T}) where {T}
+    (("Vector", vector_problem(T)[1]),
+        ("Manifold", manifold_problem(T)[1]),
+        ("flat container", flat_problem(T)[1]),
+        ("nested container", container_problem(T)[1]))
+end
+
+@testset "the flat sites of $(nameof(typeof(algorithm))) allocate nothing, $T" for T in REAL_ELTYPES,
+    algorithm in (BFGS(), DFP())
+
+    for (name, x) in quasi_newton_points(T)
         c = OptimizerCache(algorithm, x)
         state = OptimizerState(algorithm, x)
         Q = inverse_hessian(state)
+        @test eltype(Q) == T
 
         # filling the flat mirrors of the secant pair, in the quasi-Newton update and in the
         # cache's `update!` at an iterate
@@ -334,7 +374,7 @@ end
         δ, γ = _flat_secant(c)
 
         # `outer!`, which used to flatten both of its arguments on every call
-        m = zeros(Float64, length(δ), length(γ))
+        m = zeros(T, length(δ), length(γ))
         @test _measured_outer!(m, δ, γ) == 0
 
         # `γᵀQγ`, which used to materialise `Q * γ`
@@ -342,6 +382,42 @@ end
 
         # the product with `Q`, which flattens `b` and the result into the cache's buffers
         @test _measured_mul!(direction(c), Q, rhs(c), c.flat) == 0
+    end
+end
+
+# The update of the inverse Hessian itself, which calls the sites above, measured as one call. An edit
+# to it that formed the secant pair without `_flat_secant`, or a product without the cache's buffers,
+# would allocate here and nowhere above.
+#
+# The update runs only where `curvature_is_usable` holds, so the secant pair is set by hand to one for
+# which it does, and `_update_inverse_hessian!` reads it without changing it: the branch runs on the
+# warm-up call and on the measured one. `γ = 2δ` and not `γ = δ`, because with `Q = I` the BFGS
+# correction for `γ = δ` is zero, and the assertion that `Q` changed could then not tell a skipped
+# branch from a taken one. `δ` is a constant fill, which is enough for an allocation count.
+@testset "the $(nameof(typeof(algorithm))) update of the inverse Hessian allocates nothing, $T" for T in REAL_ELTYPES,
+    algorithm in (BFGS(), DFP())
+
+    for (name, x) in quasi_newton_points(T)
+        c = OptimizerCache(algorithm, x)
+        state = OptimizerState(algorithm, x)
+        _fill!(c.Δx, T(1) / 10)
+        _copyto!(c.Δg, c.Δx)
+        _rmul!(c.Δg, T(2))
+        ΔxΔg = _dot(c.Δx, c.Δg)
+        @test ΔxΔg isa T
+        @test curvature_is_usable(ΔxΔg, c.Δx, c.Δg)
+
+        Q₀ = copy(inverse_hessian(state))
+        @test _measured4(_update_inverse_hessian!, algorithm, c, state, ΔxΔg) == 0
+        # the branch ran: `Q` is not where it started, and the pair it was taken on is unchanged by
+        # the two calls, so the guard held on both
+        @test inverse_hessian(state) != Q₀
+        @test _dot(c.Δx, c.Δg) == ΔxΔg
+        @test eltype(inverse_hessian(state)) == T
+
+        # the control: the barrier sees an allocation where there is one
+        @test _measured4(
+            (a, c, s, d) -> copy(inverse_hessian(s)), algorithm, c, state, ΔxΔg) > 0
     end
 end
 
@@ -373,10 +449,10 @@ const LIFT_TYPES = (StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix)
 
 # One lift and one section per shape, at a fixed `n` and two ambient dimensions an order of
 # magnitude apart.
-function retraction_fixture(LT, N, n)
-    B = rand(Random.Xoshiro(N * 100 + n), LT{Float64}, N, n)
+function retraction_fixture(::Type{T}, LT, N, n) where {T}
+    B = rand(Random.Xoshiro(N * 100 + n), LT{T}, N, n)
     MT = LT == StiefelLieAlgHorMatrix ? StiefelManifold : GrassmannManifold
-    Y = rand(Random.Xoshiro(N + n), MT{Float64}, N, n)
+    Y = rand(Random.Xoshiro(N + n), MT{T}, N, n)
 
     (B = B, Λ = GlobalSection(Y), Λ₂ = GlobalSection(Y), ws = retraction_workspace(Y))
 end
@@ -403,13 +479,16 @@ end
 #
 # **The tolerance does not weaken what is asserted**, because of the size the `large` fixture is:
 # one reintroduced `N × N` `Float64` temporary at `N = 200` is 320 000 bytes, and one `N × 2n` is
-# 9 600. The gap between those and 1 024 is what makes this a property and not a ceiling -- a
-# ceiling on the absolute figure would have to sit above 3 792 and so could hide an `N × 2n`
-# temporary entirely.
+# 9 600; in `Float32` they are half that, 160 000 and 4 800. The gap between those and 1 024 is what
+# makes this a property and not a ceiling -- a ceiling on the absolute figure would have to sit above
+# 3 792 and so could hide an `N × 2n` temporary entirely.
 include("../helpers/allocations.jl")
 
-@testset "the retraction of a $LT does not grow with N" for LT in LIFT_TYPES
-    small, large = retraction_fixture(LT, 6, 3), retraction_fixture(LT, 200, 3)
+@testset "the retraction of a $LT does not grow with N, $T" for T in REAL_ELTYPES,
+    LT in LIFT_TYPES
+
+    small, large = retraction_fixture(T, LT, 6, 3), retraction_fixture(T, LT, 200, 3)
+    @test eltype(small.ws.retracted) == eltype(large.B) == T
 
     # `lift_factors!` writes into buffers it was handed, and on the host it densifies the lift's `A`
     # block with a broadcast rather than a kernel launch, so it costs nothing at all.
@@ -440,10 +519,13 @@ end
 # property of the shapes, not of the two paths: where an inner dimension spans several blocks, as the
 # `N - n` of `update_section!`'s transport does at `N = 400`, a five-argument `mul!` and a sum of two
 # products round differently.
-@testset "the workspace retraction is the allocating one, for a $LT" for LT in LIFT_TYPES
+@testset "the workspace retraction is the allocating one, for a $LT, $T" for T in REAL_ELTYPES,
+    LT in LIFT_TYPES
+
     for (N, n) in ((6, 3), (6, 1), (6, 6), (20, 4))
-        f = retraction_fixture(LT, N, n)
+        f = retraction_fixture(T, LT, N, n)
         for R in RETRACTIONS
+            @test eltype(retraction_matrix!(f.ws, R, f.B)) == T
             @test retraction_matrix!(f.ws, R, f.B) == retraction(R, f.B).A
         end
     end
@@ -460,9 +542,12 @@ GeometricOptimizers.retraction(::_DownstreamRetraction, x::AbstractArray) = cayl
 # reaches `ws.retracted` through `copyto!`, which copies linearly into an oversized destination
 # instead of throwing. A workspace built for another `N` would therefore return a scrambled layout
 # rather than an error, so the rejection is asserted and not only the agreement.
-@testset "a retraction this package does not ship reaches the fallback, for a $LT" for LT in LIFT_TYPES
-    f = retraction_fixture(LT, 6, 3)
+@testset "a retraction this package does not ship reaches the fallback, for a $LT, $T" for T in REAL_ELTYPES,
+    LT in LIFT_TYPES
+
+    f = retraction_fixture(T, LT, 6, 3)
     R = _DownstreamRetraction()
+    @test eltype(retraction_matrix!(f.ws, R, f.B)) == T
 
     # Agreement with the allocating form is close to true by construction here -- this arm *is* the
     # allocating form plus a copy, unlike the `Cayley` and `Geodesic` arms the testset above
@@ -470,23 +555,24 @@ GeometricOptimizers.retraction(::_DownstreamRetraction, x::AbstractArray) = cayl
     # dispatches at all, and the answer lands in the workspace buffer rather than in a fresh array.
     @test retraction_matrix!(f.ws, R, f.B) == retraction(R, f.B).A
     @test retraction_matrix!(f.ws, R, f.B) === f.ws.retracted
-    @test_throws AssertionError retraction_matrix!(retraction_fixture(LT, 20, 3).ws, R, f.B)
+    @test_throws AssertionError retraction_matrix!(retraction_fixture(T, LT, 20, 3).ws, R, f.B)
 end
 
 # One fixture and one destination written twice, not two fixtures: `global_section` draws a random
 # complement from the global RNG, so two `GlobalSection`s of the same point hold different frames and
 # comparing across them would compare two different transports.
-@testset "update_section! writes the same section with and without a workspace" begin
+@testset "update_section! writes the same section with and without a workspace, $T" for T in REAL_ELTYPES
     for LT in LIFT_TYPES, (N, n) in ((6, 3), (20, 4))
 
-        f = retraction_fixture(LT, N, n)
+        f = retraction_fixture(T, LT, N, n)
         for R in RETRACTIONS
             update_section!(f.Λ₂, f.Λ, f.B, R, nothing)
             reference_Y, reference_λ = copy(f.Λ₂.Y.A), copy(f.Λ₂.λ)
-            fill!(f.Λ₂.Y.A, zero(Float64))
-            fill!(f.Λ₂.λ, zero(Float64))
+            fill!(f.Λ₂.Y.A, zero(T))
+            fill!(f.Λ₂.λ, zero(T))
 
             update_section!(f.Λ₂, f.Λ, f.B, R, f.ws)
+            @test eltype(f.Λ₂.Y.A) == eltype(f.Λ₂.λ) == T
             @test f.Λ₂.Y.A == reference_Y
             @test f.Λ₂.λ == reference_λ
         end
@@ -524,8 +610,10 @@ function _euclidean_step(x, F, algorithm)
     _measured_step(x, state, opt)
 end
 
-@testset "a Euclidean iteration of $(nameof(typeof(algorithm))) allocates nothing" for algorithm in (
-    BFGS(), DFP(), GradientMethod())
-    x, F = vector_problem()
+@testset "a Euclidean iteration of $(nameof(typeof(algorithm))) allocates nothing, $T" for T in REAL_ELTYPES,
+    algorithm in (BFGS(), DFP(), GradientMethod())
+
+    x, F = vector_problem(T)
     @test _euclidean_step(x, F, algorithm) == 0
+    @test eltype(x) == eltype(F(x)) == T
 end

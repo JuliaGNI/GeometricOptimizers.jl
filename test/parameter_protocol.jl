@@ -25,6 +25,8 @@ using Random
 using Test
 using Zygote: Zygote
 
+include("helpers/eltypes.jl")
+
 allowscalar(false)
 
 const N, n = 5, 3
@@ -78,7 +80,7 @@ function central_difference(L, ps; h = 1e-6)
     end
 end
 
-@testset "Zygote's gradient of a parameter set is the storage gradient: $name, $T" for T in (Float32, Float64),
+@testset "Zygote's gradient of a parameter set is the storage gradient: $name, $T" for T in REAL_ELTYPES,
     (name, L) in losses(T)
 
     ps = structured_set(T)
@@ -91,7 +93,10 @@ end
     end
     flat = first(flatten(g))
     @test eltype(flat) == T
-    @test flat ≈ reference rtol = 1e-6
+    # the round-off of the gradient in `T`, and the error of the `Float64` central difference with
+    # its step `h = 1e-6`, which is about `eps(Float64) / h`. Measured: at most 7.8e-8 in `Float32`
+    # (0.7 eps) and 7.2e-10 in `Float64`, over the three losses.
+    @test flat ≈ reference rtol = 8 * eps(T) + 10 * eps(Float64) / 1e-6
 end
 
 # the storage gradient written out entry by entry, from the dense `G`
@@ -111,7 +116,7 @@ end
 
 # Integer-valued entries, so that `G_ij ± G_ji` is exact and the comparison can be `==`.
 @testset "the storage gradient of a $X cotangent, exactly: $T" for X in (SymmetricMatrix, SkewSymMatrix),
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     rng = Random.Xoshiro(9)
     G = T.(rand(rng, -9:9, n, n))
@@ -120,6 +125,7 @@ end
 
     host = storage_gradient(A, G)
     @test host isa X{T}
+    @test eltype(host) == T
     @test parent(host) == expected
 
     # an `Adjoint` cotangent: the transpose of the transpose
@@ -165,9 +171,8 @@ end
 # the storage of a leaf, on the host, in the order `flatten` writes it
 hostflat(A) = first(flatten(mapstorage(Array, NetworkParameters((A = A,)))))
 
-@testset "the storage gradient of a $T leaf and a $S cotangent is a $T leaf, $(nameof(todevice))" for (
-        T, S) in (
-        (Float32, Float64), (Float64, Float32)),
+@testset "the storage gradient of a $T leaf and a $S cotangent is a $T leaf, $(nameof(todevice))" for T in REAL_ELTYPES,
+    S in REAL_ELTYPES,
     todevice in (identity, JLArray)
 
     rng = Random.Xoshiro(11)
@@ -178,6 +183,7 @@ hostflat(A) = first(flatten(mapstorage(Array, NetworkParameters((A = A,)))))
         for cotangent in (todevice(S.(G)), todevice(copy(S.(G)'))')
             g = storage_gradient(A, cotangent)
             @test typeof(g) == typeof(A)
+            @test eltype(g) == T
             @test hostflat(g) == hostflat(expected)
         end
     end
@@ -191,11 +197,32 @@ hostflat(A) = first(flatten(mapstorage(Array, NetworkParameters((A = A,)))))
     end
 end
 
-@testset "the smallest leaves: $T" for T in (Float32, Float64)
+# A cotangent of a lift's own type is the dense `[A -Bᵀ; B 0]` it represents, so its storage gradient
+# is the one of that dense matrix: twice its `B` block, and the doubled storage of its `A` block. Both
+# are one addition per entry, so the comparison with the dense route is exact for any data.
+@testset "the storage gradient of a lift-typed $S cotangent is a $T lift, $(nameof(todevice))" for T in REAL_ELTYPES,
+    S in REAL_ELTYPES,
+    todevice in (identity, JLArray)
+
+    rng = Random.Xoshiro(12)
+    draw(::Type{U}, dims...) where {U} = todevice(rand(rng, U, dims...))
+    A = StiefelLieAlgHorMatrix(
+        SkewSymMatrix(draw(T, n * (n - 1) ÷ 2), n), draw(T, N - n, n), N, n)
+    G = StiefelLieAlgHorMatrix(
+        SkewSymMatrix(draw(S, n * (n - 1) ÷ 2), n), draw(S, N - n, n), N, n)
+    g = storage_gradient(A, G)
+    @test typeof(g) == typeof(A)
+    @test eltype(g) == T
+    dense = mapstorage(Array, NetworkParameters((G = G,))).G
+    @test hostflat(g) == hostflat(storage_gradient(A, todevice(Matrix(dense))))
+end
+
+@testset "the smallest leaves: $T" for T in REAL_ELTYPES
     # a 1 × 1 skew-symmetric matrix stores nothing, and a 1 × 1 symmetric one stores its entry
     skew = storage_gradient(SkewSymMatrix(T[], 1), fill(T(3), 1, 1))
     @test skew isa SkewSymMatrix{T}
     @test isempty(parent(skew))
     sym = storage_gradient(SymmetricMatrix(T[0], 1), fill(T(3), 1, 1))
+    @test eltype(sym) == T
     @test parent(sym) == T[3]
 end

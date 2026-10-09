@@ -17,6 +17,8 @@ using KernelAbstractions: KernelAbstractions, CPU, GPU, supports_float64
 using Random
 using Test
 
+include("../helpers/eltypes.jl")
+
 Random.seed!(2026)
 
 const jl_backend = KernelAbstractions.get_backend(JLArray(zeros(Float32, 1)))
@@ -58,23 +60,23 @@ end
     end
 end
 
-@testset "the device draw honours a manifold type that names its storage array" begin
+@testset "the device draw honours a manifold type that names its storage array, $T" for T in REAL_ELTYPES
     # the same case as on the host path, and the `GPU` arm used to write `MT{typeof(A)}`
     # unconditionally, which is a `TypeError` for an already concrete `MT`
     N, n = 5, 3
-    for MT in (StiefelManifold{Float32, Matrix{Float32}},
-        GrassmannManifold{Float32, Matrix{Float32}})
-        Y = rand(Random.default_rng(), _Float64GPU(), MT, N, n)
+    rng = Random.Xoshiro(61)
+    for MT in (StiefelManifold{T, Matrix{T}}, GrassmannManifold{T, Matrix{T}})
+        Y = rand(rng, _Float64GPU(), MT, N, n)
         @test typeof(Y) === MT
-        @test GeometricOptimizers.check(Y) < 10 * eps(eltype(Y))
+        @test eltype(Y) == T
+        # `‖YᵀY - I‖` after CholeskyQR2 of a 5 × 3 draw: the round-off of a handful of length-5 dot
+        # products per entry, a few `eps(T)`
+        @test GeometricOptimizers.check(Y) < 10 * eps(T)
     end
 end
 
-@testset "a device that carries Float64 draws one when asked" begin
-    for T in (Float32, Float64)
-        @test eltype(rand(
-            Random.default_rng(), _Float64GPU(), StiefelManifold{T}, 5, 3)) === T
-    end
+@testset "a device that carries Float64 draws one when asked, $T" for T in REAL_ELTYPES
+    @test eltype(rand(Random.Xoshiro(62), _Float64GPU(), StiefelManifold{T}, 5, 3)) === T
 end
 
 @testset "the backend-taking `rand` uses the rule on the host" begin
@@ -88,23 +90,23 @@ end
     end
 end
 
-@testset "naming the element type still fixes it" begin
+@testset "naming the element type still fixes it, $T" for T in REAL_ELTYPES
     N, n = 5, 3
-    for T in (Float32, Float64)
-        @test eltype(rand(CPU(), StiefelManifold{T}, N, n)) === T
-        @test eltype(rand(StiefelManifold{T}, N, n)) === T
-    end
+    @test eltype(rand(CPU(), StiefelManifold{T}, N, n)) === T
+    @test eltype(rand(StiefelManifold{T}, N, n)) === T
 end
 
-@testset "a manifold type that names its storage array too" begin
+@testset "a manifold type that names its storage array too, $T" for T in REAL_ELTYPES
     # `StiefelManifold{T}` and `StiefelManifold{T, AT}` reach the same method. The second used to
     # have one of its own, written for `StiefelManifold` alone, so the same call on
     # `GrassmannManifold{T, AT}` was a `TypeError`.
     N, n = 5, 3
-    for MT in (StiefelManifold{Float64, Matrix{Float64}},
-        GrassmannManifold{Float32, Matrix{Float32}})
-        Y = rand(Random.default_rng(), CPU(), MT, N, n)
+    rng = Random.Xoshiro(63)
+    for MT in (StiefelManifold{T, Matrix{T}}, GrassmannManifold{T, Matrix{T}})
+        Y = rand(rng, CPU(), MT, N, n)
         @test typeof(Y) === MT
-        @test GeometricOptimizers.check(Y) < 10 * eps(eltype(Y))
+        @test eltype(Y) == T
+        # the same orthonormality residual as the device draw above, a few `eps(T)`
+        @test GeometricOptimizers.check(Y) < 10 * eps(T)
     end
 end

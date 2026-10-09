@@ -6,6 +6,10 @@ using LinearAlgebra: norm
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
+
+# for the frame each `GlobalSection` completes, which draws from the global RNG; the data below are
+# drawn from their own seeded generators
 Random.seed!(1234)
 
 # The two guards on `x_converged` (issue A4 in `CHANGELOG.md`). The divergence that motivated
@@ -14,31 +18,41 @@ Random.seed!(1234)
 # So the state it produced is built here directly, out of the same cache and state a solve would hand
 # to `OptimizerStatus`.
 
-@testset "solution_scale is the nominal norm on a manifold and the measured one elsewhere" begin
+# An iterate far off the manifold, as a multiple of a point, in place of the `1e100` of the trace in
+# issue A4, which overflows `Float32`. `1e4/eps(T)` (`8e10` in `Float32`, `5e19` in `Float64`) is far
+# enough off that a step of `345` is under `x_reltol = 2eps(T)` relative to it, and near enough that
+# the squares the global section of the point forms stay finite in `Float32`; `1e30` overflows there.
+off_scale(::Type{T}) where {T} = T(1.0e4) / eps(T)
+
+@testset "solution_scale is the nominal norm on a manifold and the measured one elsewhere, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
     for MT in (StiefelManifold, GrassmannManifold)
         for (N, n) in ((6, 3), (5, 1), (4, 4))
-            Y = rand(MT, N, n)
+            Y = rand(rng, MT{T}, N, n)
             # `YᵀY = I` makes `‖Y‖_F = √n` exactly, so the two agree while the point is on the
             # manifold -- which is what makes this change nothing for a converging solve
-            @test solution_scale(Y) == √n
+            @test eltype(solution_scale(Y)) == T
+            @test solution_scale(Y) == √T(n)
             @test solution_scale(Y) ≈ l2norm(Y)
         end
     end
 
     # and they part company exactly where the iterate does
-    Y = rand(StiefelManifold, 6, 3)
-    off = StiefelManifold(1e100 * Y.A)
-    @test solution_scale(off) == √3
-    @test l2norm(off) > 1e99
+    Y = rand(rng, StiefelManifold{T}, 6, 3)
+    off = StiefelManifold(off_scale(T) * Y.A)
+    @test solution_scale(off) == √T(3)
+    @test l2norm(off) > off_scale(T)
 
-    @test solution_scale([3.0, 4.0]) == 5.0
-    @test solution_scale(ones(2, 2)) == 2.0
+    # integer-valued on purpose: `3² + 4² = 5²` and `‖ones(2, 2)‖ = 2` are exact identities
+    @test solution_scale(T[3, 4]) == 5
+    @test solution_scale(ones(T, 2, 2)) == 2
 
     # a whole set combines in quadrature, using the nominal scale for its manifold blocks and the
     # measured one for the rest
-    ps = NetworkParameters((w = rand(StiefelManifold, 6, 3), b = ones(4)))
-    @test solution_scale(ps) ≈ √(3 + 4)
-    @test solution_scale(NetworkParameters((w = off, b = ones(4)))) ≈ √(3 + 4)
+    ps = NetworkParameters((w = rand(rng, StiefelManifold{T}, 6, 3), b = ones(T, 4)))
+    @test eltype(solution_scale(ps)) == T
+    @test solution_scale(ps) ≈ √T(3 + 4)
+    @test solution_scale(NetworkParameters((w = off, b = ones(T, 4)))) ≈ √T(3 + 4)
 end
 
 # `l2norm` of a parameter set is `GeometricBase`'s method as of 0.6.1 — the quadrature fold moved
@@ -52,14 +66,17 @@ end
 # interface — which the generic `L2norm(::AbstractArray)` does — counts the off-diagonal blocks twice
 # and the `A` block's own skew entries twice again. `l2norm(::AbstractLieAlgHorMatrix)` folds over the
 # free parameters instead, and that is the number the stopping criteria are entitled to.
-@testset "`l2norm` of a set recurses through the leaf's `l2norm`, not through `L2norm`" begin
-    B = rand(StiefelLieAlgHorMatrix, 6, 3)
-    ps = NetworkParameters((w = B, b = [3.0, 4.0]))
+@testset "`l2norm` of a set recurses through the leaf's `l2norm`, not through `L2norm`, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(55)
+    B = rand(rng, StiefelLieAlgHorMatrix{T}, 6, 3)
+    # integer-valued on purpose: `b` contributes exactly `3² + 4² = 25`
+    ps = NetworkParameters((w = B, b = T[3, 4]))
 
     # the set is the quadrature sum of the leaves' own norms ...
+    @test eltype(l2norm(ps)) == T
     @test l2norm(ps) ≈ √(l2norm(B)^2 + 25)
     # ... and `b` alone accounts for 25 of it, so the `w` term is the lift's own norm and nothing else
-    @test l2norm(NetworkParameters((b = [3.0, 4.0],))) ≈ 5.0
+    @test l2norm(NetworkParameters((b = T[3, 4],))) ≈ 5
 
     # ... which is *not* what reading the dense interface gives. If this ever stops holding, the leaf
     # has become symmetric enough not to distinguish the two and the test needs a different leaf --
@@ -68,61 +85,65 @@ end
 
     # A `VectorStorageMatrix` leaf is the same rule with the same answer by coincidence: `l2norm` of
     # one is over the stored vector either way.
-    S = SymmetricMatrix(rand(4, 4))
+    S = SymmetricMatrix(rand(rng, T, 4, 4))
     @test l2norm(NetworkParameters((w = S,))) ≈ l2norm(S)
 
     # And the block sum is a quadrature and not a sum of norms, which is what overestimated every
     # stopping criterion by up to `√k` before 0.6.0.
-    @test l2norm(NetworkParameters((a = [3.0], b = [4.0]))) ≈ 5.0
-    @test l2norm(NetworkParameters((a = [3.0], b = [4.0]))) < l2norm([3.0]) + l2norm([4.0])
+    @test l2norm(NetworkParameters((a = T[3], b = T[4]))) ≈ 5
+    @test l2norm(NetworkParameters((a = T[3], b = T[4]))) < l2norm(T[3]) + l2norm(T[4])
 end
 
 """
     manifold_status(x, δ_norm, f, f̄)
 
 The [`OptimizerStatus`](@ref) a solve would report at the iterate `x` after a step of norm `δ_norm`,
-with the objective going from `f̄` to `f`.
+with the objective going from `f̄` to `f`, all in the element type of `x`.
 """
-function manifold_status(x::StiefelManifold, δ_norm, f, f̄)
+function manifold_status(x::StiefelManifold{T}, δ_norm, f, f̄) where {T}
     δ = _zero(x)
     δ.B .= 1
-    _rmul!(δ, δ_norm / l2norm(δ))
+    _rmul!(δ, T(δ_norm) / l2norm(δ))
 
     # `GradientCache` keeps `x` itself rather than a copy, so `solution(cache)` is already the iterate
     cache = GradientCache(x, _zero(x), δ)
 
     state = GradientState(x)
-    state.f̄ = f̄
+    state.f̄ = T(f̄)
 
-    OptimizerStatus(state, cache, f; config = Options(Float64))
+    OptimizerStatus(state, cache, T(f); config = Options(T))
 end
 
-@testset "x_converged does not fire for a step that has left the manifold" begin
-    Y = rand(StiefelManifold, 6, 3)
-    off = StiefelManifold(1e100 * Y.A)
+# The objective values in the three testsets below are integer-valued where only their order
+# matters: the guards compare `f` with `f̄`, and that comparison is exact in either precision.
+@testset "x_converged does not fire for a step that has left the manifold, $T" for T in REAL_ELTYPES
+    Y = rand(Random.Xoshiro(100), StiefelManifold{T}, 6, 3)
+    off = StiefelManifold(off_scale(T) * Y.A)
 
     # This is the trace recorded in issue A4: `‖δ‖ = 345` at an iterate of magnitude `1e100`. Against
     # `l2norm(x)` the relative change is `3.4e-98`, far under `x_reltol = 2eps`; against
-    # `solution_scale` it is `345/√3`.
+    # `solution_scale` it is `345/√3`. At `off_scale(T)` it is `345eps(T)/(1e4√3) < 2eps(T)`.
     #
     # `f` moves here (3.38 → 9.13 is what the trace records) so that `f_converged` is out of the way
     # and this is a test of the denominator alone; the objective is the *other* guard, below.
     diverged = manifold_status(off, 345.0, 9.13, 3.38)
 
-    @test diverged.rxₐ ≈ 345.0
-    @test diverged.rxᵣ ≈ 345.0 / √3
-    @test 345.0 / l2norm(off) < 1e-97          # what the denominator used to be
+    @test eltype(diverged.rxₐ) == T
+    @test diverged.rxₐ ≈ 345
+    @test diverged.rxᵣ ≈ 345 / √T(3)
+    # what the denominator used to be: under the default `x_reltol = 2eps(T)`, so it would fire
+    @test T(345) / l2norm(off) < 2eps(T)
     @test !diverged.x_converged
     @test !isconverged(diverged)
 
     # and the same status on the manifold, with a step that really has gone to zero, still converges
     converged = manifold_status(Y, 1e-20, 1.0, 1.0)
-    @test converged.rxᵣ ≈ 1e-20 / √3
+    @test converged.rxᵣ ≈ T(1e-20) / √T(3)
     @test converged.x_converged
 end
 
-@testset "x_converged does not fire on a step that increased the objective" begin
-    Y = rand(StiefelManifold, 6, 3)
+@testset "x_converged does not fire on a step that increased the objective, $T" for T in REAL_ELTYPES
+    Y = rand(Random.Xoshiro(124), StiefelManifold{T}, 6, 3)
 
     # a vanishing step is the whole of the `x_converged` evidence, so the objective is what decides
     @test manifold_status(Y, 1e-20, 1.0, 2.0).x_converged      # f went down
@@ -132,12 +153,14 @@ end
     # `f_converged` and `g_converged` are not gated on it -- they are statements about `f` and
     # `∇f` themselves rather than about a ratio whose denominator can stop meaning anything
     increased = manifold_status(Y, 1e-20, 2.0, 1.0)
+    @test eltype(increased.rxₐ) == T
     @test increased.f_increased
     @test !increased.x_converged
 end
 
-@testset "f_increased is a comparison and not a comparison of magnitudes" begin
-    Y = rand(StiefelManifold, 6, 3)
+@testset "f_increased is a comparison and not a comparison of magnitudes, $T" for T in REAL_ELTYPES
+    Y = rand(Random.Xoshiro(139), StiefelManifold{T}, 6, 3)
+    @test eltype(manifold_status(Y, 1e-20, -6.0, -5.0).rxₐ) == T
 
     # `-5 → -6` is a decrease. Through `abs(f) > abs(f̄)`, which is what this used to be, it read as
     # an increase -- and with `x_converged` gated on the flag that would cost a solve its
@@ -147,16 +170,20 @@ end
     @test manifold_status(Y, 1e-20, -4.0, -5.0).f_increased
 end
 
-@testset "the guards leave a Euclidean solve alone" begin
+@testset "the guards leave a Euclidean solve alone, $T" for T in REAL_ELTYPES
     # `solution_scale` is `l2norm` for an ordinary array, so the only thing that changes here is the
     # `f_increased` gate -- and a solve that ends on a decrease is unaffected by it.
     F(x) = sum(x .^ 2)
+    rng = Random.Xoshiro(150)
 
     for method in (Newton(), BFGS(), GradientMethod())
-        x = ones(3)
+        x = rand(rng, T, 3) .+ T(0.5)
         result = solve!(x, OptimizerState(method, x), Optimizer(x, F; algorithm = method))
 
         @test isconverged(GeometricOptimizers.status(result))
-        @test norm(x) < 1e-7
+        @test eltype(x) == T
+        # the minimizer is `0`; a minimizer is accurate to the root of the objective's precision.
+        # Measured exactly `0` for all three methods over five seeds in both precisions.
+        @test norm(x) ≤ √eps(T)
     end
 end

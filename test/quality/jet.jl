@@ -1,5 +1,6 @@
 using GeometricOptimizers
-using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, _flat_secant,
+using GeometricOptimizers: _dot, _zero, l2norm, solution_scale, _manifold_αmax,
+                           _flat_secant,
                            _flat_mul!, retraction_matrix!, lift_factors!, update_section!,
                            retraction_workspace, GlobalSection, 𝔄, OptimizerCache,
                            inverse_hessian, direction, rhs, increase_iteration_number!,
@@ -11,12 +12,14 @@ using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, _flat_
                            up_mat_mul_kernel!, symmetric_mat_mul_kernel!,
                            skew_mat_mul_kernel!, addition_kernel!, assign_S_val_kernel!,
                            assign_Skew_val_kernel!
-using JLArrays: JLBackend
-using NeuralNetworkParameters: NetworkParameters
+using JLArrays: JLArrays, JLBackend
+using NeuralNetworkParameters: NeuralNetworkParameters, NetworkParameters
 using KernelAbstractions: KernelAbstractions, CPU
 using JET
 using Test
 import Random
+
+include("../helpers/eltypes.jl")
 
 # The entry points are the functions of `src/` under `@allocated` in
 # `test/integration/flat_buffer_allocations.jl` and the functions that launch a kernel. Each has one line per
@@ -29,6 +32,23 @@ import Random
 # the tests reach them. `dot(γ, Q, γ)`, `outer!` and `l2norm` of a `NetworkParameters` are measured
 # too, and are methods of `LinearAlgebra`, `SimpleSolvers` and `GeometricBase`.
 const GO = (GeometricOptimizers,)
+
+# A function that hands a value to a fold of `NeuralNetworkParameters` dispatches on it in the fold's
+# frame, so its lines keep the reports of that package's frames too: a barrier on the initial value
+# of `_dot`'s or `_manifold_αmax`'s fold gives a report there and none in this package.
+const GO_FOLD = (GeometricOptimizers, NeuralNetworkParameters)
+
+# A kernel launch is one varargs method of KernelAbstractions, so a launch argument that is not
+# inferred dispatches in `KernelAbstractions.__run`, not here. The launcher lines keep the reports of
+# KernelAbstractions' and JLArrays' frames, all but the dispatch of `KernelAbstractions.zeros` in its
+# own `init_kernel`, which every launcher that allocates with it has and no launcher can remove.
+# A barrier on a launch argument of `map_to_lo`, `_ladd` or `_poisson_tensor` gives a report in
+# `KernelAbstractions.__run`.
+function launch_reports(f, types)
+    reports = JET.get_reports(JET.report_opt(f, types;
+        target_modules = (GeometricOptimizers, KernelAbstractions, JLArrays)))
+    filter(r -> !occursin("init_kernel", sprint(show, r)), reports)
+end
 
 Random.seed!(1234)
 
@@ -48,6 +68,10 @@ const GrassmannLift64 = typeof(rand(GrassmannLieAlgHorMatrix{Float64}, N, n))
 const GrassmannLift32 = typeof(rand(GrassmannLieAlgHorMatrix{Float32}, N, n))
 const Container64 = typeof(container(Float64))
 const Wide32 = typeof(wide())
+function stiefel_set(T)
+    NetworkParameters((L1 = (Y = rand(StiefelManifold{T}, N, n),),
+        L2 = (W = rand(T, n, 4), b = rand(T, N))))
+end
 
 # the body of `solve!`'s loop, as `test/integration/flat_buffer_allocations.jl` measures it
 function _step!(x, state, opt)
@@ -99,17 +123,24 @@ end
 @testset "JET" begin
     if isdefined(JET, :JET_AVAILABLE) ? JET.JET_AVAILABLE : JET.JET_LOADABLE
         # the functions under `@allocated` in test/integration/flat_buffer_allocations.jl
-        @test isempty(JET.get_reports(JET.report_opt(_dot, (Lift64, Lift64); target_modules = GO)))
-        @test isempty(JET.get_reports(JET.report_opt(_dot, (Wide32, Wide32); target_modules = GO)))
-        @test isempty(JET.get_reports(JET.report_opt(l2norm, (Lift64,); target_modules = GO)))
-        @test isempty(JET.get_reports(JET.report_opt(l2norm, (GrassmannLift32,); target_modules = GO)))
-        @test isempty(JET.get_reports(JET.report_opt(solution_scale, (Lift64,); target_modules = GO)))
-        @test isempty(JET.get_reports(JET.report_opt(solution_scale, (Container64,); target_modules = GO)))
-        @test isempty(JET.get_reports(JET.report_opt(solution_scale, (Wide32,); target_modules = GO)))
+        @test isempty(JET.get_reports(JET.report_opt(_dot, (Lift64, Lift64); target_modules = GO_FOLD)))
+        @test isempty(JET.get_reports(JET.report_opt(_dot, (Wide32, Wide32); target_modules = GO_FOLD)))
+        @test isempty(JET.get_reports(JET.report_opt(l2norm, (Lift64,); target_modules = GO_FOLD)))
+        @test isempty(JET.get_reports(JET.report_opt(l2norm, (GrassmannLift32,); target_modules = GO_FOLD)))
+        @test isempty(JET.get_reports(JET.report_opt(solution_scale, (Lift64,); target_modules = GO_FOLD)))
+        @test isempty(JET.get_reports(JET.report_opt(solution_scale, (Container64,); target_modules = GO_FOLD)))
+        @test isempty(JET.get_reports(JET.report_opt(solution_scale, (Wide32,); target_modules = GO_FOLD)))
         @test isempty(JET.get_reports(JET.report_opt(
-            _manifold_αmax, (Container64, Container64, Float32); target_modules = GO)))
+            _manifold_αmax, (Container64, Container64, Float32); target_modules = GO_FOLD)))
         @test isempty(JET.get_reports(JET.report_opt(
-            _manifold_αmax, (Wide32, Wide32, Float32); target_modules = GO)))
+            _manifold_αmax, (Wide32, Wide32, Float32); target_modules = GO_FOLD)))
+        # the manifold arm, `_block_αmax(::Manifold, δ, c)` and `step_αmax`: a set with a Stiefel
+        # leaf one level down, as `test/integration/network_parameters_optimizer.jl` calls it
+        for T in REAL_ELTYPES
+            ps = stiefel_set(T)
+            @test isempty(JET.get_reports(JET.report_opt(
+                _manifold_αmax, (typeof(ps), typeof(_zero(ps)), T); target_modules = GO_FOLD)))
+        end
         @test isempty(JET.get_reports(JET.report_opt(_flat_secant, (QN.cache,); target_modules = GO)))
         @test isempty(JET.get_reports(JET.report_opt(
             _flat_mul!, (QN.direction, QN.Q, QN.rhs, QN.flat); target_modules = GO)))
@@ -134,41 +165,37 @@ end
         # `_poisson_tensor` and `StiefelProjection` is analysed on a JLArray, because a `CPU`
         # dispatches to a host arm that launches nothing (one test reaches the `StiefelProjection`
         # backend arm on a `CPU` through `invoke`, at the same element types)
-        @test isempty(JET.get_reports(JET.report_opt(
-            _poisson_tensor, (JLBackend, Type{Float32}, Int); target_modules = GO)))
-        for T in (Float32, Float64)
-            @test isempty(JET.get_reports(JET.report_opt(
-                unit_matrix, (JLBackend, Type{T}, Int); target_modules = GO)))
-            @test isempty(JET.get_reports(JET.report_opt(
-                StiefelProjection, (JLBackend, Type{T}, Int, Int); target_modules = GO)))
+        for T in REAL_ELTYPES
+            @test isempty(launch_reports(_poisson_tensor, (JLBackend, Type{T}, Int)))
+            @test isempty(launch_reports(unit_matrix, (JLBackend, Type{T}, Int)))
+            @test isempty(launch_reports(StiefelProjection, (JLBackend, Type{T}, Int, Int)))
         end
         for T in (Float32, Float64, ComplexF64, Int)
-            @test isempty(JET.get_reports(JET.report_opt(map_to_lo, (Matrix{T},); target_modules = GO)))
-            @test isempty(JET.get_reports(JET.report_opt(map_to_up, (Matrix{T},); target_modules = GO)))
+            @test isempty(launch_reports(map_to_lo, (Matrix{T},)))
+            @test isempty(launch_reports(map_to_up, (Matrix{T},)))
         end
         for T in (Float32, Float64, ComplexF64, BigFloat)
-            @test isempty(JET.get_reports(JET.report_opt(map_to_S, (Matrix{T},); target_modules = GO)))
-            @test isempty(JET.get_reports(JET.report_opt(map_to_Skew, (Matrix{T},); target_modules = GO)))
+            @test isempty(launch_reports(map_to_S, (Matrix{T},)))
+            @test isempty(launch_reports(map_to_Skew, (Matrix{T},)))
         end
-        for T in (Float32, Float64),
+        for T in REAL_ELTYPES,
             MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
 
-            @test isempty(JET.get_reports(JET.report_opt(
-                _lmul_into!, (Matrix{T}, MT{T, Vector{T}}, Matrix{T}); target_modules = GO)))
+            @test isempty(launch_reports(
+                _lmul_into!, (Matrix{T}, MT{T, Vector{T}}, Matrix{T})))
         end
         for T in (Float32, Float64, ComplexF64), MT in (SymmetricMatrix, SkewSymMatrix)
 
-            @test isempty(JET.get_reports(JET.report_opt(
-                _lmul_into!, (Matrix{T}, MT{T, Vector{T}}, Matrix{T}); target_modules = GO)))
+            @test isempty(launch_reports(
+                _lmul_into!, (Matrix{T}, MT{T, Vector{T}}, Matrix{T})))
         end
         for T in (Float32, Float64, ComplexF64)
-            @test isempty(JET.get_reports(JET.report_opt(
-                _ladd, (SkewSymMatrix{T, Vector{T}}, Matrix{T}); target_modules = GO)))
+            @test isempty(launch_reports(_ladd, (SkewSymMatrix{T, Vector{T}}, Matrix{T})))
         end
 
         # the kernel bodies, at the element types the launchers above are reached at
         @test isempty(kernel_body_reports(write_poisson_blocks_kernel!, 2, zeros(Float32, 4, 4), 2))
-        for T in (Float32, Float64)
+        for T in REAL_ELTYPES
             @test isempty(kernel_body_reports(write_ones_kernel!, 3, zeros(T, 3, 3)))
             @test isempty(kernel_body_reports(
                 assign_ones_for_stiefel_projection_kernel!, 3, zeros(T, 6, 3)))

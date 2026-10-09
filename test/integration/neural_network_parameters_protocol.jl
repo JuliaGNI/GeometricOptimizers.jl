@@ -10,6 +10,7 @@ using NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata, flat
                                parameterrange, save, load
 using Random
 using Test
+include("../helpers/eltypes.jl")
 
 Random.seed!(1234)
 
@@ -48,17 +49,25 @@ const N, n = 6, 3
 # from their blocks rather than through the `(D, n)` constructors, which slice with `@views` — a lift
 # holding `SubArray`s can never compare type-equal to one rebuilt from a flat vector, and that is a
 # property of the constructor, not of the protocol under test.
-leaves = (
-    stiefel = rand(StiefelManifold{Float64}, N, n),
-    grassmann = rand(GrassmannManifold{Float64}, N, n),
-    symmetric = SymmetricMatrix(rand(n, n)),
-    skew = SkewSymMatrix(rand(n, n)),
-    lower = StrictlyLowerTriangular(rand(n, n)),
-    upper = StrictlyUpperTriangular(rand(n, n)),
-    stiefhor = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(n, n)), rand(N - n, n), N, n),
-    grasshor = GrassmannLieAlgHorMatrix(rand(N - n, n), N, n),
-    plain = rand(2, 2)
-)
+#
+# In `T`, for the testsets that store and read back numbers of either precision. The testsets that
+# only rearrange storage -- `rebuild`, the flat length and ordering, the metadata -- copy entries
+# exactly and take the `Float64` set.
+function leaves_in(::Type{T}) where {T}
+    rng = Random.Xoshiro(1234)
+    (stiefel = rand(rng, StiefelManifold{T}, N, n),
+        grassmann = rand(rng, GrassmannManifold{T}, N, n),
+        symmetric = SymmetricMatrix(rand(rng, T, n, n)),
+        skew = SkewSymMatrix(rand(rng, T, n, n)),
+        lower = StrictlyLowerTriangular(rand(rng, T, n, n)),
+        upper = StrictlyUpperTriangular(rand(rng, T, n, n)),
+        stiefhor = StiefelLieAlgHorMatrix(
+            SkewSymMatrix(rand(rng, T, n, n)), rand(rng, T, N - n, n), N, n),
+        grasshor = GrassmannLieAlgHorMatrix(rand(rng, T, N - n, n), N, n),
+        plain = rand(rng, T, 2, 2))
+end
+
+leaves = leaves_in(Float64)
 
 # `NeuralNetworkParameters` is a hard dependency as of 0.5.0, so the protocol is simply there -- no
 # extension to load and nothing to condition on. This asserts that rather than deleting the testset,
@@ -220,46 +229,51 @@ end
     @test λ_container.L1.Y.Y == ps.L1.Y
 end
 
-@testset "HDF5 round trip, with no prototype" begin
+@testset "HDF5 round trip, with no prototype, $T" for T in REAL_ELTYPES
     # the registered form: `__init__` taught `load` how to rebuild each of these, so a file loads
     # without the caller having to supply a parameter set of the right shape
-    ps = NetworkParameters((L1 = leaves,))
+    leavesₜ = leaves_in(T)
+    ps = NetworkParameters((L1 = leavesₜ,))
     withtempfile() do file
         save(file, ps)
         read_back = load(NetworkParameters, file)
 
         @test keys(read_back) == keys(ps)
-        for k in keys(leaves)
-            @test typeof(read_back.L1[k]) == typeof(leaves[k])
-            @test read_back.L1[k] ≈ leaves[k]
+        for k in keys(leavesₜ)
+            @test eltype(read_back.L1[k]) == T
+            @test typeof(read_back.L1[k]) == typeof(leavesₜ[k])
+            @test read_back.L1[k] ≈ leavesₜ[k]
             # the structure survived: the storage is the storage, not a dense n×n
-            @test _storage_lengths(read_back.L1[k]) == _storage_lengths(leaves[k])
+            @test _storage_lengths(read_back.L1[k]) == _storage_lengths(leavesₜ[k])
         end
     end
 end
 
-@testset "HDF5 round trip against a prototype" begin
+@testset "HDF5 round trip against a prototype, $T" for T in REAL_ELTYPES
     # the form that bypasses the registry entirely
-    ps = NetworkParameters((L1 = leaves,))
+    leavesₜ = leaves_in(T)
+    ps = NetworkParameters((L1 = leavesₜ,))
     withtempfile() do file
         save(file, ps)
         read_back = load(NetworkParameters, file, ps)
-        for k in keys(leaves)
-            @test typeof(read_back.L1[k]) == typeof(leaves[k])
-            @test read_back.L1[k] ≈ leaves[k]
+        for k in keys(leavesₜ)
+            @test eltype(read_back.L1[k]) == T
+            @test typeof(read_back.L1[k]) == typeof(leavesₜ[k])
+            @test read_back.L1[k] ≈ leavesₜ[k]
         end
     end
 end
 
-@testset "Float32 parameters stay Float32" begin
-    # `parameter_eltype` promotes over the leaves' storage, so a single-precision set must not widen
-    ps = NetworkParameters((L1 = (W = SymmetricMatrix(rand(Float32, n, n)),
-        Y = rand(StiefelManifold{Float32}, N, n)),))
+@testset "$T parameters stay $T" for T in REAL_ELTYPES
+    # `parameter_eltype` promotes over the leaves' storage, so a set of one precision must not widen
+    rng = Random.Xoshiro(4321)
+    ps = NetworkParameters((L1 = (W = SymmetricMatrix(rand(rng, T, n, n)),
+        Y = rand(rng, StiefelManifold{T}, N, n)),))
     v, layout = flatten(ps)
-    @test eltype(v) == Float32
+    @test eltype(v) == T
     back = unflatten(layout, v)
-    @test eltype(back.L1.W) == Float32
-    @test eltype(back.L1.Y) == Float32
+    @test eltype(back.L1.W) == T
+    @test eltype(back.L1.Y) == T
 end
 
 @testset "a file in GeometricMachineLearning's old layout still loads" begin

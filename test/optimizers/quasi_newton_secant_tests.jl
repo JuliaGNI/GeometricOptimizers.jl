@@ -1,9 +1,13 @@
 using GeometricOptimizers
 using GeometricOptimizers: BFGS, DFP, cache, solver_step!, initialize_state!,
                            inverse_hessian,
-                           increase_iteration_number!, iteration_number, update!
+                           increase_iteration_number!, iteration_number, update!,
+                           isconverged, status
 using LinearAlgebra: norm, dot
 using Test
+import Random
+
+include("../helpers/eltypes.jl")
 
 # `BFGS` and `DFP` build their inverse Hessian `Q` from the secant pair
 #
@@ -18,9 +22,10 @@ using Test
 # it does on a problem an exact line search solves in one step
 rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i + 1] - x[i]^2)^2 for i in 1:(length(x) - 1))
 
-@testset "the secant pair is formed from consecutive iterates" begin
+@testset "the secant pair is formed from consecutive iterates, $T" for T in REAL_ELTYPES
     # Rosenbrock rather than `F`, and only ten iterations, so that the whole window stays in the
-    # pre-convergence regime: `f` is still of order 1e-2 at the end of it. Once a solve reaches
+    # pre-convergence regime: `f` is still of order 1e-2 at the end of it, in both precisions
+    # (measured: 0.024 for `BFGS` and 0.15 for `DFP`, in `Float32` and in `Float64`). Once a solve reaches
     # machine precision, `δ` and `γ` underflow to zero and the guard around the `Q` update *correctly*
     # skips, and how soon that happens is a floating-point detail that differs between platforms --
     # so counting updates over a window that runs past convergence pins nothing. Every iteration in
@@ -28,7 +33,8 @@ rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i + 1] - x[i]^2)^2 for i in 1:(lengt
     ITERATIONS = 10
 
     for algorithm in (BFGS(), DFP())
-        x = [-1.2, 1.0]
+        # the standard Rosenbrock start; `-1.2` is not exact in either precision
+        x = T[-1.2, 1.0]
         state = OptimizerState(algorithm, x)
         opt = Optimizer(x, rosenbrock; algorithm = algorithm, linesearch = Backtracking())
 
@@ -48,11 +54,14 @@ rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i + 1] - x[i]^2)^2 for i in 1:(lengt
         # valid pair. Before the fix this was 0 -- `Q` was never updated at all, on any iteration.
         @test updates == ITERATIONS - 1
         @test inverse_hessian(state) != one(inverse_hessian(state))
+        @test eltype(inverse_hessian(state)) == T
+        @test eltype(x) == T
 
         # guards the premise above: if a future change makes this converge inside the window, the
         # update count would drop legitimately and the assertion above would be measuring the wrong
-        # thing. This says so rather than leaving it to look like a regression.
-        @test rosenbrock(x) > 1e-8
+        # thing. This says so rather than leaving it to look like a regression. A converged iterate
+        # has `f` of order `eps(T)`; `√eps(T)` is far above that and far below the measured 0.024.
+        @test rosenbrock(x) > √eps(T)
     end
 end
 
@@ -79,13 +88,20 @@ end
 # What the shrink-only search costs `DFP` — and that it costs `BFGS` nothing — is documented where
 # it belongs, in `curvature_is_usable` and `default_linesearch`, both of which carry the measured
 # figures. `max_iterations` is set past the bound so that a solve which did drift cannot be truncated
-# by the cap and fail the `f < 1e-12` assertion for a different reason than the one being tested.
+# by the cap and fail the `f < eps(T)` assertion for a different reason than the one being tested.
+#
+# In `Float32` the same start takes 17 iterations for `BFGS` and 35 for `DFP`. The invariance above
+# is a `Float64` measurement and does not carry over: over the 49 `Float32` starts up to three ulps
+# either side of `(-1.2, 1)`, `BFGS` takes at most 18, but `DFP` from the start two ulps below in each
+# coordinate does not converge within 300 iterations (it stops at `f = 5e-4`). This file runs the
+# one start, where both converge.
 const ROSENBROCK_MAX_ITERATIONS = 100
 
-@testset "the quasi-Newton methods beat gradient descent on Rosenbrock" begin
+@testset "the quasi-Newton methods beat gradient descent on Rosenbrock, $T" for T in REAL_ELTYPES
     # `Q ≡ I` makes `BFGS`/`DFP` identical to `GradientMethod`, which is what this separates. On
     # Rosenbrock, gradient descent is famously slow while a working quasi-Newton method is not.
-    x₀ = [-1.2, 1.0]
+    x₀ = T[-1.2, 1.0]
+    minimizer = ones(T, 2)
 
     for algorithm in (BFGS(), DFP())
         x = copy(x₀)
@@ -94,23 +110,36 @@ const ROSENBROCK_MAX_ITERATIONS = 100
             x, rosenbrock; algorithm = algorithm, linesearch = Backtracking(expand = true),
             max_iterations = 3 * ROSENBROCK_MAX_ITERATIONS, warn_iterations = 0)
 
-        solve!(x, state, opt)
+        result = solve!(x, state, opt)
 
-        @test rosenbrock(x) < 1e-12
-        @test x ≈ [1.0, 1.0] atol = 1e-5
+        @test isconverged(status(result))
+        @test eltype(x) == T
+        # `f` is quadratic at the minimizer, so an iterate accurate to `√eps(T)` has `f` of order
+        # `eps(T)`; measured at most `0.017eps(T)` (`DFP`, `Float32`) over both methods and precisions
+        @test rosenbrock(x) < eps(T)
+        # a minimizer is accurate to the root of the objective's precision; measured at most
+        # `0.29√eps(T)` (`DFP`, `Float32`) over both methods and precisions
+        @test norm(x - minimizer) ≤ √eps(T)
         @test iteration_number(state) < ROSENBROCK_MAX_ITERATIONS
     end
 end
 
-@testset "the DFP update matches the textbook formula" begin
+# A secant pair in `T` drawn from `rng`: `γ = Aδ` with `A = I + MMᵀ` symmetric positive definite, so
+# that `δᵀγ ≥ ‖δ‖² > 0` and the update is well defined, as it is for a pair taken on a convex
+# objective. Drawn rather than integer-valued, so that the update rounds in `T`.
+function secant_pair(rng, ::Type{T}) where {T}
+    δ = randn(rng, T, 3)
+    M = randn(rng, T, 3, 3)
+    γ = (one(M) + M * M') * δ
+    (δ = δ, γ = γ, ḡ = randn(rng, T, 3), x = randn(rng, T, 3))
+end
+
+@testset "the DFP update matches the textbook formula, $T" for T in REAL_ELTYPES
     # DFP is `Q ← Q - Qγγᵀ Q/(γᵀQγ) + δδᵀ/(δᵀγ)` (nocedal2006numerical, eq. 6.15). The middle term
     # used to be built from `cache.ΔxΔx`, i.e. `δδᵀ`, which left `cache.ΔgΔg` computed and unused.
     # Driving one `update!` with a chosen secant pair pins the formula directly, without depending on
     # what a line search happens to do.
-    δ = [1.0, 2.0, -1.0]
-    ḡ = [0.5, -1.0, 2.0]
-    γ = [2.0, 1.0, 1.0]           # δᵀγ = 3 > 0, so the update is well defined
-    x = [0.1, 0.2, 0.3]
+    (; δ, γ, ḡ, x) = secant_pair(Random.Xoshiro(105), T)
 
     cache = GeometricOptimizers.QuasiNewtonCache(DFP(), x)
     state = OptimizerState(DFP(), x)
@@ -120,9 +149,10 @@ end
 
     update!(cache, state, x, ḡ .+ γ)
 
-    Q = one(zeros(3, 3))
+    Q = one(zeros(T, 3, 3))
     expected = Q - (Q * γ * γ' * Q) / (γ' * Q * γ) + (δ * δ') / dot(δ, γ)
 
+    @test eltype(inverse_hessian(state)) == T
     @test inverse_hessian(state) ≈ expected
 
     # the δδᵀ variant this replaces is a different matrix, so the test would catch a revert
@@ -133,11 +163,8 @@ end
     @test state.ḡ ≈ ḡ .+ γ
 end
 
-@testset "the BFGS update matches the textbook formula" begin
-    δ = [1.0, 2.0, -1.0]
-    ḡ = [0.5, -1.0, 2.0]
-    γ = [2.0, 1.0, 1.0]
-    x = [0.1, 0.2, 0.3]
+@testset "the BFGS update matches the textbook formula, $T" for T in REAL_ELTYPES
+    (; δ, γ, ḡ, x) = secant_pair(Random.Xoshiro(136), T)
 
     cache = GeometricOptimizers.QuasiNewtonCache(BFGS(), x)
     state = OptimizerState(BFGS(), x)
@@ -147,10 +174,11 @@ end
 
     update!(cache, state, x, ḡ .+ γ)
 
-    Q = one(zeros(3, 3))
+    Q = one(zeros(T, 3, 3))
     δγ = dot(δ, γ)
     expected = Q - (δ * γ' * Q + Q * γ * δ' - (1 + (γ' * Q * γ) / δγ) * (δ * δ')) / δγ
 
+    @test eltype(inverse_hessian(state)) == T
     @test inverse_hessian(state) ≈ expected
     @test state.ḡ ≈ ḡ .+ γ
 end

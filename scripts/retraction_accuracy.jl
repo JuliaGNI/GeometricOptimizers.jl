@@ -226,6 +226,7 @@ end
 const A = include(joinpath(
     @__DIR__, "..", "test", "helpers", "svd_matrix.jl"))
 
+# The rows of the table in `test/verification/svd_optim.jl` but `DFP  Backtracking`, which says why.
 const COMBINATIONS = (
     ("BFGS  Backtracking(expand)", BFGS(), () -> Backtracking(Float64; expand = true)),
     ("BFGS  Backtracking        ", BFGS(), () -> Backtracking(Float64)),
@@ -280,10 +281,8 @@ function solve_once(algorithm, linesearch, retraction, seed::Integer;
         error = abs((objective(ps) - err_best) / err_best))
 end
 
-# The tolerance `test/verification/svd_optim.jl` and `test/integration/manifold_linesearch_tests.jl` both
-# use for "still on the manifold". Both iterates stay on `St(N, 3)` when a solve behaves, so this is a
-# round-off bound and nothing else; the values observed are of the order of `1e-14`.
-const MANIFOLD_TOLERANCE = 1e-12
+# A copy of `manifold_tolerance(Float64)` in `test/helpers/manifold_tolerance.jl`, which says why.
+const MANIFOLD_TOLERANCE = 4096 * eps(Float64)
 
 """
     on_the_manifold(results)

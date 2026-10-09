@@ -7,7 +7,7 @@
 # for the rows to mean anything, and the function turns it off. It also reseeds the global generator
 # with `seed`, for the retraction rows; a caller that needs its own stream reseeds after it.
 #
-#     using JLArrays; device_products(JLArray)     # what `test/integration/device_products.jl` asserts
+#     using JLArrays; device_products(JLArray, T)  # what `test/integration/device_products.jl` asserts
 #     using Metal;    device_products(MtlArray)    # what `test/devices/metal.jl` asserts
 #
 # `test/devices/metal.jl` runs in the `metal` test group, which a default run on Apple silicon
@@ -15,8 +15,8 @@
 # Where no device exists and no Metal cache was built, `using Metal` fails instead (K15 in
 # `KNOWN_ISSUES.md`). Run the sweep through a Kaimon session.
 #
-# `Float32` throughout, because Metal has no `Float64`. The symplectic SR factor `Sfac` is absent:
-# the decomposition that builds one runs on the host only.
+# The element type `T` is `Float32` unless a caller names another, because Metal has no `Float64`.
+# The symplectic SR factor `Sfac` is absent: the decomposition that builds one runs on the host only.
 
 using AbstractNeuralNetworks: changebackend
 using GeometricOptimizers
@@ -30,8 +30,6 @@ using LinearAlgebra: Adjoint, Transpose, mul!, qr!
 using NeuralNetworkParameters: mapstorage
 using Random
 
-const T = Float32
-
 tohost(x::AbstractGPUArray) = Array(x)
 tohost(x::Adjoint) = adjoint(tohost(parent(x)))
 tohost(x::Transpose) = transpose(tohost(parent(x)))
@@ -42,7 +40,7 @@ tohost(x::Manifold) = Base.typename(typeof(x)).wrapper(tohost(x.A))
 tohost(x) = x
 
 todev(todevice, x::Adjoint) = adjoint(todev(todevice, parent(x)))
-function todev(todevice, x::StiefelProjection)
+function todev(todevice, x::StiefelProjection{T}) where {T}
     StiefelProjection(get_backend(todevice(zeros(T, 1))), T, size(x)...)
 end
 function todev(todevice, x::Union{VectorStorageMatrix, AbstractLieAlgHorMatrix})
@@ -51,11 +49,11 @@ end
 todev(todevice, x::Manifold) = Base.typename(typeof(x)).wrapper(todevice(x.A))
 todev(todevice, x::AbstractArray) = todevice(x)
 
-# the entries a host `Matrix` of a result holds, whatever wraps it
-dense(x) = Matrix{T}(tohost(x))
-dense(x::AbstractVector) = Vector{T}(tohost(x))
+# the entries a host `Matrix` of a result holds, whatever wraps it, in the element type of the result
+dense(x) = Matrix(tohost(x))
+dense(x::AbstractVector) = Vector(tohost(x))
 
-function fixtures(rng)
+function fixtures(rng, ::Type{T}) where {T}
     N, n = 6, 3
     Q = Matrix(qr!(randn(rng, T, N, N)).Q)
     U = rand(rng, SymplecticStiefelManifold{T}, N, 4)
@@ -81,19 +79,20 @@ function row(name, f, host_args, dev_args, backend)
         expected = f(host_args...)
         on_device = r isa Number ||
                     get_backend(r isa Union{Adjoint, Transpose} ? parent(r) : r) == backend
-        on_device && dense(r) ≈ dense(expected) ? :pass : :wrong
+        on_device && eltype(r) == eltype(expected) && dense(r) ≈ dense(expected) ? :pass :
+        :wrong
     catch err
         first(split(sprint(showerror, err), '\n'))
     end
     name => status
 end
 
-function device_products(todevice; seed = 1234)
+function device_products(todevice, ::Type{T} = Float32; seed = 1234) where {T}
     allowscalar(false)
     rng = Random.Xoshiro(seed)
     backend = get_backend(todevice(zeros(T, 1)))
     rows = Pair{String, Any}[]
-    ops = fixtures(rng)
+    ops = fixtures(rng, T)
     dev(x) = todev(todevice, x)
 
     for (name, h) in ops
@@ -109,7 +108,7 @@ function device_products(todevice; seed = 1234)
             ("$name - B", -, (h, M)), ("B - $name", -, (M, h)),
             ("mul!(C, $name, B)", (c, a, b) -> mul!(c, a, b), (C, h, P)),
             ("mul!(C, B, $name)", (c, a, b) -> mul!(c, a, b), (Cᵣ, L, h)),
-            ("2f0 * $name", a -> 2.0f0 * a, (h,)), ("$name * 2f0", a -> a * 2.0f0, (h,)),
+            ("2 * $name", a -> T(2) * a, (h,)), ("$name * 2", a -> a * T(2), (h,)),
             ("-$name", -, (h,)))
             push!(rows, row(label, f, copy.(args), map(dev, args), backend))
         end
@@ -165,7 +164,9 @@ function device_products(todevice; seed = 1234)
             push!(rows,
                 "$label($name, Δ)" => try
                     Y₂ = f(dY, dΔ)
-                    get_backend(Y₂) == backend && GeometricOptimizers.check(Y₂) < 1.0f-4 ? :pass : :wrong
+                    # 1.2e-4 in `Float32`, the bound this row had before it ran in `Float64` too
+                    get_backend(Y₂) == backend && eltype(Y₂) == T &&
+                    GeometricOptimizers.check(Y₂) < 1000 * eps(T) ? :pass : :wrong
                 catch err
                     first(split(sprint(showerror, err), '\n'))
                 end)

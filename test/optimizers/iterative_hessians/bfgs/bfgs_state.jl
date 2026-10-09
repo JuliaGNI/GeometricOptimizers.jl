@@ -12,6 +12,7 @@ using GeometricOptimizers: update!, solver_step!, increase_iteration_number!,
 using Test
 import Random
 
+include("../../../helpers/eltypes.jl")
 include("../../../helpers/allocations.jl")
 
 manifold(::Val{:Stiefel}) = StiefelManifold
@@ -36,7 +37,7 @@ end
 
 @testset "one BFGS state update allocates the same at N = 40 and N = 400, $lift, $T" for lift in (:Stiefel,
         :Grassmann),
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     # under the tolerance of `test/helpers/allocations.jl`; one `N × N` buffer at `N = 40` is
     # 6 400 bytes in `Float32`, well above it
@@ -44,12 +45,13 @@ end
         small, large = stepped(lift, T, 40, retraction), stepped(lift, T, 400, retraction)
         @test n_independent(_measured_update!(small.state, small.opt, small.x, small.f),
             _measured_update!(large.state, large.opt, large.x, large.f))
+        @test eltype(section(large.state).Y) == T
     end
 end
 
 @testset "the BFGS state update writes the section the transport without a workspace writes, $lift, $T" for lift in (:Stiefel,
         :Grassmann),
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     for retraction in (Cayley(), Geodesic()), N in (40, 400)
 

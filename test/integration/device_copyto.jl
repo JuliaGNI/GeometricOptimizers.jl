@@ -26,6 +26,8 @@ using KernelAbstractions
 using Random
 using Test
 
+include("../helpers/eltypes.jl")
+
 Random.seed!(2026)
 
 struct _NoBroadcastVector{T} <: AbstractVector{T}
@@ -59,62 +61,74 @@ Base.copy(A::_NoBroadcastMatrix) = _NoBroadcastMatrix(copy(A.data))
 # with its own; this one stands for the storage type and not for the backend, so it answers `CPU()`.
 KernelAbstractions.get_backend(::_NoBroadcastMatrix) = CPU()
 
-const T = Float64
 const N, n = 6, 3
 
-@testset "copyto! moves a structured matrix onto a foreign-storage destination" begin
+# A copy moves entries and rounds none of them, so every comparison below is `==`: a write that went
+# through a `Float64` intermediate and back would still be exact, but one that lost the element type
+# is caught by the `eltype` assertions.
+@testset "copyto! moves a structured matrix onto a foreign-storage destination, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(2026)
+
     @testset "SkewSymMatrix" begin
-        host = SkewSymMatrix(rand(T, n, n))
+        host = SkewSymMatrix(randn(rng, T, n, n))
         dev = SkewSymMatrix(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n)
         copyto!(dev, host)
-        @test dev.S.data ≈ host.S
+        @test eltype(dev) == T
+        @test dev.S.data == host.S
     end
 
     @testset "SymmetricMatrix" begin
-        host = SymmetricMatrix(rand(T, n, n))
+        host = SymmetricMatrix(randn(rng, T, n, n))
         dev = SymmetricMatrix(_NoBroadcastVector(zeros(T, n * (n + 1) ÷ 2)), n)
         copyto!(dev, host)
-        @test dev.S.data ≈ host.S
+        @test eltype(dev) == T
+        @test dev.S.data == host.S
     end
 
     @testset "StrictlyLowerTriangular" begin
-        host = StrictlyLowerTriangular(rand(T, n, n))
+        host = StrictlyLowerTriangular(randn(rng, T, n, n))
         dev = StrictlyLowerTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n)
         copyto!(dev, host)
-        @test dev.S.data ≈ host.S
+        @test eltype(dev) == T
+        @test dev.S.data == host.S
     end
 
     @testset "StrictlyUpperTriangular" begin
-        host = StrictlyUpperTriangular(rand(T, n, n))
+        host = StrictlyUpperTriangular(randn(rng, T, n, n))
         dev = StrictlyUpperTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n)
         copyto!(dev, host)
-        @test dev.S.data ≈ host.S
+        @test eltype(dev) == T
+        @test dev.S.data == host.S
     end
 
     @testset "StiefelManifold" begin
-        host = rand(StiefelManifold{T}, N, n)
+        host = rand(rng, StiefelManifold{T}, N, n)
         dev = StiefelManifold(_NoBroadcastMatrix(zeros(T, N, n)))
         copyto!(dev, host)
-        @test dev.A.data ≈ host.A
+        @test eltype(dev) == T
+        @test dev.A.data == host.A
     end
 
     @testset "GrassmannManifold" begin
-        host = rand(GrassmannManifold{T}, N, n)
+        host = rand(rng, GrassmannManifold{T}, N, n)
         dev = GrassmannManifold(_NoBroadcastMatrix(zeros(T, N, n)))
         copyto!(dev, host)
-        @test dev.A.data ≈ host.A
+        @test eltype(dev) == T
+        @test dev.A.data == host.A
     end
 
     @testset "StiefelLieAlgHorMatrix, transitively through its SkewSymMatrix block" begin
         # the lift needs no write of its own: it forwards to `copyto!` on its two components, so it
         # transfers exactly when its `SkewSymMatrix` block and its bare `B` block both do
-        host = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(T, n, n)), rand(T, N - n, n), N, n)
+        host = StiefelLieAlgHorMatrix(
+            SkewSymMatrix(randn(rng, T, n, n)), randn(rng, T, N - n, n), N, n)
         dev = StiefelLieAlgHorMatrix(
             SkewSymMatrix(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
             _NoBroadcastMatrix(zeros(T, N - n, n)), N, n)
         copyto!(dev, host)
-        @test dev.A.S.data ≈ host.A.S
-        @test dev.B.data ≈ host.B
+        @test eltype(dev) == T
+        @test dev.A.S.data == host.A.S
+        @test dev.B.data == host.B
     end
 end
 
@@ -123,70 +137,81 @@ end
 # a device-backed section are already different concrete types and there was no method for the pair
 # at all. `GlobalSection` is not an `AbstractArray`, so there is no fallback either -- the failure
 # was a `MethodError` and not a silent wrong answer.
-@testset "copyto! moves a GlobalSection onto a foreign-storage destination" begin
-    host_Y = rand(StiefelManifold{T}, N, n)
+@testset "copyto! moves a GlobalSection onto a foreign-storage destination, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(2027)
+    host_Y = rand(rng, StiefelManifold{T}, N, n)
     # an independent point, so that the anchor assertion below is not true before the copy
-    dev_Y = StiefelManifold(_NoBroadcastMatrix(Matrix(rand(StiefelManifold{T}, N, n).A)))
+    dev_Y = StiefelManifold(_NoBroadcastMatrix(Matrix(rand(rng, StiefelManifold{T}, N, n).A)))
 
     Λhost = GlobalSection(host_Y)
     Λdev = GlobalSection(dev_Y)
 
     # section to section: both the anchor and the lift move
     @test copyto!(Λdev, Λhost) === Λdev
-    @test Λdev.Y.A.data ≈ Λhost.Y.A
-    @test Λdev.λ.data ≈ Λhost.λ
+    @test eltype(Λdev.Y) == T
+    @test eltype(Λdev.λ) == T
+    @test Λdev.Y.A.data == Λhost.Y.A
+    @test Λdev.λ.data == Λhost.λ
 
     # a bare point into a section: only the anchor moves, which is deliberate -- recomputing the
     # lift would move the frame a quasi-Newton secant pair is expressed in
-    other = rand(StiefelManifold{T}, N, n)
+    other = rand(rng, StiefelManifold{T}, N, n)
     λ_before = copy(Λdev.λ.data)
     @test copyto!(Λdev, other) === Λdev
-    @test Λdev.Y.A.data ≈ other.A
+    @test Λdev.Y.A.data == other.A
     @test Λdev.λ.data == λ_before
 
     # a section into a bare array, the direction the flat parameter path takes
     dest = _NoBroadcastMatrix(zeros(T, N, n))
     @test copyto!(dest, Λhost) === dest
-    @test dest.data ≈ Λhost.Y.A
+    @test eltype(dest) == T
+    @test dest.data == Λhost.Y.A
 end
 
-@testset "the Euclidean section, whose lift is nothing, crosses the same way" begin
-    x_host = rand(T, N)
+@testset "the Euclidean section, whose lift is nothing, crosses the same way, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(2028)
+    x_host = randn(rng, T, N)
     Λhost = GlobalSection(x_host)
     Λdev = GlobalSection(_NoBroadcastVector(zeros(T, N)))
 
     @test copyto!(Λdev, Λhost) === Λdev
-    @test Λdev.Y.data ≈ x_host
+    @test eltype(Λdev.Y) == T
+    @test Λdev.Y.data == x_host
 
-    y = rand(T, N)
+    y = randn(rng, T, N)
     @test copyto!(Λdev, y) === Λdev
-    @test Λdev.Y.data ≈ y
+    @test Λdev.Y.data == y
 end
 
-@testset "assign! is the same contract and moves with copyto!" begin
+@testset "assign! is the same contract and moves with copyto!, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(2029)
     for (dev, host) in (
         (SkewSymMatrix(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
-        SkewSymMatrix(rand(T, n, n))),
+        SkewSymMatrix(randn(rng, T, n, n))),
         (SymmetricMatrix(_NoBroadcastVector(zeros(T, n * (n + 1) ÷ 2)), n),
-        SymmetricMatrix(rand(T, n, n))),
+        SymmetricMatrix(randn(rng, T, n, n))),
         (StrictlyLowerTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
-        StrictlyLowerTriangular(rand(T, n, n))),
+        StrictlyLowerTriangular(randn(rng, T, n, n))),
         (StrictlyUpperTriangular(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
-        StrictlyUpperTriangular(rand(T, n, n))))
+        StrictlyUpperTriangular(randn(rng, T, n, n))))
         assign!(dev, host)
-        @test dev.S.data ≈ host.S
+        @test eltype(dev) == T
+        @test dev.S.data == host.S
     end
 
     dev_lift = StiefelLieAlgHorMatrix(
         SkewSymMatrix(_NoBroadcastVector(zeros(T, n * (n - 1) ÷ 2)), n),
         _NoBroadcastMatrix(zeros(T, N - n, n)), N, n)
-    host_lift = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(T, n, n)), rand(T, N - n, n), N, n)
+    host_lift = StiefelLieAlgHorMatrix(
+        SkewSymMatrix(randn(rng, T, n, n)), randn(rng, T, N - n, n), N, n)
     assign!(dev_lift, host_lift)
-    @test dev_lift.A.S.data ≈ host_lift.A.S
-    @test dev_lift.B.data ≈ host_lift.B
+    @test eltype(dev_lift) == T
+    @test dev_lift.A.S.data == host_lift.A.S
+    @test dev_lift.B.data == host_lift.B
 end
 
-@testset "a mismatched pair is rejected instead of partially written" begin
+# not numeric: every assertion is a refusal, looped so that the `T` of the arguments is not fixed
+@testset "a mismatched pair is rejected instead of partially written, $T" for T in REAL_ELTYPES
     # `copyto!` takes any destination at least as long as its source, so each site that writes
     # through it carries its own shape check. The fallback needs one too: the lift's `assign!`
     # reaches it for each of the two blocks, and `n` alone does not fix their shapes.
