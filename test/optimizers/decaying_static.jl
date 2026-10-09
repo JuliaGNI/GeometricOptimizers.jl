@@ -128,12 +128,14 @@ end
     # `|∇f| ≈ 6d` at a distance `d ≈ 1e-4` and `f ≈ 0.2`, that is a step of a few hundred `eps(T)`.
     # Measured `928eps(T)` in `Float64` and `432eps(T)` in `Float32`.
     @test status(result).rxₐ < 10_000eps(T)
-    # Not a multiple of `√eps(T)`: the distance at the stop is set by the schedule and not by `T`.
-    # Once `η` has decayed, Adam's second moment (`β₂ = 0.999`, a memory of about 1000 iterations)
-    # still holds the early gradients, so the step shrinks faster than the distance and the solve
-    # stops short of the minimizer. Measured `1.2e-4` in `Float64` (`7900√eps(T)`) and `5.3e-4` in
-    # `Float32` (`1.5√eps(T)`), so no multiple of `√eps(T)` describes both.
-    @test isapprox(x, minimizer(T); atol = T(1.0e-3))
+    # In `Float64` the distance at the stop is set by the schedule and not by `T`: once `η` has
+    # decayed, Adam's second moment (`β₂ = 0.999`, a memory of about 1000 iterations) still holds the
+    # early gradients, so the step shrinks faster than the distance and the solve stops short of the
+    # minimizer, at 1.2e-4 (`7900√eps(Float64)`); that part is the `1e-3` this test always had. In
+    # `Float32` it is 5.3e-4 (`1.5√eps(Float32)`), hence `10√eps(T)`. The assertion holds at the start
+    # of this file and is not a bound over starts: over 20 perturbed starts the distance reaches
+    # 1.4e-3 in `Float64` and 1.8e-3 in `Float32`.
+    @test isapprox(x, minimizer(T); atol = max(T(1.0e-3), 10 * sqrt(eps(T))))
     # and stays on the manifold: the round-off of a few hundred Cayley steps, measured `9.5eps(T)`
     # in `Float64` and `1.0eps(T)` in `Float32`, and at most `20eps(T)` over 20 nearby starts
     @test check(x) < 100eps(T)

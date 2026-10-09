@@ -465,10 +465,10 @@ end
     @test status(result).rxₐ < sqrt(eps(T))
     # The one tolerance of this file with a part that is not in `T`. In `Float64` where the run ends is
     # set by the schedule, which shrinks the step faster than `Adam`'s moving average closes on the
-    # minimiser: 1.9e-4 to 2.3e-4 over three seeds of the global RNG, far above `√eps(Float64)`, so
-    # that part is the `1e-3` this test always had. In `Float32` the run stops on the change of `f`
-    # first, at the `√eps(T)` scale of every other solve here: 0.14 to 3.1√eps(Float32) over four
-    # seeds, 3.1 on this one, hence `10√eps(T)`.
+    # minimiser, far above `√eps(Float64)`, so that part is the `1e-3` this test always had. In
+    # `Float32` the run stops on the change of `f` first, hence `10√eps(T)`. The assertion holds at
+    # the seed of this file, 1234, and is not a bound over seeds: over the global seeds 1 to 7 the
+    # distance is 3.0e-4 to 1.21e-3 in `Float64` and 3.2e-4 to 5.2e-3 in `Float32`.
     @test isapprox(x, minimizer(T); atol = max(T(1.0e-3), 10 * sqrt(eps(T))))
 end
 
