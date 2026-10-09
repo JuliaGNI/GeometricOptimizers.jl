@@ -1137,9 +1137,9 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   stays. Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
   `test/integration/device_solve.jl`. The bullets are not released, so the paths may be corrected.
 
-### K23 · The `Downgrade` job cannot resolve the test environment: its `LLVM` and the `Metal` floor exclude each other
+### K23 · The `Downgrade` job cannot resolve the test environment: its `LLVM` 10.1.0 excludes every `Metal` that `test/Project.toml` allows
 
-- location: `test/Project.toml` (`Metal = "1.10"`)
+- location: `test/Project.toml:32` (`Metal = "1.10"`)
 - kind: defect
 - found: 2026-10-03
 - evidence: the advisory `Downgrade - ubuntu-latest` job fails before any test runs. CI run
@@ -1147,16 +1147,25 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
   ```
   ERROR: LoadError: Unsatisfiable requirements detected for package LLVM [929cbde3]:
+   LLVM [929cbde3] log:
+   ├─possible versions are: 0.9.0 - 10.1.0 or uninstalled
    ├─restricted to versions 10.1.0 by an explicit requirement, leaving only versions: 10.1.0
    └─restricted by compatibility requirements with Metal [dde4c033] to versions: 7.2.0 - 9.13.2 — no versions left
+     └─Metal [dde4c033] log:
+       ├─possible versions are: 0.0.1 - 1.11.1 or uninstalled
        └─restricted to versions 1.10.0 - 1 by project [fff0a915], leaving only versions: 1.10.0 - 1.11.1
   ```
 
-  The job pins the root dependencies to their floors and keeps that manifest
-  (`allow_reresolve: false`); the test environment then adds `Metal`, which needs an `LLVM` below
-  the `10.1.0` that the floor manifest holds. The same conflict, with `UnsafeAtomics` 0.3.3 named
-  as the package that needs `LLVM` 10, is in CI run 37122615676 at `0aa622b`. Which floor pins
-  `LLVM` at `10.1.0` is not yet measured. The required jobs resolve the newest versions and pass.
+  The job resolves the direct dependencies of the root `Project.toml` to their floors and every
+  indirect dependency to its newest version, and keeps that manifest (`allow_reresolve: false`).
+  No floor pins `LLVM`: 10.1.0 is its newest version. The General registry's compat entries give
+  the chain: the `KernelAbstractions` floor 0.9.38 allows `Atomix` 1, `Atomix` 1.6.0 needs
+  `UnsafeAtomics` 0.4, and `UnsafeAtomics` 0.4.0 needs `LLVM` 10. The log does not print the
+  manifest, so the chain is read from the registry, not from the run. The test environment then
+  adds `Metal`, and `Metal` 1.11.1 needs `LLVM` 7.2 to 9. CI run 37122615676 at `0aa622b` (Julia
+  1.11.9) fails the same way; there the explicit requirement is `UnsafeAtomics` 0.3.3, its newest
+  version at that time, which restricts `LLVM` to 10.0.0. The required jobs resolve without the
+  floor manifest and pass.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
