@@ -75,6 +75,8 @@ if "slow" in GROUPS
     @safetestset "Manifold Line Search         " include("integration/manifold_linesearch_tests.jl")
     @safetestset "Grassmann Optimizers         " include("integration/grassmann_optimizer_tests.jl")
     @safetestset "device solve!                " include("integration/device_solve.jl")
+end
+if "doctests" in GROUPS
     @safetestset "Doctests                     " include("quality/doctests.jl")
 end
 if "metal" in GROUPS
