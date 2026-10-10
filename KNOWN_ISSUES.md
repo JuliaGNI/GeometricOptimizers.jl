@@ -399,7 +399,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   returns the floor again, `solver_step!` takes a zero step, and `x_converged` reports convergence.
   From `Float32`'s own draw of the starting point, the same happens on seed 6 for `BFGS` with
   `Quadratic` and with `BierlaireQuadratic`, and for `DFP` with `Quadratic`. The eight-seed sweep of
-  `svd_optim.jl` marks the three assertions of that one cell broken with this ID and issue #153.
+  `svd_optim.jl` asserts a rate per combination, and its `SWEEP_MIN_CONVERGED` comment counts this
+  solve among the misses it allows, with this ID and issue #153.
   `GradientMethod` with `BierlaireQuadratic` on `Fsmooth` of `test/integration/optimizer_tests.jl`
   stops the same way in `Float32` after 2 iterations, 172 to 370 `√eps` from the minimiser, on 3 of
   the starts tried (not the test's), with `LINESEARCH_FLOOR` at `φ(0) = 3.001769` and `φ(1) = 3.0`.
