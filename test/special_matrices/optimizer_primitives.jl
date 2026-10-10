@@ -6,6 +6,8 @@ using SimpleSolvers: Static, l2norm
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
+
 Random.seed!(1234)
 
 # The four types that store their free parameters in one vector. Everything below is written on
@@ -24,7 +26,7 @@ const N = 5
         # Not a detail: the optimizer caches allocate their scratch with `similar` and then require
         # every one of them to have the same type as the parameter. The `AbstractArray` fallback
         # returns a dense `Matrix`, which makes the cache constructors inapplicable.
-        for T in (Float32, Float64)
+        for T in REAL_ELTYPES
             A = rand(MT{T}, N)
             S = similar(A)
             @test typeof(S) == typeof(A)
@@ -33,43 +35,56 @@ const N = 5
         end
     end
 
-    @testset "fill! writes the storage" begin
-        A = fill!(similar(rand(MT{Float64}, N)), 3.0)
-        @test all(parent(A) .== 3.0)
+    @testset "fill! writes the storage, $T" for T in REAL_ELTYPES
+        rng = Random.Xoshiro(1234)
+        # `0.3` is not a dyadic number, so a value that went through the other precision on the way
+        # in would differ from `T(0.3)` in its last bits
+        x = T(0.3)
+        A = fill!(similar(rand(rng, MT{T}, N)), x)
+        @test eltype(A) == T
+        @test all(parent(A) .== x)
         # `NaN` is what the caches actually poison scratch arrays with, and it has to survive the
         # round trip rather than being swallowed by a comparison somewhere.
-        @test all(isnan, parent(fill!(similar(A), NaN)))
+        @test all(isnan, parent(fill!(similar(A), T(NaN))))
     end
 
-    @testset "the elementwise primitives act on the free parameters" begin
-        A = rand(MT{Float64}, N)
-        B = rand(MT{Float64}, N)
+    @testset "the elementwise primitives act on the free parameters, $T" for T in REAL_ELTYPES
+        rng = Random.Xoshiro(1234)
+        A = rand(rng, MT{T}, N)
+        B = rand(rng, MT{T}, N)
+        # not a power of 2, so that a product or a sum with it rounds
+        α = T(1.7)
 
         a = copy(A)
         @test _add!(a, B) === a
+        @test eltype(a) == T
         @test parent(a) ≈ parent(A) .+ parent(B)
 
         a = copy(A)
-        @test _add!(a, 2.0) === a
-        @test parent(a) ≈ parent(A) .+ 2.0
+        @test _add!(a, α) === a
+        @test parent(a) ≈ parent(A) .+ α
 
         # squares of a known matrix, so that `_rac!` inverts `_square!` exactly rather than to a
         # tolerance that a sign error could hide in
         sq = similar(A)
         @test _square!(sq, A) === sq
+        @test eltype(sq) == T
         @test parent(sq) ≈ parent(A) .^ 2
 
         rt = similar(A)
         @test _rac!(rt, sq) === rt
+        @test eltype(rt) == T
         @test parent(rt) ≈ abs.(parent(A))
 
         d = similar(A)
         @test _div!(d, A, B) === d
+        @test eltype(d) == T
         @test parent(d) ≈ parent(A) ./ parent(B)
 
         m = copy(A)
-        @test _rmul!(m, 2.0) === m
-        @test parent(m) ≈ 2 .* parent(A)
+        @test _rmul!(m, α) === m
+        @test eltype(m) == T
+        @test parent(m) ≈ α .* parent(A)
 
         # `_difference!` belongs to the same family and is reached from a different place: not from
         # `update!` but from `gradient_difference!`, on *every* `OptimizerStatus`. It was the one
@@ -78,52 +93,62 @@ const N = 5
         # broadcast nor a method of their own.
         c = similar(A)
         @test _difference!(c, A, B) === c
+        @test eltype(c) == T
         @test parent(c) ≈ parent(A) .- parent(B)
         @test Matrix(c) ≈ Matrix(A) .- Matrix(B)
     end
 
-    @testset "l2norm is taken over the free parameters" begin
-        A = rand(MT{Float64}, N)
+    @testset "l2norm is taken over the free parameters, $T" for T in REAL_ELTYPES
+        rng = Random.Xoshiro(1234)
+        A = rand(rng, MT{T}, N)
+        @test eltype(l2norm(A)) == T
         @test l2norm(A) ≈ sqrt(sum(abs2, parent(A)))
     end
 
-    @testset "flatten round trips through the free parameters" begin
+    @testset "flatten round trips through the free parameters, $T" for T in REAL_ELTYPES
         # The `AbstractMatrix` method reshapes the flattened vector to `n × n`, which for `n(n±1)/2`
         # numbers is a `DimensionMismatch`. That is where a `SymmetricMatrix` or a triangular
         # parameter used to die -- inside `Optimizer`, before a single primitive was reached.
-        for T in (Float32, Float64)
-            A = rand(MT{T}, N)
-            v, layout = flatten(T, A)
-            @test v isa Vector{T}
-            @test length(v) == length(parent(A))
-            A′ = unflatten(layout, v)
-            @test typeof(A′) == typeof(A)
-            @test A′ ≈ A
-        end
+        rng = Random.Xoshiro(1234)
+        A = rand(rng, MT{T}, N)
+        v, layout = flatten(T, A)
+        @test v isa Vector{T}
+        @test length(v) == length(parent(A))
+        A′ = unflatten(layout, v)
+        @test typeof(A′) == typeof(A)
+        @test eltype(A′) == T
+        @test A′ ≈ A
     end
 
-    @testset "the primitives leave the represented matrix consistent" begin
+    @testset "the primitives leave the represented matrix consistent, $T" for T in REAL_ELTYPES
         # `_rmul!` writes the storage, but what it has to *mean* is scaling the matrix. For a
         # skew-symmetric matrix the two differ by a sign in the upper triangle, so this checks the
         # full dense matrix and not only `parent`.
-        A = rand(MT{Float64}, N)
+        rng = Random.Xoshiro(1234)
+        A = rand(rng, MT{T}, N)
         dense = Matrix(A)
-        @test Matrix(_rmul!(copy(A), 2.0)) ≈ 2 .* dense
+        # not a power of 2, so that the product rounds
+        α = T(1.7)
+        scaled = _rmul!(copy(A), α)
+        @test eltype(scaled) == T
+        @test Matrix(scaled) ≈ α .* dense
 
-        B = rand(MT{Float64}, N)
+        B = rand(rng, MT{T}, N)
         @test Matrix(_add!(copy(A), B)) ≈ dense .+ Matrix(B)
     end
 
-    @testset "update_section! is addition on the free parameters" begin
+    @testset "update_section! is addition on the free parameters, $T" for T in REAL_ELTYPES
         # These are ordinary vector-space parameters, so the extended retraction is addition and the
         # section carries no `λ`. The retraction argument is ignored, which is what the two calls
         # below assert by giving different ones and expecting the same answer.
-        A = rand(MT{Float64}, N)
-        B = rand(MT{Float64}, N)
+        rng = Random.Xoshiro(1234)
+        A = rand(rng, MT{T}, N)
+        B = rand(rng, MT{T}, N)
 
         Λᵗ = GlobalSection(copy(A))
         Λ⁽ᵗ⁻¹⁾ = GlobalSection(copy(A))
         @test update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B, Cayley()) === Λᵗ
+        @test eltype(Λᵗ.Y) == T
         @test parent(Λᵗ.Y) ≈ parent(A) .+ parent(B)
         @test Λᵗ.λ === nothing
 
@@ -137,9 +162,8 @@ const N = 5
         @test parent(Λ₃.Y) ≈ parent(A) .+ parent(B)
     end
 
-    @testset "every one of them is a VectorStorageMatrix" begin
-        @test rand(MT{Float64}, N) isa VectorStorageMatrix
-        @test rand(MT{Float32}, N) isa VectorStorageMatrix{Float32}
+    @testset "every one of them is a VectorStorageMatrix, $T" for T in REAL_ELTYPES
+        @test rand(MT{T}, N) isa VectorStorageMatrix{T}
     end
 end
 
@@ -147,9 +171,13 @@ end
 # `+(B::AbstractMatrix, A::SkewSymMatrix) = B + A` in `GeometricMachineLearning`, which calls itself
 # and dies with a `StackOverflowError`; the method here is `A + B` and always was. The loop closes
 # the class rather than that one instance.
-@testset "addition with a dense matrix commutes -- $(nameof(MT))" for MT in TYPES
-    A = rand(MT{Float64}, N)
-    B = rand(N, N)
+@testset "addition with a dense matrix commutes -- $(nameof(MT)), $T" for T in REAL_ELTYPES,
+    MT in TYPES
+
+    rng = Random.Xoshiro(1234)
+    A = rand(rng, MT{T}, N)
+    B = rand(rng, T, N, N)
+    @test eltype(A + B) == T
     @test A + B ≈ B + A
     @test A + B ≈ Matrix(A) + B
 end
@@ -161,15 +189,15 @@ end
 # `Optimizer` constructor and `_difference!` on the first `OptimizerStatus`, so a run of a few steps
 # is what covers the whole path.
 """
-    optimize(MT, algorithm; steps, η)
+    optimize(T, MT, algorithm; steps, η)
 
-Minimize ``\\frac{1}{2}\\|A - A_\\star\\|^2`` over the free parameters of an `MT`, and return the
-objective before and after `steps` steps.
+Minimize ``\\frac{1}{2}\\|A - A_\\star\\|^2`` over the free parameters of an `MT{T}`, and return the
+objective before and after `steps` steps, and the parameters.
 """
-function optimize(MT, algorithm; steps = 5, η = 0.1)
-    Random.seed!(1234)
-    A_target = rand(MT{Float64}, N)
-    ps = NetworkParameters((A = rand(MT{Float64}, N),))
+function optimize(T, MT, algorithm; steps = 5, η = T(0.1))
+    rng = Random.Xoshiro(1234)
+    A_target = rand(rng, MT{T}, N)
+    ps = NetworkParameters((A = rand(rng, MT{T}, N),))
     # on `parent`, i.e. on the free parameters: the ambient Frobenius norm would count the strict
     # triangle of a `SkewSymMatrix` twice and the objective is not the point here
     F(p) = sum(abs2, parent(p.A) .- parent(A_target)) / 2
@@ -187,12 +215,14 @@ function optimize(MT, algorithm; steps = 5, η = 0.1)
     before, F(ps), ps
 end
 
-@testset "an optimizer runs over a $(nameof(MT)) parameter -- $(nameof(typeof(algorithm)))" for MT in TYPES,
+@testset "an optimizer runs over a $(nameof(MT)) parameter -- $(nameof(typeof(algorithm))), $T" for T in REAL_ELTYPES,
+    MT in TYPES,
     algorithm in (GradientMethod(), MomentumMethod(; α = 0.1), Adam())
 
-    before, after, ps = optimize(MT, algorithm)
+    before, after, ps = optimize(T, MT, algorithm)
+    @test eltype(after) == T
     @test after < before
     # and it is still the type it went in as, rather than a dense matrix the round trip lost the
     # structure of
-    @test typeof(ps.A) <: MT{Float64}
+    @test typeof(ps.A) <: MT{T}
 end

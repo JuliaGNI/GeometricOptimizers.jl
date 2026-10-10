@@ -4,6 +4,8 @@ using LinearAlgebra
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
+
 # Regression test for issue #17. The scalar `mul!` methods of the custom matrix types used to
 # end on their last inner `mul!(C.S, A.S, α)` (or `C.A` / `C.B`), and so returned that inner
 # *field* instead of the destination `C`. The mutation was always correct — only the return
@@ -24,28 +26,31 @@ const N, n = 5, 2
 
 # One representative of every type that defines a scalar `mul!`. `triangular.jl` defines a
 # single method for `AbstractTriangular`, which is why both of its subtypes appear.
-function instances()
+function instances(rng, T)
     (
-        rand(SkewSymMatrix, n),
-        rand(SymmetricMatrix, n),
-        rand(GeometricOptimizers.StrictlyLowerTriangular, n),
-        rand(GeometricOptimizers.StrictlyUpperTriangular, n),
-        rand(StiefelLieAlgHorMatrix, N, n),
-        rand(GrassmannLieAlgHorMatrix, N, n)
+        rand(rng, SkewSymMatrix{T}, n),
+        rand(rng, SymmetricMatrix{T}, n),
+        rand(rng, GeometricOptimizers.StrictlyLowerTriangular{T}, n),
+        rand(rng, GeometricOptimizers.StrictlyUpperTriangular{T}, n),
+        rand(rng, StiefelLieAlgHorMatrix{T}, N, n),
+        rand(rng, GrassmannLieAlgHorMatrix{T}, N, n)
     )
 end
 
 name(A) = string(typeof(A).name.name)
 
-@testset "scalar mul! and rmul! return their destination" begin
-    for A in instances()
+@testset "scalar mul! and rmul! return their destination, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    for A in instances(rng, T)
         @testset "$(name(A))" begin
-            α = 2.0
+            # not a power of 2, so that the product rounds
+            α = T(1.7)
             expected = α .* Matrix(A)
 
             # mul!(C, A, α) — the destination is returned, and the result is right.
             C = zero(A)
             @test mul!(C, A, α) === C
+            @test eltype(C) == T
             @test Matrix(C) ≈ expected
 
             # mul!(C, α, A) — the commuted method forwards to the one above.
@@ -63,14 +68,17 @@ end
 
 # The reason the above matters: `_mul` builds its result out of the return value, so a wrong
 # return type propagates straight into the optimizer caches.
-@testset "_mul preserves the type and value of its argument" begin
-    for A in instances()
+@testset "_mul preserves the type and value of its argument, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    α = T(1.7)
+    for A in instances(rng, T)
         @testset "$(name(A))" begin
             original = Matrix(A)
-            B = _mul(2.0, A)
+            B = _mul(α, A)
 
             @test B isa typeof(A)                # the structured type survives ...
-            @test Matrix(B) ≈ 2.0 .* original    # ... with the right entries ...
+            @test eltype(B) == T
+            @test Matrix(B) ≈ α .* original      # ... with the right entries ...
             @test Matrix(A) ≈ original           # ... and the input is left alone
         end
     end
@@ -79,8 +87,10 @@ end
 # `_mul` needs `copy`, which for these types needs `similar`; both were missing or wrong for
 # `GrassmannLieAlgHorMatrix`, whose `similar` passed the two-parameter concrete type to
 # `zeros`, which has no such method.
-@testset "copy and zero are structure-preserving" begin
-    for A in instances()
+@testset "copy and zero are structure-preserving, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    α = T(1.7)
+    for A in instances(rng, T)
         @testset "$(name(A))" begin
             @test zero(A) isa typeof(A)
             @test iszero(Matrix(zero(A)))
@@ -90,8 +100,9 @@ end
             @test Matrix(B) ≈ Matrix(A)
 
             # the copy is independent of the original
-            rmul!(B, 2.0)
-            @test Matrix(B) ≈ 2.0 .* Matrix(A)
+            rmul!(B, α)
+            @test eltype(B) == T
+            @test Matrix(B) ≈ α .* Matrix(A)
         end
     end
 end
@@ -100,17 +111,20 @@ end
 # on their kernel launch, which returns the launch's value and not the destination. They are the
 # only three-argument `mul!` methods the package defines -- every other multiplication of a
 # structured matrix goes through `*`.
-@testset "three-argument mul! returns its destination" begin
-    A = rand(SymmetricMatrix, n)
-    B = rand(n, n)
-    b = rand(n)
+@testset "three-argument mul! returns its destination, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    A = rand(rng, SymmetricMatrix{T}, n)
+    B = rand(rng, T, n, n)
+    b = rand(rng, T, n)
 
-    C = zeros(n, n)
+    C = zeros(T, n, n)
     @test mul!(C, A, B) === C
+    @test eltype(C) == T
     @test C ≈ Matrix(A) * B
 
-    c = zeros(n)
+    c = zeros(T, n)
     @test mul!(c, A, b) === c
+    @test eltype(c) == T
     @test c ≈ Matrix(A) * b
 end
 
@@ -118,20 +132,23 @@ end
 # instead, against the contract the comment above `copyto!(::Manifold, ::Manifold)` states in so
 # many words. The `Manifold` and horizontal-lift methods already kept it; they are asserted here so
 # that what is pinned is the package-wide contract rather than the four methods that broke it.
-@testset "copyto! returns its destination" begin
-    for A in instances()
+@testset "copyto! returns its destination, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    for A in instances(rng, T)
         @testset "$(name(A))" begin
             dest = zero(A)
             @test copyto!(dest, A) === dest
+            @test eltype(dest) == T
             @test Matrix(dest) ≈ Matrix(A)
         end
     end
 
-    for MT in (StiefelManifold{Float64}, GrassmannManifold{Float64})
-        dest = rand(MT, N, n)
-        src = rand(MT, N, n)
+    for MT in (StiefelManifold{T}, GrassmannManifold{T})
+        dest = rand(rng, MT, N, n)
+        src = rand(rng, MT, N, n)
         @testset "$(name(dest))" begin
             @test copyto!(dest, src) === dest
+            @test eltype(dest) == T
             @test dest.A ≈ src.A
         end
     end

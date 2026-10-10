@@ -18,47 +18,54 @@ using NeuralNetworkParameters: NetworkParameters, flatten
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
+
+# for the draws of the testsets that do not take a generator of their own, which only assert a
+# refusal or mix the two element types on purpose
 Random.seed!(1234)
 
 flat(x) = flatten(x)[1]
 
 # One leaf of each kind the arithmetic primitives see, with positive storage so that `_rac!` and
 # `_div!` are defined everywhere.
-function tangent_leaves(::Type{T}) where {T}
-    (vector = rand(T, 4) .+ one(T), matrix = rand(T, 2, 3) .+ one(T),
-        sym = rand(SymmetricMatrix{T}, 3), skew = rand(SkewSymMatrix{T}, 3),
-        lower = rand(StrictlyLowerTriangular{T}, 3), upper = rand(StrictlyUpperTriangular{T}, 3),
-        stiefel_lift = rand(StiefelLieAlgHorMatrix{T}, 5, 2),
-        grassmann_lift = rand(GrassmannLieAlgHorMatrix{T}, 5, 2))
+function tangent_leaves(rng, ::Type{T}) where {T}
+    (vector = rand(rng, T, 4) .+ one(T), matrix = rand(rng, T, 2, 3) .+ one(T),
+        sym = rand(rng, SymmetricMatrix{T}, 3), skew = rand(rng, SkewSymMatrix{T}, 3),
+        lower = rand(rng, StrictlyLowerTriangular{T}, 3),
+        upper = rand(rng, StrictlyUpperTriangular{T}, 3),
+        stiefel_lift = rand(rng, StiefelLieAlgHorMatrix{T}, 5, 2),
+        grassmann_lift = rand(rng, GrassmannLieAlgHorMatrix{T}, 5, 2))
 end
 
 # Every structured leaf once in one parameter set, nested one level, which is the shape a network has.
-function tangent_set(::Type{T}) where {T}
-    l = tangent_leaves(T)
+function tangent_set(rng, ::Type{T}) where {T}
+    l = tangent_leaves(rng, T)
     NetworkParameters((L1 = (S = l.sym, K = l.skew, W = l.matrix),
         L2 = (lo = l.lower, up = l.upper, b = l.vector),
         L3 = (A = l.stiefel_lift, B = l.grassmann_lift)))
 end
 
 # the same with the two manifold points, for `_copyto!`
-function point_set(::Type{T}) where {T}
-    NetworkParameters((L1 = (Y = rand(StiefelManifold{T}, 5, 2), W = rand(T, 2, 3)),
-        L2 = (Z = rand(GrassmannManifold{T}, 5, 2), S = rand(SymmetricMatrix{T}, 3))))
+function point_set(rng, ::Type{T}) where {T}
+    NetworkParameters((
+        L1 = (Y = rand(rng, StiefelManifold{T}, 5, 2), W = rand(rng, T, 2, 3)),
+        L2 = (Z = rand(rng, GrassmannManifold{T}, 5, 2),
+            S = rand(rng, SymmetricMatrix{T}, 3))))
 end
 
-function operands(T, kind)
-    kind === :set ? (tangent_set(T), tangent_set(T), tangent_set(T)) :
-    (getfield(tangent_leaves(T), kind), getfield(tangent_leaves(T), kind),
-        getfield(tangent_leaves(T), kind))
+function operands(rng, T, kind)
+    kind === :set ? (tangent_set(rng, T), tangent_set(rng, T), tangent_set(rng, T)) :
+    (getfield(tangent_leaves(rng, T), kind), getfield(tangent_leaves(rng, T), kind),
+        getfield(tangent_leaves(rng, T), kind))
 end
 
 const KINDS = (
     :vector, :matrix, :sym, :skew, :lower, :upper, :stiefel_lift, :grassmann_lift, :set)
 
-@testset "each primitive is the elementwise formula on the free parameters, $T" for T in (
-    Float32, Float64)
+@testset "each primitive is the elementwise formula on the free parameters, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(58)
     for kind in KINDS
-        a, b, c = operands(T, kind)
+        a, b, c = operands(rng, T, kind)
         A, B = flat(a), flat(b)
 
         @test _difference!(c, a, b) === c
@@ -98,20 +105,22 @@ const KINDS = (
     end
 end
 
-@testset "_copyto! copies a parameter set with manifold points, $T" for T in (Float32, Float64)
-    a, b = point_set(T), point_set(T)
+@testset "_copyto! copies a parameter set with manifold points, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(101)
+    a, b = point_set(rng, T), point_set(rng, T)
     @test _copyto!(a, b) === a
+    @test eltype(flat(a)) == T
     @test flat(a) == flat(b)
     @test a.L1.Y isa StiefelManifold{T}
     @test a.L2.Z isa GrassmannManifold{T}
-    Y, Z = rand(StiefelManifold{T}, 5, 2), rand(StiefelManifold{T}, 5, 2)
+    Y, Z = rand(rng, StiefelManifold{T}, 5, 2), rand(rng, StiefelManifold{T}, 5, 2)
     @test _copyto!(Y, Z) === Y
     @test Y == Z
 end
 
 # `_copyto!` calls each leaf's own `copyto!`, so it keeps that method's refusals: a point or a
 # structured matrix of another kind or size, bare and inside a parameter set.
-@testset "_copyto! refuses a leaf of another kind or size, $T" for T in (Float32, Float64)
+@testset "_copyto! refuses a leaf of another kind or size, $T" for T in REAL_ELTYPES
     @test_throws ArgumentError _copyto!(rand(StrictlyLowerTriangular{T}, 3),
         rand(StrictlyUpperTriangular{T}, 3))
     @test_throws ArgumentError _copyto!(rand(StiefelManifold{T}, 6, 2),
@@ -138,8 +147,7 @@ end
 
 # The arithmetic primitives refuse a structured leaf of another kind or size, also where the two
 # storage vectors have the same length; and `_difference!` and `_div!` assert the axes of arrays.
-@testset "the arithmetic primitives refuse a leaf of another kind or size, $T" for T in (
-    Float32, Float64)
+@testset "the arithmetic primitives refuse a leaf of another kind or size, $T" for T in REAL_ELTYPES
     K, S = rand(SkewSymMatrix{T}, 4), rand(SymmetricMatrix{T}, 3)   # 6 numbers each
     L, U = rand(StrictlyLowerTriangular{T}, 3), rand(StrictlyUpperTriangular{T}, 3)
     Y, Z = rand(StiefelManifold{T}, 5, 2), rand(GrassmannManifold{T}, 5, 2)
@@ -167,9 +175,10 @@ end
 
 # A hot path: every `update!` and every `OptimizerStatus` runs these, so they infer, in both
 # precisions. That they allocate nothing is asserted in `test/integration/flat_buffer_allocations.jl`.
-@testset "the primitives infer, $T" for T in (Float32, Float64)
+@testset "the primitives infer, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(170)
     for kind in (:vector, :stiefel_lift, :set)
-        a, b, c = operands(T, kind)
+        a, b, c = operands(rng, T, kind)
         @test (@inferred _difference!(c, a, b)) === c
         @test (@inferred _rmul!(c, T(2))) === c
         @test (@inferred _add!(c, b)) === c
@@ -178,13 +187,14 @@ end
         @test (@inferred _rac!(c, a)) === c
         @test (@inferred _div!(c, a, b)) === c
         @test (@inferred _copyto!(c, a)) === c
+        @test eltype(flat(c)) == T
     end
 end
 
 # A gap in a source set is skipped, as `mapparameters!` and `mapstorage!` both skip it, so the leaf it
 # would have written keeps its value. A bare `nothing` in place of a whole operand has no method: a
 # silent skip there would turn a missing gradient into an iterate that never moves.
-@testset "a `nothing` source, $T" for T in (Float32, Float64)
+@testset "a `nothing` source, $T" for T in REAL_ELTYPES
     dest() = NetworkParameters((
         W = rand(Random.Xoshiro(1), T, 3), b = rand(Random.Xoshiro(2), T, 2)))
     gap = NetworkParameters((W = rand(Random.Xoshiro(3), T, 3), b = nothing))
@@ -197,6 +207,7 @@ end
         c = dest()
         b = _copy(c.b)
         @test f!(c) === c
+        @test eltype(flat(c)) == T
         @test c.b == b
     end
 
@@ -212,7 +223,7 @@ end
 end
 
 # A leaf with no free parameters, and a layer with none: nothing to do, and nothing raised.
-@testset "zero-length storage, $T" for T in (Float32, Float64)
+@testset "zero-length storage, $T" for T in REAL_ELTYPES
     for a in (rand(SkewSymMatrix{T}, 1),
         NetworkParameters((L1 = (K = rand(SkewSymMatrix{T}, 1),), L2 = (W = zeros(T, 0),))))
         b, c = _copy(a), _copy(a)
@@ -258,8 +269,8 @@ end
 end
 
 # `NaN` and `Inf` go through as IEEE arithmetic takes them; nothing checks for them.
-@testset "NaN and Inf propagate, $T" for T in (Float32, Float64)
-    a, b, c = operands(T, :stiefel_lift)
+@testset "NaN and Inf propagate, $T" for T in REAL_ELTYPES
+    a, b, c = operands(Random.Xoshiro(261), T, :stiefel_lift)
     a.B[1] = T(NaN)
     b.B[2] = T(Inf)
     A, B = flat(a), flat(b)
@@ -273,19 +284,23 @@ end
     _add!(x, b)
     @test isequal(flat(x), A .+ B)
     _copyto!(c, a)
+    @test eltype(flat(c)) == T
     @test isequal(flat(c), A)
 end
 
 # The `NaN` poison of issue #22: an uninitialised tangent of a quasi-Newton state reads `NaN`, and the
 # copy a step takes of it reads `NaN` too, on a bare point and on a parameter set that holds one.
-@testset "the NaN poison of a quasi-Newton state survives _copyto!, $T" for T in (Float32, Float64)
-    for x in (rand(StiefelManifold{T}, 6, 3),
-        NetworkParameters((Y = rand(StiefelManifold{T}, 6, 3), W = rand(T, 2, 2))))
+@testset "the NaN poison of a quasi-Newton state survives _copyto!, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(281)
+    for x in (rand(rng, StiefelManifold{T}, 6, 3),
+        NetworkParameters((
+        Y = rand(rng, StiefelManifold{T}, 6, 3), W = rand(rng, T, 2, 2))))
         state = OptimizerState(BFGS(), x)
         @test all(isnan, flat(state.s))
 
         d = _zero(x)
         @test _copyto!(d, state.s) === d
+        @test eltype(flat(d)) == T
         @test all(isnan, flat(d))
 
         cache = OptimizerCache(BFGS(), x)
@@ -298,12 +313,14 @@ end
 # The internal primitives do not guard a manifold point: they compute on its storage, so the result
 # is in general not a point. No path in the package applies them to one. A structured leaf of
 # another element type is computed on its storage too, as a `Vector` is.
-@testset "the internal primitives do not guard a manifold point, $T" for T in (Float32, Float64)
+@testset "the internal primitives do not guard a manifold point, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(301)
     for P in (StiefelManifold, GrassmannManifold)
-        a, b = rand(P{T}, 5, 2), rand(P{T}, 5, 2)
+        a, b = rand(rng, P{T}, 5, 2), rand(rng, P{T}, 5, 2)
         A, B = parent(a), parent(b)
         x = _copy(a)
         @test _difference!(x, a, b) === x
+        @test eltype(parent(x)) == T
         @test parent(x) == A .- B
         x = _copy(a)
         @test _rmul!(x, T(2)) === x

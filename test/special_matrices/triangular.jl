@@ -5,6 +5,8 @@ using LinearAlgebra: tr, transpose, tril, triu
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
+
 Random.seed!(1234)
 
 # There was no test file for the triangular types at all until the `GeometricMachineLearning` tests
@@ -12,24 +14,29 @@ Random.seed!(1234)
 # from. The half of that file that tested `mat_tensor_mul` and its pullback stayed behind — those are
 # GML's kernels, not this package's.
 
-@testset "the two triangles and the diagonal partition the matrix" begin
+@testset "the two triangles and the diagonal partition the matrix, $T" for T in REAL_ELTYPES
     # `A - L - U` leaves exactly the diagonal, so summing it is the trace. This is the property that
     # says the two constructors take the *strict* triangles and agree on where the split is.
-    for T in (Float32, Float64), n in 2:5
-
-        A = rand(T, n, n)
-        @test tr(A) ≈ sum(A - StrictlyLowerTriangular(A) - StrictlyUpperTriangular(A))
+    rng = Random.Xoshiro(1234)
+    for n in 2:5
+        A = rand(rng, T, n, n)
+        D = A - StrictlyLowerTriangular(A) - StrictlyUpperTriangular(A)
+        @test eltype(D) == T
+        @test tr(A) ≈ sum(D)
     end
 end
 
-@testset "multiplication agrees with the dense matrix" begin
-    for T in (Float32, Float64), n in 2:5
+@testset "multiplication agrees with the dense matrix, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    for n in 2:5
+        Aₗ = rand(rng, StrictlyLowerTriangular{T}, n)
+        Aᵤ = rand(rng, StrictlyUpperTriangular{T}, n)
+        B = rand(rng, T, n, n)
+        b = rand(rng, T, n)
 
-        Aₗ = rand(StrictlyLowerTriangular{T}, n)
-        Aᵤ = rand(StrictlyUpperTriangular{T}, n)
-        B = rand(T, n, n)
-        b = rand(T, n)
-
+        @test eltype(Aₗ * B) == T
+        @test eltype(B * Aᵤ) == T
+        @test eltype(Aₗ * b) == T
         @test Aₗ * B ≈ Matrix{T}(Aₗ) * B
         @test Aᵤ * B ≈ Matrix{T}(Aᵤ) * B
         @test B * Aₗ ≈ B * Matrix{T}(Aₗ)
@@ -48,14 +55,16 @@ end
     end
 end
 
-@testset "addition and scalar multiplication are linear" begin
-    for T in (Float32, Float64), n in 2:5
-
-        A = rand(T, n, n)
-        B = rand(T, n, n)
-        α = rand(T)
+@testset "addition and scalar multiplication are linear, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    for n in 2:5
+        A = rand(rng, T, n, n)
+        B = rand(rng, T, n, n)
+        α = rand(rng, T)
 
         for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
+            @test eltype(MT(A) + MT(B)) == T
+            @test eltype(α * MT(A)) == T
             @test MT(A + B) ≈ MT(A) + MT(B)
             @test MT(α * A) ≈ α * MT(A)
             @test typeof(MT(A) + MT(B)) <: MT{T}
@@ -71,7 +80,7 @@ end
     # otherwise pay for an allocation it never needs. But it means a write through the adjoint is a
     # write through the original, so this pins the sharing: if `adjoint` is ever made to copy, this
     # test is the one that catches it.
-    for T in (Float32, Float64), n in 2:5
+    for T in REAL_ELTYPES, n in 2:5
 
         L = rand(StrictlyLowerTriangular{T}, n)
         U = rand(StrictlyUpperTriangular{T}, n)
@@ -92,25 +101,29 @@ end
 # Sharing the storage is what bounds these methods to a real element type. Reusing the vector
 # transposes without conjugating, so an unbound method is `transpose` wearing the name `adjoint`,
 # and `*(B, A::AbstractTriangular) = (A' * B')'` then returns a silently wrong product — measured at
-# `‖B*C - B*Matrix(C)‖ = 16.2` on this 3x3 `ComplexF64` case before the bound.
+# `‖B*C - B*Matrix(C)‖ = 16.2` on a 3x3 `ComplexF64` case with the storage
+# `[1 + 2im, 3 + 4im, 5 + 6im]` before the bound.
 #
 # The bound does not reject a complex argument; it hands it to `LinearAlgebra`'s lazy `Adjoint`,
 # which conjugates. So the complex path becomes correct rather than becoming an error, and the real
 # path keeps the storage-sharing swap. This testset asserts both halves, because a later edit that
 # widened the methods again would restore the wrong answer with nothing else complaining.
-@testset "adjoint conjugates on a complex element type" begin
+@testset "adjoint conjugates on a complex element type, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
     for MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
-        C = MT(ComplexF64[1 + 2im, 3 + 4im, 5 + 6im], 3)
+        C = MT(randn(rng, Complex{T}, 3), 3)
         M = Matrix(C)
-        B = randn(ComplexF64, 3, 3)
+        B = randn(rng, Complex{T}, 3, 3)
 
+        @test eltype(B * C) == Complex{T}
         @test Matrix(C') == M'
         @test Matrix(C') != transpose(M)
         @test B * C ≈ B * M
 
         # and the real path still takes the storage-sharing swap rather than the lazy wrapper
-        R = MT(randn(3), 3)
-        Br = randn(3, 3)
+        R = MT(randn(rng, T, 3), 3)
+        Br = randn(rng, T, 3, 3)
+        @test eltype(Br * R) == T
         @test R' isa AbstractTriangular
         @test parent(R') === parent(R)
         @test Br * R ≈ Br * Matrix(R)
@@ -118,7 +131,7 @@ end
 end
 
 @testset "random generation" begin
-    for T in (Float32, Float64), n in 2:5,
+    for T in REAL_ELTYPES, n in 2:5,
         MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
         A = rand(MT{T}, n)
         @test typeof(A) <: MT{T}
@@ -131,7 +144,7 @@ end
 # Each per-type `zeros` and `rand` names its constructor, so both infer to a concrete type rather
 # than `Any`.
 @testset "zeros and rand infer concretely" begin
-    for T in (Float32, Float64), MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
+    for T in REAL_ELTYPES, MT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
 
         @test (@inferred zeros(MT{T}, 4)) isa MT{T}
         @test (@inferred rand(MT{T}, 4)) isa MT{T}
@@ -142,7 +155,7 @@ end
 # `CPU()`, so each reaches the same method as the spelling that names it. This pins the placement
 # and the values.
 @testset "the backendless allocators place on the host" begin
-    for T in (Float32, Float64), MT in (StrictlyLowerTriangular, StrictlyUpperTriangular),
+    for T in REAL_ELTYPES, MT in (StrictlyLowerTriangular, StrictlyUpperTriangular),
         n in 2:5
         @test freeparameters(zeros(MT{T}, n)) isa Vector{T}
         @test all(iszero, freeparameters(zeros(MT{T}, n)))
@@ -188,12 +201,14 @@ end
 # wider on the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
 # Both triangles run, because one kernel covers them and neither is symmetric, so each pins which
 # triangle the body reaches for.
-@testset "a row vector times a triangular matrix" begin
-    for T in (Float32, Float64), N in 2:5,
-        AT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
-        A = rand(AT{T}, N)
-        v = rand(T, N)
+@testset "a row vector times a triangular matrix, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    for N in 2:5, AT in (StrictlyLowerTriangular, StrictlyUpperTriangular)
 
+        A = rand(rng, AT{T}, N)
+        v = rand(rng, T, N)
+
+        @test eltype(v' * A) == T
         @test v' * A ≈ v' * Matrix(A)
         @test transpose(v) * A ≈ transpose(v) * Matrix(A)
         @test size(v' * A) == (1, N)
@@ -205,13 +220,16 @@ end
 # swap would conjugate on the way, so `StrictlyUpperTriangular` would store a triangle nobody asked
 # for while `StrictlyLowerTriangular` stays exact, and the two constructors would disagree. The real
 # path cannot see it, which is why this testset is here.
-@testset "neither constructor conjugates on a complex element type" begin
-    M = randn(ComplexF64, 4, 4)
+@testset "neither constructor conjugates on a complex element type, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    M = randn(rng, Complex{T}, 4, 4)
 
+    @test eltype(StrictlyUpperTriangular(M)) == Complex{T}
     @test Matrix(StrictlyLowerTriangular(M)) == tril(M, -1)
     @test Matrix(StrictlyUpperTriangular(M)) == triu(M, 1)
 
-    Mr = randn(4, 4)
+    Mr = randn(rng, T, 4, 4)
+    @test eltype(StrictlyUpperTriangular(Mr)) == T
     @test Matrix(StrictlyLowerTriangular(Mr)) == tril(Mr, -1)
     @test Matrix(StrictlyUpperTriangular(Mr)) == triu(Mr, 1)
 end

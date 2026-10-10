@@ -11,14 +11,15 @@
 using GeometricOptimizers
 using GeometricOptimizers: OptimizerCache, OptimizerProblem, RiemannianGradient,
                            default_gradient,
-                           gradient, rgrad
+                           gradient, rgrad, isconverged
 using GPUArraysCore: allowscalar
 using JLArrays: JLArray
-using LinearAlgebra: qr
+using LinearAlgebra: qr, svd, norm
 using NeuralNetworkParameters: NetworkParameters
 using SimpleSolvers: GradientAutodiff, GradientFiniteDifferences, Hessian, Static
 using Random
 using Test
+include("../helpers/eltypes.jl")
 
 allowscalar(false)
 
@@ -48,7 +49,7 @@ function names_∇F!(f)
     err isa ArgumentError && occursin("∇F!", sprint(showerror, err))
 end
 
-@testset "no default gradient on a device: $name, $T" for T in (Float32, Float64),
+@testset "no default gradient on a device: $name, $T" for T in REAL_ELTYPES,
     (name, x) in device_points(T)
 
     for mode in (:autodiff, :finitediff)
@@ -78,7 +79,7 @@ end
     @test occursin(":finitediff", sprint(showerror, err))
 end
 
-@testset "mode selects the gradient on the host, $T" for T in (Float32, Float64)
+@testset "mode selects the gradient on the host, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(2)
     x = randn(rng, T, 4)
     Y = StiefelManifold(stiefel_point(rng, T))
@@ -103,19 +104,30 @@ end
 # has no truncation error, and its rounding error, `eps(T) * |F| / ϵ`, is small at the minimum, where
 # `|F|` is: two solves that differ only in the gradient then agree to well within `√eps(T)`. Over
 # eight seeds the relative distance was below `3e-3 √eps(T)` in both precisions.
+#
+# The minimiser is known in closed form, and `C` is returned so that the testset can compute it: the
+# polar factor `UVᵀ` of `C = UΣVᵀ` (the orthogonal Procrustes solution), by an SVD and not by the
+# optimizer.
 function procrustes(::Type{T}) where {T}
     rng = Random.Xoshiro(3)
     C = stiefel_point(rng, T) + randn(rng, T, N, n) / 10
     F(Y::StiefelManifold) = sum(abs2, parent(Y) - C) / 2
-    F, Y -> rgrad(Y, parent(Y) - C), StiefelManifold(stiefel_point(rng, T))
+    F, Y -> rgrad(Y, parent(Y) - C), StiefelManifold(stiefel_point(rng, T)), C
 end
 
-@testset "a bare Stiefel point: the default gradient rebuilds the point, $T" for T in (Float32, Float64)
-    F, riemannian_gradient, Y = procrustes(T)
+# The distance of a converged solve to the polar factor, in `√eps(T)`: a minimiser is accurate to the
+# root of the objective's precision. Measured with `procrustes`'s seed 3 replaced by each of 1 to 8,
+# in both modes, the worst
+# was `0.69 √eps(T)` in `Float32` and `0.72 √eps(T)` in `Float64`, so this leaves a factor of about 3.
+const PROCRUSTES_TOLERANCE_IN_SQRT_EPS = 2
+
+@testset "a bare Stiefel point: the default gradient rebuilds the point, $T" for T in REAL_ELTYPES
+    F, riemannian_gradient, Y, C = procrustes(T)
 
     # through the lower-level constructor's `default_gradient`
     autodiff = default_gradient(OptimizerProblem(F, Y), Y)
     @test autodiff isa GradientAutodiff{T}
+    @test eltype(autodiff(Y)) == T
     @test autodiff(Y) ≈ riemannian_gradient(Y) rtol = √eps(T)
 
     # `mode = :finitediff` differentiates the same `F`, and solves to the autodiff answer within
@@ -125,9 +137,20 @@ end
 
     solution(mode) =
         let Y = copy(Y)
-            solve!(Y, OptimizerState(BFGS(), Y), Optimizer(Y, F; mode = mode, retraction = Geodesic()))
-            parent(Y)
+            result = solve!(Y, OptimizerState(BFGS(), Y),
+                Optimizer(Y, F; mode = mode, retraction = Geodesic()))
+            parent(Y), result
         end
-    @test solution(:finitediff) ≈ solution(:autodiff) rtol = √eps(T)
-    @test eltype(solution(:finitediff)) == T
+    Y_finite, result_finite = solution(:finitediff)
+    Y_autodiff, result_autodiff = solution(:autodiff)
+    @test Y_finite ≈ Y_autodiff rtol = √eps(T)
+    @test eltype(Y_finite) == eltype(Y_autodiff) == T
+
+    # both solves converged, and to the known minimiser
+    U, _, V = svd(C)
+    minimiser = U * V'
+    for (Ŷ, result) in ((Y_finite, result_finite), (Y_autodiff, result_autodiff))
+        @test isconverged(result.status)
+        @test norm(Ŷ - minimiser) ≤ PROCRUSTES_TOLERANCE_IN_SQRT_EPS * √eps(T)
+    end
 end

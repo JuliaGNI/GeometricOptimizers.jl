@@ -2,6 +2,9 @@ using GeometricOptimizers
 using GeometricOptimizers: gradient, increase_iteration_number!, initialize_state!,
                            iteration_number, solver_step!
 using Test
+import Random
+
+include("../helpers/eltypes.jl")
 
 const EXPECTED_STEP_EVENTS = [
     (:optimizer_state_direction, :enter),
@@ -105,15 +108,15 @@ end
     end
 end
 
-@testset "solve! evaluates the objective once per iterate" begin
+@testset "solve! evaluates the objective once per iterate, $T" for T in REAL_ELTYPES
     # One evaluation at the start, two per step — the NaN guard's trial point and the iterate the
     # step returns — and one after the loop: the state update reuses the loop's value at the same
     # iterate. The automatic differentiation calls the objective with dual numbers; those are not
     # counted. The value the state records is the objective at the iterate it records.
     function counted_solve(x, objective, method)
         objective_calls = Ref(0)
-        counted = x -> (eltype(x) === Float64 && (objective_calls[] += 1); objective(x))
-        optimizer = Optimizer(x, counted; algorithm = method, linesearch = Static(0.01),
+        counted = x -> (eltype(x) === T && (objective_calls[] += 1); objective(x))
+        optimizer = Optimizer(x, counted; algorithm = method, linesearch = Static(T(0.01)),
             max_iterations = 3)
         state = OptimizerState(method, x)
         objective_calls[] = 0
@@ -121,31 +124,34 @@ end
         y, f = state isa BFGSState ?
                (state.x̄, GeometricOptimizers.previous_value(state)) :
                (GeometricOptimizers.solution(state), GeometricOptimizers.value(state))
-        objective_calls[], iteration_number(state), f == objective(y)
+        objective_calls[], iteration_number(state), f == objective(y), f
     end
 
     for method in (GradientMethod(), MomentumMethod(; α = 0.1), Adam(), BFGS(), DFP())
-        calls, n, recorded = counted_solve([1.0, -2.0], x -> sum(abs2, x), method)
+        calls, n, recorded, f = counted_solve(T[1.1, -2.3], x -> sum(abs2, x), method)
+        @test eltype(f) == T
         @test n == 3
         @test calls == 2n + 2
         @test recorded
     end
 
-    Y = StiefelManifold([1.0 0.0; 0.0 1.0; 0.0 0.0])
-    calls, n, recorded = counted_solve(Y, Y -> sum(abs2, Y.A .- 1), ScalarMomentAdam())
+    Y = rand(Random.Xoshiro(1), StiefelManifold{T}, 3, 2)
+    calls, n, recorded, f = counted_solve(Y, Y -> sum(abs2, Y.A .- 1), ScalarMomentAdam())
+    @test eltype(f) == T
     @test n == 3
     @test calls == 2n + 2
     @test recorded
 end
 
-@testset "parameter-set gradients retain the Riemannian wrapper" begin
+@testset "parameter-set gradients retain the Riemannian wrapper, $T" for T in REAL_ELTYPES
     observer = EventLog()
-    ps = NetworkParameters((w = [1.0, -2.0],))
+    w₀ = T[1.1, -2.3]
+    ps = NetworkParameters((w = copy(w₀),))
     objective(ps) = sum(abs2, ps.w)
     gradient!(g, x) = (g .= 2 .* x; g)
     method = GradientMethod()
     optimizer = Optimizer(ps, objective; ∇F! = gradient!, algorithm = method,
-        linesearch = Static(0.1), observer = observer)
+        linesearch = Static(T(0.1)), observer = observer)
     observed_gradient = gradient(optimizer)
     @test observed_gradient isa RiemannianGradient
     @test observed_gradient.gradient isa GeometricOptimizers.ObservedGradient
@@ -160,7 +166,9 @@ end
 
     @test count(==((:gradient, :enter)), observer.events) == 2
     @test count(==((:gradient, :exit)), observer.events) == 2
-    @test ps.w ≈ [0.8, -1.6]
+    # one gradient step of length `0.1` on `‖w‖²`: `w - 0.1⋅2w`
+    @test eltype(ps.w) == T
+    @test ps.w ≈ T(0.8) * w₀
 end
 
 @testset "observer exit is exception-safe and the default is a no-op" begin

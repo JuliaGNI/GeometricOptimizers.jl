@@ -23,13 +23,20 @@ using NeuralNetworkParameters
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
+
+# for the frame each `GlobalSection` completes, which draws from the global RNG; the data below are
+# drawn from their own seeded generators
 Random.seed!(1234)
 
-const nt = (a = rand(3), b = rand(2, 2))
-const np = NetworkParameters((a = rand(3), b = rand(2, 2)))
-const sec = (a = GlobalSection(rand(3)), b = GlobalSection(rand(2, 2)))
+# The method pairs are written on `GlobalSectionNamedTuple{T}` and `NetworkParameters{T}`, so the
+# element type is part of what dispatch matches: the shapes are built, and copied, in each precision.
+@testset "the four shapes on the overlap dispatch to exactly one method, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(1234)
+    nt = (a = rand(rng, T, 3), b = rand(rng, T, 2, 2))
+    np = NetworkParameters((a = rand(rng, T, 3), b = rand(rng, T, 2, 2)))
+    sec = (a = GlobalSection(rand(rng, T, 3)), b = GlobalSection(rand(rng, T, 2, 2)))
 
-@testset "the four shapes on the overlap dispatch to exactly one method" begin
     # `deepcopy` throughout: `_copyto!` writes into its first argument, and a shape that silently
     # aliased another would make the next case pass for the wrong reason.
     @test _copyto!(deepcopy(np), sec) isa NetworkParameters
@@ -39,19 +46,21 @@ const sec = (a = GlobalSection(rand(3)), b = GlobalSection(rand(2, 2)))
 
     # and the values actually move, so the method that wins is one that copies rather than one that
     # happens to return the right type
-    dest = NetworkParameters((a = zeros(3), b = zeros(2, 2)))
+    dest = NetworkParameters((a = zeros(T, 3), b = zeros(T, 2, 2)))
     _copyto!(dest, nt)
+    @test eltype(flatten(dest)[1]) == T
     @test dest.a == nt.a
     @test dest.b == nt.b
 
-    dest_nt = (a = zeros(3), b = zeros(2, 2))
+    dest_nt = (a = zeros(T, 3), b = zeros(T, 2, 2))
     _copyto!(dest_nt, np)
     @test dest_nt.a == np.a
     @test dest_nt.b == np.b
 
     # a section copy moves the anchors
-    dest_sec = (a = GlobalSection(zeros(3)), b = GlobalSection(zeros(2, 2)))
+    dest_sec = (a = GlobalSection(zeros(T, 3)), b = GlobalSection(zeros(T, 2, 2)))
     _copyto!(dest_sec, np)
+    @test eltype(dest_sec.b.Y) == T
     @test dest_sec.a.Y == np.a
     @test dest_sec.b.Y == np.b
 end
@@ -61,10 +70,11 @@ end
 # rather than `solve!` on a fixed one. The first step goes through
 # `_copyto!(solution(cache(opt)), section(cache(opt)))`, which is exactly the pairing above, so this is
 # a consumer's shape rather than a constructed one.
-@testset "a flat `NetworkParameters` with a manifold leaf takes a step" begin
-    ps = NetworkParameters((PQ = rand(StiefelManifold{Float64}, 6, 3),
-        W = rand(4, 4),
-        b = zeros(4)))
+@testset "a flat `NetworkParameters` with a manifold leaf takes a step, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(64)
+    ps = NetworkParameters((PQ = rand(rng, StiefelManifold{T}, 6, 3),
+        W = rand(rng, T, 4, 4),
+        b = zeros(T, 4)))
     F(p) = sum(abs2, flatten(p)[1])
     before = F(ps)
 
@@ -78,7 +88,10 @@ end
         GeometricOptimizers.update!(state, opt, ps)
     end
 
+    @test eltype(flatten(ps)[1]) == T
     @test F(ps) < before                        # it optimized rather than merely survived
-    @test ps.PQ isa StiefelManifold             # and the leaf type did not drift
-    @test check(ps.PQ) < 1e-10                  # and the iterate is still on the manifold
+    @test ps.PQ isa StiefelManifold{T}          # and the leaf type did not drift
+    # and the iterate is still on the manifold: the round-off of five Cayley steps on a 6 × 3 point,
+    # measured at most `3.1eps(T)` over five seeds in both precisions
+    @test check(ps.PQ) < 10eps(T)
 end

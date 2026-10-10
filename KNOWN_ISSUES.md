@@ -267,6 +267,13 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `ρ = sign(a[1]) * norm(a)` gives `ρ = 0` and then `c₁ = Inf` silently when `a[1] == 0`. Standard
   Householder picks a sign that cannot vanish.
 
+  `test/decompositions/symplectic_sr.jl` runs in `Float32` too, at 4×2, 6×4 and 10×6. The median of
+  `‖SᵀJS - J‖` for `sr(randn(T, N2, N2))` is 8.0 to 8.5, 136 to 141 and 9820 to 10400 `eps(T)` in
+  both precisions, over 20000 draws at each of three seeds (Julia 1.13.1). The draws that throw or
+  return a non-finite value are 0, 17 to 23 and 111 to 122 in 20000 in `Float32`, and none in
+  `Float64`. The test's rate bound in `Float32` is ten times the measured exceedance, 7 % at 10×6,
+  where the `Float64` bound is 1 %.
+
   Closing this means implementing the stabilized variant, which is numerical work rather than a
   repair. Until then the type is documented as `Float64`-only at small sizes, in both the
   `SymplecticStiefelManifold` and `sr!` docstrings, and nothing in the package depends on it.
@@ -335,32 +342,141 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
 
-### K20 · `storage_gradient` of a Stiefel lift raises a `MethodError` for a cotangent of the lift's own type
+### K24 · In `Float32`, `global_section` of a `SymplecticStiefelManifold` point raises the `DomainError` of A22 on a few draws in 2000
 
-- location: `src/parameter_protocol.jl`, `storage_gradient(A::StiefelLieAlgHorMatrix, G::AbstractMatrix)`
+- location: `src/manifolds/symplectic_stiefel_manifold.jl`, `global_section`
 - kind: found late
-- found: 2026-10-03
-- evidence: the method reads `G[1:n, 1:n]`, and `getindex(::StiefelLieAlgHorMatrix, i, j)`
-  (`src/lie_algebras/stiefel_lie_algebra_horizontal.jl`) takes integer indices only. So a
-  `StiefelLieAlgHorMatrix` cotangent raises
-  `MethodError: no method matching isless(::UnitRange{Int64}, ::Int64)`, at the leaf's own precision
-  and at another one. Zygote gives a lift a dense cotangent, so a training run may never pass this
-  method a cotangent of the lift's own type. Reproducer (Julia 1.13.1; `S = Float32` and
-  `S = Float64` both raise the error):
+- found: 2026-10-09; one issue with A22
+- evidence: over 2000 points from `rand(rng, SymplecticStiefelManifold{T}, N2, n2)` per size, with
+  the point's generator `Random.Xoshiro(987_654)` independent of the global one that the completion
+  draws from (`Random.seed!(1)`), Julia 1.13.1: in `Float32`, `global_section` raises the
+  `DomainError` of A22 on 0, 1 and 5 points at 4×2, 6×4 and 10×6 (and `rand` itself on 0, 3 and 1);
+  in `Float64` on none. Every section that returns has `‖UᵀJΛ‖ / (‖U‖² ‖Λ‖²)` under `1120 eps(T)`
+  in both precisions. The section is built with `sr!`, which has no re-orthogonalization step, so
+  the stabilized SR decomposition of A22 closes this too.
 
-  ```julia
-  using GeometricOptimizers, Test
-  using NeuralNetworkParameters: storage_gradient
+### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 
-  @testset "lift-typed cotangent, $S" for S in (Float32, Float64)
-      A = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(Float32, 3), 3), rand(Float32, 2, 3), 5, 3)
-      G = StiefelLieAlgHorMatrix(SkewSymMatrix(rand(S, 3), 3), rand(S, 2, 3), 5, 3)
-      @test storage_gradient(A, G) isa StiefelLieAlgHorMatrix{Float32}
-  end
-  ```
+- location: `src/manifolds/stiefel_manifold.jl`, `_complement_columns`
+- kind: found late
+- found: 2026-10-09
+- evidence: 400 seeds per shape, the point from `rand(Random.Xoshiro(seed), …)`, Julia 1.13.1.
+  With `Random.seed!(seed)` before the draw, the completion that `global_section` draws from the
+  global generator repeats the point's own numbers: on a `JLArray` the median `‖Yᵀλ‖` is 15 to 25
+  `eps(T)`, 39 to 63 of the 400 draws exceed `100 eps(T)`, and the largest is 7.4e3 `eps(T)` in
+  `Float32` and 2.1e4 `eps(T)` in `Float64`; on the host the median is 23 to 34 `eps(T)`, 49 to 76
+  draws exceed `100 eps(T)`, the largest is 1.7e4 `eps(T)`, and at `Float32` 12×4 one draw raises
+  `ArgumentError: No value arguments present` from the `something` of the second `_cholesky_qr2`.
+  With `Random.seed!(seed + 10^6)`, so that the two streams are independent, the median is 0.5 to
+  0.97 `eps(T)` and the largest 1.43 `eps(T)` on a `JLArray`, with no draw above `100 eps(T)`.
+  Several test files seed the global generator and a `Xoshiro` of the point with one seed.
 
-  The fix is a method `storage_gradient(A::StiefelLieAlgHorMatrix, G::StiefelLieAlgHorMatrix)` that
-  works on the blocks.
+### K26 · `DFP` with `Backtracking(expand = true)` does not converge on Rosenbrock in `Float32` from a start two ulps from the standard one
+
+- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl`
+- kind: found late
+- found: 2026-10-09
+- evidence: over the 49 `Float32` starts within ±3 ulps of `(-1.2, 1)`, `DFP` from the start
+  `(-2, -2)` ulps stops after 300 iterations at `x = [1.0223, 1.0453]`, `f = 5.0e-4`,
+  `rg = 0.0348`; it converges from the other 48, and `BFGS` from all 49. The test in
+  `test/optimizers/quasi_newton_secant_tests.jl` uses the standard start, from which both converge.
+  Whether the cause is the update, the line search or the conditioning of `Float32` is not
+  investigated.
+
+### K27 · A solve whose polynomial line search finds no decrease takes a zero step and reports convergence far from the optimum
+
+- location: `src/optimizers/optimizer.jl`, `solver_step!` (the `at_round_off_floor(…) ? zero(T)` step)
+- kind: defect
+- found: 2026-10-09
+- evidence: on the SVD problem of `test/verification/svd_optim.jl`, `DFP` with `Quadratic` under
+  `Geodesic` from seed 8 stops after 3 iterations with `rg = 3.5269928303258307`, a relative error
+  of 1.3277 against the best rank-3 approximation, `x_converged = true`, `f_converged = true` and
+  `g_converged = false`, in `Float64` and in `Float32`; `scripts/retraction_accuracy.jl`'s
+  `solve_once` gives the same numbers. SimpleSolvers' `Quadratic` (`src/linesearch/quadratic.jl:111`,
+  the last return of `solve_with_status`) classifies every step that does not decrease the merit as
+  `LINESEARCH_FLOOR`, also one whose merit rose (`φ(α) = 6.37` against `φ₀ = 6.22` on a probe of the
+  same mechanism), and `quadratic_bierlaire.jl:243` has the same rule. The steepest-descent retry
+  returns the floor again, `solver_step!` takes a zero step, and `x_converged` reports convergence.
+  From `Float32`'s own draw of the starting point, the same happens on seed 6 for `BFGS` with
+  `Quadratic` and with `BierlaireQuadratic`, and for `DFP` with `Quadratic`. The eight-seed sweep of
+  `svd_optim.jl` asserts a rate per combination, and its `SWEEP_MIN_CONVERGED` comment counts this
+  solve among the misses it allows, with this ID and issue #153.
+  `GradientMethod` with `BierlaireQuadratic` on `Fsmooth` of `test/integration/optimizer_tests.jl`
+  stops the same way in `Float32` after 2 iterations, 172 to 370 `√eps` from the minimiser, on 3 of
+  the starts tried (not the test's), with `LINESEARCH_FLOOR` at `φ(0) = 3.001769` and `φ(1) = 3.0`.
+
+### K28 · In `Float32`, a fixed-step `Adam` solve stops on `f_converged` far from the minimiser and reports convergence
+
+- location: `src/optimizers/optimizer_status.jl`, `convergence_measures` (`f_relchange ≤ f_suctol`)
+- kind: defect
+- found: 2026-10-09
+- evidence: `Adam` with `Static(0.1)` on `Fsmooth` of `test/integration/optimizer_tests.jl` stops at
+  iteration 43, 0.116 from the minimiser (336 `√eps(Float32)`), with `isconverged` true and the flags
+  `(x, f, g) = (false, true, false)`, `rfᵣ = 1.59e-7`. Two successive iterates of the fixed-step
+  orbit agree in `f` to one ulp, and `f_converged` fires on that. `Float64` runs the same orbit down
+  to 8.8 `√eps(Float64)`. The two distance assertions of that case in `Float32` are `@test_broken`
+  with this ID and issue #154.
+
+### K29 · The default gradient gate `f_reltol = √eps(T)` of `g_converged` is out of reach in `Float32` on a problem whose gradient at the round-off floor of `f` is of the order of `√eps(T)`
+
+- location: `src/optimizers/optimizer_status.jl`, `convergence_measures` (`g_converged`)
+- kind: defect
+- found: 2026-10-09
+- evidence: the `Backtracking` solve of `test/integration/manifold_linesearch_tests.jl` stops in
+  `Float32` after 5 iterations on the change of `x` and `f`, at `rg = 6.4e-4 = 1.9 √eps(Float32)`,
+  above the gate; `Float64` meets it at 0.72 `√eps(Float64)`. The `g_converged` assertion of that
+  solve in `Float32` is `@test_broken` with this ID and issue #155.
+
+### K30 · In `Float32`, `BFGS` and `DFP` with `Backtracking` stop after one iteration from a start near the minimiser of a quadratic
+
+- location: `src/optimizers/optimizer.jl`, `solve!`
+- kind: found late
+- found: 2026-10-09
+- evidence: on `F` of `test/integration/optimizer_tests.jl` from `x₀ = 0.0172`, both stop after 1
+  iteration at 50 `√eps(Float32)` from the minimiser. The test starts in `[0.5, 1.5]`, where both
+  converge to under 10 `√eps(T)`.
+
+### K31 · `Adam` with `Static(0.1)` on two Stiefel spheres runs out its iteration budget in `Float64` on some seeds of the global generator
+
+- location: `test/integration/manifold_linesearch_tests.jl`, testset `Adam runs on a manifold NamedTuple under a searching line search`
+- kind: found late
+- found: 2026-10-10
+- evidence: the `Adam` + `Static(T(0.1))` solve of that testset (`ps₀`, `two_spheres`,
+  `max_iterations = 1000`), with `Random.seed!(s)` before the state is built, on Julia 1.13.1:
+
+  | `T` | seed | `Geodesic` | `Cayley` |
+  |:--|:--|:--|:--|
+  | `Float64` | 1 | 1000 iterations, not converged, 3.9e-3 | 1000, not converged, 4.5e-3 |
+  | `Float64` | 2 | 1000, not converged, 2.9e-3 | 1000, not converged, 2.3e-3 |
+  | `Float64` | 1234 | 334, converged, 2.0e-8 | 331, converged, 4.4e-8 |
+  | `Float32` | 1, 2, 1234 | 104 to 127, converged, 4.3 to 4.9 `√eps` | 119 to 127, converged, 4.3 to 6.7 `√eps` |
+
+  The distance is the larger of the two leaves' distances to their minimisers. The seed draws the
+  completion of each `GlobalSection`; a fixed step lets `Adam` circle the minimiser, and on these
+  seeds the orbit does not shrink to a stopping criterion within the budget. The test runs at seed
+  1234.
+
+### K32 · `storage_gradient` of a device `StiefelLieAlgHorMatrix` for an `Adjoint` of a lift-typed cotangent indexes the device array one entry at a time
+
+- location: `src/parameter_protocol.jl`, `storage_gradient`
+- kind: found late
+- found: 2026-10-10
+- evidence: with `S` and `H` `StiefelLieAlgHorMatrix(SkewSymMatrix(JLArray(rand(rng, T, 3)), 3),
+  JLArray(rand(rng, T, 2, 3)), 5, 3)` under `allowscalar(false)`, `storage_gradient(S, H')` raises
+  `Scalar indexing is disallowed.` in `Float32` and `Float64`; on host arrays it returns a
+  `StiefelLieAlgHorMatrix`, and `storage_gradient(S, H)` (the block method for a lift-typed
+  cotangent) runs on both backends (Julia 1.13.1).
+
+### K33 · `storage_gradient` of a device `GrassmannLieAlgHorMatrix` for a cotangent of the lift's own type indexes the device array one entry at a time
+
+- location: `src/parameter_protocol.jl`, `storage_gradient`
+- kind: found late
+- found: 2026-10-10
+- evidence: with `A` and `G` `GrassmannLieAlgHorMatrix(JLArray(rand(rng, T, 3, 2)), 5, 2)` under
+  `allowscalar(false)`, `storage_gradient(A, G)` raises `Scalar indexing is disallowed.` in
+  `Float32` and `Float64`; on host arrays it returns a `GrassmannLieAlgHorMatrix` (Julia 1.13.1).
+  The lift-typed cotangent takes the dense `AbstractMatrix` method; only the Stiefel lift has a
+  block method for a cotangent of its own type.
 
 ## B. This package — observability
 
@@ -441,23 +557,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   more but is a behaviour change that needs its own measurement over the eight starting points, so it
   must not ride along in an observability PR; split it out if that is the choice.
 
-### C5 · `_DFP` + `Backtracking(expand = true)` is documented rather than run, on stale grounds
-
-- location: `test/verification/svd_optim.jl`
-- kind: missing test
-- found: 2026-08-14
-- evidence:
-
-  `test/verification/svd_optim.jl` excludes that pair because its iteration count ranged
-  `512..77_890` over eight starting points. The curvature condition in PR #35 brings that to
-  `385..1_118` (`Geodesic`) and `466..1_177` (`Cayley`), comfortably inside the 5 000 cap the file
-  already uses, so the stated reason no longer holds. Left out only because there is no CI measurement
-  of the post-fix spread yet — the original surprise was a factor of four between platforms.
-
-  **What to do**: add the pair to the driver loop in `svd_optim.jl` at the existing 5 000 cap and
-  rewrite the comment that explains why it is not run. Gate it on having seen one green CI run on
-  Linux *and* Windows, because the local spread does not measure the thing that surprised us.
-
 ### C7 · `ensure_descent!` is vacuous for `GradientMethod`
 
 - location: `gradient_optimizer.jl:82`
@@ -485,42 +584,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   steepest-descent substitution after a rejected line search was written as
   `_copyto!(direction(cache), rhs(cache))`, which is a no-op on these three caches. See
   `steepest_descent!`.
-
-### C8 · `svd_optim.jl`'s table and the script's `COMBINATIONS` are not the same ten rows
-
-- location: `svd_optim.jl`
-- kind: docs
-- found: #40
-- evidence:
-
-  **Severity: low**, bookkeeping. Found in the review of [#40], while making the "regenerated by
-  `scripts/retraction_accuracy.jl`" claim in that table true.
-
-  Both are ten (method, line search) pairs and eight of the ten agree. The two that do not:
-
-  - **`_DFP + Backtracking`** is in the table and not in `COMBINATIONS`. That is deliberate — at 48 322
-    iterations on the pinned seed it would dominate the runtime of every sweep, and its only purpose in
-    the table is the `α = 1` ceiling argument below it — and it now says so in place. Its spread
-    (`10_448..114_116`) is an older measurement at a cap high enough not to bind, which is why it
-    exceeds the `SVD_MAX_ITERATIONS = 20_000` the rest of the column is quoted against.
-  - ~~**`_BFGS + StrongWolfe(c₂ = 0.1)`** is in `COMBINATIONS` and not in the table.~~ **Closed.** It
-    was measured on every run of the sweep and printed to nobody; the row is in the table now
-    (`135 / 135` iterations, `7 893 / 7 880` evaluations), written down while re-measuring for the step
-    ceiling. The two options this entry offered were to add the row or drop it from `COMBINATIONS`, and
-    adding it turned out to cost one line rather than the sweep time the entry assumed — it was already
-    being computed.
-
-  So one of the two discrepancies is closed and the other is documented rather than removed. The general
-  point stands: a table that names a script as its source should be checkable against that script row by
-  row, or say which rows are exceptions and why. `svd_optim.jl` now marks its three non-regenerated
-  cells explicitly, which is what makes the remaining gap safe.
-
-  **The first bullet is why this is worth doing rather than filing.** Running the A8 sweep found that
-  the `_DFP + Backtracking` row had been *wrong* on `Geodesic` since the curvature-condition fix —
-  47 115 iterations and 1 177 919 evaluations where the same harness measures 48 322 and 1 208 157, and
-  where `default_linesearch`'s own table said 48 322 all along. Neither table is regenerated by the
-  sweep, so nothing compared them. Both are corrected and both now name the harness and the cap; a row
-  that no script regenerates is a row that goes stale silently.
 
 ### C9 · Most of the harnesses these figures come from are not in the repository
 
@@ -558,36 +621,11 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
     which makes it the mildest case and the easiest to get wrong: a figure quoted in this repository
     and regenerated in another one goes stale exactly as quietly, and nothing here will notice.
 
-  The pattern is C8's worked example: a number that no committed script regenerates is a number that
+  The pattern is the one of the `DFP  Backtracking` row of `svd_optim.jl`'s table, which went wrong
+  unnoticed because no sweep regenerates it: a number that no committed script regenerates is a number that
   goes stale silently, and the ones this catalogue has caught were all of that kind. Either put them
   under `scripts/` next to `retraction_accuracy.jl`, or accept the rule the preamble already states and
   stop quoting figures that nothing can re-run.
-
-### C10 · The eight-seed sweep is now inside `MANIFOLD_TOLERANCE` and is still not a test
-
-- location: `svd_optim.jl`
-- kind: missing test
-- found: 2026-08-15
-- evidence:
-
-  **Severity: low**, and it is the cheapest open item here.
-
-  `svd_optim.jl` used to say that enabling the eight-seed sweep as a test would need either
-  `ProjectedSkew` or a tolerance of `1e-11`, because the worst `check` over the eight was `2.8e-12`
-  against a `MANIFOLD_TOLERANCE` of `1e-12`. The step ceiling removed that outlier — it was one
-  over-long step and not the accumulation the file attributed it to — and the worst `check` over all
-  twenty combinations and all eight seeds is now `2.5e-13`. **The stated obstacle is gone.**
-
-  What is in the suite instead is the four A1b cases at seeds 2 and 8, added with the ceiling. That
-  covers the defect that was found and not the twenty-by-eight surface the sweep measures, which is
-  where both A1b and the previously unnoticed `Geodesic` 7-of-8 rows were found in the first place —
-  neither by the pinned seed the suite otherwise runs.
-
-  **What to do**: run the sweep in CI, not in `Pkg.test()` — at `SVD_MAX_ITERATIONS = 20_000` it is
-  minutes rather than seconds, which is why it is not simply added to the driver loop. A scheduled
-  workflow asserting `on_the_manifold(...) == 8` for every row and `rg < CONVERGED_GRADIENT_TOLERANCE`
-  would have caught A1b years earlier than a sweep someone remembered to run. Gate on one green run per
-  platform first, as C5 asks for the same reason.
 
 ### C11 · The `Quadratic` `Geodesic`/`Cayley` gap is unexplained, and now explicitly so
 
@@ -656,31 +694,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   a one-line change, kills both halves, and leaves every existing assertion true — the `Float32` test
   promotes to `Float32`. What is not worth doing is guarding the narrowing separately; the promotion is
   the guard.
-
-### C13 · `MANIFOLD_TOLERANCE` is defined three times
-
-- location: `test/verification/svd_optim.jl:20`
-- kind: defect
-- found: #44
-- evidence:
-
-  **Severity: low**, and the one on this list with a way to go wrong quietly. From the review of [#44].
-
-  `const MANIFOLD_TOLERANCE = 1e-12` appears in `test/verification/svd_optim.jl:20`,
-  `test/integration/manifold_linesearch_tests.jl:48` and — added with the step ceiling —
-  `scripts/retraction_accuracy.jl:286`. Three copies of one number with no import path between them: a
-  script cannot `include` a test file that runs a suite as a side effect, and the constant is a property
-  of the tests rather than of the package, so it does not belong in `src/`.
-
-  The reason it matters more than ordinary duplication is what the third copy does. `on_the_manifold`
-  counts seeds against it, and that count is what every "8 of 8" in this release means. If the script's
-  copy and the suite's copy ever drift, the sweep and the tests will disagree about whether a solve is
-  on the manifold and nothing will say so — the sweep is not run in CI (see C10), so the disagreement
-  would surface as a table that no longer matches a passing suite.
-
-  **What to do**: one `test/helpers/manifold_tolerance.jl` holding the constant and a comment, `include`d by all
-  three. That the script reaches into `test/` is already true — it takes its matrix from
-  `test/helpers/svd_matrix.jl` — so this adds no new coupling, only removes two copies.
 
 ### C15 · The compile-time figures cover the first-order caches only
 
@@ -753,56 +766,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   plainly in the docstring that no such bound is claimed and that the threshold is a measured one — the
   latter is what is written today, and it is enough to use the algorithm honestly but not enough to
   close [#52]'s first acceptance criterion.
-
-### K11 · No allocation assertion covers `_update_inverse_hessian!` itself
-
-- location: `src/optimizers/iterative_hessians/quasi_newton_cache.jl:177`
-- kind: not verified
-- found: 2026-10-01
-- evidence:
-
-  `test/integration/flat_buffer_allocations.jl` measures `_flat_secant(cache)`, the three-argument
-  `update!(cache, state, x)`, `outer!`, `dot(γ, Q, γ)` and `_flat_mul!` one at a time, but not the
-  BFGS or DFP `_update_inverse_hessian!` that calls them. An edit to that method that forms the
-  secant pair without `_flat_secant`, and allocates, is not caught there. The gap does not come from
-  `_flat_secant`: the helpers it replaces were measured at the same seam.
-
-  **What to do**: measure `_update_inverse_hessian!(method, cache, state, ΔxΔg)` on the flat path
-  through a barrier, with a `Δx` and a `Δg` for which `curvature_is_usable` holds, so that the branch
-  runs on both calls.
-
-### K21 · The Metal `Adam` row of (b) fails about one run in 40, because Metal's section draw is not seeded
-
-- location: `scripts/device_solve.jl:170` (`UNMATCHED_ADAM_RTOL`), run by `test/devices/metal.jl:42`
-- kind: defect
-- found: 2026-10-03
-- evidence:
-
-  The `metal` group run of the G8 branch failed one test, `(b) Stiefel, Adam` under `Geodesic()`,
-  with `Evaluated: mismatch === pass`, 846 of 847 passing. `Random.seed!(seed)` in `run_solve`
-  does not seed `Metal.default_rng()`. Metal 1.11.1 makes that generator once per task
-  (`src/random.jl:18-30`) and seeds it from `Random.RandomDevice()` (GPUArrays, `src/host/random.jl:315`).
-  So the device run draws another global section on every run, also for the same seed, and its
-  final objective is a random draw around the host twin's.
-
-  The row was repeated 40 times at seed 1234 in one process per tree, with `T = Float32`, ten steps,
-  and the problem, `run_solve` and the check of `solve_row` from `scripts/device_solve.jl`. The
-  relative distance of the device objective from the host twin's was:
-
-  | tree | retraction | median | max | above 0.03 | above 0.05 |
-  |---|---|---|---|---|---|
-  | `origin/main` at `4051410` | `Geodesic()` | 0.015 | 0.054 | 16 | 1 |
-  | `origin/main` at `4051410` | `Cayley()` | 0.018 | 0.043 | 11 | 0 |
-  | G8 branch | `Geodesic()` | 0.018 | 0.063 | 10 | 1 |
-  | G8 branch | `Cayley()` | 0.011 | 0.049 | 9 | 0 |
-
-  The two trees fail at the same rate, so the failure is not caused by a change to the device path.
-  The comment above `UNMATCHED_ADAM_RTOL` says the device run of (b) is up to 1.5 % from its host
-  twin over 6 seeds; 40 draws at one seed reach 6.3 %.
-
-  **What to do**: seed `Metal.default_rng()` in `run_solve` when `matched_rng = false`, so that a
-  run of the group is reproducible, and calibrate `UNMATCHED_ADAM_RTOL` on the tail of many device
-  draws and not on 6 seeds.
 
 ## D. Upstream
 
@@ -1006,7 +969,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### K12 · Revise prints EMFILE errors in the test log
 
-- location: `test/quality/jet.jl:17` (`using JET`)
+- location: `test/quality/jet.jl:18` (`using JET`)
 - kind: upstream
 - found: 2026-10-01
 - evidence: JET 0.12 loads Revise, and Revise's file watcher runs out of file handles. Each
@@ -1055,7 +1018,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ## G. Found when this file was split from the CHANGELOG
 
-### K2 · Four comments point at *Open Issues* in `CHANGELOG.md`, which does not hold it; the preamble rule that two of them cite is in neither file
+### K2 · Two comments point at the *Open Issues* preamble of `CHANGELOG.md`, which does not hold it; the rule they cite is in neither file
 
 - location: `scripts/optimizer_allocations.jl:8`
 - kind: docs
@@ -1063,10 +1026,8 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - evidence: `scripts/optimizer_allocations.jl:8` says "because of the rule the *Open Issues* preamble
   states" and `scripts/retraction_step_allocations.jl:9` says "reason the *Open Issues* preamble
   states". That preamble rule ("treat a number here as reproducible only where the harness that
-  produced it is named") did not move into this file. `test/decompositions/symplectic_sr.jl:32` says
-  "See *Open Issues* in `CHANGELOG.md`." and `test/manifolds/symplectic_stiefel_manifold.jl:14` says
-  "The figures are in `CHANGELOG.md` under *Open Issues*." Found by
-  `git grep -n -i 'open issues' origin/main -- ':!CHANGELOG.md'`.
+  produced it is named") did not move into this file. Found by
+  `git grep -n -i 'open issues' -- ':!CHANGELOG.md'`.
 
 ### K3 · The ID A22 was used for two different issues
 
@@ -1088,52 +1049,14 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ## H. The test suite
 
-### K13 · `test/quality/jet.jl` does not see an instability whose dynamic dispatch JET does not attribute to a frame of this package
-
-- location: `test/quality/jet.jl`
-- kind: missing test
-- found: 2026-10-01
-- evidence: each launcher line and each line of an `@allocated` function keeps the reports of
-  frames in `GeometricOptimizers` (`target_modules`), and JET 0.12.2 skips a kernel statement with
-  two line entries. A value that is not inferred then gives no report in four cases, each shown by
-  a mutant of `src/` that SURVIVED `test/quality/jet.jl` (Julia 1.13.1):
-  - passed to a function of another package with one method, where the dispatch happens in the
-    callee: `foldstorage(_dot_leaf, Base.inferencebarrier(zero(T)), a, b)` in `_dot`
-    (`src/optimizers/named_tuple_wrapper.jl`), and `Base.inferencebarrier(T(Inf))` as the initial
-    value of `foldparameters` in `_manifold_αmax` (`src/optimizers/linesearch_problem.jl`);
-  - inside a closure of this package that inlines into the fold of `NeuralNetworkParameters`:
-    `min(acc, _block_αmax(Base.inferencebarrier(yᵢ), δᵢ, c))` in `_manifold_αmax` gives 0
-    reports, where `min(Base.inferencebarrier(acc), …)` gives 1;
-  - an argument of a kernel launch on a `CPU`, where the launch is one varargs method of
-    KernelAbstractions: a barrier on a launch argument in `map_to_lo`, `map_to_up`, `map_to_S`,
-    `map_to_Skew`, the triangular, symmetric and skew `_lmul_into!`, and `_ladd`; on a JLArray, a
-    barrier on the `Int` argument `n` of `_poisson_tensor`'s launch;
-  - the written array in a kernel body: a barrier on `matrix` in `write_ones_kernel!` and on `A`
-    in `assign_ones_for_stiefel_projection_kernel!` gives 0 reports, where a barrier on the stored
-    value gives 1.
-
-  A barrier on a value inside each kernel body, and inside the closures that this package passes
-  to a fold (`dot(Base.inferencebarrier(x), y)` in `_dot_leaf`), is CAUGHT.
-
-### K14 · The `_manifold_αmax` lines of `test/quality/jet.jl` do not reach the manifold arm
-
-- location: `test/quality/jet.jl:109`
-- kind: missing test
-- found: 2026-10-01
-- evidence: the lines take the argument types of the `@allocated` calls in
-  `test/integration/flat_buffer_allocations.jl`, whose sets have no `Manifold` leaf, so
-  `_block_αmax(::Manifold, δ, c)` and `step_αmax` are not analysed. A barrier on `δᵢ` in the
-  closure of `_manifold_αmax` SURVIVED `quality/jet.jl`. `test/integration/network_parameters_optimizer.jl:157`
-  calls `_manifold_αmax` on a set with a Stiefel leaf and `c::Float64`, and no line has its types.
-
 ### K22 · Three `[Unreleased]` bullets of `CHANGELOG.md` give test paths from before the move to `test/integration/`
 
-- location: `CHANGELOG.md:31`
+- location: `CHANGELOG.md:33`
 - kind: docs
 - found: 2026-10-08
 - evidence: `grep -n 'test/device_solve.jl\|test/manifold_linesearch_tests.jl' CHANGELOG.md` gives
-  `:31` (`test/manifold_linesearch_tests.jl`), `:47`, `:49` and `:157` (`test/device_solve.jl`),
-  and `:4342` (`test/manifold_linesearch_tests.jl`). Line 4342 is in the released 0.2.0 section and
+  `:33` (`test/manifold_linesearch_tests.jl`), `:49`, `:51` and `:162` (`test/device_solve.jl`),
+  and `:4347` (`test/manifold_linesearch_tests.jl`). Line 4347 is in the released 0.2.0 section and
   stays. Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
   `test/integration/device_solve.jl`. The bullets are not released, so the paths may be corrected.
 
@@ -1166,6 +1089,20 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   1.11.9) fails the same way; there the explicit requirement is `UnsafeAtomics` 0.3.3, its newest
   version at that time, which restricts `LLVM` to 10.0.0. The required jobs resolve without the
   floor manifest and pass.
+
+### K34 · The exact-zero allocation assertion of `retraction_workspace.jl` failed in two rows of one count run under heavy machine load
+
+- location: `test/retractions/retraction_workspace.jl:105`
+- kind: not verified
+- found: #156
+- evidence: a per-testset count run on `417eff0`, at a machine load of 12 to 32, reported one failed
+  assertion in each of two rows of the testset "a workspace built for its retraction, for a
+  $(nameof(LT)){$T}": `StiefelLieAlgHorMatrix{Float32}` with 27 passed and 1 failed, and
+  `GrassmannLieAlgHorMatrix{Float64}` with 27 passed and 1 failed. The only allocation assertion
+  in that testset is the exact zero `@test _measured_differential!(D, own, Cayley(), B, 0.5) == 0`
+  at line 105, which is unchanged since `main`. The failing assertion was not captured. Both full
+  suites on `4a6883c` (Julia 1.13.1 and the 1.12 floor, at a load of 3 to 5) pass the file 572/572.
+  The cause is not established.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40

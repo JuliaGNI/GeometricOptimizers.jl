@@ -16,6 +16,7 @@
 # `device_products.jl` pass here and every row is asserted to pass.
 
 using Metal
+using Random
 using Test
 
 if Metal.functional()
@@ -33,11 +34,13 @@ if Metal.functional()
 
     # Metal draws its random numbers from a generator of its own, so the `Adam` rows of (b) and (c)
     # see another global section than the host twin and are compared by a property; see
-    # `UNMATCHED_ADAM_RTOL` in `device_solve.jl`. Metal supplies an `lu`, so `Cayley()` runs too.
+    # `UNMATCHED_ADAM_RTOL` in `device_solve.jl`. That generator is seeded with the row's seed, so
+    # the section, and the row, is the same on every run. Metal supplies an `lu`, so `Cayley()` runs
+    # too. Metal has no `Float64`, so the sweep runs in `Float32` only.
     @testset "solve! runs on Metal and matches the host twin, $(nameof(typeof(retraction)))" for retraction in (
         Cayley(), Geodesic())
         for (name, status) in device_solve(MtlArray, Float32; retraction = retraction,
-            matched_rng = false)
+            matched_rng = false, seed_device! = s -> Random.seed!(Metal.default_rng(), s))
             @testset "$name" begin
                 @test status === :pass
             end

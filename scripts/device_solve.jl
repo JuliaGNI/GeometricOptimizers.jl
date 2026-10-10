@@ -30,7 +30,9 @@
 # frame of the complement, and the gradient, momentum and quasi-Newton steps do not depend on which
 # frame up to round-off, but `Adam`'s componentwise moments do. So with `matched_rng = false` the
 # `Adam` rows of (b) and (c) are compared by a property instead: the objective decreases, and the
-# final objective is within `adam_rtol` of the host twin's.
+# final objective is within `adam_rtol` of the host twin's. `seed_device!(seed)` seeds the device's
+# own generator before the device twin runs, so that its section, and the row, is the same on every
+# run: `seed_device! = s -> Random.seed!(Metal.default_rng(), s)` on Metal.
 
 using GeometricOptimizers
 using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular, Manifold,
@@ -124,8 +126,10 @@ function step_rule(::Type{T}, method::Union{BFGS, DFP}) where {T}
     GeometricOptimizers.default_linesearch(T, method)
 end
 
-function run_solve(x, F, ∇F!, method, retraction, seed, ::Type{T}) where {T}
+function run_solve(x, F, ∇F!, method, retraction, seed, ::Type{T};
+        seed_device! = nothing) where {T}
     Random.seed!(seed)
+    seed_device! === nothing || seed_device!(seed)
     optimizer = Optimizer(x, F; (∇F!) = ∇F!, algorithm = method, retraction = retraction,
         linesearch = step_rule(T, method), min_iterations = STEPS, max_iterations = STEPS)
     state = OptimizerState(method, x)
@@ -134,14 +138,15 @@ function run_solve(x, F, ∇F!, method, retraction, seed, ::Type{T}) where {T}
 end
 
 function solve_row(name, problem, method, retraction, seed, backend; property = false,
-        adam_rtol = 0)
+        adam_rtol = 0, seed_device! = nothing)
     status = try
         (xh, _, (Fh, ∇Fh!)), (xd, _, (Fd, ∇Fd!)) = problem
         types = map(typeof, storages(xd))
         f₀ = Fd(xd)
         T = typeof(f₀)
         run_solve(xh, Fh, ∇Fh!, method, retraction, seed, T)
-        _, iterations = run_solve(xd, Fd, ∇Fd!, method, retraction, seed, T)
+        _, iterations = run_solve(
+            xd, Fd, ∇Fd!, method, retraction, seed, T; seed_device! = seed_device!)
         v = hostflat(xd)
         if !all(s -> get_backend(s) == backend, storages(xd)) ||
            map(typeof, storages(xd)) != types
@@ -170,7 +175,7 @@ end
 const UNMATCHED_ADAM_RTOL = 0.05
 
 function device_solve(todevice, ::Type{T}; retraction = Geodesic(), matched_rng = true,
-        adam_rtol = UNMATCHED_ADAM_RTOL, seed = 1234) where {T}
+        adam_rtol = UNMATCHED_ADAM_RTOL, seed = 1234, seed_device! = nothing) where {T}
     allowscalar(false)
     backend = get_backend(todevice(zeros(T, 1)))
     rows = Pair{String, Any}[]
@@ -182,7 +187,8 @@ function device_solve(todevice, ::Type{T}; retraction = Geodesic(), matched_rng 
             property = !matched_rng && method isa Adam && case != "(a) vector"
             push!(rows,
                 solve_row("$case, $(nameof(typeof(method)))", problem, method,
-                    retraction, seed, backend; property = property, adam_rtol = adam_rtol))
+                    retraction, seed, backend; property = property, adam_rtol = adam_rtol,
+                    seed_device! = seed_device!))
         end
     end
     rows

@@ -5,7 +5,7 @@ using LinearAlgebra: I, transpose
 import Random
 using Test
 
-Random.seed!(123)
+include("../helpers/eltypes.jl")
 
 # `N` and `n` were declared `::Integer`, which are the package's only abstract fields. Nothing
 # downstream of them lost its concrete return type -- `lift_factors`, `geodesic`, `cayley` and
@@ -23,30 +23,36 @@ end
 # it. The backend constructor allocates through `KernelAbstractions.zeros` and then starts a kernel
 # to write the ones; `invoke` reaches it on a `CPU` past that routing. What is pinned here is that
 # the three agree, entry for entry and in type, so that the cheaper spelling is the same matrix.
-@testset "the host, the `CPU()` and the backend constructor agree" begin
+@testset "the host, the `CPU()` and the backend constructor agree, $T" for T in REAL_ELTYPES
     backend_signature = Tuple{KernelAbstractions.Backend, Type, Integer, Integer}
-    for T in (Float32, Float64), N in 3:5, n in 0:(N + 1)
+    for N in 3:5, n in 0:(N + 1)
+
         E = StiefelProjection(T, N, n)
         E_cpu = StiefelProjection(CPU(), T, N, n)
         E_backend = invoke(StiefelProjection, backend_signature, CPU(), T, N, n)
         @test typeof(E) === typeof(E_cpu) === typeof(E_backend)
+        @test eltype(E_backend) == T
         @test E.A == E_cpu.A == E_backend.A
         @test E.A isa Matrix{T}
         @test KernelAbstractions.get_backend(E) == CPU()
     end
-    # the element type still defaults to `Float64`, as `zeros(N, n)` does
+end
+
+@testset "the element type of a StiefelProjection defaults to Float64" begin
+    # as `zeros(N, n)` does
     @test eltype(StiefelProjection(5, 3)) === Float64
 end
 
 # The backend constructor writes its ones with a kernel, one work item per diagonal entry. An
 # `N × n` matrix has `min(N, n)` of them, so a wide one (`n > N`) must not launch `n` items; the host
 # constructor, `Matrix{T}(I, N, n)`, is the reference for every shape.
-@testset "a device StiefelProjection of any shape matches the host one" begin
-    device = KernelAbstractions.get_backend(JLArray(zeros(Float32, 1)))
+@testset "a device StiefelProjection of any shape matches the host one, $T" for T in REAL_ELTYPES
+    device = KernelAbstractions.get_backend(JLArray(zeros(T, 1)))
     for (N, n) in ((2, 4), (3, 3), (5, 2), (0, 3), (3, 0), (0, 0))
-        E = StiefelProjection(device, Float32, N, n)
-        @test E.A isa JLArray{Float32, 2}
-        @test Array(E.A) == StiefelProjection(Float32, N, n).A
+        E = StiefelProjection(device, T, N, n)
+        @test eltype(E) == T
+        @test E.A isa JLArray{T, 2}
+        @test Array(E.A) == StiefelProjection(T, N, n).A
     end
 end
 
@@ -54,11 +60,14 @@ end
 # settle on its own: `LinearAlgebra` has its own method for that left operand, narrower there and
 # wider on the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
 # `E` is rectangular, so a method that swapped or dropped an operand would not conform.
-@testset "a row vector times a StiefelProjection" begin
-    for T in (Float32, Float64), N in 3:5, n in 1:N
-        E = StiefelProjection(T, N, n)
-        v = rand(T, N)
+@testset "a row vector times a StiefelProjection, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(123)
+    for N in 3:5, n in 1:N
 
+        E = StiefelProjection(T, N, n)
+        v = rand(rng, T, N)
+
+        @test eltype(v' * E) == T
         @test v' * E ≈ v' * Matrix{T}(E)
         @test transpose(v) * E ≈ transpose(v) * Matrix{T}(E)
         @test size(v' * E) == (1, n)
@@ -70,6 +79,8 @@ end
 function stiefel_proj(N::Integer, n::Integer, T::DataType)
     In = I(n)
     E = StiefelProjection(T, N, n)
+    @test eltype(E' * E) == T
+    # `E` holds only zeros and ones, so `E'E` is exact and the bound admits no round-off at all
     @test all(abs.((E'*E) .- In) .< eps(T))
 end
 
@@ -83,7 +94,7 @@ function stiefel_proj_is_identity_over_zeros(N::Integer, n::Integer, T::DataType
     @test eltype(E) == T
 end
 
-for T in (Float32, Float64)
+@testset "a StiefelProjection is [I; O], $T" for T in REAL_ELTYPES
     for N in 3:5
         for n in 1:N
             stiefel_proj(N, n, T)

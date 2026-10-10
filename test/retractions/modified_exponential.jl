@@ -29,6 +29,7 @@ import JLArrays
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
 include("../helpers/reference_retractions.jl")
 include("../helpers/allocations.jl")
 
@@ -53,7 +54,7 @@ const ALGORITHMS = (ScaledSquaring(), NativePade(), AugmentedPade(), TaylorSerie
 # `0.1` is below every `θ`, so `s = 0`; `40` needs `s = 7` at the default `θ = 1/2`.
 const NORMS = (0.1, 40.0)
 
-@testset "𝔄! is the allocating 𝔄 to the bit, $T" for T in (Float32, Float64)
+@testset "𝔄! is the allocating 𝔄 to the bit, $T" for T in REAL_ELTYPES
     for algorithm in ALGORITHMS, n in (1, 3, 10), (k, nrm) in enumerate(NORMS)
         ws = workspace(T, n)
         X = argument(T, n, nrm, 100n + k)
@@ -68,20 +69,23 @@ const NORMS = (0.1, 40.0)
 end
 
 # The fixture of the test above does reach the recovery step: a dropped step would otherwise pass.
-@testset "the large argument needs halving, $T" for T in (Float32, Float64)
+@testset "the large argument needs halving, $T" for T in REAL_ELTYPES
     X = argument(T, 3, last(NORMS), 302)
+    @test eltype(opnorm₁(X)) == T
     @test opnorm₁(X) > ScaledSquaring().θ
     @test opnorm₁(X) > NativePade().θ
 end
 
 # A second call on the same workspace starts from what the first left in the scratch, so a buffer
 # that is read before it is written shows here.
-@testset "𝔄! does not depend on what the workspace held, $T" for T in (Float32, Float64)
+@testset "𝔄! does not depend on what the workspace held, $T" for T in REAL_ELTYPES
     for algorithm in ALGORITHMS
         ws = workspace(T, 3)
         large, small = argument(T, 3, 40, 1), argument(T, 3, 0.1, 2)
         𝔄!(ws, large, algorithm)
-        @test 𝔄!(ws, small, algorithm) == reference(small, algorithm)
+        result = 𝔄!(ws, small, algorithm)
+        @test eltype(result) == T
+        @test result == reference(small, algorithm)
     end
 end
 
@@ -94,7 +98,7 @@ end
 #
 # The purely imaginary argument has real parts zero, so a norm of the real parts alone is 0 there:
 # it halves nothing, and the kernel then sees an argument of norm 40.
-const COMPLEX = (ComplexF32, ComplexF64)
+const COMPLEX = map(complex, REAL_ELTYPES)
 
 # a purely imaginary `2n × 2n` argument with one-norm `nrm`
 function imaginary_argument(::Type{T}, n, nrm, seed) where {T}
@@ -150,14 +154,16 @@ end
     end
 end
 
-@testset "𝔄! allocates nothing for $(nameof(typeof(algorithm))), $T" for T in (Float32, Float64),
+@testset "𝔄! allocates nothing for $(nameof(typeof(algorithm))), $T" for T in REAL_ELTYPES,
     algorithm in (ScaledSquaring(), NativePade(), TaylorSeries())
 
     ws = workspace(T, 10)
     for nrm in NORMS
         X = argument(T, 10, nrm, 7)
         @test _measured_𝔄!(ws, X, algorithm) == 0
-        @test (@inferred 𝔄!(ws, X, algorithm)) === ws.𝔄X
+        result = @inferred 𝔄!(ws, X, algorithm)
+        @test result === ws.𝔄X
+        @test eltype(result) == T
     end
     # the control: the barrier does see an allocation
     @test _measured_𝔄(argument(T, 10, 0.1, 7), algorithm) > 0
@@ -166,13 +172,14 @@ end
 # Under a tolerance, for the reason `test/helpers/allocations.jl` gives: on Windows the two readings
 # are up to 96 bytes apart. 256 bytes is well below one extra `20 × 20` buffer, 1 600 bytes in
 # `Float32`.
-@testset "AugmentedPade allocates what exp allocates, $T" for T in (Float32, Float64)
+@testset "AugmentedPade allocates what exp allocates, $T" for T in REAL_ELTYPES
     ws = workspace(T, 10)
     for nrm in NORMS
         X = argument(T, 10, nrm, 8)
         measured = _measured_𝔄!(ws, X, AugmentedPade())
         @test n_independent(measured, _measured_exp(ws.augmented); tolerance = 256)
         @test measured > 0
+        @test eltype(ws.𝔄X) == T
     end
 end
 
@@ -181,7 +188,7 @@ end
 # arm64 the two agree to the bit in every row; the test allows `100eps(T)` relative, the rounding of
 # a product chain taken in another order. `TaylorSeries` only at the small argument, where its sum
 # does not cancel.
-@testset "𝔄! runs on a JLArray without scalar indexing, $T" for T in (Float32, Float64)
+@testset "𝔄! runs on a JLArray without scalar indexing, $T" for T in REAL_ELTYPES
     JLArrays.allowscalar(false)
     for (algorithm, nrm) in ((ScaledSquaring(), 0.1), (ScaledSquaring(), 40.0),
         (NativePade(), 0.1), (NativePade(), 40.0), (TaylorSeries(), 0.1))
@@ -189,6 +196,7 @@ end
         ws = RetractionWorkspace(JLBackend(), T, 6, 3)
         result = 𝔄!(ws, JLArray(X), algorithm)
         @test result isa JLArray{T}
+        @test eltype(result) == T
         @test isapprox(Array(result), reference(X, algorithm); rtol = 100eps(T))
     end
 end

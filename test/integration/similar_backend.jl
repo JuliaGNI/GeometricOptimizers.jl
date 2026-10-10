@@ -31,55 +31,62 @@ using NeuralNetworkParameters: NetworkParameters
 using Random
 using Test
 
+include("../helpers/eltypes.jl")
+
 Random.seed!(1234)
 
-const T = Float32
 const N, n = 6, 3
 
-const device = KernelAbstractions.get_backend(JLArray(zeros(T, 1)))
+const device = KernelAbstractions.get_backend(JLArray(zeros(1)))
 
 # An orthonormal representative drawn on the host and moved over, rather than
 # `rand(device, StiefelManifold{T}, N, n)`. The device draw works -- `device_orthonormalization.jl`
 # is where that is the point -- and the host draw is here because it fixes *one* representative for
 # every type below, so a failure names the type rather than the draw.
-const host_point = Matrix(qr!(randn(T, N, n)).Q)[:, 1:n]
-
-point(MT) = MT(JLArray(host_point))
+host_point(T) = Matrix(qr!(randn(Random.Xoshiro(1234), T, N, n)).Q)[:, 1:n]
 
 # Every leaf shape a parameter set or a cache block can hold, on the device. The two lifts are the
 # ones that regressed; the rest are here because the invariant is the same for all of them and
 # because delegating `similar` to a component is easy to lose in a refactor.
-leaves = (
-    plain = JLArray(rand(T, N, n)),
-    symmetric = SymmetricMatrix(JLArray(rand(T, n, n))),
-    skew = SkewSymMatrix(JLArray(rand(T, n, n))),
-    lower = StrictlyLowerTriangular(JLArray(rand(T, n, n))),
-    upper = StrictlyUpperTriangular(JLArray(rand(T, n, n))),
-    stiefhor = StiefelLieAlgHorMatrix(
-        SkewSymMatrix(JLArray(rand(T, n, n))), JLArray(rand(T, N - n, n)), N, n),
-    grasshor = GrassmannLieAlgHorMatrix(JLArray(rand(T, N - n, n)), N, n)
-)
+function leaves(T)
+    rng = Random.Xoshiro(1235)
+    (
+        plain = JLArray(randn(rng, T, N, n)),
+        symmetric = SymmetricMatrix(JLArray(randn(rng, T, n, n))),
+        skew = SkewSymMatrix(JLArray(randn(rng, T, n, n))),
+        lower = StrictlyLowerTriangular(JLArray(randn(rng, T, n, n))),
+        upper = StrictlyUpperTriangular(JLArray(randn(rng, T, n, n))),
+        stiefhor = StiefelLieAlgHorMatrix(
+            SkewSymMatrix(JLArray(randn(rng, T, n, n))), JLArray(randn(rng, T, N - n, n)), N, n),
+        grasshor = GrassmannLieAlgHorMatrix(JLArray(randn(rng, T, N - n, n)), N, n)
+    )
+end
 
-manifolds = (stiefel = point(StiefelManifold), grassmann = point(GrassmannManifold))
+function manifolds(T)
+    (stiefel = StiefelManifold(JLArray(host_point(T))),
+        grassmann = GrassmannManifold(JLArray(host_point(T))))
+end
 
-@testset "a leaf on a device allocates its stand-ins there" begin
-    for (name, x) in pairs(leaves)
+@testset "a leaf on a device allocates its stand-ins there, $T" for T in REAL_ELTYPES
+    for (name, x) in pairs(leaves(T))
         @testset "$name" begin
             @test KernelAbstractions.get_backend(x) == device
             for allocate in (similar, zero, copy, _similar, _zero, _copy)
                 y = allocate(x)
                 @test typeof(y) === typeof(x)
+                @test eltype(y) == T
                 @test KernelAbstractions.get_backend(y) == device
             end
         end
     end
 end
 
-@testset "a lift keeps its backend through the `dims` method too" begin
+@testset "a lift keeps its backend through the `dims` method too, $T" for T in REAL_ELTYPES
     # `similar(A, dims...)` is the method the `AbstractArray` interface reaches; it takes the same
     # two integers and used to lose the backend in the same way
+    ls = leaves(T)
     for name in (:stiefhor, :grasshor)
-        A = leaves[name]
+        A = ls[name]
         @testset "$name" begin
             @test typeof(similar(A, A.N, A.n)) === typeof(A)
             @test KernelAbstractions.get_backend(similar(A, A.N, A.n)) == device
@@ -87,8 +94,8 @@ end
     end
 end
 
-@testset "a manifold point on a device" begin
-    for (name, Y) in pairs(manifolds)
+@testset "a manifold point on a device, $T" for T in REAL_ELTYPES
+    for (name, Y) in pairs(manifolds(T))
         @testset "$name" begin
             # `similar` of a point is an error by design: a point is not storage to be reused, and
             # the message says to use `rand`. `_zero` is the horizontal lift of its tangent space,
@@ -97,6 +104,7 @@ end
 
             for allocate in (zero, _zero, _copy, copy)
                 @test KernelAbstractions.get_backend(allocate(Y)) == device
+                @test eltype(allocate(Y)) == T
             end
             @test _zero(Y) isa GeometricOptimizers.AbstractLieAlgHorMatrix
             @test typeof(copy(Y)) === typeof(Y)
@@ -104,12 +112,13 @@ end
     end
 end
 
-@testset "the cache blocks of a device-resident parameter set agree" begin
+@testset "the cache blocks of a device-resident parameter set agree, $T" for T in REAL_ELTYPES
     # the shape a network actually has: nested, and mixing points with ordinary arrays and with
     # structured matrices
+    ms = manifolds(T)
     ps = NetworkParameters((
-        L1 = (Y = manifolds.stiefel, b = JLArray(rand(T, N))),
-        L2 = (S = leaves.symmetric, G = manifolds.grassmann)))
+        L1 = (Y = ms.stiefel, b = JLArray(randn(Random.Xoshiro(1236), T, N))),
+        L2 = (S = leaves(T).symmetric, G = ms.grassmann)))
 
     x = _copy(ps)
     g = _zero(ps)
@@ -132,6 +141,7 @@ end
     # touches them after allocation
     _fill!(Δg, T(NaN))
     @test KernelAbstractions.get_backend(Δg.L1.Y) == device
+    @test eltype(Δg.L1.b) == T
 
     # and the dispatch a host `Δg` used to make unavailable, for every cache whose three-argument
     # method builds a fourth block this way. `applicable` rather than a constructed cache: the
@@ -143,17 +153,21 @@ end
     @test applicable(GradientCache, x, g, δ, Δg)
 end
 
-@testset "a manifold point is drawn on its own backend" begin
+@testset "a manifold point is drawn on its own backend, $T" for T in REAL_ELTYPES
     # `_similar(::Manifold)` is `rand(backend, manifold_constructor(a){T}, size(a)...)`, and it is
     # the same defect on the state path: `AdamState` and `MomentumState` declare a single `OT` for
     # `x` and `x̄`, and `x̄` is `_similar(x)`, so a device `x` with a host `x̄` did not satisfy it.
     # The device half cannot be exercised on a `JLArray` for the QR reason above, so what is pinned
     # here is that routing the draw through the backend left the host path exactly as it was, point
     # on the manifold included.
-    for Y in (rand(StiefelManifold{T}, N, n), rand(GrassmannManifold{T}, N, n))
-        @test typeof(_similar(Y)) === typeof(Y)
-        @test KernelAbstractions.get_backend(_similar(Y)) ==
-              KernelAbstractions.get_backend(Y)
-        @test GeometricOptimizers.check(_similar(Y)) < 10 * eps(T)
+    rng = Random.Xoshiro(1237)
+    for Y in (rand(rng, StiefelManifold{T}, N, n), rand(rng, GrassmannManifold{T}, N, n))
+        Ȳ = _similar(Y)
+        @test typeof(Ȳ) === typeof(Y)
+        @test eltype(Ȳ) == T
+        @test KernelAbstractions.get_backend(Ȳ) == KernelAbstractions.get_backend(Y)
+        # CholeskyQR2 of a 6 × 3 Gaussian on the host: measured under 4 `eps(T)` over 50 seeds in
+        # both precisions
+        @test GeometricOptimizers.check(Ȳ) < 10 * eps(T)
     end
 end

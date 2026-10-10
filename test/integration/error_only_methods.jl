@@ -10,18 +10,20 @@ using GeometricOptimizers: NoHessian, OptimizerCache, hessian, inverse_hessian,
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
+
 Random.seed!(1234)
 
 struct MethodWithoutState <: OptimizerMethod end
 
-@testset "the manifold guards still refuse, $T" for T in (Float32, Float64)
+@testset "the manifold guards still refuse, $T" for T in REAL_ELTYPES
     for Y in (rand(StiefelManifold{T}, 5, 2), rand(GrassmannManifold{T}, 5, 2))
         @test_throws ErrorException similar(Y)
         @test_throws ErrorException fill!(Y, zero(T))
     end
 end
 
-@testset "Newton refuses a point and a parameter set, $T" for T in (Float32, Float64)
+@testset "Newton refuses a point and a parameter set, $T" for T in REAL_ELTYPES
     for x in (rand(StiefelManifold{T}, 6, 3), rand(GrassmannManifold{T}, 6, 3),
         NetworkParameters((W = rand(T, 3, 3),)))
         @test_throws "Newton optimizes an AbstractVector only" OptimizerState(Newton(), x)
@@ -32,7 +34,7 @@ end
     @test OptimizerState(Newton(), T[1, 2, 3]) isa NewtonState{T}
 end
 
-@testset "a deleted error-only method gives a MethodError, $T" for T in (Float32, Float64)
+@testset "a deleted error-only method gives a MethodError, $T" for T in REAL_ELTYPES
     # `ScalarMomentAdam` takes a single `StiefelManifold`, by its signature
     for x in (T[1, 2, 3], rand(GrassmannManifold{T}, 4, 2), NetworkParameters((W = rand(T, 3),)))
         @test_throws MethodError OptimizerState(ScalarMomentAdam(), x)

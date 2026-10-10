@@ -130,6 +130,15 @@ function storage_gradient(A::StiefelLieAlgHorMatrix, G::AbstractMatrix)
         N, n)
 end
 
+# A cotangent of the lift's own type is the dense `[G.A -G.Bᵀ; G.B 0]` it represents, so the `A`
+# block is a `SkewSymMatrix` cotangent and `∂L/∂B` is `G.B + G.B`.
+function storage_gradient(A::StiefelLieAlgHorMatrix, G::StiefelLieAlgHorMatrix)
+    @assert (G.N, G.n) == (A.N, A.n)
+    B = similar(G.B, eltype(A))
+    B .= G.B .+ G.B
+    StiefelLieAlgHorMatrix(storage_gradient(A.A, G.A), B, A.N, A.n)
+end
+
 function storage_gradient(A::GrassmannLieAlgHorMatrix, G::AbstractMatrix)
     @assert size(G) == (A.N, A.N)
     GrassmannLieAlgHorMatrix(_lift_block_gradient(A, G, A.N, A.n), A.N, A.n)

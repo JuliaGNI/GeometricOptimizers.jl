@@ -3,27 +3,33 @@ using LinearAlgebra: norm
 using GeometricOptimizers
 import Random
 
-Random.seed!(123)
-
+include("../helpers/eltypes.jl")
 include("../helpers/grassmann_test_help.jl")
 
-function stiefel_Ω(N::Integer, n::Integer, T::Type = Float32)
-    Y = rand(StiefelManifold{T}, N, n)
-    Δ = rgrad(Y, rand(T, N, n))
-    GeometricOptimizers.Ω(Y, Δ) * Y.A ≈ Δ
+# `Ω(Y, Δ) * Y` and the tangent vector `Δ` it has to give back.
+function stiefel_Ω(rng, N::Integer, n::Integer, T::Type)
+    Y = rand(rng, StiefelManifold{T}, N, n)
+    Δ = rgrad(Y, rand(rng, T, N, n))
+    GeometricOptimizers.Ω(Y, Δ) * Y.A, Δ
 end
 
-function grassmann_Ω(N::Integer, n::Integer, T::Type = Float32)
-    Y = rand(GrassmannManifold{T}, N, n)
-    Δ = rgrad(Y, rand(T, N, n))
-    GeometricOptimizers.Ω(Y, Δ) * Y.A ≈ Δ
+function grassmann_Ω(rng, N::Integer, n::Integer, T::Type)
+    Y = rand(rng, GrassmannManifold{T}, N, n)
+    Δ = rgrad(Y, rand(rng, T, N, n))
+    GeometricOptimizers.Ω(Y, Δ) * Y.A, Δ
 end
 
-T = Float32
+@testset "Ω, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(123)
+    for N in 3:5
+        for n in 1:N
+            ΩY, Δ = stiefel_Ω(rng, N, n, T)
+            @test eltype(ΩY) == T
+            @test ΩY ≈ Δ
 
-for N in 3:5
-    for n in 1:N
-        @test stiefel_Ω(N, n, T)
-        grassmann_test_help(grassmann_Ω(N, n, T), N, n)
+            ΩY, Δ = grassmann_Ω(rng, N, n, T)
+            @test eltype(ΩY) == T
+            grassmann_test_help(ΩY ≈ Δ, N, n)
+        end
     end
 end

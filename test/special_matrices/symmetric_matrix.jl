@@ -4,43 +4,52 @@ using LinearAlgebra: transpose
 using Test
 import Random
 
-Random.seed!(123)
+include("../helpers/eltypes.jl")
 
 # import ChainRulesTestUtils
 
 symmetrize(W::AbstractMatrix{T}) where {T} = T(0.5) * (W + W')
 
-function sym_mat_add_sub(n::Integer, T::DataType)
-    W₁ = rand(T, n, n)
+function sym_mat_add_sub(rng, n::Integer, T::DataType)
+    W₁ = rand(rng, T, n, n)
     S₁ = SymmetricMatrix(W₁)
-    W₂ = rand(T, n, n)
+    W₂ = rand(rng, T, n, n)
     S₂ = SymmetricMatrix(W₂)
     S₃ = S₁ + S₂
     S₄ = S₁ - S₂
     @test typeof(S₃) <: SymmetricMatrix
     @test typeof(S₄) <: SymmetricMatrix
+    @test eltype(S₃) == T
+    @test eltype(S₄) == T
+    # entries of `rand` are in `[0, 1)`: the reference rounds two sums below 2 (`eps(T)/2` each) and
+    # their sum below 4 (`eps(T)`) and halves exactly, so it is off by at most `eps(T)`; `S₁ ± S₂`
+    # rounds two sums below 2 (`eps(T)/2` each, then halved) and one sum below 2 (`eps(T)/2`), so
+    # by at most `eps(T)` as well. Together `2 eps(T)`.
     @test all(abs.(symmetrize(W₁ + W₂) - S₃) .< 2 * eps(T))
     @test all(abs.(symmetrize(W₁ - W₂) - S₄) .< 2 * eps(T))
 end
 
-function random_generation(N::Integer, T::DataType = Float64)
-    A_sym = rand(SymmetricMatrix{T}, N)
+function random_generation(rng, N::Integer, T::DataType)
+    A_sym = rand(rng, SymmetricMatrix{T}, N)
     @test typeof(A_sym) <: SymmetricMatrix{T}
     @test eltype(A_sym) == T
 end
 
-function multiplication(n::Integer = 5, T::DataType = Float32)
-    A = rand(SymmetricMatrix{T}, n)
-    b = rand(T, n)
-    B = rand(T, n, n)
+function multiplication(rng, n::Integer, T::DataType)
+    A = rand(rng, SymmetricMatrix{T}, n)
+    b = rand(rng, T, n)
+    B = rand(rng, T, n, n)
     # test if the custom multiplication is performed the right way
+    @test eltype(A * b) == T
+    @test eltype(A * B) == T
     @test A * b ≈ Matrix{T}(A) * b
     @test A * B ≈ Matrix{T}(A) * B
 end
 
-function calling_symmetric_matrix(n::Integer = 5, T::DataType = Float32)
-    B = rand(T, n, n)
-    @test isapprox(SymmetricMatrix(B), 0.5*(B + B'))
+function calling_symmetric_matrix(rng, n::Integer, T::DataType)
+    B = rand(rng, T, n, n)
+    @test eltype(SymmetricMatrix(B)) == T
+    @test isapprox(SymmetricMatrix(B), (B + B') / 2)
 end
 
 function test_pullback_routine(n::Integer = 5, T::DataType = Float32)
@@ -50,25 +59,27 @@ function test_pullback_routine(n::Integer = 5, T::DataType = Float32)
     @test ChainRulesTestUtils.rrule(*, A, B)
 end
 
-function scalar_multiplication(n::Integer, T::DataType)
-    A = rand(T, n, n)
-    α = rand(T)
+function scalar_multiplication(rng, n::Integer, T::DataType)
+    A = rand(rng, T, n, n)
+    α = rand(rng, T)
 
     # SymmetricMatrix
     Aα_sym = SymmetricMatrix(α * A)
     Aα_sym2 = α * SymmetricMatrix(A)
+    @test eltype(Aα_sym2) == T
     @test Aα_sym ≈ Aα_sym2
     @test typeof(Aα_sym) <: SymmetricMatrix{T}
     @test typeof(Aα_sym2) <: SymmetricMatrix{T}
 end
 
-for T in (Float32, Float64)
+@testset "SymmetricMatrix projection and arithmetic, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(123)
     for n in 1:5
-        sym_mat_add_sub(n, T)
-        random_generation(n, T)
-        multiplication(n, T)
-        calling_symmetric_matrix(n, T)
-        scalar_multiplication(n, T)
+        sym_mat_add_sub(rng, n, T)
+        random_generation(rng, n, T)
+        multiplication(rng, n, T)
+        calling_symmetric_matrix(rng, n, T)
+        scalar_multiplication(rng, n, T)
     end
 end
 
@@ -100,12 +111,15 @@ end
 # `skew_symmetric.jl`: `SymmetricMatrix` is the set `{M : Mᵀ = M}`, so the projection and
 # `*(::AbstractMatrix, ::SymmetricMatrix)` both spell it `transpose`. With `adjoint` the product
 # returns `B·conj(A)`, which the real path cannot tell from `B·A`.
-@testset "the projection and the product are transposes on a complex element type" begin
-    A = randn(ComplexF64, 4, 4)
+@testset "the projection and the product are transposes on a complex element type, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(123)
+    A = randn(rng, Complex{T}, 4, 4)
     S = SymmetricMatrix(A)
-    B = randn(ComplexF64, 3, 4)
-    v = randn(ComplexF64, 4)
+    B = randn(rng, Complex{T}, 3, 4)
+    v = randn(rng, Complex{T}, 4)
 
+    @test eltype(S) == Complex{T}
+    @test eltype(B * S) == Complex{T}
     @test Matrix(S) ≈ (A + transpose(A)) / 2
     @test transpose(Matrix(S)) == Matrix(S)
     @test B * S ≈ B * Matrix(S)
@@ -117,9 +131,10 @@ end
     @test Matrix(S') ≈ Matrix(S)'
     @test Matrix(S') ≉ transpose(Matrix(S))
 
-    Ar = randn(4, 4)
+    Ar = randn(rng, T, 4, 4)
     Sr = SymmetricMatrix(Ar)
-    Br = randn(3, 4)
+    Br = randn(rng, T, 3, 4)
+    @test eltype(Br * Sr) == T
     @test Matrix(Sr) ≈ (Ar + transpose(Ar)) / 2
     @test Matrix(Sr) ≈ (Ar + Ar') / 2
     @test Br * Sr ≈ Br * Matrix(Sr)
@@ -130,12 +145,13 @@ end
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::SymmetricMatrix)` does not settle
 # on its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on
 # the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it.
-@testset "a row vector times a SymmetricMatrix" begin
-    for T in (Float32, Float64), N in 2:5
+@testset "a row vector times a SymmetricMatrix, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(123)
+    for N in 2:5
+        A = rand(rng, SymmetricMatrix{T}, N)
+        v = rand(rng, T, N)
 
-        A = rand(SymmetricMatrix{T}, N)
-        v = rand(T, N)
-
+        @test eltype(v' * A) == T
         @test v' * A ≈ v' * Matrix(A)
         @test transpose(v) * A ≈ transpose(v) * Matrix(A)
         @test size(v' * A) == (1, N)

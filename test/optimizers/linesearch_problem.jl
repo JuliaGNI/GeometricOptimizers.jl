@@ -14,6 +14,7 @@ using NeuralNetworkParameters: NetworkParameters
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
 include("../helpers/reference_retractions.jl")
 include("../helpers/allocations.jl")
 
@@ -22,8 +23,9 @@ manifold(::Val{:Grassmann}) = GrassmannManifold
 
 # a BFGS optimizer on the point, its cache warmed through one `update!`
 function slope_fixture(lift, ::Type{T}; N = 6) where {T}
+    # the global seed is for the frame each `GlobalSection` completes, which draws from the global RNG
     Random.seed!(1234)
-    Y = rand(manifold(Val(lift)){T}, N, 3)
+    Y = rand(Random.Xoshiro(1234), manifold(Val(lift)){T}, N, 3)
     F(Z) = sum(abs2, Z .- T(0.3)) + sum(sin.(Z))
     opt = Optimizer(Y, F; algorithm = BFGS(), retraction = Cayley())
     state = OptimizerState(BFGS(), Y)
@@ -50,7 +52,7 @@ function measured_slope(f, α)
 end
 
 @testset "trial_slope allocates as much at α = 0.5 as at α = 0, $lift, $T" for lift in (:Stiefel, :Grassmann),
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     f = slope_fixture(lift, T)
     trial_iterate!(f.cache, f.params, T(0.5), Cayley(), f.workspace)
@@ -63,6 +65,7 @@ end
     @test (@inferred trial_slope(
         gradient(f.opt), f.cache, Cayley(), T(0.5), f.differential,
         f.workspace)) isa T
+    @test eltype(slope_at(f, T(0.5))) == T
 end
 
 # The same equality through `φ'` of the line search the `Optimizer` built: the problem passes its own
@@ -92,7 +95,7 @@ end
 
 @testset "φ' of the optimizer's line search allocates as much at α = 0.5 as at α = 0, $lift, $T" for lift in (
         :Stiefel, :Grassmann),
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     f = slope_fixture(lift, T; N = 40)
     D = linesearch(f.opt).problem.D
@@ -106,8 +109,10 @@ end
 # the `Optimizer` built: the `NetworkParameters` method of `retraction_differential!` walks the
 # leaves with the optimizer's tree of workspaces, and its slope is the allocating differential's.
 function mixed_fixture(lift, ::Type{T}) where {T}
-    Random.seed!(7)
-    ps = NetworkParameters((w = rand(manifold(Val(lift)){T}, 6, 3), b = randn(T, 4)))
+    Random.seed!(7)                    # for the frame of the `GlobalSection`, as above
+    rng = Random.Xoshiro(7)
+    ps = NetworkParameters((
+        w = rand(rng, manifold(Val(lift)){T}, 6, 3), b = randn(rng, T, 4)))
     F(p) = sum(abs2, p.w .- T(0.3)) + sum(sin.(p.w)) + sum(abs2, p.b) + sum(p.b)
     opt = Optimizer(ps, F; algorithm = BFGS(), retraction = Cayley())
     state = OptimizerState(BFGS(), ps)
@@ -119,7 +124,7 @@ end
 
 @testset "φ' on a mixed parameter set is the slope of the allocating differential, $lift, $T" for lift in (
         :Stiefel, :Grassmann),
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     f = mixed_fixture(lift, T)
     D = linesearch(f.opt).problem.D
@@ -127,19 +132,21 @@ end
         slope = D(α, f.params)
         g = global_rep(section(f.cache), gradient(f.opt)(solution(f.cache)))
         @test slope isa T
+        @test eltype(slope) == T
         @test slope == _dot(g, retraction_differential(Cayley(), direction(f.cache), α))
     end
 end
 
 @testset "trial_slope is the slope of the allocating differential, $lift, $T" for lift in (:Stiefel,
         :Grassmann),
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     f = slope_fixture(lift, T)
     for α in T.((0, 0.5, 2))
         slope = slope_at(f, α)
         g = global_rep(section(f.cache), gradient(f.opt)(solution(f.cache)))
         @test slope isa T
+        @test eltype(slope) == T
         @test slope == _dot(g, reference_cayley_differential(direction(f.cache), α))
     end
 end

@@ -4,11 +4,15 @@ using GeometricOptimizers
 using GeometricOptimizers: Ω, metric, geodesic
 import Random
 
-Random.seed!(123)
+include("../helpers/eltypes.jl")
 
-function correct_format(n::Integer, N::Integer, T::DataType)
-    A_skew = rand(SkewSymMatrix{T}, N)
+function correct_format(rng, n::Integer, N::Integer, T::DataType)
+    A_skew = rand(rng, SkewSymMatrix{T}, N)
     A_hor = StiefelLieAlgHorMatrix(A_skew, n)
+    @test eltype(A_hor) == T
+
+    # the horizontal part copies entries of `A_skew` and does no arithmetic on them, so every
+    # difference below is exactly zero and `eps(T)` is a bound with room to spare
 
     for i in 1:n
         for j in 1:N
@@ -26,10 +30,10 @@ function correct_format(n::Integer, N::Integer, T::DataType)
     end
 end
 
-function metric_test(n::Integer, N::Integer, T::DataType)
-    Y = rand(StiefelManifold{T}, N, n)
-    Δ₁ = rgrad(Y, rand(T, N, n))
-    Δ₂ = rgrad(Y, rand(T, N, n))
+function metric_test(rng, n::Integer, N::Integer, T::DataType)
+    Y = rand(rng, StiefelManifold{T}, N, n)
+    Δ₁ = rgrad(Y, rand(rng, T, N, n))
+    Δ₂ = rgrad(Y, rand(rng, T, N, n))
     @test T(0.5) * tr(Ω(Y, Δ₁)' * Ω(Y, Δ₂)) ≈ metric(Y, Δ₁, Δ₂)
     # A bare `Float64` literal anywhere in `metric` hands a `StiefelManifold{Float32}` a `Float64`
     # back, and returns nothing at all on a backend that has no `Float64`, e.g. Metal.
@@ -39,18 +43,20 @@ end
 # This multiplies the adjoint of a `StiefelManifold` by another `StiefelManifold` and checks the
 # result equals `Y.A' * Z.A`, i.e. that both operands are unwrapped and their underlying storage is
 # multiplied. It runs over the same `(N, n, T)` sweep as `correct_format` and `metric_test`.
-function adjoint_mul_test(n::Integer, N::Integer, T::DataType)
-    Y = rand(StiefelManifold{T}, N, n)
-    Z = rand(StiefelManifold{T}, N, n)
+function adjoint_mul_test(rng, n::Integer, N::Integer, T::DataType)
+    Y = rand(rng, StiefelManifold{T}, N, n)
+    Z = rand(rng, StiefelManifold{T}, N, n)
     @test Y' * Z ≈ Y.A' * Z.A
+    @test eltype(Y' * Z) == T
 end
 
-for N in (20, 10)
-    for n in (5, 3)
-        for T in (Float64, Float32)
-            correct_format(n, N, T)
-            metric_test(n, N, T)
-            adjoint_mul_test(n, N, T)
+@testset "Stiefel manifold, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(123)
+    for N in (20, 10)
+        for n in (5, 3)
+            correct_format(rng, n, N, T)
+            metric_test(rng, n, N, T)
+            adjoint_mul_test(rng, n, N, T)
         end
     end
 end
@@ -67,13 +73,16 @@ end
 # on its own: `LinearAlgebra` has its own method for that left operand, narrower there and wider on
 # the right, so neither wins. The two row-vector methods in `src/ambiguities.jl` settle it. `Y` is
 # rectangular, so a method that swapped or dropped an operand would not conform.
-@testset "a row vector times a StiefelManifold" begin
-    for T in (Float32, Float64), N in (20, 10), n in (5, 3)
-        Y = rand(StiefelManifold{T}, N, n)
-        v = rand(T, N)
+@testset "a row vector times a StiefelManifold, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(321)
+    for N in (20, 10), n in (5, 3)
+
+        Y = rand(rng, StiefelManifold{T}, N, n)
+        v = rand(rng, T, N)
 
         @test v' * Y ≈ v' * Matrix(Y)
         @test transpose(v) * Y ≈ transpose(v) * Matrix(Y)
         @test size(v' * Y) == (1, n)
+        @test eltype(v' * Y) == T
     end
 end

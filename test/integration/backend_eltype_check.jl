@@ -13,6 +13,8 @@ using KernelAbstractions: KernelAbstractions, CPU, GPU
 using Random
 using Test
 
+include("../helpers/eltypes.jl")
+
 Random.seed!(2026)
 
 struct _Float64GPU <: GPU end
@@ -52,20 +54,18 @@ end
 const KERNEL_LAUNCHING = ("StiefelProjection", "unit_matrix")
 runnable(as) = filter(p -> first(p) ∉ KERNEL_LAUNCHING, collect(as))
 
-@testset "a backend that carries Float64 allocates one" begin
-    for T in (Float32, Float64), (name, allocate) in runnable(allocators(T))
-
-        @testset "$name $T" begin
+@testset "a backend that carries Float64 allocates one, $T" for T in REAL_ELTYPES
+    for (name, allocate) in runnable(allocators(T))
+        @testset "$name" begin
             A = allocate(_Float64GPU())
             @test eltype(A) === T
         end
     end
 end
 
-@testset "the host is untouched in both widths" begin
-    for T in (Float32, Float64), (name, allocate) in allocators(T)
-
-        @testset "$name $T" begin
+@testset "the host is untouched in both widths, $T" for T in REAL_ELTYPES
+    for (name, allocate) in allocators(T)
+        @testset "$name" begin
             A = allocate(CPU())
             @test eltype(A) === T
         end
@@ -74,35 +74,33 @@ end
 
 # `SymmetricMatrix`'s backend-taking allocators mirror `SkewSymMatrix`'s, which is what these
 # assert: the two types are optimizer parameters in the same way and are placed on a device alike.
-@testset "SymmetricMatrix allocates on a backend as SkewSymMatrix does" begin
-    for T in (Float32, Float64)
-        Z = zeros(_Float64GPU(), SymmetricMatrix{T}, n)
-        @test Z isa SymmetricMatrix{T}
-        @test Z == zeros(SymmetricMatrix{T}, n)
-        @test all(iszero, parent(Z))
+@testset "SymmetricMatrix allocates on a backend as SkewSymMatrix does, $T" for T in REAL_ELTYPES
+    Z = zeros(_Float64GPU(), SymmetricMatrix{T}, n)
+    @test Z isa SymmetricMatrix{T}
+    @test eltype(Z) == T
+    @test Z == zeros(SymmetricMatrix{T}, n)
+    @test all(iszero, parent(Z))
 
-        A = rand(Random.MersenneTwister(11), _Float64GPU(), SymmetricMatrix{T}, n)
-        @test A isa SymmetricMatrix{T}
-        @test size(A) == (n, n)
-        @test A == A'
-        # the storage is `n(n+1)/2`, not `n(n-1)/2`: the diagonal is carried
-        @test length(parent(A)) == n * (n + 1) ÷ 2
-    end
+    A = rand(Random.MersenneTwister(11), _Float64GPU(), SymmetricMatrix{T}, n)
+    @test A isa SymmetricMatrix{T}
+    @test eltype(A) == T
+    @test size(A) == (n, n)
+    @test A == A'
+    # the storage is `n(n+1)/2`, not `n(n-1)/2`: the diagonal is carried
+    @test length(parent(A)) == n * (n + 1) ÷ 2
 end
 
 # `GrassmannLieAlgHorMatrix`'s backend-taking `rand` mirrors `StiefelLieAlgHorMatrix`'s, as its
 # backend-taking `zeros` does.
-@testset "GrassmannLieAlgHorMatrix draws on a backend as StiefelLieAlgHorMatrix does" begin
-    for T in (Float32, Float64)
-        B = rand(
-            Random.MersenneTwister(11), _Float64GPU(), GrassmannLieAlgHorMatrix{T}, N, n)
-        @test B isa GrassmannLieAlgHorMatrix{T}
-        @test size(B) == (N, N)
-        @test B.N == N && B.n == n
-        @test size(B.B) == (N - n, n)
+@testset "GrassmannLieAlgHorMatrix draws on a backend as StiefelLieAlgHorMatrix does, $T" for T in REAL_ELTYPES
+    B = rand(Random.MersenneTwister(11), _Float64GPU(), GrassmannLieAlgHorMatrix{T}, N, n)
+    @test B isa GrassmannLieAlgHorMatrix{T}
+    @test eltype(B) == T
+    @test size(B) == (N, N)
+    @test B.N == N && B.n == n
+    @test size(B.B) == (N - n, n)
 
-        # and the rng-less spelling, which is what the Stiefel one has
-        @test rand(_Float64GPU(), GrassmannLieAlgHorMatrix{T}, N, n) isa
-              GrassmannLieAlgHorMatrix{T}
-    end
+    # and the rng-less spelling, which is what the Stiefel one has
+    @test rand(_Float64GPU(), GrassmannLieAlgHorMatrix{T}, N, n) isa
+          GrassmannLieAlgHorMatrix{T}
 end

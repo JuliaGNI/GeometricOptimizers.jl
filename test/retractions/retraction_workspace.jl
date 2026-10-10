@@ -18,6 +18,7 @@ using LinearAlgebra: LinearAlgebra, I, mul!
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
 include("../helpers/reference_retractions.jl")
 include("../helpers/allocations.jl")
 
@@ -56,14 +57,16 @@ function reference_geodesic(B, algorithm)
 end
 
 @testset "lift_factors! allocates nothing, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     f = fixture(LT, T, 6, 3)
     @test _measured_lift_factors(f.ws, f.B) == 0
+    @test eltype(f.ws.B̂) == T
+    @test eltype(f.ws.B̄ᵗ) == T
 end
 
 @testset "the geodesic in a workspace is the allocating one, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     for algorithm in (ScaledSquaring(), NativePade(), AugmentedPade(), TaylorSeries()),
         (N, n) in ((6, 3), (6, 1), (20, 10))
@@ -79,7 +82,7 @@ end
 # the workspace that holds all of it answers. Its arrays keep their type, so the type of the
 # workspace does not depend on the retraction.
 @testset "a workspace built for its retraction, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     Y = rand(Random.Xoshiro(1), manifold(LT){T}, 20, 10)
     B = T(3) * rand(Random.Xoshiro(2), LT{T}, 20, 10)
@@ -89,13 +92,16 @@ end
         own = retraction_workspace(Y, R)
         @test typeof(own) == typeof(full)
         @test Base.summarysize(own) < Base.summarysize(full)
-        @test retraction_matrix!(own, R, B) == retraction_matrix!(full, R, B)
+        result = retraction_matrix!(own, R, B)
+        @test eltype(result) == T
+        @test result == retraction_matrix!(full, R, B)
     end
 
     own = retraction_workspace(Y, Cayley())
     D, D_full = _similar(B), _similar(B)
-    @test retraction_differential!(D, own, Cayley(), B, 0.5) ==
-          retraction_differential!(D_full, full, Cayley(), B, 0.5)
+    result = retraction_differential!(D, own, Cayley(), B, 0.5)
+    @test eltype(result) == T
+    @test result == retraction_differential!(D_full, full, Cayley(), B, 0.5)
     @test _measured_differential!(D, own, Cayley(), B, 0.5) == 0
     # a `Cayley` workspace has no `𝔄!` scratch, and a geodesic in it raises
     @test_throws DimensionMismatch retraction_matrix!(own, Geodesic(), B)
@@ -105,22 +111,23 @@ end
 # evaluates is `𝔄!`, in the workspace. One extra `20 × 20` `Float32` buffer is 1 600 bytes, above
 # the tolerance.
 @testset "a geodesic in a workspace allocates what lift_factors! does, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     for algorithm in (ScaledSquaring(), NativePade(), TaylorSeries()), scale in (0.01, 3)
 
         f = fixture(LT, T, 20, 10; scale = scale)
         @test n_independent(_measured_retraction(f.ws, Geodesic(algorithm), f.B),
             _measured_lift_factors(f.ws, f.B))
-        @test (@inferred retraction_matrix!(f.ws, Geodesic(algorithm), f.B)) ===
-              f.ws.retracted
+        result = @inferred retraction_matrix!(f.ws, Geodesic(algorithm), f.B)
+        @test result === f.ws.retracted
+        @test eltype(result) == T
     end
 end
 
 const ALPHAS = (0.5, -0.3, 2.0)
 
 @testset "retraction_differential! is the allocating differential to the bit, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     for (N, n) in ((6, 3), (6, 1), (20, 4), (6, 6)), α in ALPHAS
 
@@ -136,25 +143,27 @@ const ALPHAS = (0.5, -0.3, 2.0)
 end
 
 @testset "at α = 0 the differential is B, copied, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     f = fixture(LT, T, 6, 3)
     D = _similar(f.B)
     @test retraction_differential!(D, f.ws, Cayley(), f.B, 0) === D
+    @test eltype(D) == T
     @test D == f.B
     @test D !== f.B
     @test retraction_differential(Cayley(), f.B, 0) === f.B
 end
 
 @testset "a zero lift, a reused workspace, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     # a zero lift at α ≠ 0: every quantity is exact, and the in-place answer is the allocating one
     f = fixture(LT, T, 6, 3)
     zero_lift = zero(f.B)
     D = _similar(f.B)
-    @test retraction_differential!(D, f.ws, Cayley(), zero_lift, 0.5) ==
-          reference_cayley_differential(zero_lift, 0.5)
+    result = retraction_differential!(D, f.ws, Cayley(), zero_lift, 0.5)
+    @test eltype(result) == T
+    @test result == reference_cayley_differential(zero_lift, 0.5)
 
     # the differential reads nothing a geodesic left in the shared scratch
     other = fixture(LT, T, 6, 3; seed = 99, scale = 5).B
@@ -166,7 +175,7 @@ end
 # `\` raises on a matrix with an `Inf` or a `NaN`, through the `chkfinite` of its `lu`; the in-place
 # solve raises the same error through the `chkfinite` of `getrf!`.
 @testset "a NaN or an Inf raises as `\\` does, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     f = fixture(LT, T, 6, 3)
     D = _similar(f.B)
@@ -185,8 +194,8 @@ end
 # `det(𝕀 - aB̄ᵗB̂) = det(𝕀 - aB)` and a real skew `B` has no real eigenvalue but zero. A complex
 # lift can: the lift of `b = 2im` at `N = 2`, `n = 1` has the eigenvalues `±2`, so at `α = 1`,
 # where `a = 1/2`, both `𝕀 ∓ aB̄ᵗB̂` are singular.
-@testset "a singular solve raises as `\\` does, for a StiefelLieAlgHorMatrix{$T}" for T in (
-    ComplexF32, ComplexF64)
+@testset "a singular solve raises as `\\` does, for a StiefelLieAlgHorMatrix{$T}" for T in map(
+    complex, REAL_ELTYPES)
     B = StiefelLieAlgHorMatrix(SkewSymMatrix(zeros(T, 1, 1)), T[2im;;], 2, 1)
     ws = retraction_workspace(StiefelManifold(T[1; 0;;]))
     D = _similar(B)
@@ -196,13 +205,15 @@ end
 end
 
 @testset "retraction_differential! allocates nothing, for a $(nameof(LT)){$T}" for LT in LIFT_TYPES,
-    T in (Float32, Float64)
+    T in REAL_ELTYPES
 
     f = fixture(LT, T, 6, 3)
     D = _similar(f.B)
     for α in (0.5, 0)
         @test _measured_differential!(D, f.ws, Cayley(), f.B, α) == 0
-        @test (@inferred retraction_differential!(D, f.ws, Cayley(), f.B, α)) === D
+        result = @inferred retraction_differential!(D, f.ws, Cayley(), f.B, α)
+        @test result === D
+        @test eltype(result) == T
     end
     # the control: the barrier does see an allocation
     @test _measured_differential(Cayley(), f.B, 0.5) > 0
