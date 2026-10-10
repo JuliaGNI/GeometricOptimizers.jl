@@ -93,7 +93,7 @@ end
 # `512eps(T)` is a factor 4.5 over the measured worst case. `NativePade`'s `[7/6]` approximant is
 # exact through the `X¹²` term. With the `X⁶` term of its numerator dropped, the error here was
 # measured at `1.6e-13` to `4.6e-13` (`720eps` to `2060eps`) at five of the sixteen `Float64` lifts,
-# which this bound catches and `1e-10` did not; in `Float32` it is below round-off.
+# which this bound catches and a bound of `1e-10` would not; in `Float32` it is below round-off.
 @testset "NativePade agrees with AugmentedPade across manifolds, $T" for T in REAL_ELTYPES
     N, n = 20, 3
     for (_, lift) in LIFTS, s in NORM_SCALES
@@ -239,8 +239,8 @@ end
 # number, which is the part that could silently regress.
 #
 # Both sum the same `m` absolute values per column, in an order that may differ, so they agree to the
-# rounding of a sum of `m ≤ 20` positive terms; `8eps(T)` was the bound this testset carried, and the
-# measured worst over fifty `6 × 6` draws of `𝔄` is `1.0eps(T)` in `Float32` and `0` in `Float64`.
+# rounding of a sum of `m ≤ 20` positive terms; the bound is `8eps(T)`, and the measured worst over
+# fifty `6 × 6` draws of `𝔄` is `1.0eps(T)` in `Float32` and `0` in `Float64`.
 @testset "the scaling threshold is the 1-norm, taken as a reduction, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(99)
 
@@ -271,33 +271,38 @@ end
 # rather than a description. It is task-global and left set: everything after this point is an
 # `Array`, which never consults it.
 #
-# The argument is skew: `exp` of a general `8 × 8` argument of this norm overflows `Float32`, and that
-# of a skew one is orthogonal, so the same scaling path runs in both precisions. The reference is
-# `AugmentedPade` of the argument in `Float64`. Measured worst relative error over five seeds:
-# `32eps(T)` in `Float32`, `191eps(T)` in `Float64`, under `exponential_tolerance(T)`.
+# Two arguments. A skew one of norm several hundred, whose `exp` is orthogonal in either precision.
+# And a general one, not normal, as `𝔄`'s arguments `(B'')ᵀB'` are not; its scale 15 keeps `exp`
+# finite in `Float32` and `‖X‖₁` above 100. The reference is `AugmentedPade` of the argument in
+# `Float64`. Measured worst relative error over five seeds: `32eps(T)` in `Float32` and `191eps(T)`
+# in `Float64` for the skew argument, `52eps(T)` and `78eps(T)` for the general one, under
+# `exponential_tolerance(T)`.
 @testset "ScaledSquaring and NativePade do not require scalar indexing, $T" for T in REAL_ELTYPES
     allowscalar(false)
 
     rng = Random.Xoshiro(52)
     entries = randn(rng, T, 8, 8)
-    dense = T(50) * (entries - entries')
-    X = JLArray(dense)
-    reference = 𝔄(Matrix{Float64}(dense), AugmentedPade())
+    skew = T(50) * (entries - entries')
+    general = T(15) * randn(rng, T, 8, 8)
+    for dense in (skew, general)
+        X = JLArray(dense)
+        reference = 𝔄(Matrix{Float64}(dense), AugmentedPade())
 
-    # ‖X‖₁ is several hundred, so both take the scaling path with about ten squarings on top of it,
-    # and both build the 8×8 identity they need on the backend rather than through `Base.one`.
-    @test opnorm₁(X) > 100
-    for algorithm in (ScaledSquaring(), NativePade())
-        result = 𝔄(X, algorithm)
-        @test result isa JLArray
-        @test eltype(result) == T
-        @test Array(result) ≈ reference rtol = exponential_tolerance(T)
+        # ‖X‖₁ is above 100, so both take the scaling path with squarings on top of it, and both
+        # build the 8×8 identity they need on the backend rather than through `Base.one`.
+        @test opnorm₁(X) > 100
+        for algorithm in (ScaledSquaring(), NativePade())
+            result = 𝔄(X, algorithm)
+            @test result isa JLArray
+            @test eltype(result) == T
+            @test Array(result) ≈ reference rtol = exponential_tolerance(T)
+        end
     end
 
     # `Base.one(::AbstractMatrix)`, the scalar-indexed diagonal write A19 named, spelled out rather
     # than left implicit in the two calls above: this is the substitution they depend on.
-    @test unit_matrix(X) isa JLArray
-    @test Array(unit_matrix(X)) == one(dense)
+    @test unit_matrix(JLArray(skew)) isa JLArray
+    @test Array(unit_matrix(JLArray(skew))) == one(skew)
 end
 
 # `𝔄exp`'s defining property, ``\mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T = \exp(B'(B'')^T)``,

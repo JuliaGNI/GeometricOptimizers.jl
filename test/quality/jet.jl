@@ -111,13 +111,33 @@ end
 # gets a line that analyses the generated `cpu_<kernel>` function directly, at the
 # `CompilerMetadata` context that the launcher builds. This uses internals of
 # KernelAbstractions (`launch_config`, `mkcontext`, `blocks`, `Kernel.f`).
-function kernel_body_reports(kernel, ndrange, args...)
+function kernel_body(kernel, ndrange, args...)
     k = kernel(CPU())
     nd, _, iterspace, dynamic = KernelAbstractions.launch_config(k, ndrange, nothing)
     ctx = KernelAbstractions.mkcontext(
         k, first(KernelAbstractions.blocks(iterspace)), nd, iterspace, dynamic)
-    JET.get_reports(JET.report_opt(k.f, (typeof(ctx), map(typeof, args)...);
+    k.f, (typeof(ctx), map(typeof, args)...)
+end
+
+function kernel_body_reports(kernel, ndrange, args...)
+    f, types = kernel_body(kernel, ndrange, args...)
+    JET.get_reports(JET.report_opt(f, types;
         target_modules = (JET.AnyFrameModule(GeometricOptimizers),)))
+end
+
+# JET gives no report for a dynamic dispatch on the array that a kernel body writes, a statement
+# with two line entries. The optimised IR of the body holds it: a `:call` whose callee is not
+# a builtin or an intrinsic dispatches at run time, where a static call is an `:invoke`. This counts
+# those calls, with Base only, so it runs where JET does not.
+function kernel_body_dynamic_calls(kernel, ndrange, args...)
+    f, types = kernel_body(kernel, ndrange, args...)
+    code = first(only(code_typed(f, types; optimize = true))).code
+    count(code) do statement
+        Meta.isexpr(statement, :call) || return false
+        callee = statement.args[1]
+        callee isa GlobalRef && (callee = getfield(callee.mod, callee.name))
+        !(callee isa Core.Builtin || callee isa Core.IntrinsicFunction)
+    end
 end
 
 @testset "JET" begin
@@ -135,7 +155,11 @@ end
         @test isempty(JET.get_reports(JET.report_opt(
             _manifold_αmax, (Wide32, Wide32, Float32); target_modules = GO_FOLD)))
         # the manifold arm, `_block_αmax(::Manifold, δ, c)` and `step_αmax`: a set with a Stiefel
-        # leaf one level down, as `test/integration/network_parameters_optimizer.jl` calls it
+        # leaf one level down, as `test/integration/network_parameters_optimizer.jl` calls it. A
+        # barrier on the leaf `yᵢ` in the closure of `_manifold_αmax` gives no report here, and needs
+        # none: the optimiser splits the call on `isa(_, Manifold)` across the two methods of
+        # `_block_αmax`, so the optimised IR holds no dynamic call, the return type is `T`, and the
+        # call allocates 0 bytes.
         for T in REAL_ELTYPES
             ps = stiefel_set(T)
             @test isempty(JET.get_reports(JET.report_opt(
@@ -223,4 +247,11 @@ end
     else
         @test_skip "JET does not work on Julia $(VERSION)"  # aviatesk/JET.jl#681
     end
+end
+
+# the two kernel bodies that write a diagonal, at the arguments of their `kernel_body_reports` lines
+@testset "a kernel body that writes a diagonal holds no dynamic call, $T" for T in REAL_ELTYPES
+    @test kernel_body_dynamic_calls(write_ones_kernel!, 3, zeros(T, 3, 3)) == 0
+    @test kernel_body_dynamic_calls(
+        assign_ones_for_stiefel_projection_kernel!, 3, zeros(T, 6, 3)) == 0
 end

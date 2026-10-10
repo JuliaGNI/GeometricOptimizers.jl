@@ -103,7 +103,6 @@ end
     @test n_independent(_measured_derivative(D, T(0.5), f.params),
         _measured_move(f.cache, f.params, T(0.5), f.workspace) + measured_slope(f, T(0.5)))
     @test D(T(0.5), f.params) isa T
-    @test eltype(D(T(0.5), f.params)) == T
 end
 
 # A parameter set that mixes a manifold leaf with an ordinary array, through `φ'` of the line search

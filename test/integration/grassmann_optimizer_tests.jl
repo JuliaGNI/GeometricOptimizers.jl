@@ -96,7 +96,7 @@ linesearch_for(::Type{T}, algorithm) where {T} = algorithm isa Adam ? Bisection(
 # `check` measures the deviation from the manifold, so this is a round-off tolerance. The worst
 # observed over every case below and three seeds is 222eps(T) in `Float64` (the two kinds of manifold
 # side by side) and 25eps(T) in `Float32`.
-manifold_tolerance(::Type{T}) where {T} = 1000 * eps(T)
+grassmann_manifold_tolerance(::Type{T}) where {T} = 1000 * eps(T)
 
 # The distance between the projectors, which is the distance between *subspaces*. The objective is
 # quadratic at its minimiser, so a solve stops within a multiple of `√eps(T)` of it. The worst observed
@@ -119,7 +119,7 @@ end
 
         @test x isa GrassmannManifold{T}                                    # the type is preserved
         @test eltype(x) == T
-        @test check(x) < manifold_tolerance(T)                              # and so is the manifold
+        @test check(x) < grassmann_manifold_tolerance(T)                              # and so is the manifold
         @test isconverged(status(result))
         @test norm(x * x' - dominant_projector(T, N, n)) < subspace_tolerance(T)
         @test f(x) < f(x₀)                                                  # it improved on the start
@@ -151,7 +151,7 @@ end
 
         @test ps.Y isa GrassmannManifold{T}
         @test eltype(ps.W) == T
-        @test check(ps.Y) < manifold_tolerance(T)
+        @test check(ps.Y) < grassmann_manifold_tolerance(T)
         @test isconverged(status(result))
         @test norm(ps.Y * ps.Y' - dominant_projector(T, 5, 2)) < subspace_tolerance(T)
         @test norm(ps.W .- c) < subspace_tolerance(T)      # the Euclidean block converged too
@@ -183,8 +183,8 @@ end
         @test ps.Y isa GrassmannManifold{T}             # each block keeps its own manifold type
         @test ps.S isa StiefelManifold{T}
         @test eltype(ps.Y) == T
-        @test check(ps.Y) < manifold_tolerance(T)
-        @test check(ps.S) < manifold_tolerance(T)
+        @test check(ps.Y) < grassmann_manifold_tolerance(T)
+        @test check(ps.S) < grassmann_manifold_tolerance(T)
         @test isconverged(status(result))
         @test norm(ps.Y * ps.Y' - dominant_projector(T, 5, 2)) < subspace_tolerance(T)
         @test norm(ps.S * ps.S' - dominant_projector(T, 5, 1)) < subspace_tolerance(T)

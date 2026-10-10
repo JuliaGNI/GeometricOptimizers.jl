@@ -143,9 +143,10 @@ end
     @test Y₂.A isa JLArray{T, 2}
     @test eltype(Y₂) == T
     # `‖Y₂ᵀY₂ - I‖` after a section, a scaled-and-squared exponential and two `N`-term products.
-    # Measured over 50 seeds: at most 5 `eps(T)` in `Float32` and 59 `eps(T)` in `Float64`, the
-    # latter from the device section's heavy tail that `device_orthonormalization.jl` describes.
-    # The bound is the one this testset had.
+    # Measured over 50 seeds, with the point and the section's completion drawn from independent
+    # streams: at most 3.1 `eps(T)` in `Float32` and 2.8 `eps(T)` in `Float64`. A completion that
+    # repeats the point's numbers puts the section itself off by up to 2e4 `eps(T)` (K25 in
+    # `KNOWN_ISSUES.md`).
     @test check(Y₂) < 1000 * eps(T)
 end
 

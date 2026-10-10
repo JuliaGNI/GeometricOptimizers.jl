@@ -365,10 +365,10 @@ end
     # change can touch; every *searching* one is at 1.8e-8 or better, against the 6.8e-6 that
     # `BierlaireQuadratic` used to sit at while exhausting the cap.
     #
-    # The distance tolerance is now `sphere_tolerance(T)`, 1.5e-7 in `Float64`. On this seed of the
+    # The distance tolerance is `sphere_tolerance(T)`, 1.5e-7 in `Float64`. On this seed of the
     # global RNG every pair converges. With `Random.seed!(1)` or `(2)` instead, `Adam` + `Static`
     # runs out the 1000 iterations in `Float64` under both retractions, at 2.3e-3 to 4.5e-3 from
-    # the minimiser; `Float32` converges on all three seeds.
+    # the minimiser; `Float32` converges on all three seeds (K31 in `KNOWN_ISSUES.md`).
     for linesearch in nt_linesearches(T), retraction in (Geodesic(), Cayley())
 
         ps = ps₀(T)
@@ -465,7 +465,7 @@ end
     @test status(result).rxₐ < sqrt(eps(T))
     # The one tolerance of this file with a part that is not in `T`. In `Float64` where the run ends is
     # set by the schedule, which shrinks the step faster than `Adam`'s moving average closes on the
-    # minimiser, far above `√eps(Float64)`, so that part is the `1e-3` this test always had. In
+    # minimiser, far above `√eps(Float64)`, so that part of the tolerance is the literal `1e-3`. In
     # `Float32` the run stops on the change of `f` first, hence `10√eps(T)`. The assertion holds at
     # the seed of this file, 1234, and is not a bound over seeds: over the global seeds 1 to 7 the
     # distance is 3.0e-4 to 1.21e-3 in `Float64` and 3.2e-4 to 5.2e-3 in `Float32`.

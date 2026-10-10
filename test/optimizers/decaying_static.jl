@@ -131,7 +131,7 @@ end
     # In `Float64` the distance at the stop is set by the schedule and not by `T`: once `η` has
     # decayed, Adam's second moment (`β₂ = 0.999`, a memory of about 1000 iterations) still holds the
     # early gradients, so the step shrinks faster than the distance and the solve stops short of the
-    # minimizer, at 1.2e-4 (`7900√eps(Float64)`); that part is the `1e-3` this test always had. In
+    # minimizer, at 1.2e-4 (`7900√eps(Float64)`); so that part of the tolerance is the literal `1e-3`. In
     # `Float32` it is 5.3e-4 (`1.5√eps(Float32)`), hence `10√eps(T)`. The assertion holds at the start
     # of this file and is not a bound over starts: over 20 perturbed starts the distance reaches
     # 1.4e-3 in `Float64` and 1.8e-3 in `Float32`.

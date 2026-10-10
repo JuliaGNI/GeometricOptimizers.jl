@@ -73,13 +73,17 @@ function fixtures(rng, ::Type{T}) where {T}
         "E'" => StiefelProjection(T, N, n)']
 end
 
+# Every operand of a row is in the sweep's element type, so the result is in the element type of the
+# first operand.
 function row(name, f, host_args, dev_args, backend)
     status = try
         r = f(dev_args...)
         expected = f(host_args...)
         on_device = r isa Number ||
                     get_backend(r isa Union{Adjoint, Transpose} ? parent(r) : r) == backend
-        on_device && eltype(r) == eltype(expected) && dense(r) ≈ dense(expected) ? :pass :
+        T = eltype(first(host_args))
+        on_device && eltype(r) == eltype(expected) == T && dense(r) ≈ dense(expected) ?
+        :pass :
         :wrong
     catch err
         first(split(sprint(showerror, err), '\n'))
@@ -164,7 +168,7 @@ function device_products(todevice, ::Type{T} = Float32; seed = 1234) where {T}
             push!(rows,
                 "$label($name, Δ)" => try
                     Y₂ = f(dY, dΔ)
-                    # 1.2e-4 in `Float32`, the bound this row had before it ran in `Float64` too
+                    # `1000 eps(T)`: 2.2e-13 in `Float64` and 1.2e-4 in `Float32`
                     get_backend(Y₂) == backend && eltype(Y₂) == T &&
                     GeometricOptimizers.check(Y₂) < 1000 * eps(T) ? :pass : :wrong
                 catch err

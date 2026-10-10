@@ -66,11 +66,10 @@ end
         @test eltype(λ) == T
         @test size(λ) == (N, N - n)
         # the two defining properties: orthonormal columns, and orthogonal to `Y`. `λᵀλ - I` is
-        # measured under 6 `eps(T)`. `Yᵀλ` has a heavy tail on the device path and not on the host
-        # one, in both precisions: over 400 seeds the median is 15 to 25 `eps(T)` and 10 to 15 % of
-        # the draws exceed 100 `eps(T)`, up to 2e4 `eps(T)`, against at most 5 `eps(T)` for the same
-        # point on the host. The bound is the one this testset had; the tail is reported, not
-        # absorbed into it.
+        # measured under 6 `eps(T)`. Over 400 seeds, with the point and the completion drawn from
+        # independent streams, `Yᵀλ` has median 0.5 to 0.97 `eps(T)` and largest 1.43 `eps(T)` in
+        # both precisions. A completion that repeats the point's numbers reaches 2e4 `eps(T)` (K25
+        # in `KNOWN_ISSUES.md`).
         @test norm(Array(λ' * λ) - I) < 100 * eps(T)
         @test norm(Array(Y.A' * λ)) < 100 * eps(T)
     end

@@ -44,7 +44,7 @@ end
 
 # `check` measures the deviation from the manifold, so this is a round-off tolerance. The
 # values observed below are at most `3 * eps(T)`, in both precisions and with both retractions.
-manifold_tolerance(::Type{T}) where {T} = 10 * eps(T)
+gradient_method_manifold_tolerance(::Type{T}) where {T} = 10 * eps(T)
 
 # The distance to the minimizer is an error on the argument, so it is a multiple of `√eps(T)`: a
 # minimizer is accurate to the root of the objective's precision. The worst distance observed below
@@ -56,7 +56,7 @@ manifold_tolerance(::Type{T}) where {T} = 10 * eps(T)
 
     @test x isa StiefelManifold{T}                          # the type is preserved ...
     @test eltype(x) == T
-    @test check(x) < manifold_tolerance(T)                  # ... and so is the manifold
+    @test check(x) < gradient_method_manifold_tolerance(T)                  # ... and so is the manifold
     @test isconverged(result.status)                        # it converged ...
     @test isapprox(x, minimizer(T); atol = sqrt(eps(T)))    # ... to the minimizer
     @test f(x) < f(initial_point(T))                        # and it improved on the start

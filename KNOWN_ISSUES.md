@@ -268,10 +268,11 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Householder picks a sign that cannot vanish.
 
   `test/decompositions/symplectic_sr.jl` runs in `Float32` too, at 4×2, 6×4 and 10×6. The median of
-  `‖SᵀJS - J‖` for `sr(randn(T, N2, N2))` is 8, 136 and 1.0e4 `eps(T)` in both precisions, over 20000
-  draws (Julia 1.13.1). The draws that throw or return a non-finite value are 0, 14 and 120 in 20000
-  in `Float32`, and none in `Float64`. At `Float32` 10×6 that is 6 in the test's 500 draws, above its
-  rate bound of 1 %, so that one assertion is `@test_broken` with this ID and issue #152.
+  `‖SᵀJS - J‖` for `sr(randn(T, N2, N2))` is 8.0 to 8.5, 136 to 141 and 9820 to 10400 `eps(T)` in
+  both precisions, over 20000 draws at each of three seeds (Julia 1.13.1). The draws that throw or
+  return a non-finite value are 0, 17 to 23 and 111 to 122 in 20000 in `Float32`, and none in
+  `Float64`. The test's rate bound in `Float32` is ten times the measured exceedance, 7 % at 10×6,
+  where the `Float64` bound is 1 %.
 
   Closing this means implementing the stabilized variant, which is numerical work rather than a
   repair. Until then the type is documented as `Float64`-only at small sizes, in both the
@@ -341,32 +342,34 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
   type would serve both.
 
-### K24 · `global_section` of a `SymplecticStiefelManifold` point returns a section that is not symplectically orthogonal on about one draw in 2000
+### K24 · In `Float32`, `global_section` of a `SymplecticStiefelManifold` point raises the `DomainError` of A22 on a few draws in 2000
 
 - location: `src/manifolds/symplectic_stiefel_manifold.jl`, `global_section`
 - kind: found late
-- found: 2026-10-09
-- evidence: over 2000 points from `rand(rng, SymplecticStiefelManifold{Float64}, N2, n2)` per size,
-  about one per size gives `‖UᵀJΛ‖` of 10.4, 25.2 and 81.9 at 4×2, 6×4 and 10×6, at a condition
-  number `cond(U.A)` of 4.2, 26 and 4600; the other draws stay under `2540 eps`. No error is raised.
-  In `Float32`, `global_section` raises the `DomainError` of A22 on 4 of 2000 points at 10×6 with
-  `cond(U.A) ≤ 4`. The section is built with `sr!`, which has no re-orthogonalization step (A22), so
-  the stabilized SR decomposition is expected to close both. `test/manifolds/symplectic_stiefel_manifold.jl`
-  takes its section points from a well-conditioned construction (`conditioned_point`), where none of
-  2000 points fails in `Float64`.
+- found: 2026-10-09; one issue with A22
+- evidence: over 2000 points from `rand(rng, SymplecticStiefelManifold{T}, N2, n2)` per size, with
+  the point's generator `Random.Xoshiro(987_654)` independent of the global one that the completion
+  draws from (`Random.seed!(1)`), Julia 1.13.1: in `Float32`, `global_section` raises the
+  `DomainError` of A22 on 0, 1 and 5 points at 4×2, 6×4 and 10×6 (and `rand` itself on 0, 3 and 1);
+  in `Float64` on none. Every section that returns has `‖UᵀJΛ‖ / (‖U‖² ‖Λ‖²)` under `1120 eps(T)`
+  in both precisions. The section is built with `sr!`, which has no re-orthogonalization step, so
+  the stabilized SR decomposition of A22 closes this too.
 
-### K25 · A `global_section` drawn on a device is orthogonal to the point only to about 2e4 eps in its tail
+### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 
-- location: `src/manifolds/stiefel_manifold.jl`, `_complement_columns` and `_cholesky_qr2` on a device
+- location: `src/manifolds/stiefel_manifold.jl`, `_complement_columns`
 - kind: found late
 - found: 2026-10-09
-- evidence: over 400 seeds per shape on a `JLArray`, the median `‖Yᵀλ‖` is 15 to 25 `eps(T)`, 39 to
-  63 of the 400 draws exceed `100 eps(T)`, and the largest is about `2e4 eps(T)`, in `Float32` and in
-  `Float64`. For the same points on the host `‖Yᵀλ‖ ≤ 5 eps(T)`, and `‖λᵀλ - I‖ ≤ 5.2 eps(T)` on
-  either backend. `test/integration/device_orthonormalization.jl` asserts `100 eps(T)` at fixed
-  seeds; `test/integration/device_multiply.jl` asserts `check` of a device geodesic under
-  `1000 eps(T)` and measured up to 59 eps in `Float64` over 50 seeds, which comes from this tail. The
-  cause in the device path is not isolated.
+- evidence: 400 seeds per shape, the point from `rand(Random.Xoshiro(seed), …)`, Julia 1.13.1.
+  With `Random.seed!(seed)` before the draw, the completion that `global_section` draws from the
+  global generator repeats the point's own numbers: on a `JLArray` the median `‖Yᵀλ‖` is 15 to 25
+  `eps(T)`, 39 to 63 of the 400 draws exceed `100 eps(T)`, and the largest is 7.4e3 `eps(T)` in
+  `Float32` and 2.1e4 `eps(T)` in `Float64`; on the host the median is 23 to 34 `eps(T)`, 49 to 76
+  draws exceed `100 eps(T)`, the largest is 1.7e4 `eps(T)`, and at `Float32` 12×4 one draw raises
+  `ArgumentError: No value arguments present` from the `something` of the second `_cholesky_qr2`.
+  With `Random.seed!(seed + 10^6)`, so that the two streams are independent, the median is 0.5 to
+  0.97 `eps(T)` and the largest 1.43 `eps(T)` on a `JLArray`, with no draw above `100 eps(T)`.
+  Several test files seed the global generator and a `Xoshiro` of the point with one seed.
 
 ### K26 · `DFP` with `Backtracking(expand = true)` does not converge on Rosenbrock in `Float32` from a start two ulps from the standard one
 
@@ -431,6 +434,48 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence: on `F` of `test/integration/optimizer_tests.jl` from `x₀ = 0.0172`, both stop after 1
   iteration at 50 `√eps(Float32)` from the minimiser. The test starts in `[0.5, 1.5]`, where both
   converge to under 10 `√eps(T)`.
+
+### K31 · `Adam` with `Static(0.1)` on two Stiefel spheres runs out its iteration budget in `Float64` on some seeds of the global generator
+
+- location: `test/integration/manifold_linesearch_tests.jl`, testset `Adam runs on a manifold NamedTuple under a searching line search`
+- kind: found late
+- found: 2026-10-10
+- evidence: the `Adam` + `Static(T(0.1))` solve of that testset (`ps₀`, `two_spheres`,
+  `max_iterations = 1000`), with `Random.seed!(s)` before the state is built, on Julia 1.13.1:
+
+  | `T` | seed | `Geodesic` | `Cayley` |
+  |:--|:--|:--|:--|
+  | `Float64` | 1 | 1000 iterations, not converged, 3.9e-3 | 1000, not converged, 4.5e-3 |
+  | `Float64` | 2 | 1000, not converged, 2.9e-3 | 1000, not converged, 2.3e-3 |
+  | `Float64` | 1234 | 334, converged, 2.0e-8 | 331, converged, 4.4e-8 |
+  | `Float32` | 1, 2, 1234 | 104 to 127, converged, 4.3 to 4.9 `√eps` | 119 to 127, converged, 4.3 to 6.7 `√eps` |
+
+  The distance is the larger of the two leaves' distances to their minimisers. The seed draws the
+  completion of each `GlobalSection`; a fixed step lets `Adam` circle the minimiser, and on these
+  seeds the orbit does not shrink to a stopping criterion within the budget. The test runs at seed
+  1234.
+
+### K32 · `storage_gradient` of a device `StiefelLieAlgHorMatrix` for an `Adjoint` of a lift-typed cotangent indexes the device array one entry at a time
+
+- location: `src/parameter_protocol.jl`, `storage_gradient`
+- kind: found late
+- found: 2026-10-10
+- evidence: with `S` and `H` `StiefelLieAlgHorMatrix(SkewSymMatrix(JLArray(rand(rng, T, 3)), 3),
+  JLArray(rand(rng, T, 2, 3)), 5, 3)` under `allowscalar(false)`, `storage_gradient(S, H')` raises
+  `Scalar indexing is disallowed.` in `Float32` and `Float64`; on host arrays it returns a
+  `StiefelLieAlgHorMatrix`, and `storage_gradient(S, H)` (K20's block method) runs on both
+  backends (Julia 1.13.1).
+
+### K33 · `storage_gradient` of a device `GrassmannLieAlgHorMatrix` for a cotangent of the lift's own type indexes the device array one entry at a time
+
+- location: `src/parameter_protocol.jl`, `storage_gradient`
+- kind: found late
+- found: 2026-10-10
+- evidence: with `A` and `G` `GrassmannLieAlgHorMatrix(JLArray(rand(rng, T, 3, 2)), 5, 2)` under
+  `allowscalar(false)`, `storage_gradient(A, G)` raises `Scalar indexing is disallowed.` in
+  `Float32` and `Float64`; on host arrays it returns a `GrassmannLieAlgHorMatrix` (Julia 1.13.1).
+  The lift-typed cotangent takes the dense `AbstractMatrix` method, which K20 replaced by a block
+  method for the Stiefel lift only.
 
 ## B. This package — observability
 
@@ -923,7 +968,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### K12 · Revise prints EMFILE errors in the test log
 
-- location: `test/quality/jet.jl:17` (`using JET`)
+- location: `test/quality/jet.jl:18` (`using JET`)
 - kind: upstream
 - found: 2026-10-01
 - evidence: JET 0.12 loads Revise, and Revise's file watcher runs out of file handles. Each
@@ -972,7 +1017,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ## G. Found when this file was split from the CHANGELOG
 
-### K2 · Four comments point at *Open Issues* in `CHANGELOG.md`, which does not hold it; the preamble rule that two of them cite is in neither file
+### K2 · Two comments point at the *Open Issues* preamble of `CHANGELOG.md`, which does not hold it; the rule they cite is in neither file
 
 - location: `scripts/optimizer_allocations.jl:8`
 - kind: docs
@@ -980,10 +1025,8 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - evidence: `scripts/optimizer_allocations.jl:8` says "because of the rule the *Open Issues* preamble
   states" and `scripts/retraction_step_allocations.jl:9` says "reason the *Open Issues* preamble
   states". That preamble rule ("treat a number here as reproducible only where the harness that
-  produced it is named") did not move into this file. `test/decompositions/symplectic_sr.jl:32` says
-  "See *Open Issues* in `CHANGELOG.md`." and `test/manifolds/symplectic_stiefel_manifold.jl:14` says
-  "The figures are in `CHANGELOG.md` under *Open Issues*." Found by
-  `git grep -n -i 'open issues' origin/main -- ':!CHANGELOG.md'`.
+  produced it is named") did not move into this file. Found by
+  `git grep -n -i 'open issues' -- ':!CHANGELOG.md'`.
 
 ### K3 · The ID A22 was used for two different issues
 
@@ -1004,28 +1047,6 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   `[label]: url` line, and `[Unreleased]` compares `v0.6.0...main`.
 
 ## H. The test suite
-
-### K13 · `test/quality/jet.jl` does not see a dynamic dispatch on the written array of a kernel body
-
-- location: `test/quality/jet.jl`
-- kind: upstream
-- found: 2026-10-01
-- evidence: JET 0.12.2 skips a kernel statement with two line entries. A barrier on `matrix` in
-  `write_ones_kernel!` (`src/utils.jl`), `Base.inferencebarrier(matrix)[i, i] = one(T)`, SURVIVED
-  `test/quality/jet.jl` (Julia 1.13.1, `mutate.jl`), and `kernel_body_reports` gives 0 reports with
-  no `target_modules` filter at all. The optimised body of the mutant holds
-  `dynamic Base.setindex!(%63, 1.0, %37, %37)::Any`, so the dispatch is real and no call line can
-  show it. A barrier on `A` in `assign_ones_for_stiefel_projection_kernel!` is the same case. A
-  barrier on the stored value, and on a value inside each kernel body, is CAUGHT.
-
-  The other three cases this entry named are closed: a value passed to a fold of
-  `NeuralNetworkParameters` and a kernel launch argument are CAUGHT by the lines that keep that
-  package's frames (`GO_FOLD`) and KernelAbstractions' and JLArrays' frames (`launch_reports`). A
-  barrier on the leaf in the closure of `_manifold_αmax`,
-  `_block_αmax(Base.inferencebarrier(yᵢ), δᵢ, c)`, still SURVIVES, and changes no compiled code that
-  matters: the optimiser splits the call on `isa(_, Manifold)` across the two methods of
-  `_block_αmax`, so the optimised IR holds no dynamic call, the return type stays `T` and the call
-  allocates nothing.
 
 ### K22 · Three `[Unreleased]` bullets of `CHANGELOG.md` give test paths from before the move to `test/integration/`
 
