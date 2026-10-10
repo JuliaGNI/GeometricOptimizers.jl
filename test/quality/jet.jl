@@ -128,15 +128,16 @@ end
 # JET gives no report for a dynamic dispatch on the array that a kernel body writes, a statement
 # with two line entries. The optimised IR of the body holds it: a `:call` whose callee is not
 # a builtin or an intrinsic dispatches at run time, where a static call is an `:invoke`. This counts
-# those calls, with Base only, so it runs where JET does not.
+# those calls, without JET, so it runs where JET does not. The callee is read from the type the IR
+# gives it, because the form of a global callee in the IR differs between Julia versions; an
+# intrinsic is a `Core.Builtin` too.
 function kernel_body_dynamic_calls(kernel, ndrange, args...)
     f, types = kernel_body(kernel, ndrange, args...)
-    code = first(only(code_typed(f, types; optimize = true))).code
-    count(code) do statement
+    ir, _ = only(Base.code_ircode(f, types))
+    count(ir.stmts.stmt) do statement
         Meta.isexpr(statement, :call) || return false
-        callee = statement.args[1]
-        callee isa GlobalRef && (callee = getfield(callee.mod, callee.name))
-        !(callee isa Core.Builtin || callee isa Core.IntrinsicFunction)
+        callee = Core.Compiler.singleton_type(Core.Compiler.argextype(statement.args[1], ir))
+        !(callee isa Core.Builtin)
     end
 end
 
