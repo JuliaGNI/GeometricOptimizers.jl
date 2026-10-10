@@ -24,10 +24,10 @@ svd_objective(B) = ps -> norm(B - ps.w₁ * ps.w₂' * B)
 # the objective.
 #
 # Nothing bounds the error in the objective at the point a solve stops in a platform-independent way:
-# CI once produced 1.3e-10 on the seed this file uses where the local worst was 2.6e-11, so a bound
-# near the measured values passes by luck of the platform. Measured over seed 1234 and the eight seeds
-# of the sweep below, all twenty combinations, `Float64`: worst 1.4e-10, 1/54 of this bound;
-# `Float32`: worst 5.6e-5, 1/3 of it.
+# CI on another Julia version has measured 1.3e-10 on the seed this file uses, against a local worst
+# of 2.6e-11 over eight seeds, so a bound near the measured values passes by luck of the platform.
+# Measured over seed 1234 and the eight seeds of the sweep below, all twenty combinations,
+# `Float64`: worst 1.4e-10, 1/54 of this bound; `Float32`: worst 5.6e-5, 1/3 of it.
 #
 # It still discriminates: the fixed-step runs above reach 6e-3 at best, so a converged solve is
 # separated from an unconverged one by orders of magnitude in both precisions.
@@ -115,7 +115,7 @@ const ADAM_ORBIT_WINDOW = 500
 # measurably *less* stable than the mean. The longer the window, the more of the orbit is averaged
 # and the tighter the spread -- hence `501:1000` rather than `901:1000`.
 #
-# The margin, which is what the old snapshot statistic did not have. Measured today on 1.13, Geodesic /
+# The margin, which is what the old snapshot statistic did not have. Measured on 1.13, Geodesic /
 # Cayley: 2.82e-5 / 2.89e-5 in `Float64` and 2.87e-5 / 2.84e-5 in `Float32`, so `4e-5` is 1.4x above
 # the worst. The radius is a property of `α` and the problem, not of round-off, so it is the same
 # number in both precisions and not a multiple of `eps`. It is a real guard on the `Adam` bugs the
@@ -341,11 +341,11 @@ end
 #
 # `DFP  Backtracking` is the one row not in the script's `COMBINATIONS`: 48_322 iterations on one seed.
 #
-# These figures predate the code this file runs on 1.13 today, where the script measures for example
+# These figures are not those of the code this file runs: on 1.13 the script measures for example
 # 131 / 131 iterations for `BFGS  Backtracking(expand)` and `226..2_948 / 413..1_609` over the seeds
-# for `DFP  Backtracking(expand)`, and where `DFP  Quadratic  Geodesic` stops with a zero step on
-# seed 8 (see `FALSE_CONVERGENCE`). The eight-seed sweep testset at the end of this file asserts the
-# behaviour; this table is the history of it.
+# for `DFP  Backtracking(expand)`, and `DFP  Quadratic  Geodesic` stops with a zero step on seed 8
+# (see `FALSE_CONVERGENCE`). The eight-seed sweep testset at the end of this file asserts the
+# behaviour, and this table does not.
 #
 # **All twenty are now 8/8 on the manifold**, which is the column that matters and the one the sweep
 # now prints (`on_the_manifold`). It was 8/8 in sixteen of them and not in four: `BFGS` with either
@@ -394,9 +394,9 @@ end
 # That has a consequence for this file. The `1e-11` tolerance the `ProjectedSkew` paragraph says an
 # eight-seed sweep would need is no longer needed: the worst `check` over all twenty combinations and
 # all eight seeds is `2.5e-13` (`DFP  Backtracking(expand)  Cayley`) and over the twelve `BFGS`
-# rows it is `6.9e-14`, so the `1e-12` this file used then cleared the whole sweep with a factor of 4.
-# Measured today the worst is `3.8e-14` = 173 eps (`DFP  Backtracking(expand)  Geodesic`), and 34 eps
-# in `Float32`; `manifold_tolerance(T)` is 4096 eps, and the sweep testset below asserts it.
+# rows it is `6.9e-14`, so a bound of `1e-12` clears that sweep with a factor of 4. Measured on 1.13
+# the worst is `3.8e-14` = 173 eps (`DFP  Backtracking(expand)  Geodesic`), and 34 eps in `Float32`;
+# `manifold_tolerance(T)` is 4096 eps, and the sweep testset below asserts it.
 #
 # Worst `rg` over all twenty and all eight seeds is `3.8e-07` (`BFGS  BierlaireQuadratic  Cayley`),
 # against `3.1e-01` with the ceiling off -- that one being the diverging solve rather than a tolerance.
@@ -447,10 +447,10 @@ end
 #
 # What the fix bought, over the same eight starting points: the worst `check` on `Geodesic` was
 # `2.45e-5` -- `BFGS` + `Backtracking` on seed 2, seven orders of magnitude past
-# `manifold_tolerance(Float64)`, and passing here then only because this file used seed `1234` alone.
-# That same solve was `2.8e-12` after it, a factor of 10^7, and is inside `6.3e-14` now -- that being
-# the worst of the eight for the combination, which is the resolution `svd_tables` reports. Per-seed `check` for it, as
-# measured *before* the step ceiling:
+# `manifold_tolerance(Float64)`, which a test of seed `1234` alone does not see. That same solve was
+# `2.8e-12` after it, a factor of 10^7, and is inside `6.3e-14` now -- that being the worst of the
+# eight for the combination, which is the resolution `svd_tables` reports. Per-seed `check` for it,
+# as measured *before* the step ceiling:
 #
 #     seed                1        2        3        4        5        6        7        8
 #     ScaledSquaring   2.8e-14  2.8e-12  1.9e-14  4.2e-15  4.1e-15  3.7e-15  6.2e-14  2.1e-14
@@ -516,9 +516,9 @@ end
 # per iteration, and it takes `DFP` from no practical convergence to 702 and 1_366 iterations on the
 # seed used here.
 #
-# That pair is run, over the eight seeds, in the sweep testset at the end of this file. It was long left
-# out because its iteration count used to be extraordinarily sensitive to the starting point -- over
-# eight seeds it ranged
+# That pair is run, over the eight seeds, in the sweep testset at the end of this file. Its
+# iteration count used to be extraordinarily sensitive to the starting point -- over eight seeds it
+# ranged
 #
 #     Geodesic   512 .. 77_890        Cayley   465 .. 3_834
 #
@@ -533,7 +533,7 @@ end
 #
 #     Geodesic   387 .. 845           Cayley   466 .. 1_366
 #
-# i.e. a factor of 92 less spread on `Geodesic`. Measured on 1.13 today, at the 5_000 cap below, seeds
+# i.e. a factor of 92 less spread on `Geodesic`. Measured on 1.13, at the 5_000 cap below, seeds
 # 1..8:
 #
 #     Float64  Geodesic   815, 1_288, 226, 1_138, 556, 636, 498, 2_948
@@ -541,11 +541,11 @@ end
 #     Float32  Geodesic   47, 84, 34, 41, 36, 51, 46, 45
 #              Cayley     40, 67, 38, 44, 50, 58, 58, 38
 #
-# All inside the cap, the worst (`Float64`, `Geodesic`, seed 8) at 59% of it. The CI surprise was a
-# factor of four between platforms, which that seed would not survive; if CI finds it, the count is
-# the thing to report, not the cap to raise. `default_linesearch` still says what it says about
-# `StrongWolfe` being the better *explicit* choice for a DFP-heavy workload, and that is now a
-# statement about cost (16_873 evaluations against 18_258) rather than about reliability.
+# All inside the cap, the worst (`Float64`, `Geodesic`, seed 8) at 59% of it. A factor of four
+# between platforms, which CI has shown on this pair, would take that seed past the cap; if CI finds
+# it, the count is the thing to report, not the cap to raise. `default_linesearch` still says what
+# it says about `StrongWolfe` being the better *explicit* choice for a DFP-heavy workload, and that
+# is now a statement about cost (16_873 evaluations against 18_258) rather than about reliability.
 #
 # At `StrongWolfe`'s own `c₂ = 0.9` the Wolfe conditions already hold at `α = 1` on 99.4% of iterations,
 # its bracketing phase never fires, and it crawls just as the shrink-only search does.

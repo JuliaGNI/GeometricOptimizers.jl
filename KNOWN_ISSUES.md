@@ -463,8 +463,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence: with `S` and `H` `StiefelLieAlgHorMatrix(SkewSymMatrix(JLArray(rand(rng, T, 3)), 3),
   JLArray(rand(rng, T, 2, 3)), 5, 3)` under `allowscalar(false)`, `storage_gradient(S, H')` raises
   `Scalar indexing is disallowed.` in `Float32` and `Float64`; on host arrays it returns a
-  `StiefelLieAlgHorMatrix`, and `storage_gradient(S, H)` (K20's block method) runs on both
-  backends (Julia 1.13.1).
+  `StiefelLieAlgHorMatrix`, and `storage_gradient(S, H)` (the block method for a lift-typed
+  cotangent) runs on both backends (Julia 1.13.1).
 
 ### K33 · `storage_gradient` of a device `GrassmannLieAlgHorMatrix` for a cotangent of the lift's own type indexes the device array one entry at a time
 
@@ -474,8 +474,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence: with `A` and `G` `GrassmannLieAlgHorMatrix(JLArray(rand(rng, T, 3, 2)), 5, 2)` under
   `allowscalar(false)`, `storage_gradient(A, G)` raises `Scalar indexing is disallowed.` in
   `Float32` and `Float64`; on host arrays it returns a `GrassmannLieAlgHorMatrix` (Julia 1.13.1).
-  The lift-typed cotangent takes the dense `AbstractMatrix` method, which K20 replaced by a block
-  method for the Stiefel lift only.
+  The lift-typed cotangent takes the dense `AbstractMatrix` method; only the Stiefel lift has a
+  block method for a cotangent of its own type.
 
 ## B. This package — observability
 
@@ -1050,12 +1050,12 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K22 · Three `[Unreleased]` bullets of `CHANGELOG.md` give test paths from before the move to `test/integration/`
 
-- location: `CHANGELOG.md:31`
+- location: `CHANGELOG.md:33`
 - kind: docs
 - found: 2026-10-08
 - evidence: `grep -n 'test/device_solve.jl\|test/manifold_linesearch_tests.jl' CHANGELOG.md` gives
-  `:31` (`test/manifold_linesearch_tests.jl`), `:47`, `:49` and `:157` (`test/device_solve.jl`),
-  and `:4342` (`test/manifold_linesearch_tests.jl`). Line 4342 is in the released 0.2.0 section and
+  `:33` (`test/manifold_linesearch_tests.jl`), `:49`, `:51` and `:162` (`test/device_solve.jl`),
+  and `:4347` (`test/manifold_linesearch_tests.jl`). Line 4347 is in the released 0.2.0 section and
   stays. Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
   `test/integration/device_solve.jl`. The bullets are not released, so the paths may be corrected.
 

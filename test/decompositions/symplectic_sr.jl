@@ -13,9 +13,9 @@ Random.seed!(1234)
 # The distribution has a heavy tail, and no per-draw threshold both discriminates and never fails.
 # Over 20000 draws per size the residual `‖SᵀJS - J‖` has median 1.8e-15, 3.0e-14 and 2.2e-12 at
 # 4x2, 6x4 and 10x6, but maximum 3.8e-6, 1.0e-3 and 7.7e-2 — so the `Float64` thresholds below are
-# exceeded by 0 to 4, 3 to 5 and 17 to 21 draws in 20000. The medians are stable across seeds and the maxima are not, which
-# is the shape of the algorithm: `S` is symplectic rather than orthogonal, and a draw that brings a
-# reflector close to its breakdown amplifies without bound.
+# exceeded by 0 to 4, 3 to 5 and 17 to 21 draws in 20000. The medians are stable across seeds and
+# the maxima are not, which is the shape of the algorithm: `S` is symplectic rather than orthogonal,
+# and a draw that brings a reflector close to its breakdown amplifies without bound.
 #
 # The per-draw assertions below therefore run on the fixed seed above and are deterministic, but
 # they are not a bound. What is asserted as a property, rather than as one draw's luck, is the

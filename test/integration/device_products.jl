@@ -24,8 +24,9 @@ const JLARRAYS_GAPS = ("cayley(StiefelManifold, Δ)", "cayley(GrassmannManifold,
 # `2n > N`, where the thin `Q` has `N` columns and not `2n`.
 const PROJECTED_SKEW_SHAPES = ((6, 3), (6, 4))
 
-# `todev` of a lift moves its storage as it is, so the device lift is in `T` too. The host twin is the same method on the host, and the default
-# `≈` (`rtol = √eps(T)`) covers the two backends' different summation orders.
+# `todev` of a lift moves its storage as it is, so the device lift is in `T` too. The host twin is
+# the same method on the host, and the default `≈` (`rtol = √eps(T)`) covers the two backends'
+# different summation orders.
 @testset "ProjectedSkew keeps every step on the lift's backend, $T, $N × $n" for T in REAL_ELTYPES,
     (N, n) in PROJECTED_SKEW_SHAPES
 

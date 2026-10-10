@@ -22,9 +22,9 @@ function linesearches(::Type{T}) where {T}
         BierlaireQuadratic(T), Quadratic(T), Bisection(T), StrongWolfe(T; c₂ = T(0.1)))
 end
 
-# A start at a distance of order one from the minimiser `0` of `F` and `Fsmooth`, as the `ones(n)` it
-# replaces was, but not integer-valued: drawn from `[0.5, 1.5]`. A start within a few `√eps(T)` of `0`
-# tests nothing about convergence.
+# A start at a distance of order one from the minimiser `0` of `F` and `Fsmooth`, and not
+# integer-valued: drawn from `[0.5, 1.5]`. A start within a few `√eps(T)` of `0` tests nothing about
+# convergence.
 start(rng, ::Type{T}, n) where {T} = T(0.5) .+ rand(rng, T, n)
 
 struct OptimizerTest{T} <: OptimizerState{T} end

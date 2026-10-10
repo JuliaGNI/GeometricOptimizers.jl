@@ -3,9 +3,10 @@
 # `Base.broadcast(operation, Y::Manifold)` used to rewrap the result in the manifold type, which
 # claims an invariant the result does not hold: adding 1 to every entry of a point of `St(4,2)` gives
 # a `StiefelManifold` whose `check` is of order 10 — `5.0` in `Float64` and `7.3` in `Float32` at
-# the seed below — against a few `eps(T)` for a point. The figure depends on the draw, which is why the assertion is `> 1`. Dot syntax never
-# reached that method — `Y .+ 1` lowers through `broadcasted`/`materialize` — so the two spellings
-# of one operation returned different types and only the wrapped one lied.
+# the seed below — against a few `eps(T)` for a point. The figure depends on the draw, which is why
+# the assertion is `> 1`. Dot syntax never reached that method — `Y .+ 1` lowers through
+# `broadcasted`/`materialize` — so the two spellings of one operation returned different types and
+# only the wrapped one lied.
 #
 # This file is what stops the method coming back. The assertions are on the *type* of the result,
 # because the values were never wrong; and they cover both manifolds, because the deleted method was

@@ -119,7 +119,7 @@ end
 
         @test x isa GrassmannManifold{T}                                    # the type is preserved
         @test eltype(x) == T
-        @test check(x) < grassmann_manifold_tolerance(T)                              # and so is the manifold
+        @test check(x) < grassmann_manifold_tolerance(T)                    # and so is the manifold
         @test isconverged(status(result))
         @test norm(x * x' - dominant_projector(T, N, n)) < subspace_tolerance(T)
         @test f(x) < f(x₀)                                                  # it improved on the start

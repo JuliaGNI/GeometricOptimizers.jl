@@ -25,11 +25,11 @@ rosenbrock(x) = sum((1 - x[i])^2 + 100 * (x[i + 1] - x[i]^2)^2 for i in 1:(lengt
 @testset "the secant pair is formed from consecutive iterates, $T" for T in REAL_ELTYPES
     # Rosenbrock rather than `F`, and only ten iterations, so that the whole window stays in the
     # pre-convergence regime: `f` is still of order 1e-2 at the end of it, in both precisions
-    # (measured: 0.024 for `BFGS` and 0.15 for `DFP`, in `Float32` and in `Float64`). Once a solve reaches
-    # machine precision, `δ` and `γ` underflow to zero and the guard around the `Q` update *correctly*
-    # skips, and how soon that happens is a floating-point detail that differs between platforms --
-    # so counting updates over a window that runs past convergence pins nothing. Every iteration in
-    # this window has a genuine secant pair, and `Q` has to move on each of them.
+    # (measured: 0.024 for `BFGS` and 0.15 for `DFP`, in `Float32` and in `Float64`). Once a solve
+    # reaches machine precision, `δ` and `γ` underflow to zero and the guard around the `Q` update
+    # *correctly* skips, and how soon that happens is a floating-point detail that differs between
+    # platforms -- so counting updates over a window that runs past convergence pins nothing. Every
+    # iteration in this window has a genuine secant pair, and `Q` has to move on each of them.
     ITERATIONS = 10
 
     for algorithm in (BFGS(), DFP())

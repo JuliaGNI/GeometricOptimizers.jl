@@ -76,8 +76,8 @@
 #   2. `Base`-only, specialising on the type parameters, function-typed field — no gap.
 #   3. real `Optimizer` + `solve!`, one algorithm — no gap.
 #   4. real `Optimizer` + `solve!`, looping over three algorithm types and two retractions in one body,
-#      which is what `test/verification/svd_optim.jl:223-234` does and what its comment says
-#      the loop exists for — no gap.
+#      which is what the testset "fixed budget, three first-order methods" of
+#      `test/verification/svd_optim.jl` does and what its comment says the loop exists for — no gap.
 #
 # A bug report needs a reproducer and four independent negatives are not one. What these *do* establish
 # is that D1's own description of itself — "a constructor reached through N nested `kwargs...` levels

@@ -110,9 +110,8 @@ end
 # `cayley(::AbstractLieAlgHorMatrix)` evaluates a regrouping of the Cayley transform in the
 # `N × 2n` factors of `lift_factors`, so nothing in it is read off the definition and every step of
 # the regrouping is a place to lose a factor or a transpose. The retraction assertions below catch
-# only part of that. A sign slip in the `2n × 2n` inverse was measured at a `Float32` `check`
-# residual of 2e-5 (at the step `Δ / 1000` these assertions once took), where the correct grouping
-# sits at 4e-7: both are below
+# only part of that. At the step `Δ / 1000`, a sign slip in the `2n × 2n` inverse gives a `Float32`
+# `check` residual of 2e-5, where the correct grouping sits at 4e-7: both are below
 # `manifold_tolerance(Float32)`, 4.9e-4, so `check` does not separate them in that format. `B̄'`
 # spelt `transpose(B̄)` does not reach them at all, because the two are one expression on the real
 # points they run on. This pins the value against the definition, on the dense lift where there is
