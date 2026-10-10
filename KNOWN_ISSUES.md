@@ -1089,6 +1089,20 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   version at that time, which restricts `LLVM` to 10.0.0. The required jobs resolve without the
   floor manifest and pass.
 
+### K34 · The exact-zero allocation assertion of `retraction_workspace.jl` failed in two rows of one count run under heavy machine load
+
+- location: `test/retractions/retraction_workspace.jl:105`
+- kind: not verified
+- found: #156
+- evidence: a per-testset count run on `417eff0`, at a machine load of 12 to 32, reported one failed
+  assertion in each of two rows of the testset "a workspace built for its retraction, for a
+  $(nameof(LT)){$T}": `StiefelLieAlgHorMatrix{Float32}` with 27 passed and 1 failed, and
+  `GrassmannLieAlgHorMatrix{Float64}` with 27 passed and 1 failed. The only allocation assertion
+  in that testset is the exact zero `@test _measured_differential!(D, own, Cayley(), B, 0.5) == 0`
+  at line 105, which is unchanged since `main`. The failing assertion was not captured. Both full
+  suites on `4a6883c` (Julia 1.13.1 and the 1.12 floor, at a load of 3 to 5) pass the file 572/572.
+  The cause is not established.
+
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
