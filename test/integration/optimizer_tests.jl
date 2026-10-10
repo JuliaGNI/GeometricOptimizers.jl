@@ -174,7 +174,7 @@ Fsmooth(x) = sum(sqrt.(1 .+ x .^ 2))
     # not in conflict: a sufficient-decrease search has nothing to work with when the direction is
     # a moving average that is deliberately allowed not to descend, so `AdamFamily` keeps
     # `Static` as its default (asserted above). It still has to *work* when one is passed
-    # explicitly, which is what this covers -- and before this branch it threw as well.
+    # explicitly, which is what this covers.
     for method in (GradientMethod(), MomentumMethod(; α = T(0.1)), Adam()),
         _linesearch in linesearches(T),
         (name, obj, ∇obj!) in (("F", F, ∇F!), ("Fsmooth", Fsmooth, ∇Fsmooth!))
