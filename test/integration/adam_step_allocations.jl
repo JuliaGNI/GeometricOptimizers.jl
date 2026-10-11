@@ -9,10 +9,11 @@
 # `scripts/parameter_set_step_cost.jl` measures the same steps and names the frames.
 
 using GeometricOptimizers
-using GeometricOptimizers: AdamOptimizerWithDecay
+using GeometricOptimizers: AdamOptimizerWithDecay, direction, first_moment, gradient_array,
+                           second_moment
 using NeuralNetworkParameters: NetworkParameters, params, flatten
 using LinearAlgebra: norm
-using Random: Xoshiro
+using Random: Random, Xoshiro
 using Test
 
 include("../helpers/eltypes.jl")
@@ -127,4 +128,47 @@ _storages(x::AbstractArray) = Any[x]
         @test eltype(leaf) == T
         @test norm(vec(leaf) - reference) ≤ 4eps(T) * norm(reference)
     end
+end
+
+# A set with a `StiefelManifold` and a `GrassmannManifold` weight.
+function manifold_set(::Type{T}) where {T}
+    rng = Xoshiro(7)
+    NetworkParameters((
+        L1 = (W = rand(rng, StiefelManifold{T}, 16, 4), b = randn(rng, T, 16)),
+        L2 = (W = rand(rng, GrassmannManifold{T}, 16, 4),)))
+end
+
+flat(x) = flatten(x)[1]
+
+# On a manifold leaf the step is a retraction and not `x + αδ`, so `reference_adam` does not apply.
+# The moments and the direction of such a leaf are horizontal lifts, and the recursion acts
+# elementwise on their free parameters, which `flatten` writes out. So after every step the flattened
+# moments and the flattened direction are the recursion applied to the flattened lift of the gradient
+# that the cache holds, on every block of a Stiefel and a Grassmann lift. The section and the
+# retraction do not enter.
+@testset "20 Adam steps are the Adam recursion on Stiefel and Grassmann leaves, $T" for T in REAL_ELTYPES
+    # the random completion of each `GlobalSection`
+    Random.seed!(1234)
+    α, β₁, β₂, δ = T(1) / 100, T(0.9), T(0.99), T(1.0e-8)
+    x = manifold_set(T)
+    before = copy(flat(x))
+    opt = TrainingOptimizer(x; algorithm = Adam(), linesearch = α)
+    m₁ = zero(flat(first_moment(opt.state)))
+    m₂ = zero(m₁)
+    for t in 1:20
+        optimization_step!(x, opt, random_gradient(x, 30 + t))
+        fac₁₁ = (β₁ - β₁^t) / (1 - β₁^t)
+        fac₁₂ = (1 - β₁) / (1 - β₁^t)
+        fac₂₁ = (β₂ - β₂^t) / (1 - β₂^t)
+        fac₂₂ = (1 - β₂) / (1 - β₂^t)
+        g = flat(gradient_array(opt.cache))
+        m₁ = fac₁₁ .* m₁ .+ fac₁₂ .* g
+        m₂ = fac₂₁ .* m₂ .+ fac₂₂ .* g .^ 2
+        d = α .* .-(m₁ ./ (sqrt.(m₂) .+ δ))
+        @test norm(flat(first_moment(opt.state)) - m₁) ≤ 4eps(T) * norm(m₁)
+        @test norm(flat(second_moment(opt.state)) - m₂) ≤ 4eps(T) * norm(m₂)
+        @test norm(flat(direction(opt.cache)) - d) ≤ 4eps(T) * norm(d)
+    end
+    @test eltype(flat(x)) == T
+    @test flat(x) != before
 end
