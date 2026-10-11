@@ -81,6 +81,20 @@ const ADAM_FAMILY = (
     @test flatten_allocations(dp) > 0
 end
 
+# Whether the walk over the leaves specialises on the function it is handed can depend on what the
+# process compiled before, so this file's own order cannot show every case. A fresh process takes the
+# step on small dense sets first and then on sets with a vector-storage weight, in both precisions.
+@testset "the Adam step allocates nothing on a vector-storage weight after a dense one, in a fresh process" begin
+    script = joinpath(@__DIR__, "..", "helpers", "adam_step_after_dense.jl")
+    project = dirname(Base.active_project())
+    lines = readlines(`$(Base.julia_cmd()) --startup-file=no --project=$project $script`)
+    @test length(lines) == 20
+    for line in lines
+        name, bytes = split(line, ": ")
+        @test (name, parse(Int, bytes)) == (name, 0)
+    end
+end
+
 # A `64 × 8` horizontal lift holds `28 + 448 = 476` numbers: 1 904 bytes in `Float32` and 3 808 in
 # `Float64`. One more moment temporary of the Stiefel leaf alone is therefore above the tolerance of
 # `n_independent`, 1 024 bytes, and one of a dense `64 × 64` leaf is 16 kB.

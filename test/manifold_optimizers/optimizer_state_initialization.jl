@@ -2,7 +2,7 @@ using GeometricOptimizers
 using GeometricOptimizers: AdamState, MomentumState, GradientState
 using GeometricOptimizers: first_moment, second_moment, _second_moment, momentum
 using GeometricOptimizers: cache, gradient_array, increase_iteration_number!, solver_step!,
-                           update!, _square, _mul
+                           update!, _square!, _copy, _mul
 using SimpleSolvers: Static
 using LinearAlgebra: norm
 using Test
@@ -84,7 +84,7 @@ end
     @test _eltypes(first_moment(state)) == (T,)
     @test _eltypes(second_moment(state)) == (T,)
     @test _isapprox(first_moment(state), g)
-    @test _isapprox(second_moment(state), _square(g))
+    @test _isapprox(second_moment(state), _square!(_copy(g), g))
 end
 
 # A regression test for the uninitialized moments: those made the optimizers depend on

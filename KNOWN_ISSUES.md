@@ -1140,6 +1140,29 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   `SymmetricMatrix` leaves takes about 7 times as long per gradient as the same network with dense
   weights (6.7 ms against 1.0 ms for model A of eight `64 × 64` layers).
 
+### K37 · A training step on a parameter set with a `GrassmannManifold` leaf allocates 4.5 kB in `Float32` and 8.5 kB in `Float64`
+
+- location: —
+- kind: found late
+- found: 2026-10-11
+- evidence: a cold process (Julia 1.13.1, `--check-bounds=auto`), one `optimization_step!` after
+  warm-up, behind a function barrier, on a set with one `GrassmannManifold` leaf: 4 512 bytes in
+  `Float32` and 8 480 bytes in `Float64`, for `GradientMethod` and the three `Adam` methods alike.
+  The frames are not profiled.
+
+### K38 · The 20-step `Adam` comparison of `test/integration/adam_step_allocations.jl` has no manifold leaf
+
+- location: `test/integration/adam_step_allocations.jl`
+- kind: missing test
+- found: 2026-10-11
+- evidence: the testset "20 Adam steps are the Adam recursion, leaf by leaf" runs on dense,
+  `SymmetricMatrix` and `SkewSymMatrix` leaves only, because its reference recursion is written for
+  leaves whose step is `x + αδ`. The moments of a `StiefelManifold` or `GrassmannManifold` leaf, and
+  the completion of its section, are compared with the tree before the fused update by no test. A
+  cold probe that ran 20 steps of the three `Adam` methods, in both precisions, on a set with dense,
+  `SymmetricMatrix`, `SkewSymMatrix`, `StiefelManifold` and `GrassmannManifold` leaves, on both trees
+  with one seed, found the iterates bit-identical.
+
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44

@@ -47,8 +47,8 @@ function run!(label, x, objective, algorithm, linesearch, max_iterations;
         retraction = Cayley())
     state = OptimizerState(algorithm, x)
     recorded = Recorded(objective, UInt[])
-    optimizer = Optimizer(x, recorded; retraction = retraction, algorithm = algorithm,
-        linesearch = linesearch, max_iterations = max_iterations, warn_iterations = 0,
+    optimizer = Optimizer(x, recorded; mode = :autodiff, retraction = retraction,
+        algorithm = algorithm, linesearch = linesearch, max_iterations = max_iterations, warn_iterations = 0,
         store_trace = true)
     record(label, x, state, solve!(x, state, optimizer), recorded)
 end

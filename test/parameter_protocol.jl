@@ -231,6 +231,9 @@ end
     @test_throws DimensionMismatch storage_gradient(stiefel, zeros(T, 5, 4))
     @test_throws DimensionMismatch storage_gradient(stiefel,
         StiefelLieAlgHorMatrix(SkewSymMatrix(zeros(T, 1), 2), zeros(T, 3, 2), 5, 2))
+    # the same `n` and another `N`, so that the lift's own check and not its `A` block's refuses it
+    @test_throws DimensionMismatch storage_gradient(stiefel,
+        StiefelLieAlgHorMatrix(SkewSymMatrix(zeros(T, 3), 3), zeros(T, 4, 3), 7, 3))
     @test_throws DimensionMismatch storage_gradient(grassmann, zeros(T, 4, 4))
 end
 

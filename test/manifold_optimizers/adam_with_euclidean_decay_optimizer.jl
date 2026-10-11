@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: AdamState, Manifold, first_moment, second_moment, check,
-                           increase_iteration_number!, solver_step!, update!, _square,
+                           increase_iteration_number!, solver_step!, update!,
                            _weight_decay!, _is_decayable
 using SimpleSolvers: Static
 using LinearAlgebra: I, norm, tr, Symmetric
@@ -137,7 +137,7 @@ end
 
     @test eltype(first_moment(state)) == T
     @test first_moment(state) ≈ C
-    @test second_moment(state) ≈ _square(C)
+    @test second_moment(state) ≈ C .^ 2
 end
 
 # `λ = 0` is the one setting in which `AdamWithEuclideanDecay` and `Adam` are the same method for
