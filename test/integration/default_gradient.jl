@@ -106,16 +106,8 @@ end
     rng = Random.Xoshiro(4)
     ps = NetworkParameters((
         Y = StiefelManifold(stiefel_point(rng, T)), W = randn(rng, T, 2, 2)))
-    err = try
-        Optimizer(ps, objective)
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError
-    for name in ("∇F!", ":autodiff", ":finitediff")
-        @test occursin(name, sprint(showerror, err))
-    end
+    @test_throws ArgumentError Optimizer(ps, objective)
+    @test_throws ["∇F!", ":autodiff", ":finitediff"] Optimizer(ps, objective)
 
     problem = OptimizerProblem(objective, ps)
     @test names_∇F!(() -> default_gradient(problem, ps))

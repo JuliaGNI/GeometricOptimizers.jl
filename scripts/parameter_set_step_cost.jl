@@ -8,10 +8,9 @@
 # so it holds a dense, a structured and a manifold leaf. The gradient is a random set of the shape of
 # the parameters, with a dense matrix where the parameter is a manifold point.
 #
-# This is the `bench_train.jl` probe of the measurement that opened this work, without
-# `BenchmarkTools`, `AbstractNeuralNetworks` or `Zygote`: each figure is the minimum of five
-# `@allocated` readings behind a function barrier, after two warm-up steps, and the time the minimum
-# of 200 calls. BLAS runs on one thread.
+# It needs no `BenchmarkTools`, `AbstractNeuralNetworks` or `Zygote`: each figure is the minimum of
+# five `@allocated` readings behind a function barrier, after two warm-up steps, and the time the
+# minimum of 200 calls. BLAS runs on one thread.
 #
 # With the argument `profile`, `Profile.Allocs` (sample rate 1, 50 warm steps) names the innermost
 # frame of this package or of `NeuralNetworkParameters` behind each allocation of one `GradientMethod`

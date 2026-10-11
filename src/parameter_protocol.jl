@@ -91,29 +91,31 @@ function _launch_storage_gradient(kernel!, A, len::Integer, n::Integer, G)
     S
 end
 
-# `shape` is the size, or `(N, n)` for a lift whose cotangent is a lift
-function _check_cotangent_size(A, shape, cotangent_shape)
-    shape == cotangent_shape || throw(DimensionMismatch(string("a cotangent of shape ",
-        cotangent_shape, " for a `", nameof(typeof(A)), "` of shape ", shape)))
+# `shape` is `size`, or `_leaf_shape` for a lift whose cotangent is a lift, because the size of a
+# lift omits its `n`
+function _check_cotangent_size(A, G, shape = size)
+    shape(A) == shape(G) ||
+        throw(DimensionMismatch(string("a cotangent of shape ", shape(G),
+            " for a `", nameof(typeof(A)), "` of shape ", shape(A))))
     nothing
 end
 
 function storage_gradient(A::SymmetricMatrix, G::AbstractMatrix)
-    _check_cotangent_size(A, (A.n, A.n), size(G))
+    _check_cotangent_size(A, G)
     S = _launch_storage_gradient(
         symmetric_storage_gradient_kernel!, A, A.n * (A.n + 1) ÷ 2, A.n, G)
     SymmetricMatrix(S, A.n)
 end
 
 function storage_gradient(A::SymmetricMatrix, G::SymmetricMatrix)
-    _check_cotangent_size(A, (A.n, A.n), (G.n, G.n))
+    _check_cotangent_size(A, G)
     S = _launch_storage_gradient(
         symmetric_storage_doubling_kernel!, A, length(G.S), A.n, G.S)
     SymmetricMatrix(S, A.n)
 end
 
 function storage_gradient(A::SkewSymMatrix, G::AbstractMatrix)
-    _check_cotangent_size(A, (A.n, A.n), size(G))
+    _check_cotangent_size(A, G)
     SkewSymMatrix(
         _launch_storage_gradient(
             skew_storage_gradient_kernel!, A, A.n * (A.n - 1) ÷ 2, A.n, G),
@@ -121,7 +123,7 @@ function storage_gradient(A::SkewSymMatrix, G::AbstractMatrix)
 end
 
 function storage_gradient(A::SkewSymMatrix, G::SkewSymMatrix)
-    _check_cotangent_size(A, (A.n, A.n), (G.n, G.n))
+    _check_cotangent_size(A, G)
     S = similar(G.S, eltype(A))
     S .= G.S .+ G.S
     SkewSymMatrix(S, A.n)
@@ -132,7 +134,7 @@ end
 # `A` block is a `SkewSymMatrix` cotangent. Zygote gives a lift a dense cotangent.
 function storage_gradient(A::StiefelLieAlgHorMatrix, G::AbstractMatrix)
     N, n = A.N, A.n
-    _check_cotangent_size(A, (N, N), size(G))
+    _check_cotangent_size(A, G)
     StiefelLieAlgHorMatrix(
         storage_gradient(A.A, G[1:n, 1:n]), _lift_block_gradient(A, G, N, n),
         N, n)
@@ -141,14 +143,14 @@ end
 # A cotangent of the lift's own type is the dense `[G.A -G.Bᵀ; G.B 0]` it represents, so the `A`
 # block is a `SkewSymMatrix` cotangent and `∂L/∂B` is `G.B + G.B`.
 function storage_gradient(A::StiefelLieAlgHorMatrix, G::StiefelLieAlgHorMatrix)
-    _check_cotangent_size(A, (A.N, A.n), (G.N, G.n))
+    _check_cotangent_size(A, G, _leaf_shape)
     B = similar(G.B, eltype(A))
     B .= G.B .+ G.B
     StiefelLieAlgHorMatrix(storage_gradient(A.A, G.A), B, A.N, A.n)
 end
 
 function storage_gradient(A::GrassmannLieAlgHorMatrix, G::AbstractMatrix)
-    _check_cotangent_size(A, (A.N, A.N), size(G))
+    _check_cotangent_size(A, G)
     GrassmannLieAlgHorMatrix(_lift_block_gradient(A, G, A.N, A.n), A.N, A.n)
 end
 

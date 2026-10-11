@@ -214,7 +214,8 @@ function default_gradient(problem::OptimizerProblem, x::Manifold)
     GradientAutodiff(problem.F, x)
 end
 function default_gradient(::OptimizerProblem, x::NetworkParameters)
-    _refuse_default_gradient(x, nothing)
+    _refuse_default_gradient(x)
+    _no_default_gradient()
 end
 
 # The gradient `Optimizer(x, F)` builds without a `∇F!`: `mode` selects automatic differentiation or
@@ -225,15 +226,14 @@ end
 function _default_gradient(F, x, mode)
     mode === nothing || mode === :autodiff || mode === :finitediff ||
         throw(ArgumentError("`mode` is `:autodiff` or `:finitediff`, not `$(repr(mode))`"))
-    _refuse_default_gradient(x, mode)
+    _refuse_default_gradient(x)
+    mode === nothing && x isa NetworkParameters && _no_default_gradient()
     mode === :finitediff ? _finite_differences(F, x) : GradientAutodiff(F, x)
 end
 
 # Forward mode takes one pass per chunk of twelve parameters, and finite differences two evaluations
 # per parameter, so neither is the default for a parameter set; `mode` opts in to either.
-_refuse_default_gradient(x, mode) = _refuse_default_gradient(x)
-function _refuse_default_gradient(x::NetworkParameters, ::Nothing)
-    _refuse_default_gradient(x)
+function _no_default_gradient()
     throw(ArgumentError(
         "no default gradient for a parameter set: `mode = :autodiff` takes one forward-mode pass " *
         "per chunk of parameters, and `mode = :finitediff` two evaluations of `F` per parameter. " *

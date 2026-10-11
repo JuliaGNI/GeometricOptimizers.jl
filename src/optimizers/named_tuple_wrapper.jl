@@ -100,7 +100,6 @@ end
 const _StructuredLeaf = Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix}
 
 _check_leaves(x, ys::Vararg{Any, N}) where {N} = nothing
-_check_leaves(x::_StructuredLeaf) = nothing
 # A recursion and not a closure over `x`: with a closure, whether the walk specialises on the
 # function that `_storagewise!` hands it depends on what the process compiled before, and where
 # it does not, an `Adam` step on a set with a vector-storage leaf boxes that function and allocates.
