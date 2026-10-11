@@ -108,8 +108,8 @@ function reference_adam(x₀::NetworkParameters{T}, gradients, α::T; β₁ = T(
         fac₁₂ = (1 - β₁) / (1 - β₁^t)
         fac₂₁ = (β₂ - β₂^t) / (1 - β₂^t)
         fac₂₂ = (1 - β₂) / (1 - β₂^t)
-        for (i, g) in enumerate(_storages(dp))
-            g = vec(g)
+        for (i, leaf) in enumerate(_storages(dp))
+            g = vec(leaf)
             m₁[i] = fac₁₁ .* m₁[i] .+ fac₁₂ .* g
             m₂[i] = fac₂₁ .* m₂[i] .+ fac₂₂ .* (g .^ 2)
             x[i] = x[i] .+ α .* -(m₁[i] ./ (sqrt.(m₂[i]) .+ δ))
