@@ -101,7 +101,7 @@ end
 
 # A parameter set has no default gradient: forward mode takes one pass per chunk of parameters. Each
 # route that would build one raises an `ArgumentError` that names `∇F!` and the two opt-ins, and
-# `mode = :autodiff` still builds the forward-mode gradient.
+# `mode = :autodiff` builds the forward-mode gradient.
 @testset "a parameter set has no default gradient, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(4)
     ps = NetworkParameters((

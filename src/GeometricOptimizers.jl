@@ -84,9 +84,9 @@ import NeuralNetworkParameters: freeparameters, rebuild, parameter_metadata,
 
 # `NetworkParameters` *is* re-exported, and it is the one exception to the paragraph above. It is the
 # only shape in which a whole set of parameters enters this package -- see [`OptimizerSolution`](@ref)
-# -- so a caller holding a bare `NamedTuple` writes `Optimizer(NetworkParameters(ps), F)`, and having
-# to reach for a second `using` to say that would make the wrap look like a foreign concern rather
-# than this package's own entry condition. The name collides with nothing:
+# -- so a caller holding a bare `NamedTuple` writes `Optimizer(NetworkParameters(ps), F; ∇F! = …)`,
+# and having to reach for a second `using` to say that would make the wrap look like a foreign
+# concern rather than this package's own entry condition. The name collides with nothing:
 # `AbstractNeuralNetworks`, `SymbolicNeuralNetworks` and `GeometricMachineLearning` all take it from
 # `NeuralNetworkParameters` too, so a downstream package meeting it twice meets the same binding.
 export NetworkParameters

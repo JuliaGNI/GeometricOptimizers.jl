@@ -56,7 +56,8 @@ rebuild(A::GrassmannLieAlgHorMatrix, data) = GrassmannLieAlgHorMatrix(data[1], A
 # on `G`'s backend. A cotangent of the leaf's own type is the dense matrix it represents, so its
 # storage gradient doubles the off-diagonal storage. A structural tangent, which a loss that reads the
 # storage field directly produces, holds `∂L/∂S` already and takes `NeuralNetworkParameters`' own
-# method, which rebuilds the leaf around it. The triangular types store each number once and need no method.
+# method, which rebuilds the leaf around it. The triangular types store each number once and need no
+# method.
 @kernel function symmetric_storage_gradient_kernel!(S, G)
     i, j = @index(Global, NTuple)
     if i ≥ j

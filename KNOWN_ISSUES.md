@@ -1124,8 +1124,9 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   | `global_rep(::GlobalSection{T, <:StiefelManifold}, Δ)`, `src/global_sections/global_sections.jl:264` | `SkewSymMatrix(λY.Y.A' * Δ)` and `λY.λ' * Δ` | 3 560 | 33 |
   | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:280` | `inv(ws.M)` | 5 448 | 8 |
 
-  The three frames account for 13 568 of the 14 016 bytes. Removing each needs an in-place form: a buffer for the Riemannian gradient, a `global_rep!` into
-  the cache's lift, and a factorisation of `ws.M` into workspace storage.
+  The three frames account for 13 568 of the 14 016 bytes. Removing each needs an in-place form: a
+  buffer for the Riemannian gradient, a `global_rep!` into the cache's lift, and a factorisation of
+  `ws.M` into workspace storage.
 
 ### K36 · The `SymmetricMatrix` product kernel is about 7 times slower than BLAS on the dense matrix
 

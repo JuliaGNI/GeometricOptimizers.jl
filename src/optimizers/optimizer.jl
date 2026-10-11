@@ -198,7 +198,7 @@ in to forward mode or finite differences with the `mode` of `Optimizer(x, F)`.
 
 # Implementation
 
-The [`Manifold`](@ref) method is also built from `x`: `GradientAutodiff(problem.F, x)` rebuilds the
+The [`Manifold`](@ref) method is built from `x`: `GradientAutodiff(problem.F, x)` rebuilds the
 point before it calls `problem.F`, where the `AbstractArray` method would hand `problem.F` the flat
 vector.
 
