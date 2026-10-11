@@ -191,18 +191,12 @@ end
 Return the [`SimpleSolvers.Gradient`](@extref) that [`Optimizer`](@ref) uses if none is
 supplied.
 
+A [`NeuralNetworkParameters.NetworkParameters`](@extref) has no default gradient, and this throws
+an `ArgumentError` that names `∇F!`: forward mode takes one pass per chunk of parameters, which is
+the wrong default for a network of more than a few hundred parameters. Supply the gradient, or opt
+in to forward mode or finite differences with the `mode` of `Optimizer(x, F)`.
+
 # Implementation
-
-The [`NeuralNetworkParameters.NetworkParameters`](@extref) method is not just a matter of the
-*length*: a `Gradient` built for a parameter set is called on the flattened parameters, so it has to
-be constructed from `x` itself — `SimpleSolvers`' `GradientAutodiff(F, ::NetworkParameters)`, which
-composes `problem.F` with the `unflatten` that belongs to `x`. Sizing it with `length(x)` — the
-number of *layers* rather than the length of the flattening — used to make the first step fail with a
-`DimensionMismatch`.
-
-It wraps in a [`RiemannianGradient`](@ref), which is what projects the result leaf by leaf. `Optimizer`
-would wrap it anyway, and the wrap is idempotent; doing it here as well keeps this function's own
-return value the thing `Optimizer` will actually store.
 
 The [`Manifold`](@ref) method is also built from `x`: `GradientAutodiff(problem.F, x)` rebuilds the
 point before it calls `problem.F`, where the `AbstractArray` method would hand `problem.F` the flat
@@ -219,20 +213,33 @@ function default_gradient(problem::OptimizerProblem, x::Manifold)
     _refuse_default_gradient(x)
     GradientAutodiff(problem.F, x)
 end
-function default_gradient(problem::OptimizerProblem, x::NetworkParameters)
-    _refuse_default_gradient(x)
-    RiemannianGradient(GradientAutodiff(problem.F, x))
+function default_gradient(::OptimizerProblem, x::NetworkParameters)
+    _refuse_default_gradient(x, nothing)
 end
 
 # The gradient `Optimizer(x, F)` builds without a `∇F!`: `mode` selects automatic differentiation or
 # central differences, and anything else is refused rather than read as one of them. A plain vector
 # needs `GradientFiniteDifferences`' length constructor, because `SimpleSolvers` has no method for a
-# vector; a `Manifold` and a parameter set have one each.
+# vector; a `Manifold` and a parameter set have one each. With no `mode`, a vector and a `Manifold`
+# take `:autodiff`, and a parameter set takes none.
 function _default_gradient(F, x, mode)
-    mode === :autodiff || mode === :finitediff ||
+    mode === nothing || mode === :autodiff || mode === :finitediff ||
         throw(ArgumentError("`mode` is `:autodiff` or `:finitediff`, not `$(repr(mode))`"))
+    _refuse_default_gradient(x, mode)
+    mode === :finitediff ? _finite_differences(F, x) : GradientAutodiff(F, x)
+end
+
+# Forward mode takes one pass per chunk of twelve parameters, and finite differences two evaluations
+# per parameter, so neither is the default for a parameter set; `mode` opts in to either.
+_refuse_default_gradient(x, mode) = _refuse_default_gradient(x)
+function _refuse_default_gradient(x::NetworkParameters, ::Nothing)
     _refuse_default_gradient(x)
-    mode === :autodiff ? GradientAutodiff(F, x) : _finite_differences(F, x)
+    throw(ArgumentError(
+        "no default gradient for a parameter set: `mode = :autodiff` takes one forward-mode pass " *
+        "per chunk of parameters, and `mode = :finitediff` two evaluations of `F` per parameter. " *
+        "Supply the gradient: `∇F!` to `Optimizer(x, F; ∇F! = …)`, or `gradient` to " *
+        "`Optimizer(x, problem; gradient = …)`; or opt in with `mode = :autodiff` or " *
+        "`mode = :finitediff` in `Optimizer(x, F; mode = …)`."))
 end
 
 function _finite_differences(F, x::AbstractVector{T}) where {T}
@@ -317,6 +324,13 @@ end
 
 Build an [`Optimizer`](@ref) for the objective `F` at the parameters `x`.
 
+`∇F!` is the gradient of `F`. Without it, `mode = :autodiff` builds a forward-mode
+`ForwardDiff` gradient and `mode = :finitediff` a central-difference one. A vector and a
+[`Manifold`](@ref) take `:autodiff` when no `mode` is given. A
+[`NeuralNetworkParameters.NetworkParameters`](@extref) takes no default: without `∇F!` and `mode`
+this throws an `ArgumentError`. Forward mode costs one pass of `F` per chunk of twelve parameters,
+and finite differences two evaluations of `F` per parameter, so either is for a small set.
+
 `linesearch` is a [`SimpleSolvers.LinesearchMethod`](@extref) or a number, which is the fixed step
 size `Static(η)`. `algorithm`, and a `Static` or [`DecayingStatic`](@ref) `linesearch`, are converted
 to the element type of `x`, so `Optimizer(Float32[1, 2, 3], F; algorithm = Adam())` optimizes in
@@ -348,7 +362,7 @@ to the element type of `x`, so `Optimizer(Float32[1, 2, 3], F; algorithm = Adam(
     upstream and already fixed there — but a 140× compile-time cliff on a released Julia is worth one
     flat call chain.
 """
-function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = :autodiff,
+function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = nothing,
         algorithm::OptimizerMethod = BFGS(),
         linesearch::Union{LinesearchMethod, Real, Nothing} = nothing,
         retraction::AbstractRetraction = Cayley(), step_ceiling = DEFAULT_STEP_CEILING,

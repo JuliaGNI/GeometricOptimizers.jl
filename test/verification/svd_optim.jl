@@ -260,7 +260,8 @@ end
             ps = starting_point(T, 3)
             state = OptimizerState(algorithm, ps)
             optimizer = Optimizer(
-                ps, objective; retraction = retraction, algorithm = algorithm,
+                ps, objective; mode = :autodiff,
+                retraction = retraction, algorithm = algorithm,
                 linesearch = Static(T; α = T(0.01)), max_iterations = FIXED_BUDGET_STEPS,
                 min_iterations = FIXED_BUDGET_STEPS, warn_iterations = 0, store_trace = true)
             result = solve!(ps, state, optimizer)
@@ -570,7 +571,8 @@ const CONVERGENCE_MAX_ITERATIONS = 5000
             ps = starting_point(T, 3)
             state = OptimizerState(algorithm, ps)
             optimizer = Optimizer(
-                ps, objective; retraction = retraction, algorithm = algorithm,
+                ps, objective; mode = :autodiff,
+                retraction = retraction, algorithm = algorithm,
                 linesearch = linesearch, max_iterations = CONVERGENCE_MAX_ITERATIONS,
                 warn_iterations = 0)
             result = solve!(ps, state, optimizer)
@@ -606,7 +608,8 @@ const A1B_SEEDS = (2, 8)
         algorithm = GeometricOptimizers.BFGS()
         ps = starting_point(T, 3, seed)
         state = OptimizerState(algorithm, ps)
-        optimizer = Optimizer(ps, objective; retraction = GeometricOptimizers.Cayley(),
+        optimizer = Optimizer(
+            ps, objective; mode = :autodiff, retraction = GeometricOptimizers.Cayley(),
             algorithm = algorithm, linesearch = linesearch,
             max_iterations = CONVERGENCE_MAX_ITERATIONS, warn_iterations = 0)
         result = solve!(ps, state, optimizer)
@@ -691,7 +694,8 @@ end
             ps = starting_point(T, 3, seed)
             state = OptimizerState(algorithm, ps)
             optimizer = Optimizer(
-                ps, objective; retraction = retraction, algorithm = algorithm,
+                ps, objective; mode = :autodiff,
+                retraction = retraction, algorithm = algorithm,
                 linesearch = linesearch(T), max_iterations = CONVERGENCE_MAX_ITERATIONS,
                 warn_iterations = 0)
             result = solve!(ps, state, optimizer)

@@ -510,10 +510,10 @@ end
     for x in (rand(StiefelManifold{Float64}, 6, 3),
         rand(GrassmannManifold{Float64}, 6, 3),
         NetworkParameters((W = rand(3, 3), b = zeros(3))))
-        @test_throws ArgumentError Optimizer(x, f; algorithm = Newton())
+        @test_throws ArgumentError Optimizer(x, f; mode = :autodiff, algorithm = Newton())
         @test_throws "Newton optimizes an AbstractVector only" Optimizer(
-            x, f; algorithm = Newton())
-        @test_throws "BFGS()" Optimizer(x, f; algorithm = Newton())
+            x, f; mode = :autodiff, algorithm = Newton())
+        @test_throws "BFGS()" Optimizer(x, f; mode = :autodiff, algorithm = Newton())
 
         # `OptimizerState` is exported, and `solve!(x, OptimizerState(method, x), opt)` is the
         # documented pattern, so it is the entry point a manifold user reaches first
@@ -521,8 +521,8 @@ end
         @test_throws "Newton optimizes an AbstractVector only" OptimizerState(Newton(), x)
 
         # the two methods the message sends the caller to do take all three shapes
-        @test Optimizer(x, f; algorithm = BFGS()) isa Optimizer
-        @test Optimizer(x, f; algorithm = DFP()) isa Optimizer
+        @test Optimizer(x, f; mode = :autodiff, algorithm = BFGS()) isa Optimizer
+        @test Optimizer(x, f; mode = :autodiff, algorithm = DFP()) isa Optimizer
     end
 
     # and the supported shape is untouched

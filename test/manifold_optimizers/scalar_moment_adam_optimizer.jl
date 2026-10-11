@@ -86,7 +86,7 @@ end
     for x in (rand(rng, T, 3),
         NetworkParameters((Y = rand(rng, StiefelManifold{T}, 4, 2), z = rand(rng, T, 3))),
         rand(rng, GrassmannManifold{T}, 4, 2))
-        @test_throws MethodError Optimizer(x, f; algorithm = ScalarMomentAdam())
+        @test_throws MethodError Optimizer(x, f; mode = :autodiff, algorithm = ScalarMomentAdam())
     end
 
     # A Stiefel manifold of either element type is in scope: the method carries no element type,

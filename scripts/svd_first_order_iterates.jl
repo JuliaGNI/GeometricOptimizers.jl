@@ -26,7 +26,7 @@ for retraction in (GeometricOptimizers.Geodesic(), GeometricOptimizers.Cayley())
         ps = starting_point(3)
         state = OptimizerState(algorithm, ps)
         optimizer = Optimizer(
-            ps, objective; retraction = retraction, algorithm = algorithm,
+            ps, objective; mode = :autodiff, retraction = retraction, algorithm = algorithm,
             linesearch = Static(0.01), max_iterations = 1000, warn_iterations = 0)
         solve!(ps, state, optimizer)
         bits = hash((reinterpret(UInt64, vec(Matrix(ps.w₁))),

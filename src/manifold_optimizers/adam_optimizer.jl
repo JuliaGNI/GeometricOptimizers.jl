@@ -168,10 +168,12 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     fac₁₂ = (1 - β₁) / (1 - β₁^t)
     fac₂₁ = (β₂ - β₂^t) / (1 - β₂^t)
     fac₂₂ = (1 - β₂) / (1 - β₂^t)
-    _copyto!(first_moment(cache), _mul(fac₁₁, first_moment(state)))
-    _add!(first_moment(cache), _mul(fac₁₂, gradient_array(cache)))
-    _copyto!(second_moment(cache), _mul(fac₂₁, second_moment(state)))
-    _add!(second_moment(cache), _mul(fac₂₂, _square(gradient_array(cache))))
+    # one broadcast per leaf for each moment, into the cache, so that the step allocates nothing
+    first_moment!(m, m̄, g) = (m .= fac₁₁ .* m̄ .+ fac₁₂ .* g)
+    second_moment!(m, m̄, g) = (m .= fac₂₁ .* m̄ .+ fac₂₂ .* g .^ 2)
+    _storagewise!(first_moment!, first_moment(cache), first_moment(state), gradient_array(cache))
+    _storagewise!(
+        second_moment!, second_moment(cache), second_moment(state), gradient_array(cache))
     # `m̃₂ = √m₂ + δ`; note that the square root must not be applied to `m₂` in place, as
     # `advance_state!` stores `m₂` in the state afterwards.
     _copyto!(_second_moment(cache), second_moment(cache))

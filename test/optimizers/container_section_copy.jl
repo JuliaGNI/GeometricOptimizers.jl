@@ -78,7 +78,7 @@ end
     F(p) = sum(abs2, flatten(p)[1])
     before = F(ps)
 
-    opt = Optimizer(ps, F; algorithm = GradientMethod(),
+    opt = Optimizer(ps, F; mode = :autodiff, algorithm = GradientMethod(),
         linesearch = GeometricOptimizers.Static(0.01))
     state = OptimizerState(GradientMethod(), ps)
     GeometricOptimizers.initialize_state!(state)

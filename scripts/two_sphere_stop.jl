@@ -34,7 +34,8 @@ const LINESEARCHES = (
 function solve_case(method, linesearch, retraction; store_trace = false)
     ps = ps₀()
     state = OptimizerState(method, ps)
-    opt = Optimizer(ps, two_spheres; algorithm = method, linesearch = linesearch,
+    opt = Optimizer(
+        ps, two_spheres; mode = :autodiff, algorithm = method, linesearch = linesearch,
         retraction = retraction, max_iterations = 1000, store_trace = store_trace)
     result = solve!(ps, state, opt)
     (iteration_number(state), status(result), result)

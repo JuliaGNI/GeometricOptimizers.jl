@@ -71,7 +71,7 @@ end
     A = randn(rng, T, 5, 3)
     x = NetworkParameters((w = rand(rng, StiefelManifold{T}, 5, 3), b = randn(rng, T, 3)))
     algorithm = Adam()
-    optimizer = Optimizer(x, named_tuple_error(A); algorithm = algorithm,
+    optimizer = Optimizer(x, named_tuple_error(A); mode = :autodiff, algorithm = algorithm,
         linesearch = Static(T(0.01)))
     state = AdamState(x)
 
@@ -101,7 +101,8 @@ end
         results = map(1:2) do _
             Random.seed!(1234)
             ps = deepcopy(x)
-            optimizer = Optimizer(ps, f; algorithm = algorithm, linesearch = Static(T(0.01)))
+            optimizer = Optimizer(ps, f; mode = :autodiff, algorithm = algorithm,
+                linesearch = Static(T(0.01)))
             state = OptimizerState(algorithm, ps)
             for _ in 1:5
                 increase_iteration_number!(state)

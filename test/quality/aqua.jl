@@ -86,7 +86,7 @@ end
 
     # The projecting functor: wrapped, not pirated, and `Optimizer` is what wraps.
     F(p) = l2norm(p)
-    opt = Optimizer(ps, F; algorithm = GradientMethod())
+    opt = Optimizer(ps, F; mode = :autodiff, algorithm = GradientMethod())
     @test gradient(opt) isa RiemannianGradient
     @test gradient(opt).gradient isa GradientAutodiff
     # Idempotent, so handing `Optimizer` a gradient that is already wrapped is not a second wrapper.

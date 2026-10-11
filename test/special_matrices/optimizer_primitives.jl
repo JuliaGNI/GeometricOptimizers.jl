@@ -202,7 +202,8 @@ function optimize(T, MT, algorithm; steps = 5, η = T(0.1))
     # triangle of a `SkewSymMatrix` twice and the objective is not the point here
     F(p) = sum(abs2, parent(p.A) .- parent(A_target)) / 2
 
-    optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(η))
+    optimizer = Optimizer(
+        ps, F; mode = :autodiff, algorithm = algorithm, linesearch = Static(η))
     state = OptimizerState(algorithm, ps)
 
     before = F(ps)
