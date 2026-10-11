@@ -325,35 +325,6 @@ function _add!(a::GradientStorage{T}, b::GradientStorage{T}) where {T}
     _storagewise!((a, b) -> a .+= b, a, b)
 end
 
-_add!(a::GradientStorage{T}, b::T) where {T} = _storagewise!(a -> a .+= b, a)
-
-"""
-    _rac!(B, A)
-
-Compute the element-wise square-root of `A`.
-"""
-_rac!(B::GradientStorage, A::GradientStorage) = _storagewise!((B, A) -> B .= sqrt.(A), B, A)
-
-"""
-    _div!(C, A, B)
-
-Divide `A` by `B` (elment-wise)
-"""
-function _div!(C::GradientStorage, A::GradientStorage, B::GradientStorage)
-    _storagewise!(C, A, B) do C, A, B
-        @assert axes(A) == axes(B) == axes(C)
-        C .= A ./ B
-    end
-end
-
-"""
-    _square!(B, A)
-
-"""
-function _square!(B::GradientStorage, A::GradientStorage)
-    _storagewise!((B, A) -> B .= A .^ 2, B, A)
-end
-
 function Base.copyto!(dest::AbstractArray{T}, src::GlobalSection{T}) where {T}
     copyto!(dest, src.Y)
     dest

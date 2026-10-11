@@ -28,9 +28,9 @@ single array every other `parent` this package defines returns.
 Every operation on a lift that is elementwise *in the free parameters* — as opposed to in the ambient
 ``N\times{}N`` matrix, which has no `setindex!` and counts each off-diagonal block twice — is written
 once over this tuple rather than once per lift type. That is `assign!` below, and `l2norm`, and the
-`_difference!` / `_add!` / `_rac!` / `_div!` / `_square!` family in `named_tuple_wrapper.jl`, which
-reaches the tuple through `freeparameters`. So a [`GrassmannManifold`](@ref) is driven through an
-[`Optimizer`](@ref) by the same code as a [`StiefelManifold`](@ref).
+`_difference!` / `_add!` / `_rmul!` family in `named_tuple_wrapper.jl` and the moment update of
+[`Adam`](@ref), which reach the tuple through `freeparameters`. So a [`GrassmannManifold`](@ref) is
+driven through an [`Optimizer`](@ref) by the same code as a [`StiefelManifold`](@ref).
 
 The docstring is attached to the *signature* and not to the bare `Base.parent`: the package also
 defines `parent` for [`Manifold`](@ref), `SkewSymMatrix`, `SymmetricMatrix` and `AbstractTriangular`,

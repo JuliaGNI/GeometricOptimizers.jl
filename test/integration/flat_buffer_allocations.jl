@@ -30,7 +30,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update!,
-                           _difference!, _rmul!, _add!, _rac!, _div!, _square!, _copyto!,
+                           _difference!, _rmul!, _add!, _copyto!,
                            solver_step!,
                            increase_iteration_number!, gradient, inverse_hessian, cache,
                            direction, rhs,
@@ -262,12 +262,8 @@ end
     a, b, c = primitive_set(T, 1), primitive_set(T, 2), primitive_set(T, 3)
     @test _measured2(_rmul!, c, T(2)) == 0
     @test _measured2(_add!, c, b) == 0
-    @test _measured2(_add!, c, T(2)) == 0
-    @test _measured2(_square!, c, a) == 0
-    @test _measured2(_rac!, c, a) == 0
     @test _measured2(_copyto!, c, a) == 0
     @test _measured3(_difference!, c, a, b) == 0
-    @test _measured3(_div!, c, a, b) == 0
     @test eltype(flatten(c)[1]) == T
     # the control: the barrier sees an allocation where there is one
     @test _measured2((x, y) -> flatten(x), a, b) > 0

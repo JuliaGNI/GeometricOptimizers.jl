@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: l2norm, _add!, _difference!, _square!, _rac!, _div!, assign!
+using GeometricOptimizers: l2norm, _add!, _difference!, assign!
 using LinearAlgebra
 using NeuralNetworkParameters: flatten
 using Test
@@ -105,13 +105,6 @@ free(::Type{T}, B) where {T} = flatten(T, B)[1]
             @test eltype(_add!(copy(B), B)) == T
             @test free(T, _add!(copy(B), B)) ≈ 2b
             @test iszero(free(T, _difference!(copy(B), B, B)))
-
-            # `_square!` / `_rac!` / `_div!`: the `Adam` moment path. `_square!` first, so that
-            # `_rac!` is given something non-negative to take the root of.
-            S = _square!(copy(B), B)
-            @test free(T, S) ≈ b .^ 2
-            @test free(T, _rac!(copy(S), S)) ≈ abs.(b)
-            @test free(T, _div!(copy(B), S, S)) ≈ ones(T, length(b))
 
             # `assign!` and `copy` round-trip, and neither reaches `setindex!`
             E = zero(B)

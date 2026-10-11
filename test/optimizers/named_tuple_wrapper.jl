@@ -1,5 +1,4 @@
-# The elementwise optimizer primitives: `_difference!`, `_rmul!`, `_add!`, `_rac!`, `_div!`,
-# `_square!` and `_copyto!`.
+# The elementwise optimizer primitives: `_difference!`, `_rmul!`, `_add!` and `_copyto!`.
 #
 # Each acts on the free parameters of a leaf, at any depth of a `NetworkParameters`, and the tests
 # below state that as a value: the flattening of the result is the elementwise formula applied to
@@ -11,7 +10,7 @@
 # structured matrices. On a manifold point they compute on its storage and do not guard it; only
 # `_copyto!` is meant to write a point. A testset at the end pins that.
 using GeometricOptimizers
-using GeometricOptimizers: _difference!, _rmul!, _add!, _rac!, _div!, _square!, _copyto!,
+using GeometricOptimizers: _difference!, _rmul!, _add!, _copyto!,
                            _zero,
                            _copy, OptimizerCache, direction, update!
 using NeuralNetworkParameters: NetworkParameters, flatten
@@ -26,8 +25,7 @@ Random.seed!(1234)
 
 flat(x) = flatten(x)[1]
 
-# One leaf of each kind the arithmetic primitives see, with positive storage so that `_rac!` and
-# `_div!` are defined everywhere.
+# One leaf of each kind the arithmetic primitives see.
 function tangent_leaves(rng, ::Type{T}) where {T}
     (vector = rand(rng, T, 4) .+ one(T), matrix = rand(rng, T, 2, 3) .+ one(T),
         sym = rand(rng, SymmetricMatrix{T}, 3), skew = rand(rng, SkewSymMatrix{T}, 3),
@@ -80,24 +78,6 @@ const KINDS = (
         x = _copy(a)
         @test _add!(x, b) === x
         @test flat(x) == A .+ B
-        x = _copy(a)
-        @test _add!(x, T(0.5)) === x
-        @test flat(x) == A .+ T(0.5)
-
-        @test _square!(c, a) === c
-        @test flat(c) == A .^ 2
-        @test _rac!(c, a) === c
-        @test flat(c) == sqrt.(A)
-        # in place, as `AdamCache` calls it
-        x = _copy(a)
-        @test _rac!(x, x) === x
-        @test flat(x) == sqrt.(A)
-
-        @test _div!(c, a, b) === c
-        @test flat(c) == A ./ B
-        x = _copy(a)
-        @test _div!(x, x, b) === x
-        @test flat(x) == A ./ B
 
         @test _copyto!(c, a) === c
         @test flat(c) == A
@@ -146,7 +126,7 @@ end
 end
 
 # The arithmetic primitives refuse a structured leaf of another kind or size, also where the two
-# storage vectors have the same length; and `_difference!` and `_div!` assert the axes of arrays.
+# storage vectors have the same length; and `_difference!` asserts the axes of arrays.
 @testset "the arithmetic primitives refuse a leaf of another kind or size, $T" for T in REAL_ELTYPES
     K, S = rand(SkewSymMatrix{T}, 4), rand(SymmetricMatrix{T}, 3)   # 6 numbers each
     L, U = rand(StrictlyLowerTriangular{T}, 3), rand(StrictlyUpperTriangular{T}, 3)
@@ -161,16 +141,12 @@ end
     for (x, y) in ((K, S), (L, U), (Y, Z), (small, large), (narrow, wide), (gnarrow, gwide))
         @test_throws ArgumentError _difference!(_copy(x), x, y)
         @test_throws ArgumentError _add!(_copy(x), y)
-        @test_throws ArgumentError _rac!(_copy(x), y)
-        @test_throws ArgumentError _div!(_copy(x), x, y)
-        @test_throws ArgumentError _square!(_copy(x), y)
     end
     @test_throws ArgumentError _add!(NetworkParameters((A = _copy(L),)),
         NetworkParameters((A = U,)))
 
     a, b = rand(T, 3), rand(T, 4)
     @test_throws AssertionError _difference!(_copy(a), a, b)
-    @test_throws AssertionError _div!(_copy(a), a, b)
 end
 
 # A hot path: every `update!` and every `OptimizerStatus` runs these, so they infer, in both
@@ -182,10 +158,6 @@ end
         @test (@inferred _difference!(c, a, b)) === c
         @test (@inferred _rmul!(c, T(2))) === c
         @test (@inferred _add!(c, b)) === c
-        @test (@inferred _add!(c, T(2))) === c
-        @test (@inferred _square!(c, a)) === c
-        @test (@inferred _rac!(c, a)) === c
-        @test (@inferred _div!(c, a, b)) === c
         @test (@inferred _copyto!(c, a)) === c
         @test eltype(flat(c)) == T
     end
@@ -201,9 +173,7 @@ end
     full = dest()
 
     for (name, f!) in (("_difference!", c -> _difference!(c, full, gap)),
-        ("_add!", c -> _add!(c, gap)), ("_rac!", c -> _rac!(c, gap)),
-        ("_div!", c -> _div!(c, full, gap)), ("_square!", c -> _square!(c, gap)),
-        ("_copyto!", c -> _copyto!(c, gap)))
+        ("_add!", c -> _add!(c, gap)), ("_copyto!", c -> _copyto!(c, gap)))
         c = dest()
         b = _copy(c.b)
         @test f!(c) === c
@@ -215,9 +185,6 @@ end
     @test_throws MethodError _difference!(x, x, nothing)
     @test_throws MethodError _rmul!(x, nothing)
     @test_throws MethodError _add!(x, nothing)
-    @test_throws MethodError _rac!(x, nothing)
-    @test_throws MethodError _div!(x, x, nothing)
-    @test_throws MethodError _square!(x, nothing)
     @test_throws MethodError _copyto!(x, nothing)
     @test_throws MethodError _copyto!(nothing, x)
 end
@@ -231,10 +198,6 @@ end
         @test _difference!(c, a, b) === c
         @test _rmul!(c, T(2)) === c
         @test _add!(c, b) === c
-        @test _add!(c, T(2)) === c
-        @test _square!(c, a) === c
-        @test _rac!(c, a) === c
-        @test _div!(c, a, b) === c
         @test _copyto!(c, a) === c
     end
 end
@@ -248,22 +211,12 @@ end
         NetworkParameters((W = rand(Float64, 2, 2) .+ 1,))))
         @test_throws MethodError _difference!(_copy(narrow), narrow, wide)
         @test_throws MethodError _add!(_copy(narrow), wide)
-        @test_throws MethodError _add!(_copy(narrow), 2.0)
         @test_throws MethodError _copyto!(_copy(narrow), wide)
 
-        A, B = flat(narrow), flat(wide)
+        A = flat(narrow)
         x = _copy(narrow)
         @test _rmul!(x, 2.5) === x
         @test flat(x) == Float32.(A .* 2.5)
-        x = _copy(narrow)
-        @test _rac!(x, wide) === x
-        @test flat(x) == Float32.(sqrt.(B))
-        x = _copy(narrow)
-        @test _div!(x, narrow, wide) === x
-        @test flat(x) == Float32.(A ./ B)
-        x = _copy(narrow)
-        @test _square!(x, wide) === x
-        @test flat(x) == Float32.(B .^ 2)
         @test eltype(flat(x)) == Float32
     end
 end
@@ -276,10 +229,6 @@ end
     A, B = flat(a), flat(b)
     _difference!(c, a, b)
     @test isequal(flat(c), A .- B)
-    _div!(c, a, b)
-    @test isequal(flat(c), A ./ B)
-    _square!(c, b)
-    @test isequal(flat(c), B .^ 2)
     x = _copy(a)
     _add!(x, b)
     @test isequal(flat(x), A .+ B)
@@ -311,8 +260,7 @@ end
 end
 
 # The internal primitives do not guard a manifold point: they compute on its storage, so the result
-# is in general not a point. No path in the package applies them to one. A structured leaf of
-# another element type is computed on its storage too, as a `Vector` is.
+# is in general not a point. No path in the package applies them to one.
 @testset "the internal primitives do not guard a manifold point, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(301)
     for P in (StiefelManifold, GrassmannManifold)
@@ -328,37 +276,5 @@ end
         x = _copy(a)
         @test _add!(x, b) === x
         @test parent(x) == A .+ B
-        x = _copy(a)
-        @test _add!(x, T(0.5)) === x
-        @test parent(x) == A .+ T(0.5)
-        x = _copy(a)
-        @test _square!(x, a) === x
-        @test parent(x) == A .^ 2
-        @test _rac!(x, x) === x
-        @test parent(x) == sqrt.(A .^ 2)
-        x = _copy(a)
-        @test _div!(x, a, b) === x
-        @test parent(x) == A ./ B
-    end
-end
-
-@testset "a structured leaf of another element type is computed on its storage" begin
-    for (narrow, wide) in ((
-        rand(SkewSymMatrix{Float32}, 3), rand(SkewSymMatrix{Float64}, 3)),
-        (rand(SymmetricMatrix{Float32}, 3), rand(SymmetricMatrix{Float64}, 3)),
-        (rand(StrictlyLowerTriangular{Float32}, 3),
-        rand(StrictlyLowerTriangular{Float64}, 3)),
-        (rand(StiefelLieAlgHorMatrix{Float32}, 5, 2),
-        rand(StiefelLieAlgHorMatrix{Float64}, 5, 2)))
-        A, B = flat(narrow), flat(wide)
-        x = _copy(narrow)
-        @test _rac!(x, wide) === x
-        @test flat(x) == Float32.(sqrt.(B))
-        x = _copy(narrow)
-        @test _div!(x, narrow, wide) === x
-        @test flat(x) == Float32.(A ./ B)
-        x = _copy(narrow)
-        @test _square!(x, wide) === x
-        @test flat(x) == Float32.(B .^ 2)
     end
 end

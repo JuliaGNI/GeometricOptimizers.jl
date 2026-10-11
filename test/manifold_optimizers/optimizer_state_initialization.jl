@@ -1,8 +1,9 @@
 using GeometricOptimizers
 using GeometricOptimizers: AdamState, MomentumState, GradientState
-using GeometricOptimizers: first_moment, second_moment, _second_moment, momentum
+using GeometricOptimizers: first_moment, second_moment, momentum
 using GeometricOptimizers: cache, gradient_array, increase_iteration_number!, solver_step!,
-                           update!, _square!, _copy, _mul
+                           update!, _mul
+using NeuralNetworkParameters: flatten
 using SimpleSolvers: Static
 using LinearAlgebra: norm
 using Test
@@ -48,7 +49,6 @@ _eltypes(a::NetworkParameters) = Tuple(unique(eltype(v) for v in values(a)))
         @test _eltypes(first_moment(state)) == (T,)
         @test _all_zero(first_moment(state))
         @test _all_zero(second_moment(state))
-        @test _all_zero(_second_moment(state))
 
         @test _eltypes(momentum(MomentumState(x))) == (T,)
         @test _all_zero(momentum(MomentumState(x)))
@@ -84,7 +84,7 @@ end
     @test _eltypes(first_moment(state)) == (T,)
     @test _eltypes(second_moment(state)) == (T,)
     @test _isapprox(first_moment(state), g)
-    @test _isapprox(second_moment(state), _square!(_copy(g), g))
+    @test flatten(second_moment(state))[1] ≈ flatten(g)[1] .^ 2
 end
 
 # A regression test for the uninitialized moments: those made the optimizers depend on
