@@ -4,19 +4,10 @@
 # before, so the order is fixed here and the process is fresh. Prints one line per set: its name and
 # the bytes of one step after warm-up, behind a function barrier.
 using GeometricOptimizers
-using NeuralNetworkParameters: NetworkParameters, mapparameters
+using NeuralNetworkParameters: NetworkParameters
 using Random: Xoshiro
 
-function gradient_leaf(rng, x::Union{SymmetricMatrix, SkewSymMatrix, AbstractTriangular})
-    typeof(x).name.wrapper(randn(rng, eltype(x), length(x.S)) ./ 100, x.n)
-end
-gradient_leaf(rng, x::AbstractArray{T}) where {T} = randn(rng, T, size(x)...) ./ 100
-random_gradient(x) = (rng = Xoshiro(6); mapparameters(y -> gradient_leaf(rng, y), x))
-
-function allocations(x::X, opt::O, dp::D) where {X, O, D}
-    optimization_step!(x, opt, dp)
-    @allocated optimization_step!(x, opt, dp)
-end
+include(joinpath(@__DIR__, "parameter_set_step.jl"))
 
 function weights(::Type{T}) where {T}
     (
@@ -36,6 +27,6 @@ for T in (Float32, Float64), (name, W) in weights(T)
         "nested" => NetworkParameters((L1 = (W = W(), b = randn(Xoshiro(3), T, 16)),)))
         dp = random_gradient(x)
         opt = TrainingOptimizer(x; algorithm = Adam())
-        println("$T $name $shape: ", minimum(allocations(x, opt, dp) for _ in 1:3))
+        println("$T $name $shape: ", minimum(step_allocations(x, opt, dp) for _ in 1:3))
     end
 end

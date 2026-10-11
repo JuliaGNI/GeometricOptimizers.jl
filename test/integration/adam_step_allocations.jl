@@ -10,21 +10,14 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: AdamOptimizerWithDecay
-using NeuralNetworkParameters: NetworkParameters, mapparameters, params, flatten
+using NeuralNetworkParameters: NetworkParameters, params, flatten
 using LinearAlgebra: norm
 using Random: Xoshiro
 using Test
 
 include("../helpers/eltypes.jl")
 include("../helpers/allocations.jl")
-
-# "Model A": eight `Dense(64, 64)` layers and one `Dense(64, 1)`, 33 345 parameters.
-function model_A(::Type{T}) where {T}
-    rng = Xoshiro(1)
-    layer(m, n) = (W = randn(rng, T, m, n) ./ T(8), b = randn(rng, T, m) ./ T(8))
-    NetworkParameters(NamedTuple{ntuple(i -> Symbol(:L, i), 9)}(
-        (ntuple(_ -> layer(64, 64), 8)..., layer(1, 64))))
-end
+include("../helpers/parameter_set_step.jl")
 
 # Model A with a `SymmetricMatrix` and a `SkewSymMatrix` weight: dense and vector-storage leaves.
 function structured_set(::Type{T}) where {T}
@@ -43,21 +36,6 @@ function stiefel_set(::Type{T}) where {T}
         (L6 = (W = rand(rng, StiefelManifold{T}, 64, 8), b = p.L6.b),)))
 end
 
-# A Euclidean gradient of the shape of `x`: a dense matrix where `x` is a manifold point.
-_gradient_leaf(rng, x::Manifold{T}) where {T} = randn(rng, T, size(x)...) ./ 100
-function _gradient_leaf(rng, x::Union{SymmetricMatrix{T}, SkewSymMatrix{T}}) where {T}
-    typeof(x).name.wrapper(randn(rng, T, length(x.S)) ./ 100, x.n)
-end
-_gradient_leaf(rng, x::AbstractArray{T}) where {T} = randn(rng, T, size(x)...) ./ 100
-function random_gradient(x, seed)
-    (rng = Xoshiro(seed); mapparameters(y -> _gradient_leaf(rng, y), x))
-end
-
-# The barrier: concrete argument types, one warm-up call, then the measured call.
-function allocations(x::X, opt::O, dp::D) where {X, O, D}
-    optimization_step!(x, opt, dp)
-    @allocated optimization_step!(x, opt, dp)
-end
 flatten_allocations(x::X) where {X} = (flatten(x); @allocated flatten(x))
 
 const ADAM_FAMILY = (
@@ -76,7 +54,7 @@ const ADAM_FAMILY = (
     @test (@inferred optimization_step!(x, opt, dp)) === x
     @test flatten(x)[1] != before
     @test eltype(flatten(x)[1]) == T
-    @test allocations(x, opt, dp) == 0
+    @test step_allocations(x, opt, dp) == 0
     # the control: a barrier of this form sees an allocation where there is one
     @test flatten_allocations(dp) > 0
 end
@@ -103,9 +81,9 @@ end
 
     x = stiefel_set(T)
     dp = random_gradient(x, 6)
-    adam = allocations(x, TrainingOptimizer(x; kwargs()...), dp)
+    adam = step_allocations(x, TrainingOptimizer(x; kwargs()...), dp)
     y = stiefel_set(T)
-    gradient_step = allocations(y, TrainingOptimizer(y; algorithm = GradientMethod()), dp)
+    gradient_step = step_allocations(y, TrainingOptimizer(y; algorithm = GradientMethod()), dp)
     @test gradient_step > 0
     @test n_independent(adam, gradient_step)
 end
