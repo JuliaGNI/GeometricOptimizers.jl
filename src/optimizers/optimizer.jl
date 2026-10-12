@@ -120,8 +120,8 @@ struct Optimizer{T,
     cache::OCT
     linesearch::LST
     retraction::RT
-    # The buffers of every retraction on the step path, a `NoWorkspace` where the parameters carry no
-    # manifold. They are here and not on the cache because the retraction belongs to this type, and
+    # The buffers of every retraction on the step path: a `NoWorkspace` for an array, and for a
+    # parameter set a tree of workspaces, with a `NoWorkspace` at each array leaf. They are here and not on the cache because the retraction belongs to this type, and
     # both call sites that apply one, `solver_step!` and `trial_iterate!` through the closures of
     # `linesearch_problem`, start from here. See `GeometricOptimizers.retraction_workspace`.
     retraction_workspace::WT
@@ -315,9 +315,9 @@ to the element type of `x`, so `Optimizer(Float32[1, 2, 3], F; algorithm = Adam(
     This method splats `kwargs...` once. `Options` is built here and passed *positionally* from then
     on, so the return type of the constructor does not depend on which keywords were given; see
     `_optimizer` and the inner constructor. Nested levels of `kwargs...` splatting, with the
-    construction and a [`solve!`](@ref) call in one inferred body, have made the compilation
-    superlinear on a released Julia; a barrier or `@nospecialize` did not help. `KNOWN_ISSUES.md`
-    records the measurements.
+    construction and a [`solve!`](@ref) call in one inferred body, make the compile time
+    superlinear on some Julia releases, and neither a barrier nor `@nospecialize` prevents it.
+    `KNOWN_ISSUES.md` records the measurements.
 """
 function Optimizer(x::VT, F::Function; (∇F!) = nothing, mode = nothing,
         algorithm::OptimizerMethod = BFGS(),

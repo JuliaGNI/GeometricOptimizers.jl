@@ -6,8 +6,7 @@
 [![Coverage](https://codecov.io/gh/JuliaGNI/GeometricOptimizers.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/JuliaGNI/GeometricOptimizers.jl)
 [![PkgEval](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/G/GeometricOptimizers.svg)](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/G/GeometricOptimizers.html)
 
-Optimizers on vector spaces and on matrix manifolds: the Stiefel, the Grassmann and the symplectic
-Stiefel manifold.
+Optimizers on vector spaces and on matrix manifolds: the Stiefel and the Grassmann manifold.
 
 ## Example
 

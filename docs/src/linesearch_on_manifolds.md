@@ -138,9 +138,10 @@ has been accepted. That is why it is the default here for every method except [`
 The table gives the objective evaluations on the SVD problem of `test/verification/svd_optim.jl`,
 with `Geodesic`, on the starting point that the test suite uses. `Static` needs about 4 evaluations
 per iteration; subtract that for the cost of the search itself. The figures are from
-GeometricOptimizers 0.2.0 with SimpleSolvers 0.11, and `scripts/retraction_accuracy.jl` makes them
+GeometricOptimizers 0.2.0 with SimpleSolvers 0.12, and `scripts/retraction_accuracy.jl` makes them
 again. That script does not make the two `StrongWolfe (c₂ = 0.9)` cells, and the `DFP` cells of
-`Backtracking` (shrink only) and `BierlaireQuadratic`; these come from an earlier measurement.
+`Backtracking` (shrink only) and `BierlaireQuadratic`; these come from an earlier measurement, before
+SimpleSolvers 0.12.
 
 | search | evals/iteration | `BFGS`: iters / evals | `DFP`: iters / evals |
 |---|---|---|---|

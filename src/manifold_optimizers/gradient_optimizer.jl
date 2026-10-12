@@ -120,7 +120,7 @@ after it has recorded the iterate, its gradient and its objective value.
 `section(cache)` is `update_section!(section(state), direction, retraction)` once the step is taken,
 so it is copied and not retracted a second time. On a manifold the retraction is ``O(N^2n)``, and
 `update_section!` then transports the ``N\times{}(N-n)`` block of the section by a product with an
-``(N-n)\times{}(N-n)`` block, which is ``O(N(N-n)^2)``, i.e. ``O(N^3)`` for ``n \ll N``, where the
+``(N-n)\times{}N`` block, which is ``O(N^2(N-n))``, i.e. ``O(N^3)`` for ``n \ll N``, where the
 copy is ``O(N^2)``.
 """
 function advance_state!(state::GradientState, cache::GradientCache, ::GradientMethod)

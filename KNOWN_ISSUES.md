@@ -536,13 +536,13 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C1 · `f_converged_strong` is computed and thrown away
 
-- location: `src/optimizers/optimizer_status.jl:312`
+- location: `src/optimizers/optimizer_status.jl:317`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
 
-  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:312` and returns it at
-  `:319`; the `OptimizerStatus` constructor destructures it at `:135` and never stores it. Nothing else
+  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:317` and returns it at
+  `:323`; the `OptimizerStatus` constructor destructures it at `:121` and never stores it. Nothing else
   in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
   on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
   and `Options.f_stall_window` were meant to drive — both of which are also unread here.
@@ -761,6 +761,28 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   plainly in the docstring that no such bound is claimed and that the threshold is a measured one — the
   latter is what is written today, and it is enough to use the algorithm honestly but not enough to
   close [#52]'s first acceptance criterion.
+
+### K38 · Manual pages carry release history in their prose
+
+- location: `docs/src/retractions.md:494`
+- kind: found late
+- found: 2026-10-12
+- evidence: `docs/src/retractions.md:494` ("Before 0.2.0 the slope was …"),
+  `docs/src/exponential_algorithms.md:103` ("the pre-0.2.0 behaviour"), `:374-375` ("a regression
+  baseline for the pre-0.2.0 implementation — the behaviour of every release up to 0.2.0"),
+  `:1493` ("the pre-0.2.0 regression"), and `docs/src/weight_decay.md:186` ("v0.1.0's
+  `AdamWithDecay`"). The prose pass of the source comments and docstrings removed the same history
+  from `src/`; these manual pages are outside its scope.
+
+### K39 · The `Bisection` sentence of "Linesearches on Manifolds" contradicts the table above it
+
+- location: `docs/src/linesearch_on_manifolds.md:163`
+- kind: docs
+- found: 2026-08-13
+- evidence: the sentence says that `SimpleSolvers.Bisection` "needs the fewest iterations of any
+  option here, and roughly 583 objective evaluations per iteration". The table on the same page
+  gives `Bisection` 133 `BFGS` iterations against 95 for `Backtracking(expand = true)`, and 589
+  evaluations per iteration.
 
 ## D. Upstream
 
@@ -1086,7 +1108,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   |:--|:--|--:|--:|
   | `rgrad(::StiefelManifold, ::AbstractMatrix)`, `src/manifolds/stiefel_manifold.jl:54` | `∇L - Y.A * (∇L' * Y.A)` | 4 560 | 8 |
   | `global_rep(::GlobalSection{T, <:StiefelManifold}, Δ)`, `src/global_sections/global_sections.jl:264` | `SkewSymMatrix(λY.Y.A' * Δ)` and `λY.λ' * Δ` | 3 560 | 33 |
-  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:280` | `inv(ws.M)` | 5 448 | 8 |
+  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:279` | `inv(ws.M)` | 5 448 | 8 |
 
   The three frames account for 13 568 of the 14 016 bytes. Removing each needs an in-place form: a
   buffer for the Riemannian gradient, a `global_rep!` into the cache's lift, and a factorisation of

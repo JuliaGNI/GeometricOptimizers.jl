@@ -6,9 +6,10 @@
 #     julia --startup-file=no --project=. scripts/retraction_step_allocations.jl
 #
 # This is the harness behind the CHANGELOG entry on `RetractionWorkspace`, and it exists because a
-# number is reproducible only where the harness that produced it is named. `test/integration/flat_buffer_allocations.jl` is the complement — it asserts the
-# *property* the second table shows, that a retraction taken in a workspace costs the same at every
-# ambient dimension, where this says what that is worth.
+# number is reproducible only where the harness that produced it is named.
+# `test/integration/flat_buffer_allocations.jl` is the complement — it asserts the *property* the
+# second table shows, that a retraction taken in a workspace costs the same at every ambient
+# dimension, where this says what that is worth.
 #
 # ## What is compared, and why both columns come from the shipped code
 #

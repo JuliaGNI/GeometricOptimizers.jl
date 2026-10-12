@@ -149,7 +149,7 @@ The orthonormalization is **CholeskyQR2** — the Cholesky step shown twice abov
 
 The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in a hundred and twenty. Such a draw is *replaced* rather than repaired — it is Gaussian noise and carries no information — which is what [`GeometricOptimizers.orthonormal_columns`](@ref) does. A replacement fails at a somewhat higher rate again, so the redraw is bounded and raises rather than returning a result it did not produce cleanly.
 
-On a device, CholeskyQR2 keeps the point there; it is not the faster route. `scripts/orthonormalization_device_cost.jl` measures it on an M4 Max with Julia 1.13.1 and Metal 1.11.1, in `Float32`, at the ``N\times(N-3)`` shape that [`global_section`](@ref) uses: a cold session, one warm-up, the median of five runs, `Metal.synchronize()` in the timed region, and the host on one BLAS thread.
+On a device, CholeskyQR2 keeps the point there; it is not the faster route. `scripts/orthonormalization_device_cost.jl` measures it on an M4 Max with Julia 1.13.1, Metal 1.11.1 and the development version of GeometricOptimizers after 0.8.0, in `Float32`, at the ``N\times(N-3)`` shape that [`global_section`](@ref) uses: a cold session, one warm-up, the median of five runs, `Metal.synchronize()` in the timed region, and the host on one BLAS thread.
 
 | ``N`` | CholeskyQR2 on Metal | host `qr!` | download, host `qr!`, upload |
 |---|---|---|---|

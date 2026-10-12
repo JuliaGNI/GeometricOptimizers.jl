@@ -8,14 +8,14 @@
 #
 #   * `exponential_tables()` — the accuracy, cost and allocations of the five
 #     `AbstractExponentialAlgorithm`s.
-#     Feeds the tables in `src/retractions/exponential_algorithms.jl` and the note on `Cayley` in
+#     Feeds the tables in `docs/src/exponential_algorithms.md` and the note on `Cayley` in
 #     `src/retractions/retraction_types.jl`. `docs/src/retractions.md` recomputes the accuracy
 #     tables when the documentation is built, from the same seed and the same `SCALES`, so this
 #     script and that page print the same rows.
 #   * `svd_tables()` — iterations, objective evaluations, `‖∇f‖` and `check` for every (method, line
 #     search, retraction) combination of `test/verification/svd_optim.jl`, on the seed that
 #     file uses and across eight starting points. Feeds the tables in that file and in
-#     `default_linesearch`'s docstring. Its `max_iterations` is the cap those tables report against,
+#     `docs/src/linesearch_on_manifolds.md`. Its `max_iterations` is the cap those tables report against,
 #     so it belongs here and not at a call site: `BFGS` with either polynomial search does not
 #     converge on two of the eight under `Cayley` (open issue A1b), and what the tables print for
 #     those is the cap itself.
