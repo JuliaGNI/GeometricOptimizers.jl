@@ -82,8 +82,8 @@ end
 
 # The host spelling is a loop over a `zeros(T, n2, n2)`, with no backend and no kernel launch.
 # Routing it through `KernelAbstractions.zeros` and a kernel launch would make the common case pay
-# for the device machinery, and the measurement behind that is the comment on
-# `_zeros` in `allocators.jl`. `StiefelProjection` splits its
+# for the device machinery (the comment on `_zeros` in `allocators.jl`), and
+# `scripts/host_allocation_cost.jl` measures it. `StiefelProjection` splits its
 # constructor the same way, and this is the same split: the backendless form names the element type
 # and places on the host, which is the third of the four call shapes in
 # `docs/src/special_matrices.md`.

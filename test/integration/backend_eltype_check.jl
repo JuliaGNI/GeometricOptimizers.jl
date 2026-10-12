@@ -49,7 +49,7 @@ end
 
 # `StiefelProjection` and `unit_matrix` are the two entry points that launch a kernel, and a
 # stand-in device can allocate but not run one. Their successful paths on a device are covered on a
-# real backend by `test/special_matrices/stiefel_projetion.jl` and
+# real backend by `test/special_matrices/stiefel_projection.jl` and
 # `test/retractions/exponential_accuracy.jl`.
 const KERNEL_LAUNCHING = ("StiefelProjection", "unit_matrix")
 runnable(as) = filter(p -> first(p) ∉ KERNEL_LAUNCHING, collect(as))

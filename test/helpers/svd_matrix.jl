@@ -1,6 +1,6 @@
 # The matrix every SVD-problem measurement in this package is taken on. It lives in its own file
 # because `scripts/retraction_accuracy.jl` regenerates the tables in `svd_optim.jl` and in
-# `default_linesearch`'s docstring, and the two must not be able to drift apart.
+# `docs/src/linesearch_on_manifolds.md`, and the two must not be able to drift apart.
 #
 # NOTE: this literal looks like a 10x10 matrix and Julia parses it as **20x5**. Inside `[ ]` a newline
 # separates rows exactly as `;` does, so each of the two source lines that make up a visually wrapped

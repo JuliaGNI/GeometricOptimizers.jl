@@ -28,8 +28,7 @@ their approximation kernel, recovery strategy, numerical behaviour, cost, and ba
 Reach for another only if you need what it gives you: [`NativePade`](@ref) an independent direct
 calculation, [`ProjectedSkew`](@ref) orthogonality that does not degrade with the size of the lift,
 [`AugmentedPade`](@ref) a dense-CPU reference that delegates its numerics to `Base.exp`.
-[`TaylorSeries`](@ref) is the pre-0.2.0 behaviour and is retained only so the regression is
-reproducible; it is not a usable retraction.
+[`TaylorSeries`](@ref) is the unscaled series, kept as a baseline; it is not a usable retraction.
 
 The [Exponential Algorithms](@ref) page derives all five, measures them against each other, and says
 which to choose in [Choosing one](@ref). Its tables are recomputed on every documentation build, so
@@ -54,7 +53,8 @@ same Taylor evaluator is accurate, then recovers the original argument with a re
 to the low-rank factorization [skaflestad2009scaling](@cite).
 
 The series for ``\mathfrak{A}`` converges for every argument but is only *accurate* for a small one,
-so the argument is halved ``s`` times until ``\|X\|_1/2^s \leq θ``, the series is summed there, and
+so the argument is halved the smallest number ``s`` of times with ``\|X\|_1/2^s \leq θ``, the series
+is summed there, and
 each halving is undone by one application of ``W \mapsto 2W + WXW``. That recurrence is the modified
 squaring of [skaflestad2009scaling](@cite); it stays at ``2n\times{}2n`` because the low-rank form is
 closed under squaring, so nothing is ever squared at ``N\times{}N``. The recovery steps are exact
@@ -64,8 +64,8 @@ identities, so scaling moves where Taylor is evaluated without changing the func
 evaluate the series at a larger argument. The default `0.5` needs no tuning: across the 32-fold range
 ``θ \in [0.125, 4]`` neither the orthogonality of the retracted point nor the error against `exp`
 moves by as much as a factor of six, and neither moves monotonically. Unlike [`NativePade`](@ref)'s,
-this threshold is a preference and not a ceiling, because the inner series is summed until its terms
-vanish rather than for a fixed number of steps.
+this threshold is a preference and not a ceiling, because the inner series is summed to vanishing
+terms rather than for a fixed number of steps.
 
 This is the cheapest of the five, and it needs neither dense LAPACK nor scalar indexing in package
 code — whether it runs on a given accelerator depends on that backend's support for matrix products
@@ -116,19 +116,10 @@ cross-check available where [`AugmentedPade`](@ref), the dense-CPU reference, is
 count is fixed at five, and their residual is below round-off only while the argument is small: the
 bound ``\|Y\|_1 \leq 1/2`` gives ``\|I - q_6(Y)\|_1 < 0.257`` and hence a final residual below
 ``1.3\cdot10^{-19}``. Past ``θ \approx 1`` the inverse it computes stops being one, and it fails
-*silently* — nothing in the result says so. Worst relative error against [`AugmentedPade`](@ref) over
-400 random ``6\times6`` arguments of one-norm exactly ``θ``, as orders of magnitude across several
-seeds:
-
-| ``\theta`` | 1/2 | 1 | 3/2 | 2 | 3 |
-|---|---|---|---|---|---|
-| relative error | ``10^{-16}`` | ``10^{-16}``–``10^{-14}`` | ``10^{-10}`` | ``10^{-5}``–``10^{-3}`` | ``10^{4}``–``10^{6}`` |
-
-Only the pattern is reproducible, not the digits: these are maxima over a random draw, and the two
-rightmost columns move by orders of magnitude between seeds. Where the transition happens does not.
-The constructor therefore requires ``0 < θ \leq 1/2``, where [`ScaledSquaring`](@ref) accepts any
-positive value: the two thresholds are not interchangeable. Lowering this one is safe and merely adds
-modified-squaring steps, which is why it is a parameter at all.
+*silently* — nothing in the result says so. The constructor therefore requires
+``0 < θ \leq 1/2``, where [`ScaledSquaring`](@ref) accepts any positive value: the two thresholds
+are not interchangeable. Lowering this one is safe and adds modified-squaring steps, which is why it
+is a parameter at all.
 
 !!! note "The error criterion, and what it is not"
     ``θ = 1/2`` is **not** taken from a backward-error table. The ``\theta_m`` of
@@ -141,20 +132,17 @@ modified-squaring steps, which is why it is a parameter at all.
     here.
 
 [3. Padé approximation](@ref) derives the coefficients, the Newton--Schulz iteration and the residual
-bound, gives the algorithm step by step, and recomputes the table above at build time in
+bound, gives the algorithm step by step, and measures the error at a larger ``θ`` at build time in
 [What a large ``\theta`` costs `NativePade`](@ref native-pade-large-theta). See
 [`AbstractExponentialAlgorithm`](@ref) for the comparison.
 """
 struct NativePade{T <: Real} <: AbstractExponentialAlgorithm
     θ::T
 
-    # The upper bound is not decoration. `𝔄(X, ::NativePade)` runs a *fixed* five Newton--Schulz
-    # steps, and their residual `(𝕀 - q₆)³²` is below round-off only while `θ` is small: over 400
-    # random 6×6 arguments of one-norm `θ`, the worst relative error is around `1e-16` at `θ = 1`,
-    # `1e-10` at `θ = 3/2`, `1e-4` at `θ = 2` and `1e5` at `θ = 3`, with nothing raised.
-    # `ScaledSquaring` takes any positive `θ` because it sums its series until the terms vanish; this
-    # one does a fixed amount of work, so it has to refuse. The docstring above tabulates the same
-    # measurement and derives the norm bound behind `1/2`.
+    # `𝔄(X, ::NativePade)` runs a *fixed* five Newton--Schulz steps, and their residual `(𝕀 - q₆)³²`
+    # is below round-off only while `θ` is small. `ScaledSquaring` takes any positive `θ` because it
+    # sums its series to vanishing terms; this one does a fixed amount of work, so it refuses a large
+    # `θ`. The docstring above derives the norm bound behind `1/2`.
     function NativePade(θ::T = 0.5) where {T <: Real}
         @assert zero(T) < θ ≤ 1 // 2 "the scaling threshold has to be in (0, 1/2], got $(θ)"
         new{T}(θ)
@@ -237,9 +225,8 @@ struct ProjectedSkew <: AbstractExponentialAlgorithm end
 
 Sum the series for ``\mathfrak{A}`` directly, without scaling. **This is not a usable retraction.**
 
-It is the behaviour of every version of this package up to 0.2.0, retained only so that the regression
-is reproducible from the test suite and so the working algorithms have a baseline to be compared
-against. The series is summed on ``X = (B'')^TB'``, and that reduced matrix is far from normal: its
+It is kept so that the working algorithms have a baseline to be compared against, in the test suite
+and in the manual. The series is summed on ``X = (B'')^TB'``, and that reduced matrix is far from normal: its
 norm is quadratic in ``\|\bar{B}\|_2`` where its spectral radius is exactly ``\|\bar{B}\|_2``. On such
 an argument the terms cancel, so stopping when a *term* falls below `eps` leaves an error of size
 ``\varepsilon\max_m\|S_m\|`` rather than ``\varepsilon\|\mathfrak{A}(X)\|``, where ``S_m`` are the
@@ -248,8 +235,7 @@ magnitude and the "retracted" point is not on the Stiefel manifold in any sense;
 \approx 770`` the summation has overflowed.
 
 The failure is *silent*: nothing reports that the result is off the manifold. [`check`](@ref) is what
-detects it, and no optimizer in this package calls it during a run — a gap rather than a decision
-([#76](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/76)). Making the termination test
+detects it, and no optimizer in this package calls it during a run. Making the termination test
 relative to the partial sum instead of absolute changes none of it: the loss is in the cancellation,
 not in when the summation stops.
 

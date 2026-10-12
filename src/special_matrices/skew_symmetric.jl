@@ -210,9 +210,8 @@ end
 # shares storage; this type has no such method, so the transpose belongs in the product.
 #
 # The minus sits outside the product rather than on `A`, which is arithmetically the same and much
-# cheaper: `-A` builds a whole second packed vector before the kernel runs. Measured at `n = 400`
-# against one column, `-transpose(A * transpose(x))` allocates 7 520 B where
-# `transpose(-A * transpose(x))` allocates 642 944 B, for the same values.
+# cheaper: `-A` builds a whole second packed vector before the kernel runs, of the order of `n²`
+# entries against one column.
 #
 # A row vector reaches this method too, and gets it the same cheap way: `transpose(x)` is one
 # column, which reaches the kernel as a single column instead of materializing `A`. It is a `Vector`

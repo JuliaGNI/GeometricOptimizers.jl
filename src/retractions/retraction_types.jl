@@ -39,7 +39,7 @@ the manifold to round-off. [`cayley`](@ref) never forms the ``N\times{}N`` inver
     are ``O(N^2n)``. They differ only in the ``2n\times{}2n`` matrix ``C``: an inverse for `Cayley`,
     ``\mathfrak{A}(X)`` for `Geodesic`. In the measurements of [What they cost](@ref), from
     ``N = 10`` to ``N = 1000``, `Cayley` is the faster of the two at every size and with every
-    algorithm, and within `10%` of `Geodesic()` at ``N = 1000``. Timings are machine-dependent.
+    algorithm. Timings are machine-dependent.
     Choose between the two by the map the algorithm needs; `Cayley` is unconditionally stable and
     needs no matrix function at all.
 
@@ -64,8 +64,7 @@ true
     from it as the step grows, so the generator of the curve's velocity turns with ``\alpha`` instead
     of staying ``B``. [`retraction_differential`](@ref) is what supplies it, and with it
     [`trial_slope`](@ref) is the exact derivative of a line search's merit under either retraction.
-    Before 0.2.0 the slope was paired against ``B`` regardless, which made it only a first-order
-    approximation under `Cayley`.
+    A slope paired against ``B`` would be only a first-order approximation under `Cayley`.
 
 See [`cayley`](@ref) for the implementation and [`Geodesic`](@ref) for the alternative.
 """

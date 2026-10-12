@@ -37,10 +37,9 @@ struct StiefelProjection{T, AT} <: AbstractMatrix{T}
     # constructor above instead allocates through `KernelAbstractions.zeros` and then starts a
     # kernel to write `min(N, n)` ones; the `CPU` method below routes around it. A host placement is
     # the common case here and must not pay for the device machinery: `KernelAbstractions.zeros` on
-    # a `CPU` costs an overhead at every length, growing with it, and between about 1.9x and 25x
-    # the time of `zeros` -- worst at the smallest lengths, where its fixed floor dominates. The
-    # comment on `_zeros` in `allocators.jl` has the measurement, and
-    # `scripts/host_allocation_cost.jl` is the script. All of that is before the kernel launch.
+    # a `CPU` costs more than `zeros` at every length, in bytes and in time (the comment on `_zeros`
+    # in `allocators.jl`). `scripts/host_allocation_cost.jl` measures it. All of that is before the
+    # kernel launch.
     function StiefelProjection(::Type{T}, N::Integer, n::Integer) where {T}
         A = Matrix{T}(I, N, n)
         new{T, typeof(A)}(N, n, A)

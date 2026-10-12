@@ -43,8 +43,8 @@ import SimpleSolvers: update!, direction, linesearch_problem, compute_new_iterat
 import GeometricBase.Utils: l2norm
 import SimpleSolvers: change_precision, solve_with_status
 using SimpleSolvers: method, LinesearchStatus, LINESEARCH_UNKNOWN
-# The ceiling on the step a line search may return, SimpleSolvers 0.12's half of issue A1b. Read by
-# `DecayingStatic`, which has to honour a caller's ceiling itself; supplied by `linesearch_parameters`.
+# The ceiling on the step a line search may return. Read by `DecayingStatic`, which has to honour a
+# caller's ceiling itself; supplied by `linesearch_parameters`.
 using SimpleSolvers: linesearch_αmax
 # `solver_step!` decides whether to keep the step a line search returned, so it needs the outcome
 # and not only the step length. See `linesearch_rejected`.
@@ -102,9 +102,7 @@ include("decompositions/symplectic_gram_schmidt.jl")
 
 # `metric`, `check` and `Ω` join `rgrad` in being public: they are the geometry a caller works in,
 # not implementation detail, and a downstream package that defines its own manifold layers on top of
-# these types has to be able to extend them. `GeometricMachineLearning` reached all four through
-# `GeometricOptimizers.`-qualified names or through copies of its own until 0.5; see
-# GeometricMachineLearning#234.
+# these types has to be able to extend them.
 #
 # `check` is `public` and not exported, as `gradient` and `value` below are: all three are names
 # that other packages export too (`Zygote` exports `gradient`), and two exports of one name make it

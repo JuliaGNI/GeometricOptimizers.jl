@@ -344,8 +344,8 @@ end
 
 # The sweep above is broad in shape and element type and narrow in the one dimension that decides
 # whether the default is right: `T(0.1) * rand(T, N, n)` keeps ‖AB'‖ around 0.1, where every
-# algorithm is exact. The default has to hold where the unscaled series does not — the regime
-# `geodesic`'s "The default changed in 0.2.0" warning is about — so it is asserted here directly.
+# algorithm is exact. The default has to hold where the unscaled series leaves the manifold, so
+# it is asserted here directly.
 #
 # The four scales below draw lifts of ‖B̄‖ = 3.8, 36.3, 145.8 and 324.9, at which the unscaled series
 # is off by 5e-16, 1e-7, 2e24 and 2e79 respectively; `𝔄exp` defaults to `ScaledSquaring`, which stays

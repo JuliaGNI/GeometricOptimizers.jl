@@ -5,9 +5,9 @@
 #
 #     julia --startup-file=no --project=. scripts/triangular_multiply_cost.jl
 #
-# This is the check behind the table in `CHANGELOG.md` and behind the paragraph in the docstring of
+# This is the check behind the table in `CHANGELOG.md`, which quotes figures from this script and
+# from nothing else, and behind the paragraph in the docstring of
 # `*(::AbstractTriangular, ::AbstractMatrix)` that tells a reader not to expect a host speed-up.
-# Both quote figures from this script and from nothing else.
 #
 # ## Why the measurement is needed at all
 #

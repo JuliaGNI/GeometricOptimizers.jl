@@ -111,7 +111,7 @@ function advance_state!(state::MomentumState{T}, cache::MomentumCache{T},
     # `p ← αp + ∇L`, i.e. the classic momentum recursion, which is what `update!(::MomentumCache,
     # ...)` anticipates when it forms the direction. The decay is applied to `p` and *not* to `∇L`:
     # `p ← p + α∇L` is an undamped accumulator that grows without bound for a constant gradient
-    # instead of saturating at `∇L/(1 - α)`. See issue #18.
+    # instead of saturating at `∇L/(1 - α)`.
     _rmul!(momentum(state), method.α)
     _add!(momentum(state), gradient_array(cache))
     state

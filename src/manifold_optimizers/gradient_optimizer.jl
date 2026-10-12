@@ -31,9 +31,9 @@ Cache for the gradient optimizer.
     [`trial_slope`](@ref) allocation-free — and [`solver_step!`](@ref) refreshes the same array at the
     accepted iterate. Neither may land in `g`, because `g` is ``\\nabla{}f(x_k)`` at the iterate the
     direction was built from and the state updates read it afterwards: `update!(::MomentumState, ...)`
-    accumulates it into the momentum, and with `g` shared that recursion was measurably wrong (see
-    the CHANGELOG entry for issue A2). [`MomentumCache`](@ref) and [`AdamCache`](@ref) carry the same
-    field for the same reason.
+    accumulates it into the momentum, and with `g` shared that recursion would take the gradient at
+    the last trial step of the search. [`MomentumCache`](@ref) and [`AdamCache`](@ref) carry the
+    same field for the same reason.
 """
 struct GradientCache{T, MT, VT, ST} <: OptimizerCache{T}
     x::MT
@@ -119,8 +119,9 @@ after it has recorded the iterate, its gradient and its objective value.
 
 `section(cache)` is `update_section!(section(state), direction, retraction)` once the step is taken,
 so it is copied and not retracted a second time. On a manifold the retraction is ``O(N^2n)``, and
-`update_section!` then transports the ``N\times{}(N-n)`` block of the section by an
-``(N-n)\times{}N`` product, which is ``O(N^3)``, where the copy is ``O(N^2)``.
+`update_section!` then transports the ``N\times{}(N-n)`` block of the section by a product with an
+``(N-n)\times{}N`` block, which is ``O(N^2(N-n))``, i.e. ``O(N^3)`` for ``n \ll N``, where the
+copy is ``O(N^2)``.
 """
 function advance_state!(state::GradientState, cache::GradientCache, ::GradientMethod)
     _copyto!(section(state), section(cache))

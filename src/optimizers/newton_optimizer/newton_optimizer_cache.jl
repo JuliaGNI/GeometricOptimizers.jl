@@ -16,7 +16,7 @@
   this is a field of its own and not an alias for `g`,
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
 - `Δg`: gradient difference (difference between `g̃` and `g`); this is used for computing the [`OptimizerStatus`](@ref),
-- `rhs`: the right hand side used to compute the update,
+- `rhs`: the right hand side from which the update is computed,
 - `H`: the Hessian matrix evaluated at `x`,
 
 Also compare this to [`SimpleSolvers.NonlinearSolverCache`](@extref).

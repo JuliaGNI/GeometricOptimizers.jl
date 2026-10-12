@@ -60,7 +60,7 @@ BFGSState(x̄::OptimizerSolution) = BFGSState(_copy(x̄), _zero(x̄))
 #
 # `_alloc_q` sizes `Q` for a manifold and for a parameter set alike. It is not `SimpleSolvers`'
 # `alloc_h(::NetworkParameters)`, which sizes by `mapparameters(zero, ·)`, and `zero` of a manifold
-# point is the point's own shape and not its lift (issue #21). On a plain vector the parameters are
+# point is the point's own shape and not its lift. On a plain vector the parameters are
 # the flat coordinates, and `SimpleSolvers`' method is right, and it keeps the vector's array type,
 # so a device vector gets a device `Q`.
 _alloc_q(x::AbstractVector) = alloc_h(x)
@@ -72,7 +72,7 @@ function _alloc_q(x::OptimizerSolution{T}) where {T}
     fill!(KernelAbstractions.allocate(_solution_backend(x), T, n, n), T(NaN))
 end
 
-# `Manifold` is this package's type, so this method is this package's to own (issue #16).
+# `Manifold` is this package's type, so this method is this package's to own.
 alloc_h(x::Manifold) = _alloc_q(x)
 
 OptimizerState(::BFGS, x_args...) = BFGSState(x_args...)
@@ -92,9 +92,8 @@ decrease the merit — see [`linesearch_rejected`](@ref).
 !!! info "Why the direction alone is not enough"
     [`ensure_descent!`](@ref) already substitutes the steepest-descent direction for one step when
     ``Q`` has stopped being positive definite, but it leaves ``Q`` itself alone, so every subsequent
-    direction comes from the same damaged approximation. Measured on the SVD problem of
-    `test/verification/svd_optim.jl`, ``\lambda_\mathrm{min}(Q)`` reached `-398` and stayed
-    negative for the rest of the solve. Discarding ``Q`` is what actually recovers.
+    direction comes from the same damaged approximation, and ``\lambda_\mathrm{min}(Q)`` can stay
+    negative for the rest of the solve. Discarding ``Q`` is what recovers.
 """
 function restart!(state::BFGSState)
     _identity!(inverse_hessian(state))
@@ -106,8 +105,8 @@ end
 _identity!(Q::AbstractMatrix) = (Q .= unit_matrix(Q); Q)
 
 # The one initialisation, which the constructor and `initialize_state!` share: the tangents and the
-# objectives read `NaN` until a step writes them, and `Q` starts at the identity. The points are not
-# filled, because a manifold point cannot hold `NaN` (issue #22). The first secant pair is then `NaN`
+# objectives read `NaN` up to the first step, which writes them, and `Q` starts at the identity. The
+# points are not filled, because a manifold point cannot hold `NaN`. The first secant pair is then `NaN`
 # and `curvature_is_usable` rejects it, so the first step is steepest descent.
 function _poison!(state::BFGSState{T}) where {T}
     _fill!(state.s, T(NaN))
@@ -119,17 +118,9 @@ function _poison!(state::BFGSState{T}) where {T}
     state
 end
 
-# `update!(state::BFGSState, ::Gradient, x, retraction)` was deleted in 0.6.0. It had no caller: for a
-# `BFGSState` the live path is `update!(state, opt, x, f)` in `gradient_optimizer.jl`, which reaches
-# the method below and hands it the objective value `solve!` evaluated at `x`. Nothing in `src/`,
-# `test/`, `docs/` or `scripts/` called the deleted form, and neither does `GeometricMachineLearning`
-# or `GMLDatasets`.
-#
-# It is named here because of what it did rather than because it is missed: it set `f̄` with
-# `gradient.F(flatten(T, x)[1])`, and `gradient.F` is the closure `_x -> F(unflatten(layout, _x))` —
-# so that line flattened `x` and unflattened it again to compute `F(x)`, allocating twice for a value
-# the caller already had. The six-argument method takes `f` as an argument, which is the fix; a
-# scratch buffer would only have made the round trip cheaper.
+# For a `BFGSState` the step path is `update!(state, opt, x, f)` in `gradient_optimizer.jl`, which
+# reaches the method below and hands it the objective value `solve!` evaluated at `x`, so the state
+# does not evaluate `F` again.
 
 function _copyto!(sec::GlobalSection{T, AT, Nothing}, Y::AT) where {
         T, AT <: AbstractVector{T}}
@@ -143,9 +134,9 @@ function update!(state::BFGSState{T}, direction::GradientStorage{T}, gradient::G
     _copyto!(state.x̄, state.x)
     _copyto!(state.x, x)
     # `ḡ` is deliberately *not* refreshed here. This runs at the end of the iteration, at the same
-    # iterate `x` that the next `Δg = ∇f(x) - ḡ` is formed at, so writing `∇f(x)` here made `Δg`
-    # identically zero and the quasi-Newton `Q` update never fired on any iteration. The
-    # quasi-Newton cache advances `ḡ` itself, right after it has used it.
+    # iterate `x` that the next `Δg = ∇f(x) - ḡ` is formed at, so writing `∇f(x)` here would make
+    # `Δg` identically zero and the quasi-Newton `Q` update would never fire. The quasi-Newton cache
+    # advances `ḡ` itself, right after it has used it.
     state.f̄ = state.f
     state.f = f
 

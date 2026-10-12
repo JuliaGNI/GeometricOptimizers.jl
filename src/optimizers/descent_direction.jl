@@ -22,10 +22,9 @@ comparison is `false` — is replaced by `rhs`, which always descends. The subst
     *allowed* not to descend on an individual step — that is what the momentum term is for — so
     their method, on [`FirstOrderMethodWithState`](@ref), leaves the direction as it is.
 
-!!! info "Why this is needed now"
-    Up to SimpleSolvers 0.8 the `Bisection` and `Quadratic` line searches could return a *negative*
-    step, which silently turned an ascent direction into a descent one and hid the problem. They no
-    longer do, so the safeguard has to live here.
+!!! info "Why the safeguard is here"
+    A line search returns a non-negative step, so it cannot turn an ascent direction into a descent
+    one. The safeguard has to act on the direction before the search.
 
 # Examples
 
@@ -76,74 +75,48 @@ The second form takes the ceiling the caller passed as `params.αmax` and is wha
 [`solver_step!`](@ref) uses; see *A step the caller forbade is not a failed direction* below.
 
 `SimpleSolvers.solve` returns only the step length, so an outcome of `LINESEARCH_FLOOR`,
-`LINESEARCH_EXHAUSTED` or `LINESEARCH_NO_DESCENT` used to be indistinguishable from a successful
-search: the step came back and [`solver_step!`](@ref) took it. The three mean, in order, that the
-decrease achieved was no larger than the merit's own round-off resolution, that the budget ran out or
-the merit could not be bracketed, and that ``\varphi'(0) \geq 0``. In none of them does the returned
-``\alpha`` carry a guarantee, and taking it anyway is how a solve can walk *uphill*.
+`LINESEARCH_EXHAUSTED` or `LINESEARCH_NO_DESCENT` looks the same as a successful search. The three
+mean, in order, that the decrease achieved was no larger than the merit's own round-off resolution,
+that the budget ran out or the merit could not be bracketed, and that ``\varphi'(0) \geq 0``. In none
+of them does the returned ``\alpha`` carry a guarantee, and a solve that takes it can walk *uphill*.
 
 The outcome comes from `SimpleSolvers.solve_with_status`, which `solver_step!` calls in place of
-`solve` for exactly this reason.
-
-(Plain code and not an `@extref`: SimpleSolvers documents `solve_with_status` per method and not as a
-binding, so there is no binding-level entry in its inventory to link to. Documenter reports an
-unresolvable external link as an error, unlike the `@ref`-to-a-dead-signature case of issue D5, which
-it resolves silently to the wrong page.)
+`solve` for this reason. (Plain code and not an `@extref`: SimpleSolvers documents
+`solve_with_status` per method and not as a binding, so its inventory has no entry to link to.)
 
 !!! info "This is deliberately the outcome and not `φ > φ₀`"
-    Testing the merit directly — "reject the step only if it actually made things worse" — is the
-    narrower condition, and it does fix the divergence described in [`solver_step!`](@ref). It is
-    not enough, though: measured over the eight starting points of
-    `test/verification/svd_optim.jl`, restarting only on a genuine increase leaves the
-    terminal gradient residual at `1.8e-5`, where restarting on the outcome brings it to `2.9e-7`.
-    A search that ends on the floor has stopped making progress along *this* direction, and the
-    cheapest thing to do about it is to pick a different one.
+    A test on the merit — "reject the step only if it made things worse" — is the narrower
+    condition. It stops the divergence described in [`solver_step!`](@ref), but it leaves the
+    terminal gradient residual larger on the SVD problem of `test/verification/svd_optim.jl`. A
+    search that ends on the floor has stopped making progress along *this* direction, and the
+    cheapest remedy is a different direction.
 
 !!! info "It applies to every method, including `Adam` and `MomentumMethod`"
-    Those two used to be exempt, on the grounds that [`ensure_descent!`](@ref) exempts them: a moving
-    average is *allowed* not to descend on an individual step. That is a true statement about the
-    direction and the wrong conclusion about the step. A rejected search returns ``\alpha = 1``
-    untouched, so the exemption did not permit a non-descent step, it took the *longest* step
-    available along one.
+    [`ensure_descent!`](@ref) exempts those two, because a moving average is *allowed* not to
+    descend on an individual step. That is a statement about the direction and not about the step.
+    A rejected search returns ``\alpha = 1`` untouched, so an exemption here would take the
+    *longest* step along a direction that does not descend, and multiply ``f`` by many orders of
+    magnitude. `LINESEARCH_EXHAUSTED` does the same, so the test here is the whole of
+    `linesearch_rejected` and not only the ascent outcome.
 
-    Issue A7 is what that cost. On Rosenbrock from ``(-1.2, 1)`` with `MomentumMethod(; α = 0.1)` under the
-    expanding `Backtracking` default, the solve reaches `f = 7.8e-5` by iteration 400 and then:
-
-    | iteration | outcome | ``\alpha`` | ``f`` |
-    |---|---|---|---|
-    | 441 | `LINESEARCH_NO_DESCENT` | 1.0 | 4.97e-2 → 4.65e3 |
-    | 443 | `LINESEARCH_NO_DESCENT` | 1.0 | 8.16e1 → 5.33e9 |
-    | 449 | `LINESEARCH_NO_DESCENT` | 1.0 | 2.87e2 → 9.12e7 |
-    | 453 | `LINESEARCH_NO_DESCENT` | 1.0 | 1.46e3 → 4.41e19 |
-    | 455 | `LINESEARCH_NO_DESCENT` | 1.0 | 8.20e16 → 1.51e61 |
-
-    Thirteen such events over 457 iterations, each multiplying ``f`` by between ``10^3`` and
-    ``10^{42}``; the steps in between do descend and cannot make it back. `LINESEARCH_EXHAUSTED`
-    does the same thing — under `BierlaireQuadratic` it takes the same solve to `Inf` in six
-    iterations, at ``\alpha = 1`` every time — which is why the test here is the whole of
-    `linesearch_rejected` and not just the ascent outcome.
-
-    The momentum recursion is untouched by this: ``p \gets \alpha{}p + \nabla{}f`` is evaluated in
-    `update!(::MomentumState, …)` from `gradient_array(cache)` after the step, so which direction the
-    step was taken along does not enter it. Only the step changes. `ensure_descent!`, which acts on
-    the direction *before* the search, still exempts them.
+    The momentum recursion does not change: ``p \gets \alpha{}p + \nabla{}f`` is evaluated in
+    `update!(::MomentumState, …)` from `gradient_array(cache)` after the step, so the direction of
+    the step does not enter it. Only the step changes.
 
 !!! info "A step the caller forbade is not a failed direction"
-    This is the `αmax` form, and it closes issue B3. Since [`DEFAULT_STEP_CEILING`](@ref),
-    `solver_step!` hands the search a `params.αmax` of its own, and a search stopped *at* that
-    ceiling with the merit still falling is classified by the same round-off rule ``\tau`` as any
-    other returned step — so it comes back as `LINESEARCH_FLOOR` when the fall over the whole
-    admissible range was smaller than ``\tau``. That outcome is a claim about the **direction**, and
-    the one-argument form above answers it by throwing ``Q`` away and re-searching along steepest
-    descent. What was actually established is only that no step *this caller permits* decreases the
-    merit measurably, which is not a fact about the direction at all: the bound was the caller's own.
+    This is the `αmax` form. [`solver_step!`](@ref) gives the search a `params.αmax` of its own (see
+    [`DEFAULT_STEP_CEILING`](@ref)), and a search stopped *at* that ceiling with the merit still
+    falling is classified by the same round-off rule ``\tau`` as any other returned step — so it
+    comes back as `LINESEARCH_FLOOR` when the fall over the whole admissible range was smaller than
+    ``\tau``. That outcome is a claim about the **direction**, and the one-argument form answers it
+    by throwing ``Q`` away and searching again along steepest descent. But the search established
+    only that no step *this caller permits* decreases the merit measurably: the bound was the
+    caller's own.
 
     So `LINESEARCH_FLOOR` counts as a rejection only where the step returned is strictly below the
-    ceiling that was passed. Where it *is* the ceiling, the honest reading is "this step is as far as
-    I allowed", and the step is taken. The remedy is here rather than upstream because this package
-    supplied the ceiling and can therefore recognise its own bound without any new field on the
-    status — which is what upstream said when it declined to add one (issue D7, still open there and
-    now without a consequence here).
+    ceiling that was passed. Where it *is* the ceiling, the step is taken. The remedy is here and not
+    upstream, because this package supplies the ceiling and can recognise its own bound without a
+    new field on the status.
 
     `LINESEARCH_EXHAUSTED` and `LINESEARCH_NO_DESCENT` are deliberately not exempted. Neither is
     confusable with a bound step: the first says the budget ran out or the merit could not be
@@ -172,8 +145,7 @@ Replace the direction stored in `cache` by ``-\nabla{}f``, the one direction tha
 
 # Implementation
 
-[`rhs`](@ref) *is* ``-\nabla{}f`` on the (quasi-)Newton caches, so the default copies it across —
-which is what [`solver_step!`](@ref) did inline before this existed.
+[`rhs`](@ref) *is* ``-\nabla{}f`` on the (quasi-)Newton caches, so the default copies it across.
 
 It is not on the three first-order caches, where `rhs` is an alias for [`direction`](@ref) itself, so
 copying would be a silent no-op. `GradientCache`'s direction already *is* ``-\nabla{}f`` and the
@@ -218,29 +190,22 @@ Whether the secant pair ``(\delta, \gamma)`` satisfies the curvature condition, 
 quasi-Newton update built from it keeps ``Q`` positive definite.
 
 Both the BFGS and the DFP update divide by ``\delta^T\gamma`` and preserve positive definiteness of
-``Q`` only for ``\delta^T\gamma > 0`` [nocedal2006numerical](@cite). The guard this replaced was
-`!iszero(ΔxΔg) && !isnan(ΔxΔg)`, which admits both signs and, more importantly, admits denominators
-that are zero to within round-off: on the SVD problem of
-`test/verification/svd_optim.jl`, ``\delta^T\gamma`` took the values `-12.8`, `-4.5e-16`
-and `+1.5e-15` on consecutive iterations, all three of which `!iszero` accepts. Dividing a rank-two
-correction by `1.5e-15` is what drove ``\lambda_\mathrm{max}(Q)`` from 3 to 442 there, and
-``\lambda_\mathrm{min}(Q)`` to `-398` from another starting point.
+``Q`` only for ``\delta^T\gamma > 0`` [nocedal2006numerical](@cite). A test of `!iszero(ΔxΔg)` admits
+both signs and denominators that are zero to within round-off, and a rank-two correction divided by
+such a denominator makes ``Q`` badly conditioned or indefinite.
 
-The threshold is therefore *relative* -- an absolute one cannot tell `1.5e-15` on a problem scaled
-to ``10^0`` from a legitimate small pairing on a problem scaled to ``10^{-15}``. Its exact value
+The threshold is *relative*: an absolute one cannot tell a round-off pairing on a problem scaled to
+``10^0`` from a legitimate small pairing on a problem scaled to ``10^{-15}``. Its exact value
 matters much less than its existence: `1e-8` and `eps(T)` behave identically on everything measured
 here, because the pairs being rejected are the ones that are non-positive rather than merely small.
 
 !!! info "Rejecting an update is not free"
     A skipped update leaves ``Q`` where it was, so the next direction is built from staler curvature.
-    For `DFP` on Rosenbrock from ``x_0 = (-1.2, 1)`` with shrink-only `Backtracking` that costs a
-    factor of seventeen -- 50 iterations against 851, both reaching `f ≈ 3e-24`. `DFP` was
-    exploiting the invalid updates: it produces a systematically under-scaled direction (see
-    [`default_linesearch`](@ref)), and a negative-curvature update happens to inflate ``Q`` in a way
-    that partly compensates. `BFGS` is unaffected, at 22 iterations either way. In exchange, `DFP`
-    stops being wildly sensitive to its starting point -- over eight starting points of the SVD
-    problem with an expanding `Backtracking` its iteration count goes from `512..77_890` to
-    `512..845`.
+    `DFP` with a shrink-only `Backtracking` can take many more iterations under the guard: its
+    direction is systematically under-scaled (see [`default_linesearch`](@ref)), and a
+    negative-curvature update can inflate ``Q`` in a way that partly compensates. In exchange, the
+    iteration count of `DFP` with an expanding `Backtracking` depends much less on the starting
+    point.
 """
 function curvature_is_usable(ΔxΔg::T, Δx, Δg) where {T}
     isnan(ΔxΔg) && return false

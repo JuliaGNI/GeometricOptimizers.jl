@@ -2,8 +2,8 @@
 # this one makes them symplectic: the result `B` of a `2N x 2n` input satisfies `BᵀJ_{2N}B = J_{2n}`.
 #
 # The ordinary process is deliberately absent. `LinearAlgebra.qr` does it, faster and more stably,
-# and `rand(::Manifold, …)` already calls it; a second copy here would be a second thing to keep
-# right.
+# and `rand(::Manifold, …)` orthonormalizes with `orthonormal_columns`; a second copy here would be a
+# second thing to keep right.
 #
 # Both names are exported and nothing under `src/` calls either, except the copying version calling
 # the in-place one at the end of this file: `sr!` builds its symplectic factor by its own reflections

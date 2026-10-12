@@ -7,18 +7,13 @@ module AbstractNeuralNetworksExt
 # structured types need one of their own, because allocating on a backend and copying has to happen to
 # the *storage* and the leaf has to be rebuilt around it.
 #
-# The methods belong here for the same reason `src/parameter_protocol.jl` does, and it is the reason
-# `GeometricMachineLearning` gave for wanting to be rid of them: `changebackend` is
+# The methods belong here for the same reason `src/parameter_protocol.jl` does: `changebackend` is
 # `AbstractNeuralNetworks`' generic and these types are this package's, so a method on the pair has
 # one owned argument on each side and is legitimate in either of those two packages -- but in a third
-# package that merely uses both, it is piracy, and two such packages can silently disagree. They lived
-# in `GeometricMachineLearning`'s HDF5 extension until now, which also meant that
-# `changebackend(GPU(), nn)` on a network with a manifold weight was a `MethodError` unless HDF5
-# happened to be loaded.
+# package that merely uses both, it is piracy, and two such packages can silently disagree.
 #
-# One method covers every family. `mapstorage` hands the function the `freeparameters` of a leaf and
-# `rebuild`s the leaf around the result, so the five hand-written methods this replaces -- and the
-# horizontal lifts, which never had one -- reduce to a delegation. A type added to
+# One method covers every family, the horizontal lifts included. `mapstorage` hands the function the
+# `freeparameters` of a leaf and `rebuild`s the leaf around the result. A type added to
 # `src/parameter_protocol.jl` later is covered without a change here.
 
 using GeometricOptimizers: Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix,

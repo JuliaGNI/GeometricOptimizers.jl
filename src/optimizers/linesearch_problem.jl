@@ -9,7 +9,7 @@ Write the iterate a step of length `α` along the current direction would produc
 There are two methods, chosen on the type of the solution.
 
 For an `AbstractVector` the iterate is ``x_k + \alpha{}p_k``, i.e.
-[`SimpleSolvers.compute_new_iterate!`](@extref), which is what this used to do unconditionally.
+[`SimpleSolvers.compute_new_iterate!`](@extref).
 
 For a [`Manifold`](@ref) — or a `NamedTuple` that contains one — that is both undefined and wrong:
 adding ``\alpha{}p_k`` to a point of ``St(N, n)`` leaves the manifold, and the direction is an
@@ -61,7 +61,7 @@ The ceiling on the line search's ``\alpha`` that a step ceiling of `c` imposes o
 horizontal lift is a rotation, so ``\alpha\mapsto\mathrm{retract}(\alpha\bar{B})`` has nothing left to
 reach once ``\|\alpha\bar{B}\|`` passes ``2\pi`` — [`Cayley`](@ref) has converged to a fixed rotation
 by then and [`Geodesic`](@ref) is periodic. Everything past it is round-off, and on the SVD problem
-enough of it to leave the manifold; see [`DEFAULT_STEP_CEILING`](@ref) and issue A1b.
+enough of it to leave the manifold; see [`DEFAULT_STEP_CEILING`](@ref).
 
 `δ` is one direction and not a `NamedTuple` of them: the ``2\pi`` is a property of *a* rotation, so a
 solution built of several blocks needs one ceiling per block and the smallest of them, which is
@@ -91,53 +91,33 @@ does.
 One `\alpha` is applied to every block, so each manifold block needs ``\|\alpha\delta_i\| \leq 2\pi{}c``
 and the binding one is the largest ``\|\delta_i\|``. A block that is an ordinary array contributes
 nothing: the ``2\pi`` is the turn of a rotation and a vector space has no such scale, so it must
-neither impose a ceiling of its own nor inflate the norm that sets one for its neighbours.
-
-That last part is what this function exists for. The ceiling used to be
-`step_αmax(c, direction(cache))` over the whole direction, whose `l2norm` combines the blocks in
-quadrature — so a `NamedTuple` of *ordinary arrays* was bounded by a rotation that does not exist in
-its problem (measured: a Euclidean `NamedTuple` solve took 3 184 iterations against 1 for the same
-problem written as a vector), and in a mixed `NamedTuple` the Euclidean blocks tightened the manifold
-blocks' bound for no reason (measured on the mixed problem of `test/integration/flat_parameters.jl`:
-``\|\delta_Y\| = 2.5\times10^{-16}`` against a total of `3.9`, bounding ``\alpha`` at `1.6` where the
-geometry of the manifold block permits ``2.6\times10^{16}``). That was catalogued as issue A15 and is
-what this closes.
+neither impose a ceiling of its own nor inflate the norm that sets one for its neighbours. A ceiling
+of `step_αmax(c, direction(cache))` over the whole direction would do both: its `l2norm` combines the
+blocks in quadrature.
 
 # Implementation
 
-`NeuralNetworkParameters.foldparameters` over the two trees in lockstep, which is what makes a
-*heterogeneous* `NamedTuple` — a `StiefelManifold` beside a `Matrix` beside a `Vector` — stay inferable
-and the returned parameters stay concrete. A `Base.tail` recursion over the two `values` tuples stood
-here until this release, and it was the fourth of the folds issue #70 is about: a branch of `k` children
-yields `k` specialisations whose argument types are each `O(k)` long, twice over for a zipped fold, and
-at `k = 369` that does not finish inside a minute on Julia 1.12. Unlike the other three this one is on
-the *per-iteration* path, through [`linesearch_parameters`](@ref).
+`NeuralNetworkParameters.foldparameters` over the two trees in lockstep keeps a *heterogeneous*
+`NamedTuple` — a `StiefelManifold` beside a `Matrix` beside a `Vector` — inferable, and its compile
+time linear in the number of blocks. This function is on the per-iteration path, through
+[`linesearch_parameters`](@ref).
 
-`foldparameters` and not `foldstorage`: `_block_αmax` dispatches on the *whole* leaf, a `Manifold` being
-the only kind that imposes a ceiling at all, so descending into the numbers a leaf stores would turn
-every manifold block into an ordinary array and give back `Inf`. That is issue A1b, which is what the
-branch-descent method deleted below was written to prevent.
+`foldparameters` and not `foldstorage`: `_block_αmax` dispatches on the *whole* leaf, because a
+`Manifold` is the only kind that imposes a ceiling. A descent into the numbers that a leaf stores
+would make every manifold block an ordinary array and give back `Inf`.
 
-`min` is associative and commutative, so nothing here depends on the fold's direction — where `_dot` and
-[`_sumsq_leaves`](@ref) had to account for upstream's being a *left* fold, this one cannot tell. The
-initial value is `T(Inf)` off `c`, and what makes a set with no manifold in it come back `Inf` is the
-`_block_αmax(::Any, …)` method below, which every one of its blocks takes; the initial value is what
-answers a set with no blocks at all, as the empty-tuple method did before.
+`min` is associative and commutative, so the direction of the fold does not matter. A set with no
+manifold in it gives `Inf` through the `_block_αmax(::Any, …)` method, and a set with no blocks
+through the initial value `T(Inf)`.
 
-Paired by key rather than positionally, and the widths checked, both in the generator: `δ` tracks the
-solution block by block, but not necessarily as the *same kind* of branch — a container solution can be
-paired with the plain `NamedTuple` its `GlobalSection` tree is built as, which upstream's walk
-normalises. Two local normalisers stood here for that, `_as_blocks` and then `_as_walkable`, and then a
-pair of `values` calls; all are gone.
+The fold pairs the blocks by key and checks the widths: `δ` follows the solution block by block, but
+not always as the same kind of branch, because a container solution can be paired with the plain
+`NamedTuple` of its `GlobalSection` tree.
 
-`y::NetworkParameters` and not an unconstrained `y`, and that bound is the *point* of the paragraph above
-rather than housekeeping. Upstream pairs the children of a keyed branch by key and the children of a
-`Tuple` branch **positionally** — a `Tuple`'s blocks have no keys to agree on — so an unconstrained
-signature would still accept `_manifold_αmax(values(sol), values(δ), c)`, which is how every call site
-here was spelled until this release, and fold it positionally: crossed keys would come back a number
-again. Measured on a two-block set with the direction's keys swapped, `3.12` by key against `6.40`
-positionally. The four-method recursion this replaced made that call unspellable by running out of
-methods; the bound is what puts it back. Every caller passes a whole set of parameters.
+The signature takes `y::NetworkParameters` and not an unconstrained `y`. Upstream pairs the children of
+a keyed branch by key, and the children of a `Tuple` branch **positionally**, so
+`_manifold_αmax(values(sol), values(δ), c)` would fold crossed keys without an error. Every caller
+passes a whole set of parameters.
 """
 _manifold_αmax(y::NetworkParameters, δ, c::T) where {T} = foldparameters(
     (acc, yᵢ, δᵢ) -> min(acc, _block_αmax(yᵢ, δᵢ, c)), T(Inf), y, δ)
@@ -156,22 +136,20 @@ section the trial steps retract from, and — where a manifold supplies a scale 
 
 Three methods, chosen on the type of the solution, as [`trial_iterate!`](@ref)'s two are.
 
-For a [`Manifold`](@ref), `αmax` is [`step_αmax`](@ref)`(c, direction(cache))`. This is the caller's
-half of the fix for issue A1b, and it has to be rebuilt at every solver step because
-``\|\delta\|`` changes at every solver step — including between the two searches of one
-`solver_step!`, since the second runs on a direction [`steepest_descent!`](@ref) has just replaced.
+For a [`Manifold`](@ref), `αmax` is [`step_αmax`](@ref)`(c, direction(cache))`. It is built again
+at every solver step, because ``\|\delta\|`` changes at every solver step — also between the two
+searches of one `solver_step!`, where the second runs on the direction that
+[`steepest_descent!`](@ref) has replaced.
 
 For a `NamedTuple` it is [`_manifold_αmax`](@ref) over the blocks, i.e. the same quantity derived per
 block and minimised over the manifold ones. A `NamedTuple` carrying no manifold block therefore gets
 `Inf`, which is what upstream reads as *"the caller has no scale of its own"*
-([`SimpleSolvers.linesearch_αmax`](@extref)) and is exactly equivalent to the omission below.
+([`SimpleSolvers.linesearch_αmax`](@extref)) and is equivalent to the omission below.
 
-For an `AbstractVector` the field is **omitted**, which is not the same as passing `Inf` only in
-spirit — upstream reads it through a `hasproperty` guard that constant-folds, so a caller that
-supplies nothing pays nothing. Omitting it is also the right answer and not merely the cheap one: a
-Euclidean ``f(x + \alpha{}p)`` *grows* with ``\alpha``, so the search's own sufficient-decrease test
-throws an over-long step out unaided, which is why this defect went unreported upstream for so long.
-There is no geometric scale to supply and the method's own
+For an `AbstractVector` the field is **omitted**. Upstream reads it through a `hasproperty` guard
+that constant-folds, so a caller that supplies nothing pays nothing. A Euclidean
+``f(x + \alpha{}p)`` *grows* with ``\alpha``, so the sufficient-decrease test of the search rejects
+an over-long step. There is no geometric scale to supply, and the method's own
 `SimpleSolvers.DEFAULT_LINESEARCH_αmax` is the whole of the bound.
 
 Every branch returns a concrete `NamedTuple`, so the merit closures stay type-stable. That is why the
@@ -196,7 +174,7 @@ function _linesearch_parameters(sol::NetworkParameters, cache::OptimizerCache, x
 end
 
 # The ceiling a `linesearch_parameters` actually carries, read back by `solver_step!` so that it can
-# recognise a step of its own making; see `linesearch_rejected` and issue B3. This mirrors
+# recognise a step of its own making; see `linesearch_rejected`. This mirrors
 # SimpleSolvers' `caller_αmax`, which is what reads the field on the other side: `Inf` where the
 # field is absent, and `hasproperty` on a concrete `NamedTuple` constant-folds either way.
 function _caller_αmax(::Type{T}, params) where {T}
@@ -222,33 +200,18 @@ and have to be brought together by [`global_rep`](@ref) first — which is the s
 
 The pairing is then [`_dot`](@ref) and not `dot`: the `α` of the line search parameterizes a curve in
 the *intrinsic* coordinates of the lift, and `dot` on a lift is the ambient Frobenius product, which
-is exactly twice that. With `dot` this returned `2\varphi'(\alpha)` — invisible to
-[`SimpleSolvers.Bisection`](@extref), which only looks for a sign change, and swamped by the Armijo
-slack in [`SimpleSolvers.Backtracking`](@extref), but wrong, and wrong in a way a curvature condition
-or a quadratic fit would act on.
+is twice that. With `dot` the slope is `2\varphi'(\alpha)`, which a curvature condition or a
+quadratic fit acts on.
 
 The direction the gradient is paired *with* is [`retraction_differential`](@ref)`(retraction, B, α)`
 and not `B` itself. ``\varphi'(\alpha) = \langle\nabla{}f(x(\alpha)), B\rangle`` holds only where
 ``\alpha \mapsto \mathrm{retract}(\alpha{}B)`` is a one-parameter subgroup, which [`Geodesic`](@ref)
 is and [`Cayley`](@ref) is not; under `Cayley` the generator of the curve's velocity turns with the
-step, and the differential is what supplies it. Against a central difference of the merit this is now
-exact for both retractions at every ``\alpha``.
+step, and the differential supplies it. The slope agrees with a central difference of the merit for
+both retractions at every ``\alpha``.
 
-!!! info "This changed in 0.2.0"
-    The slope used to be paired against `B` under either retraction, so under `Cayley` it was exact
-    at ``\alpha = 0`` and drifted with the step — on a `St(6, 3)` problem, 8.9% out at
-    ``\alpha = 0.5``, 36% at ``\alpha = 1`` and 143% at ``\alpha = 2``, against a central difference
-    of the merit. Searches that use ``\varphi'`` only qualitatively absorbed that: `Bisection` looks
-    for a sign change, [`SimpleSolvers.StrongWolfe`](@extref) compares against ``\varphi'(0)``, and
-    `Backtracking` — the default — evaluates ``\varphi'`` at ``\alpha = 0`` only, where the two agree
-    exactly. The two polynomial searches fit a curve to it *quantitatively*, and on the SVD problem of
-    `test/verification/svd_optim.jl` that took `BFGS` off the manifold altogether on two of
-    eight starting points. The exact slope did *not* fix that — the cause was the size of the step,
-    not the slope, and [`DEFAULT_STEP_CEILING`](@ref) is what closed it. See the CHANGELOG entry for
-    issue A1b; this differential remains worth having on its own account.
-
-    At `α = 0` the differential is still `B`, copied into `differential`, so the `Backtracking`
-    default pays a copy and no solve for this.
+At `α = 0` the differential is `B`, copied into `differential`, so the `Backtracking` default pays a
+copy and no solve for it.
 """
 trial_slope(
     gradient_instance::Gradient, cache::OptimizerCache, retraction, α, differential,
@@ -259,16 +222,13 @@ trial_slope(
 # array of the cache — that is what makes it allocation-free — and so leaves the gradient at the last
 # trial `α` there, while the manifold method allocates and leaves the cache alone.
 #
-# Which array it writes into is `latest_gradient(cache)` and deliberately not `gradient(cache)`, on
-# every cache. Two reasons, and they were fixed one release apart. On the three first-order caches a
-# shared array corrupts the *state*: `update!(::MomentumState, ...)` re-runs `p ← αp + ∇f(xₖ)` from
-# `gradient_array(cache)` *after* the search, so the momentum accumulated the gradient at whatever
-# trial step the search last probed — measured over eight iterations, 104% wrong under `Bisection`,
-# `Quadratic` and `StrongWolfe` and 451% wrong under `BierlaireQuadratic` (issue A2). On the
-# quasi-Newton caches nothing downstream reads `cache.g` again, so a shared array corrupted nothing —
-# but it made `rg` a statement about the last point the line search probed rather than about the
-# iterate the solve returns, which is issue A8. `Backtracking` is exact for both, and only because it
-# evaluates `φ'` once, at `α = 0`, where the trial gradient *is* `∇f(xₖ)`.
+# The array it writes into is `latest_gradient(cache)` and not `gradient(cache)`, on every cache, for
+# two reasons. On the three first-order caches a shared array corrupts the *state*:
+# `update!(::MomentumState, ...)` runs `p ← αp + ∇f(xₖ)` from `gradient_array(cache)` *after* the
+# search, so the momentum would take the gradient at the last trial step of the search. On the
+# quasi-Newton caches a shared array would make `rg` a statement about the last point that the line
+# search probed, not about the iterate that the solve returns. `Backtracking` evaluates `φ'` once, at
+# `α = 0`, where the trial gradient *is* `∇f(xₖ)`, so it is exact either way.
 function _trial_slope(::AbstractVector, gradient_instance::Gradient,
         cache::OptimizerCache, ::AbstractRetraction, α, _, _)
     gradient_instance(latest_gradient(cache), solution(cache))

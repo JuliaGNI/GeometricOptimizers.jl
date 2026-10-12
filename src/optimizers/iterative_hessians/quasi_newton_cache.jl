@@ -173,9 +173,9 @@ end
 function _update_inverse_hessian!(::BFGS, cache::QuasiNewtonCache{T}, state::BFGSState{T},
         ΔxΔg::T) where {T}
     # `curvature_is_usable` and not `!iszero(ΔxΔg) && !isnan(ΔxΔg)`: this update keeps `Q` positive
-    # definite only for `δᵀγ > 0`, and the old guard admitted a negative pairing as readily as a
-    # positive one -- as well as denominators of the order of `1e-16`, which it is about to divide a
-    # rank-two correction by.
+    # definite only for `δᵀγ > 0`, and that test admits a negative pairing as readily as a positive
+    # one -- as well as denominators of the order of `1e-16`, which this divides a rank-two
+    # correction by.
     if curvature_is_usable(ΔxΔg, cache.Δx, cache.Δg)
         # the secant pair in `Q`'s coordinates, written into the cache's buffers rather than into two
         # fresh vectors per `outer!` and a third for `γ`; see `_flat_scratch`

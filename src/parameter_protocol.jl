@@ -171,8 +171,8 @@ parameter_metadata(A::AbstractLieAlgHorMatrix) = (N = A.N, n = A.n)
 #
 # `load` hands a registered reconstructor `(storage, metadata)`. For a file this protocol wrote,
 # `storage` is what `freeparameters` produced and `metadata` is `parameter_metadata`. There is also
-# an older shape to cope with: `GeometricMachineLearning` used to write these matrices itself as a
-# group tagged `gml_type`, holding the fields under their own names. `NeuralNetworkParameters` has no
+# a second shape: a group tagged `gml_type`, written by `GeometricMachineLearning`, holding the fields
+# under their own names. `NeuralNetworkParameters` has no
 # way to tell storage from metadata in such a file, so it passes the group's fields as *both* — a
 # `NamedTuple` in each position. Normalising here is what keeps those files loading, and this is the
 # only place that can do it, since this is where the types are.

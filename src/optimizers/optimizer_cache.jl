@@ -6,7 +6,7 @@ See e.g. [`NewtonOptimizerCache`](@ref) and [`QuasiNewtonCache`](@ref).
 # Extended help
 
 !!! todo
-    `OptimizerCache`s are only used during [`solver_step!`](@ref)s. Outside of these, [`OptimizerState`](@ref)s are used to communicate information between different iterations. This may still have to be enforced consistently.
+    `OptimizerCache`s are only used during [`solver_step!`](@ref)s. Outside of these, [`OptimizerState`](@ref)s carry information between different iterations. This may still have to be enforced consistently.
 """
 abstract type OptimizerCache{T} end
 
@@ -72,8 +72,7 @@ end
 # It splits on the parameters for the same reason `trial_slope` does, and the split is the same one:
 # `global_rep` maps an ambient gradient to the horizontal lift on a `Manifold`, and on a plain array
 # it is the identity (`global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) = gx`), so there the gradient can
-# go straight into `latest_gradient` and the allocation the manifold branch needs is pure waste. At
-# `n = 500` that is 4 160 bytes an iteration against none.
+# go straight into `latest_gradient` and the allocation the manifold branch needs is pure waste.
 function _refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::Gradient)
     g(latest_gradient(cache), solution(cache))
 end
@@ -128,10 +127,8 @@ states, `update!(state, opt, x)` copies `section(cache)` into the state through
 [`advance_state!`](@ref), so `section(state)` after it is bit-for-bit `section(cache)` after
 `solver_step!`.
 
-Without the reuse the refresh doubles the gradient evaluations of a first-order step: on the SVD
-problem of `test/verification/svd_optim.jl`, `Adam` + `Static` over 2 000 iterations costs
-124 ms without the refresh, 167 ms with it and 128 ms with it reused — one trajectory throughout. With
-the reuse, the refresh *is* the step's gradient evaluation.
+Without the reuse the refresh doubles the gradient evaluations of a first-order step. With the reuse,
+the refresh *is* the step's gradient evaluation.
 
 !!! warning "This must run before the cache's `section` and `solution` are overwritten"
     `latest_gradient_is_current` compares `solution(cache)` against `x` and `section(cache)` against
@@ -144,8 +141,8 @@ function store_gradient!(cache::OptimizerCache, state::OptimizerState, g::Gradie
     else
         _copyto!(gradient_array(cache), global_rep(section(state), g(x)))
     end
-    # consumed: from here until the next `refresh_latest_gradient!`, `solver_step!` and the line
-    # search move `solution(cache)` around and nothing keeps `latest_gradient` in step with it
+    # consumed: from here to the next `refresh_latest_gradient!`, `solver_step!` and the line search
+    # move `solution(cache)` around and nothing keeps `latest_gradient` in step with it
     invalidate_latest_gradient!(cache)
 
     cache

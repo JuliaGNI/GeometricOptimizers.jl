@@ -13,7 +13,7 @@ the identity for the same reason. On a horizontal lift, `cayley` is the Cayley t
 cayley(A::AbstractVecOrMat) = A
 
 # On a vector space the retraction is addition, so the exponential never enters and the choice of
-# algorithm is irrelevant — but the methods have to exist, because `retraction(::Geodesic, x)` now
+# algorithm is irrelevant — but the methods have to exist, because `retraction(::Geodesic, x)`
 # passes one along on every parameter type.
 geodesic(A::AbstractVecOrMat, ::AbstractExponentialAlgorithm) = A
 
@@ -166,13 +166,8 @@ Internally this is using
 with ``\bar{B} = B'(B'')^T`` the factorisation of [`lift_factors`](@ref). The only matrix function
 this evaluates is ``\mathfrak{A}`` on the ``2n\times{}2n`` product ``(B'')^TB'``, so the cost is set
 by ``n`` and not by ``N``, and so is the accuracy — see [`AbstractExponentialAlgorithm`](@ref) for
-the choice of `algorithm` and [`GeometricOptimizers.𝔄`](@ref) for the implementations.
-
-!!! warning "The default changed in 0.2.0"
-    The unscaled series was the only algorithm before, and it silently leaves the manifold for
-    ``\|\bar{B}\| \gtrsim 50``. It is still reachable as [`TaylorSeries`](@ref), and its docstring
-    carries the measurements. The default is now [`ScaledSquaring`](@ref), which is both accurate at
-    every lift norm and faster.
+the choice of `algorithm` and [`GeometricOptimizers.𝔄`](@ref) for the implementations. The default
+[`ScaledSquaring`](@ref) is accurate at every lift norm.
 """
 function geodesic(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgorithm = ScaledSquaring())
     T = eltype(B)

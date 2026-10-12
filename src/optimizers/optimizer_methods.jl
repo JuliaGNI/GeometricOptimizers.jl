@@ -63,9 +63,8 @@ Where [`BFGS`](@ref) is the better-conditioned choice and the default, `DFP` is 
 the other classical member of the family and because the two differ in exactly the way that shows
 what the line search is doing: DFP's direction is systematically *under*-scaled, so it wants a
 median ``\alpha`` well above 1 and is starved by a search that cannot exceed it. See
-[`default_linesearch`](@ref), which measures this, converges `DFP` under the default expanding
-`Backtracking`, and gives `StrongWolfe(T; c₂ = 0.1)` as the steadier explicit choice for a
-DFP-heavy workload.
+[`default_linesearch`](@ref): `DFP` converges under the default expanding `Backtracking`, and
+`StrongWolfe(T; c₂ = 0.1)` is the explicit choice for a DFP-heavy workload.
 
 Takes no parameters: like every [`OptimizerMethod`](@ref) it only produces a direction, and how far
 the optimizer travels along it is the line search's business.
@@ -324,8 +323,7 @@ keeps Stiefel weights next to unconstrained ones — and on a *bare* [`Manifold`
 entirely manifolds is therefore warned about rather than silently ignored.
 
 The derivation and the Grassmann case are in the [Weight Decay on Manifolds](@ref) page. Whether
-a *Riemannian* decay is called for is
-[issue #28](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28).
+a *Riemannian* decay is called for is an open question.
 
 # Arguments
 
@@ -398,10 +396,9 @@ a momentum and a moment average are deliberately allowed not to descend on an in
 and the decay of [`AdamWithEuclideanDecay`](@ref) tilts the direction further away from the
 gradient still.
 
-That exemption is about the direction *before* the search, and it used to be extended to the
-restart *after* it as well. It no longer is — see [`linesearch_rejected`](@ref) and issue A7.
-Declining to overrule the direction is not the same as taking the longest step along it, which
-is what a rejected search hands back.
+That exemption is about the direction *before* the search, and not about the restart *after* it —
+see [`linesearch_rejected`](@ref). Declining to overrule the direction is not the same as taking the
+longest step along it, which is what a rejected search hands back.
 """
 const FirstOrderMethodWithState = Union{MomentumMethod, AdamFamily}
 
@@ -446,124 +443,34 @@ that matters:
 *schedule* rather than in response to the merit, which is exactly AdamW's own learning-rate
 schedule and leaves ``\lambda`` its meaning relative to ``\eta``.
 
-!!! info "This changed in 0.2.0"
-    `GradientMethod` and `MomentumMethod` used to default to `Static(DEFAULT_LEARNING_RATE)` as well.
-    They could not do anything else: until the line search learned to take its trial step through the
-    retraction (see [`trial_iterate!`](@ref)), `Static` was the only line search that worked on
-    manifold parameters at all. Pass `linesearch = Static(η)` to get the old fixed learning rate back.
+Pass `linesearch = Static(η)` for a fixed learning rate with any method.
 
 !!! tip "Why a backtracking search, and why `expand`"
     `Backtracking` returns the *first* `α` that decreases `f` enough, while `Bisection`,
     [`SimpleSolvers.Quadratic`](@extref) and [`SimpleSolvers.BierlaireQuadratic`](@extref) bracket and
     then refine a line *minimum*, which costs an order of magnitude more merit evaluations per
-    iteration. Iterations are therefore the wrong unit to compare them in. Counting objective
-    evaluations instead, on the SVD problem of `test/verification/svd_optim.jl` (`Geodesic`;
-    `Static` needs ≈4 evaluations per iteration, so subtract that for the search's own cost):
+    iteration. So compare them by objective evaluations, not by iterations.
 
-    | search | evals/iteration | `BFGS`: iters / evals | `DFP`: iters / evals |
-    |---|---|---|---|
-    | `Backtracking(expand = true)` | **26** | **95** / **2 441** | 768 / 20 001 |
-    | `Backtracking` (shrink only) | 25 | 136 / 3 457 | 48 322 / 1 208 157 |
-    | `StrongWolfe` (`c₂ = 0.1`) | 58 | 135 / 7 893 | 218 / **18 127** |
-    | `StrongWolfe` (`c₂ = 0.9`) | 36 | 159 / 5 687 | 12 717 / 445 497 |
-    | `BierlaireQuadratic` | 106 | 130 / 13 781 | 121 / 13 491 |
-    | `Quadratic` | 138 | 111 / 15 377 | 175 / 18 122 |
-    | `Bisection` | 589 | 133 / 78 658 | 136 / 80 001 |
+    A shrink-only backtracking search starts at `α = 1` and can never exceed it. That is right for a
+    direction already scaled like a Newton step, and wrong for one that is systematically
+    *under*-scaled, such as the direction of [`DFP`](@ref). `expand = true` lengthens an accepted
+    *first* trial step while each longer trial satisfies sufficient decrease and improves the merit,
+    for at most `nexpand = 3` rounds of at most a factor `q = 10` each. On a well-scaled problem it
+    costs no evaluation, because the extrapolation reuses ``\varphi(0)``, ``\varphi'(0)`` and
+    ``\varphi(\alpha)``, which are known once the trial step is accepted.
 
-    (Regenerate with `scripts/retraction_accuracy.jl`. Every number here moved by a few percent in
-    0.2.0 when the geodesic retraction stopped losing accuracy on a large lift — a more accurate
-    exponential is a different trajectory. The ordering, which is what the table is for, did not.)
+    Use a bracketing method when you pay for iterations rather than evaluations — a very expensive
+    objective, or an outer loop bounded in iterations.
 
-    Three cells are **not** regenerated by that script and are older measurements: the two
-    `StrongWolfe (c₂ = 0.9)` cells and the `DFP` cells of `Backtracking (shrink only)` and
-    `BierlaireQuadratic`, none of which is one of its `COMBINATIONS`. They predate SimpleSolvers 0.12
-    and the step ceiling. Everything else in the table is current; see the note on open issue C9 about
-    which figures in this package have a named harness behind them and which do not.
+!!! note "[`DFP`](@ref) and [`SimpleSolvers.StrongWolfe`](@extref)"
+    `DFP` converges under the default, but its direction stays under-scaled.
+    `StrongWolfe(T; c₂ = 0.1)` is the choice to pass explicitly on a DFP-heavy workload: it takes fewer
+    evaluations. Use `c₂ = 0.1` and not the default `0.9` of `StrongWolfe`: at `0.9` the strong Wolfe
+    conditions hold at `α = 1` on nearly every iteration, so the bracketing phase does not start.
+    `0.1` is the value that [nocedal2006numerical](@cite) recommends where a more accurate line search
+    is necessary.
 
-    **What the step ceiling moved here: nothing.** Every cell the script regenerates is reproduced to
-    the digit with the ceiling on and off, on both retractions, at `DEFAULT_STEP_CEILING = 1`. The
-    ceiling does not bind on this starting point, which is the whole design — what it buys is on the
-    *other* starting points, where it is the difference between converging and ending off the
-    manifold. See [`DEFAULT_STEP_CEILING`](@ref) and the seed spreads in `svd_optim.jl`.
-
-    That was not true of the ceiling as first written, and the difference is issue A15. Deriving the
-    bound from `2π` over the norm of the *whole* direction made each block of a `NamedTuple` pay for
-    its neighbours, and on this problem — where both blocks are manifolds — combining them in
-    quadrature tightened it by up to `√2`. That was enough to bind on three cells here (`BFGS`
-    `Quadratic` 111 → 120 iterations, `BFGS` `BierlaireQuadratic` 130 → 113, `DFP` `Quadratic`
-    175 → 308) and on nothing under `Cayley`. Deriving it per block instead removes all three. The
-    lesson is worth keeping: those cells looked like the price of the ceiling and were the price of a
-    sloppy norm.
-
-    Every evaluation count in this table but one is ten higher than it was before `rg` became the
-    residual at the iterate a solve returns (issue A8), and every iteration count but one is unchanged
-    — and it is the same row both times: `StrongWolfe (c₂ = 0.1)` for `BFGS` went 136 → 135
-    iterations and so 8 074 → 7 893 evaluations, which is the one cell that moved *down*. Ten is
-    exactly one gradient evaluation on this problem — `GradientAutodiff` costs ten objective calls for
-    its 60 parameters, and the count above includes those — and it is the refresh at the *last*
-    iterate, the one no `update!` follows and so the one nothing reuses. Per solve, not per iteration:
-    the reuse in `store_gradient!` is what makes the difference `10` rather than `10 × iterations`.
-
-    A shrink-only backtracking search starts at `α = 1` and can never exceed it, which is right for a
-    direction already scaled like a Newton step — `BFGS` accepts `α = 1` on 74% of its iterations —
-    but wrong for one that is systematically *under*-scaled. `DFP` wants a median `α` of 8, so it
-    accepts the ceiling on **100%** of its iterations and crawls to the gate in 48 322 of them.
-    `expand = true` lets an accepted *first* trial step be lengthened while each longer trial still
-    satisfies sufficient decrease and strictly improves the merit, at most `nexpand = 3` rounds of at
-    most `q = 10` each.
-
-    That fixes `DFP` outright and makes `BFGS` slightly better as well, at a cost of under 4% per
-    iteration — and of exactly nothing on a well-scaled problem, since the extrapolation reuses
-    ``\varphi(0)``, ``\varphi'(0)`` and ``\varphi(\alpha)``, all known once the trial step is accepted,
-    so declining to expand costs no evaluation at all. On the sphere problem the evaluation counts are
-    identical with and without it.
-
-    Reach for one of the bracketing methods when iteration count rather than evaluation count is what
-    you are paying for — a very expensive objective, or an outer loop bounded in iterations. For the
-    first-order methods that trade is poor: `Bisection` burns 1.8M evaluations against
-    `Backtracking`'s 79 500 for the same 3 000 iterations.
-
-!!! note "[`DFP`](@ref) converges under the default, and [`SimpleSolvers.StrongWolfe`](@extref) is still the steadier explicit choice"
-    DFP's direction stays under-scaled — the expansion phase makes that harmless rather than absent, so
-    `DFP` needs 768 iterations on `Geodesic` and 1 366 on `Cayley` where `BFGS` needs 95 and 118, on
-    the starting point the test suite uses. Over eight starting points on the same problem it ranges
-    over 385–1 118 (`Geodesic`) and 466–1 177 (`Cayley`). (That upper bound read 1 366 — the *pinned*
-    value rather than the spread's — which `svd_optim.jl` corrected and this docstring did not.)
-
-    Those ranges used to be 512–77 890 and 465–3 834, and the difference is
-    [`curvature_is_usable`](@ref). `Q` became badly conditioned (κ ≈ 1e9) because it was being built
-    from secant pairs with ``\delta^T\gamma \leq 0``, which the guard on the update did not reject; how
-    quickly the expansion phase dug it back out was close to arbitrary. Enforcing the curvature
-    condition removes a factor of 92 from the spread on `Geodesic` and, on this problem, most of the
-    reason `DFP` had a reputation for being unpredictable.
-
-    `StrongWolfe(T; c₂ = 0.1)` remains the choice to pass explicitly on a DFP-heavy workload, now on
-    cost rather than on reliability: 218 and 279 iterations on that starting point, 296–868 and 198–515
-    across the eight, 18 127 and 23 828 evaluations against the default's 20 001 and 35 339, and 1.6×
-    to 2.2× faster in wall clock (the two wall-clock figures are older measurements: 0.155 s against
-    0.246 s on `Geodesic`, 0.205 s against 0.451 s on `Cayley`, neither of which `svd_tables`
-    produces). `Bisection` is steadier still (99–141 / 102–124) at four to five times the work.
-
-    `c₂ = 0.1` and not `StrongWolfe`'s own default of `0.9`: at `0.9` the strong Wolfe conditions are
-    already satisfied at `α = 1` on 99.4% of iterations, so its bracketing phase never fires and it
-    crawls just as a shrink-only `Backtracking` does — 12 717 iterations against 218. `0.1` is the
-    value [nocedal2006numerical](@cite) recommends where a more accurate line search is needed, and it
-    makes the expansion fire on 94.5% of iterations.
-
-    `Quadratic` is competitive on `Geodesic` (308 iterations) and falls behind on `Cayley` (529) — and
-    the explanation this entry used to give for that is now measured and wrong. It read "probably
-    because [`trial_slope`](@ref) is only first-order correct there"; `trial_slope` is exact under
-    `Cayley` as of the [`retraction_differential`](@ref), which moved this figure from 550 to 529 and
-    left the gap. What the polynomial searches are actually sensitive to is the size of the step they
-    occasionally ask for, which is what [`DEFAULT_STEP_CEILING`](@ref) bounds — that was issue A1b, and
-    bounding it is what closed it. The remaining `Geodesic`/`Cayley` gap is not that: it is the same
-    gap with the ceiling switched off (175 against 529) and with it on (308 against 529), so the
-    ceiling narrows it rather than explaining it, and no measurement here accounts for the rest.
-
-    None of this is a property of DFP as such: given a search that can exceed `α = 1` it is competitive
-    with `BFGS`. The expansion phase exists because of this package — see
-    JuliaGNI/SimpleSolvers.jl#174, which was filed from these measurements and released in
-    SimpleSolvers 0.11.
+The manual page [Linesearches on Manifolds](@ref) gives the evaluation counts on the SVD problem.
 """
 default_linesearch(::Type{T}, ::OptimizerMethod) where {T} = Backtracking(T; expand = true)
 default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNING_RATE))

@@ -33,10 +33,9 @@ one built with `retraction = nothing` holds all the scratch and serves every ret
 
 In a workspace, the ``\mathfrak{A}`` of [`ScaledSquaring`](@ref) and
 [`NativePade`](@ref) allocates nothing, and that of [`AugmentedPade`](@ref) allocates what `Base.exp`
-of its ``4n\times{}4n`` matrix allocates — on a ``20\times{}20`` argument 87 472 bytes in `Float64` and
-44 224 in `Float32`. So in both precisions the two native algorithms are the lighter, and
-`AugmentedPade` the heavier by exactly its `exp`. The figures are those of
-`scripts/in_place_retraction_cost.jl`.
+of its ``4n\times{}4n`` matrix allocates. So in both precisions the two native algorithms are the
+lighter, and `AugmentedPade` the heavier by exactly its `exp`. `scripts/in_place_retraction_cost.jl`
+measures the figures.
 
 **What this does not remove**: the ``2n\times{}2n`` `inv` in [`cayley`](@ref) and the `exp` of
 [`AugmentedPade`](@ref). Neither grows with ``N``. `inv` stays an `inv` because `lu!` and `rdiv!`
@@ -223,8 +222,8 @@ function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T})
 end
 
 # The dense form of a skew block. On the host a broadcast reads it entry by entry and allocates
-# nothing; anywhere else the product with the identity runs the backend's kernel, whose launch is
-# the 128 bytes the host form saves. The two write the same matrix.
+# nothing; anywhere else the product with the identity runs the backend's kernel, whose launch
+# allocates. The two write the same matrix.
 function _dense_skew!(C::Matrix{T}, A::SkewSymMatrix{T, Vector{T}}, ::AbstractMatrix) where {T}
     (C .= A)
 end

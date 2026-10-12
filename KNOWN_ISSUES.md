@@ -87,7 +87,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Under `Cayley`, `trial_slope` calls `retraction_differential!` on every evaluation of ``\varphi'``.
   That is `lift_factors!` and two ``2n\times{}2n`` solves in the optimizer's workspace —
   ``O(Nn^2 + n^3)``, the same order as the retraction itself, and no allocation on a host `Matrix` —
-  where before it was a `_dot` against an array the cache already held. On `St(6, 3)` at
+  in place of a `_dot` against an array the cache already holds. On `St(6, 3)` at
   ``\alpha = 0.5`` one call takes about 1.1 μs (`scripts/in_place_retraction_cost.jl`). `Geodesic`
   copies ``\bar{B}`` at every ``\alpha`` and `Cayley` does at ``\alpha = 0``, so every `Geodesic` solve
   and the `Backtracking` default pay a copy and no solve; what is unmeasured is a search that
@@ -237,7 +237,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: `src/decompositions/symplectic_sr.jl`
 - kind: defect
-- found: 2026-09-18
+- found: 2026-09-18; a commit message before 2026-09-18 that cites A22 means another issue, the CPU-only exponential
 - evidence:
 
   **Severity: medium**, and it is a property of the algorithm rather than a defect in the port. Opened
@@ -536,13 +536,13 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C1 · `f_converged_strong` is computed and thrown away
 
-- location: `src/optimizers/optimizer_status.jl:312`
+- location: `src/optimizers/optimizer_status.jl:317`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
 
-  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:312` and returns it at
-  `:319`; the `OptimizerStatus` constructor destructures it at `:135` and never stores it. Nothing else
+  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:317` and returns it at
+  `:323`; the `OptimizerStatus` constructor destructures it at `:121` and never stores it. Nothing else
   in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
   on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
   and `Options.f_stall_window` were meant to drive — both of which are also unread here.
@@ -609,11 +609,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   - **the `Adam` cross-version statistic**, quoted in `svd_optim.jl` as a 1.06× spread over three Julia
     versions and reproducible only by running three Julia versions.
   - **the 1.12 compile-time reproducer** (D1), which no longer exists at all.
-  - **the wall-clock timings** in `default_linesearch` — `0.155 s` against `0.246 s` on `Geodesic`,
-    `0.205 s` against `0.451 s` on `Cayley`, and the "1.6× to 2.2× faster" they support. `svd_tables`
-    reports iterations and evaluations and not time, so the step-ceiling round regenerated every other
-    figure in that docstring and left these four untouched. They now say so in place, which is the
-    minimum this entry asks for and not a fix.
   - **the MNIST run**: the 6 h 53 min RTX 4090 figures, the
     ``\sqrt{1.8} \approx 1.342`` plateau and the per-configuration losses are
     still quoted here, while `distill_mnist_results.jl` and the five scripts that produced them are now
@@ -642,8 +637,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `retraction_differential` disproved it (the figure moved 550 → 529 and the gap stayed). This round
   removed the second candidate too: the step ceiling turned out to have nothing to do with it either —
   `175 vs 529` with the ceiling on is the same pair as with it off, since the per-block ceiling does not
-  bind on this seed. Both docstring and docs page now say the remainder is unexplained rather than
-  offering a third guess.
+  bind on this seed. The "Linesearches on Manifolds" page says the remainder is unexplained rather
+  than offering a third guess.
 
   An intermediate version of the ceiling *did* move the `Geodesic` figure, to 308, and it would have
   been easy to read that as the third explanation. It was an artefact of combining the two manifold
@@ -767,6 +762,28 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   latter is what is written today, and it is enough to use the algorithm honestly but not enough to
   close [#52]'s first acceptance criterion.
 
+### K39 · Manual pages carry release history in their prose
+
+- location: `docs/src/retractions.md:494`
+- kind: found late
+- found: 2026-10-12
+- evidence: `docs/src/retractions.md:494` ("Before 0.2.0 the slope was …"),
+  `docs/src/exponential_algorithms.md:103` ("the pre-0.2.0 behaviour"), `:374-375` ("a regression
+  baseline for the pre-0.2.0 implementation — the behaviour of every release up to 0.2.0"),
+  `:1493` ("the pre-0.2.0 regression"), and `docs/src/weight_decay.md:186` ("v0.1.0's
+  `AdamWithDecay`"). The prose pass of the source comments and docstrings removed the same history
+  from `src/`; these manual pages are outside its scope.
+
+### K40 · The `Bisection` sentence of "Linesearches on Manifolds" contradicts the table above it
+
+- location: `docs/src/linesearch_on_manifolds.md:164`
+- kind: docs
+- found: 2026-08-13
+- evidence: the sentence says that `SimpleSolvers.Bisection` "needs the fewest iterations of any
+  option here, and roughly 583 objective evaluations per iteration". The table on the same page
+  gives `Bisection` 133 `BFGS` iterations against 95 for `Backtracking(expand = true)`, and 589
+  evaluations per iteration.
+
 ## D. Upstream
 
 ### D1 · Julia 1.12: nested `kwargs...` feeding a call in the same inferred body
@@ -781,16 +798,18 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Constructing an `Optimizer` through three nested levels of `kwargs...` splatting and calling `solve!`
   on it *in the same inferred function body* cost **940.86 s** of compile time on 1.12.6 against
   **4.35 s** on 1.13.0-rc2. Neither half is slow alone (0.99 s for the constructor, 2.35 s for
-  `solve!`). Flattening to one level: 6.53 s. A `@noinline` barrier around the construction does not
-  help (925.27 s), and neither does `@nospecialize` on the enclosing function (965 s).
+  `solve!`). Flattening to one level: 6.53 s, and the `Optimizer(x, F)` that splats `kwargs...` once
+  and passes `Options` positionally: 6.71 s (4.15 s on 1.13). A `@noinline` barrier around the
+  construction does not help (925.27 s), and neither does `@nospecialize` on the enclosing function
+  (965 s).
 
   Effect on this project before the fix: the CI suite took 31–42 minutes on 1.12 on all three
   operating systems, against 3–5 minutes on 1.10, 1.13 and nightly, with a single test file accounting
   for the whole difference.
 
   1.13 and nightly are unaffected, so this needs an upstream report only if 1.12 is still receiving
-  backports; if it is not, the value is documentation rather than a fix, and the warning on
-  `Optimizer(x, F)` already carries it.
+  backports; if it is not, the value is documentation rather than a fix: the warning on
+  `Optimizer(x, F)` carries the rule, and this entry the measurements.
 
   **The reproducer is written down now — `scripts/nested_kwargs_cost.jl` — and it does not reproduce.**
   That was the outstanding action here ("the reproducer this was measured with lived in `/tmp` and is
@@ -832,7 +851,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
      reinstated at each step, which `scripts/nested_kwargs_cost.jl --with-package` is written to make
      mechanical.
 
-  The warning on `Optimizer(x, F)` stays either way: it records a measurement that was taken, and
+  The warning on `Optimizer(x, F)` stays either way: it states the rule that a measurement set, and
   nothing here shows the flattening is safe to undo — only that the cost it avoids cannot currently be
   demonstrated.
 
@@ -840,7 +859,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: `src/base/options.jl:458-460`
 - kind: upstream
-- found: 2026-08-15; one issue with SimpleSolvers' *Open Issues* entry "`store_trace`, `show_trace` and `extended_trace` have no readers"
+- found: 2026-08-15; one issue with SimpleSolvers' known-issues entry "`store_trace`, `show_trace` and `extended_trace` have no readers"
 - evidence:
 
   `store_trace`, `show_trace` and `extended_trace` exist as fields of `SimpleSolvers.Options`
@@ -892,7 +911,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: —
 - kind: upstream
-- found: 2026-08-15; one issue with SimpleSolvers' *Open Issues* entry "A ceiling that binds can be reported as `LINESEARCH_FLOOR`"
+- found: 2026-08-15; one issue with SimpleSolvers' known-issues entry "A ceiling that binds can be reported as `LINESEARCH_FLOOR`"
 - evidence:
 
   **Severity: medium**, inherited from SimpleSolvers 0.12 with the step ceiling and carried in
@@ -1016,37 +1035,6 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   scripts have since moved to GMLDatasets.jl (see [0.3.1](#031)), which changes nothing
   about the PR body this entry is about.
 
-## G. Found when this file was split from the CHANGELOG
-
-### K2 · Two comments point at the *Open Issues* preamble of `CHANGELOG.md`, which does not hold it; the rule they cite is in neither file
-
-- location: `scripts/optimizer_allocations.jl:8`
-- kind: docs
-- found: 2026-09-26
-- evidence: `scripts/optimizer_allocations.jl:8` says "because of the rule the *Open Issues* preamble
-  states" and `scripts/retraction_step_allocations.jl:9` says "reason the *Open Issues* preamble
-  states". That preamble rule ("treat a number here as reproducible only where the harness that
-  produced it is named") did not move into this file. Found by
-  `git grep -n -i 'open issues' -- ':!CHANGELOG.md'`.
-
-### K3 · The ID A22 was used for two different issues
-
-- location: `KNOWN_ISSUES.md`
-- kind: docs
-- found: 2026-09-26
-- evidence: commit 4d2ed06 (2026-08-20) added `#### A22. The only independent exponential
-  implementation was CPU-only`, and 7f66695 (2026-08-23) removed it. Commit 4e9eb5f (#90,
-  2026-09-18) used `A22` again for the SR decomposition. A commit message that cites A22 before
-  2026-09-18 means the first issue.
-
-### K4 · Three reference links in `CHANGELOG.md` have no definition
-
-- location: `CHANGELOG.md:166`
-- kind: docs
-- found: 2026-09-26
-- evidence: `[0.8.0]`, `[0.6.1]` and `[B]` (`CHANGELOG.md:166`, `:1186`, `:1330`, `:2091`) have no
-  `[label]: url` line, and `[Unreleased]` compares `v0.6.0...main`.
-
 ## H. The test suite
 
 ### K22 · Three `[Unreleased]` bullets of `CHANGELOG.md` give test paths from before the move to `test/integration/`
@@ -1122,7 +1110,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   |:--|:--|--:|--:|
   | `rgrad(::StiefelManifold, ::AbstractMatrix)`, `src/manifolds/stiefel_manifold.jl:54` | `∇L - Y.A * (∇L' * Y.A)` | 4 560 | 8 |
   | `global_rep(::GlobalSection{T, <:StiefelManifold}, Δ)`, `src/global_sections/global_sections.jl:264` | `SkewSymMatrix(λY.Y.A' * Δ)` and `λY.λ' * Δ` | 3 560 | 33 |
-  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:280` | `inv(ws.M)` | 5 448 | 8 |
+  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:279` | `inv(ws.M)` | 5 448 | 8 |
 
   The three frames account for 13 568 of the 14 016 bytes. Removing each needs an in-place form: a
   buffer for the Riemannian gradient, a `global_rep!` into the cache's lift, and a factorisation of

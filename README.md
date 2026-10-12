@@ -6,6 +6,36 @@
 [![Coverage](https://codecov.io/gh/JuliaGNI/GeometricOptimizers.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/JuliaGNI/GeometricOptimizers.jl)
 [![PkgEval](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/G/GeometricOptimizers.svg)](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/G/GeometricOptimizers.html)
 
+Optimizers on vector spaces and on matrix manifolds: the Stiefel and the Grassmann manifold.
+
+## Example
+
+A solve on a vector, and a solve on the Stiefel manifold: the minimum of `-tr(Y' * A * Y)` over the
+`5 × 2` matrices `Y` with orthonormal columns is minus the sum of the two largest eigenvalues of `A`.
+
+```julia
+julia> using GeometricOptimizers, LinearAlgebra
+
+julia> F(x) = sum(abs2, x .- 1);
+
+julia> x = zeros(3);
+
+julia> solve!(x, OptimizerState(BFGS(), x), Optimizer(x, F));
+
+julia> x ≈ ones(3)
+true
+
+julia> A = Symmetric(diagm(0 => [5.0, 4.0, 3.0, 2.0, 1.0]));
+
+julia> G(Y) = -tr(Y' * A * Y);
+
+julia> Y = rand(StiefelManifold, 5, 2);
+
+julia> solve!(Y, OptimizerState(BFGS(), Y), Optimizer(Y, G));
+
+julia> G(Y) ≈ -9
+true
+```
 
 ## References
 - Brantner B. Generalizing Adam To Manifolds For Efficiently Training Transformers. arXiv preprint arXiv:2305.16901, 2023.
