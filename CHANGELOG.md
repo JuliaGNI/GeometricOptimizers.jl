@@ -10,7 +10,7 @@ breaking release).
 
 ### Fixed
 
-- **Files that tag a leaf `LowerTriangular` or `UpperTriangular` load, as they did before 0.9.0.** 0.9.0 renamed the two types to `StrictlyLowerTriangular` and `StrictlyUpperTriangular` and registered only the new names with `NeuralNetworkParameters.register_parameter_type!`. A file carries the name its leaf's type had when it was written, so every file that GeometricOptimizers 0.8, or GeometricMachineLearning 0.8 and earlier, wrote for one of the two types failed to load in 0.9.0 with "ArgumentError: the file contains a parameter of type `LowerTriangular`, which is not registered", a saved `VolumePreservingFeedForward` network among them. The old names are now registered as well, and rebuild the renamed types. The testset "a file written before the triangular types were renamed still loads" in `test/integration/neural_network_parameters_protocol.jl` retags a file with the old names, both in `parameter_type` and in GeometricMachineLearning's `gml_type`, and loads it; it checks the lookup, not a file that 0.8 actually wrote.
+- **Files that tag a leaf `LowerTriangular` or `UpperTriangular` load again, which reverses the break 0.9.0 announced.** 0.9.0 renamed the two types to `StrictlyLowerTriangular` and `StrictlyUpperTriangular` and registered only the new names with `NeuralNetworkParameters.register_parameter_type!`. A file carries the name its leaf had when it was written, so `load(NetworkParameters, file)` raised "ArgumentError: the file contains a parameter of type `LowerTriangular`, which is not registered" for a file written by GeometricOptimizers before 0.9, or by GeometricMachineLearning 0.8 and earlier, a saved `VolumePreservingFeedForward` network among them. With a prototype, `load(NetworkParameters, file, prototype)`, this package's layout (a `storage` group) still loaded, but GeometricMachineLearning's older layout (`gml_type`, no `storage`) had no way in. The old names are registered again and rebuild the renamed types. The testset "a file written before the triangular types were renamed still loads" in `test/integration/neural_network_parameters_protocol.jl` has a nested testset per layout, `protocol_layout` and `gml_layout`; each builds a file with the old names and loads it without a prototype. It checks the lookup with files the test writes, not a file an old release wrote.
 
 ## [0.9.0]
 
@@ -4980,4 +4980,5 @@ Euclidean optimizer machinery from SimpleSolvers into one package.
 [0.6.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.6.0...v0.7.0
 [0.7.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.7.0
 [0.8.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.8.0
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.8.0...main
+[0.9.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.9.0
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.9.0...main
