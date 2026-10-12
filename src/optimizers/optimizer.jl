@@ -120,8 +120,9 @@ struct Optimizer{T,
     cache::OCT
     linesearch::LST
     retraction::RT
-    # The buffers of every retraction on the step path: a `NoWorkspace` for an array, and for a
-    # parameter set a tree of workspaces, with a `NoWorkspace` at each array leaf. They are here and not on the cache because the retraction belongs to this type, and
+    # The buffers of every retraction on the step path: a `RetractionWorkspace` for a manifold
+    # point, a `NoWorkspace` for any other array, and for a parameter set a tree of these, one per
+    # leaf. They are here and not on the cache because the retraction belongs to this type, and
     # both call sites that apply one, `solver_step!` and `trial_iterate!` through the closures of
     # `linesearch_problem`, start from here. See `GeometricOptimizers.retraction_workspace`.
     retraction_workspace::WT

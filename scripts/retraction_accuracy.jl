@@ -15,10 +15,10 @@
 #   * `svd_tables()` — iterations, objective evaluations, `‖∇f‖` and `check` for every (method, line
 #     search, retraction) combination of `test/verification/svd_optim.jl`, on the seed that
 #     file uses and across eight starting points. Feeds the tables in that file and in
-#     `docs/src/linesearch_on_manifolds.md`. Its `max_iterations` is the cap those tables report against,
-#     so it belongs here and not at a call site: `BFGS` with either polynomial search does not
-#     converge on two of the eight under `Cayley` (open issue A1b), and what the tables print for
-#     those is the cap itself.
+#     `docs/src/linesearch_on_manifolds.md`. Its `max_iterations` is the cap those tables report
+#     against, so it belongs here and not at a call site: `BFGS` with either polynomial search
+#     does not converge on two of the eight under `Cayley` (open issue A1b), and what the tables
+#     print for those is the cap itself.
 #
 # The timings are a `minimum` over repetitions with a single BLAS thread, which is the only form that
 # is stable enough to quote. They are still machine-dependent; the accuracy figures are not, and

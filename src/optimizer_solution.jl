@@ -27,7 +27,8 @@
 # same shape but with the parameters independent and `s3<:Tuple`, which costs nothing to intersect.
 #
 # The difference is not marginal: for a nine-layer network whose optimizer is compiled through a
-# function, inference with the bounds does not finish, and without them it does.
+# function, inference with the bounds does not finish in any practical time, and without them it
+# does.
 #
 # Nothing is given up by dropping them. The invariant is enforced where it always really was, in the
 # constructors, whose signatures take `x::OptimizerSolution{T}` and
