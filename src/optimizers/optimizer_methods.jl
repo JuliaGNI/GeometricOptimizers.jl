@@ -396,8 +396,8 @@ manifold and means nothing pooled across a set. A transformer with `StiefelManif
 projections beside ordinary `Matrix` and `Vector` leaves, or a symplectic autoencoder with Stiefel PSD
 layers beside Euclidean SympNet layers, therefore has no single method that covers it.
 
-`select` is a function from a leaf to the method for that leaf. The keyword form selects by leaf
-type, and is [`LeafTypeSelector`](@ref):
+`select` is a function from a leaf to the method for that leaf, and gives one leaf the same method
+every time it is asked. The keyword form selects by leaf type, and is [`LeafTypeSelector`](@ref):
 
 ```julia
 CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
@@ -431,8 +431,7 @@ The selector of `CompositeMethod(; manifold, array)`: `manifold` for a [`Manifol
 `array` for every other.
 
 A named type and not a closure, so that a composite prints as what it is and the two methods can be
-read back off it: the run records of a comparison have to quote both, and
-[`default_step_size`](@ref) reads its answer off them.
+read back off it: [`default_step_size`](@ref) reads its answer off them.
 
 `Manifold` and not `StiefelManifold`, because the question the split asks is "does this leaf have a
 constraint the method has to respect", and that is the manifold-ness of it. A `manifold` method that
@@ -599,10 +598,12 @@ default_step_size(::Union{GradientMethod, MomentumMethod}) = 1.0e-2
 default_step_size(::AdamFamily) = DEFAULT_LEARNING_RATE
 
 function default_step_size(method::CompositeMethod{<:LeafTypeSelector})
-    η = default_step_size(method.select.manifold)
-    η == default_step_size(method.select.array) || throw(ArgumentError(
-        "the two methods of $(method) have different default step sizes, " *
-        "$(η) and $(default_step_size(method.select.array)); pass `linesearch`"))
+    (; manifold, array) = method.select
+    η, η′ = default_step_size(manifold), default_step_size(array)
+    η == η′ || throw(ArgumentError(
+        "the two methods of a CompositeMethod, $(nameof(typeof(manifold))) and " *
+        "$(nameof(typeof(array))), have different default step sizes, $(η) and $(η′); " *
+        "pass `linesearch`"))
     η
 end
 

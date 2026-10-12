@@ -17,8 +17,9 @@ _leaf_like(::Union{AbstractVector, Manifold}, y) = y
 _leaf_like(_, y) = NetworkParameters((leaf = y,))
 _leaf_solution(x) = _leaf_like(x, x)
 
-# The method for every leaf, converted to the element type of the set. Asked once, here, so that a
-# selector function is not called at every step and cannot answer differently on a later one.
+# The method for every leaf, converted to the element type of the set. `OptimizerCache` and
+# `OptimizerState` each ask it once, when they are built, and never at a step; a selector function
+# therefore has to give one leaf the same method both times.
 function _leaf_methods(method::CompositeMethod, x::NetworkParameters{T}) where {T}
     mapparameters(leaf -> change_precision(T, leafmethod(method, leaf)), params(x))
 end
@@ -93,23 +94,16 @@ function _training_workspace(::CompositeMethod, x::NetworkParameters, retraction
     mapparameters(leaf -> retraction_workspace(_leaf_solution(leaf), retraction), params(x))
 end
 
-function optimization_step!(x::NetworkParameters{T},
-        opt::TrainingOptimizer{<:CompositeMethod, <:CompositeCache, <:CompositeState{T}},
-        dp::NetworkParameters{T}) where {T}
-    # before the count moves, so that a refused step leaves the state as it was
-    _same_shape(x, dp) || throw(DimensionMismatch(
-        "the gradient does not have the shape of the parameters it is a gradient of"))
-    increase_iteration_number!(opt.state)
-    α = step_size(opt.linesearch, iteration_number(opt.state))
-    retraction = opt.retraction
-    foreachparameters(
-        opt.cache.caches, opt.state.states, opt.cache.methods, opt.workspace, x,
-        dp) do cache, state, method, workspace, xᵢ, dpᵢ
-        x̂ = _leaf_solution(xᵢ)
-        increase_iteration_number!(state)
+# The step of a composite on a parameter set: every leaf with its own method, cache and state.
+function _training_step!(
+        x::NetworkParameters, cache::CompositeCache, state::CompositeState, dp,
+        ::CompositeMethod, α, retraction, workspace)
+    foreachparameters(cache.caches, state.states, cache.methods, workspace, x,
+        dp) do cacheᵢ, stateᵢ, methodᵢ, workspaceᵢ, xᵢ, dpᵢ
+        increase_iteration_number!(stateᵢ)
         _training_step!(
-            x̂, cache, state, PrecomputedGradient(x̂, _leaf_like(xᵢ, dpᵢ)), method, α,
-            retraction, workspace)
+            _leaf_solution(xᵢ), cacheᵢ, stateᵢ, _leaf_like(xᵢ, dpᵢ), methodᵢ, α,
+            retraction, workspaceᵢ)
     end
     x
 end

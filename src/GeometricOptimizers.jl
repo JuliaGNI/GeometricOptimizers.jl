@@ -75,7 +75,8 @@ using NeuralNetworkParameters: NetworkParameters, params,
                                flatlength,
                                flatten, flatten!, unflatten, unflatten!,
                                FlatParameters,
-                               mapparameters, mapparameters!, mapstorage!, foreachparameters,
+                               mapparameters, mapparameters!, mapstorage!,
+                               foreachparameters,
                                foldparameters, foldstorage,
                                parameter_eltype, parameterlayout,
                                register_parameter_type!
@@ -223,8 +224,8 @@ export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # alongside it
 export AdamWithEuclideanDecay
 # `CompositeMethod` is a method a caller constructs, as the others are, and `CompositeState` is its
-# state. `LeafTypeSelector` and `leafmethod` are `public`: what a composite is made of and what it
-# answers for a leaf, which a caller reads rather than calls.
+# state. `LeafTypeSelector` and `leafmethod` are `public`: what a composite is made of and the
+# method it selects for a leaf, which a caller inspects but does not need in its training loop.
 export CompositeMethod, CompositeState
 public LeafTypeSelector, leafmethod
 

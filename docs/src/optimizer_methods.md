@@ -306,7 +306,8 @@ than one geometry. [`ScalarMomentAdam`](@ref) is the case that forces the point:
 manifold and means nothing pooled across a set. A transformer whose attention projections are
 Stiefel and whose residual blocks are ordinary arrays therefore has no single method that covers it.
 
-[`CompositeMethod`](@ref) chooses a method per leaf, and [`leafmethod`](@ref) reads the choice:
+[`CompositeMethod`](@ref) chooses a method per leaf, and
+[`leafmethod`](@ref GeometricOptimizers.leafmethod) reads the choice:
 
 ```@example optimizer_methods
 composite = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
@@ -339,9 +340,9 @@ the whole set, and a composite has no such direction.
 ## Library functions
 
 [`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref),
-[`CompositeMethod`](@ref), [`LeafTypeSelector`](@ref), [`leafmethod`](@ref),
-[`CompositeState`](@ref), [`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and
-[`OptimizerState`](@ref). Their
+[`CompositeMethod`](@ref), [`LeafTypeSelector`](@ref GeometricOptimizers.LeafTypeSelector),
+[`leafmethod`](@ref GeometricOptimizers.leafmethod), [`CompositeState`](@ref),
+[`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and [`OptimizerState`](@ref). Their
 docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the
 package is rendered once; the names above link to them.
 

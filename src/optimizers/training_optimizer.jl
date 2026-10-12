@@ -127,14 +127,14 @@ function optimization_step!(x::OptimizerSolution{T},
         "the gradient does not have the shape of the parameters it is a gradient of"))
     increase_iteration_number!(opt.state)
     α = step_size(opt.linesearch, iteration_number(opt.state))
-    _training_step!(x, opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, α,
-        opt.retraction, opt.workspace)
+    _training_step!(
+        x, opt.cache, opt.state, dp, opt.method, α, opt.retraction, opt.workspace)
 end
 
 # The step itself, once the count has moved and the step size is read: the whole of `x` for one
-# method, and one leaf at a time for a `CompositeMethod`.
-function _training_step!(x, cache, state, gradient, method, α, retraction, workspace)
-    update!(cache, state, gradient, method, x)
+# method, and one leaf at a time for a `CompositeMethod` (see `optimizers/composite_method.jl`).
+function _training_step!(x, cache, state, dp, method, α, retraction, workspace)
+    update!(cache, state, PrecomputedGradient(x, dp), method, x)
     _rmul!(direction(cache), α)
     update_section!(section(cache), section(state), direction(cache), retraction, workspace)
     _copyto!(solution(cache), section(cache))

@@ -5,6 +5,10 @@ using GeometricOptimizers: CompositeCache, FirstOrderMethod, LeafTypeSelector, c
 using Test
 import Random
 
+include("../helpers/eltypes.jl")
+include("../helpers/allocations.jl")
+include("../helpers/parameter_set_step.jl")
+
 # A `CompositeMethod` on a parameter set gives every leaf the cache and the state of the method it
 # selects for that leaf, and steps every leaf with them. What is pinned here is that the selection is
 # right, that each leaf then moves exactly as it would under a `TrainingOptimizer` of its own, and that
@@ -65,15 +69,19 @@ end
     @test_throws TypeError CompositeMethod(; manifold = BFGS(), array = Adam())
 
     # A parameter set is not a leaf: that it needs two methods is why the composite exists, so no one
-    # arm is the answer for it. This used to return the `array` arm for a nested set, silently.
+    # arm is the answer for it.
     method = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
     @test_throws ArgumentError leafmethod(method, mixed_parameters())
     @test_throws ArgumentError leafmethod(method, (weight = rand(StiefelManifold, 4, 2),))
 
-    # `solve!` searches one step length for the whole set, which a composite does not have.
+    # `solve!` searches one step length for the whole set, which a composite does not have. The
+    # gradient is given, so that the refusal is the composite's and not the one of a parameter set
+    # without a gradient.
     F = ps -> sum(ps.L2.b)
-    @test_throws ArgumentError Optimizer(mixed_parameters(), F; algorithm = method)
-    @test_throws ArgumentError Optimizer(rand(3), sum; algorithm = method)
+    ∇F! = (g, ps) -> g
+    @test_throws "take no CompositeMethod" Optimizer(
+        mixed_parameters(), F; ∇F! = ∇F!, algorithm = method)
+    @test_throws "take no CompositeMethod" Optimizer(rand(3), sum; algorithm = method)
 end
 
 @testset "one cache and one state per leaf, for the selected method" begin
@@ -197,17 +205,24 @@ end
     @test iteration_number(opt.state.states.L1.weight) == 0
 end
 
-@testset "a composite step allocates what its leaves' steps allocate" begin
-    # The walk over the leaves is `foreachparameters`, which allocates nothing of its own: the
-    # composite of `Adam` on every leaf costs what `Adam` on the set costs.
-    whole = mixed_parameters()
-    per_leaf = mixed_parameters()
-    whole_opt = TrainingOptimizer(whole; algorithm = Adam())
-    per_leaf_opt = TrainingOptimizer(per_leaf;
-        algorithm = CompositeMethod(; manifold = Adam(), array = Adam()))
-    dp = minibatch_gradient(Float64, 1)
-    optimization_step!(whole, whole_opt, dp)
-    optimization_step!(per_leaf, per_leaf_opt, dp)
-    @test (@allocated optimization_step!(per_leaf, per_leaf_opt, dp)) ≤
-          (@allocated optimization_step!(whole, whole_opt, dp))
+@testset "a composite step allocates what its leaves' steps allocate, $T" for T in REAL_ELTYPES
+    # The walk over the leaves is `foreachparameters`, which allocates nothing of its own. On dense
+    # leaves the composite step therefore allocates nothing, as the `Adam` step does. On a set with a
+    # Stiefel leaf the composite of `Adam` on every leaf allocates what `Adam` on the set allocates,
+    # the retraction of that leaf, within the tolerance of `n_independent`. Both are read behind the
+    # function barrier `step_allocations`.
+    composite = CompositeMethod(; manifold = Adam(), array = Adam())
+    dense = NetworkParameters((
+        L1 = (W = rand(T, 3, 2), b = rand(T, 3)), L2 = (W = rand(T, 1, 3),)))
+    @test step_allocations(dense, TrainingOptimizer(dense; algorithm = composite),
+        random_gradient(dense)) == 0
+
+    whole = mixed_parameters(T)
+    per_leaf = mixed_parameters(T)
+    dp = minibatch_gradient(T, 1)
+    whole_bytes = step_allocations(whole, TrainingOptimizer(whole; algorithm = Adam()), dp)
+    @test whole_bytes > 0
+    @test n_independent(
+        step_allocations(per_leaf, TrainingOptimizer(per_leaf; algorithm = composite), dp),
+        whole_bytes)
 end
