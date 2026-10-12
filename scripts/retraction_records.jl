@@ -1,42 +1,25 @@
 #!/usr/bin/env julia
 
-# The retraction benchmark of `retraction_accuracy.jl`, as machine-readable records instead of
-# tables.
+# The retraction benchmark of `retraction_accuracy.jl` as machine-readable records: one CSV row per
+# invocation rather than a `minimum` over repetitions, a CUDA path beside the host one, host and
+# device allocation in separate metrics, and a row for an invocation that threw. The lifts are the
+# seeded sweep of `retraction_sweep.jl`, which `retraction_accuracy.jl` draws from too.
 #
-# `retraction_accuracy.jl` answers "how do these algorithms compare" for a reader, and prints a
-# `minimum` over repetitions. An external experiment needs a different shape of the same
-# measurement: one row per *invocation* rather than an aggregate, a CUDA path beside the host one,
-# host and device allocation kept apart, and a row for an invocation that threw rather than a gap in
-# a table. All of that is about the recording; the algorithms, the reference and the seeded lift
-# sweep are this package's and are shared with that script through `retraction_sweep.jl`.
-#
-# Run it with this repository as the active project; CUDA mode additionally needs `CUDA` on the load
-# path. The four `--source-*` values stamp every row with the identity of the checkout being
-# measured, and are the caller's to supply:
+# Run it with this repository as the active project; CUDA mode also needs `CUDA` on the load path.
+# The four `--source-*` values identify the checkout being measured. The caller archives that
+# identity beside the CSV and supplies it, and every row carries it unchanged:
 #
 #     julia --project=. scripts/retraction_records.jl --output retraction-runs.csv \
 #         --source-sha $(git rev-parse HEAD) --source-dirty false \
 #         --source-patch-file go.patch --source-patch-sha256 $(shasum -a 256 go.patch | cut -d" " -f1)
 #
-# ## Provenance is the caller's
-#
-# The four `--source-*` options are written into every row and are not captured here. A benchmark of
-# *this* checkout run from an experiment harness has to be stamped with the identity that harness
-# archives -- the commit, whether the tree was dirty, and the patch file it keeps beside the CSV --
-# and a second capture here would be a second implementation of that identity, which is the one kind
-# of duplication that undermines the thing it exists to provide. The validator on the other side
-# checks the four against the patch, so they have to come from whoever wrote it.
-#
-# ## The schema
-#
-# `RETRACTION_HEADER` below is the column order, and schema version 1. A consumer validates against
-# its own copy of that list and rejects a header it does not recognise; the version is what a change
-# here has to bump.
+# `RETRACTION_HEADER` is the column order of schema version `RETRACTION_SCHEMA_VERSION`. A consumer
+# validates a file against its own copy of the header, so a change to the columns bumps the version.
 
 using GeometricOptimizers
 using GeometricOptimizers: AugmentedPade, NativePade, ScaledSquaring, SkewSymMatrix,
                            StiefelLieAlgHorMatrix, geodesic
-using LinearAlgebra: I, norm
+using LinearAlgebra: BLAS, I, norm
 
 include(joinpath(@__DIR__, "retraction_sweep.jl"))
 
@@ -51,6 +34,9 @@ const RETRACTION_HEADER = [
     "seed", "scale", "go_sha", "go_dirty", "go_patch_file", "go_patch_sha256"
 ]
 
+# A record is a `NamedTuple` with these fields, in header order.
+const RECORD_FIELDS = Tuple(Symbol.(RETRACTION_HEADER))
+
 const USAGE = """usage: retraction_records.jl [options]
 
 Write schema-$(RETRACTION_SCHEMA_VERSION) CSV records for the retraction benchmark.
@@ -60,7 +46,7 @@ Write schema-$(RETRACTION_SCHEMA_VERSION) CSV records for the retraction benchma
   --precision TYPE         Float32 or Float64 (default: Float64)
   --rows N                 full square lift size (default: 20)
   --columns N              Stiefel columns (default: 3)
-  --scales LIST            comma-separated lift scales (default: this package's sweep)
+  --scales LIST            comma-separated subset of $(join(SCALES, ',')) (default: all)
   --repetitions N          measured calls after one recorded warm-up (default: 20)
   --seed N                 deterministic lift seed (default: $(SWEEP_SEED))
 
@@ -73,8 +59,8 @@ CPU mode records ScaledSquaring, NativePade and AugmentedPade on the host. CUDA 
 ScaledSquaring and NativePade on the GPU and AugmentedPade on the host -- it is dense LAPACK --
 and transfers the GPU results before comparing them with the host AugmentedPade result.
 
-The four --source-* values are written into every row unchanged; see the header of this file for
-why they are arguments rather than something this script captures.
+A lift is the one the full sweep draws for its scale, whichever subset --scales selects. The host
+runs with one BLAS thread, as for the tables of retraction_accuracy.jl.
 """
 
 const DEFAULTS = (
@@ -135,8 +121,8 @@ function parse_options(args)
     parsed.repetitions > 0 || throw(ArgumentError("--repetitions must be positive"))
     parsed.seed >= 0 || throw(ArgumentError("--seed must be nonnegative"))
     scales = parse.(Float64, split(parsed.scales, ','; keepempty = false))
-    !isempty(scales) && all(scale -> isfinite(scale) && scale >= 0, scales) ||
-        throw(ArgumentError("--scales must contain finite nonnegative values"))
+    !isempty(scales) && scales ⊆ SCALES ||
+        throw(ArgumentError("--scales must be a nonempty subset of $(join(SCALES, ','))"))
 
     is_hex(parsed.source_sha, 40) ||
         throw(ArgumentError("--source-sha must be a 40-character hexadecimal commit"))
@@ -160,35 +146,33 @@ function csv_field(value)
     occursin(r"[\",\r\n]", text) ? "\"" * replace(text, '"' => "\"\"") * "\"" : text
 end
 
-"""Write `records` -- dictionaries keyed by `RETRACTION_HEADER` -- to `path`, in header order."""
-function write_records(path::AbstractString, records)
-    mkpath(dirname(abspath(path)))
-    open(path, "w") do io
-        println(io, join(RETRACTION_HEADER, ','))
-        for record in records
-            Set(keys(record)) == Set(RETRACTION_HEADER) ||
-                throw(ArgumentError("record fields do not match schema version $(RETRACTION_SCHEMA_VERSION)"))
-            println(io, join((csv_field(record[field]) for field in RETRACTION_HEADER), ','))
-        end
-    end
-    path
+csv_line(record) = join((csv_field(value) for value in record), ',')
+
+# --------------------------------------------------------------------------- the paths ---
+
+"""One timed, measured call on the host: `(result, seconds, bytes)`, from a single execution."""
+function host_measure(operation)
+    stats = @timed operation()
+    (stats.value, stats.time, stats.bytes)
 end
 
-# ------------------------------------------------------------------------- the CUDA path ---
+# `AugmentedPade` uses dense LAPACK, so it runs on the host in CUDA mode too.
+function host_path(name, algorithm, lift)
+    (name = name, backend = "CPU", device = Sys.CPU_NAME,
+        operation = () -> geodesic(lift, algorithm), measure = host_measure,
+        memory_metric = "host_allocated_bytes")
+end
 
-# Julia 1.12 forbids calling methods that were added after the running frame started, so the import
-# has to finish before the benchmark frame is entered through `invokelatest`. Loading CUDA also
-# brings in package extensions, whose methods are subject to the same rule.
+# `CUDA.@allocated` needs `CUDA` when this file is parsed, so the device measurement is defined
+# after the import. `main` enters the benchmark through `invokelatest`, in a world that has both.
 function import_cuda()
     @eval import CUDA
-    # One call, timed and measured together, with the device synchronized at both ends of it. See
-    # `record_invocation` for why that matters and what it replaces.
-    @eval function device_timed_allocated(operation, synchronize)
+    @eval function device_measure(operation)
         result = nothing
-        synchronize()
+        CUDA.synchronize()
         started = time_ns()
         bytes = CUDA.@allocated(result = operation())
-        synchronize()
+        CUDA.synchronize()
         (result, (time_ns() - started) / 1.0e9, bytes)
     end
     nothing
@@ -201,111 +185,8 @@ function loaded_cuda()
 end
 
 function cuda_lift(host, cuda)
-    A = SkewSymMatrix(cuda.CuArray(copy(parent(host.A))), host.n)
-    B = cuda.CuArray(copy(host.B))
-    StiefelLieAlgHorMatrix(A, B, host.N, host.n)
-end
-
-# --------------------------------------------------------------------------- one row ---
-
-sanitize_error(error) = replace(sprint(showerror, error), r"\s+" => " ")
-float_string(value) = string(Float64(value))
-
-function base_record(; algorithm, backend, device, precision, rows, stiefel_columns,
-        lift_norm, memory_metric, repetition, warmup, seed, scale, source)
-    Dict{String, Any}(
-        "schema_version" => string(RETRACTION_SCHEMA_VERSION),
-        "algorithm" => algorithm,
-        "backend" => backend,
-        "device" => string(device),
-        "precision" => string(precision),
-        "matrix_rows" => string(rows),
-        "matrix_columns" => string(rows),
-        "stiefel_columns" => string(stiefel_columns),
-        "lift_norm" => float_string(lift_norm),
-        "memory_metric" => memory_metric,
-        "repetition" => string(repetition),
-        "warmup" => string(warmup),
-        "seed" => string(seed),
-        "scale" => float_string(scale),
-        "go_sha" => source.sha,
-        "go_dirty" => source.dirty,
-        "go_patch_file" => source.patch_file,
-        "go_patch_sha256" => source.patch_sha256
-    )
-end
-
-"""
-    record_invocation(base, path, agreement_reference, forward_reference)
-
-One benchmark invocation, as a record: the timing, the allocation and the three errors of a single
-call to `path.operation`, or an explicit failure row if it threw.
-
-# One call, not two
-
-The runtime and the memory figure describe **the same invocation**. The obvious way to write this
-measures them separately -- a timed call, and then a second call inside `@allocated` -- which
-doubles the benchmark's cost and, on a device backend, synchronizes the two separately, so the
-timing and the memory figure end up describing different invocations of the same operation.
-`path.measure` wraps `@allocated` around the *timed* region instead and returns both from one
-execution, with the device synchronized at both ends of it.
-"""
-function record_invocation(base, path, agreement_reference, forward_reference)
-    started = time_ns()
-    try
-        result, elapsed, memory = path.measure(path.operation)
-        path.synchronize()
-        output = Matrix{Float64}(path.to_host(result))
-        merge(base,
-            Dict{String, Any}(
-                "agreement_error" => float_string(
-                    norm(output - agreement_reference) / norm(agreement_reference)),
-                "forward_error" => float_string(
-                    norm(output - forward_reference) / norm(forward_reference)),
-                "manifold_constraint_error" => float_string(norm(output' * output - I)),
-                "runtime_seconds" => float_string(elapsed),
-                "memory_bytes" => string(memory),
-                "success" => "true",
-                "error_type" => "",
-                "error_message" => ""
-            ))
-    catch error
-        try
-            path.synchronize()
-        catch
-        end
-        merge(base,
-            Dict{String, Any}(
-                "agreement_error" => "NaN",
-                "forward_error" => "NaN",
-                "manifold_constraint_error" => "NaN",
-                "runtime_seconds" => float_string(max(0.0, (time_ns() - started) / 1.0e9)),
-                "memory_bytes" => "0",
-                "success" => "false",
-                "error_type" => string(typeof(error)),
-                "error_message" => sanitize_error(error)
-            ))
-    end
-end
-
-# --------------------------------------------------------------------------- the paths ---
-
-"""One timed, measured call on the host: `(result, seconds, bytes)`, from a single execution."""
-function host_measure(operation)
-    result = nothing
-    started = time_ns()
-    bytes = @allocated(result = operation())
-    (result, (time_ns() - started) / 1.0e9, bytes)
-end
-
-# The host path: allocation is Julia's own, nothing needs synchronizing, and every algorithm runs on
-# it. `AugmentedPade` uses dense LAPACK and stays here even in CUDA mode.
-function host_path(name, algorithm, lift)
-    (name = name, backend = "CPU", device = Sys.CPU_NAME,
-        operation = () -> geodesic(lift, algorithm),
-        synchronize = () -> nothing,
-        measure = host_measure,
-        to_host = result -> Matrix(result), memory_metric = "host_allocated_bytes")
+    A = SkewSymMatrix(cuda.CuArray(parent(host.A)), host.n)
+    StiefelLieAlgHorMatrix(A, cuda.CuArray(host.B), host.N, host.n)
 end
 
 function algorithm_paths(options, host_lift, cuda)
@@ -316,48 +197,92 @@ function algorithm_paths(options, host_lift, cuda)
     end
 
     gpu_lift = cuda_lift(host_lift, cuda)
-    device_path(name, algorithm) = (name = name, backend = "CUDA",
-        device = string(cuda.name(cuda.device())),
-        operation = () -> geodesic(gpu_lift, algorithm),
-        synchronize = () -> cuda.synchronize(),
-        measure = operation -> Base.invokelatest(device_timed_allocated, operation,
-            () -> cuda.synchronize()),
-        to_host = result -> Array(parent(result)),
+    device = string(cuda.name(cuda.device()))
+    device_path(name, algorithm) = (name = name, backend = "CUDA", device = device,
+        operation = () -> geodesic(gpu_lift, algorithm), measure = device_measure,
         memory_metric = "device_allocated_bytes")
     [device_path("ScaledSquaring", ScaledSquaring()),
         device_path("NativePade", NativePade()),
         host_path("AugmentedPade", AugmentedPade(), host_lift)]
 end
 
+# --------------------------------------------------------------------------- one row ---
+
+sanitize_error(error) = replace(sprint(showerror, error), r"\s+" => " ")
+
+"""The fields of a record that do not depend on the outcome of the invocation."""
+function base_record(options, path, scale, lift_norm, repetition)
+    (schema_version = RETRACTION_SCHEMA_VERSION,
+        algorithm = path.name, backend = path.backend,
+        device = path.device, precision = options.precision, matrix_rows = options.rows,
+        matrix_columns = options.rows, stiefel_columns = options.columns,
+        lift_norm = Float64(lift_norm), memory_metric = path.memory_metric,
+        repetition = repetition, warmup = repetition == 0, seed = options.seed, scale = scale,
+        go_sha = options.source_sha, go_dirty = options.source_dirty,
+        go_patch_file = options.source_patch_file, go_patch_sha256 = options.source_patch_sha256)
+end
+
+"""
+    record_invocation(base, path, agreement_reference, forward_reference)
+
+One call to `path.operation` as a record: its runtime and allocation, measured by `path.measure` in
+the same execution, and the three errors of its result. If the call throws, the record is a failure
+row with `NaN` errors. An error after the call, in the transfer or the comparison, is not the
+algorithm's and propagates.
+"""
+function record_invocation(base, path, agreement_reference, forward_reference)
+    started = time_ns()
+    result, runtime_seconds, memory_bytes = try
+        path.measure(path.operation)
+    catch error
+        return NamedTuple{RECORD_FIELDS}(merge(base,
+            (agreement_error = NaN, forward_error = NaN, manifold_constraint_error = NaN,
+                runtime_seconds = (time_ns() - started) / 1.0e9, memory_bytes = 0,
+                success = false, error_type = string(typeof(error)),
+                error_message = sanitize_error(error))))
+    end
+    output = Matrix{Float64}(Array(parent(result)))
+    relative_error(reference) = norm(output - reference) / norm(reference)
+    NamedTuple{RECORD_FIELDS}(merge(base,
+        (agreement_error = relative_error(agreement_reference),
+            forward_error = relative_error(forward_reference),
+            manifold_constraint_error = norm(output' * output - I), runtime_seconds,
+            memory_bytes, success = true, error_type = "", error_message = "")))
+end
+
 # ------------------------------------------------------------------------ the benchmark ---
 
+"""
+    run_benchmark(options)
+
+Write a record per invocation to `options.output`, each row as soon as it is measured, and return
+the records.
+"""
 function run_benchmark(options)
-    source = (sha = options.source_sha, dirty = options.source_dirty,
-        patch_file = options.source_patch_file, patch_sha256 = options.source_patch_sha256)
     cuda = options.backend == :cuda ? loaded_cuda() : nothing
-    records = Dict{String, Any}[]
+    lifts = sweep(options.precision, options.rows, options.columns; seed = options.seed)
+    records = NamedTuple{RECORD_FIELDS}[]
+    mkpath(dirname(abspath(options.output)))
+    open(options.output, "w") do io
+        println(io, join(RETRACTION_HEADER, ','))
+        for scale in options.scales
+            host_lift = lifts[findfirst(==(scale), SCALES)]
+            dense_lift = Matrix(host_lift)
+            lift_norm = norm(dense_lift)
+            agreement_reference = Matrix{Float64}(Matrix(geodesic(host_lift, AugmentedPade())))
+            forward_reference = exp(Matrix{Float64}(dense_lift))
 
-    lifts = sweep(options.precision, options.rows, options.columns;
-        scales = options.scales, seed = options.seed)
-    for (scale, host_lift) in zip(options.scales, lifts)
-        dense_lift = Matrix(host_lift)
-        lift_norm = norm(dense_lift)
-        agreement_reference = Matrix{Float64}(Matrix(geodesic(host_lift, AugmentedPade())))
-        forward_reference = exp(Matrix{Float64}(dense_lift))
+            for path in algorithm_paths(options, host_lift, cuda),
+                repetition in 0:(options.repetitions)
 
-        for path in algorithm_paths(options, host_lift, cuda)
-            for repetition in 0:(options.repetitions)
-                base = base_record(; algorithm = path.name, backend = path.backend,
-                    device = path.device, precision = options.precision,
-                    rows = options.rows, stiefel_columns = options.columns, lift_norm,
-                    memory_metric = path.memory_metric, repetition,
-                    warmup = repetition == 0, seed = options.seed, scale, source)
-                push!(records,
-                    record_invocation(base, path, agreement_reference, forward_reference))
+                base = base_record(options, path, scale, lift_norm, repetition)
+                record = record_invocation(base, path, agreement_reference, forward_reference)
+                println(io, csv_line(record))
+                flush(io)
+                push!(records, record)
             end
         end
     end
-    write_records(options.output, records)
     records
 end
 
@@ -365,9 +290,10 @@ function main(args = ARGS)
     options = parse_options(args)
     options === nothing && return 0
     options.backend == :cuda && import_cuda()
+    BLAS.set_num_threads(1)
     records = Base.invokelatest(run_benchmark, options)
-    failures = count(record -> record["success"] == "false", records)
-    warmups = count(record -> record["warmup"] == "true", records)
+    failures = count(record -> !record.success, records)
+    warmups = count(record -> record.warmup, records)
     println("wrote $(length(records)) retraction records ($(warmups) warm-up, " *
             "$(length(records) - warmups) steady-state, $(failures) failure) to " *
             "$(abspath(options.output))")
@@ -375,10 +301,5 @@ function main(args = ARGS)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    try
-        exit(main())
-    catch error
-        println(stderr, "retraction record benchmark failed: ", sprint(showerror, error))
-        exit(1)
-    end
+    exit(main())
 end

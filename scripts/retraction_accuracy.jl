@@ -77,10 +77,7 @@ function bytes(f)
     (@allocated f()) / 1024
 end
 
-# `SCALES` and `sweep` are shared with `retraction_records.jl`, which writes the same lifts as CSV
-# for an external experiment rather than as tables. A row of one has to be the same lift as the row
-# of the other, and `docs/src/exponential_algorithms.md` recomputes these tables when the
-# documentation is built, so there are three readers of these numbers and one place they are drawn.
+# `SCALES` and `sweep`, shared with `retraction_records.jl`, which writes the same lifts as CSV.
 include(joinpath(@__DIR__, "retraction_sweep.jl"))
 
 function exponential_tables(; N::Integer = 20, n::Integer = 3)
