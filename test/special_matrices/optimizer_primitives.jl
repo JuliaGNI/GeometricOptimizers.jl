@@ -1,6 +1,6 @@
 using GeometricOptimizers
-using GeometricOptimizers: VectorStorageMatrix, _add!, _rac!, _square!, _div!, _rmul!,
-                           _difference!, increase_iteration_number!, solver_step!
+using GeometricOptimizers: VectorStorageMatrix, _add!, _rmul!, _difference!,
+                           increase_iteration_number!, solver_step!
 using NeuralNetworkParameters: flatten, unflatten
 using SimpleSolvers: Static, l2norm
 using Test
@@ -59,27 +59,6 @@ const N = 5
         @test _add!(a, B) === a
         @test eltype(a) == T
         @test parent(a) ≈ parent(A) .+ parent(B)
-
-        a = copy(A)
-        @test _add!(a, α) === a
-        @test parent(a) ≈ parent(A) .+ α
-
-        # squares of a known matrix, so that `_rac!` inverts `_square!` exactly rather than to a
-        # tolerance that a sign error could hide in
-        sq = similar(A)
-        @test _square!(sq, A) === sq
-        @test eltype(sq) == T
-        @test parent(sq) ≈ parent(A) .^ 2
-
-        rt = similar(A)
-        @test _rac!(rt, sq) === rt
-        @test eltype(rt) == T
-        @test parent(rt) ≈ abs.(parent(A))
-
-        d = similar(A)
-        @test _div!(d, A, B) === d
-        @test eltype(d) == T
-        @test parent(d) ≈ parent(A) ./ parent(B)
 
         m = copy(A)
         @test _rmul!(m, α) === m
@@ -202,7 +181,8 @@ function optimize(T, MT, algorithm; steps = 5, η = T(0.1))
     # triangle of a `SkewSymMatrix` twice and the objective is not the point here
     F(p) = sum(abs2, parent(p.A) .- parent(A_target)) / 2
 
-    optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(η))
+    optimizer = Optimizer(
+        ps, F; mode = :autodiff, algorithm = algorithm, linesearch = Static(η))
     state = OptimizerState(algorithm, ps)
 
     before = F(ps)

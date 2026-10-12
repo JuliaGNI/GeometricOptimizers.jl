@@ -83,7 +83,7 @@ julia> loss(ps::NetworkParameters) = norm(A - ps.w * ps.w' * A) + norm(ps.b);
 
 julia> algorithm = AdamWithEuclideanDecay(; λ = 1e-2);
 
-julia> optimizer = Optimizer(ps, loss; algorithm = algorithm, linesearch = Static(1e-3));
+julia> optimizer = Optimizer(ps, loss; mode = :autodiff, algorithm = algorithm, linesearch = Static(1e-3));
 
 julia> OptimizerState(algorithm, ps) isa AdamState   # Adam's state, reused verbatim
 true

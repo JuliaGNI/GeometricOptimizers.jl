@@ -1104,6 +1104,53 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   suites on `4a6883c` (Julia 1.13.1 and the 1.12 floor, at a load of 3 to 5) pass the file 572/572.
   The cause is not established.
 
+## I. This package — performance
+
+### K35 · A training step on a parameter set with a `StiefelManifold` leaf allocates 14 kB in `Float32` and 26 kB in `Float64`
+
+- location: `src/manifolds/stiefel_manifold.jl:54`
+- kind: defect
+- found: 2026-10-11
+- evidence: `scripts/parameter_set_step_cost.jl` (Julia 1.13.1, `--check-bounds=auto`, one BLAS
+  thread) measures one `optimization_step!` on model A with a `64 × 8` `StiefelManifold` and a
+  `64 × 64` `SymmetricMatrix` weight: 14 016 bytes in `Float32` and 25 920 bytes in `Float64`, for
+  `GradientMethod`, `MomentumMethod` and the three `Adam` methods alike. The same set without the
+  Stiefel leaf allocates nothing. `scripts/parameter_set_step_cost.jl profile` (`Profile.Allocs`,
+  sample rate 1, 50 warm `GradientMethod` steps, `Float32`) names three frames per step:
+
+  | frame | what allocates | bytes | allocations |
+  |:--|:--|--:|--:|
+  | `rgrad(::StiefelManifold, ::AbstractMatrix)`, `src/manifolds/stiefel_manifold.jl:54` | `∇L - Y.A * (∇L' * Y.A)` | 4 560 | 8 |
+  | `global_rep(::GlobalSection{T, <:StiefelManifold}, Δ)`, `src/global_sections/global_sections.jl:264` | `SkewSymMatrix(λY.Y.A' * Δ)` and `λY.λ' * Δ` | 3 560 | 33 |
+  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:280` | `inv(ws.M)` | 5 448 | 8 |
+
+  The three frames account for 13 568 of the 14 016 bytes. Removing each needs an in-place form: a
+  buffer for the Riemannian gradient, a `global_rep!` into the cache's lift, and a factorisation of
+  `ws.M` into workspace storage.
+
+### K36 · The `SymmetricMatrix` product kernel is about 7 times slower than BLAS on the dense matrix
+
+- location: `src/special_matrices/symmetric.jl:200`
+- kind: defect
+- found: 2026-10-05
+- evidence: `symmetric_mat_mul_kernel!` (`src/special_matrices/symmetric.jl:200-212`) forms each
+  entry of `S * B` from the packed storage, one product per entry and no BLAS. Measured on Julia
+  1.12.7, `--check-bounds=auto`, one BLAS thread, a `64 × 64` `SymmetricMatrix{Float32}` times a
+  `64 × 256` `Matrix{Float32}`, median of `@benchmark`: 393 µs with owned storage and 433 µs over a
+  view, against 56 µs for the dense matrix through BLAS. A network whose hidden weights are
+  `SymmetricMatrix` leaves takes about 7 times as long per gradient as the same network with dense
+  weights (6.7 ms against 1.0 ms for model A of eight `64 × 64` layers).
+
+### K37 · A training step on a parameter set with a `GrassmannManifold` leaf allocates 4.5 kB in `Float32` and 8.5 kB in `Float64`
+
+- location: —
+- kind: found late
+- found: 2026-10-11
+- evidence: a cold process (Julia 1.13.1, `--check-bounds=auto`), one `optimization_step!` after
+  warm-up, behind a function barrier, on a set with one `GrassmannManifold` leaf: 4 512 bytes in
+  `Float32` and 8 480 bytes in `Float64`, for `GradientMethod` and the three `Adam` methods alike.
+  The frames are not profiled.
+
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44

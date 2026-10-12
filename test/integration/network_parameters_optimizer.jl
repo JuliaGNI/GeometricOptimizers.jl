@@ -76,7 +76,8 @@ depend on it — the same reason `test/integration/flat_parameters.jl` gives.
 function optimize(ps, F, algorithm; steps = 20, η = 0.1, retraction = Cayley())
     T = typeof(F(ps))
     Random.seed!(1234)
-    optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(T(η)),
+    optimizer = Optimizer(
+        ps, F; mode = :autodiff, algorithm = algorithm, linesearch = Static(T(η)),
         retraction = retraction)
     state = OptimizerState(algorithm, ps)
 
@@ -100,8 +101,8 @@ retractions() = (Geodesic(), Cayley())
 # tolerance with a factor of ten in hand, where leaving the manifold is an error of the step size
 const MANIFOLD_TOLERANCE_IN_EPS = 100
 
-# The element type of a whole set of parameters: `flatten` takes it by promotion over the leaves, so a
-# single leaf built in `Float64` makes this `Float64`. `eltype` of a `NetworkParameters` is `Any`.
+# The element type of a whole set of parameters, which is the one element type of its leaves.
+# `eltype` of a `NetworkParameters` is `Any`.
 flat_eltype(ps) = eltype(flatten(ps)[1])
 
 @testset "a nested container is an OptimizerSolution" begin
@@ -209,7 +210,8 @@ end
         F = test_problem(T)
         ps = initial_parameters(T)
         f₀ = F(ps)
-        optimizer = Optimizer(ps, F; algorithm = algorithm, linesearch = Static(T(0.1)),
+        optimizer = Optimizer(
+            ps, F; mode = :autodiff, algorithm = algorithm, linesearch = Static(T(0.1)),
             max_iterations = 100)
         result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
@@ -254,7 +256,8 @@ end
     @test size(OptimizerState(algorithm, ps).Q) ==
           (flatlength(_zero(ps)), flatlength(_zero(ps)))
 
-    optimizer = Optimizer(ps, F; algorithm = algorithm, max_iterations = 50)
+    optimizer = Optimizer(
+        ps, F; mode = :autodiff, algorithm = algorithm, max_iterations = 50)
     result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
     @test flat_eltype(ps) == eltype(result.f) == T

@@ -114,7 +114,8 @@ function step_table()
 
         x, F = make()
         Random.seed!(1234)
-        opt = Optimizer(x, F; algorithm = algorithm, max_iterations = 10_000)
+        opt = Optimizer(
+            x, F; mode = :autodiff, algorithm = algorithm, max_iterations = 10_000)
         state = OptimizerState(algorithm, x)
         initialize_state!(state)
         step!(x, state, opt)

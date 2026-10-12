@@ -66,14 +66,13 @@ alternative is not available.
     on, and on the overlap neither method of such a pair is more specific — an ambiguity rather than a
     choice. `optimizers/named_tuple_wrapper.jl` is where that would bite;
   - its `T` binds through a `Vararg` bound on the *values*, which asserts "flat, and every leaf an
-    `AbstractArray{T}`". `NetworkParameters{T}` asserts something else: a promotion over leaves at any
-    depth. A union of the two would say one thing about one argument shape and another about the
-    other.
+    `AbstractArray{T}`". `NetworkParameters{T}` asserts something else: one element type over leaves
+    at any depth. A union of the two would say one thing about one argument shape and another about
+    the other.
 
 `NetworkParameters{T}` has none of those properties. It also binds `T` from a direct type parameter
 rather than through a `Vararg` bound on value types, which makes it the cheapest member of this union
-to intersect, and it is the only member whose `T` is a *promotion* over the leaves rather than a
-guarantee that every leaf is a `T`.
+to intersect.
 
 !!! note "A caller holding a bare `NamedTuple` wraps it"
     `NetworkParameters(ps)` shares the leaf arrays rather than copying them, so an in-place solve

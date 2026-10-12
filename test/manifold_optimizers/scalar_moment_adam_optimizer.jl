@@ -12,6 +12,8 @@ import Random
 
 include("../helpers/eltypes.jl")
 include("../helpers/manifold_tolerance.jl")
+include("../helpers/allocations.jl")
+include("../helpers/parameter_set_step.jl")
 
 # The `GlobalSection` every testset below builds is drawn at random from the global generator; the
 # iterates and the objectives' coefficients are drawn from a seeded generator of their own. An
@@ -86,7 +88,7 @@ end
     for x in (rand(rng, T, 3),
         NetworkParameters((Y = rand(rng, StiefelManifold{T}, 4, 2), z = rand(rng, T, 3))),
         rand(rng, GrassmannManifold{T}, 4, 2))
-        @test_throws MethodError Optimizer(x, f; algorithm = ScalarMomentAdam())
+        @test_throws MethodError Optimizer(x, f; mode = :autodiff, algorithm = ScalarMomentAdam())
     end
 
     # A Stiefel manifold of either element type is in scope: the method carries no element type,
@@ -418,6 +420,21 @@ end
         @test isconverged(status(result))
         @test !status(result).g_nonfinite
     end
+end
+
+# A training step allocates what a `GradientMethod` step on the same point allocates -- the
+# Riemannian gradient, its horizontal lift and the retraction -- and nothing for its moments. A
+# `64 × 8` lift holds `28 + 448 = 476` numbers, 1 904 bytes in `Float32`, so one copy of a moment is
+# above the tolerance of `n_independent`, 1 024 bytes.
+@testset "a ScalarMomentAdam training step allocates what a gradient step does, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(11)
+    Y = rand(rng, StiefelManifold{T}, 64, 8)
+    dp = gradient_leaf(rng, Y)
+    Z = copy(Y)
+    moment_step = step_allocations(Y, TrainingOptimizer(Y; algorithm = ScalarMomentAdam()), dp)
+    gradient_step = step_allocations(Z, TrainingOptimizer(Z; algorithm = GradientMethod()), dp)
+    @test gradient_step > 0
+    @test n_independent(moment_step, gradient_step)
 end
 
 @testset "ScalarMomentAdam differs from Adam over a solve, $T" for T in REAL_ELTYPES

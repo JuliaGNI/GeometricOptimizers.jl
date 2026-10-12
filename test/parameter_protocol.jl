@@ -144,9 +144,10 @@ end
     C = X(T.(rand(rng, -9:9, length(parent(A)))), n)
     @test parent(storage_gradient(A, C)) == expected_storage(X, Matrix(C))
 
-    # a structural tangent holds `∂L/∂S` already and passes through
+    # a structural tangent holds `∂L/∂S` already, and comes back as a leaf around that storage
     tangent = Tangent{typeof(A)}(S = T.(1:length(parent(A))))
-    @test storage_gradient(A, tangent) === tangent
+    @test storage_gradient(A, tangent) isa X{T}
+    @test parent(storage_gradient(A, tangent)) == T.(1:length(parent(A)))
 
     # `NaN` propagates as arithmetic does, into the one entry that reads it, `(n, 1)`
     G_nan = copy(G)
@@ -215,6 +216,25 @@ end
     @test eltype(g) == T
     dense = mapstorage(Array, NetworkParameters((G = G,))).G
     @test hostflat(g) == hostflat(storage_gradient(A, todevice(Matrix(dense))))
+end
+
+# A cotangent of another size than its leaf is a `DimensionMismatch`, for each method: a dense one
+# and, where the method exists, one of the leaf's own type.
+@testset "a cotangent of another size is a DimensionMismatch: $T" for T in REAL_ELTYPES
+    sym, skew = SymmetricMatrix(zeros(T, 6), 3), SkewSymMatrix(zeros(T, 3), 3)
+    stiefel = StiefelLieAlgHorMatrix(SkewSymMatrix(zeros(T, 3), 3), zeros(T, 2, 3), 5, 3)
+    grassmann = GrassmannLieAlgHorMatrix(zeros(T, 2, 3), 5, 3)
+    @test_throws DimensionMismatch storage_gradient(sym, zeros(T, 4, 4))
+    @test_throws DimensionMismatch storage_gradient(sym, SymmetricMatrix(zeros(T, 10), 4))
+    @test_throws DimensionMismatch storage_gradient(skew, zeros(T, 3, 4))
+    @test_throws DimensionMismatch storage_gradient(skew, SkewSymMatrix(zeros(T, 6), 4))
+    @test_throws DimensionMismatch storage_gradient(stiefel, zeros(T, 5, 4))
+    @test_throws DimensionMismatch storage_gradient(stiefel,
+        StiefelLieAlgHorMatrix(SkewSymMatrix(zeros(T, 1), 2), zeros(T, 3, 2), 5, 2))
+    # the same `n` and another `N`, so that the lift's own check and not its `A` block's refuses it
+    @test_throws DimensionMismatch storage_gradient(stiefel,
+        StiefelLieAlgHorMatrix(SkewSymMatrix(zeros(T, 3), 3), zeros(T, 4, 3), 7, 3))
+    @test_throws DimensionMismatch storage_gradient(grassmann, zeros(T, 4, 4))
 end
 
 @testset "the smallest leaves: $T" for T in REAL_ELTYPES

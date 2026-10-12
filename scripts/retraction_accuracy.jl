@@ -268,7 +268,8 @@ function solve_once(algorithm, linesearch, retraction, seed::Integer;
     ps = NetworkParameters((w₁ = rand(StiefelManifold, size(A, 1), 3),
         w₂ = rand(StiefelManifold, size(A, 1), 3)))
     state = OptimizerState(algorithm, ps)
-    optimizer = Optimizer(ps, objective; retraction = retraction, algorithm = algorithm,
+    optimizer = Optimizer(
+        ps, objective; mode = :autodiff, retraction = retraction, algorithm = algorithm,
         linesearch = linesearch, max_iterations = max_iterations, warn_iterations = 0,
         step_ceiling = step_ceiling)
     result = solve!(ps, state, optimizer)

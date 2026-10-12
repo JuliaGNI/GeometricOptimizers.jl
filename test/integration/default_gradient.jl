@@ -6,7 +6,8 @@
 # `ArgumentError` that names `∇F!` instead — `Optimizer(x, F)` in either `mode`,
 # `Optimizer(x, problem)` and the keyword default of the lower-level constructor, both through
 # `default_gradient`. On the host, `mode` selects the gradient, an unknown `mode` is refused, and a
-# bare manifold gets a gradient that rebuilds the manifold before it calls `F`.
+# bare manifold gets a gradient that rebuilds the manifold before it calls `F`. A parameter set gets
+# no default gradient on the host either, and `mode` opts in to one.
 
 using GeometricOptimizers
 using GeometricOptimizers: OptimizerCache, OptimizerProblem, RiemannianGradient,
@@ -96,6 +97,32 @@ end
 
     @test gradient(Optimizer(x, objective)) isa GradientAutodiff{T}
     @test gradient(Optimizer(Y, objective)) isa GradientAutodiff{T}
+end
+
+# A parameter set has no default gradient: forward mode takes one pass per chunk of parameters. Each
+# route that would build one raises an `ArgumentError` that names `∇F!` and the two opt-ins, and
+# `mode = :autodiff` builds the forward-mode gradient.
+@testset "a parameter set has no default gradient, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(4)
+    ps = NetworkParameters((
+        Y = StiefelManifold(stiefel_point(rng, T)), W = randn(rng, T, 2, 2)))
+    @test_throws ArgumentError Optimizer(ps, objective)
+    @test_throws ["∇F!", ":autodiff", ":finitediff"] Optimizer(ps, objective)
+
+    problem = OptimizerProblem(objective, ps)
+    @test names_∇F!(() -> default_gradient(problem, ps))
+    @test names_∇F!(() -> Optimizer(ps, problem))
+    method = GradientMethod()
+    cache = OptimizerCache(method, ps)
+    @test names_∇F!(() -> Optimizer(
+        method, problem, Hessian(method, problem, ps), cache, Static(T(1) / 10)))
+
+    autodiff = gradient(Optimizer(ps, objective; mode = :autodiff))
+    @test autodiff isa RiemannianGradient
+    @test autodiff.gradient isa GradientAutodiff{T}
+    # and a gradient the caller supplies, on the flat parameters, needs no `mode`
+    ∇F!(g, v) = (g .= 2 .* v; g)
+    @test gradient(Optimizer(ps, objective; ∇F! = ∇F!)) isa RiemannianGradient
 end
 
 # The Procrustes distance `‖Y - C‖²/2` to a matrix `C` near the manifold, written for a

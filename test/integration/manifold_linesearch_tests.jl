@@ -89,7 +89,7 @@ The relative error of `φ'(α)` against a central difference of `φ(α)`, both t
 """
 function slope_errors(::Type{T}, ps, F, retraction, αs; h = slope_step(T)) where {T}
     Random.seed!(7)
-    opt = Optimizer(ps, F; algorithm = BFGS(), retraction = retraction,
+    opt = Optimizer(ps, F; mode = :autodiff, algorithm = BFGS(), retraction = retraction,
         linesearch = Backtracking(T))
     state = OptimizerState(BFGS(), ps)
     c = cache(opt)
@@ -273,7 +273,8 @@ end
         Random.seed!(1234)
         state = OptimizerState(BFGS(), ps)
         opt = Optimizer(
-            ps, err; algorithm = BFGS(), linesearch = linesearch, retraction = Cayley())
+            ps, err; mode = :autodiff, algorithm = BFGS(),
+            linesearch = linesearch, retraction = Cayley())
 
         result = solve!(ps, state, opt)
 
@@ -327,7 +328,8 @@ end
 
         ps = ps₀(T)
         state = OptimizerState(method, ps)
-        opt = Optimizer(ps, two_spheres; algorithm = method, linesearch = linesearch,
+        opt = Optimizer(
+            ps, two_spheres; mode = :autodiff, algorithm = method, linesearch = linesearch,
             retraction = retraction, max_iterations = 1000)
 
         result = solve!(ps, state, opt)
@@ -374,7 +376,7 @@ end
         ps = ps₀(T)
         state = OptimizerState(Adam(), ps)
         opt = Optimizer(
-            ps, two_spheres; algorithm = Adam(), linesearch = linesearch,
+            ps, two_spheres; mode = :autodiff, algorithm = Adam(), linesearch = linesearch,
             retraction = retraction, max_iterations = 1000, warn_iterations = 0)
 
         result = solve!(ps, state, opt)
@@ -403,7 +405,7 @@ end
         ps = ps₀(T)
         state = OptimizerState(method, ps)
         opt = Optimizer(
-            ps, two_spheres; algorithm = method, linesearch = Bisection(T),
+            ps, two_spheres; mode = :autodiff, algorithm = method, linesearch = Bisection(T),
             retraction = retraction)
         grad = GeometricOptimizers.gradient(opt)
 
@@ -608,7 +610,7 @@ end
     let ps = ps₀(T)
         algorithm = BFGS()
         state = OptimizerState(algorithm, ps)
-        opt = Optimizer(ps, two_spheres; algorithm = algorithm)
+        opt = Optimizer(ps, two_spheres; mode = :autodiff, algorithm = algorithm)
         initialize!(cache(opt), ps)
         update!(
             cache(opt), state, gradient(opt), GeometricOptimizers._direction_rule(opt), ps)
@@ -647,7 +649,8 @@ end
         let state = OptimizerState(BFGS(), x)
             solve!(x,
                 state,
-                Optimizer(x, far_away; algorithm = BFGS(), max_iterations = 20_000,
+                Optimizer(x, far_away; mode = :autodiff,
+                    algorithm = BFGS(), max_iterations = 20_000,
                     warn_iterations = 0, step_ceiling = ceiling))
             iteration_number(state)
         end

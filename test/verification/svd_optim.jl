@@ -120,7 +120,7 @@ const ADAM_ORBIT_WINDOW = 500
 # the worst. The radius is a property of `α` and the problem, not of round-off, so it is the same
 # number in both precisions and not a multiple of `eps`. It is a real guard on the `Adam` bugs the
 # CHANGELOG records (bias correction at `t + 1`, factors `β/(1 - βᵗ)` instead of
-# `(β - βᵗ)/(1 - βᵗ)`, `√` applied to `m₂` rather than to `m̃₂`). Reintroducing them makes this
+# `(β - βᵗ)/(1 - βᵗ)`, `√` applied to the stored `m₂` in place). Reintroducing them makes this
 # statistic read 1.04e-1 (Geodesic) and 4.5e-2 (Cayley), i.e. more than 1000x over the tolerance. The
 # blanket `1e-1` this file once applied to all three algorithms is what let those bugs through in the
 # first place.
@@ -260,7 +260,8 @@ end
             ps = starting_point(T, 3)
             state = OptimizerState(algorithm, ps)
             optimizer = Optimizer(
-                ps, objective; retraction = retraction, algorithm = algorithm,
+                ps, objective; mode = :autodiff,
+                retraction = retraction, algorithm = algorithm,
                 linesearch = Static(T; α = T(0.01)), max_iterations = FIXED_BUDGET_STEPS,
                 min_iterations = FIXED_BUDGET_STEPS, warn_iterations = 0, store_trace = true)
             result = solve!(ps, state, optimizer)
@@ -570,7 +571,8 @@ const CONVERGENCE_MAX_ITERATIONS = 5000
             ps = starting_point(T, 3)
             state = OptimizerState(algorithm, ps)
             optimizer = Optimizer(
-                ps, objective; retraction = retraction, algorithm = algorithm,
+                ps, objective; mode = :autodiff,
+                retraction = retraction, algorithm = algorithm,
                 linesearch = linesearch, max_iterations = CONVERGENCE_MAX_ITERATIONS,
                 warn_iterations = 0)
             result = solve!(ps, state, optimizer)
@@ -606,7 +608,8 @@ const A1B_SEEDS = (2, 8)
         algorithm = GeometricOptimizers.BFGS()
         ps = starting_point(T, 3, seed)
         state = OptimizerState(algorithm, ps)
-        optimizer = Optimizer(ps, objective; retraction = GeometricOptimizers.Cayley(),
+        optimizer = Optimizer(
+            ps, objective; mode = :autodiff, retraction = GeometricOptimizers.Cayley(),
             algorithm = algorithm, linesearch = linesearch,
             max_iterations = CONVERGENCE_MAX_ITERATIONS, warn_iterations = 0)
         result = solve!(ps, state, optimizer)
@@ -691,7 +694,8 @@ end
             ps = starting_point(T, 3, seed)
             state = OptimizerState(algorithm, ps)
             optimizer = Optimizer(
-                ps, objective; retraction = retraction, algorithm = algorithm,
+                ps, objective; mode = :autodiff,
+                retraction = retraction, algorithm = algorithm,
                 linesearch = linesearch(T), max_iterations = CONVERGENCE_MAX_ITERATIONS,
                 warn_iterations = 0)
             result = solve!(ps, state, optimizer)

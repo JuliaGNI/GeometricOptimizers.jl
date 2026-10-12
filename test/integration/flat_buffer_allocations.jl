@@ -30,7 +30,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: _dot, l2norm, solution_scale, _manifold_αmax, update!,
-                           _difference!, _rmul!, _add!, _rac!, _div!, _square!, _copyto!,
+                           _difference!, _rmul!, _add!, _copyto!,
                            solver_step!,
                            increase_iteration_number!, gradient, inverse_hessian, cache,
                            direction, rhs,
@@ -100,13 +100,16 @@ function nested_bare(::Type{T}, seed) where {T}
             b = rand(Random.Xoshiro(seed + 3), T, 5)))
 end
 
-# A set whose leaves are *not* all one element type, which is what makes the accumulator's type a
-# question. `NetworkParameters` derives its `T` by promotion, so this is a `NetworkParameters{Float64}`
-# whose first leaf in `flatten` order is `Float32`.
-function mixed_container(seed)
-    NetworkParameters((
-        L1 = (W = rand(Random.Xoshiro(seed), Float32, 3, 4),),
-        L2 = (b = rand(Random.Xoshiro(seed + 1), Float64, 5),)))
+# Leaves of two element types, which a `NetworkParameters` refuses: a set has one element type.
+function mixed_leaves(seed)
+    (L1 = (W = rand(Random.Xoshiro(seed), Float32, 3, 4),),
+        L2 = (b = rand(Random.Xoshiro(seed + 1), Float64, 5),))
+end
+
+# One set of each precision, of one shape: the pair whose element types differ.
+function precision_pair(seed)
+    (NetworkParameters((L1 = (W = rand(Random.Xoshiro(seed), Float32, 3, 3),),)),
+        NetworkParameters((L1 = (W = rand(Random.Xoshiro(seed + 1), Float64, 3, 3),),)))
 end
 
 # what `_dot` and `l2norm` used to be written as, kept here as the thing to agree with
@@ -146,20 +149,15 @@ _reference_norm(a) = l2norm(flatten(Float64, a)[1])
           _dot(flat_container(T, 1), flat_container(T, 11))
 end
 
-# The accumulator is `zero(T)` and not the strong zero `false`, and this is the assertion that says why.
-# Upstream's fold is a *left* fold, so `false` would take its type from the first leaf in `flatten`
-# order -- here a `Float32` -- and the `Float64` leaf's contribution would be added to a `Float32`
-# running sum. `T` is the promotion over the leaves, so it is not order-dependent, and the reference
-# below is the same sum taken in `Float64` throughout.
-@testset "_dot accumulates in the promotion, not in the first leaf's type" begin
-    a, b = mixed_container(1), mixed_container(11)
-    @test _dot(a, b) isa Float64
-    @test _dot(a, b) ≈ _reference_dot(a, b)
-    # and the pair whose element types differ, which used to be a `MethodError`: no `T` binds on the
-    # signature, so it is `promote_type` over both sets
-    f32 = NetworkParameters((L1 = (W = rand(Random.Xoshiro(5), Float32, 3, 3),),))
-    f64 = NetworkParameters((L1 = (W = rand(Random.Xoshiro(6), Float64, 3, 3),),))
+# A set has one element type, so a set of `Float32` and `Float64` leaves is refused where it is built.
+# A pair of sets of two element types still reaches `_dot`: no `T` binds on the signature, so the
+# method for that pair accumulates in `promote_type` over both sets, and the reference is the same sum
+# taken in `Float64` throughout.
+@testset "a set has one element type, and _dot of a pair of two accumulates in the promotion" begin
+    @test_throws ArgumentError NetworkParameters(mixed_leaves(1))
+    f32, f64 = precision_pair(5)
     @test _dot(f32, f64) isa Float64
+    @test _dot(f32, f64) ≈ _reference_dot(f32, f64)
 end
 
 # The same pair of *lifts*, which is a different assertion and the one that catches a wrong answer
@@ -218,10 +216,10 @@ _measured_dot(a, b) = (_dot(a, b); @allocated _dot(a, b))
         NetworkParameters(wide_set(2, T))),
     # the method that reaches `parameter_eltype` rather than taking its element
     # type off the signature -- see the comment on it in
-    # `src/optimizers/named_tuple_wrapper.jl`. Mixed by construction, so the
-    # same pair in both passes.
-        ("mixed-precision container", mixed_container(1), mixed_container(11)))
-        @test eltype(_dot(a, b)) == (name == "mixed-precision container" ? Float64 : T)
+    # `src/optimizers/named_tuple_wrapper.jl`. Two precisions by construction, so
+    # the same pair in both passes.
+        ("pair of two precisions", precision_pair(1)...))
+        @test eltype(_dot(a, b)) == (name == "pair of two precisions" ? Float64 : T)
         @test _measured_dot(a, b) == 0
     end
 end
@@ -264,12 +262,8 @@ end
     a, b, c = primitive_set(T, 1), primitive_set(T, 2), primitive_set(T, 3)
     @test _measured2(_rmul!, c, T(2)) == 0
     @test _measured2(_add!, c, b) == 0
-    @test _measured2(_add!, c, T(2)) == 0
-    @test _measured2(_square!, c, a) == 0
-    @test _measured2(_rac!, c, a) == 0
     @test _measured2(_copyto!, c, a) == 0
     @test _measured3(_difference!, c, a, b) == 0
-    @test _measured3(_div!, c, a, b) == 0
     @test eltype(flatten(c)[1]) == T
     # the control: the barrier sees an allocation where there is one
     @test _measured2((x, y) -> flatten(x), a, b) > 0

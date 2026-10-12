@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: AdamState, Manifold, first_moment, second_moment, check,
-                           increase_iteration_number!, solver_step!, update!, _square,
+                           increase_iteration_number!, solver_step!, update!,
                            _weight_decay!, _is_decayable
 using SimpleSolvers: Static
 using LinearAlgebra: I, norm, tr, Symmetric
@@ -68,7 +68,8 @@ criteria, and return the parameters.
 """
 function run!(ps, algorithm, f, steps; α = η)
     Random.seed!(1234)
-    optimizer = Optimizer(ps, f; algorithm = algorithm, linesearch = Static(α))
+    optimizer = Optimizer(
+        ps, f; mode = :autodiff, algorithm = algorithm, linesearch = Static(α))
     state = OptimizerState(algorithm, ps)
     for _ in 1:steps
         increase_iteration_number!(state)
@@ -136,7 +137,7 @@ end
 
     @test eltype(first_moment(state)) == T
     @test first_moment(state) ≈ C
-    @test second_moment(state) ≈ _square(C)
+    @test second_moment(state) ≈ C .^ 2
 end
 
 # `λ = 0` is the one setting in which `AdamWithEuclideanDecay` and `Adam` are the same method for
@@ -279,7 +280,7 @@ end
     algorithm = AdamWithEuclideanDecay(; λ = T(λ))
 
     optimizer = Optimizer(
-        ps, f; algorithm = algorithm, linesearch = Static(T(η)),
+        ps, f; mode = :autodiff, algorithm = algorithm, linesearch = Static(T(η)),
         max_iterations = 200, warn_iterations = 0)
     state = OptimizerState(algorithm, ps)
     f₀, b₀ = f(ps), norm(ps.b)
@@ -361,5 +362,5 @@ end
     @test_logs Optimizer(deepcopy(Y), f; algorithm = AdamWithEuclideanDecay(; λ = 0.0), linesearch = Static(η))
     @test_logs Optimizer(
         NetworkParameters((w = deepcopy(Y), b = randn(3))), named_tuple_error(A);
-        algorithm = AdamWithEuclideanDecay(; λ = λ), linesearch = Static(η))
+        mode = :autodiff, algorithm = AdamWithEuclideanDecay(; λ = λ), linesearch = Static(η))
 end

@@ -59,8 +59,8 @@ const PROBLEMS = (("Vector", vector_problem), ("Manifold", manifold_problem),
 
 function solve_once(x, F, algorithm)
     Random.seed!(1234)
-    optimizer = Optimizer(x, F; algorithm = algorithm, linesearch = Static(0.1),
-        max_iterations = ITERATIONS)
+    optimizer = Optimizer(x, F; mode = :autodiff, algorithm = algorithm,
+        linesearch = Static(0.1), max_iterations = ITERATIONS)
     solve!(x, OptimizerState(algorithm, x), optimizer)
 end
 

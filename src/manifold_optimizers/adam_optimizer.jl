@@ -28,13 +28,11 @@ struct AdamCache{T, MT, VT, ST} <: OptimizerCache{T}
     g̃_is_current::Base.RefValue{Bool}
     m₁::VT
     m₂::VT
-    m̃₂::VT
     section::ST
 end
 
 first_moment(cache::AdamCache) = cache.m₁
 second_moment(cache::AdamCache) = cache.m₂
-_second_moment(cache::AdamCache) = cache.m̃₂
 
 # The `new` in a body of its own, reached with every member already computed and passed in, so that
 # this frame infers from its *own signature* rather than through the tree that built them.
@@ -53,8 +51,8 @@ _second_moment(cache::AdamCache) = cache.m̃₂
 # the nesting so each frame infers from its signature — took 940 s to 6.53 s. This is that control
 # applied here. See the changelog for what it measured.
 @noinline function _adam_cache(x::OptimizerSolution{T}, g::VT, δ::VT, Δg::VT, g̃::VT,
-        m₁::VT, m₂::VT, m̃₂::VT, sec::ST) where {T, VT, ST}
-    AdamCache{T, typeof(x), VT, ST}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, m̃₂, sec)
+        m₁::VT, m₂::VT, sec::ST) where {T, VT, ST}
+    AdamCache{T, typeof(x), VT, ST}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, sec)
 end
 
 function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
@@ -62,7 +60,7 @@ function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    _adam_cache(x, g, δ, Δg, g̃, _similar(g), _similar(g), _similar(g), sec)
+    _adam_cache(x, g, δ, Δg, g̃, _similar(g), _similar(g), sec)
 end
 
 function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {
@@ -105,14 +103,12 @@ mutable struct AdamState{T, OT, GS, VT} <: OptimizerState{T}
     ḡ::VT
     m₁::VT
     m₂::VT
-    m̃₂::VT
     f::T
     f̄::T
 end
 
 first_moment(state::AdamState) = state.m₁
 second_moment(state::AdamState) = state.m₂
-_second_moment(state::AdamState) = state.m̃₂
 
 function AdamState(x::OST, g::GradientStorage{T}) where {T, OST <: OptimizerSolution{T}}
     _x = _copy(x)
@@ -123,7 +119,7 @@ function AdamState(x::OST, g::GradientStorage{T}) where {T, OST <: OptimizerSolu
     # written to for the first time, so uninitialized memory would be used there.
     AdamState{T, typeof(_x), typeof(gs), typeof(_g)}(
         gs, 0, _x, _similar(_x), _g, _similar(_g),
-        _zero(_g), _zero(_g), _zero(_g), T(NaN), T(NaN))
+        _zero(_g), _zero(_g), T(NaN), T(NaN))
 end
 
 AdamState(x::OptimizerSolution) = AdamState(x, _zero(x))
@@ -135,7 +131,6 @@ OptimizerState(::Adam, x...) = AdamState(x...)
 function initialize_state!(state::AdamState{T}) where {T}
     _fill!(first_moment(state), zero(T))
     _fill!(second_moment(state), zero(T))
-    _fill!(_second_moment(state), zero(T))
     state
 end
 
@@ -168,20 +163,16 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     fac₁₂ = (1 - β₁) / (1 - β₁^t)
     fac₂₁ = (β₂ - β₂^t) / (1 - β₂^t)
     fac₂₂ = (1 - β₂) / (1 - β₂^t)
-    _copyto!(first_moment(cache), _mul(fac₁₁, first_moment(state)))
-    _add!(first_moment(cache), _mul(fac₁₂, gradient_array(cache)))
-    _copyto!(second_moment(cache), _mul(fac₂₁, second_moment(state)))
-    _add!(second_moment(cache), _mul(fac₂₂, _square(gradient_array(cache))))
-    # `m̃₂ = √m₂ + δ`; note that the square root must not be applied to `m₂` in place, as
-    # `advance_state!` stores `m₂` in the state afterwards.
-    _copyto!(_second_moment(cache), second_moment(cache))
-    _rac!(_second_moment(cache), _second_moment(cache))
-    _add!(_second_moment(cache), δ)
-    # the direction is `-m₁/(√m₂ + δ)`, which is *not* scaled by a learning rate: that is the
-    # line search's `α` (see [`default_linesearch`](@ref)).
-    _copyto!(direction(cache), first_moment(cache))
-    _div!(direction(cache), direction(cache), _second_moment(cache))
-    _rmul!(direction(cache), -1)
+    # One broadcast per leaf for both moments and the direction, into the cache, so that the step
+    # allocates nothing. The direction is `-m₁/(√m₂ + δ)`, which is *not* scaled by a learning rate:
+    # that is the line search's `α` (see [`default_linesearch`](@ref)).
+    function adam_leaf!(d, m₁, m₂, m̄₁, m̄₂, g)
+        m₁ .= fac₁₁ .* m̄₁ .+ fac₁₂ .* g
+        m₂ .= fac₂₁ .* m̄₂ .+ fac₂₂ .* g .^ 2
+        d .= .-(m₁ ./ (sqrt.(m₂) .+ δ))
+    end
+    _storagewise!(adam_leaf!, direction(cache), first_moment(cache), second_moment(cache),
+        first_moment(state), second_moment(state), gradient_array(cache))
 
     cache
 end

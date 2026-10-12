@@ -114,7 +114,7 @@ function mixed_fixture(lift, ::Type{T}) where {T}
     ps = NetworkParameters((
         w = rand(rng, manifold(Val(lift)){T}, 6, 3), b = randn(rng, T, 4)))
     F(p) = sum(abs2, p.w .- T(0.3)) + sum(sin.(p.w)) + sum(abs2, p.b) + sum(p.b)
-    opt = Optimizer(ps, F; algorithm = BFGS(), retraction = Cayley())
+    opt = Optimizer(ps, F; mode = :autodiff, algorithm = BFGS(), retraction = Cayley())
     state = OptimizerState(BFGS(), ps)
     c = cache(opt)
     initialize!(c, ps)

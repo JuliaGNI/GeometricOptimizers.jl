@@ -20,8 +20,8 @@ Each of them stores ``n(n\pm1)/2`` numbers behind an ``n \times n`` interface, s
   that. `NeuralNetworkParameters` asks [`Base.parent`](@ref) instead, through `freeparameters`.
 
 For every one of these types the free parameters *are* the coordinates the optimizer should work in,
-so each primitive is the corresponding operation on `parent`. `_add!`, `_rac!`, `_square!`, `_div!`,
-`_rmul!` and `_difference!` live next to the rest of their family in
+so each primitive is the corresponding operation on `parent`. `_add!`, `_rmul!` and `_difference!`
+live next to the rest of their family in
 `optimizers/named_tuple_wrapper.jl`, `l2norm` in `optimizers/optimizer_status.jl`; `update_section!`
 in `global_sections/global_sections.jl` splits on this alias for the same reason.
 

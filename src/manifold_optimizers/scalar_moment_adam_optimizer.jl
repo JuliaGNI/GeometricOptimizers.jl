@@ -226,8 +226,9 @@ function update!(cache::ScalarMomentAdamCache{T},
     fac₁₂ = (1 - method.β₁) / (1 - method.β₁^t)
     fac₂₁ = (method.β₂ - method.β₂^t) / (1 - method.β₂^t)
     fac₂₂ = (1 - method.β₂) / (1 - method.β₂^t)
-    _copyto!(first_moment(cache), _mul(fac₁₁, first_moment(state)))
-    _add!(first_moment(cache), _mul(fac₁₂, gradient_array(cache)))
+    # one broadcast per block of the lift, into the cache, so that the moment update allocates nothing
+    first_moment!(m, m̄, g) = (m .= fac₁₁ .* m̄ .+ fac₁₂ .* g)
+    _storagewise!(first_moment!, first_moment(cache), first_moment(state), gradient_array(cache))
     # The line that makes this method the paper's and not `Adam`'s: a squared *norm* where `Adam` has
     # `Ḡ ⊙ Ḡ`. Which norm is `method.ambient_norm`'s business; see `_squared_gradient_norm`.
     cache.m₂ = fac₂₁ * second_moment(state) +

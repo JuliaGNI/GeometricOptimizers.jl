@@ -236,18 +236,15 @@ which cost 26 s to compile at `k = 369` on Julia 1.12 and 35 s on 1.13. Upstream
 
 `false` and not `zero(T)` for the initial value: there is no `T` in scope, and `false` is the strong
 zero that takes its type from whatever it is added to, so a one-block set adds it to that block's value
-and stays a `T`. Note that upstream's fold is a **left** fold where the recursion it replaces was a
-right one, so on a *mixed-precision* set the accumulator now takes its type from the first leaf in
-`flatten` order rather than the last. Both are arbitrary, and neither is a promotion over the whole set;
-`_dot` has a `T` to accumulate in and does. The reason not to write `zero(parameter_eltype(x))` here is
-that it would put upstream's `_promote_eltypes` generated body on this path, per branch shape, which is
-a compile cost on the very walk #70 was about.
+and stays a `T`. A set has one element type, so every leaf gives it the same `T`. The reason not to
+write `zero(parameter_eltype(x))` here is that it would put upstream's `_promote_eltypes` generated
+body on this path, per branch shape, which is a compile cost on the very walk #70 was about.
 
 `f` is annotated `::F where {F}`, which is now belt and braces rather than load-bearing. It used to be
 the latter: two of the four methods only *passed `f` along*, and Julia does not specialise on a function
 argument it never sees called, so without the annotation `f` arrived boxed and each leaf cost a dynamic
-dispatch — 128 bytes against 64 on the mixed set of `test/integration/flat_buffer_allocations.jl`, which is the test
-that caught it. The single method below closes over `f` instead, and a closure is a `new`, which counts
+dispatch — 128 bytes against 64 on a set of `Float32` and `Float64` leaves, which NeuralNetworkParameters
+0.4 still built. The single method below closes over `f` instead, and a closure is a `new`, which counts
 as a use, so measured the annotation changes nothing on any shape. It is kept because the obligation it
 discharges is real for whoever hands an `op` on: upstream's `foldparameters` docstring says so, and its
 own `op` slot does de-specialise -- costing nothing only because it is `@inline` and folds into this

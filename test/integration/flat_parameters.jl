@@ -2,7 +2,7 @@ using GeometricOptimizers
 using GeometricOptimizers: OptimizerCache, OptimizerSolution,
                            Cayley, Geodesic, check, increase_iteration_number!, solver_step!
 using NeuralNetworkParameters: flatten, unflatten
-using SimpleSolvers: Static, l2norm
+using SimpleSolvers: GradientAutodiff, Static, l2norm
 using Test
 import Random
 include("../helpers/eltypes.jl")
@@ -85,7 +85,7 @@ function optimize(::Type{T}, algorithm; steps = 20, η = 0.1,
         Optimizer(ps, F; (∇F!) = ∇F!, algorithm = algorithm,
             linesearch = Static(T(η)), retraction = retraction)
     else
-        Optimizer(ps, F; algorithm = algorithm,
+        Optimizer(ps, F; mode = :autodiff, algorithm = algorithm,
             linesearch = Static(T(η)), retraction = retraction)
     end
     state = OptimizerState(algorithm, ps)
@@ -106,11 +106,11 @@ end
 algorithms(::Type{T}) where {T} = (GradientMethod(), MomentumMethod(; α = T(0.1)), Adam())
 retractions() = (Geodesic(), Cayley())
 
-# The element type of a whole set of parameters: `flatten` takes it by promotion over the leaves, so a
-# single leaf built in `Float64` makes this `Float64`. `eltype` of a `NetworkParameters` is `Any`.
+# The element type of a whole set of parameters, which is the one element type of its leaves.
+# `eltype` of a `NetworkParameters` is `Any`.
 flat_eltype(ps) = eltype(flatten(ps)[1])
 
-# `NetworkParameters{T}` derives its `T` by *promotion* over the leaves, so a set mixing a
+# `NetworkParameters{T}` takes its `T` from the element type its leaves share, so a set mixing a
 # `StiefelManifold` with an ordinary `Matrix` and a `Vector` is one solution of one element type. A
 # `Vararg` bound on the values cannot say that: written `Tuple{Vararg{AT}} where {AT<:AbstractArray{T}}`
 # Julia's diagonal rule makes it *homogeneous*, so a set holding three different leaf types binds no
@@ -249,8 +249,8 @@ end
     # `max_iterations` is capped because a fixed step size does not get these all the way to
     # the convergence criteria: `GradientMethod` and `Adam` run to the iteration limit, so
     # the default of `1000` only costs time (and prints a warning) without testing more.
-    optimizer = Optimizer(
-        ps, F; algorithm = algorithm, linesearch = Static(T(0.1)), max_iterations = 100)
+    optimizer = Optimizer(ps, F; mode = :autodiff, algorithm = algorithm,
+        linesearch = Static(T(0.1)), max_iterations = 100)
     result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
     @test flat_eltype(ps) == eltype(result.f) == T
@@ -262,18 +262,18 @@ end
     @test result.status.rg ≥ 0
 end
 
-# The `Optimizer(x, problem)` entry point is the one that `Optimizer(x, F)` delegates to, but
-# it is also public on its own — and it is the one that has to build the gradient itself. For
-# a set of parameters that gradient is called on the *flattened* parameters, so sizing it
-# with `length(x)` (the number of entries, `3` here) instead of constructing it from `x` used
-# to make the very first step throw a `DimensionMismatch`.
-@testset "Optimizer(ps, OptimizerProblem(F, ps)) supplies its own gradient, $T" for T in REAL_ELTYPES
+# The `Optimizer(x, problem)` entry point is public on its own. A parameter set has no default
+# gradient there (`test/integration/default_gradient.jl`), and a gradient built from `ps` is called
+# on the *flattened* parameters: one sized with `length(x)` (the number of entries, `3` here) would
+# make the very first step throw a `DimensionMismatch`.
+@testset "Optimizer(ps, OptimizerProblem(F, ps)) takes a gradient built from ps, $T" for T in REAL_ELTYPES
     Random.seed!(1234)
     F, _ = test_problem(T)
     ps = initial_parameters(T)
     ps₀ = deepcopy(ps)
     algorithm = GradientMethod()
-    optimizer = Optimizer(ps, OptimizerProblem(F, ps); algorithm = algorithm, linesearch = Static(T(0.1)))
+    optimizer = Optimizer(ps, OptimizerProblem(F, ps); algorithm = algorithm,
+        linesearch = Static(T(0.1)), gradient = GradientAutodiff(F, ps))
     state = OptimizerState(algorithm, ps)
 
     increase_iteration_number!(state)
@@ -282,7 +282,7 @@ end
     @test flat_eltype(ps) == T
     @test F(ps) < F(ps₀)
     @test ps.Y ≉ ps₀.Y
-    # the same step as the one taken through `Optimizer(ps, F)`, which passes its own gradient
+    # the same step as the one taken through `Optimizer(ps, F; mode = :autodiff)`
     ps′, _, _ = optimize(T, algorithm; steps = 1)
     @test ps.Y ≈ ps′.Y
     @test ps.W ≈ ps′.W
@@ -292,7 +292,7 @@ end
 # `Adam` carries no element type of the parameters: the `Optimizer` converts it to theirs.
 @testset "Adam() optimizes a $T parameter set" for T in REAL_ELTYPES
     ps = initial_parameters(T)
-    opt = Optimizer(ps, test_problem(T)[1]; algorithm = Adam())
+    opt = Optimizer(ps, test_problem(T)[1]; mode = :autodiff, algorithm = Adam())
     @test opt.algorithm isa Adam{T}
     @test OptimizerCache(Adam(), ps) isa GeometricOptimizers.AdamCache{T}
 end
@@ -388,7 +388,8 @@ end
     F, _ = test_problem(T)
     f₀ = F(wrapped)
     solve!(wrapped, OptimizerState(GradientMethod(), wrapped),
-        Optimizer(wrapped, F; algorithm = GradientMethod(), linesearch = Static(T(0.1)),
+        Optimizer(wrapped, F; mode = :autodiff,
+            algorithm = GradientMethod(), linesearch = Static(T(0.1)),
             max_iterations = 10))
     @test flat_eltype(wrapped) == T
     @test F(wrapped) < f₀

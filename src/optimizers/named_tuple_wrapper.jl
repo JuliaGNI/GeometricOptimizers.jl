@@ -100,8 +100,12 @@ end
 const _StructuredLeaf = Union{Manifold, VectorStorageMatrix, AbstractLieAlgHorMatrix}
 
 _check_leaves(x, ys::Vararg{Any, N}) where {N} = nothing
-function _check_leaves(x::_StructuredLeaf, ys::Vararg{Any, N}) where {N}
-    foreach(y -> _check_leaf_pair(x, y), ys)
+# A recursion and not a closure over `x`: with a closure, whether the walk specialises on the
+# function that `_storagewise!` hands it depends on what the process compiled before, and where
+# it does not, an `Adam` step on a set with a vector-storage leaf boxes that function and allocates.
+function _check_leaves(x::_StructuredLeaf, y, ys::Vararg{Any, N}) where {N}
+    _check_leaf_pair(x, y)
+    _check_leaves(x, ys...)
 end
 # a horizontal lift reports `(N, N)` whatever its `n`, so `n` is part of its shape
 _leaf_shape(x) = size(x)
@@ -303,14 +307,14 @@ const LiftOrParameters{T} = Union{AbstractLieAlgHorMatrix{T}, NetworkParameters{
 # ambient Frobenius product is twice the intrinsic one.
 const DottableSet = Union{AbstractLieAlgHorMatrix, NetworkParameters}
 
-# The accumulator starts at `zero(T)`, the promotion over the leaves, and not at the strong zero
-# `false`, which would take the type of the first leaf of the left fold.
+# The accumulator starts at `zero(T)`, the one element type of both arguments, and not at the strong
+# zero `false`, which would take the type of the first leaf of the left fold.
 function _dot(a::LiftOrParameters{T}, b::LiftOrParameters{T}) where {T}
     foldstorage(_dot_leaf, zero(T), a, b)
 end
 
-# The pair whose element types differ, which binds no `T`; `parameter_eltype` is the promotion over
-# the leaves. The method above is strictly more specific, so it takes every pair of one element
+# The pair whose element types differ, which binds no `T`; `parameter_eltype` is the one element type
+# of each argument. The method above is strictly more specific, so it takes every pair of one element
 # type.
 function _dot(a::DottableSet, b::DottableSet)
     foldstorage(
@@ -319,41 +323,6 @@ end
 
 function _add!(a::GradientStorage{T}, b::GradientStorage{T}) where {T}
     _storagewise!((a, b) -> a .+= b, a, b)
-end
-
-_add!(a::GradientStorage{T}, b::T) where {T} = _storagewise!(a -> a .+= b, a)
-
-"""
-    _rac!(B, A)
-
-Compute the element-wise square-root of `A`.
-"""
-_rac!(B::GradientStorage, A::GradientStorage) = _storagewise!((B, A) -> B .= sqrt.(A), B, A)
-
-"""
-    _div!(C, A, B)
-
-Divide `A` by `B` (elment-wise)
-"""
-function _div!(C::GradientStorage, A::GradientStorage, B::GradientStorage)
-    _storagewise!(C, A, B) do C, A, B
-        @assert axes(A) == axes(B) == axes(C)
-        C .= A ./ B
-    end
-end
-
-"""
-    _square!(B, A)
-
-"""
-function _square!(B::GradientStorage, A::GradientStorage)
-    _storagewise!((B, A) -> B .= A .^ 2, B, A)
-end
-
-function _square(a)
-    b = _copy(a)
-    _square!(b, a)
-    b
 end
 
 function Base.copyto!(dest::AbstractArray{T}, src::GlobalSection{T}) where {T}

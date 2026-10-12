@@ -145,8 +145,10 @@ end
         f = p -> -tr(p.Y' * M * p.Y) + sum(abs2, p.W .- c)
         f₀ = f(ps)
         ls = linesearch_for(T, algorithm)
-        optimizer = isnothing(ls) ? Optimizer(ps, f; algorithm = algorithm) :
-                    Optimizer(ps, f; algorithm = algorithm, linesearch = ls)
+        optimizer = isnothing(ls) ?
+                    Optimizer(ps, f; mode = :autodiff, algorithm = algorithm) :
+                    Optimizer(
+            ps, f; mode = :autodiff, algorithm = algorithm, linesearch = ls)
         result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
         @test ps.Y isa GrassmannManifold{T}
@@ -177,7 +179,8 @@ end
             S = rand(rng, StiefelManifold{T}, 5, 1)))
         f = p -> -tr(p.Y' * M * p.Y) - tr(p.S' * M * p.S)
         f₀ = f(ps)
-        optimizer = Optimizer(ps, f; algorithm = BFGS(), retraction = retraction)
+        optimizer = Optimizer(
+            ps, f; mode = :autodiff, algorithm = BFGS(), retraction = retraction)
         result = solve!(ps, OptimizerState(BFGS(), ps), optimizer)
 
         @test ps.Y isa GrassmannManifold{T}             # each block keeps its own manifold type
