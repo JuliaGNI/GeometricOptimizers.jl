@@ -43,11 +43,8 @@ positive number, which is the fixed step size `Static(η)`, a [`SimpleSolvers.St
 [`DecayingStatic`](@ref); the default is [`default_step_size`](@ref)`(algorithm)`. `retraction` is
 an instance of an [`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
 
-`observer` is notified of the `:retraction_application` phase of every step, as the observer of an
-[`Optimizer`](@ref) is; see [Observing the Phases of an Optimizer Step](@ref). The gradient is the caller's, so a
-caller who times it brackets its own reverse pass, and one who wants the cost of the direction
-brackets [`optimization_step!`](@ref) in a phase of its own, from which the nested retraction
-subtracts itself.
+`observer` is notified of the `:retraction_application` phase of every step; see
+[Observing the Phases of an Optimizer Step](@ref).
 
 # Why a training step is not `solve!`
 
@@ -145,8 +142,8 @@ end
 
 # The step itself, once the count has moved and the step size is read: the whole of `x` for one
 # method, and one leaf at a time for a `CompositeMethod` (see `optimizers/composite_method.jl`).
-# The phase is the one `solver_step!` reports for the same work, the retraction, the copies of the
-# retracted point and the state update after it; see the table of phases in the observers chapter.
+# The phase holds what `solve!` reports as `:retraction_application`, in `solver_step!` and in
+# `update!` of the state: the retraction, the copies of the retracted point and `advance_state!`.
 function _training_step!(x, cache, state, dp, method, α, retraction, workspace, observer)
     update!(cache, state, PrecomputedGradient(x, dp), method, x)
     _rmul!(direction(cache), α)

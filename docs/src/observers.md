@@ -144,13 +144,17 @@ A caller who drives the loop itself rather than calling [`solve!`](@ref) bracket
 
 A [`TrainingOptimizer`](@ref) takes the same `observer` keyword. Its step has no objective to
 evaluate and no gradient of its own, since the caller passes the gradient in, so the one phase it
-reports is `:retraction_application`. A training loop brackets its reverse pass in `:gradient` and
-[`optimization_step!`](@ref) in a phase of its own; the time left in that phase once the nested
-retraction has subtracted itself is the cost of the direction:
+reports is `:retraction_application`, with
+[`advance_state!`](@ref GeometricOptimizers.advance_state!) inside it as in the table above. A
+training loop brackets its reverse pass in `:gradient` and [`optimization_step!`](@ref) in a phase
+of its own; the time left in that phase once the nested retraction has subtracted itself is the cost
+of the direction. Here `loss_gradient` stands for the caller's reverse pass:
 
 ```julia
-observe_optimizer_phase(timer, :gradient) do
-    dp = euclidean_gradient(x, batch)
+timer = PhaseTimer()
+opt = TrainingOptimizer(x; observer = timer)
+dp = observe_optimizer_phase(timer, :gradient) do
+    loss_gradient(x, batch)
 end
 observe_optimizer_phase(timer, :direction) do
     optimization_step!(x, opt, dp)
