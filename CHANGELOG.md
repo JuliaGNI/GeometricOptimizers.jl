@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased] — targeting 0.9.0
+## [0.9.0]
+
+**This release makes the package the optimizer that GeometricMachineLearning trains with.**
+`TrainingOptimizer` and `optimization_step!` take one step per minibatch with a gradient the caller
+computes, and an Adam step on a dense parameter set allocates nothing. The methods carry no element
+type: `Optimizer` and `TrainingOptimizer` convert them to the element type of the parameters.
+`solve!` runs on a device with `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and `DFP`, the
+owned matrix types share one allocator convention, and every numeric test runs in `Float32` and
+`Float64`. The package needs Julia 1.12 and NeuralNetworkParameters 0.5. The entries below carry
+the evidence.
 
 ### Fixed
 
