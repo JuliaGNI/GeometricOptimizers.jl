@@ -1,5 +1,5 @@
 """
-An `OptimizerState` is a data structure that is used to dispatch on different algorithms.
+An `OptimizerState` is a data structure for the dispatch on different algorithms.
 
 It needs to implement three methods,
 ```

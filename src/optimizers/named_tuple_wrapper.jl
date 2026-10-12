@@ -1,13 +1,11 @@
-# `GradientAutodiff(F, ps)` and `GradientFunction(F, ∇F!, ps)` for a parameter set are not here. Both are `SimpleSolvers` functions taking a `NeuralNetworkParameters` type, so this package
-# owned neither side of either signature and every package that loaded this one -- directly or through
-# a dependency -- got the new meaning for the rest of its session. They are `SimpleSolvers`' own
-# methods as of 0.13.2, in `ext/SimpleSolversNeuralNetworkParametersExt.jl`, and reach this package
-# unchanged because both packages are hard dependencies here. `GradientFiniteDifferences` never had a
-# parameter-set method and still does not. See issue #16.
+# `GradientAutodiff(F, ps)` and `GradientFunction(F, ∇F!, ps)` for a parameter set are not here. Both
+# are `SimpleSolvers` functions of a `NeuralNetworkParameters` type, so a method here would own
+# neither side of its signature. They are in `SimpleSolvers`' extension
+# `SimpleSolversNeuralNetworkParametersExt`, and reach this package because both packages are hard
+# dependencies here. `GradientFiniteDifferences` has no parameter-set method.
 #
-# What the extension could not take with it is the *functor*, whose body is `rgrad`, this package's
-# Riemannian projection. That one is de-pirated by wrapping instead: see
-# [`RiemannianGradient`](@ref) in `utils.jl`.
+# The *functor*, whose body is `rgrad`, the Riemannian projection of this package, is owned through a
+# wrapper: see `RiemannianGradient` in `utils.jl`.
 
 # This pairs `ps` with the unflattened gradient leaf by leaf, so both trees have to hold arrays of one
 # element type for `rgrad` to have a method at every position -- which a container guarantees and a
@@ -40,28 +38,16 @@ end
 # and the plain `NamedTuple` of a section tree comes back a plain `NamedTuple`.
 #
 # The in-place primitives take `mapparameters!`, which is `foreachparameters` returning its
-# destination: the tree of results a `map`-shaped walk builds is allocated and immediately discarded
-# on every call, which was 992 bytes per `update!` on the flat problem of
-# `scripts/optimizer_allocations.jl`.
+# destination: a `map`-shaped walk allocates a tree of results and discards it on every call.
 #
 # Both check that the keys agree at every level, which is the property this file depends on and which
 # `Base.foreach` over `NamedTuple`s does *not* have -- it goes through `zip`, iterates values, and so
-# neither compares the keys nor notices that one tree is shorter. [`_dot`](@ref) joins them in this
-# release, and more cheaply than either: `foldstorage` checks the keys and the widths in its
-# *generator*, so both cost nothing at run time and a mismatch raises before the fold is specialised at
-# all. Until now that one paired positionally over `values` and checked neither — inherited from the
-# `dot(flatten(a), flatten(b))` it replaced rather than chosen, and its own comment said this was where
-# such a check would go if one were ever wanted. `mapparameters` normalises its
-# trailing arguments through an exhaustive three-method `_as_namedtuple`, so a container may be walked
-# in lockstep with the plain `NamedTuple` tree `GlobalSection(::NetworkParameters)` deliberately
-# returns, and pairing a *leaf* with a branch raises a `MethodError` naming the type.
-#
-# `_mapleaves`/`_mapleaves!` in `src/parameter_walks.jl` were a local copy of all of this until
-# 0.6.0. They existed only because `mapparameters` could not be compiled on a wide-flat set -- see
-# the 0.6.0 entry in the changelog, and `NeuralNetworkParameters` 0.2.2, which fixed that from this
-# package's report. The local copy also normalised its trailing arguments with a *catch-all*, so a
-# leaf paired with a branch fell through to the generic iterator `map`, which zipped the branch's
-# entries against the leaf's elements and returned a truncated `Array` instead of raising.
+# neither compares the keys nor notices that one tree is shorter. `_dot` checks them too, through
+# `foldstorage`, which checks the keys and the widths in its *generator*: no cost at run time, and a
+# mismatch raises before the fold is specialised. `mapparameters` normalises its trailing arguments
+# through an exhaustive three-method `_as_namedtuple`, so a container may be walked in lockstep with
+# the plain `NamedTuple` tree that `GlobalSection(::NetworkParameters)` returns, and a *leaf* paired
+# with a branch raises a `MethodError` that names the type.
 _zero(a::AbstractArray) = zero(a)
 # the zero tangent vector at a point, which is a horizontal lift and not the point's own shape
 _zero(a::Union{StiefelManifold, GrassmannManifold}) = zero_tangent(a)
@@ -72,9 +58,9 @@ _copy(a::NetworkParameters) = mapparameters(_copy, a)
 
 # `Base.similar` is deliberately an error on a `Manifold` — an arbitrary array of that shape is not a
 # point of it — so a fresh *random* point stands in for it. `Manifold` and not `StiefelManifold`, and
-# built with `manifold_constructor` for the same reason `flatten` above is: a `NamedTuple` holding a
-# `GrassmannManifold` used to reach the `AbstractArray` method below and raise that error while
-# building an `AdamState` or a `MomentumState`. See issue A11.
+# built with `manifold_constructor`, so that a `GrassmannManifold` leaf does not reach the
+# `AbstractArray` method below and raise that error while an `AdamState` or a `MomentumState` is
+# built.
 #
 # The point is drawn on `a`'s own backend, as `_zero` and `_copy` allocate by construction:
 # `AdamState` and `MomentumState` declare a single `OT` for `x` and `x̄`, and `x̄` is `_similar(x)`.
@@ -278,21 +264,18 @@ measured ``\Delta f``, and by [`ensure_descent!`](@ref)'s descent test, for the 
 !!! info "No flat vector is built"
     This is the *value* the flattened inner product has, not the flattening. `flatten` writes the
     leaves one after another into one vector, so ``\langle\mathrm{flatten}(a),
-    \mathrm{flatten}(b)\rangle`` is the sum of the per-leaf inner products, and the sum can be taken
-    without the vectors. Until 0.6.0 this allocated two of them per call — once per line-search trial
-    slope, which is the hottest site there is, once per `OptimizerStatus`, and twice per quasi-Newton
-    `update!`.
+    \mathrm{flatten}(b)\rangle`` is the sum of the per-leaf inner products, and the sum is taken
+    without the vectors. This matters because `_dot` runs once per line-search trial slope, once per
+    `OptimizerStatus`, and twice per quasi-Newton `update!`.
 
-    The summation order changes with it: per leaf and then across, rather than one `dot` over the
-    concatenation. Both are ``\sum_i a_ib_i``; they differ at round-off, and
+    The summation order is per leaf and then across, rather than one `dot` over the concatenation.
+    Both are ``\sum_i a_ib_i``; they differ at round-off, and
     `test/integration/flat_buffer_allocations.jl` pins the two against each other.
 
-    What the *grouping* of the leaves does to that sum is nothing, and as of this release that holds by
-    construction rather than by luck. `foldstorage` threads its accumulator through the nested branches,
-    so a left fold over a tree is the left fold over the flat leaf list whatever shape the tree has —
-    where the `Base.tail` recursion this replaced was a right fold that happened to align. So the same
-    numbers written flat, written nested, and wrapped in a container all pair to the same `Float64`,
-    exactly, and the test asserts `==` for the three of them.
+    The *grouping* of the leaves does not change the sum. `foldstorage` threads its accumulator
+    through the nested branches, so a left fold over a tree is the left fold over the flat leaf list
+    whatever shape the tree has. So the same numbers written flat, written nested, and wrapped in a
+    container all pair to the same `Float64`, exactly, and the test asserts `==` for the three of them.
 """
 _dot(a::AbstractVecOrMat, b::AbstractVecOrMat) = dot(a, b)
 

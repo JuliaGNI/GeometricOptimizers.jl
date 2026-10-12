@@ -91,10 +91,9 @@ Without this method the product falls through to the generic `AbstractMatrix` pa
 for one entry at a time. That is scalar indexing, so it **cannot run on a device at all**. The
 packed vector holds ``n(n-1)/2`` entries and the generic path reads ``n^2`` of them, the other
 ``n(n+1)/2`` being zeros that [`StrictlyLowerTriangular`](@ref) and [`StrictlyUpperTriangular`](@ref) manufacture —
-but **do not read a host speed-up into that**, which is what the arithmetic invites. Measured
-against the very path this method shadows, the ratio runs from 0.76x to 1.72x and is not monotone
-in `n`. At `n = 6` — the size the retraction tests use — both products are *slower* than the path
-they shadow, because the kernel launch has a fixed cost that a small product cannot amortize.
+but **do not read a host speed-up into that**, which is what the arithmetic invites. Against the
+path this method shadows, the ratio is not monotone in `n`, and at a small `n` both products are
+*slower*, because the kernel launch has a fixed cost that a small product cannot amortize.
 `scripts/triangular_multiply_cost.jl` is the check and `CHANGELOG.md` carries its table. The device
 is what this buys.
 

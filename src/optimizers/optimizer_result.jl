@@ -72,10 +72,8 @@ Base.minimum(result::OptimizerResult) = result.f
 
 The per-iteration record [`solve!`](@ref) kept, or an empty vector if it was not asked to keep one.
 
-`Options(store_trace = true)` is what asks. Before this existed the option was accepted and silently
-ignored — by this package *and* by SimpleSolvers 0.11, where it is a field of
-[`SimpleSolvers.Options`](@extref) that nothing reads — so code that set it got no trace and no
-error either.
+`Options(store_trace = true)` is what asks. It is a field of [`SimpleSolvers.Options`](@extref), and
+this package is what reads it.
 
 # Examples
 
@@ -121,8 +119,8 @@ What it is for: a statistic that has to be *phase-independent*. `Adam` at a fixe
 not converge to the minimizer, it orbits it at a distance of order ``\alpha``, so the error at any
 one iteration is a sample of an arbitrary phase on that orbit and moves with the last bits of the
 floating-point arithmetic. Averaging over a stretch of the orbit measures its radius instead, which
-is a property of ``\alpha`` and the problem — across Julia 1.10, 1.12 and 1.13 the final-iterate
-error on the problem in `test/verification/svd_optim.jl` spans a factor of 3.0 and the mean
-over the last five hundred iterations spans 1.06.
+is a property of ``\alpha`` and the problem: across Julia versions, the final-iterate error on the
+problem in `test/verification/svd_optim.jl` changes by a factor of a few, and the mean over the last
+five hundred iterations by a few percent.
 """
 trace(result::OptimizerResult) = result.trace

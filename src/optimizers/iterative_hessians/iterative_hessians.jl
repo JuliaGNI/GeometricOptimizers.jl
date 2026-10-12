@@ -6,9 +6,9 @@ The flat buffers a quasi-Newton cache keeps, or `nothing` where it needs none.
 ``Q`` lives in the *flattened* coordinates — it is sized by the length of the flattening, it is where
 the outer products that build it are formed and where [`_dot`](@ref) pairs — while the secant pair, the
 right-hand side and the direction are handed around in the parameters' own representation: a
-`NamedTuple`, a container, or a horizontal lift of the ambient shape. Crossing between the two used to
-allocate a fresh vector every time, four times per `update!`. These are the buffers to write into
-instead, through `NeuralNetworkParameters`' allocation-free `flatten!` and `unflatten!`.
+`NamedTuple`, a container, or a horizontal lift of the ambient shape. These are the buffers that the
+crossing between the two writes into, through `NeuralNetworkParameters`' allocation-free `flatten!`
+and `unflatten!`, so that no `update!` allocates a fresh vector.
 
 A `NeuralNetworkParameters.FlatParameters` rather than a bare `Vector`, because it carries its own
 `ParameterLayout` and keeps it through `similar` — so δ is built once and the other three buffers are
@@ -17,20 +17,13 @@ one `similar` each, with no `parameterlayout` call written anywhere below this l
 `similar`s buy is that it happens once per cache rather than once per product with ``Q``.
 
 That layout then goes into the cache's own type, as `FlatParameters`' third type parameter and so as
-`QuasiNewtonCache`'s `FT`. Until `NeuralNetworkParameters` 0.2.3 that meant every leaf's *concrete
-array type* came with it, `LeafLayout` having carried a `prototype` field nothing read — and a live
-reference to every leaf array besides, so a cache retained the set its buffers were sized from.
-`LeafLayout{N}` is the shape alone now, and neither is true. See the 0.6.0 changelog.
-
-(Those four in plain code and not `@extref`s, for the reason `descent_direction.jl` gives about
-`solve_with_status`: `docs/make.jl` carries `DocumenterInterLinks` inventories for `SimpleSolvers` and
-`GeometricMachineLearning`, not for `NeuralNetworkParameters`, and `docs/src/api.md` renders every
-docstring in this package — so an unresolvable `@extref` is a build error rather than a dead link.)
+`QuasiNewtonCache`'s `FT`. A `LeafLayout{N}` holds the shape alone, so the cache type does not carry
+the array types of the leaves, and the cache keeps no reference to the leaves.
 
 # The ambient and the intrinsic
 
-This is where the distinction the quasi-Newton methods turn on is written down, having moved here from
-the `outer!` methods 0.6.0 deleted. ``Q`` is sized by the *intrinsic* dimension of the parameters — the
+This is where the distinction the quasi-Newton methods turn on is written down. ``Q`` is sized by the
+*intrinsic* dimension of the parameters — the
 length of their flattening — while the direction and the gradient are handed around in the *ambient*
 representation. For a bare `StiefelManifold` of size ``(3, 1)`` those are 2 and ``3 \times 3``
 respectively, so `SimpleSolvers.outer!`, which checks the axes of its arguments against those of its

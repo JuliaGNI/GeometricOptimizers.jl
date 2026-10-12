@@ -46,11 +46,6 @@ The fixed-step column is not merely slower. With `Static(0.01)` the SVD solve re
 ``2.1\times10^{-4}``, ``4.0\times10^{-5}`` at 5000, 20 000 and 60 000; reaching the convergence gate
 that way would take of the order of a million iterations.
 
-!!! info "This changed in 0.2.0"
-    [`GradientMethod`](@ref) and [`MomentumMethod`](@ref) used to default to a fixed
-    `Static(1e-3)`. They could not do anything else, because until the trial point went through the
-    retraction `Static` was the only line search that worked on manifold parameters at all.
-
 ## Pair gradients and directions intrinsically
 
 `LinearAlgebra.dot` on an [`AbstractLieAlgHorMatrix`](@ref) is the *ambient* Frobenius product, and it
@@ -132,15 +127,33 @@ iterations and crawls to the gradient gate in 47 115 of them. Raising only the i
 from 1 to 3, brought the same solve to 229 — which is what identifies the ceiling rather than DFP
 itself as the cause.
 
-The remedy is an expansion phase, which SimpleSolvers 0.11 added in response to
-[SimpleSolvers issue #174](https://github.com/JuliaGNI/SimpleSolvers.jl/issues/174):
-`Backtracking(T; expand = true)` lengthens an accepted *first* trial step for at most `nexpand = 3`
+The remedy is the expansion phase of SimpleSolvers: `Backtracking(T; expand = true)` lengthens an accepted *first* trial step for at most `nexpand = 3`
 rounds of at most a factor `q = 10` each, while every longer trial still satisfies sufficient decrease
 and strictly improves the merit. It is close to free — under 4% more objective evaluations per
 iteration, and *exactly* nothing on a well-scaled problem, because the extrapolation reuses
 ``\varphi(0)``, ``\varphi'(0)`` and ``\varphi(\alpha)``, all of which are known once the trial step
 has been accepted. That is why it is the default here for every method except [`Adam`](@ref); see
-[`default_linesearch`](@ref) for the per-method choices and the evaluation counts behind them.
+[`default_linesearch`](@ref) for the per-method choices.
+
+The table gives the objective evaluations on the SVD problem of `test/verification/svd_optim.jl`,
+with `Geodesic`, on the starting point that the test suite uses. `Static` needs about 4 evaluations
+per iteration; subtract that for the cost of the search itself. The figures are from
+GeometricOptimizers 0.2.0 with SimpleSolvers 0.11, and `scripts/retraction_accuracy.jl` makes them
+again. That script does not make the two `StrongWolfe (c₂ = 0.9)` cells, and the `DFP` cells of
+`Backtracking` (shrink only) and `BierlaireQuadratic`; these come from an earlier measurement.
+
+| search | evals/iteration | `BFGS`: iters / evals | `DFP`: iters / evals |
+|---|---|---|---|
+| `Backtracking(expand = true)` | **26** | **95** / **2 441** | 768 / 20 001 |
+| `Backtracking` (shrink only) | 25 | 136 / 3 457 | 48 322 / 1 208 157 |
+| `StrongWolfe` (`c₂ = 0.1`) | 58 | 135 / 7 893 | 218 / **18 127** |
+| `StrongWolfe` (`c₂ = 0.9`) | 36 | 159 / 5 687 | 12 717 / 445 497 |
+| `BierlaireQuadratic` | 106 | 130 / 13 781 | 121 / 13 491 |
+| `Quadratic` | 138 | 111 / 15 377 | 175 / 18 122 |
+| `Bisection` | 589 | 133 / 78 658 | 136 / 80 001 |
+
+The step ceiling of the next section does not bind on this starting point: every cell that the
+script makes is the same with the ceiling on and off, on both retractions.
 
 Two conclusions from those measurements are worth stating separately, because they are properties of
 the manifold problem rather than of any one search:
@@ -153,17 +166,15 @@ the manifold problem rather than of any one search:
   what you pay for — a very expensive objective, or an outer loop bounded in iterations.
 - **A search that uses ``\varphi'`` quantitatively is the one that notices a bad step, not the one
   that causes it.** [`SimpleSolvers.Quadratic`](@extref) is competitive on `Geodesic` (175 iterations
-  for `DFP`) and falls behind on `Cayley` (529). The obvious explanation — that it fits a polynomial
-  to a slope which is only first-order correct there — was measured and is not the cause: with the
-  exact differential above the figure moved from 550 to 529 and the gap remained. The step ceiling
-  below narrows it without accounting for the rest, and nothing measured here explains the remainder.
+  for `DFP`) and falls behind on `Cayley` (529). A slope that is only first-order correct is not the
+  cause: the slope is exact under both retractions, and the gap remains. The step ceiling below
+  narrows it without accounting for the rest, and nothing measured here explains the remainder.
 
-  The *divergence* that used to accompany it is a different matter and is fixed; see the next section.
+  A *divergence* on an over-long step is a different matter; see the next section.
 
 ## A bounded merit is not a bound on the step
 
-This is the property of a compact manifold that no line search is written to expect, and it is the
-subject of issue A1b.
+This is the property of a compact manifold that no line search is written to expect.
 
 ``\varphi(\alpha) = f(\Lambda\,\mathrm{retract}(\alpha\bar{B})E)`` is **bounded** in ``\alpha``:
 [`Cayley`](@ref) converges to a fixed rotation as ``\alpha \to \infty`` and [`Geodesic`](@ref) is
@@ -173,8 +184,8 @@ periodic in it. On ``\operatorname{St}(10,3)`` against a random target, ``\varph
 reports one is telling the truth.
 
 In the Euclidean case the same ``\alpha`` gives ``f(x + \alpha{}p) = 3.4\times10^{18}`` against
-`1.1e1`, and the search's own sufficient-decrease test throws it out. That is why no line search
-carried a guard here for so long: **on a vector space the merit is the guard.** On a manifold it is
+`1.1e1`, and the search's own sufficient-decrease test throws it out. That is why a line search
+carries no guard of its own here: **on a vector space the merit is the guard.** On a manifold it is
 not, and the only thing wrong with the step is that retracting a lift of that norm loses the manifold.
 
 Measured on the SVD problem, `Quadratic` returned ``\alpha = 4.3\times10^7`` on a direction of norm
@@ -185,18 +196,18 @@ back to the identity so that the direction *was* ``-\nabla{}f``, the same search
 ``8.6\times10^7`` on steepest descent. So a better direction was never the remedy; a bound on the step
 was.
 
-### The fix, and why it takes two packages
+### The bound, and why it takes two packages
 
 The bound is geometric. Retracting a lift is a rotation, so past ``\|\alpha\bar{B}\| \approx 2\pi``
 a longer step reaches nothing new — and ``2\pi/\|\delta\|`` is not a property of ``\varphi``, changes
 at every solver step, and cannot be measured by a line search. Hence the split:
 
-- **SimpleSolvers 0.12** takes a per-call ceiling as `params.αmax`, honoured by all six of its line
+- **SimpleSolvers** takes a per-call ceiling as `params.αmax`, honoured by all six of its line
   searches, and stops the bracketing *at* the ceiling rather than clamping afterwards — so the merit
   is measured at the step that is handed back, and the evaluations past it are saved rather than
   wasted. Its own default of `65536` is a backstop against unbounded extrapolation and, upstream is
-  explicit about this, is nowhere near tight enough to fix A1b: at ``\|\delta\| \approx 5.5`` it still
-  permits ``\|\alpha\delta\| = 3.6\times10^5``.
+  explicit about this, is nowhere near tight enough to bound the step: at
+  ``\|\delta\| \approx 5.5`` it still permits ``\|\alpha\delta\| = 3.6\times10^5``.
 - **This package** supplies the value, because choosing it is a statement about the geometry.
   [`solver_step!`](@ref) passes ``c\,2\pi/\|\delta\|`` through [`linesearch_parameters`](@ref), with
   `c` the [`DEFAULT_STEP_CEILING`](@ref) — `1`, i.e. never more than one full turn — settable per
@@ -219,9 +230,9 @@ both factors still on ``\operatorname{St}(20,3)``:
 | `BFGS` `Backtracking(expand)` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.0e-14` |
 | `BFGS` `Backtracking` `Geodesic` | 7 of 8 | **8 of 8** | `2.8e-12` → `6.3e-14` |
 
-All twenty combinations in that sweep are now 8 of 8. The last two rows are worth reading twice: they
-were never catalogued under A1b, and a *shrink-only* `Backtracking` reaching an over-long step at all
-is surprising until you notice that its expansion phase can exceed ``\alpha = 1`` and that ``\|\delta\|``
+All twenty combinations in that sweep are 8 of 8 with the ceiling. The last two rows are worth
+reading twice: a *shrink-only* `Backtracking` that reaches an over-long step at all is surprising
+until you notice that its expansion phase can exceed ``\alpha = 1`` and that ``\|\delta\|``
 is what makes ``\alpha = 1`` too far. The mechanism is not confined to the searches that extrapolate
 polynomials; it is confined to steps that are long relative to ``2\pi/\|\delta\|``.
 
@@ -243,12 +254,10 @@ polynomials; it is confined to steps that are long relative to ``2\pi/\|\delta\|
 [`DFP`](@ref) converges under the default expansion phase, but its direction stays under-scaled:
 across eight starting points on the SVD problem it ranges over 385–1 118 iterations on `Geodesic`.
 
-That range used to read 512–77 890, and the difference is not the line search. A badly conditioned
-``Q`` on this problem was a ``Q`` built from secant pairs with ``\delta^T\gamma \leq 0``, which the
-guard on the quasi-Newton update accepted; how quickly the expansion phase dug it back out was close
-to arbitrary. Enforcing the curvature condition — see [`curvature_is_usable`](@ref) — takes a factor
-of 92 off the spread, and with it most of the reason DFP had a reputation here for being
-unpredictable. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 296–868 iterations
+The curvature condition, and not the line search, keeps that range narrow. A ``Q`` built from secant
+pairs with ``\delta^T\gamma \leq 0`` is badly conditioned on this problem, and how quickly the
+expansion phase digs it back out is close to arbitrary. Enforcing the curvature condition — see
+[`curvature_is_usable`](@ref) — takes a factor of 92 off the spread. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 296–868 iterations
 across the same eight, at 18 127 objective evaluations against the default's 20 001 — and remains the
 choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
 `StrongWolfe`'s own default of ``0.9``: at ``0.9`` the strong Wolfe conditions already hold at
@@ -269,16 +278,15 @@ average that is deliberately *not* required to descend on any individual step, s
 sufficient-decrease search has nothing to work with and would spend every step reporting that it found
 no descent direction.
 
-[`DecayingStatic`](@ref) is the weaker of the two ways to make such a solve terminate — it is what the
-`AdamWithDecay` method of v0.1.0 did with its own fields. It drives the step to zero geometrically, so
+[`DecayingStatic`](@ref) is the weaker of the two ways to make such a solve terminate. It drives the step to zero geometrically, so
 the solve does stop on a criterion, but the schedule is summable: it stops short at
 ``\|\nabla f\| \approx 10^{-3}`` with ``\|\Delta x\|`` already around ``10^{-13}``. A searching line
 search reaches about ``10^{-7}`` on the same Adam problem.
 
 ## Quasi-Newton caches on manifold solutions
 
-[`DFP`](@ref) used to be restricted to `AbstractVector` solutions, and the restriction was
-accidental: like [`BFGS`](@ref) it is built from a secant pair and never needs a vector-valued point.
+[`DFP`](@ref) runs on manifold solutions as well as on `AbstractVector` solutions: like
+[`BFGS`](@ref) it is built from a secant pair and never needs a vector-valued point.
 The cache operates at the [`OptimizerSolution`](@ref) level, with separate type parameters for the
 solution and the gradient, because a manifold point and its horizontal lift need not have the same
 shape. Its section may be a tree of sections rather than one, ``Q`` is sized by the *intrinsic*

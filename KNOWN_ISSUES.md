@@ -87,7 +87,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Under `Cayley`, `trial_slope` calls `retraction_differential!` on every evaluation of ``\varphi'``.
   That is `lift_factors!` and two ``2n\times{}2n`` solves in the optimizer's workspace —
   ``O(Nn^2 + n^3)``, the same order as the retraction itself, and no allocation on a host `Matrix` —
-  where before it was a `_dot` against an array the cache already held. On `St(6, 3)` at
+  in place of a `_dot` against an array the cache already holds. On `St(6, 3)` at
   ``\alpha = 0.5`` one call takes about 1.1 μs (`scripts/in_place_retraction_cost.jl`). `Geodesic`
   copies ``\bar{B}`` at every ``\alpha`` and `Cayley` does at ``\alpha = 0``, so every `Geodesic` solve
   and the `Backtracking` default pay a copy and no solve; what is unmeasured is a search that
@@ -237,7 +237,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: `src/decompositions/symplectic_sr.jl`
 - kind: defect
-- found: 2026-09-18
+- found: 2026-09-18; a commit message before 2026-09-18 that cites A22 means another issue, the CPU-only exponential
 - evidence:
 
   **Severity: medium**, and it is a property of the algorithm rather than a defect in the port. Opened
@@ -609,11 +609,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   - **the `Adam` cross-version statistic**, quoted in `svd_optim.jl` as a 1.06× spread over three Julia
     versions and reproducible only by running three Julia versions.
   - **the 1.12 compile-time reproducer** (D1), which no longer exists at all.
-  - **the wall-clock timings** in `default_linesearch` — `0.155 s` against `0.246 s` on `Geodesic`,
-    `0.205 s` against `0.451 s` on `Cayley`, and the "1.6× to 2.2× faster" they support. `svd_tables`
-    reports iterations and evaluations and not time, so the step-ceiling round regenerated every other
-    figure in that docstring and left these four untouched. They now say so in place, which is the
-    minimum this entry asks for and not a fix.
   - **the MNIST run**: the 6 h 53 min RTX 4090 figures, the
     ``\sqrt{1.8} \approx 1.342`` plateau and the per-configuration losses are
     still quoted here, while `distill_mnist_results.jl` and the five scripts that produced them are now
@@ -789,8 +784,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   for the whole difference.
 
   1.13 and nightly are unaffected, so this needs an upstream report only if 1.12 is still receiving
-  backports; if it is not, the value is documentation rather than a fix, and the warning on
-  `Optimizer(x, F)` already carries it.
+  backports; if it is not, the value is documentation rather than a fix: the warning on
+  `Optimizer(x, F)` carries the rule, and this entry the measurements.
 
   **The reproducer is written down now — `scripts/nested_kwargs_cost.jl` — and it does not reproduce.**
   That was the outstanding action here ("the reproducer this was measured with lived in `/tmp` and is
@@ -832,7 +827,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
      reinstated at each step, which `scripts/nested_kwargs_cost.jl --with-package` is written to make
      mechanical.
 
-  The warning on `Optimizer(x, F)` stays either way: it records a measurement that was taken, and
+  The warning on `Optimizer(x, F)` stays either way: it states the rule that a measurement set, and
   nothing here shows the flattening is safe to undo — only that the cost it avoids cannot currently be
   demonstrated.
 
@@ -840,7 +835,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: `src/base/options.jl:458-460`
 - kind: upstream
-- found: 2026-08-15; one issue with SimpleSolvers' *Open Issues* entry "`store_trace`, `show_trace` and `extended_trace` have no readers"
+- found: 2026-08-15; one issue with SimpleSolvers' known-issues entry "`store_trace`, `show_trace` and `extended_trace` have no readers"
 - evidence:
 
   `store_trace`, `show_trace` and `extended_trace` exist as fields of `SimpleSolvers.Options`
@@ -892,7 +887,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: —
 - kind: upstream
-- found: 2026-08-15; one issue with SimpleSolvers' *Open Issues* entry "A ceiling that binds can be reported as `LINESEARCH_FLOOR`"
+- found: 2026-08-15; one issue with SimpleSolvers' known-issues entry "A ceiling that binds can be reported as `LINESEARCH_FLOOR`"
 - evidence:
 
   **Severity: medium**, inherited from SimpleSolvers 0.12 with the step ceiling and carried in
@@ -1015,37 +1010,6 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   body becomes a squashed commit message, the wrong reason goes into the history with it. The
   scripts have since moved to GMLDatasets.jl (see [0.3.1](#031)), which changes nothing
   about the PR body this entry is about.
-
-## G. Found when this file was split from the CHANGELOG
-
-### K2 · Two comments point at the *Open Issues* preamble of `CHANGELOG.md`, which does not hold it; the rule they cite is in neither file
-
-- location: `scripts/optimizer_allocations.jl:8`
-- kind: docs
-- found: 2026-09-26
-- evidence: `scripts/optimizer_allocations.jl:8` says "because of the rule the *Open Issues* preamble
-  states" and `scripts/retraction_step_allocations.jl:9` says "reason the *Open Issues* preamble
-  states". That preamble rule ("treat a number here as reproducible only where the harness that
-  produced it is named") did not move into this file. Found by
-  `git grep -n -i 'open issues' -- ':!CHANGELOG.md'`.
-
-### K3 · The ID A22 was used for two different issues
-
-- location: `KNOWN_ISSUES.md`
-- kind: docs
-- found: 2026-09-26
-- evidence: commit 4d2ed06 (2026-08-20) added `#### A22. The only independent exponential
-  implementation was CPU-only`, and 7f66695 (2026-08-23) removed it. Commit 4e9eb5f (#90,
-  2026-09-18) used `A22` again for the SR decomposition. A commit message that cites A22 before
-  2026-09-18 means the first issue.
-
-### K4 · Three reference links in `CHANGELOG.md` have no definition
-
-- location: `CHANGELOG.md:166`
-- kind: docs
-- found: 2026-09-26
-- evidence: `[0.8.0]`, `[0.6.1]` and `[B]` (`CHANGELOG.md:166`, `:1186`, `:1330`, `:2091`) have no
-  `[label]: url` line, and `[Unreleased]` compares `v0.6.0...main`.
 
 ## H. The test suite
 

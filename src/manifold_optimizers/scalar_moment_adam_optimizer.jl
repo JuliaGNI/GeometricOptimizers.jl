@@ -165,8 +165,8 @@ function update!(
     state.f̄ = value(state)
     _copyto!(solution(state), x)
     # `latest_gradient` and not `gradient_array`: the gradient at `x`, which `solver_step!` has just
-    # refreshed, and not the one the step was built from, so `g` and `ḡ` belong to `x` and `x̄`
-    # (issue A10). Nothing reads `gradient(state)` to build a step.
+    # refreshed, and not the one the step was built from, so `g` and `ḡ` belong to `x` and `x̄`.
+    # Nothing reads `gradient(state)` to build a step.
     _copyto!(gradient(state), latest_gradient(cache(opt)))
     state.f = f
     observe_optimizer_phase(step_observer(opt), :retraction_application) do

@@ -136,6 +136,7 @@ makedocs(;
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", "false") == "true",
         canonical = "https://JuliaGNI.github.io/GeometricOptimizers.jl",
+        repolink = "https://github.com/JuliaGNI/GeometricOptimizers.jl",
         edit_link = "main",
         # The moved chapters include each of their figures twice, once per theme; without
         # GeometricFigures' `figures.css` both variants render, stacked. It hides the `_light`/`_dark`
@@ -145,21 +146,7 @@ makedocs(;
             "assets/extra_styles.css",
             asset("https://juliagni.github.io/GeometricFigures.jl/figures.css"; islocal = false)
         ],
-        # `api.md` is one catch-all `@autodocs` over the whole package, so it is large by design.
-        # `size_threshold_warn` is left at its default: the warning it prints for that one page is
-        # the reminder that the docstrings are still not distributed over the chapters that explain
-        # them.
-        #
-        # `size_threshold` is an *error*, not a warning, so the page failing the build is how a
-        # documented addition announces itself. Raising the number is the smaller half of the fix
-        # and not the fix: the page grows with every documented addition, and what actually bounds
-        # it is continuing the migration that moved the manifold, matrix, global-section and
-        # retraction docstrings onto the chapters that explain them. Until that is done this number
-        # will need raising again, and the warning above says so on every build.
-        #
-        # The number sits a little above `api.md`'s size, so that a few more additions announce
-        # themselves one at a time rather than in a batch. `CHANGELOG.md` carries the size that
-        # forced the current value.
+        # `api.md` is one `@autodocs` over the whole package and is above the default 200 KiB.
         size_threshold = 600 * 2^10
     ),
     pages = [

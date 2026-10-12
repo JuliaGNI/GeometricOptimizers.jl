@@ -149,6 +149,15 @@ The orthonormalization is **CholeskyQR2** — the Cholesky step shown twice abov
 
 The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in a hundred and twenty. Such a draw is *replaced* rather than repaired — it is Gaussian noise and carries no information — which is what [`GeometricOptimizers.orthonormal_columns`](@ref) does. A replacement fails at a somewhat higher rate again, so the redraw is bounded and raises rather than returning a result it did not produce cleanly.
 
+On a device, CholeskyQR2 keeps the point there; it is not the faster route. `scripts/orthonormalization_device_cost.jl` measures it on an M4 Max with Julia 1.13.1 and Metal 1.11.1, in `Float32`, at the ``N\times(N-3)`` shape that [`global_section`](@ref) uses: a cold session, one warm-up, the median of five runs, `Metal.synchronize()` in the timed region, and the host on one BLAS thread.
+
+| ``N`` | CholeskyQR2 on Metal | host `qr!` | download, host `qr!`, upload |
+|---|---|---|---|
+| 20 | 7.3 ms | 46 μs | 0.60 ms |
+| 400 | 29 ms | 12 ms | 19 ms |
+
+At these sizes the device time is mostly launch and synchronisation latency. The second pass is necessary: on Metal in `Float32` at the same shape, ``\|Q^TQ - \mathbb{I}\|`` after one pass is ``9.7\times10^{-6}`` at ``N = 20`` and ``1.9\times10^{-3}`` at ``N = 400``, against ``7.1\times10^{-7}`` and ``7.7\times10^{-6}`` after the second.
+
 ```@eval
 Main.theorem(raw"The matrix ``Y_\perp`` constructed with the algorithm above satisfies
 " * Main.indentation * raw"```math

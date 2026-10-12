@@ -59,11 +59,9 @@ end
 The ``N\times{}N`` identity, built with a `KernelAbstractions` kernel.
 
 `Base.one(::AbstractMatrix)` writes the diagonal in a scalar-indexed loop, which is what a GPU array
-cannot serve; [`geodesic`](@ref) reaches this on every retraction. It existed for the Stiefel lift
-only, so the Grassmann retraction was taking the scalar-indexed path — the same hazard issue A19
-recorded for [`GeometricOptimizers.𝔄`](@ref), whose argument is a bare matrix and which reached
-`Base.one` until the ``2n\times{}2n`` identities went through
-[`GeometricOptimizers.unit_matrix`](@ref) as well.
+cannot serve; [`geodesic`](@ref) reaches this on every retraction, for every lift type.
+[`GeometricOptimizers.𝔄`](@ref), whose argument is a bare matrix, builds its ``2n\times{}2n``
+identities through [`GeometricOptimizers.unit_matrix`](@ref) for the same reason.
 """
 function Base.one(B::AbstractLieAlgHorMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(B), T, B.N)

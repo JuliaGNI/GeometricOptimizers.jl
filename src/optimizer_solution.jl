@@ -26,9 +26,8 @@
 # to re-solve that constraint system in `subtype_unionall`. Unbounded, the same call infers to the
 # same shape but with the parameters independent and `s3<:Tuple`, which costs nothing to intersect.
 #
-# The difference is not marginal: a nine-layer network whose optimizer was compiled through a
-# function did not finish inferring in over an hour with the bounds, and takes ~14 s without them.
-# See GeometricMachineLearning#230.
+# The difference is not marginal: for a network of a few layers, inference with the bounds does not
+# finish in an hour.
 #
 # Nothing is given up by dropping them. The invariant is enforced where it always really was, in the
 # constructors, whose signatures take `x::OptimizerSolution{T}` and
@@ -58,9 +57,7 @@ alternative is not available.
 
   - a method taking one is a method on `Base.NamedTuple`. Unless the function is also this package's,
     that is type piracy — and it is global, changing what the function means for every keyed
-    `NamedTuple` in any session that loads this package, directly or through a dependency. Issue
-    [#16](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/16) is the record of what that
-    costs to undo;
+    `NamedTuple` in any session that loads this package, directly or through a dependency;
   - it cannot be told apart from any *other* `NamedTuple` alias in the same method table. It would
     overlap `GlobalSectionNamedTuple` and the bare `NamedTuple` that a nested section tree is written
     on, and on the overlap neither method of such a pair is more specific — an ambiguity rather than a

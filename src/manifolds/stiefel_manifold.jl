@@ -158,7 +158,7 @@ function _complement_columns(Y::AbstractMatrix{T}) where {T}
 end
 
 # The zero horizontal lift at `Y`, on the backend of `Y`: the zero tangent vector the optimizer
-# caches are sized by. Not `Base.zero`, which is a point's own shape and not a tangent (issue #21).
+# caches are sized by. Not `Base.zero`, which is a point's own shape and not a tangent.
 function zero_tangent(Y::StiefelManifold{T}) where {T}
     N, n = size(Y)
     backend = KernelAbstractions.get_backend(Y.A)

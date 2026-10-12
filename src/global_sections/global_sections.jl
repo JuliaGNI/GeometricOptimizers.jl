@@ -17,7 +17,7 @@ For an implementation of `GlobalSection` for a custom array (especially manifold
 """
 struct GlobalSection{T, AT <: AbstractArray{T}, λT <: Union{AbstractArray{T}, Nothing}}
     Y::AT
-    # for now the only lift that is implemented is the Stiefel one - these types will have to be expanded!
+    # the complement `Y⟂` of a manifold point, and `nothing` for a vector-space parameter
     λ::λT
 
     function GlobalSection(Y::AbstractVecOrMat)
@@ -34,7 +34,6 @@ GlobalSection(ps::NamedTuple) = mapparameters(GlobalSection, ps)
 # The container `NeuralNetworkParameters` holds a network's parameters in. `GlobalSection` is this
 # package's own function, so a method on it is this package's to write -- and it has to be, because a
 # package that merely uses both owns neither name and its method would be piracy.
-# `GeometricMachineLearning` carried exactly that method until now, with a comment saying as much.
 #
 # The result is deliberately the same `NamedTuple` tree the method above returns rather than a
 # `NetworkParameters` of sections: a section is not a parameter, and everything downstream --

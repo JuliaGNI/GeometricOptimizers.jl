@@ -6,7 +6,8 @@ Compute ``\mathfrak{A}(A) := \sum_{n=1}^\infty \frac{1}{n!} (A)^{n-1}.``
 # Implementation
 
 The partial sum is accumulated term by term, each term obtained from its predecessor by
-``A^{n-1}/n! = (A^{n-2}/(n-1)!)\cdot{}A/n``, until the term's norm falls below machine precision.
+``A^{n-1}/n! = (A^{n-2}/(n-1)!)\cdot{}A/n``; the sum stops when the norm of a term falls below
+machine precision.
 Both start at the identity, which is the ``n = 1`` term. The recurrence and the accumulation are
 in place, so the loop allocates nothing.
 
@@ -14,7 +15,7 @@ in place, so the loop allocates nothing.
     The series converges for every `A`, but cancellation can make direct summation inaccurate for
     ``\|A\| \gg 1`` — see [`TaylorSeries`](@ref) for what it does at a large argument. This method
     is therefore intended as a small-argument kernel. It is used by [`ScaledSquaring`](@ref) only
-    after the argument has been divided until its norm is below `θ`. Reach for it directly only if
+    after the argument has been divided to a norm below `θ`. Reach for it directly only if
     you know the argument is small.
 """
 function 𝔄(A::AbstractMatrix)
@@ -233,8 +234,8 @@ end
 #
 #     p = 𝕀 + c₁X + X²(c₂𝕀 + c₃X) + X⁴(c₄𝕀 + c₅X + c₆X²)
 #
-# and its `q` counterpart write them, to the bit. `p` holds the `X⁴` product until the last sum reads
-# it, and `q` likewise.
+# and its `q` counterpart write them, to the bit. `p` holds the `X⁴` product up to the last sum, which
+# reads it, and `q` likewise.
 function _native_pade_polynomials!(
         p, q, X::AbstractMatrix, 𝕀::AbstractMatrix, X², X⁴, inner,
         product)

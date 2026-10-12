@@ -147,108 +147,65 @@ the other.
 solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
 # A fold over the leaves, and not `map` + `sum` over one level: a container is a tree of layers, so the
-# scales to combine are at its *leaves*. `map` would hand `solution_scale` a whole layer, for which
-# there is no method. See [`NeuralNetworkParameters.NetworkParameters`](@extref). [`_sumsq_leaves`](@ref) is
+# scales to combine are at its *leaves*, at any depth. `_sumsq_leaves` is
 # `NeuralNetworkParameters.foldparameters`, which reaches a leaf at any depth and allocates nothing.
-# A whole set of parameters, at any depth: [`_sumsq_leaves`](@ref) recurses, so the nested
-# plain `NamedTuple` costs nothing to cover, and leaving it out cost something. `GeometricBase.l2norm`
-# is variadic, so an uncovered `NamedTuple` did not raise a `MethodError` naming `l2norm` — it was
-# splatted into `L2norm(::NamedTuple, ::Matrix, ::Matrix, …)` and reported against a function the caller
-# never named. `scripts/walk_compile_cost.jl` is where that surfaced.
 solution_scale(ps::NetworkParameters) = √_sumsq_leaves(solution_scale, ps)
 
 # The norm of a horizontal lift is taken over its *free parameters*, i.e. over `Base.parent`, and in
 # quadrature -- the same intrinsic-versus-ambient distinction `_dot` documents. Leaving it to the
-# `AbstractMatrix` fallback below would give the ambient Frobenius norm, which counts each
-# off-diagonal block twice and so comes out `√2` times too large; that is what a
-# `GrassmannLieAlgHorMatrix` used to get, silently, in `step_αmax`, `curvature_is_usable`, `rxₐ` and
-# `rg`. Written out for `StiefelLieAlgHorMatrix` this is `√(l2norm(a.A)^2 + l2norm(a.B)^2)`, which is
-# what it was.
+# `AbstractMatrix` fallback would give the ambient Frobenius norm, which counts each off-diagonal
+# block twice and so comes out `√2` times too large in `step_αmax`, `curvature_is_usable`, `rxₐ` and
+# `rg`. For a `StiefelLieAlgHorMatrix` this is `√(l2norm(a.A)^2 + l2norm(a.B)^2)`.
 #
-# `_sumsq_leaves` over the blocks and not `sum(abs2 ∘ l2norm, ·)`, which is what stood here. At one or
-# two blocks the two are the same arithmetic — `sum` over a 2-tuple is one `+` — so this buys nothing
-# and is not meant to: it makes every quadrature sum in the package the same fold, which is worth more
-# than keeping the last `sum` over a heterogeneous tuple. `parent(a)` and not `a`: `foldparameters`
-# treats a lift as a *leaf*, so passing the lift itself would call this method on it again, forever.
+# `_sumsq_leaves` over the blocks, so that every quadrature sum in the package is the same fold.
+# `parent(a)` and not `a`: `foldparameters` treats a lift as a *leaf*, so the lift itself would call
+# this method on it again, forever.
 l2norm(a::AbstractLieAlgHorMatrix) = √_sumsq_leaves(l2norm, parent(a))
 
 # The same over the free parameters, for the same reason, for the four types that keep theirs in one
 # vector: `GeometricBase`'s `AbstractArray` method would take the norm of the `n²` entries instead.
 l2norm(a::VectorStorageMatrix) = l2norm(parent(a))
 
-# Two methods stood here until 0.6.0, `l2norm(a::AbstractMatrix) = l2norm(vec(a))` and
-# `l2norm(a::AbstractFloat) = norm(a)`. Both were type piracy of the plainest kind -- `l2norm` is
-# `GeometricBase.Utils.l2norm`, which `SimpleSolvers` only re-exports, and both argument types are
-# `Base`'s -- so every package that loaded this one inherited them. They were **issue #16 group 1**,
-# and their own comment said where they belonged.
+# The norm of a matrix and of a number are `GeometricBase`'s, which owns `l2norm`; a method here for
+# a `Base` type would be type piracy.
 #
-# They are there now. `GeometricBase` 0.14.9 takes `L2norm(x::AbstractArray)` where it had
-# `AbstractVector`, which is the matrix method with the `vec` removed, and its `L2norm(x::Real) = x^2`
-# already gave `abs` for an `AbstractFloat` -- so the second of the two had been redundant as well as
-# pirated.
-#
-# Taking no `vec` is not only a matter of ownership. `vec` of a `Matrix` allocates a 32-byte reshape
-# wrapper, so `l2norm` of a parameter set would cost 32 bytes per matrix leaf, per call, on every
-# stopping criterion of every iteration of `solve!`.
-#
-# `l2norm` of a whole set is **not** defined here, and cannot be: `l2norm` is `GeometricBase`'s and
-# `NetworkParameters` is `NeuralNetworkParameters`', so a method here would own neither side of its own
-# signature. It is `NeuralNetworkParameters`' own `L2norm(::NetworkParameters)`, in
-# `src/norms.jl`, from which the generic `l2norm(x) = sqrt(L2norm(x))` follows. The body
-# there is this fold with `foldparameters` written out in place of [`_sumsq_leaves`](@ref), and it
-# calls `l2norm` on the *leaves* — so the two methods below are what keep deciding the contribution of
-# a lift and of a [`VectorStorageMatrix`](@ref). See issue #16.
-#
-# The block norms combine in quadrature, as for `StiefelLieAlgHorMatrix` above: summing them (which
-# this used to do) overestimates the ℓ² norm by up to `√k` for `k` blocks and thereby every stopping
-# criterion computed from it.
+# `l2norm` of a whole set is **not** defined here: `l2norm` is `GeometricBase`'s and
+# `NetworkParameters` is `NeuralNetworkParameters`', so a method here would own neither side of its
+# signature. `NeuralNetworkParameters` defines `L2norm(::NetworkParameters)`, from which the generic
+# `l2norm(x) = sqrt(L2norm(x))` follows. It calls `l2norm` on the *leaves*, so the two methods above
+# decide the contribution of a lift and of a `VectorStorageMatrix`, and the leaves combine in
+# quadrature.
 
 @doc raw"""
     _sumsq_leaves(f, x)
 
 ``\sum_i f(x_i)^2`` over the leaves of `x`, at whatever depth they are.
 
-The quadrature sum `l2norm` and [`solution_scale`](@ref) both combine their blocks in, written once:
-the two differ only in `f`, and each used to carry its own four-method copy of this recursion.
-
-(`l2norm` in plain code and not an `@ref`, for the reason `descent_direction.jl` gives about
-`solve_with_status`: it is `GeometricBase`'s function, so it has no docstring in this package's docs to
-point at, and `docs/src/api.md` renders every docstring here.)
+The quadrature sum in which `l2norm` and [`solution_scale`](@ref) both combine their blocks; the two
+differ only in `f`. (`l2norm` is `GeometricBase`'s function, so it has no docstring here to link to.)
 
 # Implementation
 
 `NeuralNetworkParameters.foldparameters` and not `map` + `sum` over one level, because a container is a
 tree of layers and the quantities to combine are at its *leaves* — `map` would hand `f` a whole layer,
 for which neither of them has a method. `foldparameters` recurses on the branches and so reaches a leaf
-at any depth, and it allocates nothing.
+at any depth, and it allocates nothing. Its body is generated at literal indices, so its compile time
+is linear in the number of children of a branch.
 
-`foldparameters` and emphatically not `foldstorage`, which is the pairing `_dot` wants and would be
-wrong here. `foldstorage` descends past a leaf into the numbers it stores, and
+`foldparameters` and not `foldstorage`, which is the pairing `_dot` wants and would be wrong here.
+`foldstorage` descends past a leaf into the numbers it stores, and
 [`solution_scale`](@ref)`(Y::Manifold)` is `√size(Y, 2)` — a *nominal* value that has nothing to do with
-those numbers. It is the one leaf method whose answer would change; `l2norm` of a lift or of a
-[`VectorStorageMatrix`](@ref) is over the free parameters either way, so those two agree by coincidence
-rather than by this choice.
-
-Four methods of a `Base.tail` recursion stood here until this release, and they are the subject of issue
-#70: a branch of `k` children yields `k` specialisations whose argument types are each `O(k)` long,
-which cost 26 s to compile at `k = 369` on Julia 1.12 and 35 s on 1.13. Upstream's fold is one
-`@generated` body at literal indices and has no such shape. See the changelog.
+those numbers.
 
 `false` and not `zero(T)` for the initial value: there is no `T` in scope, and `false` is the strong
 zero that takes its type from whatever it is added to, so a one-block set adds it to that block's value
-and stays a `T`. A set has one element type, so every leaf gives it the same `T`. The reason not to
-write `zero(parameter_eltype(x))` here is that it would put upstream's `_promote_eltypes` generated
-body on this path, per branch shape, which is a compile cost on the very walk #70 was about.
+and stays a `T`. A set has one element type, so every leaf gives it the same `T`.
+`zero(parameter_eltype(x))` would put the generated `_promote_eltypes` body of upstream on this path,
+once per branch shape, which costs compile time.
 
-`f` is annotated `::F where {F}`, which is now belt and braces rather than load-bearing. It used to be
-the latter: two of the four methods only *passed `f` along*, and Julia does not specialise on a function
-argument it never sees called, so without the annotation `f` arrived boxed and each leaf cost a dynamic
-dispatch — 128 bytes against 64 on a set of `Float32` and `Float64` leaves, which NeuralNetworkParameters
-0.4 still built. The single method below closes over `f` instead, and a closure is a `new`, which counts
-as a use, so measured the annotation changes nothing on any shape. It is kept because the obligation it
-discharges is real for whoever hands an `op` on: upstream's `foldparameters` docstring says so, and its
-own `op` slot does de-specialise -- costing nothing only because it is `@inline` and folds into this
-body, where the closure's type is a constant.
+`f` is annotated `::F where {F}`, so that the method specialises on it even where it only passes `f`
+on: Julia does not specialise on a function argument that it does not see called. The docstring of
+`foldparameters` asks this of every caller that hands on an `op`.
 """
 _sumsq_leaves(f::F, x) where {F} = foldparameters((acc, y) -> acc + abs2(f(y)), false, x)
 
@@ -257,14 +214,10 @@ _sumsq_leaves(f::F, x) where {F} = foldparameters((acc, y) -> acc + abs2(f(y)), 
 
 Whether `a` holds any value that is not finite.
 
-This was `contains_nan`, and tested `isnan` only. `NaN` is the *last* thing a diverging solve
-produces: it reaches `Inf` first, and before that every finite magnitude on the way. On the SVD
-problem of `test/verification/svd_optim.jl` the diverging solve passed through
-`f = 1.2e169` and `check(Y) = 1.07e200` — both perfectly ordinary `Float64`s, neither of them `NaN`
-— and only went `NaN` on the iteration after that. By then it had been off the manifold for two
-iterations.
+`NaN` is the *last* thing a diverging solve produces: it reaches `Inf` first, and before that every
+finite magnitude on the way, so this tests `isfinite` and not `isnan`.
 
-`isfinite` still does not catch `1e200`, which is why it is not the only guard; see
+`isfinite` does not catch `1e200`, so it is not the only guard; see
 [`convergence_measures`](@ref) for the one that does.
 """
 contains_nonfinite(a::Real) = !isfinite(a)
@@ -315,55 +268,38 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
 
 !!! info "Which iterate `g_converged` is a statement about"
     `rg` is [`latest_gradient`](@ref), i.e. ``\|\nabla{}f(x_{k+1})\|`` at the iterate the step ended
-    at, for every method. It used to be ``\|\nabla{}f(x_k)\|`` at the one the step started from, and
-    for the (quasi-)Newton caches it was worse than that: [`trial_slope`](@ref) evaluates the trial
-    gradient into the same array, so `rg` was ``\|\nabla{}f\|`` at whatever point the line search
-    last probed. On Rosenbrock from ``(-1.2, 1)`` with the default `Backtracking` — which probes
-    ``\alpha = 0``, so that point is ``x_k`` — `rg` came out `5.8\times10^4` times the true residual
-    for `BFGS` and `299` times it for `DFP`. It errs high near a minimiser, so `g_converged` fired
-    *late*; that was issue A8.
+    at, for every method, and not at the iterate it started from or at the last point that the line
+    search probed.
 
-    The distinction is not cosmetic for a direction that carries momentum. Under
+    The distinction matters for a direction that carries momentum. Under
     [`SimpleSolvers.Static`](@extref) a stale `rg` is harmless, because the direction is a scaled
     gradient and a vanishing gradient means a vanishing step. Under a line search accurate enough to
-    drive ``\nabla{}f(x_{k+1}) \approx 0`` it is not: the momentum term still moves the iterate, so
-    `g_converged` fired one step *past* the minimiser. `MomentumMethod` + `Backtracking` on
-    ``f(x) = 1 + x^2`` from ``x = 1`` stopped at ``x = -0.2`` reporting `rg = 0`, where
-    ``\|\nabla{}f(x)\| = 0.4`` and the momentum was ``2``. Over `Bisection`, `Quadratic` and
-    `BierlaireQuadratic` this left `MomentumMethod` at ``\|x\| = 0.35`` and `Adam` at
-    ``\|x\| = 1.16``, i.e. barely moved from `ones(3)`, both reporting convergence. Refreshing costs
-    one gradient evaluation per iteration and never cost an iteration in any case measured.
+    drive ``\nabla{}f(x_{k+1}) \approx 0`` it is not: the momentum term still moves the iterate, and
+    a stale `rg` fires `g_converged` one step *past* the minimiser. The refresh costs one gradient
+    evaluation per iteration.
 
 !!! warning "What `x_converged` is guarded against, and what it is not"
     ``\|x - x'\|/\|x'\|`` measures "the iterate stopped moving" only while ``\|x'\|`` is bounded, and
-    a diverging solve is exactly the case where it is not. On the SVD problem of
-    `test/verification/svd_optim.jl`, `BFGS` + `Bisection` + `Geodesic` once left the
-    manifold on iteration 4 with an iterate of magnitude ``10^{100}``. The step that took it there
-    had ``\|\delta\| = 345`` — not remotely a solve that has stopped moving — but the *relative*
-    change was ``345/10^{100} \approx 10^{-98}``, far under `x_reltol`, so `x_converged` fired and
-    the solve reported success. Two guards, neither of which invents a tolerance:
+    a diverging solve is the case where it is not: a large step from an iterate of magnitude
+    ``10^{100}`` is a small *relative* change. Two guards, neither of which invents a tolerance:
 
     - the denominator is [`solution_scale`](@ref) and not ``\|x'\|``. On a manifold the two are the
-      same number — ``\|Y\|_F = \sqrt{n}`` exactly — right up to the point where the iterate leaves
-      the manifold, and there the constant is the honest scale and the measured norm is the
-      divergence. The trace above gives ``345/\sqrt{3} \approx 199`` in place of ``10^{-98}``.
+      same number — ``\|Y\|_F = \sqrt{n}`` exactly — up to the point where the iterate leaves the
+      manifold, and there the constant is the true scale and the measured norm is the divergence.
     - `x_converged` also requires `!f_increased`. An iterate that has stopped moving is evidence of
-      convergence only if the objective did not just go up, and in that trace it went `3.38 → 9.13 →
-      1.2\times10^{169}`. This is the only guard the *Euclidean* case has, because nothing there
-      bounds ``\|x\|``.
+      convergence only if the objective did not just go up. This is the only guard of the
+      *Euclidean* case, because nothing there bounds ``\|x\|``.
 
-    What is still not covered: a Euclidean solve that runs away *downhill*, where ``\|x\|`` grows
-    without bound and `f` decreases at every step, has no scale to be measured against and is still
-    reported as converged. Closing that needs a threshold on ``\|x\|`` that no property of the
-    problem supplies — which is the *same* shape of gap as the one
-    [`DEFAULT_STEP_CEILING`](@ref) closes on a manifold, and the reason it stays open here: on a
-    manifold the geometry supplies the threshold and in ``\mathbb{R}^n`` nothing does.
+    Not covered: a Euclidean solve that runs away *downhill*, where ``\|x\|`` grows without bound
+    and `f` decreases at every step, has no scale to be measured against and is reported as
+    converged. A threshold on ``\|x\|`` would close it, but no property of the problem supplies one:
+    on a manifold the geometry supplies [`DEFAULT_STEP_CEILING`](@ref), and in ``\mathbb{R}^n``
+    nothing does.
 
-    Note also that the divergences above are fixed at their source — [`linesearch_rejected`](@ref)
-    and [`curvature_is_usable`](@ref) for a search that *failed* and was believed anyway,
-    `DEFAULT_STEP_CEILING` for one that *succeeded* on a step too long for the manifold — and that
-    [`contains_nonfinite`](@ref) catches the `Inf`/`NaN` end of the range, so nothing measured
-    reaches any of this.
+    The divergences are also stopped at their source — [`linesearch_rejected`](@ref) and
+    [`curvature_is_usable`](@ref) for a search that *failed*, `DEFAULT_STEP_CEILING` for one that
+    *succeeded* on a step too long for the manifold — and [`contains_nonfinite`](@ref) catches the
+    `Inf`/`NaN` end of the range.
 """
 function convergence_measures(status::OptimizerStatus, config::Options)
     # `&& !f_increased`: both branches above say "the iterate stopped moving", which is evidence of
@@ -371,18 +307,16 @@ function convergence_measures(status::OptimizerStatus, config::Options)
     x_converged = (x_abschange(status) ≤ x_abstol(config) ||
                    x_relchange(status) ≤ x_reltol(config)) && !status.f_increased
 
-    # `f_relchange` is a *successive* change, so it is gated on `f_suctol`, which SimpleSolvers
-    # 0.9 introduced for exactly that and gave `f_reltol`'s former default. `f_reltol` itself is
-    # now anchored to the initial residual and defaults to `√eps(T)` -- seven orders of magnitude
-    # looser -- so keeping it here would stop a `Static` line search long before the minimizer.
+    # `f_relchange` is a *successive* change, so it is gated on `f_suctol`. `f_reltol` is anchored to
+    # the initial residual and defaults to `√eps(T)`, much looser, so it would stop a `Static` line
+    # search long before the minimizer.
     f_converged = f_abschange(status) ≤ f_abstol(config) ||
                   f_relchange(status) ≤ f_suctol(config)
 
     f_converged_strong = f_change(status) ≤ f_mindec(config) * f_change_approx(status)
 
-    # SimpleSolvers 0.9 removed `Options.g_restol` and gave its role to `f_reltol`, whose default
-    # (`√eps(T)`) is the same number `g_restol` defaulted to. The residual of an optimizer is
-    # `‖∇f(x)‖`, so this is the corresponding gate here.
+    # `Options` has no gradient tolerance; `f_reltol` is the residual gate, with the default
+    # `√eps(T)`. The residual of an optimizer is `‖∇f(x)‖`, so this is the corresponding gate here.
     g_converged = g_residual(status) ≤ f_reltol(config)
 
     (x_converged, f_converged, f_converged_strong, g_converged)
@@ -405,11 +339,8 @@ Check if the optimizer has converged.
 # Extended help
 
 !!! info "A non-finite iterate stops the solve"
-    The last of those used to be reported and then ignored: the `@error` below fired and the loop
-    carried on. Nothing an iteration does to a `NaN` iterate can recover it, so the only effect was
-    to burn the whole iteration budget printing the same message. On the SVD problem of
-    `test/verification/svd_optim.jl` one starting point spent all 100 000 iterations of a
-    raised cap that way, at roughly one `@error` per iteration.
+    No iteration can recover a `NaN` iterate, so the solve stops with an `@error` and does not spend
+    the rest of its iteration budget.
 
     A solve that stops here is *not* converged — [`isconverged`](@ref) reads the three convergence
     flags and none of them is set by this — so a caller that checks the status rather than only the
@@ -427,8 +358,6 @@ function meets_stopping_criteria(status::OptimizerStatus, config::Options, itera
         (status.f_increased && !config.allow_f_increases) ||
         iterations ≥ config.max_iterations ||
         (iterations ≥ 1 && nonfinite) ||
-        # `f_abstol_break` is the only `*_break` field SimpleSolvers 0.9 kept; the four that
-        # are gone (`x_abstol_break`, `x_reltol_break`, `f_reltol_break`, `g_restol_break`)
-        # all defaulted to `Inf`, so dropping them changes nothing at default `Options`.
+        # `f_abstol_break` is the only `*_break` field of `Options`.
         status.rfₐ > config.f_abstol_break
 end

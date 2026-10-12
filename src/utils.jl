@@ -143,15 +143,6 @@ function add!(C::AbstractVecOrMat, A::AbstractVecOrMat, B::AbstractVecOrMat)
     C .= A .+ B
 end
 
-# There used to be a parameter-set arm of `add!` here, recursing over the leaves. Nothing in `src/`,
-# `test/`, `docs/` or `scripts/` ever called it, and `GeometricMachineLearning` deleted its own
-# `NamedTuple` arm of `AbstractNeuralNetworks.add!` for the same reason in 0.7 -- so this had the
-# distinction of being the only signature in 0.6.0 that got *narrower* rather than wider. It was
-# `::NamedTuple` and became `::NetworkParameters`, which drops a nested plain `NamedTuple` and any
-# layer whose weights do not share one element type: exactly the two cases every other primitive in
-# this release went out of its way to keep. Deleted rather than widened, since widening dead code only
-# makes it harder to notice.
-
 # The gradient of a bare manifold point is evaluated on its dense storage, flattened column-major,
 # and projected with `rgrad`. `vec(parent(x))` and not `vec(x)`: the latter is a lazy reshape of the
 # manifold, which reads it entry by entry and so raises on a device.
@@ -164,17 +155,15 @@ end
 # the reconstruction of the point, and `GradientFunction`'s `∇F!(g, v)` gets the flat storage `v`
 # and writes the Euclidean gradient into `g`.
 #
-# `Manifold` and not `StiefelManifold`: hardcoding the latter is what made a bare
-# `GrassmannManifold` a `MethodError` at `Optimizer` construction (issue A11). The manifold is
-# rebuilt with `manifold_constructor` and not with `typeof(x)`, for the reason that function gives:
-# under `GradientAutodiff` the argument this closure is called on is a vector of `ForwardDiff.Dual`s,
-# whose element type is not `x`'s.
+# `Manifold` and not `StiefelManifold`, so that a bare `GrassmannManifold` has the methods too. The
+# manifold is rebuilt with `manifold_constructor` and not with `typeof(x)`, for the reason that
+# function gives: under `GradientAutodiff` the argument this closure is called on is a vector of
+# `ForwardDiff.Dual`s, whose element type is not `x`'s.
 #
-# These dispatch on `Manifold`, which is this package's type, so none is type piracy; the
-# `Matrix` pair that used to stand below them was. `GradientAutodiff(F, ::AbstractMatrix)` is
-# `SimpleSolvers`' own method as of 0.13.2 -- the same body with the `Manifold` reconstruction taken
-# out -- and this one takes precedence over it for a manifold. The functor is [`RiemannianGradient`](@ref)
-# below.
+# These dispatch on `Manifold`, which is this package's type, so none is type piracy.
+# `GradientAutodiff(F, ::AbstractMatrix)` is `SimpleSolvers`' own method — the same body with the
+# `Manifold` reconstruction taken out — and this one takes precedence over it for a manifold. The
+# functor is `RiemannianGradient` below.
 _on_storage(F, x::Manifold) = _x -> F(manifold_constructor(x)(reshape(_x, size(x)...)))
 
 GradientAutodiff(F, x::Manifold) = GradientAutodiff(_on_storage(F, x), vec(parent(x)))
@@ -198,15 +187,11 @@ else.
 
 # Implementation
 
-This type exists to own a signature. The projection used to be written as methods on
-`SimpleSolvers.Gradient` itself, which for a `Matrix` and for a parameter set was type piracy: the
-function is `SimpleSolvers`' and neither `Base.Matrix` nor
-[`NeuralNetworkParameters.NetworkParameters`](@extref) is this package's, so any package that loaded
-this one changed what calling *any* gradient on either of those meant. Unlike the two `Gradient`
-constructors that went upstream in 0.6.1, these bodies cannot follow them: `rgrad` is this package's
-Riemannian projection, and `SimpleSolvers` neither has it nor should. Wrapping is the other way to
-de-pirate a method, and it is the shape `GeometricMachineLearning` already uses for its
-`_GMLGradient`. See issue #16.
+This type exists to own a signature. A method of `SimpleSolvers.Gradient` itself on a `Matrix` or on
+a parameter set would be type piracy: the function is `SimpleSolvers`' and neither `Base.Matrix` nor
+[`NeuralNetworkParameters.NetworkParameters`](@extref) is this package's. The body cannot go
+upstream either: `rgrad` is the Riemannian projection of this package, and `SimpleSolvers` does not
+have it. So the gradient is wrapped, as `GeometricMachineLearning` does for its `_GMLGradient`.
 
 [`Optimizer`](@ref) wraps for you, and only where it changes something — see `_riemannian_gradient`.
 A `Manifold` iterate needs no wrapper, because `Manifold` is this package's type and the method above

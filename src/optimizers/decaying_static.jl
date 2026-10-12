@@ -27,13 +27,12 @@ asserts this against a live solve).
 [`Adam`](@ref) produces a direction of magnitude ``\approx{}1`` per component whatever the gradient
 is — that scale-freeness is the point of it. With a constant step ``\alpha`` the iterate therefore
 does not converge to the minimizer but circles it at a distance of order ``\alpha``, so no
-gradient-based stopping criterion is ever met and the solve runs until `max_iterations`. A step size
+gradient-based stopping criterion is ever met and the solve runs to `max_iterations`. A step size
 that goes to zero is what turns it back into a convergent iteration.
 
-This is what the `AdamWithDecay` method of v0.1.0 did with its own `η₁`, `η₂` and `n_epochs` fields.
-It was removed when the step size moved out of the [`OptimizerMethod`](@ref)s and into the line
-search; this is the replacement, and being a `LinesearchMethod` it composes with
-[`GradientMethod`](@ref) and [`MomentumMethod`](@ref) just as well.
+The step size is the business of the line search, not of the [`OptimizerMethod`](@ref), so the
+schedule is a `LinesearchMethod`; it composes with [`GradientMethod`](@ref) and
+[`MomentumMethod`](@ref) as well.
 
 # Examples
 
@@ -91,8 +90,8 @@ remark on ``\\alpha(0)`` there).
 step_size(method::DecayingStatic{T}, t::Integer) where {T} = method.γ^t * method.η₁
 step_size(method::Static, ::Integer) = method.α
 
-# `solve_with_status` and not `solve`: since SimpleSolvers 0.12 a `LinesearchMethod` implements this
-# one and gets `solve` — the call plus `linesearch_warnings` — derived from it for free. The generic
+# `solve_with_status` and not `solve`: a `LinesearchMethod` implements this one and gets `solve` —
+# the call plus `linesearch_warnings` — derived from it. The generic
 # `solve_with_status` raises rather than deriving itself from `solve`, so a method that implements
 # only the latter is reached through the reporting path from inside every iteration of a solve, which
 # is the one thing the `LinesearchMethod` contract promises does not happen.
@@ -145,14 +144,10 @@ Neither carries the element type of the parameters; the optimizer converts both.
 
 # Why it exists
 
-`GeometricMachineLearning` carried an `AdamOptimizerWithDecay` that bundled Adam's `ρ₁`, `ρ₂`, `δ`
-with a learning-rate schedule `η₁`, `η₂`, `n_epochs`, and computed the same
-``\gamma = \exp(\log(\eta_2/\eta_1)/n)``. Since 0.2.0 the two halves of that live in different
-places here — the direction in an [`OptimizerMethod`](@ref), the step size in a
-`SimpleSolvers.LinesearchMethod` — which is the right split but left no single name to migrate that
-method to. This is it, and GML deleted its own copy in 0.5, where both packages exporting the name
-made `using` the two of them together an error; see
-[GeometricMachineLearning#239](https://github.com/JuliaGNI/GeometricMachineLearning.jl/pull/239).
+The name comes from `GeometricMachineLearning`, for Adam's `ρ₁`, `ρ₂`, `δ` together with a
+learning-rate schedule `η₁`, `η₂`, `n_epochs` and the same ``\gamma = \exp(\log(\eta_2/\eta_1)/n)``.
+Here the two halves live in different places — the direction in an [`OptimizerMethod`](@ref), the
+step size in a `SimpleSolvers.LinesearchMethod` — and this function is the one name that holds both.
 
 !!! warning "This decays the learning rate, not the weights"
     Despite the shared word, this has nothing to do with [`AdamWithEuclideanDecay`](@ref). That one

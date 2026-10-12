@@ -64,8 +64,7 @@ true
     from it as the step grows, so the generator of the curve's velocity turns with ``\alpha`` instead
     of staying ``B``. [`retraction_differential`](@ref) is what supplies it, and with it
     [`trial_slope`](@ref) is the exact derivative of a line search's merit under either retraction.
-    Before 0.2.0 the slope was paired against ``B`` regardless, which made it only a first-order
-    approximation under `Cayley`.
+    A slope paired against ``B`` would be only a first-order approximation under `Cayley`.
 
 See [`cayley`](@ref) for the implementation and [`Geodesic`](@ref) for the alternative.
 """

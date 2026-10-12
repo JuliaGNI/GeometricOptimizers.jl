@@ -5,8 +5,7 @@
 #     julia --project=. scripts/optimizer_allocations.jl
 #
 # This is the harness behind the table in the 0.6.0 CHANGELOG entry on the flat buffers, and it exists
-# because of the rule the *Open Issues* preamble states: treat a number as reproducible only where the
-# harness that produced it is named. It is also the answer to the obvious cheaper measurement, which is
+# because a number is reproducible only where the harness that produced it is named. It is also the answer to the obvious cheaper measurement, which is
 # wrong — `@allocated update!(cache, state, x, g)` needs one call to compile and one to measure, and
 # calling `update!` twice at one iterate leaves `Δg` identically zero, because the cache advances
 # `state.ḡ` as soon as it has used it. The `γᵀQγ` and both `outer!`s sit inside the

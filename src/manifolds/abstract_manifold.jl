@@ -31,18 +31,12 @@ on a `JLArray` cannot rebuild its `Q`. Measured on an M4 Max with scalar indexin
 runs on Metal and its ``\|Q^TQ - \mathbb{I}\|`` is *smaller* than the host Householder QR's at every
 size tried.
 
-**The second pass is not a refinement.** Measured on Metal in `Float32` at the shape
-[`global_section`](@ref) uses, ``\|Q^TQ - \mathbb{I}\|`` after one pass is 9.7e-6 at ``N = 20`` and
-1.9e-3 at ``N = 400``, against 7.1e-7 and 7.7e-6 after the second — and the manifold tests assert
-`check(Y) < 1e-14` in `Float64`.
+**The second pass is not a refinement.** One pass leaves ``\|Q^TQ - \mathbb{I}\|`` orders of
+magnitude above the round-off of the second, and the manifold tests assert `check(Y) < 1e-14` in
+`Float64`.
 
-**On a device this keeps the point there; it is not the faster route.** Measured by
-`scripts/orthonormalization_device_cost.jl` on an M4 Max (Julia 1.13.1, Metal 1.11.1) in `Float32`
-at the ``N\times(N-3)`` shape [`global_section`](@ref) uses — a cold session, one warm-up, the median
-of five runs, `Metal.synchronize()` in the timed region and the host on one BLAS thread: at
-``N = 20`` this takes 7.3 ms on Metal, against 46 μs for a host `qr!` and 0.60 ms for the round trip
-that downloads `A`, factorizes it on the host and uploads ``Q``; at ``N = 400``, 29 ms against 12 ms
-and 19 ms. At these sizes the device time is mostly launch and synchronisation latency.
+**On a device this keeps the point there; it is not the faster route.** The manual page
+[Global Tangent Spaces](@ref) gives the measurements of both statements.
 
 **Forming ``A^TA`` squares the condition number**, which is what the `nothing` is for. `cholesky`
 with `check = false` reports a Gram matrix that is no longer positive definite rather than throwing,
@@ -160,10 +154,8 @@ function Base.rand(rng::AbstractRNG, ::CPU, ::Type{MT},
     # `MT` may name the storage array type as well as the element type --
     # `StiefelManifold{Float64, Matrix{Float64}}` -- and is then already concrete, so applying a
     # further parameter to it is an error. `StiefelManifold{Float64}` still needs one. The branch
-    # is on a type parameter and folds away. This used to be a second method in
-    # `stiefel_manifold.jl`, written against `StiefelManifold{T, AT}` and so available to that one
-    # manifold only; `Manifold{T}` has a single parameter and cannot name the storage type, which
-    # is why this is a branch rather than a signature.
+    # is on a type parameter and folds away. `Manifold{T}` has a single parameter and cannot name the
+    # storage type, which is why this is a branch rather than a signature.
     (isconcretetype(MT) ? MT : MT{typeof(Q)})(Q)
 end
 
@@ -326,9 +318,7 @@ arithmetic this is zero and what it actually returns is accumulated round-off.
 so it carries its own method. Anything defining a further manifold has to decide which of the two
 it is rather than inherit this one by default.
 
-This is the assertion the manifold tests rest on. It used to exist for [`StiefelManifold`](@ref)
-only, which is why the accuracy loss in [`GeometricOptimizers.𝔄`](@ref) went unnoticed for so long:
-half the retraction paths had nothing that could have caught it.
+This is the assertion the manifold tests rest on, for every retraction path.
 
 # Examples
 
@@ -363,8 +353,8 @@ The one-argument constructor of `x`'s manifold: `GrassmannManifold` for a
 
 The type *name* and not `typeof(x)`, because the array the result is applied to may have a different
 element type from `x`'s: the closure `GradientAutodiff` differentiates is handed a vector of
-`ForwardDiff.Dual`s. And `x`'s manifold rather than a hardcoded `StiefelManifold`, which is what used
-to make a bare one a `MethodError` at [`Optimizer`](@ref) construction (issue A11).
+`ForwardDiff.Dual`s. And `x`'s manifold rather than a hardcoded `StiefelManifold`, so that a bare
+[`GrassmannManifold`](@ref) reaches [`Optimizer`](@ref) too.
 
 Its callers are `GeometricOptimizers._similar(::Manifold)`, `copyto!(::Manifold, ::Manifold)` and the
 reconstruction that `GradientAutodiff(F, ::Manifold)` and `GradientFiniteDifferences(F, ::Manifold)`
@@ -375,11 +365,9 @@ compose `F` with. The flattening does not call it: `NeuralNetworkParameters.rebu
 manifold_constructor(x::Manifold) = Base.typename(typeof(x)).wrapper
 
 # No `Manifold` defines `setindex!`, so the generic `AbstractArray` `copyto!` — which routes through
-# it — is not available to any of them. This method existed for `StiefelManifold` alone, which is why
-# a `NamedTuple` holding a `GrassmannManifold` died with a `CanonicalIndexError` in
-# `update!(::QuasiNewtonCache, …)`; see issue A11. It returns `A` and not `nothing`: that is the `copyto!`
-# contract, and it is what `copyto!(::GrassmannLieAlgHorMatrix, …)` and
-# `copyto!(::GlobalSection, …)` next to it already do.
+# it — is not available to any of them, and every manifold needs this method. It returns `A` and not
+# `nothing`: that is the `copyto!` contract, and it is what `copyto!(::GrassmannLieAlgHorMatrix, …)`
+# and `copyto!(::GlobalSection, …)` do.
 #
 # The species check is a runtime one because a type parameter shared by both arguments cannot
 # express it: the parameter binds the whole type, storage array included, so a host `A` and a device
