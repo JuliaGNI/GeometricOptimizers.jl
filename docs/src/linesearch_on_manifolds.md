@@ -127,8 +127,9 @@ iterations and crawls to the gradient gate in 47 115 of them. Raising only the i
 from 1 to 3, brought the same solve to 229 — which is what identifies the ceiling rather than DFP
 itself as the cause.
 
-The remedy is the expansion phase of SimpleSolvers: `Backtracking(T; expand = true)` lengthens an accepted *first* trial step for at most `nexpand = 3`
-rounds of at most a factor `q = 10` each, while every longer trial still satisfies sufficient decrease
+The remedy is the expansion phase of SimpleSolvers: `Backtracking(T; expand = true)` lengthens an
+accepted *first* trial step for at most `nexpand = 3` rounds of at most a factor `q = 10` each,
+while every longer trial still satisfies sufficient decrease
 and strictly improves the merit. It is close to free — under 4% more objective evaluations per
 iteration, and *exactly* nothing on a well-scaled problem, because the extrapolation reuses
 ``\varphi(0)``, ``\varphi'(0)`` and ``\varphi(\alpha)``, all of which are known once the trial step
@@ -258,8 +259,9 @@ across eight starting points on the SVD problem it ranges over 385–1 118 itera
 The curvature condition, and not the line search, keeps that range narrow. A ``Q`` built from secant
 pairs with ``\delta^T\gamma \leq 0`` is badly conditioned on this problem, and how quickly the
 expansion phase digs it back out is close to arbitrary. Enforcing the curvature condition — see
-[`curvature_is_usable`](@ref) — takes a factor of 92 off the spread. `StrongWolfe(T; c₂ = 0.1)` is still somewhat faster and steadier — 296–868 iterations
-across the same eight, at 18 127 objective evaluations against the default's 20 001 — and remains the
+[`curvature_is_usable`](@ref) — takes a factor of 92 off the spread. `StrongWolfe(T; c₂ = 0.1)` is
+still somewhat faster and steadier — 296–868 iterations across the same eight, at 18 127 objective
+evaluations against the default's 20 001 — and remains the
 choice to pass explicitly on a DFP-heavy workload. It has to be ``c_2 = 0.1`` and not
 `StrongWolfe`'s own default of ``0.9``: at ``0.9`` the strong Wolfe conditions already hold at
 ``\alpha = 1`` on 99.4% of iterations, so the bracketing phase never fires and the solve crawls just as
@@ -279,8 +281,9 @@ average that is deliberately *not* required to descend on any individual step, s
 sufficient-decrease search has nothing to work with and would spend every step reporting that it found
 no descent direction.
 
-[`DecayingStatic`](@ref) is the weaker of the two ways to make such a solve terminate. It drives the step to zero geometrically, so
-the solve does stop on a criterion, but the schedule is summable: it stops short at
+[`DecayingStatic`](@ref) is the weaker of the two ways to make such a solve terminate. It drives
+the step to zero geometrically, so the solve does stop on a criterion, but the schedule is
+summable: it stops short at
 ``\|\nabla f\| \approx 10^{-3}`` with ``\|\Delta x\|`` already around ``10^{-13}``. A searching line
 search reaches about ``10^{-7}`` on the same Adam problem.
 

@@ -637,8 +637,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `retraction_differential` disproved it (the figure moved 550 → 529 and the gap stayed). This round
   removed the second candidate too: the step ceiling turned out to have nothing to do with it either —
   `175 vs 529` with the ceiling on is the same pair as with it off, since the per-block ceiling does not
-  bind on this seed. Both docstring and docs page now say the remainder is unexplained rather than
-  offering a third guess.
+  bind on this seed. The "Linesearches on Manifolds" page says the remainder is unexplained rather
+  than offering a third guess.
 
   An intermediate version of the ceiling *did* move the `Geodesic` figure, to 308, and it would have
   been easy to read that as the third explanation. It was an artefact of combining the two manifold
@@ -762,7 +762,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   latter is what is written today, and it is enough to use the algorithm honestly but not enough to
   close [#52]'s first acceptance criterion.
 
-### K38 · Manual pages carry release history in their prose
+### K39 · Manual pages carry release history in their prose
 
 - location: `docs/src/retractions.md:494`
 - kind: found late
@@ -774,9 +774,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `AdamWithDecay`"). The prose pass of the source comments and docstrings removed the same history
   from `src/`; these manual pages are outside its scope.
 
-### K39 · The `Bisection` sentence of "Linesearches on Manifolds" contradicts the table above it
+### K40 · The `Bisection` sentence of "Linesearches on Manifolds" contradicts the table above it
 
-- location: `docs/src/linesearch_on_manifolds.md:163`
+- location: `docs/src/linesearch_on_manifolds.md:164`
 - kind: docs
 - found: 2026-08-13
 - evidence: the sentence says that `SimpleSolvers.Bisection` "needs the fewest iterations of any
@@ -798,8 +798,10 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Constructing an `Optimizer` through three nested levels of `kwargs...` splatting and calling `solve!`
   on it *in the same inferred function body* cost **940.86 s** of compile time on 1.12.6 against
   **4.35 s** on 1.13.0-rc2. Neither half is slow alone (0.99 s for the constructor, 2.35 s for
-  `solve!`). Flattening to one level: 6.53 s. A `@noinline` barrier around the construction does not
-  help (925.27 s), and neither does `@nospecialize` on the enclosing function (965 s).
+  `solve!`). Flattening to one level: 6.53 s, and the `Optimizer(x, F)` that splats `kwargs...` once
+  and passes `Options` positionally: 6.71 s (4.15 s on 1.13). A `@noinline` barrier around the
+  construction does not help (925.27 s), and neither does `@nospecialize` on the enclosing function
+  (965 s).
 
   Effect on this project before the fix: the CI suite took 31–42 minutes on 1.12 on all three
   operating systems, against 3–5 minutes on 1.10, 1.13 and nightly, with a single test file accounting

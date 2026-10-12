@@ -118,7 +118,7 @@ end
 # `Base.one` is the `N × N` identity built with a `KernelAbstractions` kernel rather than with
 # `Base._one`'s scalar-indexed diagonal loop, which is what a GPU array cannot serve. `geodesic`
 # reaches it on every retraction; it existed for the Stiefel lift only, so the Grassmann retraction
-# was on the scalar-indexed path. See the note on issue A19.
+# was on the scalar-indexed path.
 @testset "one(::AbstractLieAlgHorMatrix) is the ambient identity, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(123)
     for N in 3:6, n in 1:(N - 1)
