@@ -244,11 +244,14 @@ function __init__()
     register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(_dense(S)))
     register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
     register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
-    register_parameter_type!("StrictlyLowerTriangular", (
-        S, md) -> StrictlyLowerTriangular(_vector(S, md)...))
-    register_parameter_type!("StrictlyUpperTriangular", (
-        S, md) -> StrictlyUpperTriangular(_vector(S, md)...))
-    # These two index positionally where the six above go by name, because they can: the older layout
+    lower = (S, md) -> StrictlyLowerTriangular(_vector(S, md)...)
+    upper = (S, md) -> StrictlyUpperTriangular(_vector(S, md)...)
+    register_parameter_type!("StrictlyLowerTriangular", lower)
+    register_parameter_type!("StrictlyUpperTriangular", upper)
+    # The names the two types had before 0.9, which a file written then carries as its leaf's tag.
+    register_parameter_type!("LowerTriangular", lower)
+    register_parameter_type!("UpperTriangular", upper)
+    # These two index positionally where the ones above go by name, because they can: the older layout
     # covered five types and never a lift, so their `storage` is only ever the `Tuple` this protocol
     # wrote, in the order `parent` returned. A `NamedTuple` from that layout records no key order, so
     # anything that might meet one has to reach for a field name.

@@ -309,6 +309,45 @@ end
     end
 end
 
+@testset "a file written before the triangular types were renamed still loads" begin
+    # Until 0.9 the two types were `LowerTriangular` and `UpperTriangular`, and a file carries the
+    # name its leaf's type had when it was written: in `parameter_type` for this protocol's own
+    # layout, in `gml_type` for GeometricMachineLearning's old one.
+    lower, upper = leaves.lower, leaves.upper
+    old_tags = (("L", lower, "LowerTriangular"), ("U", upper, "UpperTriangular"))
+    function protocol_layout(file)
+        save(file, NetworkParameters((L1 = (L = lower, U = upper),)))
+        h5open(file, "r+") do h5
+            for (key, _, tag) in old_tags
+                HDF5.attrs(h5["L1"][key])["parameter_type"] = tag
+            end
+        end
+    end
+    function gml_layout(file)
+        h5open(file, "w") do h5
+            g = HDF5.create_group(h5, "L1")
+            for (key, A, tag) in old_tags
+                gA = HDF5.create_group(g, key)
+                HDF5.attrs(gA)["gml_type"] = tag
+                gA["S"] = Array(A.S)
+                gA["n"] = A.n
+            end
+        end
+    end
+    @testset "$(nameof(write_file))" for write_file in (protocol_layout, gml_layout)
+        withtempfile() do file
+            write_file(file)
+
+            read_back = load(NetworkParameters, file)
+
+            @test read_back.L1.L isa StrictlyLowerTriangular
+            @test read_back.L1.L ≈ lower
+            @test read_back.L1.U isa StrictlyUpperTriangular
+            @test read_back.L1.U ≈ upper
+        end
+    end
+end
+
 @testset "a parameter set is an OptimizerSolution and binds its element type" begin
     # this is the reason `NeuralNetworkParameters` 0.2 carries the element type on the type. Every
     # cache and state constructor, both `Optimizer` constructors and the `BFGSState` `update!` methods
