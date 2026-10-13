@@ -196,16 +196,27 @@ end
 #
 # `_lift_leaf!` and not `global_rep!` directly, because a leaf that is an ordinary array has no lift
 # to write and is a plain copy; the walk's leaf function has to answer for both.
-_lift_leaf!(dest, λY::GlobalSection, gx) = _copyto!(dest, global_rep(λY, gx))
-function _lift_leaf!(dest::StiefelLieAlgHorMatrix, λY::GlobalSection, gx::AbstractMatrix)
-    global_rep!(dest, λY, gx)
+#
+# The two arms are disjoint on the *section*: a lift beside a section that carries one, and a plain
+# array beside a section whose lift is `nothing`. That is the axis on which the destination's kind and
+# the section's kind agree, because a lift only ever stands beside a manifold point and an array only
+# beside a vector-space parameter.
+#
+# A parameter set with a structured-matrix leaf takes neither: the leaf is a `VectorStorageMatrix`,
+# which is an ordinary array beside a section whose lift is `nothing`, so the copy arm answers. The
+# lift arms' section is bound to a `Manifold` for the same disjointness on `global_rep!`, whose same
+# pair would otherwise be ambiguous.
+function _lift_leaf!(
+        D::AbstractLieAlgHorMatrix, λY::GlobalSection{T, <:Manifold, <:AbstractArray},
+        gx::AbstractMatrix) where {T}
+    global_rep!(D, λY, gx)
 end
-function _lift_leaf!(dest::GrassmannLieAlgHorMatrix, λY::GlobalSection, gx::AbstractMatrix)
-    global_rep!(dest, λY, gx)
-end
-function _lift_leaf!(dest, ::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
+# `AbstractArray` and not `AbstractVecOrMat`, for the disjointness `global_rep!`'s same pair needs:
+# a horizontal lift is an `AbstractVecOrMat`, so the two arms would be two-wider and ambiguous.
+function _lift_leaf!(
+        D::AbstractArray, λY::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
         gx::AbstractVecOrMat{T}) where {T}
-    (copyto!(dest, gx); dest)
+    (copyto!(D, gx); D)
 end
 
 function global_rep!(D::NamedTuple, λY::NamedTuple, gx::NetworkParameters)
@@ -223,8 +234,18 @@ global_rep!(D, λY::NamedTuple, gx::NetworkParameters) = global_rep!(D, λY, gx)
 # identity and the write is a copy. This is the arm a plain-vector solution reaches through
 # `store_gradient!` and `refresh_latest_gradient!`, and it is why their other arm can be written
 # once and dispatch the same way for every kind of parameter.
+#
+# The two arms of this function are disjoint on the third parameter of the section, which is the
+# `λ` the section carries: a lift stands beside a manifold point, whose section always carries one;
+# an ordinary array beside a vector-space parameter, whose section never does. So a lift destination
+# takes the lift arm and a `Vector{Float64}` takes this one.
+#
+# The destination is bound to `AbstractArray` and not `AbstractVecOrMat`, which is what separates the
+# pair: a `StiefelLieAlgHorMatrix` *is* an `AbstractVecOrMat`, so a wider first argument here and a
+# `Manifold` section above would be two-wider in the two slots and ambiguous. `AbstractArray` and a
+# horizontal lift are disjoint, and both are the arrays this package's caches hold.
 function global_rep!(
-        D::AbstractVecOrMat, ::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
+        D::AbstractArray, λY::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
         gx::AbstractVecOrMat{T}) where {T}
     (copyto!(D, gx); D)
 end
@@ -311,8 +332,9 @@ end
 _ambient(Δ::AbstractMatrix) = Δ
 _ambient(Δ::Manifold) = parent(Δ)
 
-function global_rep!(D::StiefelLieAlgHorMatrix{T}, λY::GlobalSection{T, AT},
-        Δ::AbstractMatrix{T}) where {T, AT <: StiefelManifold{T}}
+function global_rep!(
+        D::StiefelLieAlgHorMatrix{T}, λY::GlobalSection{T, <:Manifold, <:AbstractArray},
+        Δ::AbstractMatrix{T}) where {T}
     N, n = size(λY.Y)
     @assert (D.N, D.n) == (N, n)
     ∇L = _ambient(Δ)
@@ -366,8 +388,8 @@ end
 
 # The Grassmann form of `global_rep!`: only the `B` block moves, because the lift's `A` block is
 # the zero matrix here.
-function global_rep!(D::GrassmannLieAlgHorMatrix{T}, λY::GlobalSection{T, AT},
-        Δ::AbstractMatrix{T}) where {T, AT <: GrassmannManifold{T}}
+function global_rep!(D::GrassmannLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:Manifold, <:AbstractArray}, Δ::AbstractMatrix{T}) where {T}
     N, n = size(λY.Y)
     @assert (D.N, D.n) == (N, n)
     ∇L = _ambient(Δ)
