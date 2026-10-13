@@ -236,10 +236,12 @@ function apply_S_left!(b::AbstractVector, Λ::SymplecticHouseholderDecom)
     @assert length(b) == 2 * N
     for j in M:-1:1
         row_ind = vcat(j:N, (N + j):(2 * N))
-        @views v₁ = Λ.A[row_ind, j]
-        @views v₂ = Λ.A[row_ind, j + M]
-        b[row_ind] .-= Λ.c₂[j] * symplectic_form(v₂, b[row_ind]) * v₂
-        b[row_ind] .-= Λ.c₁[j] * symplectic_form(v₁, b[row_ind]) * v₁
+        @views begin
+            v₁ = Λ.A[row_ind, j]
+            v₂ = Λ.A[row_ind, j + M]
+            b[row_ind] .-= Λ.c₂[j] * symplectic_form(v₂, b[row_ind]) * v₂
+            b[row_ind] .-= Λ.c₁[j] * symplectic_form(v₁, b[row_ind]) * v₁
+        end
     end
     b
 end
@@ -249,11 +251,13 @@ function apply_S_left!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom)
     @assert size(B, 1) == 2 * N
     for j in M:-1:1
         row_ind = vcat(j:N, (N + j):(2 * N))
-        @views v₁ = Λ.A[row_ind, j]
-        @views v₂ = Λ.A[row_ind, j + M]
         for i in axes(B, 2)
-            B[row_ind, i] .-= Λ.c₂[j] * symplectic_form(v₂, B[row_ind, i]) * v₂
-            B[row_ind, i] .-= Λ.c₁[j] * symplectic_form(v₁, B[row_ind, i]) * v₁
+            @views begin
+                v₁ = Λ.A[row_ind, j]
+                v₂ = Λ.A[row_ind, j + M]
+                B[row_ind, i] .-= Λ.c₂[j] * symplectic_form(v₂, B[row_ind, i]) * v₂
+                B[row_ind, i] .-= Λ.c₁[j] * symplectic_form(v₁, B[row_ind, i]) * v₁
+            end
         end
     end
     B
@@ -271,10 +275,12 @@ function apply_S_inverse_left!(b::AbstractVector, Λ::SymplecticHouseholderDecom
     @assert length(b) == 2 * N
     for j in 1:M
         row_ind = vcat(j:N, (N + j):(2 * N))
-        @views v₁ = Λ.A[row_ind, j]
-        @views v₂ = Λ.A[row_ind, j + M]
-        b[row_ind] .+= Λ.c₁[j] * symplectic_form(v₁, b[row_ind]) * v₁
-        b[row_ind] .+= Λ.c₂[j] * symplectic_form(v₂, b[row_ind]) * v₂
+        @views begin
+            v₁ = Λ.A[row_ind, j]
+            v₂ = Λ.A[row_ind, j + M]
+            b[row_ind] .+= Λ.c₁[j] * symplectic_form(v₁, b[row_ind]) * v₁
+            b[row_ind] .+= Λ.c₂[j] * symplectic_form(v₂, b[row_ind]) * v₂
+        end
     end
     b
 end
@@ -284,11 +290,13 @@ function apply_S_inverse_left!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom
     @assert size(B, 1) == 2 * N
     for j in 1:M
         row_ind = vcat(j:N, (N + j):(2 * N))
-        @views v₁ = Λ.A[row_ind, j]
-        @views v₂ = Λ.A[row_ind, j + M]
         for i in axes(B, 2)
-            B[row_ind, i] .+= Λ.c₁[j] * symplectic_form(v₁, B[row_ind, i]) * v₁
-            B[row_ind, i] .+= Λ.c₂[j] * symplectic_form(v₂, B[row_ind, i]) * v₂
+            @views begin
+                v₁ = Λ.A[row_ind, j]
+                v₂ = Λ.A[row_ind, j + M]
+                B[row_ind, i] .+= Λ.c₁[j] * symplectic_form(v₁, B[row_ind, i]) * v₁
+                B[row_ind, i] .+= Λ.c₂[j] * symplectic_form(v₂, B[row_ind, i]) * v₂
+            end
         end
     end
     B
@@ -305,16 +313,18 @@ function apply_S_right!(B::AbstractMatrix, Λ::SymplecticHouseholderDecom)
     @assert size(B, 2) == 2 * N
     for j in 1:M
         row_ind = vcat(j:N, (N + j):(2 * N))
-        @views v₁ = Λ.A[row_ind, j]
-        @views v₂ = Λ.A[row_ind, j + M]
         for i in axes(B, 1)
-            @views b = B[i, row_ind]
-            fac₁ = -Λ.c₁[j] * transpose(b) * v₁
-            b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
-            b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
-            fac₂ = -Λ.c₂[j] * transpose(b) * v₂
-            b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
-            b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
+            @views begin
+                v₁ = Λ.A[row_ind, j]
+                v₂ = Λ.A[row_ind, j + M]
+                b = B[i, row_ind]
+                fac₁ = -Λ.c₁[j] * transpose(b) * v₁
+                b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
+                b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
+                fac₂ = -Λ.c₂[j] * transpose(b) * v₂
+                b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
+                b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
+            end
         end
     end
     B
@@ -333,16 +343,18 @@ function apply_S_inverse_right!(B::AbstractMatrix, Λ::SymplecticHouseholderDeco
     @assert size(B, 2) == 2 * N
     for j in M:-1:1
         row_ind = vcat(j:N, (N + j):(2 * N))
-        @views v₁ = Λ.A[row_ind, j]
-        @views v₂ = Λ.A[row_ind, j + M]
         for i in axes(B, 1)
-            @views b = B[i, row_ind]
-            fac₂ = Λ.c₂[j] * transpose(b) * v₂
-            b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
-            b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
-            fac₁ = Λ.c₁[j] * transpose(b) * v₁
-            b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
-            b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
+            @views begin
+                v₁ = Λ.A[row_ind, j]
+                v₂ = Λ.A[row_ind, j + M]
+                b = B[i, row_ind]
+                fac₂ = Λ.c₂[j] * transpose(b) * v₂
+                b[1:(N + 1 - j)] .-= fac₂ * v₂[(N + 2 - j):(2 * N + 2 - 2 * j)]
+                b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₂ * v₂[1:(N + 1 - j)]
+                fac₁ = Λ.c₁[j] * transpose(b) * v₁
+                b[1:(N + 1 - j)] .-= fac₁ * v₁[(N + 2 - j):(2 * N + 2 - 2 * j)]
+                b[(N + 2 - j):(2 * N + 2 - 2 * j)] .+= fac₁ * v₁[1:(N + 1 - j)]
+            end
         end
     end
     B

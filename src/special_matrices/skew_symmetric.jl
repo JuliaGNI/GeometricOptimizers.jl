@@ -232,9 +232,23 @@ function Base.one(A::SkewSymMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A.S), T, A.n)
 end
 
-# the first matrix is multiplied onto A2 in order for it to not be SkewSymMatrix!
+# The dense form of a skew block, allocated. `_dense_skew!` in
+# `retractions/retraction_workspace.jl` writes the same matrix into a buffer the caller owns, and it
+# is the one a workspace reuses; this one allocates the result.
+function _dense_skew(B::SkewSymMatrix{T}) where {T}
+    backend = KernelAbstractions.get_backend(B.S)
+    C = KernelAbstractions.allocate(backend, T, B.n, B.n)
+    _dense_skew!(C, B, unit_matrix(B))
+
+    C
+end
+
+# `*(::SkewSymMatrix, ::SkewSymMatrix)` is a product of two skew matrices, which is a general
+# matrix, so the right operand has to be materialised densely first. `one(A2) * A2` was the obvious
+# spelling and builds a second `N × N` identity to do it; `_dense_skew` writes the same matrix in
+# one pass over the packed vector, so the product costs the destination and nothing else.
 function Base.:*(A1::SkewSymMatrix{T}, A2::SkewSymMatrix{T}) where {T}
-    A1 * (one(A2) * A2)
+    A1 * _dense_skew(A2)
 end
 
 function Base.zero(A::SkewSymMatrix)
