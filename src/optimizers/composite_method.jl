@@ -83,13 +83,13 @@ end
 # The step of a composite on a parameter set: every leaf with its own method, cache and state.
 function _training_step!(
         x::NetworkParameters, cache::CompositeCache, state::CompositeState, dp,
-        method::CompositeMethod, α, retraction, workspace)
+        method::CompositeMethod, α, retraction, workspace, observer)
     foreachparameters(cache.caches, state.states, workspace, x,
         dp) do cacheᵢ, stateᵢ, workspaceᵢ, xᵢ, dpᵢ
         increase_iteration_number!(stateᵢ)
         _training_step!(
             _leaf_solution(xᵢ), cacheᵢ, stateᵢ, _leaf_like(xᵢ, dpᵢ), leafmethod(method, xᵢ), α,
-            retraction, workspaceᵢ)
+            retraction, workspaceᵢ, observer)
     end
     x
 end
