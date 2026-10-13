@@ -77,17 +77,8 @@ function bytes(f)
     (@allocated f()) / 1024
 end
 
-# The scales every accuracy table below sweeps over. All three use the *same* eight, drawn from the
-# same seed, so a row of one is the same lift as the row of another — and so that
-# `docs/src/retractions.md`, which recomputes these tables when the documentation is built, gets the
-# figures this script prints rather than figures that merely resemble them.
-const SCALES = (0.1, 1.0, 3.0, 6.0, 12.0, 30.0, 60.0, 120.0)
-
-"A sweep of horizontal lifts of increasing norm, all drawn from the same seed."
-function sweep(T, N, n)
-    Random.seed!(1234)
-    [T(s) * rand(StiefelLieAlgHorMatrix{T}, N, n) for s in SCALES]
-end
+# `SCALES` and `sweep`, shared with `retraction_records.jl`, which writes the same lifts as CSV.
+include(joinpath(@__DIR__, "retraction_sweep.jl"))
 
 function exponential_tables(; N::Integer = 20, n::Integer = 3)
     BLAS.set_num_threads(1)

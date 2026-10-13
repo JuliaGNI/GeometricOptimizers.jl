@@ -12,6 +12,33 @@ breaking release).
 
 - **Files that tag a leaf `LowerTriangular` or `UpperTriangular` load again, which reverses the break 0.9.0 announced.** 0.9.0 renamed the two types to `StrictlyLowerTriangular` and `StrictlyUpperTriangular` and registered only the new names with `NeuralNetworkParameters.register_parameter_type!`. A file carries the name its leaf had when it was written, so `load(NetworkParameters, file)` raised "ArgumentError: the file contains a parameter of type `LowerTriangular`, which is not registered" for a file written by GeometricOptimizers before 0.9, or by GeometricMachineLearning 0.8 and earlier, a saved `VolumePreservingFeedForward` network among them. With a prototype, `load(NetworkParameters, file, prototype)`, this package's layout (a `storage` group) still loaded, but GeometricMachineLearning's older layout (`gml_type`, no `storage`) had no way in. The old names are registered again and rebuild the renamed types. The testset "a file written before the triangular types were renamed still loads" in `test/integration/neural_network_parameters_protocol.jl` has a nested testset per layout, `protocol_layout` and `gml_layout`; each builds a file with the old names and loads it without a prototype. It checks the lookup with files the test writes, not a file an old release wrote.
 
+### Added
+
+- Added **`scripts/retraction_records.jl`**, the retraction benchmark of
+  `scripts/retraction_accuracy.jl` as machine-readable CSV records instead of tables. Each row
+  is one invocation, not a `minimum` over repetitions: a warm-up row at repetition 0, then
+  the steady-state rows, each written as soon as it is measured. A row's runtime and
+  allocation come from the same call. Host and device allocation are separate metrics, and
+  a CUDA path runs beside the host one. A call that throws gives a row with `success=false` and
+  `NaN` errors; an error in the transfer or the comparison after the call propagates. The CSV
+  has the columns of schema version 1; a change to them bumps the version.
+
+  `--scales` takes a subset of the sweep's eight scales and rejects any other value. Each selected
+  scale gets the lift the full sweep draws for it, so a row's `seed` and `scale` identify its
+  lift. The four `--source-*` options are required and stamped unchanged into every row; the
+  script does not capture the checkout's identity itself. The script runs with one BLAS thread,
+  as the tables of `retraction_accuracy.jl` do.
+
+  The lift sweep is shared: `SCALES` and `sweep` live in `scripts/retraction_sweep.jl`, which both
+  scripts include. With the default options the sweep draws the same lifts as before, so
+  `scripts/retraction_accuracy.jl` prints the same tables. `docs/src/exponential_algorithms.md`
+  draws the same sweep, the same seed and the same eight scales, from its own copy of those
+  lines; the header of `scripts/retraction_sweep.jl` says so.
+
+### Fixed
+
+- **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
+
 ## [0.9.0]
 
 **This release makes the package the optimizer that GeometricMachineLearning trains with.**
