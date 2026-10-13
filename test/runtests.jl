@@ -38,6 +38,7 @@ if "core" in GROUPS
     @safetestset "Ω functions                  " include("global_sections/omega_functions.jl")
     @safetestset "Global global_sections       " include("global_sections/global_sections.jl")
     @safetestset "Optimizer phase observer     " include("integration/optimizer_observer.jl")
+    @safetestset "Retraction records script    " include("integration/retraction_records.jl")
     @safetestset "Optimizer Problems           " include("optimizers/optimizer_problems.jl")
     @safetestset "Optimizer Status             " include("optimizers/optimizer_status_tests.jl")
     @safetestset "Descent Direction            " include("optimizers/descent_direction_tests.jl")

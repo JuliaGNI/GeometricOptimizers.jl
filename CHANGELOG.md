@@ -8,6 +8,29 @@ breaking release).
 
 ## [Unreleased]
 
+### Added
+
+- Added **`scripts/retraction_records.jl`**, the retraction benchmark of
+  `scripts/retraction_accuracy.jl` as machine-readable CSV records instead of tables. Each row
+  is one invocation, not a `minimum` over repetitions: a warm-up row at repetition 0, then
+  the steady-state rows, each written as soon as it is measured. A row's runtime and
+  allocation come from the same call. Host and device allocation are separate metrics, and
+  a CUDA path runs beside the host one. A call that throws gives a row with `success=false` and
+  `NaN` errors; an error in the transfer or the comparison after the call propagates. The CSV
+  has the columns of schema version 1; a change to them bumps the version.
+
+  `--scales` takes a subset of the sweep's eight scales and rejects any other value. Each selected
+  scale gets the lift the full sweep draws for it, so a row's `seed` and `scale` identify its
+  lift. The four `--source-*` options are required and stamped unchanged into every row; the
+  script does not capture the checkout's identity itself. The script runs with one BLAS thread,
+  as the tables of `retraction_accuracy.jl` do.
+
+  The lift sweep is shared: `SCALES` and `sweep` live in `scripts/retraction_sweep.jl`, which both
+  scripts include. With the default options the sweep draws the same lifts as before, so
+  `scripts/retraction_accuracy.jl` prints the same tables. `docs/src/exponential_algorithms.md`
+  draws the same sweep, the same seed and the same eight scales, from its own copy of those
+  lines; the header of `scripts/retraction_sweep.jl` says so.
+
 ### Fixed
 
 - **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
