@@ -64,12 +64,10 @@ end
         @test name in names(GeometricOptimizers)
     end
 
-    # What a composite is made of and what it answers for a leaf are read rather than called by a
-    # training loop, so they are public without being brought into `Main`.
-    for name in (:LeafTypeSelector, :leafmethod)
-        @test Base.ispublic(GeometricOptimizers, name)
-        @test !Base.isexported(GeometricOptimizers, name)
-    end
+    # The method a composite gives a leaf is inspected, not needed by a training loop, so it is
+    # public without being brought into `Main`.
+    @test Base.ispublic(GeometricOptimizers, :leafmethod)
+    @test !Base.isexported(GeometricOptimizers, :leafmethod)
 
     # The breakdown path behind `orthonormal_columns` is the half that stays internal: it answers
     # `nothing`, which is a contract for the redraw above it and not one to hand a caller.

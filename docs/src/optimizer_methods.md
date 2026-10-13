@@ -306,8 +306,9 @@ than one geometry. [`ScalarMomentAdam`](@ref) is the case that forces the point:
 manifold and means nothing pooled across a set. A transformer whose attention projections are
 Stiefel and whose residual blocks are ordinary arrays therefore has no single method that covers it.
 
-[`CompositeMethod`](@ref) chooses a method per leaf, and
-[`leafmethod`](@ref GeometricOptimizers.leafmethod) reads the choice:
+[`CompositeMethod`](@ref) holds two methods: `manifold` for every [`Manifold`](@ref) leaf, and
+`array` for every other leaf. [`leafmethod`](@ref GeometricOptimizers.leafmethod) gives the method
+of a leaf:
 
 ```@example optimizer_methods
 composite = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
@@ -317,7 +318,7 @@ composite = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
 ```
 
 A [`TrainingOptimizer`](@ref) on a parameter set builds one cache and one state per leaf, each for
-the method chosen for that leaf, and [`optimization_step!`](@ref) steps every leaf with its own:
+the method of that leaf, and [`optimization_step!`](@ref) steps every leaf with its own:
 
 ```@example optimizer_methods
 ps = NetworkParameters((L1 = (weight = rand(StiefelManifold, 6, 2),),
@@ -340,9 +341,9 @@ the whole set, and a composite has no such direction.
 ## Library functions
 
 [`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref),
-[`CompositeMethod`](@ref), [`LeafTypeSelector`](@ref GeometricOptimizers.LeafTypeSelector),
-[`leafmethod`](@ref GeometricOptimizers.leafmethod), [`CompositeState`](@ref),
-[`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and [`OptimizerState`](@ref). Their
+[`CompositeMethod`](@ref), [`leafmethod`](@ref GeometricOptimizers.leafmethod),
+[`CompositeState`](@ref), [`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and
+[`OptimizerState`](@ref). Their
 docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the
 package is rendered once; the names above link to them.
 

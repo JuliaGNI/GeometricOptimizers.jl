@@ -224,10 +224,10 @@ export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # alongside it
 export AdamWithEuclideanDecay
 # `CompositeMethod` is a method a caller constructs, as the others are, and `CompositeState` is its
-# state. `LeafTypeSelector` and `leafmethod` are `public`: what a composite is made of and the
-# method it selects for a leaf, which a caller inspects but does not need in its training loop.
+# state. `leafmethod` is `public`: the method a composite gives a leaf, which a caller inspects but
+# does not need in its training loop.
 export CompositeMethod, CompositeState
-public LeafTypeSelector, leafmethod
+public leafmethod
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")

@@ -69,7 +69,8 @@ optimization_step!(x, opt, Float32[2, 2, 2])
 ```
 """
 struct TrainingOptimizer{
-    MT <: FirstOrderMethod, CT <: OptimizerCache, ST <: OptimizerState,
+    MT <: Union{FirstOrderMethod, CompositeMethod},
+    CT <: OptimizerCache, ST <: OptimizerState,
     LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT}
     method::MT
     cache::CT
@@ -79,7 +80,8 @@ struct TrainingOptimizer{
     workspace::WT
 end
 
-function TrainingOptimizer(x::OptimizerSolution{T}; algorithm::FirstOrderMethod = Adam(),
+function TrainingOptimizer(x::OptimizerSolution{T};
+        algorithm::Union{FirstOrderMethod, CompositeMethod} = Adam(),
         linesearch = default_step_size(algorithm),
         retraction::AbstractRetraction = Cayley()) where {T}
     method = _training_method(T, algorithm, x)
@@ -120,7 +122,8 @@ For a parameter set, `dp` is a [`NeuralNetworkParameters.NetworkParameters`](@ex
 shape as `x`. See [`TrainingOptimizer`](@ref) for why this is not [`solve!`](@ref).
 """
 function optimization_step!(x::OptimizerSolution{T},
-        opt::TrainingOptimizer{<:FirstOrderMethod, <:OptimizerCache, <:OptimizerState{T}},
+        opt::TrainingOptimizer{
+            <:Union{FirstOrderMethod, CompositeMethod}, <:OptimizerCache, <:OptimizerState{T}},
         dp::Union{AbstractArray{T}, NetworkParameters{T}}) where {T}
     # before the count moves, so that a refused step leaves the state as it was
     _same_shape(x, dp) || throw(DimensionMismatch(

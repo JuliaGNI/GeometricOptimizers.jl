@@ -382,96 +382,6 @@ cache:
 """
 const AdamFamily = Union{Adam, AdamWithEuclideanDecay, ScalarMomentAdam}
 
-@doc raw"""
-    CompositeMethod(select)
-    CompositeMethod(; manifold, array)
-
-One first-order method per *leaf* of a parameter set, chosen by `select`, for a set whose leaves are
-not all of one kind.
-
-A method is a statement about the geometry of the thing it steps, and a mixed set has more than one
-geometry in it. [`ScalarMomentAdam`](@ref) is the case that forces the point: it steps a single
-[`StiefelManifold`](@ref), deliberately so, because a *scalar* second moment is a statement about one
-manifold and means nothing pooled across a set. A transformer with `StiefelManifold` attention
-projections beside ordinary `Matrix` and `Vector` leaves, or a symplectic autoencoder with Stiefel PSD
-layers beside Euclidean SympNet layers, therefore has no single method that covers it.
-
-`select` is a function from a leaf to the method for that leaf, and gives one leaf the same method
-every time it is asked. The keyword form selects by leaf type, and is [`LeafTypeSelector`](@ref):
-
-```julia
-CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
-```
-
-# How a composite steps a parameter set
-
-`TrainingOptimizer(ps; algorithm = composite)` asks [`leafmethod`](@ref) once for every leaf of `ps`,
-converts each answer to the element type of `ps`, and builds a cache and a state *per leaf* with the
-method chosen for it: a [`CompositeState`](@ref) holds the leaves' states in a tree of the shape of
-`ps`, and the optimizer's cache holds the leaves' caches and methods in the same way.
-[`optimization_step!`](@ref) then steps every leaf with its own method, cache and state, at the one
-step size the schedule gives for that step. Nothing is pooled across leaves — no moment, no section,
-no step length — so every leaf moves exactly as it would under a `TrainingOptimizer` of its own.
-
-On a single leaf, an `AbstractVector` or a [`Manifold`](@ref), `TrainingOptimizer` takes the method
-`select` chooses for it, and the composite is that method.
-
-The selected methods are [`FirstOrderMethod`](@ref)s other than a composite, and [`leafmethod`](@ref)
-rejects anything else by name. [`solve!`](@ref) takes no composite: its line search chooses one step
-length for the direction of the whole set, and [`Optimizer`](@ref) raises an `ArgumentError` for one.
-"""
-struct CompositeMethod{S} <: OptimizerMethod
-    select::S
-end
-
-"""
-    LeafTypeSelector(manifold, array)
-
-The selector of `CompositeMethod(; manifold, array)`: `manifold` for a [`Manifold`](@ref) leaf,
-`array` for every other.
-
-A named type and not a closure, so that a composite prints as what it is and the two methods can be
-read back off it: [`default_step_size`](@ref) reads its answer off them.
-
-`Manifold` and not `StiefelManifold`, because the question the split asks is "does this leaf have a
-constraint the method has to respect", and that is the manifold-ness of it. A `manifold` method that
-steps only some manifolds keeps its own scope: [`ScalarMomentAdam`](@ref) steps a `StiefelManifold`
-and nothing else, so a `GrassmannManifold` leaf is a `MethodError` when its cache is built.
-"""
-struct LeafTypeSelector{M, A}
-    manifold::M
-    array::A
-end
-
-(selector::LeafTypeSelector)(::Manifold) = selector.manifold
-(selector::LeafTypeSelector)(_) = selector.array
-
-"""
-    leafmethod(method, x)
-
-The method that steps the leaf `x`: `method` itself for an ordinary [`OptimizerMethod`](@ref), and
-`method.select(x)` for a [`CompositeMethod`](@ref).
-
-A selection that is not a [`FirstOrderMethod`](@ref), or that is itself a composite, is an
-`ArgumentError` naming it. So is a parameter set in place of a leaf: the set needs more than one
-method, which is the reason the composite exists, so no one arm can be the answer for it.
-"""
-leafmethod(method::OptimizerMethod, _) = method
-
-function leafmethod(method::CompositeMethod, x)
-    selected = method.select(x)
-    selected isa FirstOrderMethod && !(selected isa CompositeMethod) || throw(ArgumentError(
-        "a CompositeMethod selected $(typeof(selected)) for a $(typeof(x)) leaf; the selected " *
-        "methods are `GradientMethod`, `MomentumMethod` or a member of the `AdamFamily`"))
-    selected
-end
-
-function leafmethod(::CompositeMethod, x::Union{NetworkParameters, NamedTuple})
-    throw(ArgumentError(
-        "a CompositeMethod chooses a method per leaf, and a $(nameof(typeof(x))) is a set of " *
-        "leaves; `TrainingOptimizer(ps; algorithm = composite)` asks it once for every leaf of `ps`"))
-end
-
 """
 The methods whose `update!` needs the *method* rather than a
 [`SimpleSolvers.Hessian`](@extref), because they carry state of their own out of which the
@@ -568,17 +478,62 @@ default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNIN
 """
     FirstOrderMethod
 
-The methods that build their direction from the gradient alone: [`GradientMethod`](@ref), the
-[`FirstOrderMethodWithState`](@ref) and the [`CompositeMethod`](@ref) that chooses one of them per
-leaf. These are the methods a [`TrainingOptimizer`](@ref) takes. All but the composite are the
-methods whose `update!(cache, state, gradient, method, x)` takes the method rather than a
-[`SimpleSolvers.Hessian`](@extref); a composite's leaves are each stepped with their own.
+The methods that build their direction from the gradient alone: [`GradientMethod`](@ref) and the
+[`FirstOrderMethodWithState`](@ref). These, and a [`CompositeMethod`](@ref) of two of them, are the
+methods a [`TrainingOptimizer`](@ref) takes, and these are the methods whose
+`update!(cache, state, gradient, method, x)` takes the method rather than a
+[`SimpleSolvers.Hessian`](@extref).
 """
-const FirstOrderMethod = Union{GradientMethod, FirstOrderMethodWithState, CompositeMethod}
+const FirstOrderMethod = Union{GradientMethod, FirstOrderMethodWithState}
+
+@doc raw"""
+    CompositeMethod(; manifold, array)
+
+Two [`FirstOrderMethod`](@ref)s for a parameter set whose leaves are not all of one kind: `manifold`
+steps every [`Manifold`](@ref) leaf, and `array` every other leaf.
+
+A method is a statement about the geometry of the thing it steps, and a mixed set has more than one
+geometry in it. [`ScalarMomentAdam`](@ref) is the case that forces the point: it steps a single
+[`StiefelManifold`](@ref), because a *scalar* second moment is a statement about one manifold and
+means nothing pooled across a set. A transformer with `StiefelManifold` attention projections beside
+ordinary `Matrix` and `Vector` leaves therefore has no single method that covers it:
+
+```julia
+CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
+```
+
+The split is by `Manifold` and not by `StiefelManifold`: a `manifold` method that steps only some
+manifolds keeps its own scope, so a `GrassmannManifold` leaf under `ScalarMomentAdam` is a
+`MethodError` when its cache is built.
+
+`TrainingOptimizer(ps; algorithm = composite)` builds a cache and a state *per leaf*, each for the
+method [`leafmethod`](@ref) gives for it and in the element type of `ps`; a [`CompositeState`](@ref)
+holds the leaves' states in a tree of the shape of `ps`. [`optimization_step!`](@ref) steps every leaf
+with its own method, cache and state, at the one step size the schedule gives for that step. Nothing
+is pooled across leaves, so every leaf moves exactly as it would under a `TrainingOptimizer` of its
+own. On a single leaf, `TrainingOptimizer` takes the method for that leaf, and the composite is that
+method.
+
+[`solve!`](@ref) takes no composite: its line search chooses one step length for the direction of the
+whole set, and [`Optimizer`](@ref) raises an `ArgumentError` for one.
+"""
+struct CompositeMethod{M <: FirstOrderMethod, A <: FirstOrderMethod} <: OptimizerMethod
+    manifold::M
+    array::A
+end
 
 function CompositeMethod(; manifold::FirstOrderMethod, array::FirstOrderMethod)
-    CompositeMethod(LeafTypeSelector(manifold, array))
+    CompositeMethod(manifold, array)
 end
+
+"""
+    leafmethod(method::CompositeMethod, x)
+
+The method that steps the leaf `x`: `method.manifold` for a [`Manifold`](@ref), and `method.array`
+for any other array. A parameter set is not a leaf, and is a `MethodError`.
+"""
+leafmethod(method::CompositeMethod, ::Manifold) = method.manifold
+leafmethod(method::CompositeMethod, ::AbstractArray) = method.array
 
 """
     default_step_size(method)
@@ -589,27 +544,21 @@ not given: `1e-2` for [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), and
 ``\\approx{}1`` per component whatever the gradient is.
 
 A [`CompositeMethod`](@ref) steps all of its leaves at one step size, so it has a default only when
-its methods agree on one: `CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())` takes
-`DEFAULT_LEARNING_RATE`. For two methods that disagree, and for a selector that is a function rather
-than a [`LeafTypeSelector`](@ref), there is no default, and this raises an `ArgumentError` asking for
-`linesearch`.
+its two methods agree on one: `CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())`
+takes `DEFAULT_LEARNING_RATE`. For two methods that disagree this raises an `ArgumentError` asking
+for `linesearch`.
 """
 default_step_size(::Union{GradientMethod, MomentumMethod}) = 1.0e-2
 default_step_size(::AdamFamily) = DEFAULT_LEARNING_RATE
 
-function default_step_size(method::CompositeMethod{<:LeafTypeSelector})
-    (; manifold, array) = method.select
+function default_step_size(method::CompositeMethod)
+    (; manifold, array) = method
     η, η′ = default_step_size(manifold), default_step_size(array)
     η == η′ || throw(ArgumentError(
         "the two methods of a CompositeMethod, $(nameof(typeof(manifold))) and " *
         "$(nameof(typeof(array))), have different default step sizes, $(η) and $(η′); " *
         "pass `linesearch`"))
     η
-end
-
-function default_step_size(::CompositeMethod)
-    throw(ArgumentError("a CompositeMethod with a selector function has no default step size, " *
-                        "since the methods it selects are known only leaf by leaf; pass `linesearch`"))
 end
 
 # The conversion `Optimizer` and `TrainingOptimizer` apply once, to the element type of the
@@ -622,6 +571,9 @@ function change_precision(::Type{T}, m::ScalarMomentAdam) where {T}
 end
 function change_precision(::Type{T}, m::AdamWithEuclideanDecay) where {T}
     AdamWithEuclideanDecay{T}(T(m.β₁), T(m.β₂), T(m.δ), T(m.λ))
+end
+function change_precision(::Type{T}, m::CompositeMethod) where {T}
+    CompositeMethod(change_precision(T, m.manifold), change_precision(T, m.array))
 end
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")

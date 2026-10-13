@@ -3,7 +3,7 @@
 # `optimizers/optimizer_methods.jl`, where the method types live; everything below needs the
 # first-order caches and states and `TrainingOptimizer`, so it is included after them.
 #
-# A composite pools nothing. Every leaf gets the cache and the state of the method chosen for it, and
+# A composite pools nothing. Every leaf gets the cache and the state of its method, and
 # the step walks the leaves and takes, for each, the step a `TrainingOptimizer` built on that leaf
 # alone would take. What the leaves share is the iteration number and the step size read from it.
 
@@ -17,34 +17,21 @@ _leaf_like(::Union{AbstractVector, Manifold}, y) = y
 _leaf_like(_, y) = NetworkParameters((leaf = y,))
 _leaf_solution(x) = _leaf_like(x, x)
 
-# The method for every leaf, converted to the element type of the set. `OptimizerCache` and
-# `OptimizerState` each ask it once, when they are built, and never at a step; a selector function
-# therefore has to give one leaf the same method both times.
-function _leaf_methods(method::CompositeMethod, x::NetworkParameters{T}) where {T}
-    mapparameters(leaf -> change_precision(T, leafmethod(method, leaf)), params(x))
-end
-
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
 """
     CompositeCache <: OptimizerCache
 
-The cache of a [`CompositeMethod`](@ref) on a parameter set: the method chosen for every leaf and
-that method's cache for the leaf, each in a tree of the shape of the set.
-
-# Fields
-- `methods`: the method of each leaf, converted to the element type of the set,
-- `caches`: the cache of each leaf, built by `OptimizerCache(method, leaf)`.
+The cache of a [`CompositeMethod`](@ref) on a parameter set: in `caches`, the cache of every leaf for
+the method [`leafmethod`](@ref) gives for it, in a tree of the shape of the set.
 """
-struct CompositeCache{T, MT, CT} <: OptimizerCache{T}
-    methods::MT
+struct CompositeCache{T, CT} <: OptimizerCache{T}
     caches::CT
 end
 
 function OptimizerCache(method::CompositeMethod, x::NetworkParameters{T}) where {T}
-    methods = _leaf_methods(method, x)
     caches = mapparameters(
-        (leaf, m) -> OptimizerCache(m, _leaf_solution(leaf)), params(x), methods)
-    CompositeCache{T, typeof(methods), typeof(caches)}(methods, caches)
+        leaf -> OptimizerCache(leafmethod(method, leaf), _leaf_solution(leaf)), params(x))
+    CompositeCache{T, typeof(caches)}(caches)
 end
 
 # The type parameters are deliberately unbounded; see the warning in `optimizer_solution.jl`.
@@ -77,18 +64,17 @@ mutable struct CompositeState{T, ST} <: OptimizerState{T}
 end
 
 function OptimizerState(method::CompositeMethod, x::NetworkParameters{T}) where {T}
-    states = mapparameters((leaf, m) -> OptimizerState(m, _leaf_solution(leaf)), params(x),
-        _leaf_methods(method, x))
+    states = mapparameters(
+        leaf -> OptimizerState(leafmethod(method, leaf), _leaf_solution(leaf)), params(x))
     CompositeState{T, typeof(states)}(states, 0)
 end
 
-# On a single leaf a composite is the method it chooses for it, and the optimizer keeps that method.
-# On a parameter set it keeps the composite, whose leaves `OptimizerCache` converts one by one.
+# On a single leaf a composite is the method it gives for that leaf, and the optimizer keeps that
+# method. On a parameter set it keeps the composite, converted as a whole by `change_precision`.
 function _training_method(::Type{T}, method::CompositeMethod,
         x::Union{AbstractVector, Manifold}) where {T}
     change_precision(T, leafmethod(method, x))
 end
-_training_method(::Type, method::CompositeMethod, ::NetworkParameters) = method
 
 function _training_workspace(::CompositeMethod, x::NetworkParameters, retraction)
     mapparameters(leaf -> retraction_workspace(_leaf_solution(leaf), retraction), params(x))
@@ -97,12 +83,12 @@ end
 # The step of a composite on a parameter set: every leaf with its own method, cache and state.
 function _training_step!(
         x::NetworkParameters, cache::CompositeCache, state::CompositeState, dp,
-        ::CompositeMethod, α, retraction, workspace)
-    foreachparameters(cache.caches, state.states, cache.methods, workspace, x,
-        dp) do cacheᵢ, stateᵢ, methodᵢ, workspaceᵢ, xᵢ, dpᵢ
+        method::CompositeMethod, α, retraction, workspace)
+    foreachparameters(cache.caches, state.states, workspace, x,
+        dp) do cacheᵢ, stateᵢ, workspaceᵢ, xᵢ, dpᵢ
         increase_iteration_number!(stateᵢ)
         _training_step!(
-            _leaf_solution(xᵢ), cacheᵢ, stateᵢ, _leaf_like(xᵢ, dpᵢ), methodᵢ, α,
+            _leaf_solution(xᵢ), cacheᵢ, stateᵢ, _leaf_like(xᵢ, dpᵢ), leafmethod(method, xᵢ), α,
             retraction, workspaceᵢ)
     end
     x
@@ -115,5 +101,5 @@ function _check_method(::CompositeMethod, x)
     throw(ArgumentError(
         "`Optimizer` and `solve!` take no CompositeMethod, which steps one leaf at a time and has " *
         "no direction of the whole set for a line search; use `TrainingOptimizer(x; algorithm)`, " *
-        "or the method the composite selects for a single leaf"))
+        "or the composite's method for a single leaf"))
 end

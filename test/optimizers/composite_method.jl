@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: CompositeCache, FirstOrderMethod, LeafTypeSelector, check,
+using GeometricOptimizers: CompositeCache, FirstOrderMethod, check,
                            default_step_size, leafmethod,
                            iteration_number, DEFAULT_LEARNING_RATE
 using Test
@@ -9,10 +9,10 @@ include("../helpers/eltypes.jl")
 include("../helpers/allocations.jl")
 include("../helpers/parameter_set_step.jl")
 
-# A `CompositeMethod` on a parameter set gives every leaf the cache and the state of the method it
-# selects for that leaf, and steps every leaf with them. What is pinned here is that the selection is
-# right, that each leaf then moves exactly as it would under a `TrainingOptimizer` of its own, and that
-# what the composite cannot do is refused by name rather than by a `MethodError` several frames in.
+# A `CompositeMethod` on a parameter set gives every leaf the cache and the state of its method, and
+# steps every leaf with them. What is pinned here is that each leaf gets the right method, that each
+# leaf then moves exactly as it would under a `TrainingOptimizer` of its own, and that what the
+# composite cannot do is refused where it is constructed or used.
 #
 # The seed is fixed for the reason given in `test/manifold_optimizers/scalar_moment_adam_optimizer.jl`:
 # every point below is drawn at random, and an unseeded file is a different test on every run.
@@ -32,47 +32,36 @@ function minibatch_gradient(::Type{T}, k) where {T}
         L1 = (weight = randn(T, 6, 2),), L2 = (W = randn(T, 3, 2), b = randn(T, 3))))
 end
 
-@testset "the leaf-type selector" begin
+@testset "the method of a leaf" begin
     stiefel = ScalarMomentAdam()
     euclidean = Adam()
     method = CompositeMethod(; manifold = stiefel, array = euclidean)
 
-    @test method isa FirstOrderMethod
-    @test method.select isa LeafTypeSelector
-    @test method.select.manifold === stiefel
-    @test method.select.array === euclidean
+    @test !(method isa FirstOrderMethod)
+    @test method.manifold === stiefel
+    @test method.array === euclidean
 
     @test leafmethod(method, rand(StiefelManifold{Float32}, 4, 2)) === stiefel
     @test leafmethod(method, rand(GrassmannManifold{Float32}, 4, 2)) === stiefel
     @test leafmethod(method, rand(Float32, 3)) === euclidean
     @test leafmethod(method, rand(Float32, 3, 2)) === euclidean
-
-    # The identity arm, for an ordinary method.
-    @test leafmethod(euclidean, rand(3)) === euclidean
-    @test leafmethod(GradientMethod(), rand(3)) === GradientMethod()
-
-    # An arbitrary selector, which is the general form the keyword constructor is sugar for.
-    by_size = CompositeMethod(x -> length(x) > 4 ? euclidean : MomentumMethod(; α = 0.5))
-    @test leafmethod(by_size, rand(Float32, 6)) === euclidean
-    @test leafmethod(by_size, rand(Float32, 2)) == MomentumMethod(; α = 0.5)
+    @test leafmethod(CompositeMethod(; manifold = GradientMethod(), array = Adam()),
+        rand(StiefelManifold, 4, 2)) === GradientMethod()
 end
 
-@testset "what a composite cannot select or be asked is refused by name" begin
-    # `GradientMethod` is a first-order method like the others and may be selected.
-    @test leafmethod(CompositeMethod(_ -> GradientMethod()), rand(3)) === GradientMethod()
-
-    # A method that needs a Hessian or a line search, and a composite inside a composite, are not.
-    @test_throws ArgumentError leafmethod(CompositeMethod(_ -> BFGS()), rand(3))
-    @test_throws ArgumentError leafmethod(CompositeMethod(_ -> Newton()), rand(3))
-    inner = CompositeMethod(; manifold = Adam(), array = Adam())
-    @test_throws ArgumentError leafmethod(CompositeMethod(_ -> inner), rand(3))
+@testset "what a composite cannot hold or be asked is refused" begin
+    # A method that needs a Hessian or a line search, and a composite inside a composite, are not
+    # first-order methods.
     @test_throws TypeError CompositeMethod(; manifold = BFGS(), array = Adam())
+    @test_throws TypeError CompositeMethod(; manifold = Adam(), array = Newton())
+    inner = CompositeMethod(; manifold = Adam(), array = Adam())
+    @test_throws TypeError CompositeMethod(; manifold = inner, array = Adam())
 
     # A parameter set is not a leaf: that it needs two methods is why the composite exists, so no one
-    # arm is the answer for it.
+    # method is the answer for it.
     method = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
-    @test_throws ArgumentError leafmethod(method, mixed_parameters())
-    @test_throws ArgumentError leafmethod(method, (weight = rand(StiefelManifold, 4, 2),))
+    @test_throws MethodError leafmethod(method, mixed_parameters())
+    @test_throws MethodError leafmethod(method, (weight = rand(StiefelManifold, 4, 2),))
 
     # `solve!` searches one step length for the whole set, which a composite does not have. The
     # gradient is given, so that the refusal is the composite's and not the one of a parameter set
@@ -84,7 +73,7 @@ end
     @test_throws "take no CompositeMethod" Optimizer(rand(3), sum; algorithm = method)
 end
 
-@testset "one cache and one state per leaf, for the selected method" begin
+@testset "one cache and one state per leaf, for the method of the leaf" begin
     ps = mixed_parameters(Float32)
     method = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
     opt = TrainingOptimizer(ps; algorithm = method)
@@ -97,18 +86,17 @@ end
     @test opt.cache.caches.L1.weight isa GeometricOptimizers.ScalarMomentAdamCache{Float32}
     @test opt.cache.caches.L2.W isa GeometricOptimizers.AdamCache{Float32}
 
-    # Each arm is converted to the element type of the set, which `change_precision` on the
-    # composite as a whole could not have done for a selector function.
-    @test opt.cache.methods.L1.weight isa ScalarMomentAdam{Float32}
-    @test opt.cache.methods.L2.W isa Adam{Float32}
-    by_type = CompositeMethod(x -> x isa Manifold ? ScalarMomentAdam() :
-                                   MomentumMethod(; α = 0.5))
+    # Both methods are converted to the element type of the set.
+    @test opt.method.manifold isa ScalarMomentAdam{Float32}
+    @test opt.method.array isa Adam{Float32}
+    momentum = CompositeMethod(; manifold = ScalarMomentAdam(), array = MomentumMethod(;
+        α = 0.5))
     opt = TrainingOptimizer(
-        mixed_parameters(Float32); algorithm = by_type, linesearch = 1.0e-2)
-    @test opt.cache.methods.L2.b isa MomentumMethod{Float32}
+        mixed_parameters(Float32); algorithm = momentum, linesearch = 1.0e-2)
+    @test opt.method.array isa MomentumMethod{Float32}
     @test opt.state.states.L2.b isa MomentumState{Float32}
 
-    # On a single leaf the composite is the method it selects for it.
+    # On a single leaf the composite is the method of that leaf.
     Y = rand(StiefelManifold{Float32}, 4, 2)
     @test TrainingOptimizer(Y; algorithm = method).method isa ScalarMomentAdam{Float32}
     @test TrainingOptimizer(rand(Float32, 3); algorithm = method).method isa Adam{Float32}
@@ -174,7 +162,6 @@ end
     @test_throws ArgumentError TrainingOptimizer(mixed_parameters();
         algorithm = CompositeMethod(;
             manifold = ScalarMomentAdam(), array = GradientMethod()))
-    @test_throws ArgumentError default_step_size(CompositeMethod(_ -> Adam()))
 
     # A schedule is read at the composite's iteration number, and every leaf takes that step: here
     # the `GradientMethod` leaf moves by exactly `step_size(schedule, t)` times its gradient.
