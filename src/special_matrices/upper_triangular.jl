@@ -97,20 +97,28 @@ end
 
 mat_mul_kernel(::StrictlyUpperTriangular, backend) = up_mat_mul_kernel!(backend)
 
+# The projection that builds the packed vector from a dense matrix, in one kernel over the whole
+# `n × n` range: it reads `A` entrywise and writes only the strict upper triangle, so a call
+# allocates the packed result and nothing else.
+#
+# Reading `A[i, j]` under the guard `j > i` and not `A[j, i]` through `transpose(A)`: the kernel is
+# indexed by the entry it writes, and the guard is the transpose that the old form expressed by
+# handing the kernel a lazy `Transpose` wrapper. `transpose` and not `adjoint`, and this constructor
+# performs no projection, it reads the entries that are there — the same convention the old body
+# documented, one kernel launch instead of `n - 1` of them.
+@kernel function up_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
+    i, j = @index(Global, NTuple)
+    if j > i
+        S[(j - 2) * (j - 1) ÷ 2 + i] = A[i, j]
+    end
+end
+
 function map_to_up(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
     S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
-    assign_Skew_val! = assign_Skew_val_kernel!(backend)
-    # `transpose` and not `adjoint`. The kernel is the one `map_to_low` uses, which reads the strict
-    # *lower* triangle, so the upper triangle is reached by swapping the indices — a transpose, and
-    # nothing more. `adjoint` conjugates on the way, which stores a triangle the docstring does not
-    # promise: this constructor performs no projection, it reads the entries that are there. The two
-    # are the same operation on a real element type.
-    for i in 2:n
-        assign_Skew_val!(S, transpose(A), i, ndrange = (i - 1))
-    end
+    up_projection_kernel(backend)(S, A; ndrange = (n, n))
     S
 end
 

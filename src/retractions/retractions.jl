@@ -402,7 +402,10 @@ function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) wh
     B̂, B̄ = lift_factors(B)
     E = StiefelProjection(B)
     G = B̄' * B̂
-    𝕀 = one(G)
+    # `unit_matrix(G)` and not `one(G)`: `Base._one` writes the diagonal in a scalar-indexed loop,
+    # which an array on a `KernelAbstractions` backend cannot serve. The workspace arm below takes
+    # the same identity from the workspace; this is the allocating arm, and it has to be as portable.
+    𝕀 = unit_matrix(G)
 
     w₁ = E + B̂ * ((𝕀 - a * G) \ (a * (B̄' * E)))      # M E
     w₂ = B̂ * (B̄' * w₁)                                # B̄ M E

@@ -32,7 +32,9 @@ mutable struct GrassmannLieAlgHorMatrix{T, ST <: AbstractMatrix{T}} <:
     N::Int
     n::Int
 
-    #maybe modify this - you don't need N & n as inputs!
+    # `N` and `n` are taken as inputs because the lift stores them, and a call site holding only the
+    # `B` block cannot deduce them: `N` is the size of the ambient matrix, `n` the number of columns
+    # `B` has in common with it.
     function GrassmannLieAlgHorMatrix(B::AbstractMatrix{T}, N::Integer, n::Integer) where {T}
         @assert n == size(B, 2)
         @assert N == size(B, 1) + n

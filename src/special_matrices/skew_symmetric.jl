@@ -257,25 +257,38 @@ end
 # see the comment on `similar(::SymmetricMatrix)`
 Base.similar(A::SkewSymMatrix) = SkewSymMatrix(similar(A.S), A.n)
 
-@kernel function assign_Skew_val_kernel!(S, A_skew, i)
-    j = @index(Global)
-    S[((i - 2) * (i - 1) ÷ 2 + j)] = A_skew[i, j]
+@kernel function skew_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
+    i, j = @index(Global, NTuple)
+    if i > j
+        S[(i - 2) * (i - 1) ÷ 2 + j] = T(0.5) * (A[i, j] - A[j, i])
+    end
 end
 
 # `transpose` and not `adjoint`, because the set being projected onto is `{M : Mᵀ = -M}` — which is
 # what `getindex` reconstructs, and what the docstring above states. `(A - Aᴴ)/2` is the projection
 # onto the skew-*Hermitian* matrices, and its strict lower triangle stored here gives a matrix that
 # is neither that projection nor `(A - Aᵀ)/2`. The two agree for a real element type.
+#
+# One kernel over the whole `n × n` range, reading `A` entrywise and writing the packed vector, so a
+# call allocates the packed result and nothing else. The dense symmetrisation that a broadcast would
+# build is a full `n × n` matrix, and this projection reads every entry twice and writes half of
+# them, so materialising it costs a temporary the size of the argument and a pass over it for a
+# result half that size. `map_to_Skew!` is the same kernel into a `SkewSymMatrix` that already
+# exists, which is what a `global_rep!` into a cache buffer uses.
 function map_to_Skew(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
-    A_skew = T(0.5) * (A - transpose(A))
     backend = KernelAbstractions.get_backend(A)
     S = _zeros(backend, T, n * (n - 1) ÷ 2)
-    assign_Skew_val! = assign_Skew_val_kernel!(backend)
-    for i in 2:n
-        assign_Skew_val!(S, A_skew, i, ndrange = (i - 1))
-    end
+    skew_projection_kernel(backend)(S, A; ndrange = (n, n))
+    S
+end
+
+function map_to_Skew!(S::SkewSymMatrix{T}, A::AbstractMatrix{T}) where {T}
+    n = size(A, 1)
+    @assert size(A, 2) == n
+    @assert S.n == n
+    skew_projection_kernel(KernelAbstractions.get_backend(A))(S.S, A; ndrange = (n, n))
     S
 end
 

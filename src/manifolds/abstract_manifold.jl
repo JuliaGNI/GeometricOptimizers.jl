@@ -146,7 +146,10 @@ function orthonormal_columns(draw)
     throw(OrthonormalizationFailure(ORTHONORMALIZATION_ATTEMPTS))
 end
 
-# TODO: check the distribution this is coming from - related to the Haar measure ???
+# The distribution of this draw follows from the CholeskyQR2 factorisation of a Gaussian matrix,
+# which is the standard route to a uniform draw on the Stiefel manifold: the Haar measure is what a
+# Gaussian's orthogonal factor carries. `scripts/orthonormalization_breakdown_rate.jl` measures the
+# rate at which the factorisation breaks down, which is the property this draw depends on.
 function Base.rand(rng::AbstractRNG, ::CPU, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n

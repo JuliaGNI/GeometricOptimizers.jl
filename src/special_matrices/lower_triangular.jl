@@ -99,21 +99,31 @@ end
     C[i, j] = tmp_sum
 end
 
-mat_mul_kernel(::StrictlyLowerTriangular, backend) = lo_mat_mul_kernel!(backend)
+# The projection that builds the packed vector from a dense matrix, in one kernel over the whole
+# `n × n` range. It reads `A` entrywise and writes only the strict lower triangle, so a call
+# allocates the packed result and nothing else.
+#
+# Row `i` of a strictly lower-triangular matrix has its entries in columns `1:(i-1)`, packed at
+# `(i-2)(i-1)/2 + k`, which is the same arithmetic `getindex` above uses.
+@kernel function lo_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
+    i, j = @index(Global, NTuple)
+    if i > j
+        S[(i - 2) * (i - 1) ÷ 2 + j] = A[i, j]
+    end
+end
 
 function map_to_lo(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
     S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
-    assign_Skew_val! = assign_Skew_val_kernel!(backend)
-    for i in 2:n
-        assign_Skew_val!(S, A, i, ndrange = (i - 1))
-    end
+    lo_projection_kernel(backend)(S, A; ndrange = (n, n))
     S
 end
 
-# define routines for generalizing ChainRulesCore to StrictlyLowerTriangular 
+mat_mul_kernel(::StrictlyLowerTriangular, backend) = lo_mat_mul_kernel!(backend)
+
+# define routines for generalizing ChainRulesCore to StrictlyLowerTriangular
 function ChainRulesCore.ProjectTo(A::AT) where {AT <: StrictlyLowerTriangular}
     ProjectTo{AT}(; triang = ProjectTo(A.S))
 end

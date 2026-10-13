@@ -30,7 +30,9 @@ mutable struct StiefelLieAlgHorMatrix{T, AT <: SkewSymMatrix{T}, ST <: AbstractM
     N::Int
     n::Int
 
-    #maybe modify this - you don't need N & n as inputs!
+    # `N` and `n` are taken as inputs because the lift stores them: `n` is the size of its `A` block
+    # and `N` the size of the ambient matrix, and a lift is `N × N` over `(N-n) × n` of free
+    # parameters, so neither follows from the two blocks alone at a call site that has only them.
     function StiefelLieAlgHorMatrix(A::SkewSymMatrix{T}, B::AbstractMatrix{T}, N::Integer, n::Integer) where {T}
         @assert n == A.n == size(B, 2)
         @assert N == size(B, 1) + n

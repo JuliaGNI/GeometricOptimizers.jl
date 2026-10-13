@@ -24,31 +24,43 @@ retraction into the cache's section, and read the point back out.
     its `NaN` loop and for the accepted step, so the line search leaves nothing behind that it does
     not overwrite itself.
 """
-trial_iterate!(
-    cache::OptimizerCache, params, α, retraction, workspace = nothing) = _trial_iterate!(
-    solution(cache), cache, params, α, retraction, workspace)
+trial_iterate!(cache::OptimizerCache, params, α, retraction, workspace = nothing;
+    scaled = nothing) = _trial_iterate!(
+    solution(cache), cache, params, α, retraction, workspace; scaled)
 
 function _trial_iterate!(
-        ::AbstractVector, cache::OptimizerCache, params, α, ::AbstractRetraction, _)
+        ::AbstractVector, cache::OptimizerCache, params, α, ::AbstractRetraction, _;
+        scaled = nothing)
     compute_new_iterate!(solution(cache), params.x, α, direction(cache))
 end
 
+# The `Manifold`/parameter-set arm: the direction is scaled by `α` and the *state's* section is
+# pushed through the retraction into the cache's section, from which the trial point is read back.
+#
+# `scaled` is the buffer `linesearch_problem` builds for this, so that a search of any length writes
+# into one array instead of allocating a copy of the lift per trial. It is `nothing` for a caller
+# that has no optimizer — a bare `trial_iterate!` from outside a solve — and then the copy is made,
+# because `direction(cache)` has to stay intact for the next trial step.
 function _trial_iterate!(
         ::Union{Manifold, NetworkParameters}, cache::OptimizerCache, params, α, retraction,
-        workspace)
+        workspace; scaled = nothing)
     # `params` is a concrete `NamedTuple` here, so this is constant-folded away rather than checked on
     # every merit evaluation. Without it a missing `state` surfaces as `has no field state`.
     hasproperty(params, :state) ||
         error("a trial step on a manifold retracts from `section(params.state)`, so the line " *
               "search parameters have to carry the `state`; `solver_step!` passes it, a bare " *
               "`(x = x,)` does not.")
-    # `_mul` allocates a scaled copy because `direction(cache)` has to stay intact for the next trial
-    # step; `solver_step!` can afford the in-place `_rmul!` only because it scales exactly once, by
-    # the `α` the line search has already settled on.
-    update_section!(
-        section(cache), section(params.state), _mul(α, direction(cache)), retraction,
-        workspace)
+    δ = scaled === nothing ? _mul(α, direction(cache)) : _mul!(scaled, α, direction(cache))
+    update_section!(section(cache), section(params.state), δ, retraction, workspace)
     _copyto!(solution(cache), section(cache))
+end
+
+# `_mul` written into `dest`: the scaled copy the line search needs, without the copy. `dest` is the
+# search's own buffer and nothing else reads it between two trial steps.
+function _mul!(dest, α::Number, a)
+    _copyto!(dest, a)
+    _rmul!(dest, α)
+    dest
 end
 
 @doc raw"""
@@ -215,8 +227,8 @@ copy and no solve for it.
 """
 trial_slope(
     gradient_instance::Gradient, cache::OptimizerCache, retraction, α, differential,
-    workspace) = _trial_slope(
-    solution(cache), gradient_instance, cache, retraction, α, differential, workspace)
+    workspace; buffers = nothing) = _trial_slope(
+    solution(cache), gradient_instance, cache, retraction, α, differential, workspace; buffers)
 
 # These two differ in one respect worth knowing about: the `AbstractVector` method evaluates *into* an
 # array of the cache — that is what makes it allocation-free — and so leaves the gradient at the last
@@ -230,15 +242,33 @@ trial_slope(
 # search probed, not about the iterate that the solve returns. `Backtracking` evaluates `φ'` once, at
 # `α = 0`, where the trial gradient *is* `∇f(xₖ)`, so it is exact either way.
 function _trial_slope(::AbstractVector, gradient_instance::Gradient,
-        cache::OptimizerCache, ::AbstractRetraction, α, _, _)
+        cache::OptimizerCache, ::AbstractRetraction, α, _, _; buffers = nothing)
     gradient_instance(latest_gradient(cache), solution(cache))
     _dot(latest_gradient(cache), direction(cache))
 end
 
+# The buffers a search of any length writes into, so that a trial step and a trial slope cost their
+# products and nothing else. The same idea as `RetractionWorkspace` for the retraction and
+# `_differential_buffer` for the differential: they are built once per `Optimizer` and live in the
+# merit closures.
+#
+# The scaled direction is a copy of `direction(cache)` because the direction has to survive the next
+# trial step — `solver_step!` can scale in place only because it scales exactly once, by the `α` the
+# search has settled on. The lift is the destination the ambient gradient is lifted into, which on a
+# manifold is a `global_rep!` write and on a vector is nothing at all.
+_trial_buffers(::AbstractVector, direction) = nothing
+function _trial_buffers(::Union{Manifold, NetworkParameters}, direction)
+    (scaled = _similar(direction), lift = _similar(direction))
+end
+
 function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::Gradient,
-        cache::OptimizerCache, retraction::AbstractRetraction, α, differential, workspace)
-    _dot(global_rep(section(cache), gradient_instance(solution(cache))),
-        retraction_differential!(differential, workspace, retraction, direction(cache), α))
+        cache::OptimizerCache, retraction::AbstractRetraction, α, differential, workspace;
+        buffers = nothing)
+    ∇ = gradient_instance(solution(cache))
+    lift = buffers === nothing ? global_rep(section(cache), ∇) :
+           global_rep!(buffers.lift, section(cache), ∇)
+    _dot(lift, retraction_differential!(
+        differential, workspace, retraction, direction(cache), α))
 end
 
 # The lift `trial_slope` writes the retraction's differential into, dispatched as `_trial_slope` is:
@@ -299,10 +329,14 @@ function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gra
         observer = NoStepObserver(), workspace = nothing) where {T}
     # built once per problem, and `nothing` for a vector-space problem
     differential = _differential_buffer(solution(cache), direction(cache))
+    buffers = _trial_buffers(solution(cache), direction(cache))
 
     function f(α, params)
         observe_optimizer_phase(observer, :retraction_application) do
-            trial_iterate!(cache, params, α, retraction, workspace)
+            trial_iterate!(
+                cache, params, α, retraction, workspace;
+                scaled = buffers === nothing ?
+                         nothing : buffers.scaled)
         end
         observe_optimizer_phase(observer, :objective) do
             value(problem, solution(cache))
@@ -311,10 +345,14 @@ function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gra
 
     function d(α, params)
         observe_optimizer_phase(observer, :retraction_application) do
-            trial_iterate!(cache, params, α, retraction, workspace)
+            trial_iterate!(
+                cache, params, α, retraction, workspace;
+                scaled = buffers === nothing ?
+                         nothing : buffers.scaled)
         end
         observe_optimizer_phase(observer, :retraction_application) do
-            trial_slope(gradient_instance, cache, retraction, α, differential, workspace)
+            trial_slope(
+                gradient_instance, cache, retraction, α, differential, workspace; buffers)
         end
     end
 

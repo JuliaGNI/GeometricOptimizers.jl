@@ -38,8 +38,7 @@ GeometricOptimizers.Ω(E, Δ)
 Note that the output of `Ω` is a skew-symmetric matrix, i.e. an element of ``\mathfrak{g}``.
 """
 function Ω(Y::StiefelManifold{T}, Δ::AbstractMatrix{T}) where {T}
-    YY = Y * Y'
-    SkewSymMatrix(2 * (one(YY) - T(0.5) * Y * Y') * Δ * Y')
+    _omega_lift(Y, Δ)
 end
 
 @doc raw"""
@@ -72,8 +71,19 @@ GeometricOptimizers.Ω(E, Δ)
 ```
 """
 function Ω(Y::GrassmannManifold{T}, Δ::AbstractMatrix{T}) where {T}
-    YY = Y * Y'
+    _omega_lift(Y, Δ)
+end
 
-    ΩSt = 2 * (one(YY) - T(0.5) * Y * Y') * Δ * Y'
-    SkewSymMatrix(ΩSt)
+# The one body both `Ω` methods share. The Grassmann lift drops the `A` block and keeps the `B`
+# block, and the skew-symmetrised `n × n` block is the same expression for both, so the two
+# manifolds take one function and differ only in what `getindex` makes of the result.
+#
+# Three products, two of them the same `Y * Y'`: the identity is built once with `unit_matrix`
+# rather than `Base.one`, whose diagonal loop is scalar-indexed and so unavailable on a
+# `KernelAbstractions` backend, and the doubled product is written once. `Y * Y'` was computed a
+# third time in a variable nothing read, at the cost of an `N × N` matrix and an `N × N` product.
+function _omega_lift(Y::Manifold{T}, Δ::AbstractMatrix{T}) where {T}
+    skew_matrix = 2 * (unit_matrix(KernelAbstractions.get_backend(Y), T, size(Y, 1)) -
+                   T(0.5) * Y * Y')
+    SkewSymMatrix(skew_matrix * Δ * Y')
 end
