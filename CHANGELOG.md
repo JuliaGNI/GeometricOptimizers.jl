@@ -65,10 +65,6 @@ breaking release).
   `ArgumentError`: their line search chooses one step length for the direction of the whole set, and
   a composite has no such direction.
 
-### Fixed
-
-- **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
-
 - Added **`observer`** to `TrainingOptimizer`, the same keyword as `Optimizer`, and `step_observer`
   reads it back. Each `optimization_step!` reports one `:retraction_application` phase, around the
   retraction, the copies of the retracted point and `advance_state!`; `solve!` reports the same
@@ -77,6 +73,10 @@ breaking release).
   phases of its own (see the observers chapter). Without the keyword the observer is a
   `NoStepObserver` and the step is unchanged: `scripts/training_step_cost.jl` gives the same bytes
   per step for all six rows, and the same time to within run-to-run spread.
+
+### Fixed
+
+- **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
 
 ## [0.9.0]
 
