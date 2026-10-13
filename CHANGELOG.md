@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Fixed
+
+- **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
+
 ## [0.9.0]
 
 **This release makes the package the optimizer that GeometricMachineLearning trains with.**
