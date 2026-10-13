@@ -15,7 +15,7 @@ using GeometricOptimizers: OptimizerCache, OptimizerSolution,
                            Cayley, Geodesic, check, increase_iteration_number!,
                            solver_step!,
                            _zero, _copy, _similar, _fill!, _manifold_αmax, l2norm,
-                           solution_scale, isconverged
+                           solution_scale, isconverged, PrecomputedGradient
 using LinearAlgebra: norm, svdvals
 using NeuralNetworkParameters: NetworkParameters, params, flatten, unflatten, flatlength
 using SimpleSolvers: Static
@@ -265,4 +265,48 @@ end
     @test check(ps.attention.Y) < MANIFOLD_TOLERANCE_IN_EPS * eps(T)
     @test isconverged(result.status)
     @test norm(ps.attention.Y * ps.dense.W .+ ps.dense.b .- B) ≤ √eps(T) * norm(B)
+end
+
+# The training step builds its direction from the gradient of the whole container: a container of
+# the same shape, with the Riemannian gradient on a manifold leaf and the Euclidean gradient,
+# unchanged, on a plain one.
+@testset "the gradient of a whole container, a $M leaf beside plain ones, $T" for T in REAL_ELTYPES,
+    M in (StiefelManifold, GrassmannManifold)
+
+    rng = Random.Xoshiro(1234)
+    ps = NetworkParameters((L1 = (weight = rand(rng, M{T}, 4, 2),),
+        L2 = (W = randn(rng, T, 3, 3), b = randn(rng, T, 3))))
+    dp = NetworkParameters((L1 = (weight = randn(rng, T, 4, 2),),
+        L2 = (W = randn(rng, T, 3, 3), b = randn(rng, T, 3))))
+    out = PrecomputedGradient(ps, dp)(ps)
+
+    @test out isa NetworkParameters
+    @test keys(out) == keys(ps)
+    @test out.L1.weight == rgrad(ps.L1.weight, dp.L1.weight)
+    @test out.L2.W == dp.L2.W
+    @test out.L2.b == dp.L2.b
+    @test eltype(out.L1.weight) === eltype(out.L2.W) === eltype(out.L2.b) === T
+end
+
+# `TrainingOptimizer` converts a step size once to the element type of the parameters, so a
+# `Float64` step size on `Float32` parameters takes the same step as that value rounded to `Float32`
+# first. Only `Float32` tells the two apart: for `Float64` the rounding does nothing.
+@testset "a Float64 step size takes the rounded Float32 step: $(nameof(typeof(method)))" for method in (
+    Adam(), MomentumMethod(; α = 0.5))
+    T = Float32
+    rng = Random.Xoshiro(2)
+    ps₀ = NetworkParameters((L1 = (weight = rand(rng, T, 6, 6),),))
+    dp = NetworkParameters((L1 = (weight = rand(rng, T, 6, 6),),))
+    ps_a, ps_b = deepcopy(ps₀), deepcopy(ps₀)
+
+    opt_a = TrainingOptimizer(ps_a; algorithm = method, linesearch = 0.1)
+    opt_b = TrainingOptimizer(ps_b; algorithm = method, linesearch = T(0.1))
+    @test typeof(opt_a.linesearch) == typeof(opt_b.linesearch)
+
+    optimization_step!(ps_a, opt_a, dp)
+    optimization_step!(ps_b, opt_b, dp)
+
+    @test ps_a.L1.weight isa Matrix{T}
+    @test ps_a.L1.weight != ps₀.L1.weight
+    @test ps_a.L1.weight == ps_b.L1.weight
 end
