@@ -76,6 +76,7 @@ using NeuralNetworkParameters: NetworkParameters, params,
                                flatten, flatten!, unflatten, unflatten!,
                                FlatParameters,
                                mapparameters, mapparameters!, mapstorage!,
+                               foreachparameters,
                                foldparameters, foldstorage,
                                parameter_eltype, parameterlayout,
                                register_parameter_type!
@@ -222,6 +223,11 @@ export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # `AdamWithEuclideanDecay` shares `Adam`'s cache and state, so there is no state to export
 # alongside it
 export AdamWithEuclideanDecay
+# `CompositeMethod` is a method a caller constructs, as the others are, and `CompositeState` is its
+# state. `leafmethod` is `public`: the method a composite gives a leaf, which a caller inspects but
+# does not need in its training loop.
+export CompositeMethod, CompositeState
+public leafmethod
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")
@@ -234,6 +240,9 @@ include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
 export TrainingOptimizer, optimization_step!
 public PrecomputedGradient, step_size, default_step_size
 include("optimizers/training_optimizer.jl")
+
+# The per-leaf cache, state and training step of `CompositeMethod`, which need everything above.
+include("optimizers/composite_method.jl")
 
 # Teach `NeuralNetworkParameters.load` how to rebuild each of these types from a file, which has no
 # prototype to rebuild against. Was the extension's `__init__` before the package became a hard

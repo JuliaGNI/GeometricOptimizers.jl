@@ -17,9 +17,9 @@ end
 # `BFGS()`, which is the reason these in particular are exported rather than internal.
 @testset "the optimizer methods and their states are exported" begin
     for name in (:Newton, :BFGS, :DFP,
-        :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam,
+        :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam, :CompositeMethod,
         :NewtonState, :BFGSState, :DFPState,
-        :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState)
+        :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState, :CompositeState)
         @test name in names(GeometricOptimizers)
     end
 
@@ -63,6 +63,11 @@ end
         :EventLog, :PhaseTimer, :NoStepObserver, :observe_optimizer_phase, :step_observer)
         @test name in names(GeometricOptimizers)
     end
+
+    # The method a composite gives a leaf is inspected, not needed by a training loop, so it is
+    # public without being brought into `Main`.
+    @test Base.ispublic(GeometricOptimizers, :leafmethod)
+    @test !Base.isexported(GeometricOptimizers, :leafmethod)
 
     # The breakdown path behind `orthonormal_columns` is the half that stays internal: it answers
     # `nothing`, which is a contract for the redraw above it and not one to hand a caller.

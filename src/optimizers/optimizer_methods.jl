@@ -479,11 +479,61 @@ default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNIN
     FirstOrderMethod
 
 The methods that build their direction from the gradient alone: [`GradientMethod`](@ref) and the
-[`FirstOrderMethodWithState`](@ref). These are the methods a [`TrainingOptimizer`](@ref) takes, and
-the methods whose `update!(cache, state, gradient, method, x)` takes the method rather than a
+[`FirstOrderMethodWithState`](@ref). These, and a [`CompositeMethod`](@ref) of two of them, are the
+methods a [`TrainingOptimizer`](@ref) takes, and these are the methods whose
+`update!(cache, state, gradient, method, x)` takes the method rather than a
 [`SimpleSolvers.Hessian`](@extref).
 """
 const FirstOrderMethod = Union{GradientMethod, FirstOrderMethodWithState}
+
+@doc raw"""
+    CompositeMethod(; manifold, array)
+
+Two [`FirstOrderMethod`](@ref)s for a parameter set whose leaves are not all of one kind: `manifold`
+steps every [`Manifold`](@ref) leaf, and `array` every other leaf.
+
+A method is a statement about the geometry of the thing it steps, and a mixed set has more than one
+geometry in it. [`ScalarMomentAdam`](@ref) is the case that forces the point: it steps a single
+[`StiefelManifold`](@ref), because a *scalar* second moment is a statement about one manifold and
+means nothing pooled across a set. A transformer with `StiefelManifold` attention projections beside
+ordinary `Matrix` and `Vector` leaves therefore has no single method that covers it:
+
+```julia
+CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
+```
+
+The split is by `Manifold` and not by `StiefelManifold`: a `manifold` method that steps only some
+manifolds keeps its own scope, so a `GrassmannManifold` leaf under `ScalarMomentAdam` is a
+`MethodError` when its cache is built.
+
+`TrainingOptimizer(ps; algorithm = composite)` builds a cache and a state *per leaf*, each for the
+method [`leafmethod`](@ref) gives for it and in the element type of `ps`; a [`CompositeState`](@ref)
+holds the leaves' states in a tree of the shape of `ps`. [`optimization_step!`](@ref) steps every leaf
+with its own method, cache and state, at the one step size the schedule gives for that step. Nothing
+is pooled across leaves, so every leaf moves exactly as it would under a `TrainingOptimizer` of its
+own. On a single leaf, `TrainingOptimizer` takes the method for that leaf, and the composite is that
+method.
+
+[`solve!`](@ref) takes no composite: its line search chooses one step length for the direction of the
+whole set, and [`Optimizer`](@ref) raises an `ArgumentError` for one.
+"""
+struct CompositeMethod{M <: FirstOrderMethod, A <: FirstOrderMethod} <: OptimizerMethod
+    manifold::M
+    array::A
+end
+
+function CompositeMethod(; manifold::FirstOrderMethod, array::FirstOrderMethod)
+    CompositeMethod(manifold, array)
+end
+
+"""
+    leafmethod(method::CompositeMethod, x)
+
+The method that steps the leaf `x`: `method.manifold` for a [`Manifold`](@ref), and `method.array`
+for any other array. A parameter set is not a leaf, and is a `MethodError`.
+"""
+leafmethod(method::CompositeMethod, ::Manifold) = method.manifold
+leafmethod(method::CompositeMethod, ::AbstractArray) = method.array
 
 """
     default_step_size(method)
@@ -492,9 +542,24 @@ The fixed step size a [`TrainingOptimizer`](@ref) takes for `method` if its `lin
 not given: `1e-2` for [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), and
 `DEFAULT_LEARNING_RATE = 1e-3` for the [`AdamFamily`](@ref), whose direction has magnitude
 ``\\approx{}1`` per component whatever the gradient is.
+
+A [`CompositeMethod`](@ref) steps all of its leaves at one step size, so it has a default only when
+its two methods agree on one: `CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())`
+takes `DEFAULT_LEARNING_RATE`. For two methods that disagree this raises an `ArgumentError` asking
+for `linesearch`.
 """
 default_step_size(::Union{GradientMethod, MomentumMethod}) = 1.0e-2
 default_step_size(::AdamFamily) = DEFAULT_LEARNING_RATE
+
+function default_step_size(method::CompositeMethod)
+    (; manifold, array) = method
+    η, η′ = default_step_size(manifold), default_step_size(array)
+    η == η′ || throw(ArgumentError(
+        "the two methods of a CompositeMethod, $(nameof(typeof(manifold))) and " *
+        "$(nameof(typeof(array))), have different default step sizes, $(η) and $(η′); " *
+        "pass `linesearch`"))
+    η
+end
 
 # The conversion `Optimizer` and `TrainingOptimizer` apply once, to the element type of the
 # parameters. A method without coefficients is returned as it is.
@@ -506,6 +571,9 @@ function change_precision(::Type{T}, m::ScalarMomentAdam) where {T}
 end
 function change_precision(::Type{T}, m::AdamWithEuclideanDecay) where {T}
     AdamWithEuclideanDecay{T}(T(m.β₁), T(m.β₂), T(m.δ), T(m.λ))
+end
+function change_precision(::Type{T}, m::CompositeMethod) where {T}
+    CompositeMethod(change_precision(T, m.manifold), change_precision(T, m.array))
 end
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
