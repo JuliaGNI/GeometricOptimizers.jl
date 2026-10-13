@@ -213,3 +213,13 @@ end
         step_allocations(per_leaf, TrainingOptimizer(per_leaf; algorithm = composite), dp),
         whole_bytes)
 end
+
+@testset "a composite step reports one retraction per leaf to the observer" begin
+    ps = mixed_parameters(Float32)
+    recorder = EventLog()
+    composite = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
+    opt = TrainingOptimizer(ps; algorithm = composite, linesearch = 1.0f-3, observer = recorder)
+    optimization_step!(ps, opt, minibatch_gradient(Float32, 1))
+    @test recorder.events == repeat(
+        [(:retraction_application, :enter), (:retraction_application, :exit)], 3)  # weight, W and b
+end
