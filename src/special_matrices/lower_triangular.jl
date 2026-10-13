@@ -72,7 +72,13 @@ function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
     StrictlyLowerTriangular(_rand(rng, backend, T, n * (n - 1) ÷ 2), Int(n))
 end
 
+# The index is bounds-checked before the packed vector is read. The last line of the body below is
+# reached for a `j` outside the matrix as well as for one in the upper triangle, and without the
+# check an out-of-range index answers `zero(T)` instead of raising, which reads as a legitimate
+# entry. The packed array would usually raise on its own, but "usually" is not a contract — the
+# check makes it one.
 function Base.getindex(A::StrictlyLowerTriangular{T}, i::Int, j::Int) where {T}
+    @boundscheck checkbounds(A, i, j)
     if j == i
         return zero(T)
     end

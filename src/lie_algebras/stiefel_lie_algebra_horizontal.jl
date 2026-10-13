@@ -86,7 +86,12 @@ Base.size(A::StiefelLieAlgHorMatrix) = (A.N, A.N)
 
 manifold_type(::StiefelLieAlgHorMatrix) = StiefelManifold
 
+# The bounds check comes first for the reason `getindex(::StrictlyLowerTriangular, …)` gives: the
+# last line of the body answers `zero(T)` for an index outside the matrix as well as for one in the
+# zero block, and the four branches above it index two different arrays, so an out-of-range pair can
+# answer a legitimate-looking entry instead of raising.
 function Base.getindex(A::StiefelLieAlgHorMatrix{T}, i, j) where {T}
+    @boundscheck checkbounds(A, i, j)
     if i ≤ A.n
         if j ≤ A.n
             return A.A[i, j]

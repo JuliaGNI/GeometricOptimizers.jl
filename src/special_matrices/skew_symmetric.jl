@@ -95,7 +95,11 @@ function return_element(S::AbstractVector{T}, i::Int, j::Int) where {T}
     end
 end
 
+# The bounds check comes first for the reason `getindex(::StrictlyLowerTriangular, …)` gives: every
+# branch below indexes the packed vector with arithmetic derived from the index, and an out-of-range
+# pair raises from deep inside it with a message that names neither the matrix nor the index.
 function Base.getindex(A::SkewSymMatrix, i::Int, j::Int)
+    @boundscheck checkbounds(A, i, j)
     return_element(A.S, i, j)
 end
 

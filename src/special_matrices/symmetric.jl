@@ -141,7 +141,11 @@ Base.similar(A::SymmetricMatrix) = SymmetricMatrix(similar(A.S), A.n)
 # poison scratch arrays with `NaN`.
 Base.fill!(A::SymmetricMatrix, val) = (fill!(A.S, val); A)
 
+# The bounds check comes first for the reason `getindex(::StrictlyLowerTriangular, ·)` gives: the
+# packed vector is indexed with arithmetic derived from the index, so an out-of-range pair raises
+# from inside it rather than here.
 function Base.getindex(A::SymmetricMatrix, i::Int, j::Int)
+    @boundscheck checkbounds(A, i, j)
     if i ≥ j
         A.S[((i - 1) * i) ÷ 2 + j]
     else

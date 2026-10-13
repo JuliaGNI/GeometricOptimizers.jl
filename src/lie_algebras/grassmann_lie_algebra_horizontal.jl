@@ -89,7 +89,9 @@ function KernelAbstractions.get_backend(B::GrassmannLieAlgHorMatrix)
     KernelAbstractions.get_backend(B.B)
 end
 
+# The bounds check comes first for the reason `getindex(::StrictlyLowerTriangular, …)` gives.
 function Base.getindex(A::GrassmannLieAlgHorMatrix{T}, i::Integer, j::Integer) where {T}
+    @boundscheck checkbounds(A, i, j)
     if i ≤ A.n
         if j ≤ A.n
             return zero(T)

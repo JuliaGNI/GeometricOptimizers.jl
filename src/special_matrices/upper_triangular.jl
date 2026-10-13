@@ -71,7 +71,9 @@ function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
     StrictlyUpperTriangular(_rand(rng, backend, T, n * (n - 1) ÷ 2), Int(n))
 end
 
+# The bounds check and the reason for it are on `getindex(::StrictlyLowerTriangular, …)`.
 function Base.getindex(A::StrictlyUpperTriangular{T}, i::Int, j::Int) where {T}
+    @boundscheck checkbounds(A, i, j)
     if j == i
         return zero(T)
     end
