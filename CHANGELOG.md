@@ -31,6 +31,10 @@ breaking release).
   draws the same sweep, the same seed and the same eight scales, from its own copy of those
   lines; the header of `scripts/retraction_sweep.jl` says so.
 
+### Fixed
+
+- **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
+
 ## [0.9.0]
 
 **This release makes the package the optimizer that GeometricMachineLearning trains with.**
@@ -4999,4 +5003,4 @@ Euclidean optimizer machinery from SimpleSolvers into one package.
 [0.6.1]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.6.0...v0.7.0
 [0.7.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.7.0
 [0.8.0]: https://github.com/JuliaGNI/GeometricOptimizers.jl/releases/tag/v0.8.0
-[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.8.0...main
+[Unreleased]: https://github.com/JuliaGNI/GeometricOptimizers.jl/compare/v0.9.0...main
