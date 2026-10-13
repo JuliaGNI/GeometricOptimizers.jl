@@ -65,6 +65,11 @@ breaking release).
   `ArgumentError`: their line search chooses one step length for the direction of the whole set, and
   a composite has no such direction.
 
+  A composite step on dense leaves allocates nothing, as `Adam` on the whole set does, and on a set
+  with a Stiefel leaf it allocates what `Adam` on the whole set allocates. The step of each leaf runs
+  a walk of NeuralNetworkParameters inside the walk over the leaves, and only 0.5.2 walks a nested
+  set without allocating, so the `[compat]` floor of NeuralNetworkParameters is now 0.5.2.
+
 ### Fixed
 
 - **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
