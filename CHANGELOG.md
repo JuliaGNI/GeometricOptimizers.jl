@@ -35,6 +35,36 @@ breaking release).
   draws the same sweep, the same seed and the same eight scales, from its own copy of those
   lines; the header of `scripts/retraction_sweep.jl` says so.
 
+- Added **`CompositeMethod`**, one first-order method per *leaf* of a mixed parameter set.
+  `CompositeMethod(; manifold, array)`, or positionally `CompositeMethod(manifold, array)`, holds two
+  methods: `manifold` steps every `Manifold` leaf and `array` every other leaf. The `public`
+  `leafmethod(method, x)` returns the method that steps a leaf, and a parameter set passed in place
+  of a leaf is a `MethodError`.
+
+  The case that forces it is `ScalarMomentAdam`, which steps a single `StiefelManifold` on purpose:
+  a *scalar* second moment is a statement about one manifold and means nothing pooled across a set.
+  A transformer with Stiefel attention projections beside ordinary arrays, or a symplectic
+  autoencoder with Stiefel PSD layers beside Euclidean SympNet layers, has no single method that
+  covers it, and `GeometricMachineLearning` had been assembling the choice by hand, in two different
+  ways.
+
+  `TrainingOptimizer(ps; algorithm = composite)` builds **one cache and one state per leaf**, each
+  for the method `leafmethod` gives that leaf and converted to the element type of `ps`. The
+  new exported `CompositeState` holds the leaves' states in a tree of the shape of `ps`.
+  `optimization_step!` steps every leaf with its own method, cache and state, at the one step size
+  the schedule gives for the step. Nothing is pooled across leaves, so every leaf moves exactly as
+  under a `TrainingOptimizer` of its own: `test/optimizers/composite_method.jl` pins this to the
+  bit, and pins a composite of `Adam` on every leaf against `Adam` on the whole set. On a single
+  leaf the composite is the method of that leaf.
+
+  A quasi-Newton method, `Newton` or a nested composite as either argument is a `TypeError` at
+  construction. `CompositeMethod` is not a `FirstOrderMethod`, so `TrainingOptimizer` takes
+  `Union{FirstOrderMethod, CompositeMethod}`. `change_precision` converts both methods.
+  `default_step_size` of a composite is the two methods' default when they agree, and otherwise an
+  `ArgumentError` asking for `linesearch`. `Optimizer` and `solve!` refuse a composite with an
+  `ArgumentError`: their line search chooses one step length for the direction of the whole set, and
+  a composite has no such direction.
+
 ### Fixed
 
 - **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
