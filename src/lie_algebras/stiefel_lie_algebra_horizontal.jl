@@ -104,40 +104,6 @@ function Base.getindex(A::StiefelLieAlgHorMatrix{T}, i, j) where {T}
     return zero(T)
 end
 
-# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
-function _owned_add(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    @assert A.N == B.N
-    @assert A.n == B.n
-    StiefelLieAlgHorMatrix(A.A + B.A,
-        A.B + B.B,
-        A.N,
-        A.n)
-end
-
-function _owned_sub(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    @assert A.N == B.N
-    @assert A.n == B.n
-    StiefelLieAlgHorMatrix(A.A - B.A,
-        A.B - B.B,
-        A.N,
-        A.n)
-end
-
-function add!(C::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    @assert A.N == B.N == C.N
-    @assert A.n == B.n == C.n
-    add!(C.A, A.A, B.A)
-    add!(C.B, A.B, B.B)
-end
-
-function Base.:-(A::StiefelLieAlgHorMatrix)
-    StiefelLieAlgHorMatrix(-A.A, -A.B, A.N, A.n)
-end
-
-function Base.:*(A::StiefelLieAlgHorMatrix, α::Real)
-    StiefelLieAlgHorMatrix(α * A.A, α * A.B, A.N, A.n)
-end
-
 # The sum kernel. `src/ambiguities.jl` has the `+` methods that reach it.
 function _ladd(B::StiefelLieAlgHorMatrix, A::AbstractMatrix)
     @assert size(A) == size(B)
@@ -191,8 +157,6 @@ _owned_add(A::SkewSymMatrix, C::StiefelLieAlgHorMatrix) = _owned_add(C, A)
 # matrices is skew-symmetric as well. A structured `-` would be a behaviour change, so the asymmetry
 # against `+` above is deliberate.
 
-Base.:*(α::Real, A::StiefelLieAlgHorMatrix) = A * α
-
 # The first `n` rows of `B * C`, which is the one part of the product that differs between the two
 # lifts. This lift's top row of blocks is `[A  -Bᵀ]`, so both blocks contribute; the docstring on
 # `*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)` in `abstract_lie_algebra_horizontal.jl` says why
@@ -224,27 +188,6 @@ function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
     StiefelLieAlgHorMatrix(A, _rand(rng, backend, T, N - n, n), N, n)
 end
 
-# Both methods allocate on the backend `A` is already on, through the backend-taking `zeros` above.
-# That is what makes `similar` usable as the like-for-like allocation of an optimizer cache: the
-# four-argument cache constructors bind their three gradient blocks to a single
-# `AT <: GradientStorage{T}`, so a host block beside a device one does not dispatch.
-function Base.similar(A::StiefelLieAlgHorMatrix, dims::Union{Integer, AbstractUnitRange}...)
-    zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, dims...)
-end
-function Base.similar(A::StiefelLieAlgHorMatrix)
-    zeros(KernelAbstractions.get_backend(A), StiefelLieAlgHorMatrix{eltype(A)}, A.N, A.n)
-end
-
-function LinearAlgebra.mul!(C::StiefelLieAlgHorMatrix, A::StiefelLieAlgHorMatrix, α::Real)
-    mul!(C.A, A.A, α)
-    mul!(C.B, A.B, α)
-    C
-end
-function LinearAlgebra.mul!(C::StiefelLieAlgHorMatrix, α::Real, A::StiefelLieAlgHorMatrix)
-    mul!(C, A, α)
-end
-LinearAlgebra.rmul!(C::StiefelLieAlgHorMatrix, α::Real) = mul!(C, C, α)
-
 function StiefelLieAlgHorMatrix(V::AbstractVector, N::Int, n::Int)
     # length of skew-symmetric matrix
     skew_sym_size = n * (n - 1) ÷ 2
@@ -259,29 +202,10 @@ function StiefelLieAlgHorMatrix(V::AbstractVector, N::Int, n::Int)
     )
 end
 
-function Base.zero(B::StiefelLieAlgHorMatrix)
-    StiefelLieAlgHorMatrix(
-        zero(B.A),
-        zero(B.B),
-        B.N,
-        B.n
-    )
-end
-
 function KernelAbstractions.get_backend(B::StiefelLieAlgHorMatrix)
     KernelAbstractions.get_backend(B.B)
 end
 
-function Base.copy(B::StiefelLieAlgHorMatrix)
-    StiefelLieAlgHorMatrix(
-        copy(B.A),
-        copy(B.B),
-        B.N,
-        B.n
-    )
-end
-
-# fallback -> put this somewhere else!
 # `copyto!` accepts any destination at least as long as its source, so without this guard a
 # mismatched pair partially overwrites `A` and leaves the rest stale. The structured `assign!`
 # methods that reach this one through `foreach` check only their own `n`, not the block shapes.
@@ -291,20 +215,3 @@ function assign!(A::AbstractArray, B::AbstractArray)
 
     nothing
 end
-
-function _round(B::StiefelLieAlgHorMatrix; kwargs...)
-    StiefelLieAlgHorMatrix(
-        _round(B.A; kwargs...),
-        _round(B.B; kwargs...),
-        B.N,
-        B.n
-    )
-end
-
-function Base.copyto!(A::StiefelLieAlgHorMatrix, B::StiefelLieAlgHorMatrix)
-    copyto!(A.A, B.A)
-    copyto!(A.B, B.B)
-    A
-end
-
-Base.fill!(A::StiefelLieAlgHorMatrix, val) = (fill!(A.A, val); fill!(A.B, val); A)
