@@ -37,7 +37,100 @@ breaking release).
 
 ### Fixed
 
+**`retraction_differential(::Cayley, B, α)` builds its identity in a way a device cannot serve.**
+`Base._one` writes the diagonal of an `AbstractMatrix` in a scalar-indexed loop, which a
+`KernelAbstractions` backend refuses. On a `JLArray` lift under `allowscalar(false)` the call raised
+`Scalar indexing is disallowed`, and the in-place workspace arm is bound to a host `Matrix`, so a
+device workspace fell through to it. `unit_matrix` answers with a kernel, as `geodesic` and
+`cayley` already do.
+
+**`Ω` computed a matrix nothing read.** `YY = Y * Y'` was assigned and never used; its only consumer
+was `one(YY)`, which read its size. At `N = 60` that was 32 848 of the 317 424 bytes a call
+allocated. The line is gone, the identity comes from `unit_matrix`, and the two manifolds share one
+body instead of two that differ by the wrapper.
+
+**The two-argument `NewtonOptimizerCache` constructor is deleted.** No call site reached it, and the
+comment that kept it alive claimed an arity error it did not have: the struct has nine fields and
+the call passes nine values. The real failure, were it ever called, is a `MethodError` on
+`Gradient(problem)`.
+
+**`OptimizerStatus` no longer builds its struct twice.** The constructor built the whole 13-field
+struct, destructured `convergence_measures` from it, and then built a second identical one to
+return.
+
+**An out-of-range index answered `0.0` instead of raising.** The last branch of each structured
+matrix's `getindex` is reached for a zero block as well as for an index outside the matrix, so
+`A[1, 100]` on a triangular returned `0.0`; the skew and symmetric matrices raised from inside the
+packed vector's index arithmetic, with a message naming neither the matrix nor the index. All four
+types, and both lifts, now check the index first. The check is `@boundscheck`, so it folds away
+at `-O3` and with `--check-bounds=no`, as the constructors' asserts already do.
+
+**`*(::SkewSymMatrix, ::SkewSymMatrix)` no longer allocates an identity to materialise its right
+operand.** `A1 * (one(A2) * A2)` built an `N × N` identity in order to reach the dense form; the
+packed vector is written in one pass, so at `n = 6` the product costs 1 280 bytes instead of 1 824.
+
+
 - **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
+
+
+### Changed
+
+**A manifold solver step allocates the buffers it used to rebuild at every trial.** The line search
+makes a scaled copy of the direction for every trial step, and the slope evaluation lifts a fresh
+horizontal lift out of a fresh ambient gradient. Both now write into arrays built once per
+`Optimizer`, beside the `RetractionWorkspace` and the differential that `linesearch_problem` already
+held. The gradient itself is lifted in place: `global_rep!` writes the `A` and `B` blocks of a lift
+that already exists, with the skew block as one fused projection kernel and the `B` block as a
+`mul!`, and its vector-space arm covers a plain-vector solution so the three call sites
+(`store_gradient!`, `_refresh_latest_gradient!` and `trial_slope`) are written once. A manifold
+`solver_step!` at `40 × 5`, Julia 1.13.1, `--check-bounds=auto`, one step after a warm solve,
+measured against base `78f76f4`:
+
+| what | before | after |
+|:--|--:|--:|
+| `solver_step!`, `BFGS` + default `Backtracking(expand)` | 352 320 B | 338 432 B |
+| `solver_step!`, any method with a fixed step | 30 832 B | 24 128 B |
+| `solver_step!`, `GradientMethod` + default search | 93 200 B | 59 824 B |
+
+**The four dense-to-packed projections build their packed vector in one kernel.** Each took a full
+`n × n` intermediate and then launched one kernel per row to copy the triangle out. One kernel over
+the `n × n` range reads the argument entrywise and writes the packed form, so a call allocates the
+packed result and nothing else. At `n = 1024`, `--check-bounds=auto`:
+
+| | before | after |
+|:--|:--|:--|
+| `map_to_S` | 4.6 ms, 21.1 MB | 0.81 ms, 8.4 MB |
+| `map_to_Skew` | 3.9 ms, 21.1 MB | 0.71 ms, 4.2 MB |
+
+**The symplectic decompositions read their columns as views.** `A[1:(2N), i]`,
+`B[row_ind, i]` and `B[i, row_ind]` copied a whole column per read. `symplectic_gram_schmidt!` on
+`80 × 80` allocated 11.2 MB and now allocates 6.8 MB; `apply_S_left` on `80 × 3` 460 kB and now
+374 kB. The values are unchanged to the round-off of a process whose own docstring records that the
+inverse reconstructs to `1.7e-8` at `2N = 20`.
+
+**The two horizontal lifts share one file for their common method families.** Fourteen families —
+the pair operations, the scalar product with both argument orders and `rmul!`, `zero`, `copy`,
+`copyto!`, `fill!`, `_round` and `similar` — were duplicated character-for-character in the two
+per-type files, differing only in which constructor the result took. They are now written once in
+`src/lie_algebras/lift_families.jl`, over `parent`'s block tuple, with the one-argument constructor
+as the single hook a concrete lift supplies. The two lift files lose 170 lines and the shared file
+gains 103. `zeros` and `rand` stay per type, because a caller may name the storage arrays as well as
+the element type and a three-parameter `Type` is not callable; a sum of two lifts of different
+species takes the dense path, as the triangulars' does.
+
+
+### Removed
+
+- The commented-out `update_section!` block in `global_sections.jl`, and the `apply_section!` method
+  over a section as its destination, which no call site reached.
+- Six comments that left an open question in the reader's hands: a `TODO` on the Haar measure and five
+  notes of uncertainty about a signature, a file boundary or a `setindex!`.
+
+### Known gaps this leaves
+
+A manifold step still allocates the ambient gradient its user-supplied gradient functor produces,
+because `SimpleSolvers`' one-argument form allocates its destination and the two-argument form of
+`GradientFunction` is `AbstractVector`-only. That is K41 in `KNOWN_ISSUES.md`, beside K35 to K37,
 
 ## [0.9.0]
 

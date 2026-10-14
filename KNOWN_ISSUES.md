@@ -1139,6 +1139,25 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   `Float32` and 8 480 bytes in `Float64`, for `GradientMethod` and the three `Adam` methods alike.
   The frames are not profiled.
 
+### K41 · A manifold solver step still allocates its ambient gradient, and the fix is cross-package
+
+- location: `src/optimizers/optimizer_cache.jl` (`_refresh_latest_gradient!`) and
+  `src/optimizers/linesearch_problem.jl` (`_trial_slope`)
+- kind: found late
+- found: 2026-10-14
+- evidence: after `52db167` cut the line-search buffers, a manifold `solver_step!` at `40 × 5`
+  (Julia 1.13.1, `--check-bounds=auto`, one step after a warm solve, an allocation-free objective)
+  allocates 338 432 B with the default `Backtracking(expand)` search and 24 128 B with a fixed
+  step, of which `refresh_latest_gradient!` is 5 760 B and the line search's every slope probe
+  6 256 B. The remainder is the ambient gradient the user's gradient functor allocates:
+  `SimpleSolvers`' one-argument `(grad::Gradient)(x)` is `g = alloc_g(x); grad(g, x)`, and the
+  two-argument form of `GradientFunction` is `AbstractVector`-only, so `g(dest, x::Manifold)` has no
+  method. An experiment with a `∇` field on `GradientCache` and a flat scratch buffer was reverted:
+  a manifold gradient's destination is a lift, while `∇F!`'s contract for a manifold is the flat
+  storage, so removing it needs a protocol change in `SimpleSolvers` rather than a local one. Until
+  then the 24 kB floor stands beside K35, K36 and K37, and this branch's CHANGELOG entry states the
+  figure with its base commit.
+
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
