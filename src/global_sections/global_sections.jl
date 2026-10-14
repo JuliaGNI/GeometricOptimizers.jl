@@ -93,10 +93,6 @@ end
 Apply `λY` to `Y₂` and store the result in `Y`.
 
 This is the inplace version of [`apply_section`](@ref).
-
-A call writes into a *point*, and the optimizer step never wants one: `update_section!` transports
-a section along the retraction instead, which is the operation a step is made of. A further method
-of this function over a section as its destination has no call site, so none is written.
 """
 function apply_section!(Y::AT, λY::GlobalSection{T, AT},
         Y₂::MT) where {T, AT <: StiefelManifold{T}, MT <: StiefelManifold{T}}
@@ -128,10 +124,6 @@ function _apply_section!(A::AbstractMatrix{T}, λY::GlobalSection, A₂::Abstrac
     A
 end
 
-# This one is `StiefelManifold`-only and stays so: widening it to `Manifold` would be widening a
-# method that no call site reaches — every `apply_section!` call in this package writes into a
-# point, not into a section. `update_section!` transports a section with the retraction instead,
-# which is the operation the optimizer step needs.
 function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {
         T, AT <: GrassmannManifold{T}}
     Y = GrassmannManifold(zero(Y₂.A))
@@ -189,61 +181,21 @@ function global_rep(λY::NamedTuple, gx::NetworkParameters)
     mapparameters((g, λ) -> global_rep(λ, g), gx, λY)
 end
 
-# The in-place forms of the two container versions, which write the lift set into a destination that
-# already has its shape. `mapparameters!` pairs the trees by key and reaches leaves at any depth, so
-# a manifold leaf takes `global_rep!` on its own lift and an ordinary array takes a `copyto!`. The
-# `gx` argument is the ambient gradient of the whole set, and the leaves are projected one at a time.
-#
-# `_lift_leaf!` and not `global_rep!` directly, because a leaf that is an ordinary array has no lift
-# to write and is a plain copy; the walk's leaf function has to answer for both.
-#
-# The two arms are disjoint on the *section*: a lift beside a section that carries one, and a plain
-# array beside a section whose lift is `nothing`. That is the axis on which the destination's kind and
-# the section's kind agree, because a lift only ever stands beside a manifold point and an array only
-# beside a vector-space parameter.
-#
-# A parameter set with a structured-matrix leaf takes neither: the leaf is a `VectorStorageMatrix`,
-# which is an ordinary array beside a section whose lift is `nothing`, so the copy arm answers. The
-# lift arms' section is bound to a `Manifold` for the same disjointness on `global_rep!`, whose same
-# pair would otherwise be ambiguous.
-function _lift_leaf!(
-        D::AbstractLieAlgHorMatrix, λY::GlobalSection{T, <:Manifold, <:AbstractArray},
-        gx::AbstractMatrix) where {T}
-    global_rep!(D, λY, gx)
-end
-# `AbstractArray` and not `AbstractVecOrMat`, for the disjointness `global_rep!`'s same pair needs:
-# a horizontal lift is an `AbstractVecOrMat`, so the two arms would be two-wider and ambiguous.
-function _lift_leaf!(
-        D::AbstractArray, λY::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
-        gx::AbstractVecOrMat{T}) where {T}
-    (copyto!(D, gx); D)
-end
-
-function global_rep!(D::NamedTuple, λY::NamedTuple, gx::NetworkParameters)
-    mapparameters!(_lift_leaf!, D, λY, gx)
+# The in-place form of the container versions, which writes the lift set into a destination that
+# already has its shape. `mapparameters!` pairs the trees by key and reaches the leaves at any depth,
+# where a manifold leaf takes the lift method of `global_rep!` and an ordinary array the copy below.
+function global_rep!(D::Union{NamedTuple, NetworkParameters}, λY::NamedTuple,
+        gx::Union{NamedTuple, NetworkParameters})
+    mapparameters!(global_rep!, D, λY, gx)
     D
 end
-function global_rep!(D::NetworkParameters, λY::NamedTuple, gx::NetworkParameters)
-    mapparameters!(_lift_leaf!, D, λY, gx)
-    D
-end
-global_rep!(D, λY::NamedTuple, gx::NamedTuple) = mapparameters!(_lift_leaf!, D, λY, gx)
-global_rep!(D, λY::NamedTuple, gx::NetworkParameters) = global_rep!(D, λY, gx)
 
-# The vector-space form of the same pair: the section's lift is `nothing`, so the map is the
-# identity and the write is a copy. This is the arm a plain-vector solution reaches through
-# `store_gradient!` and `refresh_latest_gradient!`, and it is why their other arm can be written
-# once and dispatch the same way for every kind of parameter.
+# The vector-space form: the section's lift is `nothing`, so the map is the identity and the write
+# is a copy. `store_gradient!` reaches it for a plain-vector solution, and a parameter set reaches it
+# for each of its vector-space leaves.
 #
-# The two arms of this function are disjoint on the third parameter of the section, which is the
-# `λ` the section carries: a lift stands beside a manifold point, whose section always carries one;
-# an ordinary array beside a vector-space parameter, whose section never does. So a lift destination
-# takes the lift arm and a `Vector{Float64}` takes this one.
-#
-# The destination is bound to `AbstractArray` and not `AbstractVecOrMat`, which is what separates the
-# pair: a `StiefelLieAlgHorMatrix` *is* an `AbstractVecOrMat`, so a wider first argument here and a
-# `Manifold` section above would be two-wider in the two slots and ambiguous. `AbstractArray` and a
-# horizontal lift are disjoint, and both are the arrays this package's caches hold.
+# It is disjoint from the lift methods below on the section, whose `λ` is `nothing` here and an
+# array beside a manifold point.
 function global_rep!(
         D::AbstractArray, λY::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
         gx::AbstractVecOrMat{T}) where {T}
@@ -332,6 +284,11 @@ end
 _ambient(Δ::AbstractMatrix) = Δ
 _ambient(Δ::Manifold) = parent(Δ)
 
+# The `B` block, `λᵀ∇L`. It is zeroed first because Metal's `mul!` scales the destination by `β = 0`
+# rather than ignoring it, so a `NaN` the block holds, as a cache's lift does from its construction,
+# would survive the product.
+_lift_B!(B, λ, ∇L) = mul!(fill!(B, zero(eltype(B))), λ', ∇L)
+
 function global_rep!(
         D::StiefelLieAlgHorMatrix{T}, λY::GlobalSection{T, <:Manifold, <:AbstractArray},
         Δ::AbstractMatrix{T}) where {T}
@@ -340,7 +297,7 @@ function global_rep!(
     ∇L = _ambient(Δ)
     @assert size(∇L) == (N, n)
     map_to_Skew!(D.A, λY.Y.A' * ∇L)
-    mul!(D.B, λY.λ', ∇L)
+    _lift_B!(D.B, λY.λ, ∇L)
 
     D
 end
@@ -394,7 +351,7 @@ function global_rep!(D::GrassmannLieAlgHorMatrix{T},
     @assert (D.N, D.n) == (N, n)
     ∇L = _ambient(Δ)
     @assert size(∇L) == (N, n)
-    mul!(D.B, λY.λ', ∇L)
+    _lift_B!(D.B, λY.λ, ∇L)
 
     D
 end

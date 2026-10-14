@@ -141,7 +141,7 @@ function store_gradient!(cache::OptimizerCache, state::OptimizerState, g::Gradie
     else
         # `global_rep!` into the cache's own array, rather than `global_rep` into a fresh lift: the
         # destination already has the shape, so a gradient the step builds costs the products and
-        # nothing else. The `AbstractVector` method below keeps the direct write into the array.
+        # nothing else. On a vector space the write is a copy.
         global_rep!(gradient_array(cache), section(state), g(x))
     end
     # consumed: from here to the next `refresh_latest_gradient!`, `solver_step!` and the line search

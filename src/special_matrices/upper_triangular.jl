@@ -99,15 +99,9 @@ end
 
 mat_mul_kernel(::StrictlyUpperTriangular, backend) = up_mat_mul_kernel!(backend)
 
-# The projection that builds the packed vector from a dense matrix, in one kernel over the whole
-# `n × n` range: it reads `A` entrywise and writes only the strict upper triangle, so a call
-# allocates the packed result and nothing else.
-#
-# Reading `A[i, j]` under the guard `j > i` and not `A[j, i]` through `transpose(A)`: the kernel is
-# indexed by the entry it writes, and the guard is the transpose that the old form expressed by
-# handing the kernel a lazy `Transpose` wrapper. `transpose` and not `adjoint`, and this constructor
-# performs no projection, it reads the entries that are there — the same convention the old body
-# documented, one kernel launch instead of `n - 1` of them.
+# The packed vector from a dense matrix, in one kernel over the whole `n × n` range that writes only
+# the strict upper triangle, so a call allocates the packed result and nothing else. It reads the
+# entries that are there, unconjugated: this constructor performs no projection.
 @kernel function up_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
     i, j = @index(Global, NTuple)
     if j > i

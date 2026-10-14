@@ -25,43 +25,38 @@ retraction into the cache's section, and read the point back out.
     not overwrite itself.
 """
 trial_iterate!(cache::OptimizerCache, params, α, retraction, workspace = nothing;
-    scaled = nothing) = _trial_iterate!(
-    solution(cache), cache, params, α, retraction, workspace; scaled)
+    buffers = nothing) = _trial_iterate!(
+    solution(cache), cache, params, α, retraction, workspace; buffers)
 
 function _trial_iterate!(
         ::AbstractVector, cache::OptimizerCache, params, α, ::AbstractRetraction, _;
-        scaled = nothing)
+        buffers = nothing)
     compute_new_iterate!(solution(cache), params.x, α, direction(cache))
 end
 
 # The `Manifold`/parameter-set arm: the direction is scaled by `α` and the *state's* section is
 # pushed through the retraction into the cache's section, from which the trial point is read back.
 #
-# `scaled` is the buffer `linesearch_problem` builds for this, so that a search of any length writes
-# into one array instead of allocating a copy of the lift per trial. It is `nothing` for a caller
-# that has no optimizer — a bare `trial_iterate!` from outside a solve — and then the copy is made,
-# because `direction(cache)` has to stay intact for the next trial step.
+# The scaled direction goes into `buffers.scaled`, the buffer of `_trial_buffers`, and into a fresh
+# copy for a caller without one, such as a bare `trial_iterate!` from outside a solve.
+# `direction(cache)` itself has to stay intact for the next trial step.
 function _trial_iterate!(
         ::Union{Manifold, NetworkParameters}, cache::OptimizerCache, params, α, retraction,
-        workspace; scaled = nothing)
+        workspace; buffers = nothing)
     # `params` is a concrete `NamedTuple` here, so this is constant-folded away rather than checked on
     # every merit evaluation. Without it a missing `state` surfaces as `has no field state`.
     hasproperty(params, :state) ||
         error("a trial step on a manifold retracts from `section(params.state)`, so the line " *
               "search parameters have to carry the `state`; `solver_step!` passes it, a bare " *
               "`(x = x,)` does not.")
-    δ = scaled === nothing ? _mul(α, direction(cache)) : _mul!(scaled, α, direction(cache))
+    δ = buffers === nothing ? _mul(α, direction(cache)) :
+        _mul!(buffers.scaled, α, direction(cache))
     update_section!(section(cache), section(params.state), δ, retraction, workspace)
     _copyto!(solution(cache), section(cache))
 end
 
-# `_mul` written into `dest`: the scaled copy the line search needs, without the copy. `dest` is the
-# search's own buffer and nothing else reads it between two trial steps.
-function _mul!(dest, α::Number, a)
-    _copyto!(dest, a)
-    _rmul!(dest, α)
-    dest
-end
+# `_mul` written into `dest`, in one pass over the free parameters.
+_mul!(dest, α::Number, a) = _storagewise!((d, s) -> (d .= α .* s), dest, a)
 
 @doc raw"""
     step_αmax(c, δ)
@@ -333,10 +328,7 @@ function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gra
 
     function f(α, params)
         observe_optimizer_phase(observer, :retraction_application) do
-            trial_iterate!(
-                cache, params, α, retraction, workspace;
-                scaled = buffers === nothing ?
-                         nothing : buffers.scaled)
+            trial_iterate!(cache, params, α, retraction, workspace; buffers)
         end
         observe_optimizer_phase(observer, :objective) do
             value(problem, solution(cache))
@@ -345,10 +337,7 @@ function linesearch_problem(problem::OptimizerProblem{T}, gradient_instance::Gra
 
     function d(α, params)
         observe_optimizer_phase(observer, :retraction_application) do
-            trial_iterate!(
-                cache, params, α, retraction, workspace;
-                scaled = buffers === nothing ?
-                         nothing : buffers.scaled)
+            trial_iterate!(cache, params, α, retraction, workspace; buffers)
         end
         observe_optimizer_phase(observer, :retraction_application) do
             trial_slope(

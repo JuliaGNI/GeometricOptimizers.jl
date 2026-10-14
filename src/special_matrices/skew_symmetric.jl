@@ -236,21 +236,16 @@ function Base.one(A::SkewSymMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A.S), T, A.n)
 end
 
-# The dense form of a skew block, allocated. `_dense_skew!` in
-# `retractions/retraction_workspace.jl` writes the same matrix into a buffer the caller owns, and it
-# is the one a workspace reuses; this one allocates the result.
+# The dense form of a skew block, allocated. `_dense_skew!` in `retractions/retraction_workspace.jl`
+# writes it into a buffer the caller owns: on the host entry by entry, and on a device, which serves
+# no `getindex`, as the product with the identity.
+_dense_skew(B::SkewSymMatrix{T, Vector{T}}) where {T} = Matrix{T}(undef, B.n, B.n) .= B
 function _dense_skew(B::SkewSymMatrix{T}) where {T}
-    backend = KernelAbstractions.get_backend(B.S)
-    C = KernelAbstractions.allocate(backend, T, B.n, B.n)
+    C = KernelAbstractions.allocate(KernelAbstractions.get_backend(B.S), T, B.n, B.n)
     _dense_skew!(C, B, unit_matrix(B))
-
-    C
 end
 
-# `*(::SkewSymMatrix, ::SkewSymMatrix)` is a product of two skew matrices, which is a general
-# matrix, so the right operand has to be materialised densely first. `one(A2) * A2` was the obvious
-# spelling and builds a second `N × N` identity to do it; `_dense_skew` writes the same matrix in
-# one pass over the packed vector, so the product costs the destination and nothing else.
+# The product of two skew matrices is a general matrix, so the right operand is made dense first.
 function Base.:*(A1::SkewSymMatrix{T}, A2::SkewSymMatrix{T}) where {T}
     A1 * _dense_skew(A2)
 end
@@ -287,19 +282,11 @@ end
 # onto the skew-*Hermitian* matrices, and its strict lower triangle stored here gives a matrix that
 # is neither that projection nor `(A - Aᵀ)/2`. The two agree for a real element type.
 #
-# One kernel over the whole `n × n` range, reading `A` entrywise and writing the packed vector, so a
-# call allocates the packed result and nothing else. The dense symmetrisation that a broadcast would
-# build is a full `n × n` matrix, and this projection reads every entry twice and writes half of
-# them, so materialising it costs a temporary the size of the argument and a pass over it for a
-# result half that size. `map_to_Skew!` is the same kernel into a `SkewSymMatrix` that already
-# exists, which is what a `global_rep!` into a cache buffer uses.
+# One kernel writes the packed vector straight from `A`, so a call allocates no dense temporary.
+# `map_to_Skew` returns a new packed vector, and `map_to_Skew!` writes into a `SkewSymMatrix`.
 function map_to_Skew(A::AbstractMatrix{T}) where {T}
-    n = size(A, 1)
-    @assert size(A, 2) == n
-    backend = KernelAbstractions.get_backend(A)
-    S = _zeros(backend, T, n * (n - 1) ÷ 2)
-    skew_projection_kernel(backend)(S, A; ndrange = (n, n))
-    S
+    S = zeros(KernelAbstractions.get_backend(A), SkewSymMatrix{T}, size(A, 1))
+    map_to_Skew!(S, A).S
 end
 
 function map_to_Skew!(S::SkewSymMatrix{T}, A::AbstractMatrix{T}) where {T}
