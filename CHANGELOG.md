@@ -113,10 +113,11 @@ the pair operations, the scalar product with both argument orders and `rmul!`, `
 `copyto!`, `fill!`, `_round` and `similar` — were duplicated character-for-character in the two
 per-type files, differing only in which constructor the result took. They are now written once in
 `src/lie_algebras/lift_families.jl`, over `parent`'s block tuple, with the one-argument constructor
-as the single hook a concrete lift supplies. The two lift files lose 170 lines and the shared file
-gains 103. `zeros` and `rand` stay per type, because a caller may name the storage arrays as well as
-the element type and a three-parameter `Type` is not callable; a sum of two lifts of different
-species takes the dense path, as the triangulars' does.
+as the single hook a concrete lift supplies. The two lift files lose 157 lines and the shared file
+gains 103, so the three files together are 54 shorter; the counts are against the merge of this
+branch onto `origin/main`, not against either side alone. `zeros` and `rand` stay per type, because
+a caller may name the storage arrays as well as the element type and a three-parameter `Type` is not
+callable; a sum of two lifts of different species takes the dense path, as the triangulars' does.
 
 
 ### Removed
