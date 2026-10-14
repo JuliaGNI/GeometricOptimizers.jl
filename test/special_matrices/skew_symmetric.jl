@@ -1,5 +1,5 @@
 using GeometricOptimizers
-using GeometricOptimizers: map_to_Skew, freeparameters
+using GeometricOptimizers: map_to_Skew, map_to_Skew!, freeparameters
 using LinearAlgebra: transpose
 using Test
 import Random
@@ -238,6 +238,26 @@ end
     @test Matrix(Sr) ≈ (Ar - transpose(Ar)) / 2
     @test Matrix(Sr) ≈ (Ar - Ar') / 2
     @test Br * Sr ≈ Br * Matrix(Sr)
+end
+
+# The projection kernel writes every packed entry and the storage is not zeroed first, so a
+# destination that holds `NaN` comes back as the projection or the kernel missed an entry.
+@testset "map_to_Skew! overwrites every entry, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(5)
+    for n in 1:5
+        A = randn(rng, T, n, n)
+        S = SkewSymMatrix(fill(T(NaN), n * (n - 1) ÷ 2), n)
+        @test map_to_Skew!(S, A) === S
+        @test S == SkewSymMatrix(A)
+        @test Matrix(S) ≈ (A - transpose(A)) / 2
+    end
+end
+
+@testset "an index outside a SkewSymMatrix raises" begin
+    A = SkewSymMatrix(randn(Random.Xoshiro(6), 4, 4))
+    for (i, j) in ((0, 1), (-1, 2), (5, 1), (1, 5))
+        @test_throws BoundsError A[i, j]
+    end
 end
 
 # A row vector on the left is the one shape `*(::AbstractMatrix, ::OwnedMatrix)` does not settle on

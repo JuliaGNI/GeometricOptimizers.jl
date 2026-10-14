@@ -208,7 +208,7 @@ function sr!(A::AbstractMatrix{T}) where {T}
         @views b = A[row_ind, M + i]
         c₁[i], c₂[i], ρ[i], ν[i], μ[i] = symplectic_householder!(a, b)
         # apply the two reflections of this step to the columns that are left
-        for j in (i + 1):M
+        @views for j in (i + 1):M
             A[row_ind, j] .+= c₁[i] * symplectic_form(a, A[row_ind, j]) * a
             A[row_ind, j] .+= c₂[i] * symplectic_form(b, A[row_ind, j]) * b
             A[row_ind, j + M] .+= c₁[i] * symplectic_form(a, A[row_ind, j + M]) * a

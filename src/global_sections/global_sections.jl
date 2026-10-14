@@ -265,42 +265,39 @@ to get the arbitrary matrix ``B\in\mathbb{R}^{(N-n)\times{}n}``.
 """
 function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {
         T, AT <: StiefelManifold{T}}
-    StiefelLieAlgHorMatrix(
-        SkewSymMatrix(λY.Y.A' * Δ),
-        λY.λ' * Δ,
-        size(λY.Y)...
-    )
+    global_rep!(_zero_lift(StiefelLieAlgHorMatrix{T}, λY.Y), λY, Δ)
+end
+
+function _zero_lift(::Type{L}, Y::Manifold) where {L}
+    zeros(KernelAbstractions.get_backend(parent(Y)), L, size(Y)...)
 end
 
 # `global_rep` written into a lift that already exists, which is the form a cache and the line
-# search use: a gradient is lifted once per line-search trial slope and once per accepted step, and
-# allocating a fresh lift for each one is what the out-of-place form costs. The two writes are a
-# packed-kernel skew projection of the `n × n` block and a `mul!` into the `B` block, so a call
-# allocates nothing beyond the product the projection reads.
+# search use, so a call allocates nothing beyond the `n × n` product the skew projection reads.
 #
 # `Δ` is the ambient gradient, which a gradient of this package produces as a manifold point over
 # the same storage (`rgrad(Y, ·)` returns one), so it is read through its parent rather than through
 # its `getindex` — a device array serves no scalar indexing, and the lifted product is a plain one.
+#
+# The `B` block is zeroed before the `mul!` because Metal's `mul!` scales the destination by `β = 0`
+# rather than ignoring it, so a `NaN` the block holds, as a cache's lift does from its construction,
+# would survive the product.
+function global_rep!(D::AbstractLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:Manifold, <:AbstractArray}, Δ::AbstractMatrix{T}) where {T}
+    ∇L = _ambient(Δ)
+    @assert (D.N, D.n) == size(λY.Y) == size(∇L)
+    _lift_A!(D, λY.Y, ∇L)
+    mul!(fill!(D.B, zero(T)), λY.λ', ∇L)
+    D
+end
+
 _ambient(Δ::AbstractMatrix) = Δ
 _ambient(Δ::Manifold) = parent(Δ)
 
-# The `B` block, `λᵀ∇L`. It is zeroed first because Metal's `mul!` scales the destination by `β = 0`
-# rather than ignoring it, so a `NaN` the block holds, as a cache's lift does from its construction,
-# would survive the product.
-_lift_B!(B, λ, ∇L) = mul!(fill!(B, zero(eltype(B))), λ', ∇L)
-
-function global_rep!(
-        D::StiefelLieAlgHorMatrix{T}, λY::GlobalSection{T, <:Manifold, <:AbstractArray},
-        Δ::AbstractMatrix{T}) where {T}
-    N, n = size(λY.Y)
-    @assert (D.N, D.n) == (N, n)
-    ∇L = _ambient(Δ)
-    @assert size(∇L) == (N, n)
-    map_to_Skew!(D.A, λY.Y.A' * ∇L)
-    _lift_B!(D.B, λY.λ, ∇L)
-
-    D
-end
+# The `n × n` block: `skew(YᵀΔ)` for a Stiefel lift, and nothing for a Grassmann lift, whose `A`
+# block is the zero matrix.
+_lift_A!(D::StiefelLieAlgHorMatrix, Y, ∇L) = map_to_Skew!(D.A, Y.A' * ∇L)
+_lift_A!(::GrassmannLieAlgHorMatrix, _, _) = nothing
 
 @doc raw"""
     global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {T, AT<:GrassmannManifold{T}}
@@ -337,23 +334,7 @@ _round(global_rep(λY, Δ); digits = 3)
 """
 function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {
         T, AT <: GrassmannManifold{T}}
-    GrassmannLieAlgHorMatrix(
-        λY.λ' * Δ,
-        size(λY.Y)...
-    )
-end
-
-# The Grassmann form of `global_rep!`: only the `B` block moves, because the lift's `A` block is
-# the zero matrix here.
-function global_rep!(D::GrassmannLieAlgHorMatrix{T},
-        λY::GlobalSection{T, <:Manifold, <:AbstractArray}, Δ::AbstractMatrix{T}) where {T}
-    N, n = size(λY.Y)
-    @assert (D.N, D.n) == (N, n)
-    ∇L = _ambient(Δ)
-    @assert size(∇L) == (N, n)
-    _lift_B!(D.B, λY.λ, ∇L)
-
-    D
+    global_rep!(_zero_lift(GrassmannLieAlgHorMatrix{T}, λY.Y), λY, Δ)
 end
 
 @doc raw"""

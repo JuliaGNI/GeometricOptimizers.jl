@@ -40,19 +40,20 @@ function symplectic_gram_schmidt!(A::AbstractMatrix, J::AbstractMatrix, start = 
     @assert n ≤ N
     @assert iseven(N)
     @assert iseven(n)
-    N ÷= 2
     n ÷= 2
 
-    for i in start:n
-        @views vec₁ = A[1:(2 * N), i]
-        @views vec₂ = A[1:(2 * N), n + i]
-        @views for j in 1:(i - 1)
-            vec₁ = vec₁ - (A[1:(2 * N), j]' * J * vec₁) * A[1:(2 * N), n + j] -
-                   (vec₁' * J * A[1:(2 * N), n + j]) * A[1:(2 * N), j]
-            vec₂ = vec₂ - (A[1:(2 * N), j]' * J * vec₂) * A[1:(2 * N), n + j] -
-                   (vec₂' * J * A[1:(2 * N), n + j]) * A[1:(2 * N), j]
+    @views for i in start:n
+        vec₁ = A[:, i]
+        vec₂ = A[:, n + i]
+        for j in 1:(i - 1)
+            vec₁ = vec₁ - (A[:, j]' * J * vec₁) * A[:, n + j] -
+                   (vec₁' * J * A[:, n + j]) * A[:, j]
+            vec₂ = vec₂ - (A[:, j]' * J * vec₂) * A[:, n + j] -
+                   (vec₂' * J * A[:, n + j]) * A[:, j]
         end
-        A[1:(2 * N), i], A[1:(2 * N), n + i] = symplectic_normalize(vec₁, vec₂, J)
+        e, f = symplectic_normalize(vec₁, vec₂, J)
+        A[:, i] .= e
+        A[:, n + i] .= f
     end
     A
 end

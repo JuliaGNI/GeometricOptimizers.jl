@@ -22,6 +22,7 @@ for L in (:StiefelLieAlgHorMatrix, :GrassmannLieAlgHorMatrix)
         Base.zero(B::$L) = $L(map(zero, parent(B))..., B.N, B.n)
         Base.copy(B::$L) = $L(map(copy, parent(B))..., B.N, B.n)
         Base.copyto!(A::$L, B::$L) = (foreach(copyto!, parent(A), parent(B)); A)
+        Base.fill!(B::$L, val) = (foreach(b -> fill!(b, val), parent(B)); B)
         _round(B::$L; kwargs...) = $L(map(b -> _round(b; kwargs...), parent(B))..., B.N, B.n)
 
         # on the backend `A` is already on, which is what makes `similar` usable as the
@@ -29,6 +30,7 @@ for L in (:StiefelLieAlgHorMatrix, :GrassmannLieAlgHorMatrix)
         function Base.similar(A::$L, N::Integer, n::Integer)
             zeros(KernelAbstractions.get_backend(A), $L{eltype(A)}, N, n)
         end
+        Base.similar(A::$L) = similar(A, A.N, A.n)
     end
 end
 
@@ -37,5 +39,3 @@ function LinearAlgebra.mul!(C::AbstractLieAlgHorMatrix, α::Real, A::AbstractLie
     mul!(C, A, α)
 end
 LinearAlgebra.rmul!(C::AbstractLieAlgHorMatrix, α::Real) = mul!(C, C, α)
-Base.fill!(B::AbstractLieAlgHorMatrix, val) = (foreach(b -> fill!(b, val), parent(B)); B)
-Base.similar(A::AbstractLieAlgHorMatrix) = similar(A, A.N, A.n)

@@ -144,9 +144,8 @@ function update!(cache::GradientCache{T}, state::GradientState{T},
     cache
 end
 
-# `BFGSState`'s step path: `solve!`'s `update!(state, opt, x, f)` for the quasi-Newton states, which
-# reaches the method below. It lives here because that is the file that defines the first-order
-# states and their `advance_state!`, and it is reached from `solve!` rather than from a cache.
+# `solve!`'s `update!(state, opt, x[, f])` for `BFGSState`. Both methods take an `Optimizer`, so they
+# come after `optimizer.jl`, which `bfgs_state.jl` precedes.
 function update!(
         state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}, f) where {T}
     update!(state, direction(cache(opt)), gradient(opt), x, f, opt.retraction,

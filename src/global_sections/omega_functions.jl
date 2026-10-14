@@ -38,7 +38,8 @@ GeometricOptimizers.Ω(E, Δ)
 Note that the output of `Ω` is a skew-symmetric matrix, i.e. an element of ``\mathfrak{g}``.
 """
 function Ω(Y::StiefelManifold{T}, Δ::AbstractMatrix{T}) where {T}
-    _omega_lift(Y, Δ)
+    # `2(𝕀 - ½YYᵀ)ΔYᵀ`, multiplied out so that it forms no identity and one `N × N` product
+    SkewSymMatrix((2 * Δ - Y.A * (Y.A' * Δ)) * Y.A')
 end
 
 @doc raw"""
@@ -71,11 +72,6 @@ GeometricOptimizers.Ω(E, Δ)
 ```
 """
 function Ω(Y::GrassmannManifold{T}, Δ::AbstractMatrix{T}) where {T}
-    _omega_lift(Y, Δ)
-end
-
-# The body both `Ω` methods share: `2(𝕀 - ½YYᵀ)ΔYᵀ`, multiplied out as `(2Δ - Y(YᵀΔ))Yᵀ`, which
-# takes one `N × N` product and no identity. It reads the storage of `Y`, which a device multiplies.
-function _omega_lift(Y::Manifold{T}, Δ::AbstractMatrix{T}) where {T}
+    # multiplied out as in the `StiefelManifold` method
     SkewSymMatrix((2 * Δ - Y.A * (Y.A' * Δ)) * Y.A')
 end
