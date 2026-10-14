@@ -99,9 +99,9 @@ end
 
 mat_mul_kernel(::StrictlyUpperTriangular, backend) = up_mat_mul_kernel!(backend)
 
-# The packed vector from a dense matrix, in one kernel over the whole `n × n` range that writes only
-# the strict upper triangle, so a call allocates the packed result and nothing else. It reads the
-# entries that are there, unconjugated: this constructor performs no projection.
+# The packed vector from a dense matrix, in one kernel over the whole `n × n` range that writes every
+# entry of the strict upper triangle, so a call allocates the packed result, unzeroed, and nothing
+# else. It reads the entries that are there, unconjugated: this constructor performs no projection.
 @kernel function up_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
     i, j = @index(Global, NTuple)
     if j > i
@@ -113,7 +113,7 @@ function map_to_up(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
-    S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
+    S = KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
     up_projection_kernel(backend)(S, A; ndrange = (n, n))
     S
 end

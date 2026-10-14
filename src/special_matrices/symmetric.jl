@@ -101,14 +101,15 @@ end
     end
 end
 
-# `transpose` and not `adjoint`, for the reason `map_to_Skew` in `skew_symmetric.jl` spells out: the
-# set being projected onto is `{M : Mᵀ = M}`, which is what `getindex` reconstructs and what the
-# docstring above states. The two agree for a real element type.
+# The kernel reads `A[j, i]` unconjugated, a transpose and not an adjoint, for the reason
+# `map_to_Skew` in `skew_symmetric.jl` spells out: the set being projected onto is `{M : Mᵀ = M}`,
+# which is what `getindex` reconstructs and what the docstring above states. The two agree for a
+# real element type. The kernel writes every packed entry, so the storage is not zeroed first.
 function map_to_S(A::AbstractMatrix{T}) where {T <: Number}
     n = size(A, 1)
     @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
-    S = KernelAbstractions.zeros(backend, T, n*(n+1)÷2)
+    S = KernelAbstractions.allocate(backend, T, n*(n+1)÷2)
     sym_projection_kernel(backend)(S, A; ndrange = (n, n))
     S
 end

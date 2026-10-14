@@ -112,13 +112,13 @@ function OptimizerStatus(state::OST, cache::OCT, f::T;
     f_nonfinite = contains_nonfinite(f)
     g_nonfinite = contains_nonfinite(latest_gradient(cache))
 
+    _status = OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false,
+        f_increased, x_nonfinite, f_nonfinite, g_nonfinite)
+
     # `convergence_measures` returns `f_converged_strong`, and no stop rule reads it.
     # `KNOWN_ISSUES.md` records whether to use it or delete it.
     # fatou-ignore unused-binding
-    (x_converged, f_converged, f_converged_strong, g_converged) = convergence_measures(
-        OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, false, false, false,
-            f_increased, x_nonfinite, f_nonfinite, g_nonfinite),
-        config)
+    (x_converged, f_converged, f_converged_strong, g_converged) = convergence_measures(_status, config)
 
     OptimizerStatus(rxₐ, rxᵣ, rfₐ, rfᵣ, rgₐ, rg, Δf, Δf̃, x_converged, f_converged,
         g_converged, f_increased, x_nonfinite, f_nonfinite, g_nonfinite)

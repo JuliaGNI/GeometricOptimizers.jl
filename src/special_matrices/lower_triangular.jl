@@ -72,11 +72,8 @@ function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
     StrictlyLowerTriangular(_rand(rng, backend, T, n * (n - 1) ÷ 2), Int(n))
 end
 
-# The index is bounds-checked before the packed vector is read. The last line of the body below is
-# reached for a `j` outside the matrix as well as for one in the upper triangle, and without the
-# check an out-of-range index answers `zero(T)` instead of raising, which reads as a legitimate
-# entry. The packed array would usually raise on its own, but "usually" is not a contract — the
-# check makes it one.
+# The index is bounds-checked first: the last line of the body is reached for an index outside the
+# matrix as well as for one in the upper triangle, and would answer `zero(T)` for it.
 function Base.getindex(A::StrictlyLowerTriangular{T}, i::Int, j::Int) where {T}
     @boundscheck checkbounds(A, i, j)
     if j == i
@@ -105,12 +102,9 @@ end
     C[i, j] = tmp_sum
 end
 
-# The projection that builds the packed vector from a dense matrix, in one kernel over the whole
-# `n × n` range. It reads `A` entrywise and writes only the strict lower triangle, so a call
-# allocates the packed result and nothing else.
-#
-# Row `i` of a strictly lower-triangular matrix has its entries in columns `1:(i-1)`, packed at
-# `(i-2)(i-1)/2 + k`, which is the same arithmetic `getindex` above uses.
+# The packed vector from a dense matrix, in one kernel over the whole `n × n` range. It writes every
+# entry of the strict lower triangle, with the packing of `getindex` above, so a call allocates the
+# packed result, unzeroed, and nothing else.
 @kernel function lo_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
     i, j = @index(Global, NTuple)
     if i > j
@@ -122,7 +116,7 @@ function map_to_lo(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
-    S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
+    S = KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
     lo_projection_kernel(backend)(S, A; ndrange = (n, n))
     S
 end

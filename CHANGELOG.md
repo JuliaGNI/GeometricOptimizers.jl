@@ -66,9 +66,7 @@ host the right operand is now copied entrywise by `_dense_skew`; a device, which
 `getindex`, still multiplies by the identity. At `n = 6` the product costs 896 bytes, against 1 824
 bytes on main.
 
-
 - **Two properties of the training step have tests of their own**, moved from GeometricMachineLearning's suite, in `test/integration/network_parameters_optimizer.jl`. The gradient of a `NetworkParameters` with a `StiefelManifold` or `GrassmannManifold` leaf beside plain leaves is checked leaf by leaf, in `Float32` and `Float64`: `PrecomputedGradient(ps, dp)(ps)` gives `rgrad` on the manifold leaf and the Euclidean gradient, unchanged, on the plain ones. The check in `test/integration/training_optimizer.jl` compares the call with `rgrad(ps, dps)`, which is how the call is defined, so it cannot fail, and it has no Grassmann leaf. And a `Float64` step size on `Float32` parameters is checked as the step it takes: for `Adam` and `MomentumMethod`, `linesearch = 0.1` gives the same iterate as `linesearch = Float32(0.1)`, where before only the converted step size was compared. No package code changes.
-
 
 ### Changed
 
@@ -106,8 +104,9 @@ packed result and under 40 kB beyond it. Measured at `n = 1024`, `--check-bounds
 | `map_to_S` | 4.6 ms, 21.1 MB | 0.97 ms, 4.2 MB |
 | `map_to_Skew` | 3.9 ms, 21.1 MB | 0.77 ms, 4.2 MB |
 
-**The symplectic decompositions read their columns as views.** `A[1:(2N), i]`,
-`B[row_ind, i]` and `B[i, row_ind]` copied a whole column per read. `symplectic_gram_schmidt!` on
+**`symplectic_gram_schmidt!` and the four `apply_S_*!` functions read their columns as views.** The
+reads they replaced, `A[1:(2N), i]`, `B[row_ind, i]` and `B[i, row_ind]`, copied a whole column per read.
+`symplectic_gram_schmidt!` on
 `80 × 80` allocated 11.2 MB and now allocates 6.8 MB; `apply_S_left` on `80 × 3` 460 kB and now
 374 kB. The values are unchanged to the round-off of a process whose own docstring records that the
 inverse reconstructs to `1.7e-8` at `2N = 20`.
@@ -123,13 +122,10 @@ the scalar on the left, `mul!` with the scalar first, `rmul!`, `fill!` and `simi
 `rand` stay in each type's own file, because a caller may name the storage arrays as well as the
 element type.
 
-
 ### Removed
 
 - The commented-out `update_section!` block in `global_sections.jl`, and the `apply_section!` method
   over a section as its destination, which no call site reached.
-- Six comments that left an open question in the reader's hands: a `TODO` on the Haar measure and five
-  notes of uncertainty about a signature, a file boundary or a `setindex!`.
 
 ## [0.9.0]
 

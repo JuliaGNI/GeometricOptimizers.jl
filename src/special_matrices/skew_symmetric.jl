@@ -277,16 +277,19 @@ Base.similar(A::SkewSymMatrix) = SkewSymMatrix(similar(A.S), A.n)
     end
 end
 
-# `transpose` and not `adjoint`, because the set being projected onto is `{M : Mᵀ = -M}` — which is
-# what `getindex` reconstructs, and what the docstring above states. `(A - Aᴴ)/2` is the projection
-# onto the skew-*Hermitian* matrices, and its strict lower triangle stored here gives a matrix that
-# is neither that projection nor `(A - Aᵀ)/2`. The two agree for a real element type.
+# The kernel reads `A[j, i]` unconjugated, a transpose and not an adjoint, because the set being
+# projected onto is `{M : Mᵀ = -M}` — which is what `getindex` reconstructs, and what the docstring
+# above states. `(A - Aᴴ)/2` is the projection onto the skew-*Hermitian* matrices, and its strict
+# lower triangle stored here gives a matrix that is neither that projection nor `(A - Aᵀ)/2`. The two
+# agree for a real element type.
 #
-# One kernel writes the packed vector straight from `A`, so a call allocates no dense temporary.
-# `map_to_Skew` returns a new packed vector, and `map_to_Skew!` writes into a `SkewSymMatrix`.
+# One kernel writes every entry of the packed vector straight from `A`, so a call allocates no dense
+# temporary and zeroes nothing. `map_to_Skew` returns a new packed vector, and `map_to_Skew!` writes
+# into a `SkewSymMatrix`.
 function map_to_Skew(A::AbstractMatrix{T}) where {T}
-    S = zeros(KernelAbstractions.get_backend(A), SkewSymMatrix{T}, size(A, 1))
-    map_to_Skew!(S, A).S
+    n = size(A, 1)
+    S = KernelAbstractions.allocate(KernelAbstractions.get_backend(A), T, n * (n - 1) ÷ 2)
+    map_to_Skew!(SkewSymMatrix(S, n), A).S
 end
 
 function map_to_Skew!(S::SkewSymMatrix{T}, A::AbstractMatrix{T}) where {T}
