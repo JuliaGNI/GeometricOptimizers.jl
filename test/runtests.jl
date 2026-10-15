@@ -31,6 +31,7 @@ if "core" in GROUPS
     @safetestset "Error-only methods           " include("integration/error_only_methods.jl")
     @safetestset "Grassmann Lie Alg Hor        " include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
     @safetestset "Stiefel Lie Alg Hor          " include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
+    @safetestset "Lift families                " include("lie_algebras/lift_families.jl")
     @safetestset "Retractions                  " include("retractions/retractions.jl")
     @safetestset "Exponential Accuracy         " include("retractions/exponential_accuracy.jl")
     @safetestset "In-place 𝔄                   " include("retractions/modified_exponential.jl")

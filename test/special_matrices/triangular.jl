@@ -233,3 +233,13 @@ end
     @test Matrix(StrictlyLowerTriangular(Mr)) == tril(Mr, -1)
     @test Matrix(StrictlyUpperTriangular(Mr)) == triu(Mr, 1)
 end
+
+# `getindex` answers `zero(T)` for the other triangle, so an index outside the matrix has to raise
+# before it reaches that branch.
+@testset "an index outside a $A raises" for A in (
+    StrictlyLowerTriangular, StrictlyUpperTriangular)
+    M = A(randn(Random.Xoshiro(6), 4, 4))
+    for (i, j) in ((0, 1), (-1, 2), (5, 1), (1, 5), (5, 5))
+        @test_throws BoundsError M[i, j]
+    end
+end

@@ -124,20 +124,6 @@ function _apply_section!(A::AbstractMatrix{T}, λY::GlobalSection, A₂::Abstrac
     A
 end
 
-# This one is `StiefelManifold`-only and stays so: it has no live caller — every `apply_section!` call
-# in the package writes into a point, not into a section — and the commented-out `update_section!`
-# below is what it was written for. Widening it to `Manifold` would be widening dead code.
-function apply_section!(Λᵗ::GlobalSection{T, MT}, λY::GlobalSection{T, MT},
-        Y₂::MT) where {T, MT <: StiefelManifold{T}}
-    N, n = size(Λᵗ.Y)
-    @assert size(Y₂) == size(Λᵗ) == size(λY)
-
-    @views apply_section!(Λᵗ.Y, λY, StiefelManifold(Y₂.A[:, 1:n]))
-    @views Λᵗ.λ .= λY.Y * Y₂.A[1:n, (n + 1):N] .+ λY.λ * Y₂.A[(n + 1):N, (n + 1):N]
-
-    Λᵗ
-end
-
 function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {
         T, AT <: GrassmannManifold{T}}
     Y = GrassmannManifold(zero(Y₂.A))
@@ -195,7 +181,27 @@ function global_rep(λY::NamedTuple, gx::NetworkParameters)
     mapparameters((g, λ) -> global_rep(λ, g), gx, λY)
 end
 
-##auxiliary function
+# The in-place form of the container versions, which writes the lift set into a destination that
+# already has its shape. `mapparameters!` pairs the trees by key and reaches the leaves at any depth,
+# where a manifold leaf takes the lift method of `global_rep!` and an ordinary array the copy below.
+function global_rep!(D::Union{NamedTuple, NetworkParameters}, λY::NamedTuple,
+        gx::Union{NamedTuple, NetworkParameters})
+    mapparameters!(global_rep!, D, λY, gx)
+    D
+end
+
+# The vector-space form: the section's lift is `nothing`, so the map is the identity and the write
+# is a copy. `store_gradient!` reaches it for a plain-vector solution, and a parameter set reaches it
+# for each of its vector-space leaves.
+#
+# It is disjoint from the lift methods below on the section, whose `λ` is `nothing` here and an
+# array beside a manifold point.
+function global_rep!(
+        D::AbstractArray, λY::GlobalSection{T, <:AbstractVecOrMat{T}, Nothing},
+        gx::AbstractVecOrMat{T}) where {T}
+    (copyto!(D, gx); D)
+end
+
 function global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) where {T}
     gx
 end
@@ -259,14 +265,39 @@ to get the arbitrary matrix ``B\in\mathbb{R}^{(N-n)\times{}n}``.
 """
 function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {
         T, AT <: StiefelManifold{T}}
-    N, n = size(λY.Y)
-    StiefelLieAlgHorMatrix(
-        SkewSymMatrix(λY.Y.A' * Δ),
-        λY.λ' * Δ,
-        N,
-        n
-    )
+    global_rep!(_zero_lift(StiefelLieAlgHorMatrix{T}, λY.Y), λY, Δ)
 end
+
+function _zero_lift(::Type{L}, Y::Manifold) where {L}
+    zeros(KernelAbstractions.get_backend(parent(Y)), L, size(Y)...)
+end
+
+# `global_rep` written into a lift that already exists, which is the form a cache and the line
+# search use, so a call allocates nothing beyond the `n × n` product the skew projection reads.
+#
+# `Δ` is the ambient gradient, which a gradient of this package produces as a manifold point over
+# the same storage (`rgrad(Y, ·)` returns one), so it is read through its parent rather than through
+# its `getindex` — a device array serves no scalar indexing, and the lifted product is a plain one.
+#
+# The `B` block is zeroed before the `mul!` because Metal's `mul!` scales the destination by `β = 0`
+# rather than ignoring it, so a `NaN` the block holds, as a cache's lift does from its construction,
+# would survive the product.
+function global_rep!(D::AbstractLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:Manifold, <:AbstractArray}, Δ::AbstractMatrix{T}) where {T}
+    ∇L = _ambient(Δ)
+    @assert (D.N, D.n) == size(λY.Y) == size(∇L)
+    _lift_A!(D, λY.Y, ∇L)
+    mul!(fill!(D.B, zero(T)), λY.λ', ∇L)
+    D
+end
+
+_ambient(Δ::AbstractMatrix) = Δ
+_ambient(Δ::Manifold) = parent(Δ)
+
+# The `n × n` block: `skew(YᵀΔ)` for a Stiefel lift, and nothing for a Grassmann lift, whose `A`
+# block is the zero matrix.
+_lift_A!(D::StiefelLieAlgHorMatrix, Y, ∇L) = map_to_Skew!(D.A, Y.A' * ∇L)
+_lift_A!(::GrassmannLieAlgHorMatrix, _, _) = nothing
 
 @doc raw"""
     global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {T, AT<:GrassmannManifold{T}}
@@ -303,21 +334,8 @@ _round(global_rep(λY, Δ); digits = 3)
 """
 function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {
         T, AT <: GrassmannManifold{T}}
-    N, n = size(λY.Y)
-    GrassmannLieAlgHorMatrix(
-        λY.λ' * Δ,
-        N,
-        n
-    )
+    global_rep!(_zero_lift(GrassmannLieAlgHorMatrix{T}, λY.Y), λY, Δ)
 end
-
-# function update_section!(Λᵗ::GlobalSection{T, MT}, Λ⁽ᵗ⁻¹⁾::GlobalSection{T, MT}, B⁽ᵗ⁻¹⁾::AbstractLieAlgHorMatrix{T}, retraction) where {T, MT <: Manifold}
-#     N, n = B⁽ᵗ⁻¹⁾.N, B⁽ᵗ⁻¹⁾.n
-#     expB = retraction(B⁽ᵗ⁻¹⁾)
-#     apply_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, expB)
-#
-#     Λᵗ
-# end
 
 @doc raw"""
     update_section!(Λᵗ, Λ⁽ᵗ⁻¹⁾, B⁽ᵗ⁻¹⁾, retraction, workspace = nothing)

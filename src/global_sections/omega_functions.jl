@@ -38,8 +38,8 @@ GeometricOptimizers.Ω(E, Δ)
 Note that the output of `Ω` is a skew-symmetric matrix, i.e. an element of ``\mathfrak{g}``.
 """
 function Ω(Y::StiefelManifold{T}, Δ::AbstractMatrix{T}) where {T}
-    YY = Y * Y'
-    SkewSymMatrix(2 * (one(YY) - T(0.5) * Y * Y') * Δ * Y')
+    # `2(𝕀 - ½YYᵀ)ΔYᵀ`, multiplied out so that it forms no identity and one `N × N` product
+    SkewSymMatrix((2 * Δ - Y.A * (Y.A' * Δ)) * Y.A')
 end
 
 @doc raw"""
@@ -72,8 +72,6 @@ GeometricOptimizers.Ω(E, Δ)
 ```
 """
 function Ω(Y::GrassmannManifold{T}, Δ::AbstractMatrix{T}) where {T}
-    YY = Y * Y'
-
-    ΩSt = 2 * (one(YY) - T(0.5) * Y * Y') * Δ * Y'
-    SkewSymMatrix(ΩSt)
+    # multiplied out as in the `StiefelManifold` method
+    SkewSymMatrix((2 * Δ - Y.A * (Y.A' * Δ)) * Y.A')
 end

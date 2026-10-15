@@ -28,7 +28,7 @@ end
 # [`Optimizer`](@ref) builds that is [`RiemannianGradient`](@ref).
 function (grad::Gradient{T})(g::NetworkParameters{T}, x::NetworkParameters{T},
         state::OptimizerState{T}) where {T}
-    _copyto!(g, global_rep(section(state), grad(x)))
+    global_rep!(g, section(state), grad(x))
 end
 
 # `NeuralNetworkParameters.mapparameters` and not `map`, here and in every primitive below. `map`
@@ -239,6 +239,9 @@ function _mul(α::T, a::GradientStorage{T}) where {T}
     b = _copy(a)
     _rmul!(b, α)
 end
+
+# `_mul` written into `dest`, in one pass over the free parameters.
+_mul!(dest, α::Number, a) = _storagewise!((d, s) -> (d .= α .* s), dest, a)
 
 @doc raw"""
     _dot(a, b)

@@ -146,7 +146,10 @@ function orthonormal_columns(draw)
     throw(OrthonormalizationFailure(ORTHONORMALIZATION_ATTEMPTS))
 end
 
-# TODO: check the distribution this is coming from - related to the Haar measure ???
+# The draw is uniform (Haar) on the Stiefel manifold. CholeskyQR2 returns the `Q` of a Gaussian
+# matrix `G = QR` with a positive diagonal of `R`, and that `Q` is Haar-distributed and independent
+# of `R`. A breakdown depends only on `R`, through the condition number of `G`, so the redraw of
+# `orthonormal_columns` does not bias `Q`.
 function Base.rand(rng::AbstractRNG, ::CPU, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n

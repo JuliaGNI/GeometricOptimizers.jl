@@ -144,7 +144,8 @@ function update!(cache::GradientCache{T}, state::GradientState{T},
     cache
 end
 
-# this should be moved to a different file
+# `solve!`'s `update!(state, opt, x[, f])` for `BFGSState`. Both methods take an `Optimizer`, so they
+# come after `optimizer.jl`, which `bfgs_state.jl` precedes.
 function update!(
         state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}, f) where {T}
     update!(state, direction(cache(opt)), gradient(opt), x, f, opt.retraction,

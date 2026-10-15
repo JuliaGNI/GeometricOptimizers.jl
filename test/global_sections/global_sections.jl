@@ -1,6 +1,9 @@
 using GeometricOptimizers
-using GeometricOptimizers: apply_section, global_rep, StiefelProjection
+using GeometricOptimizers: apply_section, global_rep, global_rep!, StiefelProjection,
+                           _similar,
+                           _fill!
 using LinearAlgebra: norm
+using NeuralNetworkParameters: NetworkParameters
 using Test
 import Random
 
@@ -146,4 +149,45 @@ end
         @test eltype(f.λY.Y) == T
         @test f.λY.Y.A == reference
     end
+end
+
+# `global_rep!` writes the lift into a destination that a cache fills with `NaN` at construction, so
+# every entry has to be overwritten. The reference is the formula of the `global_rep` docstrings,
+# written out with the lift constructors.
+function reference_lift(λY::GlobalSection{T, <:StiefelManifold}, Δ) where {T}
+    StiefelLieAlgHorMatrix(SkewSymMatrix(λY.Y.A' * Δ), λY.λ' * Δ, size(λY.Y)...)
+end
+function reference_lift(λY::GlobalSection{T, <:GrassmannManifold}, Δ) where {T}
+    GrassmannLieAlgHorMatrix(λY.λ' * Δ, size(λY.Y)...)
+end
+
+@testset "global_rep! overwrites a NaN-filled lift, $(nameof(M)){$T}" for T in REAL_ELTYPES,
+    M in (StiefelManifold, GrassmannManifold)
+
+    rng = Random.Xoshiro(9)
+    for (N, n) in ((5, 2), (40, 3))
+        Y = rand(rng, M{T}, N, n)
+        λY = GlobalSection(Y)
+        Δ = rgrad(Y, randn(rng, T, N, n))
+        D = fill!(similar(reference_lift(λY, Δ)), T(NaN))
+        @test global_rep!(D, λY, Δ) === D
+        @test D ≈ reference_lift(λY, Δ)
+        @test global_rep(λY, Δ) == D
+    end
+end
+
+# The container method pairs the trees by key and reaches the leaves at any depth: a lift for a
+# manifold leaf and a copy for a vector leaf.
+@testset "global_rep! on a parameter set is global_rep, $T" for T in REAL_ELTYPES
+    Random.seed!(10)
+    rng = Random.Xoshiro(10)
+    ps = NetworkParameters((w = rand(rng, StiefelManifold{T}, 6, 3),
+        v = (g = rand(rng, GrassmannManifold{T}, 5, 2), b = randn(rng, T, 4))))
+    gx = NetworkParameters((w = randn(rng, T, 6, 3),
+        v = (g = randn(rng, T, 5, 2), b = randn(rng, T, 4))))
+    λ = GlobalSection(ps)
+    reference = global_rep(λ, gx)
+    D = _fill!(_similar(reference), T(NaN))
+    @test global_rep!(D, λ, gx) === D
+    @test D == reference
 end

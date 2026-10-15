@@ -10,8 +10,9 @@ using GeometricOptimizers: _dot, _zero, l2norm, solution_scale, _manifold_αmax,
                            write_ones_kernel!, write_poisson_blocks_kernel!,
                            assign_ones_for_stiefel_projection_kernel!, lo_mat_mul_kernel!,
                            up_mat_mul_kernel!, symmetric_mat_mul_kernel!,
-                           skew_mat_mul_kernel!, addition_kernel!, assign_S_val_kernel!,
-                           assign_Skew_val_kernel!
+                           skew_mat_mul_kernel!, addition_kernel!,
+                           sym_projection_kernel, skew_projection_kernel,
+                           lo_projection_kernel, up_projection_kernel
 using JLArrays: JLArrays, JLBackend
 using NeuralNetworkParameters: NeuralNetworkParameters, NetworkParameters
 using KernelAbstractions: KernelAbstractions, CPU
@@ -237,13 +238,18 @@ end
             @test isempty(kernel_body_reports(
                 addition_kernel!, (4, 4), zeros(T, 4, 4), rand(T, 6), rand(T, 4, 4)))
         end
+        # the two projections halve, so they take no integer element type
         for T in (Float32, Float64, ComplexF64, BigFloat)
             @test isempty(kernel_body_reports(
-                assign_S_val_kernel!, 3, zeros(T, 6), ones(T, 3, 3), 3))
+                sym_projection_kernel, (3, 3), zeros(T, 6), rand(T, 3, 3)))
+            @test isempty(kernel_body_reports(
+                skew_projection_kernel, (3, 3), zeros(T, 3), rand(T, 3, 3)))
         end
         for T in (Float32, Float64, ComplexF64, Int, BigFloat)
             @test isempty(kernel_body_reports(
-                assign_Skew_val_kernel!, 2, zeros(T, 3), ones(T, 3, 3), 3))
+                lo_projection_kernel, (3, 3), zeros(T, 3), rand(T, 3, 3)))
+            @test isempty(kernel_body_reports(
+                up_projection_kernel, (3, 3), zeros(T, 3), rand(T, 3, 3)))
         end
     else
         @test_skip "JET does not work on Julia $(VERSION)"  # aviatesk/JET.jl#681
