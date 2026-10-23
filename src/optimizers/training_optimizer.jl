@@ -69,10 +69,10 @@ optimization_step!(x, opt, Float32[2, 2, 2])
   2.0
 ```
 """
-# `CT` and `ST` are unbounded because a composite holds trees of caches and states.
 struct TrainingOptimizer{MT <: Union{FirstOrderMethod, CompositeMethod}, CT, ST,
     LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT}
     method::MT
+    # `CT` and `ST` are unbounded because a composite holds trees of caches and states.
     cache::CT
     state::ST
     linesearch::LT
