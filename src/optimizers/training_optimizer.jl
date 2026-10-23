@@ -36,10 +36,13 @@ retraction, and the buffers the retraction works in.
 
 `algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref) or a member of the
 [`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, and
-raises an `ArgumentError` for any other `x`. `linesearch` is a finite positive number, which is
-the fixed step size `Static(η)`, a [`SimpleSolvers.Static`](@extref) or a
-[`DecayingStatic`](@ref); the default is [`default_step_size`](@ref)`(algorithm)`. `retraction` is
-an instance of an [`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
+raises a `MethodError` for any other `x`. For a parameter set it may also be a
+[`CompositeMethod`](@ref): then `cache`, `state` and `workspace` are trees of the shape of `x`, with
+the cache, the state and the retraction buffers of each leaf for the method of that leaf. `linesearch`
+is a finite positive number, which is the fixed step size `Static(η)`, a
+[`SimpleSolvers.Static`](@extref) or a [`DecayingStatic`](@ref); the default is
+[`default_step_size`](@ref)`(algorithm)`. `retraction` is an instance of an
+[`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
 
 # Why a training step is not `solve!`
 
@@ -66,10 +69,10 @@ optimization_step!(x, opt, Float32[2, 2, 2])
   2.0
 ```
 """
-struct TrainingOptimizer{
-    MT <: FirstOrderMethod, CT <: OptimizerCache, ST <: OptimizerState,
+struct TrainingOptimizer{MT <: Union{FirstOrderMethod, CompositeMethod}, CT, ST,
     LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT}
     method::MT
+    # `CT` and `ST` are unbounded because a composite holds trees of caches and states.
     cache::CT
     state::ST
     linesearch::LT
@@ -77,15 +80,22 @@ struct TrainingOptimizer{
     workspace::WT
 end
 
-function TrainingOptimizer(x::OptimizerSolution{T}; algorithm::FirstOrderMethod = Adam(),
+function TrainingOptimizer(x::OptimizerSolution{T};
+        algorithm::Union{FirstOrderMethod, CompositeMethod} = Adam(),
         linesearch = default_step_size(algorithm),
         retraction::AbstractRetraction = Cayley()) where {T}
-    method = change_precision(T, algorithm)
+    _training_optimizer(
+        x, change_precision(T, algorithm), _training_step_size(T, linesearch),
+        retraction)
+end
+
+# The composite method of this is in `optimizers/composite_method.jl`.
+function _training_optimizer(x, method::FirstOrderMethod, linesearch, retraction)
     # the cache first and the state second: each draws the random completion of its `GlobalSection`
     cache = OptimizerCache(method, x)
     state = OptimizerState(method, x)
-    TrainingOptimizer(method, cache, state, _training_step_size(T, linesearch), retraction,
-        retraction_workspace(x, retraction))
+    TrainingOptimizer(
+        method, cache, state, linesearch, retraction, retraction_workspace(x, retraction))
 end
 
 @doc raw"""
@@ -103,7 +113,9 @@ another number of leaves is an `ArgumentError`. Each is raised before the iterat
 The step increments the iteration number `t` of `opt.state`, reads the step size
 [`step_size`](@ref)`(opt.linesearch, t)`, forms the direction of `opt.method` from the
 [`PrecomputedGradient`](@ref) of `dp`, scales it, retracts it with `opt.retraction` and copies the
-result into `x`. [`advance_state!`](@ref) then carries the state over to the new parameters.
+result into `x`. [`advance_state!`](@ref) then carries the state over to the new parameters. A
+[`CompositeMethod`](@ref) takes this step on every leaf, with the method, the cache and the state of
+that leaf.
 
 For a parameter set, `dp` is a [`NeuralNetworkParameters.NetworkParameters`](@extref) of the same
 shape as `x`. See [`TrainingOptimizer`](@ref) for why this is not [`solve!`](@ref).
@@ -111,9 +123,7 @@ shape as `x`. See [`TrainingOptimizer`](@ref) for why this is not [`solve!`](@re
 function optimization_step!(x::OptimizerSolution{T},
         opt::TrainingOptimizer{<:FirstOrderMethod, <:OptimizerCache, <:OptimizerState{T}},
         dp::Union{AbstractArray{T}, NetworkParameters{T}}) where {T}
-    # before the count moves, so that a refused step leaves the state as it was
-    _same_shape(x, dp) || throw(DimensionMismatch(
-        "the gradient does not have the shape of the parameters it is a gradient of"))
+    _check_shape(x, dp)
     increase_iteration_number!(opt.state)
     α = step_size(opt.linesearch, iteration_number(opt.state))
     update!(opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, x)
@@ -124,6 +134,13 @@ function optimization_step!(x::OptimizerSolution{T},
     _copyto!(x, solution(opt.cache))
     advance_state!(opt.state, opt.cache, opt.method)
     x
+end
+
+# before the count moves, so that a refused step leaves the state as it was
+function _check_shape(x, dp)
+    _same_shape(x, dp) || throw(DimensionMismatch(
+        "the gradient does not have the shape of the parameters it is a gradient of"))
+    nothing
 end
 
 _same_shape(x::AbstractArray, dp::AbstractArray) = size(x) == size(dp)

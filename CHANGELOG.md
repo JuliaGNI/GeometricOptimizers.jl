@@ -75,6 +75,30 @@ breaking release).
   draws the same sweep, the same seed and the same eight scales, from its own copy of those
   lines; the header of `scripts/retraction_sweep.jl` says so.
 
+- Added **`CompositeMethod(; manifold, array)`**, two first-order methods for one parameter set:
+  `manifold` steps every `Manifold` leaf and `array` every other leaf. It is for a network with
+  Stiefel weights beside ordinary arrays, which no single method covers, because
+  `ScalarMomentAdam` steps a single `StiefelManifold`. `TrainingOptimizer(ps; algorithm =
+  composite)` holds the cache, the state and the retraction buffers of every leaf, for the method
+  of that leaf and in the element type of `ps`, in trees of the shape of `ps` (`opt.state.L1.weight`
+  is the state of that leaf). `optimization_step!` takes the ordinary training step on every leaf,
+  so every leaf moves to the bit as under a `TrainingOptimizer` of its own, and a composite of
+  `Adam` on both sides moves as `Adam` on the whole set. The leaves share the step size of each
+  step: `default_step_size` of a composite is its methods' default where they agree, and an
+  `ArgumentError` asking for `linesearch` where they do not. A step refused for a shape or an
+  element type moves no leaf.
+
+  Any other method, or a composite, as either argument is a `MethodError`, and so is a composite
+  for a single leaf, which takes its method directly. `CompositeMethod` is not an `OptimizerMethod`,
+  so `Optimizer` does not take it (a `TypeError` at the keyword): its line search finds one step
+  length for the direction of the whole set. A composite step allocates what `Adam` on the whole
+  set allocates: nothing on dense leaves, and the retraction of a Stiefel leaf. The step runs a walk
+  of NeuralNetworkParameters inside the walk over the leaves, which allocates on 0.5.1, and the
+  construction runs a `mapparameters` inside the `mapparameters` over the leaves, whose result type
+  is not inferred on 0.5.2. There a caller that builds the optimizer and steps it in one function
+  allocates 64 B per step, on a dense set where `Adam` on the whole set allocates nothing. So the
+  `[compat]` floor of NeuralNetworkParameters is 0.5.3, and the optimizer of a composite is inferred.
+
 ### Changed
 
 - **A manifold solver step allocates the buffers it used to rebuild at every trial.** The line

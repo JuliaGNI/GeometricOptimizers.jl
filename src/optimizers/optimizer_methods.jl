@@ -479,11 +479,48 @@ default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNIN
     FirstOrderMethod
 
 The methods that build their direction from the gradient alone: [`GradientMethod`](@ref) and the
-[`FirstOrderMethodWithState`](@ref). These are the methods a [`TrainingOptimizer`](@ref) takes, and
-the methods whose `update!(cache, state, gradient, method, x)` takes the method rather than a
+[`FirstOrderMethodWithState`](@ref). These are the methods a
+[`TrainingOptimizer`](@ref) takes, alone or two of them in a [`CompositeMethod`](@ref), and the
+methods whose `update!(cache, state, gradient, method, x)` takes the method rather than a
 [`SimpleSolvers.Hessian`](@extref).
 """
 const FirstOrderMethod = Union{GradientMethod, FirstOrderMethodWithState}
+
+@doc raw"""
+    CompositeMethod(; manifold, array)
+
+Two [`FirstOrderMethod`](@ref)s for a parameter set whose leaves are not all of one kind: `manifold`
+steps every [`Manifold`](@ref) leaf, and `array` every other leaf.
+
+[`ScalarMomentAdam`](@ref) is the case that needs it: it steps a single [`StiefelManifold`](@ref),
+because a *scalar* second moment pooled across a set means nothing. So a network with Stiefel
+weights beside ordinary `Matrix` and `Vector` leaves has no single method that covers it:
+
+```julia
+CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
+```
+
+The split is by `Manifold` and not by `StiefelManifold`, so a `GrassmannManifold` leaf under
+`ScalarMomentAdam` is a `MethodError` when its cache is built. Any other method, or a composite, in
+either place is a `MethodError` at construction.
+
+A composite is for [`TrainingOptimizer`](@ref) on a parameter set. Every leaf gets a cache and a
+state of its own method, in the element type of the set, and moves exactly as it would under a
+`TrainingOptimizer` of its own; nothing is pooled across leaves. The leaves share the step size of
+each step. A composite is not an [`OptimizerMethod`](@ref), so [`Optimizer`](@ref) and
+[`solve!`](@ref), whose line search finds one step length for the direction of the whole set, do
+not take it.
+"""
+struct CompositeMethod{M <: FirstOrderMethod, A <: FirstOrderMethod}
+    manifold::M
+    array::A
+end
+
+CompositeMethod(; manifold, array) = CompositeMethod(manifold, array)
+
+# The method that steps the leaf `x`. A parameter set is not a leaf, and is a `MethodError`.
+leafmethod(method::CompositeMethod, ::Manifold) = method.manifold
+leafmethod(method::CompositeMethod, ::AbstractArray) = method.array
 
 """
     default_step_size(method)
@@ -492,9 +529,22 @@ The fixed step size a [`TrainingOptimizer`](@ref) takes for `method` if its `lin
 not given: `1e-2` for [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), and
 `DEFAULT_LEARNING_RATE = 1e-3` for the [`AdamFamily`](@ref), whose direction has magnitude
 ``\\approx{}1`` per component whatever the gradient is.
+
+A [`CompositeMethod`](@ref) steps all of its leaves at one step size, so its default is the one its
+two methods agree on, and an `ArgumentError` asking for `linesearch` where they disagree.
 """
 default_step_size(::Union{GradientMethod, MomentumMethod}) = 1.0e-2
 default_step_size(::AdamFamily) = DEFAULT_LEARNING_RATE
+
+function default_step_size(method::CompositeMethod)
+    (; manifold, array) = method
+    η, η′ = default_step_size(manifold), default_step_size(array)
+    η == η′ || throw(ArgumentError(
+        "the two methods of a CompositeMethod, $(nameof(typeof(manifold))) and " *
+        "$(nameof(typeof(array))), have different default step sizes, $(η) and $(η′); " *
+        "pass `linesearch`"))
+    η
+end
 
 # The conversion `Optimizer` and `TrainingOptimizer` apply once, to the element type of the
 # parameters. A method without coefficients is returned as it is.
@@ -506,6 +556,9 @@ function change_precision(::Type{T}, m::ScalarMomentAdam) where {T}
 end
 function change_precision(::Type{T}, m::AdamWithEuclideanDecay) where {T}
     AdamWithEuclideanDecay{T}(T(m.β₁), T(m.β₂), T(m.δ), T(m.λ))
+end
+function change_precision(::Type{T}, m::CompositeMethod) where {T}
+    CompositeMethod(change_precision(T, m.manifold), change_precision(T, m.array))
 end
 
 Base.show(io::IO, alg::Newton) = print(io, "Newton")

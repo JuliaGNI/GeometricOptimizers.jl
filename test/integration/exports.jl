@@ -17,7 +17,7 @@ end
 # `BFGS()`, which is the reason these in particular are exported rather than internal.
 @testset "the optimizer methods and their states are exported" begin
     for name in (:Newton, :BFGS, :DFP,
-        :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam,
+        :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam, :CompositeMethod,
         :NewtonState, :BFGSState, :DFPState,
         :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState)
         @test name in names(GeometricOptimizers)
