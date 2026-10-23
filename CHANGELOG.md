@@ -99,6 +99,14 @@ breaking release).
   allocates 64 B per step, on a dense set where `Adam` on the whole set allocates nothing. So the
   `[compat]` floor of NeuralNetworkParameters is 0.5.3, and the optimizer of a composite is inferred.
 
+- Added **`observer`** to `TrainingOptimizer`, the same keyword as `Optimizer`, and `step_observer`
+  reads it back. Each `optimization_step!` reports one `:retraction_application` phase, around the
+  retraction, the copies of the retracted point and `advance_state!`, as `solve!` does in
+  `solver_step!` and in `update!` of the state. A `CompositeMethod` reports one per leaf. The
+  gradient is the caller's, so a training loop brackets its reverse pass and the step in phases of
+  its own (see the observers chapter). Without the keyword the observer is a `NoStepObserver`, and
+  the step is the one it was before.
+
 ### Changed
 
 - **A manifold solver step allocates the buffers it used to rebuild at every trial.** The line

@@ -26,7 +26,7 @@ end
 (g::PrecomputedGradient{T})(x::NetworkParameters{T}) where {T} = rgrad(x, g.dp)
 
 @doc raw"""
-    TrainingOptimizer(x; algorithm = Adam(), linesearch = default_step_size(algorithm), retraction = Cayley())
+    TrainingOptimizer(x; algorithm = Adam(), linesearch = default_step_size(algorithm), retraction = Cayley(), observer = NoStepObserver())
 
 The optimizer of a training loop: one step per minibatch, with [`optimization_step!`](@ref).
 
@@ -43,6 +43,9 @@ is a finite positive number, which is the fixed step size `Static(η)`, a
 [`SimpleSolvers.Static`](@extref) or a [`DecayingStatic`](@ref); the default is
 [`default_step_size`](@ref)`(algorithm)`. `retraction` is an instance of an
 [`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
+
+`observer` is notified of the `:retraction_application` phase of every step, once per leaf for a
+`CompositeMethod`; see [Observing the Phases of an Optimizer Step](@ref).
 
 # Why a training step is not `solve!`
 
@@ -70,7 +73,7 @@ optimization_step!(x, opt, Float32[2, 2, 2])
 ```
 """
 struct TrainingOptimizer{MT <: Union{FirstOrderMethod, CompositeMethod}, CT, ST,
-    LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT}
+    LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT, OT}
     method::MT
     # `CT` and `ST` are unbounded because a composite holds trees of caches and states.
     cache::CT
@@ -78,25 +81,28 @@ struct TrainingOptimizer{MT <: Union{FirstOrderMethod, CompositeMethod}, CT, ST,
     linesearch::LT
     retraction::RT
     workspace::WT
+    observer::OT
 end
 
 function TrainingOptimizer(x::OptimizerSolution{T};
         algorithm::Union{FirstOrderMethod, CompositeMethod} = Adam(),
         linesearch = default_step_size(algorithm),
-        retraction::AbstractRetraction = Cayley()) where {T}
+        retraction::AbstractRetraction = Cayley(), observer = NoStepObserver()) where {T}
     _training_optimizer(
         x, change_precision(T, algorithm), _training_step_size(T, linesearch),
-        retraction)
+        retraction, observer)
 end
 
 # The composite method of this is in `optimizers/composite_method.jl`.
-function _training_optimizer(x, method::FirstOrderMethod, linesearch, retraction)
+function _training_optimizer(x, method::FirstOrderMethod, linesearch, retraction, observer)
     # the cache first and the state second: each draws the random completion of its `GlobalSection`
     cache = OptimizerCache(method, x)
     state = OptimizerState(method, x)
-    TrainingOptimizer(
-        method, cache, state, linesearch, retraction, retraction_workspace(x, retraction))
+    TrainingOptimizer(method, cache, state, linesearch, retraction,
+        retraction_workspace(x, retraction), observer)
 end
+
+step_observer(opt::TrainingOptimizer) = opt.observer
 
 @doc raw"""
     optimization_step!(x, opt::TrainingOptimizer, dp)
@@ -128,11 +134,14 @@ function optimization_step!(x::OptimizerSolution{T},
     α = step_size(opt.linesearch, iteration_number(opt.state))
     update!(opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, x)
     _rmul!(direction(opt.cache), α)
-    update_section!(section(opt.cache), section(opt.state), direction(opt.cache),
-        opt.retraction, opt.workspace)
-    _copyto!(solution(opt.cache), section(opt.cache))
-    _copyto!(x, solution(opt.cache))
-    advance_state!(opt.state, opt.cache, opt.method)
+    # the phase `solve!` reports around its retraction and `advance_state!`
+    observe_optimizer_phase(step_observer(opt), :retraction_application) do
+        update_section!(section(opt.cache), section(opt.state), direction(opt.cache),
+            opt.retraction, opt.workspace)
+        _copyto!(solution(opt.cache), section(opt.cache))
+        _copyto!(x, solution(opt.cache))
+        advance_state!(opt.state, opt.cache, opt.method)
+    end
     x
 end
 

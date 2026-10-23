@@ -193,3 +193,13 @@ end
     @test whole_bytes > 0
     @test n_independent(per_leaf_bytes, whole_bytes)
 end
+
+@testset "a composite step reports one retraction per leaf to the observer" begin
+    ps = mixed_parameters(Float32)
+    recorder = EventLog()
+    composite = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
+    opt = TrainingOptimizer(ps; algorithm = composite, linesearch = 1.0f-3, observer = recorder)
+    optimization_step!(ps, opt, minibatch_gradient(ps, 1))
+    @test recorder.events == repeat(
+        [(:retraction_application, :enter), (:retraction_application, :exit)], 4)  # weight, W, b, S
+end

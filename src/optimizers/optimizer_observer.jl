@@ -137,10 +137,10 @@ end
 """
     NoStepObserver()
 
-The default no-op observer used by [`Optimizer`](@ref).
+The default no-op observer used by [`Optimizer`](@ref) and [`TrainingOptimizer`](@ref).
 
 Pass an [`EventLog`](@ref), a [`PhaseTimer`](@ref), or any callable `observer`
-to `Optimizer(...; observer=observer)` to receive
+to `Optimizer(...; observer=observer)` or `TrainingOptimizer(...; observer=observer)` to receive
 `observer(phase, event)` notifications, where `event` is `:enter` or `:exit` and
 `phase` is one of `:gradient`, `:objective`, or `:retraction_application`.
 Notifications are properly nested and an `:exit` is emitted from a `finally`
