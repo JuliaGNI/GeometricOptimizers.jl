@@ -16,14 +16,15 @@ _leaf_like(::Union{AbstractVector, Manifold}, y) = y
 _leaf_like(_, y) = NetworkParameters((leaf = y,))
 _leaf_solution(x) = _leaf_like(x, x)
 
-function _training_optimizer(x::NetworkParameters, method::CompositeMethod, linesearch, retraction)
+function _training_optimizer(
+        x::NetworkParameters, method::CompositeMethod, linesearch, retraction, observer)
     leaves(f) = mapparameters(xᵢ -> f(_leaf_solution(xᵢ), leafmethod(method, xᵢ)), params(x))
     # every cache first and every state second, the order of one method on the whole set, so that
     # the random completions of the sections are the same draws
     cache = leaves((xᵢ, mᵢ) -> OptimizerCache(mᵢ, xᵢ))
     state = leaves((xᵢ, mᵢ) -> OptimizerState(mᵢ, xᵢ))
     workspace = leaves((xᵢ, _) -> retraction_workspace(xᵢ, retraction))
-    TrainingOptimizer(method, cache, state, linesearch, retraction, workspace)
+    TrainingOptimizer(method, cache, state, linesearch, retraction, workspace, observer)
 end
 
 function optimization_step!(
@@ -35,7 +36,8 @@ function optimization_step!(
     foreachparameters(
         opt.cache, opt.state, opt.workspace, x, dp) do cacheᵢ, stateᵢ, wsᵢ, xᵢ, dpᵢ
         leaf = TrainingOptimizer(
-            leafmethod(opt.method, xᵢ), cacheᵢ, stateᵢ, opt.linesearch, opt.retraction, wsᵢ)
+            leafmethod(opt.method, xᵢ), cacheᵢ, stateᵢ, opt.linesearch,
+            opt.retraction, wsᵢ, opt.observer)
         optimization_step!(_leaf_solution(xᵢ), leaf, _leaf_like(xᵢ, dpᵢ))
     end
     x
