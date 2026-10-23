@@ -93,8 +93,11 @@ breaking release).
   so `Optimizer` does not take it (a `TypeError` at the keyword): its line search finds one step
   length for the direction of the whole set. A composite step allocates what `Adam` on the whole
   set allocates: nothing on dense leaves, and the retraction of a Stiefel leaf. The step runs a walk
-  of NeuralNetworkParameters inside the walk over the leaves, which allocates on 0.5.1, so the
-  `[compat]` floor of NeuralNetworkParameters is 0.5.2.
+  of NeuralNetworkParameters inside the walk over the leaves, which allocates on 0.5.1, and the
+  construction runs a `mapparameters` inside the `mapparameters` over the leaves, whose result type
+  is not inferred on 0.5.2. There a caller that builds the optimizer and steps it in one function
+  allocates 64 B per step, on a dense set where `Adam` on the whole set allocates nothing. So the
+  `[compat]` floor of NeuralNetworkParameters is 0.5.3, and the optimizer of a composite is inferred.
 
 ### Changed
 

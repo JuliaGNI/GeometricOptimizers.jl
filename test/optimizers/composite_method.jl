@@ -78,6 +78,15 @@ end
     @test opt.state.L2.b isa MomentumState{T}
 end
 
+@testset "the optimizer of a composite is inferred, $T" for T in REAL_ELTYPES
+    # so that a caller that builds it and steps in one function dispatches each step statically
+    build(ps, method, η) = TrainingOptimizer(ps; algorithm = method, linesearch = η)
+    for method in (CompositeMethod(ScalarMomentAdam(), Adam()), CompositeMethod(Adam(), Adam()),
+        CompositeMethod(ScalarMomentAdam(), GradientMethod()))
+        @test (@inferred build(mixed_parameters(T), method, 1.0e-3)) isa TrainingOptimizer
+    end
+end
+
 @testset "a composite of one method is that method on the whole set, exactly, $T" for T in REAL_ELTYPES
     # `Adam` pools nothing across leaves, so `Adam` on every leaf reproduces `Adam` on the set to the
     # bit, the random section completions included
