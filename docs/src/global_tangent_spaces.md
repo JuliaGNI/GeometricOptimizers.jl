@@ -261,7 +261,7 @@ Canonical = false
 absil2004riemannian
 absil2008optimization
 bendokat2020grassmann
-brantner2023generalizing
+Brantner:2023
 frankel2011geometry
 ```
 

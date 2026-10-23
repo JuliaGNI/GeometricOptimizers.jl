@@ -408,7 +408,7 @@ Y^{(t+1)} \gets \Lambda^{(t+1)}E,
 
 with ``W^{(t)} \in \mathfrak{g}^\mathrm{hor}`` the direction the method produced. So what a
 retraction has to return is an element of the *group*, not of the manifold, and the point follows
-from it. This is the *extended* retraction of [brantner2023generalizing](@cite); `update_section!`
+from it. This is the *extended* retraction of [Brantner:2023](@cite); `update_section!`
 performs the first line and `apply_section` the second. Because the retracted element is in ``G``, a
 retracted point is on the manifold by construction, and [`check`](@ref) — which measures
 ``\|Y^TY - \mathbb{I}\|`` — returns nothing but accumulated round-off.

@@ -122,7 +122,7 @@ being constructible:
       ``\varphi_1(X) = (\exp(X) - \mathbb{I})X^{-1}``. That form is only valid at an invertible ``X``,
       while the series above is not, so this page uses ``\mathfrak{A}`` and the series — which is also
       the notation of the implementation and of
-      [brantner2023generalizing](@cite). The names of the recovery formulas in
+      [Brantner:2023](@cite). The names of the recovery formulas in
       [skaflestad2009scaling](@cite) refer to the ``\varphi``-functions, and that is the only place the
       correspondence is needed here.
 
@@ -373,7 +373,7 @@ at the top of the sweep the series has overflowed outright. The [`Cayley`](@ref)
 !!! danger "This is not a usable retraction"
     `TaylorSeries` is retained as a regression baseline for the pre-0.2.0 implementation — the
     behaviour of every release up to 0.2.0, and of the algorithm as published in earlier versions of
-    [brantner2023generalizing](@cite). It can silently lose orthogonality for large lifts. Do not
+    [Brantner:2023](@cite). It can silently lose orthogonality for large lifts. Do not
     select it for optimization. Its role in the current package is as the small-argument kernel of
     [`ScaledSquaring`](@ref), where the argument it is handed is guaranteed small.
 

@@ -15,7 +15,7 @@ gives
 
 Computing ``\mathfrak{A}(X)`` is therefore the central numerical task: it preserves the low-rank
 factorization and reduces the matrix function from ``N\times{}N`` to ``2n\times{}2n``.
-``\mathfrak{A}`` is the notation of this implementation and of [brantner2023generalizing](@cite); the
+``\mathfrak{A}`` is the notation of this implementation and of [Brantner:2023](@cite); the
 exponential-integrator literature writes the same function ``\varphi_1``
 [hochbruck2010exponential; §2.1](@cite).
 
