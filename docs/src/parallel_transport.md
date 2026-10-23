@@ -215,7 +215,7 @@ schlarb2024covariant
 Canonical = false
 Pages = []
 
-brantner2023generalizing
+Brantner:2023
 schlarb2024covariant
 absil2008optimization
 gao2021riemannian

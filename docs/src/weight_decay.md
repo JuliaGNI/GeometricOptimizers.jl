@@ -129,7 +129,7 @@ That distinction matters because manifold-flavoured optimizers for large languag
 active area — Mano ([gu2026mano](@cite)) projects the momentum onto the tangent space of the
 parameters and constrains it on a rotational oblique manifold, and reports outperforming AdamW and
 Muon at lower memory and compute cost. This package takes the other route, following
-[brantner2023generalizing](@cite): the constraint is part of the model, maintained at every
+[Brantner:2023](@cite): the constraint is part of the model, maintained at every
 iterate, rather than a projection wrapped around an essentially unconstrained solution. Its cost
 is kept down in the retraction instead — [`cayley`](@ref) needs only a ``2n\times{}2n`` solve, not
 an SVD or a QR decomposition of the full weight.
