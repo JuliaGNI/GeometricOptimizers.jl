@@ -1,6 +1,7 @@
 # The fixtures of a training step on a parameter set, shared by `test/integration/adam_step_allocations.jl`,
-# `test/helpers/adam_step_after_dense.jl`, `test/manifold_optimizers/scalar_moment_adam_optimizer.jl`
-# and `scripts/parameter_set_step_cost.jl`: model A, a random gradient of the shape of a set, and the
+# `test/helpers/adam_step_after_dense.jl`, `test/manifold_optimizers/scalar_moment_adam_optimizer.jl`,
+# `test/optimizers/composite_method.jl`, `scripts/parameter_set_step_cost.jl` and
+# `scripts/composite_step_cost.jl`: model A, a random gradient of the shape of a set, and the
 # barrier that reads the bytes of one step.
 using GeometricOptimizers
 using NeuralNetworkParameters: NetworkParameters, mapparameters
