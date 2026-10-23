@@ -157,3 +157,10 @@ end
         @test size(v' * A) == (1, N)
     end
 end
+
+@testset "an index outside a SymmetricMatrix raises" begin
+    A = SymmetricMatrix(randn(Random.Xoshiro(6), 4, 4))
+    for (i, j) in ((0, 1), (-1, 2), (5, 1), (1, 5))
+        @test_throws BoundsError A[i, j]
+    end
+end

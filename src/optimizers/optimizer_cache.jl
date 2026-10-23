@@ -78,7 +78,7 @@ function _refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::G
 end
 
 function _refresh_latest_gradient!(::Union{Manifold, NetworkParameters}, cache::OptimizerCache, g::Gradient)
-    _copyto!(latest_gradient(cache), global_rep(section(cache), g(solution(cache))))
+    global_rep!(latest_gradient(cache), section(cache), g(solution(cache)))
 end
 
 @doc raw"""
@@ -139,7 +139,10 @@ function store_gradient!(cache::OptimizerCache, state::OptimizerState, g::Gradie
     if latest_gradient_is_current(cache, state, x)
         _copyto!(gradient_array(cache), latest_gradient(cache))
     else
-        _copyto!(gradient_array(cache), global_rep(section(state), g(x)))
+        # `global_rep!` into the cache's own array, rather than `global_rep` into a fresh lift: the
+        # destination already has the shape, so a gradient the step builds costs the products and
+        # nothing else. On a vector space the write is a copy.
+        global_rep!(gradient_array(cache), section(state), g(x))
     end
     # consumed: from here to the next `refresh_latest_gradient!`, `solver_step!` and the line search
     # move `solution(cache)` around and nothing keeps `latest_gradient` in step with it

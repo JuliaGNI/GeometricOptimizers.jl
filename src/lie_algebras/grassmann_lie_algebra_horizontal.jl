@@ -32,7 +32,7 @@ mutable struct GrassmannLieAlgHorMatrix{T, ST <: AbstractMatrix{T}} <:
     N::Int
     n::Int
 
-    #maybe modify this - you don't need N & n as inputs!
+    # `N` and `n` follow from `B`; the constructor takes them and asserts that they agree.
     function GrassmannLieAlgHorMatrix(B::AbstractMatrix{T}, N::Integer, n::Integer) where {T}
         @assert n == size(B, 2)
         @assert N == size(B, 1) + n
@@ -87,7 +87,9 @@ function KernelAbstractions.get_backend(B::GrassmannLieAlgHorMatrix)
     KernelAbstractions.get_backend(B.B)
 end
 
+# The bounds check comes first for the reason `getindex(::StrictlyLowerTriangular, …)` gives.
 function Base.getindex(A::GrassmannLieAlgHorMatrix{T}, i::Integer, j::Integer) where {T}
+    @boundscheck checkbounds(A, i, j)
     if i ≤ A.n
         if j ≤ A.n
             return zero(T)
@@ -100,39 +102,6 @@ function Base.getindex(A::GrassmannLieAlgHorMatrix{T}, i::Integer, j::Integer) w
     return zero(T)
 end
 
-# `src/ambiguities.jl` has the `+` and `-` methods that reach these two.
-function _owned_add(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
-    @assert A.N == B.N
-    @assert A.n == B.n
-    GrassmannLieAlgHorMatrix(A.B + B.B,
-        A.N,
-        A.n)
-end
-
-function _owned_sub(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
-    @assert A.N == B.N
-    @assert A.n == B.n
-    GrassmannLieAlgHorMatrix(A.B - B.B,
-        A.N,
-        A.n)
-end
-
-function add!(C::GrassmannLieAlgHorMatrix, A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
-    @assert A.N == B.N == C.N
-    @assert A.n == B.n == C.n
-    add!(C.B, A.B, B.B)
-end
-
-function Base.:-(A::GrassmannLieAlgHorMatrix)
-    GrassmannLieAlgHorMatrix(-A.B, A.N, A.n)
-end
-
-function Base.:*(A::GrassmannLieAlgHorMatrix, α::Real)
-    GrassmannLieAlgHorMatrix(α*A.B, A.N, A.n)
-end
-
-Base.:*(α::Real, A::GrassmannLieAlgHorMatrix) = A*α
-
 # The first `n` rows of `B * C` — see the comment on the `StiefelLieAlgHorMatrix` method of this
 # function for the `transpose` and for where the minus sits. This lift's `(1, 1)` block is the zero
 # matrix, so only the `-Bᵀ` block contributes.
@@ -143,52 +112,10 @@ _hor_top_rows(B::GrassmannLieAlgHorMatrix, C₁, C₂) = -(transpose(B.B) * C₂
 
 function Base.zeros(backend::KernelAbstractions.Backend,
         ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
-    GrassmannLieAlgHorMatrix(_zeros(backend, T, N-n, n), N, n)
+    GrassmannLieAlgHorMatrix(_zeros(backend, T, N - n, n), N, n)
 end
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
         ::Type{GrassmannLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     GrassmannLieAlgHorMatrix(_rand(rng, backend, T, N - n, n), N, n)
 end
-
-# `typeof(A)` is the two-parameter `GrassmannLieAlgHorMatrix{T, AT}`, which `zeros` has no
-# method for; it has to be narrowed to the one-parameter form, as in the Stiefel case.
-#
-# The backend comes from `A`, for the reason given beside `similar(::StiefelLieAlgHorMatrix)`.
-function Base.similar(A::GrassmannLieAlgHorMatrix, dims::Union{
-        Integer, AbstractUnitRange}...)
-    zeros(KernelAbstractions.get_backend(A), GrassmannLieAlgHorMatrix{eltype(A)}, dims...)
-end
-function Base.similar(A::GrassmannLieAlgHorMatrix)
-    zeros(KernelAbstractions.get_backend(A), GrassmannLieAlgHorMatrix{eltype(A)}, A.N, A.n)
-end
-
-function LinearAlgebra.mul!(C::GrassmannLieAlgHorMatrix, A::GrassmannLieAlgHorMatrix, α::Real)
-    mul!(C.B, A.B, α)
-    C
-end
-function LinearAlgebra.mul!(C::GrassmannLieAlgHorMatrix, α::Real, A::GrassmannLieAlgHorMatrix)
-    mul!(C, A, α)
-end
-LinearAlgebra.rmul!(C::GrassmannLieAlgHorMatrix, α::Real) = mul!(C, C, α)
-
-function _round(B::GrassmannLieAlgHorMatrix; kwargs...)
-    GrassmannLieAlgHorMatrix(
-        _round(B.B; kwargs...),
-        B.N,
-        B.n
-    )
-end
-
-# The generic `AbstractArray` fallbacks for these route through `setindex!`, which this type
-# does not define, so they have to be given explicitly — as they already are for
-# `StiefelLieAlgHorMatrix`.
-Base.zero(B::GrassmannLieAlgHorMatrix) = GrassmannLieAlgHorMatrix(zero(B.B), B.N, B.n)
-Base.copy(B::GrassmannLieAlgHorMatrix) = GrassmannLieAlgHorMatrix(copy(B.B), B.N, B.n)
-
-function Base.copyto!(A::GrassmannLieAlgHorMatrix, B::GrassmannLieAlgHorMatrix)
-    copyto!(A.B, B.B)
-    A
-end
-
-Base.fill!(A::GrassmannLieAlgHorMatrix, val) = (fill!(A.B, val); A)

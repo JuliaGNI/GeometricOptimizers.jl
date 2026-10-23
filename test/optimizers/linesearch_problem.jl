@@ -1,7 +1,7 @@
 # `trial_slope` under `Cayley` takes the retraction's differential in the optimizer's workspace
 # (issue #73), so what it allocates away from `α = 0` is what it allocates at `α = 0`: the gradient
-# functor and `global_rep`, which are the same at every `α`, and nothing for the differential. The
-# slope itself is the one the allocating differential gives, to the bit.
+# functor and the lift's `n × n` product, which are the same at every `α`, and nothing for the
+# differential. The slope itself is the one the allocating differential gives, to the bit.
 
 using GeometricOptimizers
 using GeometricOptimizers: trial_slope, trial_iterate!, retraction_workspace, initialize!,
@@ -32,8 +32,10 @@ function slope_fixture(lift, ::Type{T}; N = 6) where {T}
     c = cache(opt)
     initialize!(c, Y)
     update!(c, state, gradient(opt), _direction_rule(opt), Y)
+    # `scaled` and `lift` are the buffers `linesearch_problem` builds for a search
     (opt = opt, cache = c, params = (x = Y, state = state),
-        differential = _similar(direction(c)), workspace = retraction_workspace(opt))
+        differential = _similar(direction(c)), workspace = retraction_workspace(opt),
+        scaled = _similar(direction(c)), lift = _similar(direction(c)))
 end
 
 function slope_at(f, α)
@@ -41,14 +43,16 @@ function slope_at(f, α)
     trial_slope(gradient(f.opt), f.cache, Cayley(), α, f.differential, f.workspace)
 end
 
-function _measured_slope(gradient_instance, cache, retraction, α, differential, workspace)
-    trial_slope(gradient_instance, cache, retraction, α, differential, workspace)
-    @allocated trial_slope(gradient_instance, cache, retraction, α, differential, workspace)
+function _measured_slope(
+        gradient_instance, cache, retraction, α, differential, workspace, lift)
+    trial_slope(gradient_instance, cache, retraction, α, differential, workspace, lift)
+    @allocated trial_slope(
+        gradient_instance, cache, retraction, α, differential, workspace, lift)
 end
 
 function measured_slope(f, α)
     _measured_slope(gradient(f.opt), f.cache, Cayley(), α, f.differential,
-        f.workspace)
+        f.workspace, f.lift)
 end
 
 @testset "trial_slope allocates as much at α = 0.5 as at α = 0, $lift, $T" for lift in (:Stiefel, :Grassmann),
@@ -74,8 +78,9 @@ end
 # iterate, and the `Cayley` retraction allocates at `α = 0.5` what it does not at `α = 0`, so the
 # equality is of what `φ'` allocates beyond that move, measured alone in the same workspace. And
 # at `α = 0.5` all that `φ'` allocates is that move and the slope, each measured alone in the
-# optimizer's workspace: a `φ'` that moved the iterate without the workspace would allocate the
-# retraction's buffers on top. The readings are compared under the tolerance of
+# optimizer's workspace and with buffers like the search's own: a `φ'` that moved the iterate without
+# the workspace would allocate the retraction's buffers on top, and one without its buffers a scaled
+# direction and a lift. The readings are compared under the tolerance of
 # `test/helpers/allocations.jl`, so the fixture is at `N = 40`, where one of those `N × N` buffers is
 # 6 400 bytes in `Float32`; at `N = 6` it would be 144, below the tolerance.
 function _measured_derivative(D, α, params)
@@ -83,15 +88,14 @@ function _measured_derivative(D, α, params)
     @allocated D(α, params)
 end
 
-function _measured_move(cache, params, α, workspace)
-    trial_iterate!(cache, params, α, Cayley(), workspace)
-    @allocated trial_iterate!(cache, params, α, Cayley(), workspace)
+function _measured_move(cache, params, α, workspace, scaled)
+    trial_iterate!(cache, params, α, Cayley(), workspace, scaled)
+    @allocated trial_iterate!(cache, params, α, Cayley(), workspace, scaled)
 end
 
-function beyond_move(f, D, α)
-    _measured_derivative(D, α, f.params) -
-    _measured_move(f.cache, f.params, α, f.workspace)
-end
+measured_move(f, α) = _measured_move(f.cache, f.params, α, f.workspace, f.scaled)
+
+beyond_move(f, D, α) = _measured_derivative(D, α, f.params) - measured_move(f, α)
 
 @testset "φ' of the optimizer's line search allocates as much at α = 0.5 as at α = 0, $lift, $T" for lift in (
         :Stiefel, :Grassmann),
@@ -101,7 +105,7 @@ end
     D = linesearch(f.opt).problem.D
     @test n_independent(beyond_move(f, D, T(0.5)), beyond_move(f, D, zero(T)))
     @test n_independent(_measured_derivative(D, T(0.5), f.params),
-        _measured_move(f.cache, f.params, T(0.5), f.workspace) + measured_slope(f, T(0.5)))
+        measured_move(f, T(0.5)) + measured_slope(f, T(0.5)))
     @test D(T(0.5), f.params) isa T
 end
 

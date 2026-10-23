@@ -4,7 +4,7 @@ CurrentModule = GeometricOptimizers
 
 # Optimization on Homogeneous Spaces
 
-The manifold optimizers in this package implement [brantner2023generalizing](@cite). This page summarizes that paper: what problem it solves, how it solves it, and which function in `GeometricOptimizers` corresponds to which operation in the algorithm.
+The manifold optimizers in this package implement [Brantner:2023](@cite). This page summarizes that paper: what problem it solves, how it solves it, and which function in `GeometricOptimizers` corresponds to which operation in the algorithm.
 
 ## The problem: Adam has no coordinate-free formulation
 

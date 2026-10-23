@@ -139,6 +139,9 @@ export StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, AbstractLieAlgHorMatrix
 include("lie_algebras/abstract_lie_algebra_horizontal.jl")
 include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
 include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
+# The method families both lifts share, written once over the block tuple; the file needs both
+# concrete types, so it is included after them.
+include("lie_algebras/lift_families.jl")
 include("lie_algebras/stiefel_projection.jl")
 
 # The `zeros` and `rand` chain over all of the types above.

@@ -72,7 +72,10 @@ function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend,
     StrictlyLowerTriangular(_rand(rng, backend, T, n * (n - 1) ÷ 2), Int(n))
 end
 
+# The index is bounds-checked first: the last line of the body is reached for an index outside the
+# matrix as well as for one in the upper triangle, and would answer `zero(T)` for it.
 function Base.getindex(A::StrictlyLowerTriangular{T}, i::Int, j::Int) where {T}
+    @boundscheck checkbounds(A, i, j)
     if j == i
         return zero(T)
     end
@@ -99,21 +102,28 @@ end
     C[i, j] = tmp_sum
 end
 
-mat_mul_kernel(::StrictlyLowerTriangular, backend) = lo_mat_mul_kernel!(backend)
+# The packed vector from a dense matrix, in one kernel over the whole `n × n` range. It writes every
+# entry of the strict lower triangle, with the packing of `getindex` above, so a call allocates the
+# packed result, unzeroed, and nothing else.
+@kernel function lo_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
+    i, j = @index(Global, NTuple)
+    if i > j
+        S[(i - 2) * (i - 1) ÷ 2 + j] = A[i, j]
+    end
+end
 
 function map_to_lo(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
-    S = KernelAbstractions.zeros(backend, T, n * (n - 1) ÷ 2)
-    assign_Skew_val! = assign_Skew_val_kernel!(backend)
-    for i in 2:n
-        assign_Skew_val!(S, A, i, ndrange = (i - 1))
-    end
+    S = KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
+    lo_projection_kernel(backend)(S, A; ndrange = (n, n))
     S
 end
 
-# define routines for generalizing ChainRulesCore to StrictlyLowerTriangular 
+mat_mul_kernel(::StrictlyLowerTriangular, backend) = lo_mat_mul_kernel!(backend)
+
+# define routines for generalizing ChainRulesCore to StrictlyLowerTriangular
 function ChainRulesCore.ProjectTo(A::AT) where {AT <: StrictlyLowerTriangular}
     ProjectTo{AT}(; triang = ProjectTo(A.S))
 end

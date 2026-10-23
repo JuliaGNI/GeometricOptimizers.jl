@@ -42,20 +42,6 @@ struct NewtonOptimizerCache{T, AT, HT, GS} <: OptimizerCache{T}
         initialize!(cache, x)
         cache
     end
-
-    # we probably don't need this constructor -- and nothing calls it, which is how it came to pass
-    # eight values for seven fields (it would have thrown on the first call). The field list is
-    # spelled out here so that the next person to reach for it gets a cache and not an arity error.
-    function NewtonOptimizerCache(x::AT, problem::OptimizerProblem) where {
-            T <: Number, AT <: AbstractArray{T}}
-        g = Gradient(problem)(x)
-        h = Hessian(problem)(x)
-        section = GlobalSection(x)
-        g̃ = similar(x)
-        fill!(g̃, T(NaN))
-        new{T, AT, typeof(h), typeof(section)}(
-            copy(x), zero(x), g, g̃, Ref(false), zero(x), -g, h, section)
-    end
 end
 
 function OptimizerCache(::Newton, x::OptimizerSolution)

@@ -95,7 +95,11 @@ function return_element(S::AbstractVector{T}, i::Int, j::Int) where {T}
     end
 end
 
+# The bounds check comes first for the reason `getindex(::StrictlyLowerTriangular, …)` gives: every
+# branch below indexes the packed vector with arithmetic derived from the index, and an out-of-range
+# pair raises from deep inside it with a message that names neither the matrix nor the index.
 function Base.getindex(A::SkewSymMatrix, i::Int, j::Int)
+    @boundscheck checkbounds(A, i, j)
     return_element(A.S, i, j)
 end
 
@@ -232,9 +236,18 @@ function Base.one(A::SkewSymMatrix{T}) where {T}
     unit_matrix(KernelAbstractions.get_backend(A.S), T, A.n)
 end
 
-# the first matrix is multiplied onto A2 in order for it to not be SkewSymMatrix!
+# The dense form of a skew block, allocated. `_dense_skew!` in `retractions/retraction_workspace.jl`
+# writes it into a buffer the caller owns: on the host entry by entry, and on a device, which serves
+# no `getindex`, as the product with the identity.
+_dense_skew(B::SkewSymMatrix{T, Vector{T}}) where {T} = Matrix{T}(undef, B.n, B.n) .= B
+function _dense_skew(B::SkewSymMatrix{T}) where {T}
+    C = KernelAbstractions.allocate(KernelAbstractions.get_backend(B.S), T, B.n, B.n)
+    _dense_skew!(C, B, unit_matrix(B))
+end
+
+# The product of two skew matrices is a general matrix, so the right operand is made dense first.
 function Base.:*(A1::SkewSymMatrix{T}, A2::SkewSymMatrix{T}) where {T}
-    A1 * (one(A2) * A2)
+    A1 * _dense_skew(A2)
 end
 
 function Base.zero(A::SkewSymMatrix)
@@ -257,25 +270,33 @@ end
 # see the comment on `similar(::SymmetricMatrix)`
 Base.similar(A::SkewSymMatrix) = SkewSymMatrix(similar(A.S), A.n)
 
-@kernel function assign_Skew_val_kernel!(S, A_skew, i)
-    j = @index(Global)
-    S[((i - 2) * (i - 1) ÷ 2 + j)] = A_skew[i, j]
+@kernel function skew_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
+    i, j = @index(Global, NTuple)
+    if i > j
+        S[(i - 2) * (i - 1) ÷ 2 + j] = T(0.5) * (A[i, j] - A[j, i])
+    end
 end
 
-# `transpose` and not `adjoint`, because the set being projected onto is `{M : Mᵀ = -M}` — which is
-# what `getindex` reconstructs, and what the docstring above states. `(A - Aᴴ)/2` is the projection
-# onto the skew-*Hermitian* matrices, and its strict lower triangle stored here gives a matrix that
-# is neither that projection nor `(A - Aᵀ)/2`. The two agree for a real element type.
+# The kernel reads `A[j, i]` unconjugated, a transpose and not an adjoint, because the set being
+# projected onto is `{M : Mᵀ = -M}` — which is what `getindex` reconstructs, and what the docstring
+# above states. `(A - Aᴴ)/2` is the projection onto the skew-*Hermitian* matrices, and its strict
+# lower triangle stored here gives a matrix that is neither that projection nor `(A - Aᵀ)/2`. The two
+# agree for a real element type.
+#
+# One kernel writes every entry of the packed vector straight from `A`, so a call allocates no dense
+# temporary and zeroes nothing. `map_to_Skew` returns a new packed vector, and `map_to_Skew!` writes
+# into a `SkewSymMatrix`.
 function map_to_Skew(A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
+    S = KernelAbstractions.allocate(KernelAbstractions.get_backend(A), T, n * (n - 1) ÷ 2)
+    map_to_Skew!(SkewSymMatrix(S, n), A).S
+end
+
+function map_to_Skew!(S::SkewSymMatrix{T}, A::AbstractMatrix{T}) where {T}
+    n = size(A, 1)
     @assert size(A, 2) == n
-    A_skew = T(0.5) * (A - transpose(A))
-    backend = KernelAbstractions.get_backend(A)
-    S = _zeros(backend, T, n * (n - 1) ÷ 2)
-    assign_Skew_val! = assign_Skew_val_kernel!(backend)
-    for i in 2:n
-        assign_Skew_val!(S, A_skew, i, ndrange = (i - 1))
-    end
+    @assert S.n == n
+    skew_projection_kernel(KernelAbstractions.get_backend(A))(S.S, A; ndrange = (n, n))
     S
 end
 

@@ -82,7 +82,10 @@ function SymmetricMatrix(A::AbstractMatrix{T}) where {T}
     SymmetricMatrix(S, size(A, 1))
 end
 
-# I'm not 100% sure this is the best solution (needed for broadcasting operations ...)
+# One entry of the storage, written through the dense interface. It is a *storage* write: the entry
+# `[A]ᵢⱼ` and the entry `[A]ⱼᵢ` are one number in `S`, so the write touches one of them and leaves the
+# other equal by construction. The three structured types with no `setindex!` cannot represent an
+# arbitrary matrix at all, which is what makes this one the exception — a broadcast writes it.
 function Base.setindex!(A::SymmetricMatrix{T}, val::T, i::Int, j::Int) where {T}
     if i ≥ j
         A.S[i * (i - 1) ÷ 2 + j] = val
@@ -91,24 +94,23 @@ function Base.setindex!(A::SymmetricMatrix{T}, val::T, i::Int, j::Int) where {T}
     end
 end
 
-@kernel function assign_S_val_kernel!(S, A_sym, i)
-    j = @index(Global)
-    S[i * (i - 1) ÷ 2 + j] = A_sym[i, j]
+@kernel function sym_projection_kernel(S::AbstractVector{T}, A::AbstractMatrix) where {T}
+    i, j = @index(Global, NTuple)
+    if i >= j
+        S[i * (i - 1) ÷ 2 + j] = T(0.5)*(A[i, j] + A[j, i])
+    end
 end
 
-# `transpose` and not `adjoint`, for the reason `map_to_Skew` in `skew_symmetric.jl` spells out: the
-# set being projected onto is `{M : Mᵀ = M}`, which is what `getindex` reconstructs and what the
-# docstring above states. The two agree for a real element type.
+# The kernel reads `A[j, i]` unconjugated, a transpose and not an adjoint, for the reason
+# `map_to_Skew` in `skew_symmetric.jl` spells out: the set being projected onto is `{M : Mᵀ = M}`,
+# which is what `getindex` reconstructs and what the docstring above states. The two agree for a
+# real element type. The kernel writes every packed entry, so the storage is not zeroed first.
 function map_to_S(A::AbstractMatrix{T}) where {T <: Number}
     n = size(A, 1)
     @assert size(A, 2) == n
-    A_sym = T(0.5)*(A + transpose(A))
     backend = KernelAbstractions.get_backend(A)
-    S = KernelAbstractions.zeros(backend, T, n*(n+1)÷2)
-    assign_S_val! = assign_S_val_kernel!(backend)
-    for i in 1:n
-        assign_S_val!(S, A_sym, i, ndrange = i)
-    end
+    S = KernelAbstractions.allocate(backend, T, n*(n+1)÷2)
+    sym_projection_kernel(backend)(S, A; ndrange = (n, n))
     S
 end
 
@@ -140,7 +142,11 @@ Base.similar(A::SymmetricMatrix) = SymmetricMatrix(similar(A.S), A.n)
 # poison scratch arrays with `NaN`.
 Base.fill!(A::SymmetricMatrix, val) = (fill!(A.S, val); A)
 
+# The bounds check comes first for the reason `getindex(::StrictlyLowerTriangular, ·)` gives: the
+# packed vector is indexed with arithmetic derived from the index, so an out-of-range pair raises
+# from inside it rather than here.
 function Base.getindex(A::SymmetricMatrix, i::Int, j::Int)
+    @boundscheck checkbounds(A, i, j)
     if i ≥ j
         A.S[((i - 1) * i) ÷ 2 + j]
     else
