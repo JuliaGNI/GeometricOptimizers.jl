@@ -75,40 +75,26 @@ breaking release).
   draws the same sweep, the same seed and the same eight scales, from its own copy of those
   lines; the header of `scripts/retraction_sweep.jl` says so.
 
-- Added **`CompositeMethod`**, one first-order method per *leaf* of a mixed parameter set.
-  `CompositeMethod(; manifold, array)`, or positionally `CompositeMethod(manifold, array)`, holds two
-  methods: `manifold` steps every `Manifold` leaf and `array` every other leaf. The `public`
-  `leafmethod(method, x)` returns the method that steps a leaf, and a parameter set passed in place
-  of a leaf is a `MethodError`.
+- Added **`CompositeMethod(; manifold, array)`**, two first-order methods for one parameter set:
+  `manifold` steps every `Manifold` leaf and `array` every other leaf. It is for a network with
+  Stiefel weights beside ordinary arrays, which no single method covers, because
+  `ScalarMomentAdam` steps a single `StiefelManifold`. `TrainingOptimizer(ps; algorithm =
+  composite)` holds the cache, the state and the retraction buffers of every leaf, for the method
+  of that leaf and in the element type of `ps`, in trees of the shape of `ps` (`opt.state.L1.weight`
+  is the state of that leaf). `optimization_step!` takes the ordinary training step on every leaf,
+  so every leaf moves to the bit as under a `TrainingOptimizer` of its own, and a composite of
+  `Adam` on both sides moves as `Adam` on the whole set. The leaves share the step size of each
+  step: `default_step_size` of a composite is its methods' default where they agree, and an
+  `ArgumentError` asking for `linesearch` where they do not. A step refused for a shape or an
+  element type moves no leaf.
 
-  The case that forces it is `ScalarMomentAdam`, which steps a single `StiefelManifold` on purpose:
-  a *scalar* second moment is a statement about one manifold and means nothing pooled across a set.
-  A transformer with Stiefel attention projections beside ordinary arrays, or a symplectic
-  autoencoder with Stiefel PSD layers beside Euclidean SympNet layers, has no single method that
-  covers it, and `GeometricMachineLearning` had been assembling the choice by hand, in two different
-  ways.
-
-  `TrainingOptimizer(ps; algorithm = composite)` builds **one cache and one state per leaf**, each
-  for the method `leafmethod` gives that leaf and converted to the element type of `ps`. The
-  new exported `CompositeState` holds the leaves' states in a tree of the shape of `ps`.
-  `optimization_step!` steps every leaf with its own method, cache and state, at the one step size
-  the schedule gives for the step. Nothing is pooled across leaves, so every leaf moves exactly as
-  under a `TrainingOptimizer` of its own: `test/optimizers/composite_method.jl` pins this to the
-  bit, and pins a composite of `Adam` on every leaf against `Adam` on the whole set. On a single
-  leaf the composite is the method of that leaf.
-
-  A quasi-Newton method, `Newton` or a nested composite as either argument is a `TypeError` at
-  construction. `CompositeMethod` is not a `FirstOrderMethod`, so `TrainingOptimizer` takes
-  `Union{FirstOrderMethod, CompositeMethod}`. `change_precision` converts both methods.
-  `default_step_size` of a composite is the two methods' default when they agree, and otherwise an
-  `ArgumentError` asking for `linesearch`. `Optimizer` and `solve!` refuse a composite with an
-  `ArgumentError`: their line search chooses one step length for the direction of the whole set, and
-  a composite has no such direction.
-
-  A composite step on dense leaves allocates nothing, as `Adam` on the whole set does, and on a set
-  with a Stiefel leaf it allocates what `Adam` on the whole set allocates. The step of each leaf runs
-  a walk of NeuralNetworkParameters inside the walk over the leaves, and only 0.5.2 walks a nested
-  set without allocating, so the `[compat]` floor of NeuralNetworkParameters is now 0.5.2.
+  Any other method, or a composite, as either argument is a `MethodError`, and so is a composite
+  for a single leaf, which takes its method directly. `CompositeMethod` is not an `OptimizerMethod`,
+  so `Optimizer` does not take it (a `TypeError` at the keyword): its line search finds one step
+  length for the direction of the whole set. A composite step allocates what `Adam` on the whole
+  set allocates: nothing on dense leaves, and the retraction of a Stiefel leaf. The step runs a walk
+  of NeuralNetworkParameters inside the walk over the leaves, which allocates on 0.5.1, so the
+  `[compat]` floor of NeuralNetworkParameters is 0.5.2.
 
 ### Changed
 

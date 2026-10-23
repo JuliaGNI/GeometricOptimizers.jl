@@ -226,11 +226,7 @@ export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # `AdamWithEuclideanDecay` shares `Adam`'s cache and state, so there is no state to export
 # alongside it
 export AdamWithEuclideanDecay
-# `CompositeMethod` is a method a caller constructs, as the others are, and `CompositeState` is its
-# state. `leafmethod` is `public`: the method a composite gives a leaf, which a caller inspects but
-# does not need in its training loop.
-export CompositeMethod, CompositeState
-public leafmethod
+export CompositeMethod
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")
@@ -244,7 +240,7 @@ export TrainingOptimizer, optimization_step!
 public PrecomputedGradient, step_size, default_step_size
 include("optimizers/training_optimizer.jl")
 
-# The per-leaf cache, state and training step of `CompositeMethod`, which need everything above.
+# The training optimizer of `CompositeMethod`, which needs everything above.
 include("optimizers/composite_method.jl")
 
 # Teach `NeuralNetworkParameters.load` how to rebuild each of these types from a file, which has no

@@ -479,9 +479,9 @@ default_linesearch(::Type{T}, ::AdamFamily) where {T} = Static(T(DEFAULT_LEARNIN
     FirstOrderMethod
 
 The methods that build their direction from the gradient alone: [`GradientMethod`](@ref) and the
-[`FirstOrderMethodWithState`](@ref). These, and a [`CompositeMethod`](@ref) of two of them, are the
-methods a [`TrainingOptimizer`](@ref) takes, and these are the methods whose
-`update!(cache, state, gradient, method, x)` takes the method rather than a
+[`FirstOrderMethodWithState`](@ref). These are the methods a
+[`TrainingOptimizer`](@ref) takes, alone or two of them in a [`CompositeMethod`](@ref), and the
+methods whose `update!(cache, state, gradient, method, x)` takes the method rather than a
 [`SimpleSolvers.Hessian`](@extref).
 """
 const FirstOrderMethod = Union{GradientMethod, FirstOrderMethodWithState}
@@ -492,46 +492,33 @@ const FirstOrderMethod = Union{GradientMethod, FirstOrderMethodWithState}
 Two [`FirstOrderMethod`](@ref)s for a parameter set whose leaves are not all of one kind: `manifold`
 steps every [`Manifold`](@ref) leaf, and `array` every other leaf.
 
-A method is a statement about the geometry of the thing it steps, and a mixed set has more than one
-geometry in it. [`ScalarMomentAdam`](@ref) is the case that forces the point: it steps a single
-[`StiefelManifold`](@ref), because a *scalar* second moment is a statement about one manifold and
-means nothing pooled across a set. A transformer with `StiefelManifold` attention projections beside
-ordinary `Matrix` and `Vector` leaves therefore has no single method that covers it:
+[`ScalarMomentAdam`](@ref) is the case that needs it: it steps a single [`StiefelManifold`](@ref),
+because a *scalar* second moment pooled across a set means nothing. So a network with Stiefel
+weights beside ordinary `Matrix` and `Vector` leaves has no single method that covers it:
 
 ```julia
 CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
 ```
 
-The split is by `Manifold` and not by `StiefelManifold`: a `manifold` method that steps only some
-manifolds keeps its own scope, so a `GrassmannManifold` leaf under `ScalarMomentAdam` is a
-`MethodError` when its cache is built.
+The split is by `Manifold` and not by `StiefelManifold`, so a `GrassmannManifold` leaf under
+`ScalarMomentAdam` is a `MethodError` when its cache is built. Any other method, or a composite, in
+either place is a `MethodError` at construction.
 
-`TrainingOptimizer(ps; algorithm = composite)` builds a cache and a state *per leaf*, each for the
-method [`leafmethod`](@ref) gives for it and in the element type of `ps`; a [`CompositeState`](@ref)
-holds the leaves' states in a tree of the shape of `ps`. [`optimization_step!`](@ref) steps every leaf
-with its own method, cache and state, at the one step size the schedule gives for that step. Nothing
-is pooled across leaves, so every leaf moves exactly as it would under a `TrainingOptimizer` of its
-own. On a single leaf, `TrainingOptimizer` takes the method for that leaf, and the composite is that
-method.
-
-[`solve!`](@ref) takes no composite: its line search chooses one step length for the direction of the
-whole set, and [`Optimizer`](@ref) raises an `ArgumentError` for one.
+A composite is for [`TrainingOptimizer`](@ref) on a parameter set. Every leaf gets a cache and a
+state of its own method, in the element type of the set, and moves exactly as it would under a
+`TrainingOptimizer` of its own; nothing is pooled across leaves. The leaves share the step size of
+each step. A composite is not an [`OptimizerMethod`](@ref), so [`Optimizer`](@ref) and
+[`solve!`](@ref), whose line search finds one step length for the direction of the whole set, do
+not take it.
 """
-struct CompositeMethod{M <: FirstOrderMethod, A <: FirstOrderMethod} <: OptimizerMethod
+struct CompositeMethod{M <: FirstOrderMethod, A <: FirstOrderMethod}
     manifold::M
     array::A
 end
 
-function CompositeMethod(; manifold::FirstOrderMethod, array::FirstOrderMethod)
-    CompositeMethod(manifold, array)
-end
+CompositeMethod(; manifold, array) = CompositeMethod(manifold, array)
 
-"""
-    leafmethod(method::CompositeMethod, x)
-
-The method that steps the leaf `x`: `method.manifold` for a [`Manifold`](@ref), and `method.array`
-for any other array. A parameter set is not a leaf, and is a `MethodError`.
-"""
+# The method that steps the leaf `x`. A parameter set is not a leaf, and is a `MethodError`.
 leafmethod(method::CompositeMethod, ::Manifold) = method.manifold
 leafmethod(method::CompositeMethod, ::AbstractArray) = method.array
 
@@ -543,10 +530,8 @@ not given: `1e-2` for [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), and
 `DEFAULT_LEARNING_RATE = 1e-3` for the [`AdamFamily`](@ref), whose direction has magnitude
 ``\\approx{}1`` per component whatever the gradient is.
 
-A [`CompositeMethod`](@ref) steps all of its leaves at one step size, so it has a default only when
-its two methods agree on one: `CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())`
-takes `DEFAULT_LEARNING_RATE`. For two methods that disagree this raises an `ArgumentError` asking
-for `linesearch`.
+A [`CompositeMethod`](@ref) steps all of its leaves at one step size, so its default is the one its
+two methods agree on, and an `ArgumentError` asking for `linesearch` where they disagree.
 """
 default_step_size(::Union{GradientMethod, MomentumMethod}) = 1.0e-2
 default_step_size(::AdamFamily) = DEFAULT_LEARNING_RATE

@@ -300,51 +300,34 @@ typeof(GeometricOptimizers.first_moment(state).A)
 
 ## Composing methods over a mixed parameter set
 
-A method is a statement about the geometry of the thing it steps, and a parameter set can hold more
-than one geometry. [`ScalarMomentAdam`](@ref) is the case that forces the point: it steps a single
-[`StiefelManifold`](@ref), deliberately, because a *scalar* second moment is a statement about one
-manifold and means nothing pooled across a set. A transformer whose attention projections are
-Stiefel and whose residual blocks are ordinary arrays therefore has no single method that covers it.
-
+[`ScalarMomentAdam`](@ref) steps a single [`StiefelManifold`](@ref), because a *scalar* second
+moment pooled across a set means nothing. A network whose attention projections are Stiefel and
+whose other weights are ordinary arrays therefore has no single method that covers it.
 [`CompositeMethod`](@ref) holds two methods: `manifold` for every [`Manifold`](@ref) leaf, and
-`array` for every other leaf. [`leafmethod`](@ref GeometricOptimizers.leafmethod) gives the method
-of a leaf:
+`array` for every other leaf. A [`TrainingOptimizer`](@ref) with a composite holds the cache and the
+state of every leaf, for the method of that leaf, in a tree of the shape of the parameter set:
 
 ```@example optimizer_methods
 composite = CompositeMethod(; manifold = ScalarMomentAdam(), array = Adam())
-
-(GeometricOptimizers.leafmethod(composite, rand(StiefelManifold, 4, 2)),
-    GeometricOptimizers.leafmethod(composite, rand(3)))
-```
-
-A [`TrainingOptimizer`](@ref) on a parameter set builds one cache and one state per leaf, each for
-the method of that leaf, and [`optimization_step!`](@ref) steps every leaf with its own:
-
-```@example optimizer_methods
 ps = NetworkParameters((L1 = (weight = rand(StiefelManifold, 6, 2),),
     L2 = (W = rand(3, 2), b = zeros(3))))
 opt = TrainingOptimizer(ps; algorithm = composite)
 optimization_step!(ps, opt, NetworkParameters((L1 = (weight = randn(6, 2),),
     L2 = (W = randn(3, 2), b = randn(3)))))
 
-(nameof(typeof(opt.state.states.L1.weight)), nameof(typeof(opt.state.states.L2.b)))
+(nameof(typeof(opt.state.L1.weight)), nameof(typeof(opt.state.L2.b)))
 ```
 
-Nothing is pooled across leaves — no moment, no section, no step length — so every leaf moves
-exactly as it would under a `TrainingOptimizer` of its own, and the Stiefel weight's scalar second
-moment is its own. What the leaves share is the iteration number and the step size the schedule gives
-for it, so a composite takes a default step size only when its methods agree on one.
-
-[`solve!`](@ref) takes no composite: its line search chooses one step length for the direction of
-the whole set, and a composite has no such direction.
+Every leaf moves exactly as it would under a `TrainingOptimizer` of its own. The leaves share only
+the step size of each step, so a composite has a default step size only when its two methods agree
+on one. A composite is for a training loop: [`solve!`](@ref) finds one step length for the direction
+of the whole set, and [`Optimizer`](@ref) does not take one.
 
 ## Library functions
 
 [`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`ScalarMomentAdam`](@ref),
-[`CompositeMethod`](@ref), [`leafmethod`](@ref GeometricOptimizers.leafmethod),
-[`CompositeState`](@ref), [`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and
-[`OptimizerState`](@ref). Their
-docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the
+[`CompositeMethod`](@ref), [`AdamOptimizerWithDecay`](@ref), [`DecayingStatic`](@ref) and
+[`OptimizerState`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the
 package is rendered once; the names above link to them.
 
 Taking a step with one of these over the parameter tree of a *neural network* is
