@@ -1015,6 +1015,28 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `device()`; after one run of the same command outside the sandbox it gave `Broken 1`. The fix is
   upstream: a workload that skips the kernel compilation where no device exists.
 
+### K42 · The `Julia nightly` and `Julia pre` jobs fail in the precompilation of `GPUCompiler` and never reach the tests
+
+- location: `test/Project.toml:32` (`Metal = "1.10"`)
+- kind: upstream
+- found: 2026-10-24
+- evidence: CI run 40089695637 at `fa92a28`. Both jobs resolve `LLVM` 9.13.2 and `LLVMExtra_jll`
+  0.0.47, because `Metal` 1.11.1 needs `LLVM` 7.2 to 9 (see K23). That `LLVMExtra_jll` has no build
+  for Julia 1.15.0-DEV with LLVM 23 (nightly) or for Julia 1.14 (pre):
+
+  ```
+  Error: LLVM extensions library unavailable for your platform:
+    x86_64-linux-gnu-libgfortran5-cxx11-julia_version+1.15.0-llvm_version+23
+  ERROR: LoadError: UndefVarError: `libLLVMExtra` not defined in `LLVM.API`
+  Failed to precompile GPUCompiler [61eb1bfa-7361-4325-ad38-22787b887f55] to "/home/runner/.julia/compiled/v1.14/GPUCompiler/jl_JbOXov"
+  1 package was skipped because a dependency failed to precompile: Metal
+  ```
+
+  An earlier nightly run, on Julia 1.14.0-DEV.3623, reached the tests and reported two
+  `apply_section!` ambiguities in `src/global_sections/global_sections.jl`; no later run reached
+  the tests, so that report is not confirmed. The fix is upstream: a `Metal` release that allows
+  `LLVM` 10.
+
 ## F. Loose ends from the geodesic-retraction review
 
 Not a defect in the code; a thing a later reader would otherwise have to rediscover.
