@@ -35,20 +35,42 @@ end
 
 tangent_defect(Y, Δ) = norm(Y' * Δ + Δ' * Y)
 
-# The phrases of the two size guards. A size error raised later, by `mul!` or a broadcast, is
-# also a `DimensionMismatch`, so a test of a guard asserts its phrase.
-const POINT_GUARD = "a matrix of size"
-const WORKSPACE_GUARD = "a workspace for points of size"
+# The whole messages of the two size guards. A size error raised later, by `mul!` or a
+# broadcast, is also a `DimensionMismatch`, and Base's matrix-product message holds the words
+# "a matrix of size" too, so a test of a guard matches its whole message.
+const POINT_GUARD = r"^a matrix of size \(\d+, \d+\) at a point of size \(\d+, \d+\)$"
+const WORKSPACE_GUARD = r"^a workspace for points of size \(\d+, \d+\) at a point of size \(\d+, \d+\)$"
 
-# `f()` raises a `DimensionMismatch` whose message holds `phrase`.
-function refuses(f, phrase)
+# `f()` raises a `DimensionMismatch` whose whole message matches `pattern`.
+function refuses(f, pattern)
     err = try
         f()
         nothing
     catch e
         e
     end
-    err isa DimensionMismatch && occursin(phrase, err.msg)
+    err isa DimensionMismatch && occursin(pattern, err.msg)
+end
+
+@testset "the guard patterns match only their own guard, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(7)
+    Y = rand(rng, StiefelManifold{T}, 20, 4)
+    Δ = zero(Y.A)
+    Z = StiefelManifold(zero(Y.A))
+    ws = DirectCayleyWorkspace(rand(rng, StiefelManifold{T}, 19, 4))
+    point = () -> cayley_direct(Y, randn(rng, T, 20, 3))
+    workspace = () -> cayley_direct!(Z, Y, Δ, ws)
+    @test refuses(point, POINT_GUARD)
+    @test !refuses(point, WORKSPACE_GUARD)
+    @test refuses(workspace, WORKSPACE_GUARD)
+    @test !refuses(workspace, POINT_GUARD)
+    # the size errors of a matrix product and of a broadcast
+    for f in (() -> randn(rng, T, 20, 4) * randn(rng, T, 5, 4),
+        () -> randn(rng, T, 20, 4) .+ randn(rng, T, 20, 3))
+        @test_throws DimensionMismatch f()
+        @test !refuses(f, POINT_GUARD)
+        @test !refuses(f, WORKSPACE_GUARD)
+    end
 end
 
 @testset "Stiefel metric traits" begin
