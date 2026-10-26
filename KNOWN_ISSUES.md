@@ -478,6 +478,21 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   The lift-typed cotangent takes the dense `AbstractMatrix` method; only the Stiefel lift has a
   block method for a cotangent of its own type.
 
+### K42 · The direct Cayley retraction and the differentiated Cayley transport index a device array one entry at a time
+
+- location: `src/retractions/direct_cayley.jl`, `_cayley_system!`
+- kind: found late
+- found: 2026-10-26
+- evidence: on a `JLArray` point under `allowscalar(false)`, `cayley_direct(Y, Δ)` (through
+  `cayley_direct!`) and `transport(Y_new, Y, Δ, Ξ, DifferentiatedCayleyTransport())` (through
+  `transport!`) raise `Scalar indexing is disallowed.` in `Float32`; the stack trace passes
+  through `LinearAlgebra.lu!(ws.M₂ₖ)` in `_cayley_system!`, whose factorization the `ldiv!` of
+  both callers then uses (Julia 1.13.2). Reproducers: `round-1a/probe_jlarray.jl` and
+  `round-1b/probe_device.jl` of the part A critics. The fix is `inv(ws.M₂ₖ)` and `mul!`, as
+  `cayley` does (`src/retractions/retraction_workspace.jl:40-43`), checked on Metal: `JLArrays`
+  has no `lu` for `inv` either (`test/integration/device_multiply.jl:153-170`), so a `JLArray`
+  test cannot show the fix.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status

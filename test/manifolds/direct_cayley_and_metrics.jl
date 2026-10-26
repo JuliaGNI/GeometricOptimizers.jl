@@ -35,6 +35,22 @@ end
 
 tangent_defect(Y, Δ) = norm(Y' * Δ + Δ' * Y)
 
+# The phrases of the two size guards. A size error raised later, by `mul!` or a broadcast, is
+# also a `DimensionMismatch`, so a test of a guard asserts its phrase.
+const POINT_GUARD = "a matrix of size"
+const WORKSPACE_GUARD = "a workspace for points of size"
+
+# `f()` raises a `DimensionMismatch` whose message holds `phrase`.
+function refuses(f, phrase)
+    err = try
+        f()
+        nothing
+    catch e
+        e
+    end
+    err isa DimensionMismatch && occursin(phrase, err.msg)
+end
+
 @testset "Stiefel metric traits" begin
     @test CanonicalMetric() isa StiefelMetric
     @test EuclideanMetric() isa StiefelMetric
@@ -76,12 +92,12 @@ tangent_defect(Y, Δ) = norm(Y' * Δ + Δ' * Y)
 
         wrong = randn(rng, T, M, k + 1)
         for m in (CanonicalMetric(), EuclideanMetric())
-            @test_throws DimensionMismatch rgrad(Y, wrong, m)
-            @test_throws DimensionMismatch rgrad(Y, randn(rng, T, M + 1, k), m)
-            @test_throws DimensionMismatch metric(Y, wrong, Δ, m)
-            @test_throws DimensionMismatch metric(Y, Δ, wrong, m)
+            @test refuses(() -> rgrad(Y, wrong, m), POINT_GUARD)
+            @test refuses(() -> rgrad(Y, randn(rng, T, M + 1, k), m), POINT_GUARD)
+            @test refuses(() -> metric(Y, wrong, Δ, m), POINT_GUARD)
+            @test refuses(() -> metric(Y, Δ, wrong, m), POINT_GUARD)
             # two arguments of one wrong size have a well-defined dot product
-            @test_throws DimensionMismatch metric(Y, wrong, wrong, m)
+            @test refuses(() -> metric(Y, wrong, wrong, m), POINT_GUARD)
         end
     end
 end
@@ -119,13 +135,17 @@ end
     Y, Δ = point_and_tangent(rng, T, 20, 4)
     ws = DirectCayleyWorkspace(Y)
     Z = StiefelManifold(zero(Y.A))
-    @test_throws DimensionMismatch cayley_direct(Y, randn(rng, T, 20, 3))
-    @test_throws DimensionMismatch cayley_direct(Y, randn(rng, T, 19, 4))
-    @test_throws DimensionMismatch cayley_direct!(Z, Y, randn(rng, T, 20, 3), ws)
-    @test_throws DimensionMismatch cayley_direct!(
-        StiefelManifold(zeros(T, 20, 3)), Y, Δ, ws)
-    @test_throws DimensionMismatch cayley_direct!(
-        Z, Y, Δ, DirectCayleyWorkspace(rand(rng, StiefelManifold{T}, 21, 4)))
+    @test refuses(() -> cayley_direct(Y, randn(rng, T, 20, 3)), POINT_GUARD)
+    @test refuses(() -> cayley_direct(Y, randn(rng, T, 19, 4)), POINT_GUARD)
+    @test refuses(() -> cayley_direct!(Z, Y, randn(rng, T, 20, 3), ws), POINT_GUARD)
+    @test refuses(() -> cayley_direct!(StiefelManifold(zeros(T, 20, 3)), Y, Δ, ws),
+        POINT_GUARD)
+    for M_ws in (21, 19)
+        @test refuses(
+            () -> cayley_direct!(
+                Z, Y, Δ, DirectCayleyWorkspace(rand(rng, StiefelManifold{T}, M_ws, 4))),
+            WORKSPACE_GUARD)
+    end
     # a refused call leaves the output alone
     @test Z.A == zero(Y.A)
 end
@@ -189,17 +209,29 @@ end
 
         wrong = randn(rng, T, M, k + 1)
         for tr in (ProjectionTransport(), DifferentiatedCayleyTransport())
-            @test_throws DimensionMismatch transport(Y_new, Y, Δ, wrong, tr)
-            @test_throws DimensionMismatch transport(Y_new, Y, wrong, Ξ, tr)
-            @test_throws DimensionMismatch transport(
-                StiefelManifold(zeros(T, M + 1, k)), Y, Δ, Ξ, tr)
-            @test_throws DimensionMismatch transport!(copy(wrong), Y_new, Y, Δ, Ξ, tr, ws)
-            @test_throws DimensionMismatch transport!(zero(Ξ), Y_new, Y, Δ, Ξ, tr,
-                DirectCayleyWorkspace(rand(rng, StiefelManifold{T}, M + 1, k)))
+            @test refuses(() -> transport(Y_new, Y, Δ, wrong, tr), POINT_GUARD)
+            @test refuses(() -> transport(Y_new, Y, wrong, Ξ, tr), POINT_GUARD)
+            @test refuses(
+                () -> transport(StiefelManifold(zeros(T, M + 1, k)), Y, Δ, Ξ, tr),
+                POINT_GUARD)
+            @test refuses(() -> transport!(copy(wrong), Y_new, Y, Δ, Ξ, tr, ws),
+                POINT_GUARD)
+            @test refuses(
+                () -> transport!(zero(Ξ), Y_new, Y, Δ, Ξ, tr,
+                    DirectCayleyWorkspace(rand(rng, StiefelManifold{T}, M + 1, k))),
+                WORKSPACE_GUARD)
             # a refused call leaves the output alone
             out = copy(wrong)
-            @test_throws DimensionMismatch transport!(out, Y_new, Y, Δ, Ξ, tr, ws)
+            @test refuses(() -> transport!(out, Y_new, Y, Δ, Ξ, tr, ws), POINT_GUARD)
             @test out == wrong
+        end
+        # the guard refuses a `Y_new` with one column, which the differentiated transport would
+        # otherwise broadcast against `Y`
+        if k > 1
+            @test refuses(
+                () -> transport(StiefelManifold(randn(rng, T, M, 1)), Y, Δ, Ξ,
+                    DifferentiatedCayleyTransport()),
+                POINT_GUARD)
         end
     end
 end
