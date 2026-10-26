@@ -15,7 +15,8 @@ struct DirectCayleyWorkspace{T, AT <: AbstractMatrix{T}}
     # the same factors for the transported vector
     U_Ξ::AT
     Vᵗ_Ξ::AT
-    # the result before it is copied into the output, so that the output may be the input
+    # the result before it is copied into the output, so that the output may be the input, and
+    # `W₊` in the differentiated transport
     Y_out::AT
     YᵀX::AT
     A::AT
@@ -92,9 +93,10 @@ and the Sherman–Morrison–Woodbury identity
 Y_\mathrm{new} = Y + U M_{2k}^{-1} VY, \qquad M_{2k} = \mathbb{I}_{2k} - \frac{1}{2}VU.
 ```
 
-The cost is ``O(Mk^2)``, and the only solve is the ``2k\times{}2k`` system ``M_{2k}``. For a `Δ`
-off the tangent space the result is the retraction of its tangent projection
-``\Delta - \frac{1}{2}Y(Y^T\Delta + \Delta^TY)``.
+The cost is ``O(Mk^2)``, and the only solve is the ``2k\times{}2k`` system ``M_{2k}``. That solve
+is an in-place `LinearAlgebra.lu!`, so the retraction runs only on a backend that supplies one; on
+`JLArrays` it raises a scalar-indexing error. For a `Δ` off the tangent space the result is the
+retraction of its tangent projection ``\Delta - \frac{1}{2}Y(Y^T\Delta + \Delta^TY)``.
 
 `Y_new` may be `Y`: the result is written into `ws` first and copied into `Y_new.A` last. A `Δ`,
 `Y_new` or `ws` of another size than `Y` raises a `DimensionMismatch` before anything is written.

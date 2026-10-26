@@ -43,6 +43,8 @@ It is computed in ``O(Mk^2)``, with the matrix ``M_{2k}`` of the retraction and 
 \bigl(U_\Xi + \tfrac{1}{2}UM_{2k}^{-1}(VU_\Xi)\bigr)(V_\Xi W_+), \qquad
 W_+ = (\mathbb{I}_M - \tfrac{1}{2}W(\Delta))^{-1}Y = \tfrac{1}{2}(Y + Y_\mathrm{new}).
 ```
+
+Its solve is the `lu!` of [`cayley_direct!`](@ref), with the same backend limit.
 """
 struct DifferentiatedCayleyTransport <: AbstractVectorTransport end
 
