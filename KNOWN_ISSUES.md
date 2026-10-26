@@ -500,8 +500,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `transport(Y, Y, Δ, Δ, DifferentiatedCayleyTransport())` raise `Scalar indexing is disallowed.`
   in `Float32` and `Float64`, and the stack trace passes through `LinearAlgebra.lu!(ws.M₂ₖ)` in
   `_cayley_system!`; `transport(Y, Y, Δ, Δ, ProjectionTransport())` runs (Julia 1.13.2). The fix
-  is `inv(ws.M₂ₖ)` and `mul!`, as `cayley` does (`src/retractions/retraction_workspace.jl:40-43`),
-  checked on Metal: `JLArrays` has no `lu` for `inv` either
+  is `inv(ws.M₂ₖ)` and `mul!`, as `cayley` does (`src/retractions/retraction_workspace.jl:279`;
+  why, `:40-43`), checked on Metal: `JLArrays` has no `lu` for `inv` either
   (`test/integration/device_multiply.jl:153-170`), so a `JLArray` test cannot show the fix.
 
 ## B. This package — observability
