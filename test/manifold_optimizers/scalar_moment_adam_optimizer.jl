@@ -423,7 +423,7 @@ end
 end
 
 # A training step allocates what a `GradientMethod` step on the same point allocates -- the
-# Riemannian gradient, its horizontal lift and the retraction -- and nothing for its moments. A
+# horizontal lift and the retraction -- and nothing for its moments. A
 # `64 × 8` lift holds `28 + 448 = 476` numbers, 1 904 bytes in `Float32`, so one copy of a moment is
 # above the tolerance of `n_independent`, 1 024 bytes.
 @testset "a ScalarMomentAdam training step allocates what a gradient step does, $T" for T in REAL_ELTYPES
