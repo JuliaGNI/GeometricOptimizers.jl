@@ -478,6 +478,19 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   The lift-typed cotangent takes the dense `AbstractMatrix` method; only the Stiefel lift has a
   block method for a cotangent of its own type.
 
+### K44 · A training step of `ScalarMomentAdam(; ambient_norm = true)` raises an `AssertionError` on its first step
+
+- location: `src/manifold_optimizers/scalar_moment_adam_optimizer.jl:207`
+- kind: defect
+- found: 2026-10-26
+- evidence: `TrainingOptimizer(Y; algorithm = ScalarMomentAdam(; ambient_norm = true))` on a
+  `StiefelManifold` `Y`, then `optimization_step!(Y, opt, dp)`, raises
+  `AssertionError: size(Y) == size(dx)` from `rgrad(::AbstractVecOrMat, ::AbstractVecOrMat)` in
+  `src/optimizers/named_tuple_wrapper.jl`, on the branch `perf/training-rgrad-buffer` and at
+  `fa92a28` alike (Julia 1.13.2). `_squared_gradient_norm` calls the gradient on
+  `vec(parent(x))`, which a `PrecomputedGradient` answers with `rgrad` of that vector against the
+  `N × n` matrix `dp`. The ambient norm of a precomputed gradient is `sum(abs2, dp)`.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status

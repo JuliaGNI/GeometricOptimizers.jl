@@ -2,7 +2,7 @@
 # `optimizers/optimizer_methods.jl`, beside the other methods; this file needs the first-order
 # caches and states and `TrainingOptimizer`, so it is included after them.
 #
-# The composite optimizer holds the cache, the state and the retraction buffers of every leaf in
+# The composite optimizer holds the cache, the state and the buffers of every leaf in
 # trees of the shape of the set. Its step takes, at every leaf, the step of a `TrainingOptimizer`
 # built from that leaf's method, cache, state and buffers, so the leaves share the code of the
 # ordinary step and its step-size schedule, and nothing else.

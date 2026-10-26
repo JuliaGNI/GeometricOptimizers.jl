@@ -69,9 +69,9 @@ a Grassmann leaf is written into.
 `algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref) or a member of the
 [`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, and
 raises a `MethodError` for any other `x`. For a parameter set it may also be a
-[`CompositeMethod`](@ref): then `cache`, `state` and `workspace` are trees of the shape of `x`, with
-the cache, the state and the retraction buffers of each leaf for the method of that leaf. `linesearch`
-is a finite positive number, which is the fixed step size `Static(η)`, a
+[`CompositeMethod`](@ref): then `cache`, `state`, `workspace` and `gradient_buffer` are trees of
+the shape of `x`, with the cache, the state and the buffers of each leaf for the method of that leaf.
+`linesearch` is a finite positive number, which is the fixed step size `Static(η)`, a
 [`SimpleSolvers.Static`](@extref) or a [`DecayingStatic`](@ref); the default is
 [`default_step_size`](@ref)`(algorithm)`. `retraction` is an instance of an
 [`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
