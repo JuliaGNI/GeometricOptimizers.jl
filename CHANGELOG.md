@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased] — targeting 0.9.2
+
+### Changed
+
+- **A training step writes the Riemannian gradient of a Stiefel or a Grassmann leaf into a buffer
+  instead of allocating it.** `TrainingOptimizer` holds the buffers, an `N × n` gradient and an
+  `n × n` product per such leaf, and passes them to its `PrecomputedGradient`, which fills them
+  with the new `rgrad!`. Measured with `scripts/parameter_set_step_cost.jl` (Julia 1.13.2,
+  `--check-bounds=auto`, one BLAS thread), one step on model A with a `64 × 8` `StiefelManifold`
+  and a `64 × 64` `SymmetricMatrix` weight allocates 5 968 B in `Float32` and 11 312 B in
+  `Float64`, against 10 560 B and 20 256 B at the base commit `fa92a28`, for all five first-order
+  methods. Model A alone still allocates nothing. `PrecomputedGradient(x, dp)` without buffers
+  computes what it did before. `PrecomputedGradient` and `TrainingOptimizer` each gain a type
+  parameter and a field, so a caller who names the positional constructor of either passes one
+  more argument.
+
 ## [0.9.1]
 
 ### Fixed

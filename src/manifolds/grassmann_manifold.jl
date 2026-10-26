@@ -50,6 +50,14 @@ function rgrad(Y::GrassmannManifold, ∇L::AbstractMatrix)
     ∇L - Y.A * (Y.A' * ∇L)
 end
 
+# `rgrad(Y, ∇L)` written into the `N × n` matrix `Δ`, with `scratch` the `n × n` product `Yᵀ ∇L`.
+function rgrad!(Δ::AbstractMatrix, scratch::AbstractMatrix, Y::GrassmannManifold, ∇L::AbstractMatrix)
+    _check_gradient_backend(Y, ∇L)
+    mul!(scratch, Y.A', ∇L)
+    copyto!(Δ, ∇L)
+    mul!(Δ, Y.A, scratch, -1, 1)
+end
+
 @doc raw"""
     metric(Y::GrassmannManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
 
