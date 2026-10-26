@@ -64,7 +64,7 @@ abstract type StiefelMetric end
 
 The canonical metric of the Stiefel manifold,
 ``g_Y(\Delta_1, \Delta_2) = \mathrm{Tr}(\Delta_1^T(\mathbb{I} - \frac{1}{2}YY^T)\Delta_2)``.
-The two-argument forms of [`rgrad`](@ref) and [`metric`](@ref) use it.
+The two-argument form of [`rgrad`](@ref) and the three-argument form of [`metric`](@ref) use it.
 """
 struct CanonicalMetric <: StiefelMetric end
 
@@ -110,6 +110,15 @@ function rgrad(Y::StiefelManifold, ∇L::AbstractMatrix, ::EuclideanMetric)
     _check_gradient_backend(Y, ∇L)
     YᵀG = Y.A' * ∇L
     ∇L - Y.A * ((YᵀG + YᵀG') / 2)
+end
+
+# `rgrad(Y, ∇L)` written into the `N × n` matrix `Δ`, with `scratch` the `n × n` product `∇Lᵀ Y`. A
+# training step keeps both in its `RiemannianGradientBuffer`.
+function rgrad!(Δ::AbstractMatrix, scratch::AbstractMatrix, Y::StiefelManifold, ∇L::AbstractMatrix)
+    _check_gradient_backend(Y, ∇L)
+    mul!(scratch, ∇L', Y.A)
+    copyto!(Δ, ∇L)
+    mul!(Δ, Y.A, scratch, -1, 1)
 end
 
 @doc raw"""

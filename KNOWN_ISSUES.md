@@ -7,7 +7,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### A5 · `geodesic(Y, Δ)` and `cayley(Y, Δ)` are not deterministic and consume global RNG state
 
-- location: `src/manifolds/stiefel_manifold.jl:213-237`
+- location: `src/manifolds/stiefel_manifold.jl:222-232`
 - kind: defect
 - found: #36
 - evidence:
@@ -16,7 +16,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   same retraction failed. Pre-existing on `main`; PR #36 neither causes nor fixes it.
 
   Both tangent-vector entry points open with `GlobalSection(Y)`, and `global_section(::StiefelManifold)`
-  (`src/manifolds/stiefel_manifold.jl:213-237`) completes `Y` with a **random** basis of its orthogonal
+  (`src/manifolds/stiefel_manifold.jl:222-232`) completes `Y` with a **random** basis of its orthogonal
   complement:
 
   ```julia
@@ -1141,27 +1141,27 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ## I. This package — performance
 
-### K35 · A training step on a parameter set with a `StiefelManifold` leaf allocates 14 kB in `Float32` and 26 kB in `Float64`
+### K35 · A training step on a parameter set with a `StiefelManifold` leaf allocates 6 kB in `Float32` and 11 kB in `Float64`
 
-- location: `src/manifolds/stiefel_manifold.jl:105`
+- location: `src/retractions/retraction_workspace.jl:279`
 - kind: defect
 - found: 2026-10-11
-- evidence: `scripts/parameter_set_step_cost.jl` (Julia 1.13.1, `--check-bounds=auto`, one BLAS
+- evidence: `scripts/parameter_set_step_cost.jl` (Julia 1.13.2, `--check-bounds=auto`, one BLAS
   thread) measures one `optimization_step!` on model A with a `64 × 8` `StiefelManifold` and a
-  `64 × 64` `SymmetricMatrix` weight: 14 016 bytes in `Float32` and 25 920 bytes in `Float64`, for
+  `64 × 64` `SymmetricMatrix` weight: 5 968 bytes in `Float32` and 11 312 bytes in `Float64`, for
   `GradientMethod`, `MomentumMethod` and the three `Adam` methods alike. The same set without the
   Stiefel leaf allocates nothing. `scripts/parameter_set_step_cost.jl profile` (`Profile.Allocs`,
-  sample rate 1, 50 warm `GradientMethod` steps, `Float32`) names three frames per step:
+  sample rate 1, 50 warm `GradientMethod` steps, `Float32`) names two frames per step:
 
   | frame | what allocates | bytes | allocations |
   |:--|:--|--:|--:|
-  | `rgrad(::StiefelManifold, ::AbstractMatrix, ::CanonicalMetric)`, `src/manifolds/stiefel_manifold.jl:105` | `∇L - Y.A * (∇L' * Y.A)` | 4 560 | 8 |
-  | `global_rep(::GlobalSection{T, <:StiefelManifold}, Δ)`, `src/global_sections/global_sections.jl:264` | `SkewSymMatrix(λY.Y.A' * Δ)` and `λY.λ' * Δ` | 3 560 | 33 |
   | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:279` | `inv(ws.M)` | 5 448 | 8 |
+  | `_lift_A!` and `map_to_Skew!`, `src/global_sections/global_sections.jl:299`, `src/special_matrices/skew_symmetric.jl:299` | a temporary and the kernel launch | 416 | 5 |
 
-  The three frames account for 13 568 of the 14 016 bytes. Removing each needs an in-place form: a
-  buffer for the Riemannian gradient, a `global_rep!` into the cache's lift, and a factorisation of
-  `ws.M` into workspace storage.
+  The two frames account for 5 864 of the 5 968 bytes. `inv(ws.M)` of the `2n × 2n` matrix stays
+  an `inv`: `lu!` and `rdiv!` would take it in place on the host only, and a `KernelAbstractions`
+  backend need not supply either (see the docstring of `RetractionWorkspace`). It does not grow
+  with `N`.
 
 ### K36 · The `SymmetricMatrix` product kernel is about 7 times slower than BLAS on the dense matrix
 

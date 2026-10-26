@@ -2,7 +2,7 @@
 # `optimizers/optimizer_methods.jl`, beside the other methods; this file needs the first-order
 # caches and states and `TrainingOptimizer`, so it is included after them.
 #
-# The composite optimizer holds the cache, the state and the retraction buffers of every leaf in
+# The composite optimizer holds the cache, the state and the buffers of every leaf in
 # trees of the shape of the set. Its step takes, at every leaf, the step of a `TrainingOptimizer`
 # built from that leaf's method, cache, state and buffers, so the leaves share the code of the
 # ordinary step and its step-size schedule, and nothing else.
@@ -24,7 +24,9 @@ function _training_optimizer(
     cache = leaves((xᵢ, mᵢ) -> OptimizerCache(mᵢ, xᵢ))
     state = leaves((xᵢ, mᵢ) -> OptimizerState(mᵢ, xᵢ))
     workspace = leaves((xᵢ, _) -> retraction_workspace(xᵢ, retraction))
-    TrainingOptimizer(method, cache, state, linesearch, retraction, workspace, observer)
+    gradient_buffer = leaves((xᵢ, _) -> rgrad_buffer(xᵢ))
+    TrainingOptimizer(
+        method, cache, state, linesearch, retraction, workspace, gradient_buffer, observer)
 end
 
 function optimization_step!(
@@ -32,12 +34,13 @@ function optimization_step!(
         dp::NetworkParameters{T}) where {T}
     # the whole set first, so that a refused step moves no leaf
     _check_shape(x, dp)
-    # `opt.cache` leads the walk: a wrapped leaf's workspace is a tree of one leaf, handed over whole
-    foreachparameters(
-        opt.cache, opt.state, opt.workspace, x, dp) do cacheᵢ, stateᵢ, wsᵢ, xᵢ, dpᵢ
+    # `opt.cache` leads the walk: a wrapped leaf's workspace and gradient buffer are trees of one
+    # leaf, handed over whole
+    foreachparameters(opt.cache, opt.state, opt.workspace, opt.gradient_buffer, x,
+        dp) do cacheᵢ, stateᵢ, wsᵢ, bufferᵢ, xᵢ, dpᵢ
         leaf = TrainingOptimizer(
             leafmethod(opt.method, xᵢ), cacheᵢ, stateᵢ, opt.linesearch,
-            opt.retraction, wsᵢ, opt.observer)
+            opt.retraction, wsᵢ, bufferᵢ, opt.observer)
         optimization_step!(_leaf_solution(xᵢ), leaf, _leaf_like(xᵢ, dpᵢ))
     end
     x

@@ -3,14 +3,14 @@
 # `Adam`, `AdamWithEuclideanDecay` and `AdamOptimizerWithDecay` update both moments of every leaf in
 # place, so a step after warm-up allocates nothing on a set of dense and vector-storage leaves. On a
 # set with a `StiefelManifold` leaf the step allocates what the `GradientMethod` step allocates there:
-# the Riemannian gradient, its horizontal lift and the Cayley retraction of that leaf, which
-# `KNOWN_ISSUES.md` records. `Adam` adds nothing to it.
+# the horizontal lift and the Cayley retraction of that leaf, which `KNOWN_ISSUES.md` records. `Adam`
+# adds nothing to it. The Riemannian gradient of the leaf goes into the optimizer's buffer.
 #
 # `scripts/parameter_set_step_cost.jl` measures the same steps and names the frames.
 
 using GeometricOptimizers
-using GeometricOptimizers: AdamOptimizerWithDecay, direction, first_moment, gradient_array,
-                           second_moment
+using GeometricOptimizers: AdamOptimizerWithDecay, NoWorkspace, direction, first_moment,
+                           gradient_array, second_moment
 using NeuralNetworkParameters: NetworkParameters, params, flatten
 using LinearAlgebra: norm
 using Random: Random, Xoshiro
@@ -87,6 +87,33 @@ end
     gradient_step = step_allocations(y, TrainingOptimizer(y; algorithm = GradientMethod()), dp)
     @test gradient_step > 0
     @test n_independent(adam, gradient_step)
+end
+
+# The same optimizer with no gradient buffer, which allocates the Riemannian gradient of every
+# manifold leaf.
+function unbuffered(opt::TrainingOptimizer)
+    TrainingOptimizer(opt.method, opt.cache, opt.state, opt.linesearch, opt.retraction,
+        opt.workspace, NoWorkspace(), opt.observer)
+end
+
+# The `64 × 8` Riemannian gradient of the Stiefel leaf is 2 048 bytes in `Float32` and 4 096 in
+# `Float64`, its `8 × 8` product 256 and 512, so the buffer saves more than the tolerance of
+# `n_independent` above that. The iterates of the two agree to round-off.
+@testset "the gradient buffer holds the Riemannian gradient of a Stiefel leaf, $T" for T in REAL_ELTYPES
+    x, y = stiefel_set(T), stiefel_set(T)
+    dp = random_gradient(x, 6)
+    # the random completion of each `GlobalSection`
+    Random.seed!(99)
+    buffered = TrainingOptimizer(x; algorithm = GradientMethod())
+    Random.seed!(99)
+    plain = unbuffered(TrainingOptimizer(y; algorithm = GradientMethod()))
+    for _ in 1:3
+        optimization_step!(x, buffered, dp)
+        optimization_step!(y, plain, dp)
+    end
+    @test norm(flatten(x)[1] - flatten(y)[1]) ≤ 8eps(T) * norm(flatten(y)[1])
+    saved = step_allocations(y, plain, dp) - step_allocations(x, buffered, dp)
+    @test saved ≥ 64 * 8 * sizeof(T) + 8 * 8 * sizeof(T) - N_INDEPENDENCE_TOLERANCE
 end
 
 # The `Adam` step written out for leaves whose step is `x + αδ`: a dense array and the storage vector

@@ -6,16 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased]
+## [Unreleased] — targeting 0.9.2
 
 ### Added
 
 - **Stiefel metric traits.** `StiefelMetric`, with `CanonicalMetric` and `EuclideanMetric`, is
   the last argument of `rgrad(Y, G, m)` and `metric(Y, Δ₁, Δ₂, m)`. The Euclidean gradient is
   the tangent projection `G - Y(YᵀG + GᵀY)/2`, and its metric is `tr(Δ₁ᵀΔ₂)`. The two-argument
-  `rgrad` and `metric` are the canonical metric, as before. `rgrad`, with two arguments or three,
-  and the four-argument `metric` raise a `DimensionMismatch` before any work when a matrix
-  argument has another size than the point.
+  `rgrad` and the three-argument `metric` are the canonical metric, as before. `rgrad`, with two
+  arguments or three, and the four-argument `metric` raise a `DimensionMismatch` before any work
+  when a matrix argument has another size than the point.
 - **The direct Cayley retraction `cayley_direct(Y, Δ)` and `cayley_direct!(Y_new, Y, Δ, ws)`.**
   It retracts a tangent matrix `Δ` at `Y ∈ St(k, M)` through the rank-`2k` Sherman–Morrison–Woodbury
   form of the Cayley transform, with one `2k × 2k` solve. It needs no global section, so it does
@@ -28,6 +28,31 @@ breaking release).
   `DifferentiatedCayleyTransport`, the differential of `cayley_direct` in the direction `Ξ`.
   Both are subtypes of `AbstractVectorTransport`. `DifferentiatedCayleyTransport` accepts any
   `Ξ` and drops its part off the tangent space at `Y`.
+
+### Changed
+
+- **A training step writes the Riemannian gradient of a Stiefel or a Grassmann leaf into a buffer
+  instead of allocating it.** `TrainingOptimizer` holds the buffers, an `N × n` gradient and an
+  `n × n` product per such leaf, and passes them to its `PrecomputedGradient`, which fills them
+  with the new `rgrad!`. Measured with `scripts/parameter_set_step_cost.jl` (Julia 1.13.2,
+  `--check-bounds=auto`, one BLAS thread), one step on model A with a `64 × 8` `StiefelManifold`
+  and a `64 × 64` `SymmetricMatrix` weight allocates 5 968 B in `Float32` and 11 312 B in
+  `Float64`, against 10 560 B and 20 256 B at the base commit `fa92a28`, for all five first-order
+  methods. Model A alone still allocates nothing. `PrecomputedGradient(x, dp)` without buffers
+  computes what it did before. `PrecomputedGradient` and `TrainingOptimizer` each gain a type
+  parameter and a field, so a caller who names the positional constructor of either passes one
+  more argument.
+
+### Fixed
+
+- **A training step of `ScalarMomentAdam(; ambient_norm = true)` raised an `AssertionError` on its
+  first step.** The ambient norm called the gradient on the flat storage of the point, which a
+  `PrecomputedGradient` answered with `rgrad` of that vector against its `N × n` matrix `dp`, so
+  `TrainingOptimizer(Y; algorithm = ScalarMomentAdam(; ambient_norm = true))` could not take a
+  step. The ambient norm of a precomputed gradient is now `sum(abs2, dp)`, the norm of the gradient
+  the step is given. The testset "a ScalarMomentAdam training step squares the ambient gradient it
+  is given" in `test/manifold_optimizers/scalar_moment_adam_optimizer.jl` fails without the fix.
+  This closes K44.
 
 ## [0.9.1]
 

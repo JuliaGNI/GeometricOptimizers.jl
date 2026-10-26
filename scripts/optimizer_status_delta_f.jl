@@ -64,4 +64,5 @@ end
 
 # `ScalarMomentAdam` is absent on purpose: it accepts one `StiefelManifold` and refuses the plain
 # vector every other method here takes, so it cannot join this table without a second fixture. Its
-# `update!` has the same shape as `AdamState`'s at `scalar_moment_adam_optimizer.jl:227`.
+# `update!` has the same shape as `AdamState`'s: see `update!(::ScalarMomentAdamCache, …)` in
+# `scalar_moment_adam_optimizer.jl`.
