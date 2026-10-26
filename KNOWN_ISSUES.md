@@ -478,20 +478,31 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   The lift-typed cotangent takes the dense `AbstractMatrix` method; only the Stiefel lift has a
   block method for a cotangent of its own type.
 
-### K42 · The direct Cayley retraction and the differentiated Cayley transport index a device array one entry at a time
+### K43 · On Julia 1.14.0-DEV, the Stiefel and the Grassmann `apply_section!` methods are ambiguous with the method for a `Nothing` section
+
+- location: `src/global_sections/global_sections.jl:147`
+- kind: defect
+- found: 2026-10-13
+- evidence: the nightly jobs of CI runs 38445772866 (Julia 1.14.0-DEV.3647, at `78f76f4`) and
+  38715367722 (Julia 1.14.0-DEV.3705, at `07545d1`) each fail `Own-vs-own ambiguities` once, at
+  `Test Failed at test/ambiguities.jl:22`, with two pairs: `global_sections.jl:97` against `:147`,
+  and `:135` against `:147`. The pre job on Julia 1.13.2 of run 39127065561 passes the same testset.
+  Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests, so it is open
+  whether the current Julia reports the pairs.
+
+### K44 · The direct Cayley retraction and the differentiated Cayley transport index a device array one entry at a time
 
 - location: `src/retractions/direct_cayley.jl`, `_cayley_system!`
 - kind: found late
 - found: 2026-10-26
-- evidence: on a `JLArray` point under `allowscalar(false)`, `cayley_direct(Y, Δ)` (through
-  `cayley_direct!`) and `transport(Y_new, Y, Δ, Ξ, DifferentiatedCayleyTransport())` (through
-  `transport!`) raise `Scalar indexing is disallowed.` in `Float32`; the stack trace passes
-  through `LinearAlgebra.lu!(ws.M₂ₖ)` in `_cayley_system!`, whose factorization the `ldiv!` of
-  both callers then uses (Julia 1.13.2). Reproducers: `round-1a/probe_jlarray.jl` and
-  `round-1b/probe_device.jl` of the part A critics. The fix is `inv(ws.M₂ₖ)` and `mul!`, as
-  `cayley` does (`src/retractions/retraction_workspace.jl:40-43`), checked on Metal: `JLArrays`
-  has no `lu` for `inv` either (`test/integration/device_multiply.jl:153-170`), so a `JLArray`
-  test cannot show the fix.
+- evidence: with `Y = StiefelManifold(JLArray(rand(rng, StiefelManifold{T}, 20, 4).A))` and `Δ` a
+  `JLArray` tangent vector at `Y` under `allowscalar(false)`, `cayley_direct(Y, Δ)` and
+  `transport(Y, Y, Δ, Δ, DifferentiatedCayleyTransport())` raise `Scalar indexing is disallowed.`
+  in `Float32` and `Float64`, and the stack trace passes through `LinearAlgebra.lu!(ws.M₂ₖ)` in
+  `_cayley_system!`; `transport(Y, Y, Δ, Δ, ProjectionTransport())` runs (Julia 1.13.2). The fix
+  is `inv(ws.M₂ₖ)` and `mul!`, as `cayley` does (`src/retractions/retraction_workspace.jl:40-43`),
+  checked on Metal: `JLArrays` has no `lu` for `inv` either
+  (`test/integration/device_multiply.jl:153-170`), so a `JLArray` test cannot show the fix.
 
 ## B. This package — observability
 
@@ -1029,6 +1040,27 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `BoundsError: attempt to access 0-element Vector{Metal.MTL.MTLDevice} at index [1]` from
   `device()`; after one run of the same command outside the sandbox it gave `Broken 1`. The fix is
   upstream: a workload that skips the kernel compilation where no device exists.
+
+### K42 · The `Julia nightly` and `Julia pre` jobs fail in the precompilation of `GPUCompiler` and never reach the tests
+
+- location: `test/Project.toml:32` (`Metal = "1.10"`)
+- kind: upstream
+- found: 2026-10-24; one issue with K23
+- evidence: CI run 40089695637 at `fa92a28`. Both jobs resolve `LLVM` 9.13.2 and `LLVMExtra_jll`
+  0.0.47, because `Metal` 1.11.1 needs `LLVM` 7.2 to 9 (see K23). That `LLVMExtra_jll` has no build
+  for Julia 1.15.0-DEV (nightly) or Julia 1.14.0 (pre), both with LLVM 23. The nightly job:
+
+  ```
+  Error: LLVM extensions library unavailable for your platform:
+    x86_64-linux-gnu-libgfortran5-cxx11-julia_version+1.15.0-llvm_version+23
+  ERROR: LoadError: UndefVarError: `libLLVMExtra` not defined in `LLVM.API`
+  Failed to precompile GPUCompiler [61eb1bfa-7361-4325-ad38-22787b887f55] to "/home/runner/.julia/compiled/v1.15/GPUCompiler/jl_1VCVra" (ProcessExited(1)).
+  1 package was skipped because a dependency failed to precompile: Metal
+  ```
+
+  The nightly jobs of runs 39127065561 (Julia 1.14.0-DEV.3787) and 39923326569 (Julia
+  1.15.0-DEV.97) stop at the same precompilation. The fix is upstream: a `Metal` release that allows
+  `LLVM` 10.
 
 ## F. Loose ends from the geodesic-retraction review
 
