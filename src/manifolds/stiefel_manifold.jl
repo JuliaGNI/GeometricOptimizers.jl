@@ -54,6 +54,15 @@ function rgrad(Y::StiefelManifold, ∇L::AbstractMatrix)
     ∇L - Y.A * (∇L' * Y.A)
 end
 
+# `rgrad(Y, ∇L)` written into the `N × n` matrix `Δ`, with `scratch` the `n × n` product `∇Lᵀ Y`. A
+# training step keeps both in its `RiemannianGradientBuffer`.
+function rgrad!(Δ::AbstractMatrix, scratch::AbstractMatrix, Y::StiefelManifold, ∇L::AbstractMatrix)
+    _check_gradient_backend(Y, ∇L)
+    mul!(scratch, ∇L', Y.A)
+    copyto!(Δ, ∇L)
+    mul!(Δ, Y.A, scratch, -1, 1)
+end
+
 @doc raw"""
     metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
 

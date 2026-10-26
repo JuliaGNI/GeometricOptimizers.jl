@@ -7,7 +7,7 @@
 using Test
 using LinearAlgebra
 using GeometricOptimizers
-using GeometricOptimizers: Ω, metric, check
+using GeometricOptimizers: Ω, metric, check, rgrad!
 using GeometricOptimizers: global_section, global_rep
 import Random
 
@@ -84,4 +84,18 @@ end
             run_tests(rng, T, N, n)
         end
     end
+end
+
+rgrad!_allocations(Δ, S, Y, ∇L) = (rgrad!(Δ, S, Y, ∇L); @allocated rgrad!(Δ, S, Y, ∇L))
+
+# The reference is the out-of-place `rgrad`; the two group the same products, so they agree to
+# round-off. A sign or a transpose slip in `rgrad!` is an `O(1)` difference.
+@testset "rgrad! writes rgrad into its buffers, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(17)
+    Y = rand(rng, GrassmannManifold{T}, 12, 4)
+    ∇L = randn(rng, T, 12, 4)
+    Δ, S = zeros(T, 12, 4), zeros(T, 4, 4)
+    @test rgrad!(Δ, S, Y, ∇L) === Δ
+    @test isapprox(Δ, rgrad(Y, ∇L); rtol = 8eps(T))
+    @test rgrad!_allocations(Δ, S, Y, ∇L) == 0
 end

@@ -9,21 +9,52 @@ This is the gradient of a training step: a training loop computes the gradient o
 minibatch, and [`optimization_step!`](@ref) wraps it in this type, so the optimizer caches build the
 direction from it exactly as they build it from a gradient they evaluate themselves. For a parameter
 set, `dp` is a [`NeuralNetworkParameters.NetworkParameters`](@extref) of the same shape as `x`.
+
+# Implementation
+
+[`optimization_step!`](@ref) passes the `RiemannianGradientBuffer`s of its optimizer as a third
+argument, and the Riemannian gradient of a Stiefel or a Grassmann leaf is then written into them
+rather than allocated. The result is overwritten by the next call, which `store_gradient!` makes
+only after it has read the one before.
 """
-struct PrecomputedGradient{T, DT} <: Gradient{T}
+struct PrecomputedGradient{T, DT, BT} <: Gradient{T}
     dp::DT
+    buffer::BT
 end
 
-function PrecomputedGradient(::OptimizerSolution{T}, dp) where {T}
-    PrecomputedGradient{T, typeof(dp)}(dp)
+function PrecomputedGradient(::OptimizerSolution{T}, dp, buffer = NoWorkspace()) where {T}
+    PrecomputedGradient{T, typeof(dp), typeof(buffer)}(dp, buffer)
 end
 
 # One method per kind of parameter, and not one on `OptimizerSolution{T}`: `(::Gradient{T})(::Manifold{T})`
 # and `SimpleSolvers`' `(::Gradient{T})(::AbstractVector{T})` are each more specific in the second
 # argument than a `Union`, so a single method would be ambiguous with both.
 (g::PrecomputedGradient{T})(x::AbstractVector{T}) where {T} = rgrad(x, g.dp)
-(g::PrecomputedGradient{T})(x::Manifold{T}) where {T} = rgrad(x, g.dp)
-(g::PrecomputedGradient{T})(x::NetworkParameters{T}) where {T} = rgrad(x, g.dp)
+(g::PrecomputedGradient{T})(x::Manifold{T}) where {T} = _rgrad(g.buffer, x, g.dp)
+(g::PrecomputedGradient{T})(x::NetworkParameters{T}) where {T} = _rgrad(g.buffer, x, g.dp)
+
+# The `N × n` Riemannian gradient of a Stiefel or a Grassmann leaf and the `n × n` product it is
+# formed from, for `rgrad!`.
+struct RiemannianGradientBuffer{AT <: AbstractMatrix}
+    Δ::AT
+    scratch::AT
+end
+
+# A `NoWorkspace` and not `nothing` at every other leaf, for the reason `NoWorkspace` gives.
+function rgrad_buffer(Y::Union{StiefelManifold, GrassmannManifold})
+    n = size(Y, 2)
+    RiemannianGradientBuffer(similar(Y.A), similar(Y.A, n, n))
+end
+rgrad_buffer(::AbstractArray) = NoWorkspace()
+rgrad_buffer(ps::NetworkParameters) = mapparameters(rgrad_buffer, params(ps))
+
+_rgrad(::NoWorkspace, x, dp) = rgrad(x, dp)
+_rgrad(buffer::RiemannianGradientBuffer, Y, ∇L) = rgrad!(buffer.Δ, buffer.scratch, Y, ∇L)
+# a named function and not a closure, so that the walk specialises on it
+function _rgrad(buffer::NamedTuple, ps::NetworkParameters, dp)
+    mapparameters(_rgrad_leaf, ps, dp, buffer)
+end
+_rgrad_leaf(x, dp, buffer) = _rgrad(buffer, x, dp)
 
 @doc raw"""
     TrainingOptimizer(x; algorithm = Adam(), linesearch = default_step_size(algorithm), retraction = Cayley(), observer = NoStepObserver())
@@ -32,7 +63,8 @@ The optimizer of a training loop: one step per minibatch, with [`optimization_st
 
 It holds the first-order `algorithm`, converted once to the element type of `x` with
 `change_precision`, its cache and its state over the whole of `x`, the step-size schedule, the
-retraction, and the buffers the retraction works in.
+retraction, the buffers the retraction works in, and those the Riemannian gradient of a Stiefel or
+a Grassmann leaf is written into.
 
 `algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref) or a member of the
 [`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, and
@@ -73,7 +105,7 @@ optimization_step!(x, opt, Float32[2, 2, 2])
 ```
 """
 struct TrainingOptimizer{MT <: Union{FirstOrderMethod, CompositeMethod}, CT, ST,
-    LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT, OT}
+    LT <: Union{Static, DecayingStatic}, RT <: AbstractRetraction, WT, BT, OT}
     method::MT
     # `CT` and `ST` are unbounded because a composite holds trees of caches and states.
     cache::CT
@@ -81,6 +113,8 @@ struct TrainingOptimizer{MT <: Union{FirstOrderMethod, CompositeMethod}, CT, ST,
     linesearch::LT
     retraction::RT
     workspace::WT
+    # the `RiemannianGradientBuffer`s of `PrecomputedGradient`, a tree of the shape of `workspace`
+    gradient_buffer::BT
     observer::OT
 end
 
@@ -99,7 +133,7 @@ function _training_optimizer(x, method::FirstOrderMethod, linesearch, retraction
     cache = OptimizerCache(method, x)
     state = OptimizerState(method, x)
     TrainingOptimizer(method, cache, state, linesearch, retraction,
-        retraction_workspace(x, retraction), observer)
+        retraction_workspace(x, retraction), rgrad_buffer(x), observer)
 end
 
 step_observer(opt::TrainingOptimizer) = opt.observer
@@ -132,7 +166,8 @@ function optimization_step!(x::OptimizerSolution{T},
     _check_shape(x, dp)
     increase_iteration_number!(opt.state)
     α = step_size(opt.linesearch, iteration_number(opt.state))
-    update!(opt.cache, opt.state, PrecomputedGradient(x, dp), opt.method, x)
+    update!(opt.cache, opt.state,
+        PrecomputedGradient(x, dp, opt.gradient_buffer), opt.method, x)
     _rmul!(direction(opt.cache), α)
     # the phase `solve!` reports around its retraction and `advance_state!`
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
