@@ -490,7 +490,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests, so it is open
   whether the current Julia reports the pairs.
 
-### K44 · The direct Cayley retraction and the differentiated Cayley transport index a device array one entry at a time
+### K45 · The direct Cayley retraction and the differentiated Cayley transport index a device array one entry at a time
 
 - location: `src/retractions/direct_cayley.jl`, `_cayley_system!`
 - kind: found late

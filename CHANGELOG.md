@@ -21,7 +21,8 @@ breaking release).
   form of the Cayley transform, with one `2k × 2k` solve. It needs no global section, so it does
   not draw the `M × (M - k)` orthogonal complement. `DirectCayleyWorkspace(Y)` holds its
   `O(Mk + k²)` buffers. With a workspace, a call allocates 128 B at both `M = 200` and
-  `M = 800` (`k = 4`, `Float32` and `Float64`, a cold process on Julia 1.13).
+  `M = 800` (`k = 4`, `Float32` and `Float64`, a cold process on Julia 1.13). It runs on host
+  arrays only, and so does `DifferentiatedCayleyTransport` below (K45).
 - **Vector transports along it.** `transport(Y_new, Y, Δ, Ξ, tr)` and `transport!` with
   `ProjectionTransport`, the projection onto the tangent space at `Y_new`, or
   `DifferentiatedCayleyTransport`, the differential of `cayley_direct` in the direction `Ξ`.

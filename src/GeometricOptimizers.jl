@@ -107,7 +107,9 @@ include("decompositions/symplectic_gram_schmidt.jl")
 #
 # `check` is `public` and not exported, as `gradient` and `value` below are: all three are names
 # that other packages export too (`Zygote` exports `gradient`), and two exports of one name make it
-# unusable unqualified in a `Main` that loads both.
+# unusable unqualified in a `Main` that loads both. A name that implements the same concept as the
+# other package's may still be exported under that name: `CanonicalMetric`, `EuclideanMetric` and
+# `ProjectionTransport` are the metrics and the transport that `Manifolds.jl` exports as well.
 export Manifold, StiefelManifold, GrassmannManifold, SymplecticStiefelManifold
 export rgrad, metric, Ω
 # The metric a Stiefel gradient and dot product are taken in, as the last argument of both.
