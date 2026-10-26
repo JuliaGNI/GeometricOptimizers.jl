@@ -50,8 +50,8 @@ struct DifferentiatedCayleyTransport <: AbstractVectorTransport end
     transport!(Ξ_out, Y_new::StiefelManifold, Y::StiefelManifold, Δ, Ξ, tr::AbstractVectorTransport, ws::DirectCayleyWorkspace)
 
 Write the transport `tr` of `Ξ` from `Y` to `Y_new = cayley_direct(Y, Δ)` into `Ξ_out`, and return
-`Ξ_out`. `Ξ_out` may be `Ξ`. A `Ξ_out`, `Y_new`, `Δ`, `Ξ` or `ws` of another size than `Y` raises
-a `DimensionMismatch` before anything is written.
+`Ξ_out`. `Ξ_out` may be `Ξ`, and must not be `Y_new.A`. A `Ξ_out`, `Y_new`, `Δ`, `Ξ` or `ws` of
+another size than `Y` raises a `DimensionMismatch` before anything is written.
 """
 function transport!(Ξ_out::AbstractMatrix, Y_new::StiefelManifold, Y::StiefelManifold,
         Δ::AbstractMatrix, Ξ::AbstractMatrix, tr::AbstractVectorTransport,
