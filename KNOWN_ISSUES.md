@@ -1096,7 +1096,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K35 · A training step on a parameter set with a `StiefelManifold` leaf allocates 14 kB in `Float32` and 26 kB in `Float64`
 
-- location: `src/manifolds/stiefel_manifold.jl:54`
+- location: `src/manifolds/stiefel_manifold.jl:105`
 - kind: defect
 - found: 2026-10-11
 - evidence: `scripts/parameter_set_step_cost.jl` (Julia 1.13.1, `--check-bounds=auto`, one BLAS
@@ -1108,7 +1108,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
   | frame | what allocates | bytes | allocations |
   |:--|:--|--:|--:|
-  | `rgrad(::StiefelManifold, ::AbstractMatrix)`, `src/manifolds/stiefel_manifold.jl:54` | `∇L - Y.A * (∇L' * Y.A)` | 4 560 | 8 |
+  | `rgrad(::StiefelManifold, ::AbstractMatrix, ::CanonicalMetric)`, `src/manifolds/stiefel_manifold.jl:105` | `∇L - Y.A * (∇L' * Y.A)` | 4 560 | 8 |
   | `global_rep(::GlobalSection{T, <:StiefelManifold}, Δ)`, `src/global_sections/global_sections.jl:264` | `SkewSymMatrix(λY.Y.A' * Δ)` and `λY.λ' * Δ` | 3 560 | 33 |
   | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:279` | `inv(ws.M)` | 5 448 | 8 |
 

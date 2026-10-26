@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Added
+
+- **Stiefel metric traits.** `StiefelMetric`, with `CanonicalMetric` and `EuclideanMetric`, is
+  the last argument of `rgrad(Y, G, m)` and `metric(Y, Δ₁, Δ₂, m)`. The Euclidean gradient is
+  the tangent projection `G - Y(YᵀG + GᵀY)/2`, and its metric is `tr(Δ₁ᵀΔ₂)`. The two-argument
+  `rgrad` and `metric` are the canonical metric, as before. `rgrad`, with two arguments or three,
+  and the four-argument `metric` raise a `DimensionMismatch` before any work when a matrix
+  argument has another size than the point.
+- **The direct Cayley retraction `cayley_direct(Y, Δ)` and `cayley_direct!(Y_new, Y, Δ, ws)`.**
+  It retracts a tangent matrix `Δ` at `Y ∈ St(k, M)` through the rank-`2k` Sherman–Morrison–Woodbury
+  form of the Cayley transform, with one `2k × 2k` solve. It needs no global section, so it does
+  not draw the `M × (M - k)` orthogonal complement. `DirectCayleyWorkspace(Y)` holds its
+  `O(Mk + k²)` buffers. With a workspace, a call allocates 128 B at both `M = 200` and
+  `M = 800` (`k = 4`, `Float32` and `Float64`, a cold process on Julia 1.13).
+- **Vector transports along it.** `transport(Y_new, Y, Δ, Ξ, tr)` and `transport!` with
+  `ProjectionTransport`, the projection onto the tangent space at `Y_new`, or
+  `DifferentiatedCayleyTransport`, the differential of `cayley_direct` in the direction `Ξ`.
+  Both are subtypes of `AbstractVectorTransport`. `DifferentiatedCayleyTransport` accepts any
+  `Ξ` and drops its part off the tangent space at `Y`.
+
 ## [0.9.1]
 
 ### Fixed

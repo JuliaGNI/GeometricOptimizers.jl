@@ -110,6 +110,8 @@ include("decompositions/symplectic_gram_schmidt.jl")
 # unusable unqualified in a `Main` that loads both.
 export Manifold, StiefelManifold, GrassmannManifold, SymplecticStiefelManifold
 export rgrad, metric, Ω
+# The metric a Stiefel gradient and dot product are taken in, as the last argument of both.
+export StiefelMetric, CanonicalMetric, EuclideanMetric
 public check
 # `orthonormal_columns` is public for the same reason, and for one more: a downstream layer that
 # initialises a manifold weight has to orthonormalise it, and `LinearAlgebra.qr!` cannot do that
@@ -172,6 +174,14 @@ include("retractions/modified_exponential.jl")
 include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")
 include("retractions/retraction_workspace.jl")
+
+# The Cayley retraction of a Stiefel tangent vector without a global section, and the two vector
+# transports along it: `O(Mk²)` per step, and no `M × M` array.
+export cayley_direct, cayley_direct!, DirectCayleyWorkspace
+export AbstractVectorTransport, ProjectionTransport, DifferentiatedCayleyTransport
+export transport, transport!
+include("retractions/direct_cayley.jl")
+include("retractions/vector_transport.jl")
 
 export Optimizer,
        OptimizerProblem,
