@@ -198,7 +198,7 @@ the optimizer protocol, so `true` recovers it by calling the gradient on the fla
 `GradientAutodiff(F, ::Manifold)` and the other `Manifold` gradients are built for — which is what
 `gradient(vec(parent(x)))` is. `store_gradient!`'s
 reuse does not help, because what it caches is the lift. A [`PrecomputedGradient`](@ref) holds its
-ambient gradient, and its norm is that of `dp`.
+ambient gradient, so its norm is that of `dp`, at no extra evaluation.
 
 The two are not interchangeable up to a constant, and which to reach for when is on the
 [Optimizer Methods](@ref "Standard Neural Network Optimizers") page.
