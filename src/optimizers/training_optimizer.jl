@@ -33,6 +33,9 @@ end
 (g::PrecomputedGradient{T})(x::Manifold{T}) where {T} = _rgrad(g.buffer, x, g.dp)
 (g::PrecomputedGradient{T})(x::NetworkParameters{T}) where {T} = _rgrad(g.buffer, x, g.dp)
 
+# `ScalarMomentAdam(; ambient_norm = true)` squares the ambient gradient, which this one holds
+_squared_ambient_norm(g::PrecomputedGradient, ::StiefelManifold) = sum(abs2, g.dp)
+
 # The `N × n` Riemannian gradient of a Stiefel or a Grassmann leaf and the `n × n` product it is
 # formed from, for `rgrad!`.
 struct RiemannianGradientBuffer{AT <: AbstractMatrix}

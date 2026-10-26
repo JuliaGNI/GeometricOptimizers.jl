@@ -22,6 +22,17 @@ breaking release).
   parameter and a field, so a caller who names the positional constructor of either passes one
   more argument.
 
+### Fixed
+
+- **A training step of `ScalarMomentAdam(; ambient_norm = true)` raised an `AssertionError` on its
+  first step.** The ambient norm called the gradient on the flat storage of the point, which a
+  `PrecomputedGradient` answered with `rgrad` of that vector against its `N × n` matrix `dp`, so
+  `TrainingOptimizer(Y; algorithm = ScalarMomentAdam(; ambient_norm = true))` could not take a
+  step. The ambient norm of a precomputed gradient is now `sum(abs2, dp)`, the norm of the gradient
+  the step is given. The testset "a ScalarMomentAdam training step squares the ambient gradient it
+  is given" in `test/manifold_optimizers/scalar_moment_adam_optimizer.jl` fails without the fix.
+  This closes K44.
+
 ## [0.9.1]
 
 ### Fixed

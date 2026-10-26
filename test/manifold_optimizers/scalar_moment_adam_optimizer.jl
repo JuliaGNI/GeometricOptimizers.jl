@@ -437,6 +437,22 @@ end
     @test n_independent(moment_step, gradient_step)
 end
 
+# The ambient norm of a training step is that of the gradient the step is given. After the first step
+# the bias-corrected second moment is that norm squared, as `sum(abs2, C)` is for the evaluated
+# gradient of the linear objective in "which norm the second moment squares" above.
+@testset "a ScalarMomentAdam training step squares the ambient gradient it is given, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(12)
+    Y = rand(rng, StiefelManifold{T}, 6, 3)
+    before = copy(Y.A)
+    dp = randn(rng, T, 6, 3)
+    opt = TrainingOptimizer(Y; algorithm = ScalarMomentAdam(; ambient_norm = true))
+    optimization_step!(Y, opt, dp)
+    @test second_moment(opt.cache) isa T
+    @test isapprox(second_moment(opt.cache), sum(abs2, dp); rtol = 8eps(T))
+    @test Y.A != before
+    @test check(Y) < manifold_tolerance(T)
+end
+
 @testset "ScalarMomentAdam differs from Adam over a solve, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(10)
     Y₁ = rand(rng, StiefelManifold{T}, 6, 3)
