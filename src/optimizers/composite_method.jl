@@ -23,8 +23,8 @@ function _training_optimizer(
     # the random completions of the sections are the same draws
     cache = leaves((xᵢ, mᵢ) -> OptimizerCache(mᵢ, xᵢ))
     state = leaves((xᵢ, mᵢ) -> OptimizerState(mᵢ, xᵢ))
-    workspace = leaves((xᵢ, _) -> retraction_workspace(xᵢ, retraction))
-    gradient_buffer = leaves((xᵢ, _) -> rgrad_buffer(xᵢ))
+    workspace = leaves((xᵢ, mᵢ) -> _training_workspace(xᵢ, mᵢ, retraction))
+    gradient_buffer = leaves((xᵢ, mᵢ) -> _gradient_buffer(xᵢ, mᵢ))
     TrainingOptimizer(
         method, cache, state, linesearch, retraction, workspace, gradient_buffer, observer)
 end

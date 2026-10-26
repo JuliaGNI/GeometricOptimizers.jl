@@ -190,6 +190,28 @@ The final velocity is then fed into a [retraction](@ref "Retractions")[^2]. For 
 
 where ``\Delta\in{}T_\mathcal{M}`` and ``B^\Delta`` is its representation in ``\mathfrak{g}^\mathrm{hor}`` as ``B^\Delta = \lambda(Y)^{-1}\Omega(\Delta)\lambda(Y).``
 
+## Optimizers in the tangent space of the Stiefel manifold
+
+The section ``\lambda(Y) = [Y, Y_\perp]`` is an ``N\times{}N`` matrix: [`Adam`](@ref) and [`ScalarMomentAdam`](@ref) build it with a ``QR`` decomposition when they start, at a cost of ``O(N^3)``, and update it at every step, at a cost of ``O(N(N-n)n)``. Three methods step a [`StiefelManifold`](@ref) in its tangent space ``T_YSt(n,N)\subset\mathbb{R}^{N\times{}n}`` instead, with no section and no ``N\times{}N`` array: they retract with [`cayley_direct!`](@ref) and carry their moments from one point to the next with a vector transport, [`ProjectionTransport`](@ref) or [`DifferentiatedCayleyTransport`](@ref). Their caches, their states and the [`DirectCayleyWorkspace`](@ref) that [`TrainingOptimizer`](@ref) builds for them hold ``O(Nn + n^2)`` numbers, and a step costs ``O(Nn^2)``.
+
+- [`DirectMomentum`](@ref) is gradient descent with momentum, with the state [`DirectMomentumState`](@ref).
+- [`DirectScalarMomentAdam`](@ref) is the Cayley Adam of [li2020efficient](@cite), with one scalar second moment for the whole matrix, and the state [`DirectScalarMomentAdamState`](@ref).
+- [`FactoredStiefelAdam`](@ref) has one adaptive learning rate per mode. It splits a tangent vector into its vertical part ``Y^T\Delta\in\mathfrak{so}(n)`` and its horizontal part ``(\mathbb{I}_N - YY^T)\Delta``, and keeps an entrywise second moment of the first and a columnwise one of the second. Its state is [`FactoredStiefelAdamState`](@ref).
+
+Each method takes a `metric`, [`CanonicalMetric`](@ref) or [`EuclideanMetric`](@ref), for the Riemannian gradient, and a `transport`. Every operation of a step commutes with ``Y\mapsto{}QY``, ``\nabla{}L\mapsto{}Q\nabla{}L`` for ``Q\in{}O(N)``, so the iterates are left ``O(N)``-equivariant. Only [`TrainingOptimizer`](@ref) steps these methods, alone on a `StiefelManifold` or as the `manifold` method of a [`CompositeMethod`](@ref):
+
+```@example direct_stiefel
+using GeometricOptimizers
+import Random
+Random.seed!(1)
+Y = rand(StiefelManifold{Float64}, 100, 4)
+opt = TrainingOptimizer(Y; algorithm = FactoredStiefelAdam(), linesearch = 1e-2)
+optimization_step!(Y, opt, randn(100, 4))
+opt.workspace isa DirectCayleyWorkspace
+```
+
+The caches are [`GeometricOptimizers.DirectStiefelCache`](@ref) and [`GeometricOptimizers.FactoredStiefelAdamCache`](@ref), and [`GeometricOptimizers.DirectStiefelMethod`](@ref) is the union of the three methods. Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
+
 ## Reference
 
 ```@bibliography

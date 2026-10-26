@@ -55,6 +55,7 @@ if "core" in GROUPS
     @safetestset "Adam + Euclidean decay       " include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
     @safetestset "Adam + decaying step         " include("optimizers/decaying_static.jl")
     @safetestset "Scalar-moment Adam           " include("manifold_optimizers/scalar_moment_adam_optimizer.jl")
+    @safetestset "Direct Stiefel optimizers    " include("manifold_optimizers/direct_stiefel_optimizers.jl")
     @safetestset "Training step                " include("integration/training_optimizer.jl")
     @safetestset "Adam step allocations        " include("integration/adam_step_allocations.jl")
     @safetestset "Composite optimizer method   " include("optimizers/composite_method.jl")

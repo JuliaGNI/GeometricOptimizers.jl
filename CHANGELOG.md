@@ -30,6 +30,26 @@ breaking release).
   `DifferentiatedCayleyTransport`, the differential of `cayley_direct` in the direction `Ξ`.
   Both are subtypes of `AbstractVectorTransport`. `DifferentiatedCayleyTransport` accepts any
   `Ξ` and drops its part off the tangent space at `Y`.
+- **Three Stiefel optimizers that step in the tangent space, with no global section.**
+  `DirectMomentum`, `DirectScalarMomentAdam` and `FactoredStiefelAdam` step a `StiefelManifold`
+  `Y ∈ St(k, M)` in `T_Y St(k, M)` itself: they retract with `cayley_direct!` and carry their
+  first moment to the new point with `ProjectionTransport` or `DifferentiatedCayleyTransport`, so
+  no cache, state or workspace of theirs holds an `M × M` array. `DirectMomentum` is gradient
+  descent with momentum. `DirectScalarMomentAdam` is the Cayley Adam of Li et al. (2020) with one
+  scalar second moment. `FactoredStiefelAdam` has one adaptive learning rate per mode: an
+  entrywise second moment of the vertical part `YᵀG` and a columnwise one of the horizontal part
+  `(I - YYᵀ)G`, so its step is a tangent vector with no projection after it, and its iterates are
+  left `O(M)`-equivariant. Each takes a `metric` and a `transport` keyword; the two Adam methods
+  also cap the Frobenius norm of a step at `α_max`. A coefficient out of its range is an
+  `ArgumentError` at construction. `DirectScalarMomentAdam` and `FactoredStiefelAdam` are members
+  of `AdamFamily`. `TrainingOptimizer` steps them, alone on a `StiefelManifold` or as the
+  `manifold` method of a `CompositeMethod`, and builds a `DirectCayleyWorkspace` for them; it
+  refuses a `retraction` other than `Cayley()` with an `ArgumentError`. `Optimizer` does not take
+  them. A step allocates 128 B with the first two methods and 160 B with `FactoredStiefelAdam`,
+  at both `M = 200` and `M = 800` (`k = 4`, `Float32` and `Float64`, alone and in a
+  `CompositeMethod` with `Adam`, a cold process on Julia 1.13). Their states,
+  `DirectMomentumState`, `DirectScalarMomentAdamState` and `FactoredStiefelAdamState`, are
+  exported.
 
 ### Changed
 
