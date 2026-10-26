@@ -110,6 +110,7 @@ include("decompositions/symplectic_gram_schmidt.jl")
 # unusable unqualified in a `Main` that loads both. A name that implements the same concept as the
 # other package's may still be exported under that name: `CanonicalMetric`, `EuclideanMetric` and
 # `ProjectionTransport` are the metrics and the transport that `Manifolds.jl` exports as well.
+# The cost is the same: a `Main` that loads both packages has to qualify these three names.
 export Manifold, StiefelManifold, GrassmannManifold, SymplecticStiefelManifold
 export rgrad, metric, Ω
 # The metric a Stiefel gradient and dot product are taken in, as the last argument of both.

@@ -41,10 +41,11 @@ It is computed in ``O(Mk^2)``, with the matrix ``M_{2k}`` of the retraction and 
 
 ```math
 \bigl(U_\Xi + \tfrac{1}{2}UM_{2k}^{-1}(VU_\Xi)\bigr)(V_\Xi W_+), \qquad
-W_+ = (\mathbb{I}_M - \tfrac{1}{2}W(\Delta))^{-1}Y = \tfrac{1}{2}(Y + Y_\mathrm{new}).
+W_+ = (\mathbb{I}_M - \tfrac{1}{2}W(\Delta))^{-1}Y = Y + \tfrac{1}{2}UM_{2k}^{-1}VY.
 ```
 
-Its solve is the `lu!` of [`cayley_direct!`](@ref), with the same backend limit.
+``W_+`` comes from the factorization of the step, so the result does not read the entries of
+``Y_\mathrm{new}``. Its solve is the `lu!` of [`cayley_direct!`](@ref), with the same backend limit.
 """
 struct DifferentiatedCayleyTransport <: AbstractVectorTransport end
 
@@ -82,8 +83,11 @@ function _transport!(Ξ_out, Y_new::StiefelManifold{T}, Y::StiefelManifold{T}, �
     # `M₂ₖ⁻¹(VU_Ξ)`
     mul!(ws.VU_Ξ, ws.Vᵗ', ws.U_Ξ)
     LinearAlgebra.ldiv!(F, ws.VU_Ξ)
-    # `C = V_Ξ W₊`, with `W₊ = (Y + Y_new)/2`
-    ws.Y_out .= (Y.A .+ Y_new.A) ./ 2
+    # `C = V_Ξ W₊`, with `W₊ = Y + UM₂ₖ⁻¹(VY)/2` from the factorization of the step
+    mul!(ws.VY, ws.Vᵗ', Y.A)
+    LinearAlgebra.ldiv!(F, ws.VY)
+    copyto!(ws.Y_out, Y.A)
+    mul!(ws.Y_out, ws.U, ws.VY, one(T) / 2, one(T))
     mul!(ws.C, ws.Vᵗ_Ξ', ws.Y_out)
     mul!(ws.D, ws.VU_Ξ, ws.C)
     mul!(Ξ_out, ws.U_Ξ, ws.C)

@@ -490,20 +490,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests, so it is open
   whether the current Julia reports the pairs.
 
-### K45 · The direct Cayley retraction and the differentiated Cayley transport index a device array one entry at a time
-
-- location: `src/retractions/direct_cayley.jl`, `_cayley_system!`
-- kind: found late
-- found: 2026-10-26
-- evidence: with `Y = StiefelManifold(JLArray(rand(rng, StiefelManifold{T}, 20, 4).A))` and `Δ` a
-  `JLArray` tangent vector at `Y` under `allowscalar(false)`, `cayley_direct(Y, Δ)` and
-  `transport(Y, Y, Δ, Δ, DifferentiatedCayleyTransport())` raise `Scalar indexing is disallowed.`
-  in `Float32` and `Float64`, and the stack trace passes through `LinearAlgebra.lu!(ws.M₂ₖ)` in
-  `_cayley_system!`; `transport(Y, Y, Δ, Δ, ProjectionTransport())` runs (Julia 1.13.2). The fix
-  is `inv(ws.M₂ₖ)` and `mul!`, as `cayley` does (`src/retractions/retraction_workspace.jl:279`;
-  why, `:40-43`), checked on Metal: `JLArrays` has no `lu` for `inv` either
-  (`test/integration/device_multiply.jl:153-170`), so a `JLArray` test cannot show the fix.
-
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status

@@ -211,6 +211,8 @@ end
         @test norm(differentiated -
                    transport(Y_new, Y, Δ, Ξ_t, DifferentiatedCayleyTransport())) ≤
               50eps(T) * norm(Ξ)
+        # it reads only the size of `Y_new`: another point gives the same result
+        @test transport(Y, Y, Δ, Ξ, DifferentiatedCayleyTransport()) == differentiated
 
         # the in-place forms agree with the out-of-place ones, also when `Ξ_out === Ξ`
         for (tr, expected) in ((ProjectionTransport(), projected),
@@ -248,7 +250,7 @@ end
             @test out == wrong
         end
         # the guard refuses a `Y_new` with one column, which the differentiated transport would
-        # otherwise broadcast against `Y`
+        # otherwise accept, because it reads no entry of `Y_new`
         if k > 1
             @test refuses(
                 () -> transport(StiefelManifold(randn(rng, T, M, 1)), Y, Δ, Ξ,
