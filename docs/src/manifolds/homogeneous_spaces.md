@@ -143,6 +143,34 @@ gradL = rgrad(Y, ∇L)
 metric(Y, gradL, Δ) ≈ tr(∇L' * Δ)
 ```
 
+## Metrics, the Direct Cayley Retraction and Vector Transports
+
+The metric is a trait: [`CanonicalMetric`](@ref) is the metric above, and [`EuclideanMetric`](@ref) is ``g_Y(\Delta_1, \Delta_2) = \mathrm{Tr}(\Delta_1^T\Delta_2)``, the metric inherited from ``\mathbb{R}^{N\times{}n}``. Both are a [`StiefelMetric`](@ref) and are passed as the last argument of [`rgrad`](@ref) and [`metric`](@ref). The Euclidean gradient is the orthogonal projection ``\nabla{}L - \frac{1}{2}Y(Y^T\nabla{}L + (\nabla{}L)^TY)``, and the Riesz identity holds for both metrics:
+
+```@example omega_metric
+G = rand(5, 3)
+Δ = rgrad(Y, rand(5, 3), EuclideanMetric())
+@assert metric(Y, rgrad(Y, G, EuclideanMetric()), Δ, EuclideanMetric()) ≈ tr(G' * Δ) # hide
+metric(Y, rgrad(Y, G, EuclideanMetric()), Δ, EuclideanMetric()) ≈ tr(G' * Δ)
+```
+
+[`cayley_direct`](@ref) and [`cayley_direct!`](@ref) take the Cayley retraction of a tangent vector ``\Delta\in{}T_YSt(n,N)`` without the orthogonal complement of ``Y`` that a [global section](@ref "Global Sections") needs. The generator ``W = \Delta{}Y^T - Y\Delta^T + Y\Delta^TYY^T`` has rank at most ``2n`` and factors as ``W = UV`` with ``U\in\mathbb{R}^{N\times{}2n}`` and ``V\in\mathbb{R}^{2n\times{}N}``, so the Sherman–Morrison–Woodbury identity gives
+
+```math
+(\mathbb{I}_N - \tfrac{1}{2}W)^{-1}(\mathbb{I}_N + \tfrac{1}{2}W)Y = Y + U(\mathbb{I}_{2n} - \tfrac{1}{2}VU)^{-1}VY
+```
+
+in ``O(Nn^2)`` operations and with one ``2n\times{}2n`` solve. A [`DirectCayleyWorkspace`](@ref) holds the buffers; it has no ``N\times{}N`` array.
+
+```@example omega_metric
+using LinearAlgebra: I, norm # hide
+Y_new = cayley_direct(Y, Δ / (2norm(Δ)))
+@assert norm(Y_new' * Y_new - I) < 1e-14 # hide
+norm(Y_new' * Y_new - I)
+```
+
+[`transport`](@ref) and [`transport!`](@ref) move a vector ``\Xi`` from ``Y`` to the retracted point. An [`AbstractVectorTransport`](@ref) selects how: [`ProjectionTransport`](@ref) projects ``\Xi`` onto the tangent space at the new point, and [`DifferentiatedCayleyTransport`](@ref) applies the differential of the Cayley retraction, through the same ``2n\times{}2n`` matrix.
+
 # The Grassmann Manifold
 
 The Grassmann manifold is closely related to the Stiefel manifold, and an element of the Grassmann manifold can be represented through an element of the Stiefel manifold (but not vice-versa). An element of the Grassmann manifold ``Gr(n,N)`` is a vector subspace ``\subset\mathbb{R}^N`` of dimension $n$. Each such subspace (i.e. element of the Grassmann manifold) can be represented by a full-rank matrix ``A\in\mathbb{R}^{N\times{}n}`` and we identify two elements with the following equivalence relation: 
@@ -213,7 +241,11 @@ Main.proof(raw"In a first step we identify charts on the Grassmann manifold to m
  ## Library functions 
 
 [`StiefelManifold`](@ref), [`GrassmannManifold`](@ref), [`StiefelProjection`](@ref),
-[`metric`](@ref), [`rgrad`](@ref) and [`Ω`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
+[`metric`](@ref), [`rgrad`](@ref), [`Ω`](@ref),
+[`StiefelMetric`](@ref), [`CanonicalMetric`](@ref), [`EuclideanMetric`](@ref),
+[`cayley_direct`](@ref), [`cayley_direct!`](@ref), [`DirectCayleyWorkspace`](@ref),
+[`AbstractVectorTransport`](@ref), [`ProjectionTransport`](@ref),
+[`DifferentiatedCayleyTransport`](@ref), [`transport`](@ref) and [`transport!`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 ```@raw latex
 \begin{comment}

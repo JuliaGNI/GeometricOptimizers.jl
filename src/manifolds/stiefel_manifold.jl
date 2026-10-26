@@ -49,9 +49,67 @@ rgrad(Y, Δ)
  7   8
 ```
 """
-function rgrad(Y::StiefelManifold, ∇L::AbstractMatrix)
+rgrad(Y::StiefelManifold, ∇L::AbstractMatrix) = rgrad(Y, ∇L, CanonicalMetric())
+
+@doc raw"""
+    StiefelMetric
+
+A Riemannian metric on the Stiefel manifold, passed as the last argument of [`rgrad`](@ref) and
+[`metric`](@ref). The two metrics are [`CanonicalMetric`](@ref) and [`EuclideanMetric`](@ref).
+"""
+abstract type StiefelMetric end
+
+@doc raw"""
+    CanonicalMetric <: StiefelMetric
+
+The canonical metric of the Stiefel manifold,
+``g_Y(\Delta_1, \Delta_2) = \mathrm{Tr}(\Delta_1^T(\mathbb{I} - \frac{1}{2}YY^T)\Delta_2)``.
+The two-argument form of [`rgrad`](@ref) and the three-argument form of [`metric`](@ref) use it.
+"""
+struct CanonicalMetric <: StiefelMetric end
+
+@doc raw"""
+    EuclideanMetric <: StiefelMetric
+
+The metric that the Stiefel manifold inherits from ``\mathbb{R}^{N\times{}n}``,
+``g_Y(\Delta_1, \Delta_2) = \mathrm{Tr}(\Delta_1^T\Delta_2)``.
+"""
+struct EuclideanMetric <: StiefelMetric end
+
+# The size guard of the metric methods and of the direct retraction and transports: every matrix
+# argument has the shape of the point.
+function _check_point_size(Y::StiefelManifold, X::AbstractMatrix)
+    size(X) == size(Y.A) || throw(DimensionMismatch(
+        "a matrix of size $(size(X)) at a point of size $(size(Y.A))"))
+    nothing
+end
+
+@doc raw"""
+    rgrad(Y::StiefelManifold, ∇L::AbstractMatrix, ::CanonicalMetric)
+    rgrad(Y::StiefelManifold, ∇L::AbstractMatrix, ::EuclideanMetric)
+
+The Riemannian gradient at `Y` for the given metric, from the Euclidean gradient `∇L`:
+
+```math
+\nabla{}L - Y(\nabla{}L)^TY \quad\text{(canonical)}, \qquad
+\nabla{}L - \frac{1}{2}Y(Y^T\nabla{}L + (\nabla{}L)^TY) \quad\text{(Euclidean)}.
+```
+
+The Euclidean form is the orthogonal projection of `∇L` onto the tangent space at `Y`. Both forms
+satisfy ``\mathtt{metric}(Y, \mathtt{rgrad}(Y, \nabla{}L, m), \Delta, m) = \mathrm{Tr}((\nabla{}L)^T\Delta)``
+for every tangent vector ``\Delta``. A `∇L` of another size than `Y` raises a `DimensionMismatch`.
+"""
+function rgrad(Y::StiefelManifold, ∇L::AbstractMatrix, ::CanonicalMetric)
+    _check_point_size(Y, ∇L)
     _check_gradient_backend(Y, ∇L)
     ∇L - Y.A * (∇L' * Y.A)
+end
+
+function rgrad(Y::StiefelManifold, ∇L::AbstractMatrix, ::EuclideanMetric)
+    _check_point_size(Y, ∇L)
+    _check_gradient_backend(Y, ∇L)
+    YᵀG = Y.A' * ∇L
+    ∇L - Y.A * ((YᵀG + YᵀG') / 2)
 end
 
 # `rgrad(Y, ∇L)` written into the `N × n` matrix `Δ`, with `scratch` the `n × n` product `∇Lᵀ Y`. A
@@ -75,6 +133,27 @@ g_Y: (\Delta_1, \Delta_2) \mapsto \mathrm{Tr}(\Delta_1^T(\mathbb{I} - \frac{1}{2
 """
 function metric(Y::StiefelManifold{T}, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix) where {T}
     LinearAlgebra.tr(Δ₁' * Δ₂) - (T(1) / 2) * LinearAlgebra.tr((Δ₁' * Y.A) * (Y.A' * Δ₂))
+end
+
+@doc raw"""
+    metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix, ::CanonicalMetric)
+    metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix, ::EuclideanMetric)
+
+The dot product of `Δ₁` and `Δ₂` at `Y` in the given metric: the canonical one of
+[`metric(::StiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref), or
+``\mathrm{Tr}(\Delta_1^T\Delta_2)``. A `Δ₁` or `Δ₂` of another size than `Y` raises a
+`DimensionMismatch`.
+"""
+function metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix, ::CanonicalMetric)
+    _check_point_size(Y, Δ₁)
+    _check_point_size(Y, Δ₂)
+    metric(Y, Δ₁, Δ₂)
+end
+
+function metric(Y::StiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix, ::EuclideanMetric)
+    _check_point_size(Y, Δ₁)
+    _check_point_size(Y, Δ₂)
+    dot(Δ₁, Δ₂)
 end
 
 @doc raw"""

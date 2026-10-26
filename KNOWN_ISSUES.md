@@ -7,7 +7,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### A5 · `geodesic(Y, Δ)` and `cayley(Y, Δ)` are not deterministic and consume global RNG state
 
-- location: `src/manifolds/stiefel_manifold.jl:143-153`
+- location: `src/manifolds/stiefel_manifold.jl:222-232`
 - kind: defect
 - found: #36
 - evidence:
@@ -16,7 +16,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   same retraction failed. Pre-existing on `main`; PR #36 neither causes nor fixes it.
 
   Both tangent-vector entry points open with `GlobalSection(Y)`, and `global_section(::StiefelManifold)`
-  (`src/manifolds/stiefel_manifold.jl:143-153`) completes `Y` with a **random** basis of its orthogonal
+  (`src/manifolds/stiefel_manifold.jl:222-232`) completes `Y` with a **random** basis of its orthogonal
   complement:
 
   ```julia

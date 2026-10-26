@@ -107,9 +107,14 @@ include("decompositions/symplectic_gram_schmidt.jl")
 #
 # `check` is `public` and not exported, as `gradient` and `value` below are: all three are names
 # that other packages export too (`Zygote` exports `gradient`), and two exports of one name make it
-# unusable unqualified in a `Main` that loads both.
+# unusable unqualified in a `Main` that loads both. A name that implements the same concept as the
+# other package's may still be exported under that name: `CanonicalMetric`, `EuclideanMetric` and
+# `ProjectionTransport` are the metrics and the transport that `Manifolds.jl` exports as well.
+# The cost is the same: a `Main` that loads both packages has to qualify these three names.
 export Manifold, StiefelManifold, GrassmannManifold, SymplecticStiefelManifold
 export rgrad, metric, Ω
+# The metric a Stiefel gradient and dot product are taken in, as the last argument of both.
+export StiefelMetric, CanonicalMetric, EuclideanMetric
 public check
 # `orthonormal_columns` is public for the same reason, and for one more: a downstream layer that
 # initialises a manifold weight has to orthonormalise it, and `LinearAlgebra.qr!` cannot do that
@@ -172,6 +177,14 @@ include("retractions/modified_exponential.jl")
 include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")
 include("retractions/retraction_workspace.jl")
+
+# The Cayley retraction of a Stiefel tangent vector without a global section, and the two vector
+# transports along it: `O(Mk²)` per step, and no `M × M` array.
+export cayley_direct, cayley_direct!, DirectCayleyWorkspace
+export AbstractVectorTransport, ProjectionTransport, DifferentiatedCayleyTransport
+export transport, transport!
+include("retractions/direct_cayley.jl")
+include("retractions/vector_transport.jl")
 
 export Optimizer,
        OptimizerProblem,
