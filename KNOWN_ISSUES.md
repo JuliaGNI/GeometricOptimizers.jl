@@ -478,6 +478,18 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   The lift-typed cotangent takes the dense `AbstractMatrix` method; only the Stiefel lift has a
   block method for a cotangent of its own type.
 
+### K43 · On Julia 1.14.0-DEV, the Stiefel and the Grassmann `apply_section!` methods are ambiguous with the method for a `Nothing` section
+
+- location: `src/global_sections/global_sections.jl:147`
+- kind: defect
+- found: 2026-10-13
+- evidence: the nightly jobs of CI runs 38445772866 (Julia 1.14.0-DEV.3647, at `78f76f4`) and
+  38715367722 (Julia 1.14.0-DEV.3705, at `07545d1`) each fail `Own-vs-own ambiguities` once, at
+  `Test Failed at test/ambiguities.jl:22`, with two pairs: `global_sections.jl:97` against `:147`,
+  and `:135` against `:147`. The pre job on Julia 1.13.2 of run 39127065561 passes the same testset.
+  Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests, so it is open
+  whether the current Julia reports the pairs.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
@@ -1019,22 +1031,21 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 - location: `test/Project.toml:32` (`Metal = "1.10"`)
 - kind: upstream
-- found: 2026-10-24
+- found: 2026-10-24; one issue with K23
 - evidence: CI run 40089695637 at `fa92a28`. Both jobs resolve `LLVM` 9.13.2 and `LLVMExtra_jll`
   0.0.47, because `Metal` 1.11.1 needs `LLVM` 7.2 to 9 (see K23). That `LLVMExtra_jll` has no build
-  for Julia 1.15.0-DEV with LLVM 23 (nightly) or for Julia 1.14 (pre):
+  for Julia 1.15.0-DEV (nightly) or Julia 1.14.0 (pre), both with LLVM 23. The nightly job:
 
   ```
   Error: LLVM extensions library unavailable for your platform:
     x86_64-linux-gnu-libgfortran5-cxx11-julia_version+1.15.0-llvm_version+23
   ERROR: LoadError: UndefVarError: `libLLVMExtra` not defined in `LLVM.API`
-  Failed to precompile GPUCompiler [61eb1bfa-7361-4325-ad38-22787b887f55] to "/home/runner/.julia/compiled/v1.14/GPUCompiler/jl_JbOXov"
+  Failed to precompile GPUCompiler [61eb1bfa-7361-4325-ad38-22787b887f55] to "/home/runner/.julia/compiled/v1.15/GPUCompiler/jl_1VCVra" (ProcessExited(1)).
   1 package was skipped because a dependency failed to precompile: Metal
   ```
 
-  An earlier nightly run, on Julia 1.14.0-DEV.3623, reached the tests and reported two
-  `apply_section!` ambiguities in `src/global_sections/global_sections.jl`; no later run reached
-  the tests, so that report is not confirmed. The fix is upstream: a `Metal` release that allows
+  The nightly jobs of runs 39127065561 (Julia 1.14.0-DEV.3787) and 39923326569 (Julia
+  1.15.0-DEV.97) stop at the same precompilation. The fix is upstream: a `Metal` release that allows
   `LLVM` 10.
 
 ## F. Loose ends from the geodesic-retraction review
