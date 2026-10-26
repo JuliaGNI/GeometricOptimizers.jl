@@ -197,15 +197,21 @@ The `‖·‖²` that [`ScalarMomentAdam`](@ref)'s second moment accumulates, se
 the optimizer protocol, so `true` recovers it by calling the gradient on the flat storage, as
 `GradientAutodiff(F, ::Manifold)` and the other `Manifold` gradients are built for — which is what
 `gradient(vec(parent(x)))` is. `store_gradient!`'s
-reuse does not help, because what it caches is the lift.
+reuse does not help, because what it caches is the lift. A [`PrecomputedGradient`](@ref) holds its
+ambient gradient, and its norm is that of `dp`.
 
 The two are not interchangeable up to a constant, and which to reach for when is on the
 [Optimizer Methods](@ref "Standard Neural Network Optimizers") page.
 """
 function _squared_gradient_norm(method::ScalarMomentAdam, cache::ScalarMomentAdamCache,
         gradient::Gradient, x::StiefelManifold)
-    method.ambient_norm ? sum(abs2, gradient(vec(parent(x)))) :
+    method.ambient_norm ? _squared_ambient_norm(gradient, x) :
     l2norm(gradient_array(cache))^2
+end
+
+# the method for a `PrecomputedGradient` is in `optimizers/training_optimizer.jl`
+function _squared_ambient_norm(gradient::Gradient, x::StiefelManifold)
+    sum(abs2, gradient(vec(parent(x))))
 end
 
 function update!(cache::ScalarMomentAdamCache{T},
