@@ -9,9 +9,9 @@
 #   * `exponential_tables()` — the accuracy, cost and allocations of the five
 #     `AbstractExponentialAlgorithm`s.
 #     Feeds the tables in `docs/src/exponential_algorithms.md` and the note on `Cayley` in
-#     `src/retractions/retraction_types.jl`. `docs/src/retractions.md` recomputes the accuracy
-#     tables when the documentation is built, from the same seed and the same `SCALES`, so this
-#     script and that page print the same rows.
+#     `src/retractions/retraction_types.jl`. `docs/src/exponential_algorithms.md` recomputes the
+#     accuracy tables when the documentation is built, from the same seed and the same `SCALES`,
+#     so this script and that page print the same rows.
 #   * `svd_tables()` — iterations, objective evaluations, `‖∇f‖` and `check` for every (method, line
 #     search, retraction) combination of `test/verification/svd_optim.jl`, on the seed that
 #     file uses and across eight starting points. Feeds the tables in that file and in
