@@ -148,8 +148,9 @@ function _transport_vertical!(A₁, S, P, ::ProjectionTransport)
     A₁ .= (S .- S') ./ 2
 end
 
-# The generator of the Cayley transform along `YA₁` is `YA₁Yᵀ`, and `𝕀 + W/2 = 2𝕀 - (𝕀 - W/2)`
-# makes `W₊ = (𝕀 - W/2)⁻¹Y = (Y + Y_new)/2`, so `𝒯(YA₁) = W₊A₁(YᵀW₊)` and `N = (𝕀 + P)A₁(𝕀 + P)ᵀ/4`.
+# The generator of the Cayley transform along `YA₁` is `YA₁Yᵀ`. With `W` the generator along the
+# step, `𝕀 + W/2 = 2𝕀 - (𝕀 - W/2)` makes `W₊ = (𝕀 - W/2)⁻¹Y = (Y + Y_new)/2`, so
+# `𝒯(YA₁) = W₊A₁(YᵀW₊)` and `N = (𝕀 + P)A₁(𝕀 + P)ᵀ/4`.
 function _transport_vertical!(A₁, S, P, ::DifferentiatedCayleyTransport)
     T = eltype(A₁)
     P ./= 2

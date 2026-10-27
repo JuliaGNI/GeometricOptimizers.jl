@@ -551,9 +551,17 @@ transport keeps the one part out of the other.
 For ``G = 0``, ``\varepsilon = 0``. Every operation commutes with ``Y \mapsto QY``, ``G \mapsto QG``
 for ``Q \in O(M)``, so the iterates are left ``O(M)``-equivariant.
 
-The constraints on the coefficients, their element type, the learning rate and the limit of the
-gradient's norm are those of [`DirectScalarMomentAdam`](@ref). Only a single `StiefelManifold` is a
-leaf of this method, and only [`TrainingOptimizer`](@ref) steps it.
+The constraints on the coefficients, their element type and the learning rate are those of
+[`DirectScalarMomentAdam`](@ref). Only a single `StiefelManifold` is a leaf of this method, and only
+[`TrainingOptimizer`](@ref) steps it.
+
+The second moments hold the squares of the entries of ``A`` and of the column norms of ``K`` in
+`T`, so an entry of ``A`` or a column norm of ``K`` above about ``\sqrt{\mathrm{floatmax}(T)}``,
+``1.8\cdot10^{19}`` in `Float32`, makes one of them infinite, and ``\varepsilon`` and every
+denominator with it. For ``\beta_2 > 0`` it stays infinite, so that step and every later step are
+zero. A gradient whose norm is above that limit while every entry of ``A`` and every column norm of
+``K`` is below it does not stop the method: ``\varepsilon`` is infinite at most while the sum of the
+second moments overflows.
 """
 struct FactoredStiefelAdam{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
        OptimizerMethod

@@ -504,20 +504,29 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   the next step, from a gradient of norm 1, moves. The two Adam methods cap the step at `α_max` and
   do not raise; their limit is K47.
 
-### K47 · A `DirectScalarMomentAdam` or `FactoredStiefelAdam` gradient of a norm above about `√floatmax(T)` makes every later step zero
+### K47 · A `DirectScalarMomentAdam` gradient of a norm above about `√floatmax(T)`, or a `FactoredStiefelAdam` gradient with a vertical entry or a horizontal column norm above it, makes every later step zero
 
 - location: `src/manifold_optimizers/direct_scalar_moment_adam_optimizer.jl`,
   `src/manifold_optimizers/factored_stiefel_adam_optimizer.jl`
 - kind: found late
 - found: 2026-10-27
-- evidence: the second moment holds the squares of the gradient in `T`, so a finite gradient of a
-  norm above about `√floatmax(T)` makes it `Inf`, and with `β₂ > 0` it stays `Inf`. On `St(3, 12)`
-  in `Float32` with `linesearch = 1f-2`, after one step with `randn(Xoshiro(7), T, 12, 3)`, a step
-  with `G = s .* clamp.(randn(Xoshiro(8), T, 12, 3), -3, 3)` for `s` from `1f30` to
-  `floatmax(Float32) / 64` gives `‖Δ‖_F = 0`, and the next step with `randn(Xoshiro(9), T, 12, 3)`
-  gives `‖Δ‖_F = 0` again, for both methods (a cold process on Julia 1.13.3). Neither method raises,
-  and the point stays finite. The docstring of `DirectScalarMomentAdam` states the limit, and the
-  docstring of `FactoredStiefelAdam` refers to it.
+- evidence: the second moments hold squares of the gradient in `T`. The scalar second moment of
+  `DirectScalarMomentAdam` holds the squared norm, so a finite gradient of a norm above about
+  `√floatmax(T)` makes it `Inf`. Those of `FactoredStiefelAdam` hold the squared entries of the
+  vertical part `YᵀG_R` and the squared column norms of the horizontal part, so an entry or a column
+  norm above about `√floatmax(T)` makes one of them `Inf`, and the floor `ε` with it. With `β₂ > 0`
+  it stays `Inf`. On `St(3, 12)` in `Float32` with `linesearch = 1f-2`, after one step with
+  `randn(Xoshiro(7), T, 12, 3)`, a step with `G = s .* clamp.(randn(Xoshiro(8), T, 12, 3), -3, 3)`
+  for `s` from `1f30` to `floatmax(Float32) / 64` gives `‖Δ‖_F = 0`, and the next step with
+  `randn(Xoshiro(9), T, 12, 3)` gives `‖Δ‖_F = 0` again, for both methods (a cold process on Julia
+  1.13.3). At `s = 4f18`, `‖G‖_F = 2.5e19` with every entry at most `1.2e19`,
+  `DirectScalarMomentAdam` gives `‖Δ‖_F = 0` at that step and at the 1st, 10th, 50th, 100th, 200th,
+  500th, 1000th and 2000th step after it, and `FactoredStiefelAdam` gives `‖Δ‖_F = 0.022` and a
+  nonzero step at each of those. For `FactoredStiefelAdam`, a horizontal gradient with one column of
+  norm `3e19`, or a vertical gradient `YB` with an entry of `YᵀG_R` of `3e19`, gives `‖Δ‖_F = 0` at
+  that step and at each of the next 200; a horizontal gradient with three columns of norm `1.5e19`,
+  `‖G‖_F = 2.6e19`, gives a nonzero step there and at each of the next 200. Neither method raises,
+  and the point stays finite. The docstring of each method states its limit.
 
 ## B. This package — observability
 
