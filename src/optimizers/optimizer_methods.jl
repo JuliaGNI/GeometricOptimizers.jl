@@ -363,6 +363,248 @@ function AdamWithEuclideanDecay(;
     AdamWithEuclideanDecay{typeof(δ)}(β₁, β₂, δ, λ)
 end
 
+# The range checks of the coefficients of the direct Stiefel methods below, on the coefficient
+# `given` converted to `T`. Where the conversion takes `given` out of its range, the message says
+# so.
+function _check_unit_interval(name, ::Type{T}, given) where {T}
+    x = T(given)
+    0 ≤ x < 1 ||
+        throw(ArgumentError(_range_message("$(name) must satisfy 0 ≤ $(name) < 1", name, x, given)))
+    nothing
+end
+function _check_positive(name, ::Type{T}, given) where {T}
+    x = T(given)
+    x > 0 ||
+        throw(ArgumentError(_range_message("$(name) must be positive", name, x, given)))
+    nothing
+end
+function _range_message(text, name, x, given)
+    isequal(x, given) ? text : "$(name) = $(given) is $(x) in $(typeof(x)), and $(text)"
+end
+
+# The checks of the coefficients that `DirectScalarMomentAdam` and `FactoredStiefelAdam` share.
+function _check_adam_coefficients(::Type{T}, β₁, β₂, δ, α_max) where {T}
+    _check_unit_interval("β₁", T, β₁)
+    _check_unit_interval("β₂", T, β₂)
+    _check_positive("δ", T, δ)
+    _check_positive("α_max", T, α_max)
+end
+
+@doc raw"""
+    DirectMomentum(; α = DEFAULT_MOMENTUM_α, metric = CanonicalMetric(), transport = ProjectionTransport())
+
+Riemannian gradient descent with momentum on a [`StiefelManifold`](@ref), in the tangent space
+``T_Y\mathrm{St}(k, M)`` itself: no [`GlobalSection`](@ref), no ``M\times{}M`` matrix and no
+orthogonal complement of ``Y``.
+
+With ``G_\mathcal{R} = \mathtt{rgrad}(Y, G, \mathtt{metric})`` for the Euclidean gradient ``G`` and
+the step size ``\eta`` of the line search, a step is
+```math
+p \gets \alpha\,\mathcal{T}(p) + G_\mathcal{R}, \qquad \Delta = -\eta{}p, \qquad
+Y \gets \mathtt{cayley\_direct}(Y, \Delta),
+```
+where ``\mathcal{T}`` is the vector transport `transport` ([`ProjectionTransport`](@ref) or
+[`DifferentiatedCayleyTransport`](@ref)) that carries the momentum of the previous step to the tangent
+space at ``Y``. `metric` is [`CanonicalMetric`](@ref) or [`EuclideanMetric`](@ref).
+
+`α` satisfies ``0 \le \alpha < 1``; another value is an `ArgumentError`. As for
+[`MomentumMethod`](@ref), it carries no element type of the parameters, and the step size is not
+stored here: [`TrainingOptimizer`](@ref) converts `α` once, with `change_precision`, and takes
+``\eta`` as its `linesearch`. Only a single `StiefelManifold` is a leaf of this method, and only
+[`TrainingOptimizer`](@ref) steps it, with the retraction [`cayley_direct!`](@ref).
+
+The step has no cap. A finite gradient whose step has ``\lVert\Delta\rVert_F`` above about
+``\sqrt{\mathrm{floatmax}(T)}``, ``1.8\cdot10^{19}`` in `Float32`, makes the factorization of
+[`cayley_direct!`](@ref) overflow, and the step raises `ArgumentError: matrix contains Infs or
+NaNs`, as a step of [`MomentumMethod`](@ref) does. The momentum ``p`` and the point are written
+only after the retraction, with the iteration number, so they stay as they were.
+"""
+struct DirectMomentum{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
+       OptimizerMethod
+    α::T
+    metric::MT
+    transport::TT
+
+    function DirectMomentum{T}(α, metric::StiefelMetric,
+            transport::AbstractVectorTransport) where {T}
+        _check_unit_interval("α", T, α)
+        new{T, typeof(metric), typeof(transport)}(T(α), metric, transport)
+    end
+end
+
+function DirectMomentum(;
+        α = DEFAULT_MOMENTUM_α, metric::StiefelMetric = CanonicalMetric(),
+        transport::AbstractVectorTransport = ProjectionTransport())
+    DirectMomentum{typeof(float(α))}(float(α), metric, transport)
+end
+
+@doc raw"""
+    DirectScalarMomentAdam(; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8, α_max = 1.0, metric = CanonicalMetric(), transport = ProjectionTransport())
+
+*Cayley ADAM* of [li2020efficient](@cite), with a scalar second moment, in the tangent space
+``T_Y\mathrm{St}(k, M)`` of a [`StiefelManifold`](@ref) itself. Where [`ScalarMomentAdam`](@ref)
+steps in ``\mathfrak{g}^\mathrm{hor}`` through a [`GlobalSection`](@ref), this method needs no
+``M\times{}M`` matrix and no orthogonal complement of ``Y``.
+
+With ``G_\mathcal{R} = \mathtt{rgrad}(Y, G, \mathtt{metric})``, the step size ``\alpha`` of the line
+search and the iteration ``t``, the moments are stored in bias-corrected form, as [`Adam`](@ref)'s are:
+```math
+B_1 \gets \frac{\beta_1 - \beta_1^t}{1 - \beta_1^t}\mathcal{T}(B_1) + \frac{1 - \beta_1}{1 - \beta_1^t}G_\mathcal{R},
+\qquad
+v \gets \frac{\beta_2 - \beta_2^t}{1 - \beta_2^t}v + \frac{1 - \beta_2}{1 - \beta_2^t}\lVert{}G_\mathcal{R}\rVert_F^2,
+```
+and the step is
+```math
+D = \frac{B_1}{\sqrt{v} + \delta}, \qquad
+\Delta = -\min\Bigl(\alpha, \frac{\alpha_\mathrm{max}}{\lVert{}D\rVert_F + \delta}\Bigr)D, \qquad
+Y \gets \mathtt{cayley\_direct}(Y, \Delta).
+```
+``\mathcal{T}`` is the vector transport `transport` that carries ``B_1`` from the previous point.
+The ``\delta`` is outside the square root, as in [`Adam`](@ref) and [`FactoredStiefelAdam`](@ref);
+[`ScalarMomentAdam`](@ref) puts it inside. The cap ``\alpha_\mathrm{max}`` bounds the Frobenius norm
+of the step.
+
+``0 \le \beta_1, \beta_2 < 1``, ``\delta > 0`` and ``\alpha_\mathrm{max} > 0``; another value is an
+`ArgumentError`, also where the conversion of a coefficient to the element type of the parameters
+takes it out of its range. The coefficients carry no element type of the parameters, and the
+learning rate is the `linesearch` of [`TrainingOptimizer`](@ref), which is the only optimizer that
+steps this method. Only a single `StiefelManifold` is a leaf of it.
+
+``\lVert{}D\rVert_F \approx 1``, so at the step size of [`Adam`](@ref), whose direction has
+``\lVert{}D\rVert_F \approx \sqrt{Mk}``, a step is about ``\sqrt{Mk}`` times shorter, as for
+[`ScalarMomentAdam`](@ref). Scale the learning rate before comparing this method with
+[`Adam`](@ref).
+
+The second moment holds the squares of the gradient in the element type `T` of the parameters, so a
+gradient with ``\lVert{}G_\mathcal{R}\rVert_F`` above about ``\sqrt{\mathrm{floatmax}(T)}``,
+``1.8\cdot10^{19}`` in `Float32`, makes it infinite. For ``\beta_2 > 0`` it stays infinite, so
+that step and every later step are zero.
+"""
+struct DirectScalarMomentAdam{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
+       OptimizerMethod
+    β₁::T
+    β₂::T
+    δ::T
+    α_max::T
+    metric::MT
+    transport::TT
+
+    function DirectScalarMomentAdam{T}(β₁, β₂, δ, α_max, metric::StiefelMetric,
+            transport::AbstractVectorTransport) where {T}
+        _check_adam_coefficients(T, β₁, β₂, δ, α_max)
+        new{T, typeof(metric), typeof(transport)}(
+            T(β₁), T(β₂), T(δ), T(α_max), metric, transport)
+    end
+end
+
+function DirectScalarMomentAdam(; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8, α_max = 1.0,
+        metric::StiefelMetric = CanonicalMetric(),
+        transport::AbstractVectorTransport = ProjectionTransport())
+    β₁, β₂, δ, α_max = promote(float(β₁), float(β₂), float(δ), float(α_max))
+    DirectScalarMomentAdam{typeof(δ)}(β₁, β₂, δ, α_max, metric, transport)
+end
+
+@doc raw"""
+    FactoredStiefelAdam(; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8, α_max = 1.0, metric = CanonicalMetric(), transport = ProjectionTransport())
+
+Adam on a [`StiefelManifold`](@ref) with one adaptive learning rate per mode, in the tangent space
+``T_Y\mathrm{St}(k, M)`` itself: no [`GlobalSection`](@ref), no ``M\times{}M`` matrix and no
+orthogonal complement of ``Y``.
+
+A tangent vector ``X`` at ``Y`` splits into a vertical part
+``P_V(Y)X = Y\cdot\tfrac{1}{2}(Y^TX - X^TY)`` and a horizontal part ``P_H(Y)X = X - Y(Y^TX)``.
+The first moment ``B_1`` is a tangent vector. The second moment is a ``k\times{}k`` matrix
+``V_W`` for the vertical part, and a vector ``v_K \in \mathbb{R}^k`` of the squared column norms of
+the horizontal part. With ``G_\mathcal{R} = \mathtt{rgrad}(Y, G, \mathtt{metric})``, the step size
+``\alpha`` of the line search, the iteration ``t`` and the weights
+``c_{i1} = (\beta_i - \beta_i^t)/(1 - \beta_i^t)``, ``c_{i2} = (1 - \beta_i)/(1 - \beta_i^t)`` of
+the bias-corrected form of [`Adam`](@ref), a step is
+```math
+\begin{aligned}
+B_1 &\gets c_{11}\mathcal{T}_s(B_1) + c_{12}G_\mathcal{R}, &
+A &= \tfrac{1}{2}(Y^TG_\mathcal{R} - G_\mathcal{R}^TY), &
+K &= P_H(Y)G_\mathcal{R}, \\
+V_W &\gets c_{21}V_W + c_{22}A\odot{}A, &
+(v_K)_j &\gets c_{21}(v_K)_j + c_{22}\lVert{}K_{:,j}\rVert_2^2, &
+\varepsilon &= \sqrt{\mathrm{eps}(T)}
+    \Bigl(\textstyle\sum_{ij}(V_W)_{ij} + \sum_j(v_K)_j\Bigr)^{1/2}, \\
+\tilde{A} &= \tfrac{1}{2}(Y^TB_1 - B_1^TY) \oslash (\sqrt{V_W} + \delta + \varepsilon), &
+\tilde{K}_{:,j} &= \frac{(P_H(Y)B_1)_{:,j}}{\sqrt{(v_K)_j} + \delta + \varepsilon},
+\end{aligned}
+```
+```math
+D = Y\tilde{A} + \tilde{K}, \qquad
+\Delta = -\min\Bigl(\alpha, \frac{\alpha_\mathrm{max}}{\lVert{}D\rVert_F + \delta}\Bigr)D, \qquad
+Y \gets \mathtt{cayley\_direct}(Y, \Delta).
+```
+``\mathcal{T}_s`` carries ``B_1`` from the previous point ``Y_\mathrm{prev}`` with the vector
+transport ``\mathcal{T}`` of `transport`, one part at a time, and puts each part back into its own
+subspace at ``Y``:
+```math
+\mathcal{T}_s(B_1) = P_V(Y)\mathcal{T}(P_V(Y_\mathrm{prev})B_1)
+    + P_H(Y)\mathcal{T}(P_H(Y_\mathrm{prev})B_1).
+```
+
+``V_W`` is symmetric, so ``\tilde{A}`` is skew-symmetric, and every column of ``\tilde{K}`` is
+orthogonal to ``Y``: ``\Delta`` is a tangent vector with no projection after it. Each ``P_H`` is
+two passes of ``K \gets K - Y(Y^TK)``: one pass leaves a part of the order of
+``\mathrm{eps}(T)\lVert{}X\rVert`` along ``Y``, and the scaling of a column with a small norm would
+make it large. A part of
+``B_1`` whose own second moment is zero holds only round-off; the floor ``\varepsilon``, relative to
+both second moments and with ``T`` the element type of the parameters, keeps it small, and the split
+transport keeps the one part out of the other.
+For ``G = 0``, ``\varepsilon = 0``. Every operation commutes with ``Y \mapsto QY``, ``G \mapsto QG``
+for ``Q \in O(M)``, so the iterates are left ``O(M)``-equivariant.
+
+The constraints on the coefficients, their element type and the learning rate are those of
+[`DirectScalarMomentAdam`](@ref). Only a single `StiefelManifold` is a leaf of this method, and only
+[`TrainingOptimizer`](@ref) steps it.
+
+Each off-diagonal entry of ``\tilde{A}`` and each column of ``\tilde{K}`` has a magnitude of about
+``1``, so ``\lVert{}D\rVert_F \approx k``. At the step size of [`Adam`](@ref), whose direction has
+``\lVert{}D\rVert_F \approx \sqrt{Mk}``, a step is about ``\sqrt{M/k}`` times shorter.
+
+The second moments hold the squares of the entries of ``A`` and of the column norms of ``K`` in
+`T`, so an entry of ``A`` or a column norm of ``K`` above about ``\sqrt{\mathrm{floatmax}(T)}``,
+``1.8\cdot10^{19}`` in `Float32`, makes one of them infinite, and ``\varepsilon`` and every
+denominator with it. For ``\beta_2 > 0`` it stays infinite, so that step and every later step are
+zero. A gradient whose norm is above that limit while every entry of ``A`` and every column norm of
+``K`` is below it does not stop the method: ``\varepsilon`` is infinite at most while the sum of the
+second moments overflows.
+"""
+struct FactoredStiefelAdam{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
+       OptimizerMethod
+    β₁::T
+    β₂::T
+    δ::T
+    α_max::T
+    metric::MT
+    transport::TT
+
+    function FactoredStiefelAdam{T}(β₁, β₂, δ, α_max, metric::StiefelMetric,
+            transport::AbstractVectorTransport) where {T}
+        _check_adam_coefficients(T, β₁, β₂, δ, α_max)
+        new{T, typeof(metric), typeof(transport)}(
+            T(β₁), T(β₂), T(δ), T(α_max), metric, transport)
+    end
+end
+
+function FactoredStiefelAdam(; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8, α_max = 1.0,
+        metric::StiefelMetric = CanonicalMetric(),
+        transport::AbstractVectorTransport = ProjectionTransport())
+    β₁, β₂, δ, α_max = promote(float(β₁), float(β₂), float(δ), float(α_max))
+    FactoredStiefelAdam{typeof(δ)}(β₁, β₂, δ, α_max, metric, transport)
+end
+
+"""
+The three methods that step a [`StiefelManifold`](@ref) in its tangent space, with
+[`cayley_direct!`](@ref) and a vector transport: [`DirectMomentum`](@ref),
+[`DirectScalarMomentAdam`](@ref) and [`FactoredStiefelAdam`](@ref). Their caches, their states and the
+workspace a [`TrainingOptimizer`](@ref) builds for them hold ``O(Mk + k^2)`` numbers.
+"""
+const DirectStiefelMethod = Union{
+    DirectMomentum, DirectScalarMomentAdam, FactoredStiefelAdam}
+
 """
 [`Adam`](@ref) and the methods that build their direction from a pair of bias-corrected moment
 averages as it does. What the union selects for is that shared *character* and not a shared
@@ -379,8 +621,11 @@ cache:
 - [`ScalarMomentAdam`](@ref) has neither, because its second moment is a *number* rather than an
   element of `𝔤ʰᵒʳ` and its recursion is therefore not `Adam`'s. It carries
   `ScalarMomentAdamCache` and [`ScalarMomentAdamState`](@ref) of its own.
+- [`DirectScalarMomentAdam`](@ref) and [`FactoredStiefelAdam`](@ref) step in the tangent space of a
+  [`StiefelManifold`](@ref) and not in `𝔤ʰᵒʳ`, and carry caches and states of their own.
 """
-const AdamFamily = Union{Adam, AdamWithEuclideanDecay, ScalarMomentAdam}
+const AdamFamily = Union{
+    Adam, AdamWithEuclideanDecay, ScalarMomentAdam, DirectScalarMomentAdam, FactoredStiefelAdam}
 
 """
 The methods whose `update!` needs the *method* rather than a
@@ -389,7 +634,9 @@ direction is built — a momentum or a pair of moments. The (quasi-)Newton metho
 complement: their direction comes from the Hessian and the method object holds nothing.
 
 [`GradientMethod`](@ref) has no Hessian *and* no state; with these methods it forms the
-[`FirstOrderMethod`](@ref)s, whose `update!` takes the method.
+[`FirstOrderMethod`](@ref)s, whose `update!` takes the method. The three members of
+[`GeometricOptimizers.DirectStiefelMethod`](@ref) have no `update!`: the training step of
+[`TrainingOptimizer`](@ref) builds their direction from the method, the cache and the state.
 
 [`ensure_descent!`](@ref) has a no-op method for these. It must not apply to them:
 a momentum and a moment average are deliberately allowed not to descend on an individual step,
@@ -400,7 +647,7 @@ That exemption is about the direction *before* the search, and not about the res
 see [`linesearch_rejected`](@ref). Declining to overrule the direction is not the same as taking the
 longest step along it, which is what a rejected search hands back.
 """
-const FirstOrderMethodWithState = Union{MomentumMethod, AdamFamily}
+const FirstOrderMethodWithState = Union{MomentumMethod, DirectMomentum, AdamFamily}
 
 @doc raw"""
     default_linesearch(T, method)
@@ -482,7 +729,8 @@ The methods that build their direction from the gradient alone: [`GradientMethod
 [`FirstOrderMethodWithState`](@ref). These are the methods a
 [`TrainingOptimizer`](@ref) takes, alone or two of them in a [`CompositeMethod`](@ref), and the
 methods whose `update!(cache, state, gradient, method, x)` takes the method rather than a
-[`SimpleSolvers.Hessian`](@extref).
+[`SimpleSolvers.Hessian`](@extref), except the members of
+[`GeometricOptimizers.DirectStiefelMethod`](@ref), which have no `update!`.
 """
 const FirstOrderMethod = Union{GradientMethod, FirstOrderMethodWithState}
 
@@ -526,14 +774,20 @@ leafmethod(method::CompositeMethod, ::AbstractArray) = method.array
     default_step_size(method)
 
 The fixed step size a [`TrainingOptimizer`](@ref) takes for `method` if its `linesearch` keyword is
-not given: `1e-2` for [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), and
-`DEFAULT_LEARNING_RATE = 1e-3` for the [`AdamFamily`](@ref), whose direction has magnitude
-``\\approx{}1`` per component whatever the gradient is.
+not given: `1e-2` for [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and
+[`DirectMomentum`](@ref), and
+`DEFAULT_LEARNING_RATE = 1e-3` for the [`AdamFamily`](@ref), whose direction has a magnitude
+that does not depend on the gradient. That magnitude differs between the members: ``\\approx{}1``
+per component for [`Adam`](@ref), ``\\approx{}1`` in total for [`ScalarMomentAdam`](@ref) and
+[`DirectScalarMomentAdam`](@ref), and ``\\approx{}1`` per off-diagonal entry of the vertical part
+and per column of the horizontal part for [`FactoredStiefelAdam`](@ref), ``\\approx{}k`` in total on
+``\\mathrm{St}(k, M)``. At the same step size, their steps on a [`StiefelManifold`](@ref) are
+therefore shorter than [`Adam`](@ref)'s.
 
 A [`CompositeMethod`](@ref) steps all of its leaves at one step size, so its default is the one its
 two methods agree on, and an `ArgumentError` asking for `linesearch` where they disagree.
 """
-default_step_size(::Union{GradientMethod, MomentumMethod}) = 1.0e-2
+default_step_size(::Union{GradientMethod, MomentumMethod, DirectMomentum}) = 1.0e-2
 default_step_size(::AdamFamily) = DEFAULT_LEARNING_RATE
 
 function default_step_size(method::CompositeMethod)
@@ -556,6 +810,16 @@ function change_precision(::Type{T}, m::ScalarMomentAdam) where {T}
 end
 function change_precision(::Type{T}, m::AdamWithEuclideanDecay) where {T}
     AdamWithEuclideanDecay{T}(T(m.β₁), T(m.β₂), T(m.δ), T(m.λ))
+end
+# The inner constructors of the direct Stiefel methods convert their coefficients to `T`.
+function change_precision(::Type{T}, m::DirectMomentum) where {T}
+    DirectMomentum{T}(m.α, m.metric, m.transport)
+end
+function change_precision(::Type{T}, m::DirectScalarMomentAdam) where {T}
+    DirectScalarMomentAdam{T}(m.β₁, m.β₂, m.δ, m.α_max, m.metric, m.transport)
+end
+function change_precision(::Type{T}, m::FactoredStiefelAdam) where {T}
+    FactoredStiefelAdam{T}(m.β₁, m.β₂, m.δ, m.α_max, m.metric, m.transport)
 end
 function change_precision(::Type{T}, m::CompositeMethod) where {T}
     CompositeMethod(change_precision(T, m.manifold), change_precision(T, m.array))

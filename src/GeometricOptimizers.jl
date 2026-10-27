@@ -240,12 +240,19 @@ export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # alongside it
 export AdamWithEuclideanDecay
 export CompositeMethod
+# The methods that step a `StiefelManifold` in its tangent space, and their states
+export DirectMomentum, DirectMomentumState
+export DirectScalarMomentAdam, DirectScalarMomentAdamState
+export FactoredStiefelAdam, FactoredStiefelAdamState
 
 include("manifold_optimizers/gradient_optimizer.jl")
 include("manifold_optimizers/momentum_optimizer.jl")
 include("manifold_optimizers/adam_optimizer.jl")
 include("manifold_optimizers/scalar_moment_adam_optimizer.jl")
 include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
+include("manifold_optimizers/direct_momentum_optimizer.jl")
+include("manifold_optimizers/direct_scalar_moment_adam_optimizer.jl")
+include("manifold_optimizers/factored_stiefel_adam_optimizer.jl")
 
 # The training step: one step per minibatch, with a gradient the caller computed and a fixed or
 # scheduled step size. `step_size` and `default_step_size` are how that step size is read and chosen.

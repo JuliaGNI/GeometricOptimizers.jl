@@ -135,6 +135,9 @@ function advance_state!(
     state
 end
 
+# The weights of the bias-corrected moments of step `t`: `m ← c₁ m̄ + c₂ g`.
+_bias_corrected_weights(β, t) = ((β - β^t) / (1 - β^t), (1 - β) / (1 - β^t))
+
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
         β₁::T, β₂::T, δ::T, t::Integer, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`
@@ -150,10 +153,8 @@ function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T}
     @assert t ≥ 1 "the bias-corrected Adam moments are undefined before the first iteration (t = $(t)); `increase_iteration_number!` has to be called before the step"
     # the moments are stored in bias-corrected form, hence the `- β^t` in the numerators of
     # `fac₁₁` and `fac₂₁` (see the docstring of [`Adam`](@ref)).
-    fac₁₁ = (β₁ - β₁^t) / (1 - β₁^t)
-    fac₁₂ = (1 - β₁) / (1 - β₁^t)
-    fac₂₁ = (β₂ - β₂^t) / (1 - β₂^t)
-    fac₂₂ = (1 - β₂) / (1 - β₂^t)
+    fac₁₁, fac₁₂ = _bias_corrected_weights(β₁, t)
+    fac₂₁, fac₂₂ = _bias_corrected_weights(β₂, t)
     # One broadcast per leaf for both moments and the direction, into the cache, so that the step
     # allocates nothing. The direction is `-m₁/(√m₂ + δ)`, which is *not* scaled by a learning rate:
     # that is the line search's `α` (see [`default_linesearch`](@ref)).

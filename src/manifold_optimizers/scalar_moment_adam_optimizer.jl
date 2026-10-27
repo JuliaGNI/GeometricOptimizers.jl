@@ -228,10 +228,8 @@ function update!(cache::ScalarMomentAdamCache{T},
     # numerators of `fac₁₁` and `fac₂₁`. This is the paper's lines 4-7 rearranged and not a departure
     # from them: substituting `m = (1 - β₁ᵗ)m̂` into its recursion gives exactly these factors, and its
     # `r` of line 7 is then `√(v̂ + ε)` alone, the `(1 - β₁ᵗ)` of `r` having been absorbed.
-    fac₁₁ = (method.β₁ - method.β₁^t) / (1 - method.β₁^t)
-    fac₁₂ = (1 - method.β₁) / (1 - method.β₁^t)
-    fac₂₁ = (method.β₂ - method.β₂^t) / (1 - method.β₂^t)
-    fac₂₂ = (1 - method.β₂) / (1 - method.β₂^t)
+    fac₁₁, fac₁₂ = _bias_corrected_weights(method.β₁, t)
+    fac₂₁, fac₂₂ = _bias_corrected_weights(method.β₂, t)
     # one broadcast per block of the lift, into the cache, so that the moment update allocates nothing
     first_moment!(m, m̄, g) = (m .= fac₁₁ .* m̄ .+ fac₁₂ .* g)
     _storagewise!(first_moment!, first_moment(cache), first_moment(state), gradient_array(cache))

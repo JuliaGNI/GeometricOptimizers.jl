@@ -23,8 +23,8 @@ function _training_optimizer(
     # the random completions of the sections are the same draws
     cache = leaves((xᵢ, mᵢ) -> OptimizerCache(mᵢ, xᵢ))
     state = leaves((xᵢ, mᵢ) -> OptimizerState(mᵢ, xᵢ))
-    workspace = leaves((xᵢ, _) -> retraction_workspace(xᵢ, retraction))
-    gradient_buffer = leaves((xᵢ, _) -> rgrad_buffer(xᵢ))
+    workspace = leaves((xᵢ, mᵢ) -> _training_workspace(xᵢ, mᵢ, retraction))
+    gradient_buffer = leaves((xᵢ, mᵢ) -> _gradient_buffer(xᵢ, mᵢ))
     TrainingOptimizer(
         method, cache, state, linesearch, retraction, workspace, gradient_buffer, observer)
 end
@@ -34,6 +34,7 @@ function optimization_step!(
         dp::NetworkParameters{T}) where {T}
     # the whole set first, so that a refused step moves no leaf
     _check_shape(x, dp)
+    foreachparameters((xᵢ, dpᵢ) -> _check_gradient(leafmethod(opt.method, xᵢ), dpᵢ), x, dp)
     # `opt.cache` leads the walk: a wrapped leaf's workspace and gradient buffer are trees of one
     # leaf, handed over whole
     foreachparameters(opt.cache, opt.state, opt.workspace, opt.gradient_buffer, x,

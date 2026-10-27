@@ -28,10 +28,12 @@ abstract type OptimizerState{T} <: AbstractSolverState end
 
 iteration_number(state::OptimizerState) = state.iterations
 
-# The accessors every state in this package answers, on the fields they all name alike: the unbarred
-# field is the current iterate's and the barred one the previous iterate's. `value` is public, the
-# other five internal. `gradient` is not among them: `BFGSState` holds no current gradient, so it is
-# defined on the states that do, in `scalar_moment_adam_optimizer.jl`.
+# The accessors on the fields that the states of this package name alike: the unbarred field is the
+# current iterate's and the barred one the previous iterate's. `value` is public, the other five
+# internal. `gradient` is not among them: `BFGSState` holds no current gradient, so it is defined on
+# the states that do, in `scalar_moment_adam_optimizer.jl`. The states of the methods that step a
+# `StiefelManifold` in its tangent space, `DirectMomentumState`, `DirectScalarMomentAdamState` and
+# `FactoredStiefelAdamState`, hold only the point `x` of these fields, and answer `solution` alone.
 solution(state::OptimizerState) = state.x
 previous_solution(state::OptimizerState) = state.x̄
 previous_gradient(state::OptimizerState) = state.ḡ

@@ -69,15 +69,19 @@ It holds the first-order `algorithm`, converted once to the element type of `x` 
 retraction, the buffers the retraction works in, and those the Riemannian gradient of a Stiefel or
 a Grassmann leaf is written into.
 
-`algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref) or a member of the
-[`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref) steps a single `StiefelManifold` only, and
-raises a `MethodError` for any other `x`. For a parameter set it may also be a
+`algorithm` is a [`GradientMethod`](@ref), a [`MomentumMethod`](@ref), a [`DirectMomentum`](@ref)
+or a member of the [`AdamFamily`](@ref); [`ScalarMomentAdam`](@ref), [`DirectMomentum`](@ref),
+[`DirectScalarMomentAdam`](@ref) and [`FactoredStiefelAdam`](@ref) step a single `StiefelManifold`
+only, and raise a `MethodError` for any other `x`. For a parameter set it may also be a
 [`CompositeMethod`](@ref): then `cache`, `state`, `workspace` and `gradient_buffer` are trees of
 the shape of `x`, with the cache, the state and the buffers of each leaf for the method of that leaf.
 `linesearch` is a finite positive number, which is the fixed step size `Static(η)`, a
 [`SimpleSolvers.Static`](@extref) or a [`DecayingStatic`](@ref); the default is
 [`default_step_size`](@ref)`(algorithm)`. `retraction` is an instance of an
-[`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`.
+[`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`. The three direct Stiefel methods retract
+with [`cayley_direct!`](@ref) in a [`DirectCayleyWorkspace`](@ref), and another `retraction` than
+`Cayley()` is an `ArgumentError` for them. They form the Riemannian gradient in their own cache, so
+their leaf has no gradient buffer.
 
 `observer` is notified of the `:retraction_application` phase of every step, once per leaf for a
 `CompositeMethod`; see [Observing the Phases of an Optimizer Step](@ref).
@@ -136,8 +140,24 @@ function _training_optimizer(x, method::FirstOrderMethod, linesearch, retraction
     cache = OptimizerCache(method, x)
     state = OptimizerState(method, x)
     TrainingOptimizer(method, cache, state, linesearch, retraction,
-        retraction_workspace(x, retraction), rgrad_buffer(x), observer)
+        _training_workspace(x, method, retraction), _gradient_buffer(x, method), observer)
 end
+
+# The buffers of the retraction and of the Riemannian gradient of a leaf `x` under `method`. A
+# direct Stiefel method retracts with `cayley_direct!` in a `DirectCayleyWorkspace`, `O(Mk + k²)`,
+# and forms the Riemannian gradient in its own cache, so it takes neither a `RetractionWorkspace`,
+# which holds `M × M` matrices, nor a `RiemannianGradientBuffer`.
+_training_workspace(x, ::FirstOrderMethod, retraction) = retraction_workspace(x, retraction)
+function _training_workspace(x::StiefelManifold, ::DirectStiefelMethod, ::Cayley)
+    DirectCayleyWorkspace(x)
+end
+function _training_workspace(::StiefelManifold, method::DirectStiefelMethod, ::AbstractRetraction)
+    throw(ArgumentError("$(nameof(typeof(method))) retracts with the direct Cayley transform " *
+                        "and takes `retraction = Cayley()` only"))
+end
+
+_gradient_buffer(x, ::FirstOrderMethod) = rgrad_buffer(x)
+_gradient_buffer(::StiefelManifold, ::DirectStiefelMethod) = NoWorkspace()
 
 step_observer(opt::TrainingOptimizer) = opt.observer
 
@@ -151,12 +171,17 @@ and write the new parameters into `x`, which it returns.
 from the point `opt.state` carries, which is `x` after the previous step. `dp` has the shape and the
 element type of `x`. An `x` or a `dp` of another element type than `opt` is an `ArgumentError`. A
 `dp` with arrays of other sizes is a `DimensionMismatch`, and a parameter set with other keys or
-another number of leaves is an `ArgumentError`. Each is raised before the iteration number moves.
+another number of leaves is an `ArgumentError`, and so is a `dp` with an entry that is not finite
+for a [`GeometricOptimizers.DirectStiefelMethod`](@ref). Each is raised before the iteration number
+moves.
 
 The step increments the iteration number `t` of `opt.state`, reads the step size
 [`step_size`](@ref)`(opt.linesearch, t)`, forms the direction of `opt.method` from the
 [`PrecomputedGradient`](@ref) of `dp`, scales it, retracts it with `opt.retraction` and copies the
 result into `x`. [`advance_state!`](@ref) then carries the state over to the new parameters. A
+[`GeometricOptimizers.DirectStiefelMethod`](@ref) forms the Riemannian gradient of `dp` in its
+cache instead, retracts with [`cayley_direct!`](@ref) and transports its first moment to the new
+point with the `transport` of the method. A
 [`CompositeMethod`](@ref) takes this step on every leaf, with the method, the cache and the state of
 that leaf.
 
@@ -182,6 +207,42 @@ function optimization_step!(x::OptimizerSolution{T},
     end
     x
 end
+
+# The step of a direct Stiefel method, from the point `Y` of the state: the Riemannian gradient and
+# the step `Δ` in the tangent space at `Y`, the retraction `cayley_direct!`, and the transport of the
+# method's first moment from `Y` to the new point. The cache keeps `Y` and `Δ`, the state the new
+# point. `_direct_step!` writes the cache only, and the state, its iteration number and its moments
+# are written after the retraction, so that a step that `cayley_direct!` refuses leaves the state as
+# it was.
+function optimization_step!(x::StiefelManifold{T},
+        opt::TrainingOptimizer{
+            <:DirectStiefelMethod, <:OptimizerCache, <:OptimizerState{T}},
+        dp::AbstractMatrix{T}) where {T}
+    _check_shape(x, dp)
+    (; method, cache, state, workspace) = opt
+    _check_gradient(method, dp)
+    α = step_size(opt.linesearch, iteration_number(state) + 1)
+    Y, Y_new = solution(cache), solution(state)
+    copyto!(Y.A, Y_new.A)
+    _direct_gradient!(cache, Y, dp, method.metric, workspace)
+    _direct_step!(cache, state, method, α)
+    observe_optimizer_phase(step_observer(opt), :retraction_application) do
+        cayley_direct!(Y_new, Y, direction(cache), workspace)
+        increase_iteration_number!(state)
+        _transport_moment!(state, cache, method, Y_new, Y, workspace)
+        copyto!(x.A, Y_new.A)
+    end
+    x
+end
+
+# A non-finite entry of the gradient of a direct Stiefel method enters its moments, and the
+# factorization of every later step then fails, so the gradient is refused before the state moves.
+function _check_gradient(::DirectStiefelMethod, dp)
+    mapreduce(isfinite, &, dp; init = true) ||
+        throw(ArgumentError("the gradient has an entry that is not finite"))
+    nothing
+end
+_check_gradient(::OptimizerMethod, dp) = nothing
 
 # before the count moves, so that a refused step leaves the state as it was
 function _check_shape(x, dp)
