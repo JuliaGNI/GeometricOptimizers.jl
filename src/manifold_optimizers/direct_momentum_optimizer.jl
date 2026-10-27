@@ -8,10 +8,7 @@
 # `Y` as the new point.
 function _direct_rgrad!(G_R, Y::StiefelManifold{T}, ∇L, ::CanonicalMetric,
         ws::DirectCayleyWorkspace{T}) where {T}
-    _check_gradient_backend(Y, ∇L)
-    mul!(ws.YᵀX, ∇L', Y.A)
-    copyto!(G_R, ∇L)
-    mul!(G_R, Y.A, ws.YᵀX, -one(T), one(T))
+    rgrad!(G_R, ws.YᵀX, Y, ∇L)
 end
 
 function _direct_rgrad!(G_R, Y::StiefelManifold{T}, ∇L, ::EuclideanMetric,
@@ -74,6 +71,12 @@ OptimizerState(::DirectMomentum, x::StiefelManifold) = DirectMomentumState(x)
 
 # The tangent vector at the point of the state that the training step transports to the new point.
 _transported_moment(state::DirectMomentumState) = state.p
+
+# The transport of the first moment of the state from `Y` to `Y_new`, along the step of the cache.
+function _transport_moment!(state, cache, method, Y_new, Y, ws)
+    B = _transported_moment(state)
+    transport!(B, Y_new, Y, direction(cache), B, method.transport, ws)
+end
 
 # `p ← αp + G_R` and `Δ = -ηp`, for the momentum `p` already transported to the point of the step.
 function _direct_step!(cache::DirectStiefelCache{T}, state::DirectMomentumState{T},

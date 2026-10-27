@@ -39,17 +39,25 @@ breaking release).
   scalar second moment. `FactoredStiefelAdam` has one adaptive learning rate per mode: an
   entrywise second moment of the vertical part `YᵀG` and a columnwise one of the horizontal part
   `(I - YYᵀ)G`, so its step is a tangent vector with no projection after it, and its iterates are
-  left `O(M)`-equivariant. Each takes a `metric` and a `transport` keyword; the two Adam methods
-  also cap the Frobenius norm of a step at `α_max`. A coefficient out of its range is an
-  `ArgumentError` at construction. `DirectScalarMomentAdam` and `FactoredStiefelAdam` are members
-  of `AdamFamily`. `TrainingOptimizer` steps them, alone on a `StiefelManifold` or as the
-  `manifold` method of a `CompositeMethod`, and builds a `DirectCayleyWorkspace` for them; it
-  refuses a `retraction` other than `Cayley()` with an `ArgumentError`. `Optimizer` does not take
-  them. A step allocates 128 B with the first two methods and 160 B with `FactoredStiefelAdam`,
-  at both `M = 200` and `M = 800` (`k = 4`, `Float32` and `Float64`, alone and in a
-  `CompositeMethod` with `Adam`, a cold process on Julia 1.13). Their states,
-  `DirectMomentumState`, `DirectScalarMomentAdamState` and `FactoredStiefelAdamState`, are
-  exported.
+  left `O(M)`-equivariant. It forms each horizontal part with two passes of the projection,
+  transports the vertical and the horizontal part of its first moment one at a time, and adds a
+  floor `√eps(T)·σ`, relative to the size `σ` of both second moments, to both denominators. So
+  the round-off of a part of the gradient that is zero, as for a loss that is invariant under
+  `Y ↦ YR`, stays round-off and does not grow into a step of norm `α_max`. Each method takes a
+  `metric` and a `transport` keyword; the two Adam methods also cap the Frobenius norm of a step
+  at `α_max`. A coefficient out of its range is an
+  `ArgumentError` at construction, and also where its conversion to the element type of the
+  parameters takes it out of its range. A gradient with an entry that is not finite is an
+  `ArgumentError` before the state moves, and in a `CompositeMethod` before any leaf moves.
+  `DirectScalarMomentAdam` and `FactoredStiefelAdam` are members of `AdamFamily`.
+  `TrainingOptimizer` steps them, alone on a `StiefelManifold` or as the `manifold` method of a
+  `CompositeMethod`, and builds a `DirectCayleyWorkspace` for them; it refuses a `retraction`
+  other than `Cayley()` with an `ArgumentError`. `Optimizer` does not take them. A step allocates
+  the same at `M = 200` and `M = 800` (`k = 4`, `Float32` and `Float64`, a cold process on Julia
+  1.13): 128 B with `ProjectionTransport`, alone and in a `CompositeMethod` with `Adam`, and with
+  `DifferentiatedCayleyTransport` 256 B for the first two methods and 384 B for
+  `FactoredStiefelAdam`. Their states, `DirectMomentumState`, `DirectScalarMomentAdamState` and
+  `FactoredStiefelAdamState`, are exported.
 
 ### Changed
 

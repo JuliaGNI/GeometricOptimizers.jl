@@ -171,7 +171,9 @@ and write the new parameters into `x`, which it returns.
 from the point `opt.state` carries, which is `x` after the previous step. `dp` has the shape and the
 element type of `x`. An `x` or a `dp` of another element type than `opt` is an `ArgumentError`. A
 `dp` with arrays of other sizes is a `DimensionMismatch`, and a parameter set with other keys or
-another number of leaves is an `ArgumentError`. Each is raised before the iteration number moves.
+another number of leaves is an `ArgumentError`, and so is a `dp` with an entry that is not finite
+for a [`GeometricOptimizers.DirectStiefelMethod`](@ref). Each is raised before the iteration number
+moves.
 
 The step increments the iteration number `t` of `opt.state`, reads the step size
 [`step_size`](@ref)`(opt.linesearch, t)`, forms the direction of `opt.method` from the
@@ -216,6 +218,7 @@ function optimization_step!(x::StiefelManifold{T},
         dp::AbstractMatrix{T}) where {T}
     _check_shape(x, dp)
     (; method, cache, state, workspace) = opt
+    _check_gradient(method, dp)
     increase_iteration_number!(state)
     α = step_size(opt.linesearch, iteration_number(state))
     Y, Y_new = solution(cache), solution(state)
@@ -224,12 +227,20 @@ function optimization_step!(x::StiefelManifold{T},
     _direct_step!(cache, state, method, α)
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
         cayley_direct!(Y_new, Y, direction(cache), workspace)
-        B = _transported_moment(state)
-        transport!(B, Y_new, Y, direction(cache), B, method.transport, workspace)
+        _transport_moment!(state, cache, method, Y_new, Y, workspace)
         copyto!(x.A, Y_new.A)
     end
     x
 end
+
+# A non-finite entry of the gradient of a direct Stiefel method enters its moments, and the
+# factorization of every later step then fails, so the gradient is refused before the state moves.
+function _check_gradient(::DirectStiefelMethod, dp)
+    all(isfinite, dp) ||
+        throw(ArgumentError("the gradient has an entry that is not finite"))
+    nothing
+end
+_check_gradient(::OptimizerMethod, dp) = nothing
 
 # before the count moves, so that a refused step leaves the state as it was
 function _check_shape(x, dp)

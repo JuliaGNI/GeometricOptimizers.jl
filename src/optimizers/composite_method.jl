@@ -34,6 +34,7 @@ function optimization_step!(
         dp::NetworkParameters{T}) where {T}
     # the whole set first, so that a refused step moves no leaf
     _check_shape(x, dp)
+    foreachparameters((xᵢ, dpᵢ) -> _check_gradient(leafmethod(opt.method, xᵢ), dpᵢ), x, dp)
     # `opt.cache` leads the walk: a wrapped leaf's workspace and gradient buffer are trees of one
     # leaf, handed over whole
     foreachparameters(opt.cache, opt.state, opt.workspace, opt.gradient_buffer, x,

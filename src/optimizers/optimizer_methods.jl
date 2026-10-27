@@ -363,13 +363,31 @@ function AdamWithEuclideanDecay(;
     AdamWithEuclideanDecay{typeof(δ)}(β₁, β₂, δ, λ)
 end
 
-# The range checks of the coefficients of the direct Stiefel methods below.
-function _check_unit_interval(name, x)
-    0 ≤ x < 1 || throw(ArgumentError("$(name) must satisfy 0 ≤ $(name) < 1"))
+# The range checks of the coefficients of the direct Stiefel methods below, on the coefficient
+# `given` converted to `T`. Where the conversion takes `given` out of its range, the message says
+# so.
+function _check_unit_interval(name, ::Type{T}, given) where {T}
+    x = T(given)
+    0 ≤ x < 1 ||
+        throw(ArgumentError(_range_message("$(name) must satisfy 0 ≤ $(name) < 1", name, x, given)))
     nothing
 end
-function _check_positive(name, x)
-    (x > 0 || throw(ArgumentError("$(name) must be positive")); nothing)
+function _check_positive(name, ::Type{T}, given) where {T}
+    x = T(given)
+    x > 0 ||
+        throw(ArgumentError(_range_message("$(name) must be positive", name, x, given)))
+    nothing
+end
+function _range_message(text, name, x, given)
+    isequal(x, given) ? text : "$(name) = $(given) is $(x) in $(typeof(x)), and $(text)"
+end
+
+# The checks of the coefficients that `DirectScalarMomentAdam` and `FactoredStiefelAdam` share.
+function _check_adam_coefficients(::Type{T}, β₁, β₂, δ, α_max) where {T}
+    _check_unit_interval("β₁", T, β₁)
+    _check_unit_interval("β₂", T, β₂)
+    _check_positive("δ", T, δ)
+    _check_positive("α_max", T, α_max)
 end
 
 @doc raw"""
@@ -403,8 +421,8 @@ struct DirectMomentum{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
 
     function DirectMomentum{T}(α, metric::StiefelMetric,
             transport::AbstractVectorTransport) where {T}
-        _check_unit_interval("α", α)
-        new{T, typeof(metric), typeof(transport)}(α, metric, transport)
+        _check_unit_interval("α", T, α)
+        new{T, typeof(metric), typeof(transport)}(T(α), metric, transport)
     end
 end
 
@@ -441,9 +459,14 @@ The ``\delta`` is outside the square root, as in [`Adam`](@ref) and [`FactoredSt
 of the step.
 
 ``0 \le \beta_1, \beta_2 < 1``, ``\delta > 0`` and ``\alpha_\mathrm{max} > 0``; another value is an
-`ArgumentError`. The coefficients carry no element type of the parameters, and the learning rate is
-the `linesearch` of [`TrainingOptimizer`](@ref), which is the only optimizer that steps this method.
-Only a single `StiefelManifold` is a leaf of it.
+`ArgumentError`, also where the conversion of a coefficient to the element type of the parameters
+takes it out of its range. The coefficients carry no element type of the parameters, and the
+learning rate is the `linesearch` of [`TrainingOptimizer`](@ref), which is the only optimizer that
+steps this method. Only a single `StiefelManifold` is a leaf of it.
+
+The second moment holds the squares of the gradient in the element type `T` of the parameters, so a
+gradient with ``\lVert{}G_\mathcal{R}\rVert_F`` above about ``\sqrt{\mathrm{floatmax}(T)}``,
+``1.8\cdot10^{19}`` in `Float32`, makes it infinite, and the step is zero.
 """
 struct DirectScalarMomentAdam{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
        OptimizerMethod
@@ -456,11 +479,9 @@ struct DirectScalarMomentAdam{T, MT <: StiefelMetric, TT <: AbstractVectorTransp
 
     function DirectScalarMomentAdam{T}(β₁, β₂, δ, α_max, metric::StiefelMetric,
             transport::AbstractVectorTransport) where {T}
-        _check_unit_interval("β₁", β₁)
-        _check_unit_interval("β₂", β₂)
-        _check_positive("δ", δ)
-        _check_positive("α_max", α_max)
-        new{T, typeof(metric), typeof(transport)}(β₁, β₂, δ, α_max, metric, transport)
+        _check_adam_coefficients(T, β₁, β₂, δ, α_max)
+        new{T, typeof(metric), typeof(transport)}(
+            T(β₁), T(β₂), T(δ), T(α_max), metric, transport)
     end
 end
 
@@ -478,22 +499,25 @@ Adam on a [`StiefelManifold`](@ref) with one adaptive learning rate per mode, in
 ``T_Y\mathrm{St}(k, M)`` itself: no [`GlobalSection`](@ref), no ``M\times{}M`` matrix and no
 orthogonal complement of ``Y``.
 
-A tangent vector ``X`` at ``Y`` splits into a vertical part ``Y^TX \in \mathfrak{so}(k)`` and a
-horizontal part ``(\mathbb{I}_M - YY^T)X``. The first moment ``B_1`` is a tangent vector. The second
-moment is a ``k\times{}k`` matrix ``V_W`` for the vertical part, and a vector ``v_K \in \mathbb{R}^k``
-of the squared column norms of the horizontal part. With ``G_\mathcal{R} = \mathtt{rgrad}(Y, G,
-\mathtt{metric})``, the step size ``\alpha`` of the line search, the iteration ``t`` and the weights
-``c_{i1} = (\beta_i - \beta_i^t)/(1 - \beta_i^t)``, ``c_{i2} = (1 - \beta_i)/(1 - \beta_i^t)`` of the
-bias-corrected form of [`Adam`](@ref), a step is
+A tangent vector ``X`` at ``Y`` splits into a vertical part
+``P_V(Y)X = Y\cdot\tfrac{1}{2}(Y^TX - X^TY)`` and a horizontal part ``P_H(Y)X = X - Y(Y^TX)``.
+The first moment ``B_1`` is a tangent vector. The second moment is a ``k\times{}k`` matrix
+``V_W`` for the vertical part, and a vector ``v_K \in \mathbb{R}^k`` of the squared column norms of
+the horizontal part. With ``G_\mathcal{R} = \mathtt{rgrad}(Y, G, \mathtt{metric})``, the step size
+``\alpha`` of the line search, the iteration ``t`` and the weights
+``c_{i1} = (\beta_i - \beta_i^t)/(1 - \beta_i^t)``, ``c_{i2} = (1 - \beta_i)/(1 - \beta_i^t)`` of
+the bias-corrected form of [`Adam`](@ref), a step is
 ```math
 \begin{aligned}
-B_1 &\gets c_{11}\mathcal{T}(B_1) + c_{12}G_\mathcal{R}, &
+B_1 &\gets c_{11}\mathcal{T}_s(B_1) + c_{12}G_\mathcal{R}, &
 A &= \tfrac{1}{2}(Y^TG_\mathcal{R} - G_\mathcal{R}^TY), &
-K &= G_\mathcal{R} - Y(Y^TG_\mathcal{R}), \\
+K &= P_H(Y)G_\mathcal{R}, \\
 V_W &\gets c_{21}V_W + c_{22}A\odot{}A, &
-(v_K)_j &\gets c_{21}(v_K)_j + c_{22}\lVert{}K_{:,j}\rVert_2^2, \\
-\tilde{A} &= \tfrac{1}{2}(Y^TB_1 - B_1^TY) \oslash (\sqrt{V_W} + \delta), &
-\tilde{K}_{:,j} &= \frac{(B_1 - Y(Y^TB_1))_{:,j}}{\sqrt{(v_K)_j} + \delta},
+(v_K)_j &\gets c_{21}(v_K)_j + c_{22}\lVert{}K_{:,j}\rVert_2^2, &
+\varepsilon &= \sqrt{\mathrm{eps}(T)}
+    \Bigl(\textstyle\sum_{ij}(V_W)_{ij} + \sum_j(v_K)_j\Bigr)^{1/2}, \\
+\tilde{A} &= \tfrac{1}{2}(Y^TB_1 - B_1^TY) \oslash (\sqrt{V_W} + \delta + \varepsilon), &
+\tilde{K}_{:,j} &= \frac{(P_H(Y)B_1)_{:,j}}{\sqrt{(v_K)_j} + \delta + \varepsilon},
 \end{aligned}
 ```
 ```math
@@ -501,16 +525,28 @@ D = Y\tilde{A} + \tilde{K}, \qquad
 \Delta = -\min\Bigl(\alpha, \frac{\alpha_\mathrm{max}}{\lVert{}D\rVert_F + \delta}\Bigr)D, \qquad
 Y \gets \mathtt{cayley\_direct}(Y, \Delta).
 ```
-``\mathcal{T}`` is the vector transport `transport` that carries ``B_1`` from the previous point.
-``V_W`` is symmetric, so ``\tilde{A}`` is skew-symmetric, and every column of ``\tilde{K}`` is
-orthogonal to ``Y``: ``\Delta`` is a tangent vector with no projection after it. The vertical and the
-horizontal part of ``B_1`` are formed from ``B_1`` at every step, so a drift of ``B_1`` off the
-tangent space does not enter ``\Delta``. Every operation commutes with ``Y \mapsto QY``,
-``G \mapsto QG`` for ``Q \in O(M)``, so the iterates are left ``O(M)``-equivariant.
+``\mathcal{T}_s`` carries ``B_1`` from the previous point ``Y_\mathrm{prev}`` with the vector
+transport ``\mathcal{T}`` of `transport`, one part at a time, and puts each part back into its own
+subspace at ``Y``:
+```math
+\mathcal{T}_s(B_1) = P_V(Y)\mathcal{T}(P_V(Y_\mathrm{prev})B_1)
+    + P_H(Y)\mathcal{T}(P_H(Y_\mathrm{prev})B_1).
+```
 
-The constraints on the coefficients, their element type and the learning rate are those of
-[`DirectScalarMomentAdam`](@ref). Only a single `StiefelManifold` is a leaf of this method, and only
-[`TrainingOptimizer`](@ref) steps it.
+``V_W`` is symmetric, so ``\tilde{A}`` is skew-symmetric, and every column of ``\tilde{K}`` is
+orthogonal to ``Y``: ``\Delta`` is a tangent vector with no projection after it. Each ``P_H`` is
+two passes of ``K \gets K - Y(Y^TK)``: one pass leaves a part of the order of
+``\mathrm{eps}(T)\lVert{}X\rVert`` along ``Y``, and the scaling of a column with a small norm would
+make it large. A part of
+``B_1`` whose own second moment is zero holds only round-off; the floor ``\varepsilon``, relative to
+both second moments and with ``T`` the element type of the parameters, keeps it small, and the split
+transport keeps the one part out of the other.
+For ``G = 0``, ``\varepsilon = 0``. Every operation commutes with ``Y \mapsto QY``, ``G \mapsto QG``
+for ``Q \in O(M)``, so the iterates are left ``O(M)``-equivariant.
+
+The constraints on the coefficients, their element type, the learning rate and the limit of the
+gradient's norm are those of [`DirectScalarMomentAdam`](@ref). Only a single `StiefelManifold` is a
+leaf of this method, and only [`TrainingOptimizer`](@ref) steps it.
 """
 struct FactoredStiefelAdam{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
        OptimizerMethod
@@ -523,11 +559,9 @@ struct FactoredStiefelAdam{T, MT <: StiefelMetric, TT <: AbstractVectorTransport
 
     function FactoredStiefelAdam{T}(β₁, β₂, δ, α_max, metric::StiefelMetric,
             transport::AbstractVectorTransport) where {T}
-        _check_unit_interval("β₁", β₁)
-        _check_unit_interval("β₂", β₂)
-        _check_positive("δ", δ)
-        _check_positive("α_max", α_max)
-        new{T, typeof(metric), typeof(transport)}(β₁, β₂, δ, α_max, metric, transport)
+        _check_adam_coefficients(T, β₁, β₂, δ, α_max)
+        new{T, typeof(metric), typeof(transport)}(
+            T(β₁), T(β₂), T(δ), T(α_max), metric, transport)
     end
 end
 
@@ -748,14 +782,15 @@ end
 function change_precision(::Type{T}, m::AdamWithEuclideanDecay) where {T}
     AdamWithEuclideanDecay{T}(T(m.β₁), T(m.β₂), T(m.δ), T(m.λ))
 end
+# The inner constructors of the direct Stiefel methods convert their coefficients to `T`.
 function change_precision(::Type{T}, m::DirectMomentum) where {T}
-    DirectMomentum{T}(T(m.α), m.metric, m.transport)
+    DirectMomentum{T}(m.α, m.metric, m.transport)
 end
 function change_precision(::Type{T}, m::DirectScalarMomentAdam) where {T}
-    DirectScalarMomentAdam{T}(T(m.β₁), T(m.β₂), T(m.δ), T(m.α_max), m.metric, m.transport)
+    DirectScalarMomentAdam{T}(m.β₁, m.β₂, m.δ, m.α_max, m.metric, m.transport)
 end
 function change_precision(::Type{T}, m::FactoredStiefelAdam) where {T}
-    FactoredStiefelAdam{T}(T(m.β₁), T(m.β₂), T(m.δ), T(m.α_max), m.metric, m.transport)
+    FactoredStiefelAdam{T}(m.β₁, m.β₂, m.δ, m.α_max, m.metric, m.transport)
 end
 function change_precision(::Type{T}, m::CompositeMethod) where {T}
     CompositeMethod(change_precision(T, m.manifold), change_precision(T, m.array))

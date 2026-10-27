@@ -44,20 +44,25 @@ skew(X) = (X - X') / 2
 # The bias-corrected weights of step `t`, as `Adam` stores its moments.
 weights(β, t) = ((β - β^t) / (1 - β^t), (1 - β) / (1 - β^t))
 
+# The vertical part `Y·½(YᵀX - XᵀY)` and the horizontal part `X - Y(YᵀX)` of `X` at `Y`.
+vertical(Y, X) = Y * skew(Y' * X)
+horizontal(Y, X) = X - Y * (Y' * X)
+
 # The memory of each method before its first step, and one dense step: the new point, the step `Δ`
-# and the new memory, transported to the new point.
+# and the new memory, transported to the new point. `T` is the element type of the optimizer, whose
+# `eps` sets the floor of `FactoredStiefelAdam`.
 dense_memory(::DirectMomentum, M, k) = (p = zeros(M, k),)
 dense_memory(::DirectScalarMomentAdam, M, k) = (B = zeros(M, k), v = 0.0)
 dense_memory(::FactoredStiefelAdam, M, k) = (B = zeros(M, k), V = zeros(k, k), v = zeros(k))
 
-function dense_step(m::DirectMomentum, Y, G, mem, t, η)
+function dense_step(m::DirectMomentum, Y, G, mem, t, η, T)
     p = m.α * mem.p + dense_rgrad(Y, G, m.metric)
     Δ = -η * p
     Y_new = dense_cayley(Y, Δ)
     Y_new, Δ, (p = dense_transport(Y_new, Y, Δ, p, m.transport),)
 end
 
-function dense_step(m::DirectScalarMomentAdam, Y, G, mem, t, η)
+function dense_step(m::DirectScalarMomentAdam, Y, G, mem, t, η, T)
     GR = dense_rgrad(Y, G, m.metric)
     c₁₁, c₁₂ = weights(m.β₁, t)
     c₂₁, c₂₂ = weights(m.β₂, t)
@@ -69,20 +74,25 @@ function dense_step(m::DirectScalarMomentAdam, Y, G, mem, t, η)
     Y_new, Δ, (B = dense_transport(Y_new, Y, Δ, B, m.transport), v = v)
 end
 
-function dense_step(m::FactoredStiefelAdam, Y, G, mem, t, η)
+# The floor `ε = √eps(T)·σ`, `σ² = Σ V_W + Σ v_K`, sits in both denominators, and each part of the
+# first moment is transported on its own and put back into its own subspace at the new point.
+function dense_step(m::FactoredStiefelAdam, Y, G, mem, t, η, T)
     GR = dense_rgrad(Y, G, m.metric)
     c₁₁, c₁₂ = weights(m.β₁, t)
     c₂₁, c₂₂ = weights(m.β₂, t)
     B = c₁₁ * mem.B + c₁₂ * GR
     V = c₂₁ * mem.V + c₂₂ * skew(Y' * GR) .^ 2
-    K = GR - Y * (Y' * GR)
-    v = c₂₁ * mem.v + c₂₂ * vec(sum(abs2, K; dims = 1))
-    Ã = skew(Y' * B) ./ (sqrt.(V) .+ m.δ)
-    K̃ = (B - Y * (Y' * B)) ./ (sqrt.(v') .+ m.δ)
+    v = c₂₁ * mem.v + c₂₂ * vec(sum(abs2, horizontal(Y, GR); dims = 1))
+    ε = sqrt(eps(T)) * sqrt(sum(V) + sum(v))
+    Ã = skew(Y' * B) ./ (sqrt.(V) .+ m.δ .+ ε)
+    K̃ = horizontal(Y, B) ./ (sqrt.(v') .+ m.δ .+ ε)
     D = Y * Ã + K̃
     Δ = -min(η, m.α_max / (norm(D) + m.δ)) * D
     Y_new = dense_cayley(Y, Δ)
-    Y_new, Δ, (B = dense_transport(Y_new, Y, Δ, B, m.transport), V = V, v = v)
+    B_V = dense_transport(Y_new, Y, Δ, vertical(Y, B), m.transport)
+    B_H = dense_transport(Y_new, Y, Δ, horizontal(Y, B), m.transport)
+    B = vertical(Y_new, B_V) + horizontal(Y_new, B_H)
+    Y_new, Δ, (B = B, V = V, v = v)
 end
 
 # A sequence of synthetic Euclidean gradients, the same for every method.
@@ -201,6 +211,26 @@ end
     @test FactoredStiefelAdam(; δ = nextfloat(0.0)).δ === nextfloat(0.0)
 end
 
+@testset "a coefficient that its conversion takes out of its range is refused with the conversion" begin
+    @test message(() -> change_precision(Float32, DirectMomentum(; α = prevfloat(1.0)))) ==
+          (ArgumentError,
+        "α = 0.9999999999999999 is 1.0 in Float32, and α must satisfy 0 ≤ α < 1")
+    for method in (DirectScalarMomentAdam, FactoredStiefelAdam)
+        @test message(() -> change_precision(Float32, method(; β₂ = 0.99999999))) ==
+              (ArgumentError,
+            "β₂ = 0.99999999 is 1.0 in Float32, and β₂ must satisfy 0 ≤ β₂ < 1")
+        @test message(() -> change_precision(Float32, method(; δ = 1.0e-50))) ==
+              (ArgumentError, "δ = 1.0e-50 is 0.0 in Float32, and δ must be positive")
+        # `TrainingOptimizer` converts the method to the element type of the point
+        Y = rand(Random.Xoshiro(16), StiefelManifold{Float32}, 6, 2)
+        @test message(() -> TrainingOptimizer(Y; algorithm = method(; α_max = 1.0e-50))) ==
+              (ArgumentError,
+            "α_max = 1.0e-50 is 0.0 in Float32, and α_max must be positive")
+        # a conversion that keeps the coefficient in its range is accepted
+        @test change_precision(Float32, method(; β₂ = 0.9999)).β₂ === Float32(0.9999)
+    end
+end
+
 @testset "only a StiefelManifold is a leaf of these methods, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(1)
     for method in METHODS
@@ -279,7 +309,7 @@ const VARIANTS = ((CanonicalMetric(), ProjectionTransport()),
             @test optimization_step!(Y, opt, G) === Y
             @test Y.A != Y_before
             @test eltype(Y.A) === T
-            Yd, Δd, mem = dense_step(m, Yd, Float64.(G), mem, t, Float64(η))
+            Yd, Δd, mem = dense_step(m, Yd, Float64.(G), mem, t, Float64(η), T)
             Δ = direction(opt.cache)
             @test eltype(Δ) === T
             @test norm(Δ - Δd) ≤ sqrt(eps(T)) * norm(Δd)
@@ -296,6 +326,8 @@ const VARIANTS = ((CanonicalMetric(), ProjectionTransport()),
     end
 end
 
+# `YᵀG_R` is skew-symmetric for both metrics, so the skew-symmetrization of `A` before its square
+# changes `V_W` by round-off only: the exact equalities here are what see it go.
 @testset "FactoredStiefelAdam keeps V_W symmetric and Ã skew-symmetric exactly, $T" for T in REAL_ELTYPES
     for metric in (CanonicalMetric(), EuclideanMetric())
         rng = Random.Xoshiro(5)
@@ -303,6 +335,7 @@ end
         opt = TrainingOptimizer(Y; algorithm = FactoredStiefelAdam(; metric), linesearch = T(5e-2))
         for G in gradients(rng, T, 16, 4, 5)
             optimization_step!(Y, opt, G)
+            @test eltype(opt.state.V_W) === T && eltype(opt.cache.Ã) === T
             @test opt.state.V_W == opt.state.V_W'
             @test opt.cache.Ã == -opt.cache.Ã'
             @test all(≥(0), opt.state.v_K)
@@ -319,6 +352,7 @@ end
     opt = TrainingOptimizer(Y; algorithm = method(), linesearch = T(1.0e-1))
     optimization_step!(Y, opt, zeros(T, 12, 3))
     @test gradient(opt.cache) == zeros(T, 12, 3)
+    @test eltype(direction(opt.cache)) === T
     @test direction(opt.cache) == zeros(T, 12, 3)
     @test Y.A == Y₀
     # a later step from a nonzero gradient is finite
@@ -341,6 +375,98 @@ end
     @test Y.A == Y₀
 end
 
+@testset "a gradient with an entry that is not finite is refused before the state moves, $T" for T in REAL_ELTYPES,
+    method in METHODS
+
+    rng = Random.Xoshiro(15)
+    Y = rand(rng, StiefelManifold{T}, 8, 2)
+    opt = TrainingOptimizer(Y; algorithm = method(), linesearch = T(5.0e-2))
+    optimization_step!(Y, opt, randn(rng, T, 8, 2))
+    Y₁, B₁ = copy(Y.A), copy(method === DirectMomentum ? opt.state.p : opt.state.B₁)
+    for bad in (T(NaN), T(Inf), -T(Inf))
+        G = randn(rng, T, 8, 2)
+        G[3, 1] = bad
+        @test message(() -> optimization_step!(Y, opt, G)) ==
+              (ArgumentError, "the gradient has an entry that is not finite")
+        @test opt.state.iterations == 1
+        @test Y.A == Y₁
+        @test (method === DirectMomentum ? opt.state.p : opt.state.B₁) == B₁
+    end
+    # the next finite gradient steps as from the state before the refused ones
+    optimization_step!(Y, opt, randn(rng, T, 8, 2))
+    @test opt.state.iterations == 2
+    @test all(isfinite, Y.A)
+    @test Y.A != Y₁
+    @test eltype(Y.A) === T
+end
+
+const TRANSPORTS = (ProjectionTransport(), DifferentiatedCayleyTransport())
+
+# With a vertical gradient `G = YS`, the exact iterates stay in the span of the first point, the
+# horizontal second moment is zero and the step is vertical. The round-off of the horizontal part
+# must not grow into a horizontal step.
+@testset "FactoredStiefelAdam takes a vertical step for a vertical gradient, $T" for T in REAL_ELTYPES,
+    transport in TRANSPORTS
+
+    for seed in 1:5
+        rng = Random.Xoshiro(seed)
+        Y = rand(rng, StiefelManifold{T}, 16, 4)
+        opt = TrainingOptimizer(Y; algorithm = FactoredStiefelAdam(; transport),
+            linesearch = T(5.0e-2))
+        for _ in 1:30
+            optimization_step!(Y, opt, Y.A * randn(rng, T, 4, 4))
+            Y₀, Δ = solution(opt.cache).A, direction(opt.cache)
+            @test eltype(Δ) === T
+            @test norm(Δ - Y₀ * (Y₀' * Δ)) ≤ 16 * sqrt(eps(T)) * norm(Δ)
+            @test tangent_defect(Y₀, Δ) ≤ 20 * eps(T) * norm(Δ)
+        end
+    end
+end
+
+# At `k = M` the horizontal space is zero, and every horizontal part is round-off.
+@testset "the step of FactoredStiefelAdam is tangent at k = M, $T" for T in REAL_ELTYPES,
+    transport in TRANSPORTS
+
+    for seed in 1:5, vertical_gradient in (false, true)
+
+        rng = Random.Xoshiro(seed)
+        Y = rand(rng, StiefelManifold{T}, 8, 8)
+        opt = TrainingOptimizer(Y; algorithm = FactoredStiefelAdam(; transport),
+            linesearch = T(5.0e-2))
+        for _ in 1:30
+            G = vertical_gradient ? Y.A * randn(rng, T, 8, 8) : randn(rng, T, 8, 8)
+            optimization_step!(Y, opt, G)
+            Δ = direction(opt.cache)
+            @test eltype(Δ) === T
+            @test tangent_defect(solution(opt.cache).A, Δ) ≤ 20 * eps(T) * norm(Δ)
+        end
+    end
+end
+
+# `f(Y) = -tr(YᵀCY)/2` is invariant under `Y ↦ YR` for `R ∈ O(k)`, so its gradient `-CY` has a zero
+# vertical part, and its minimum over `St(4, 16)` is minus half the sum of the 4 largest eigenvalues
+# of `C`.
+@testset "FactoredStiefelAdam minimizes a right-O(k)-invariant loss, $T" for T in REAL_ELTYPES,
+    transport in TRANSPORTS
+
+    rng = Random.Xoshiro(3)
+    R = randn(rng, 16, 16)
+    C = T.(LinearAlgebra.Symmetric(R' * R / 16))
+    f_opt = -sum(sort(LinearAlgebra.eigvals(Float64.(C)); rev = true)[1:4]) / 2
+    Y = rand(rng, StiefelManifold{T}, 16, 4)
+    f(Y) = -LinearAlgebra.tr(Float64.(Y.A)' * Float64.(C) * Float64.(Y.A)) / 2
+    f₀ = f(Y)
+    opt = TrainingOptimizer(Y; algorithm = FactoredStiefelAdam(; transport),
+        linesearch = T(5.0e-2))
+    for t in 1:300
+        optimization_step!(Y, opt, -C * Y.A)
+        Y₀, Δ = solution(opt.cache).A, direction(opt.cache)
+        t ≤ 10 && @test norm(Y₀' * Δ) ≤ 16 * sqrt(eps(T)) * norm(Δ)
+    end
+    @test eltype(Y.A) === T
+    @test max(f(Y) - f_opt, 0) ≤ (f₀ - f_opt) / 1000
+end
+
 random_orthogonal(rng, ::Type{T}, M) where {T} = T.(Matrix(qr(randn(rng, M, M)).Q))
 
 @testset "$(nameof(method)) is left O(M)-equivariant, $T" for T in REAL_ELTYPES,
@@ -360,6 +486,7 @@ random_orthogonal(rng, ::Type{T}, M) where {T} = T.(Matrix(qr(randn(rng, M, M)).
             optimization_step!(Y, opt, G)
             optimization_step!(Yq, optq, Q * G)
         end
+        @test eltype(Yq.A) === T
         @test norm(Yq.A - Q * Y.A) ≤ 100 * eps(T)
     end
 end
@@ -425,6 +552,20 @@ end
         @test norm(ps.L1.weight.A' * ps.L1.weight.A - I) ≤ 50 * eps(T)
     end
     @test eltype(ps.L1.weight.A) === T
+    # a gradient of the Stiefel leaf that is not finite moves no leaf, whatever the order of the
+    # leaves: the array leaf comes first in `swapped`
+    swapped = NetworkParameters((L2 = ps.L2, L1 = ps.L1))
+    opt_swapped = TrainingOptimizer(swapped; algorithm = method, linesearch = T(1e-3))
+    g = mixed_gradient(ps, 4)
+    g.L1.weight[2, 1] = T(NaN)
+    for (x, o, dp) in ((ps, opt, g),
+        (swapped, opt_swapped, NetworkParameters((L2 = g.L2, L1 = g.L1))))
+        W₀, Y₀ = copy(x.L2.W), copy(x.L1.weight.A)
+        @test message(() -> optimization_step!(x, o, dp)) ==
+              (ArgumentError, "the gradient has an entry that is not finite")
+        @test x.L2.W == W₀
+        @test x.L1.weight.A == Y₀
+    end
 end
 
 # One `M × M` temporary of the Stiefel leaf is 1.9 MB in `Float32` between `M = 200` and `M = 800`,

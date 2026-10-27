@@ -490,6 +490,20 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests, so it is open
   whether the current Julia reports the pairs.
 
+### K46 · In `Float32`, a `DirectMomentum` step of a norm above about `1e19` raises from `lu!` after the state moved
+
+- location: `src/manifold_optimizers/direct_momentum_optimizer.jl`
+- kind: found late
+- found: 2026-10-27
+- evidence: `DirectMomentum` has no cap on the step `Δ = -ηp`, and the factorization of
+  `cayley_direct!` forms products of `Δ` in `T`. On `St(3, 12)` with `linesearch = 1f-2` and a
+  finite gradient `s * randn(Float32, 12, 3)`, a cold process on Julia 1.13.3 gives: `s = 1f20`
+  (`‖p‖ = 5.8e20`) moves; `s = 1f21` (`‖p‖ = 5.8e21`) raises `ArgumentError: matrix contains Infs
+  or NaNs`, with the iteration number at 1 and the momentum updated; at `s = 1f30` the next step,
+  from a gradient of scale 1, raises again. The two Adam methods cap the step at `α_max` and do not
+  raise; their docstrings state the limit `√floatmax(T)` of the gradient's norm, above which their
+  step is zero.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
