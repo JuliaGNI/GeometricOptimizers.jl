@@ -54,9 +54,8 @@ breaking release).
   `CompositeMethod`, and builds a `DirectCayleyWorkspace` for them; it refuses a `retraction`
   other than `Cayley()` with an `ArgumentError`. `Optimizer` does not take them. A step allocates
   the same at `M = 200` and `M = 800` (`k = 4`, `Float32` and `Float64`, a cold process on Julia
-  1.13): 128 B with `ProjectionTransport`, alone and in a `CompositeMethod` with `Adam`, and with
-  `DifferentiatedCayleyTransport` 256 B for the first two methods and 384 B for
-  `FactoredStiefelAdam`. Their states, `DirectMomentumState`, `DirectScalarMomentAdamState` and
+  1.13): 128 B with `ProjectionTransport`, alone and in a `CompositeMethod` with `Adam`, and
+  256 B with `DifferentiatedCayleyTransport`. Their states, `DirectMomentumState`, `DirectScalarMomentAdamState` and
   `FactoredStiefelAdamState`, are exported.
 
 ### Changed

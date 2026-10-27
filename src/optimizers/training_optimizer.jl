@@ -223,7 +223,7 @@ function optimization_step!(x::StiefelManifold{T},
     α = step_size(opt.linesearch, iteration_number(state))
     Y, Y_new = solution(cache), solution(state)
     copyto!(Y.A, Y_new.A)
-    _direct_rgrad!(gradient(cache), Y, dp, method.metric, workspace)
+    _direct_gradient!(cache, Y, dp, method.metric, workspace)
     _direct_step!(cache, state, method, α)
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
         cayley_direct!(Y_new, Y, direction(cache), workspace)
@@ -236,7 +236,7 @@ end
 # A non-finite entry of the gradient of a direct Stiefel method enters its moments, and the
 # factorization of every later step then fails, so the gradient is refused before the state moves.
 function _check_gradient(::DirectStiefelMethod, dp)
-    all(isfinite, dp) ||
+    mapreduce(isfinite, &, dp; init = true) ||
         throw(ArgumentError("the gradient has an entry that is not finite"))
     nothing
 end

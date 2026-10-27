@@ -17,13 +17,22 @@ function _direct_rgrad!(G_R, Y::StiefelManifold{T}, ∇L, ::EuclideanMetric,
     _transport!(G_R, Y, Y, ∇L, ∇L, ProjectionTransport(), ws)
 end
 
+# The Riemannian gradient of the step at `Y`, in the cache.
+function _direct_gradient!(cache, Y, ∇L, metric, ws)
+    _direct_rgrad!(gradient(cache), Y, ∇L, metric, ws)
+end
+
 # The weights of the bias-corrected moments of step `t`, as in `Adam`.
 _bias_corrected_weights(β, t) = ((β - β^t) / (1 - β^t), (1 - β) / (1 - β^t))
 
 # `D ← -min(α, α_max / (‖D‖_F + δ)) D`: the step size of the line search, capped so that the
-# Frobenius norm of the step is at most `α_max`.
+# Frobenius norm of the step is at most `α_max`. `‖D‖_F` is the root of the sum of the squares,
+# and `norm`, which scales the entries at several times the cost, only where that sum overflows or
+# is below `floatmin`.
 function _capped_step!(D, α, method::Union{DirectScalarMomentAdam, FactoredStiefelAdam})
-    s = min(α, method.α_max / (norm(D) + method.δ))
+    n² = sum(abs2, D)
+    n = floatmin(n²) ≤ n² < Inf ? sqrt(n²) : norm(D)
+    s = min(α, method.α_max / (n + method.δ))
     D .*= -s
 end
 
@@ -69,18 +78,21 @@ end
 
 OptimizerState(::DirectMomentum, x::StiefelManifold) = DirectMomentumState(x)
 
-# The tangent vector at the point of the state that the training step transports to the new point.
-_transported_moment(state::DirectMomentumState) = state.p
-
 # The transport of the first moment of the state from `Y` to `Y_new`, along the step of the cache.
 function _transport_moment!(state, cache, method, Y_new, Y, ws)
     B = _transported_moment(state)
     transport!(B, Y_new, Y, direction(cache), B, method.transport, ws)
 end
 
-# `p ← αp + G_R` and `Δ = -ηp`, for the momentum `p` already transported to the point of the step.
+# `Δ = -η(αp + G_R)`, for the momentum `p` already transported to the point of the step. The state
+# is not written here: `p ← αp + G_R` comes after the retraction, as in `MomentumMethod`, so that a
+# step that `cayley_direct!` refuses leaves `p` as it was.
 function _direct_step!(cache::DirectStiefelCache{T}, state::DirectMomentumState{T},
         method::DirectMomentum{T}, η) where {T}
+    cache.δ .= -η .* (method.α .* state.p .+ cache.g)
+end
+
+function _transport_moment!(state::DirectMomentumState, cache, method, Y_new, Y, ws)
     state.p .= method.α .* state.p .+ cache.g
-    cache.δ .= -η .* state.p
+    transport!(state.p, Y_new, Y, direction(cache), state.p, method.transport, ws)
 end

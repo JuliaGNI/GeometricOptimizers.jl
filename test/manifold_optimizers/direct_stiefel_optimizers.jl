@@ -100,6 +100,12 @@ gradients(rng, ::Type{T}, M, k, n) where {T} = [randn(rng, T, M, k) for _ in 1:n
 
 tangent_defect(Y, Δ) = norm(Y' * Δ + Δ' * Y)
 
+# The first moment of a state, a tangent vector at the point of the state. `FactoredStiefelAdam`
+# stores it in its vertical part `A₁` and its horizontal part `K₁`.
+first_moment(state::DirectMomentumState) = state.p
+first_moment(state::DirectScalarMomentAdamState) = state.B₁
+first_moment(state::FactoredStiefelAdamState) = state.x.A * state.A₁ + state.K₁
+
 # The whole messages of the refusing guards. A test of a guard matches its whole message, and the
 # patterns are checked against Base's own messages below.
 const HYPERPARAMETER_GUARD = r"^(α|β₁|β₂) must satisfy 0 ≤ (α|β₁|β₂) < 1$|^(δ|α_max) must be positive$"
@@ -309,6 +315,9 @@ const VARIANTS = ((CanonicalMetric(), ProjectionTransport()),
             @test optimization_step!(Y, opt, G) === Y
             @test Y.A != Y_before
             @test eltype(Y.A) === T
+            G_R = dense_rgrad(Float64.(Y_before), Float64.(G), metric)
+            @test eltype(gradient(opt.cache)) === T
+            @test norm(gradient(opt.cache) - G_R) ≤ sqrt(eps(T)) * norm(G_R)
             Yd, Δd, mem = dense_step(m, Yd, Float64.(G), mem, t, Float64(η), T)
             Δ = direction(opt.cache)
             @test eltype(Δ) === T
@@ -318,10 +327,17 @@ const VARIANTS = ((CanonicalMetric(), ProjectionTransport()),
             # the step is tangent at the point it is taken from, with no re-projection
             @test tangent_defect(solution(opt.cache).A, Δ) ≤ 20 * eps(T) * norm(Δ)
             # the stored first moment is a tangent vector at the new point
-            B = method === DirectMomentum ? opt.state.p : opt.state.B₁
+            B = first_moment(opt.state)
             @test tangent_defect(Y.A, B) ≤ 20 * eps(T) * norm(B)
             @test norm(B - (method === DirectMomentum ? mem.p : mem.B)) ≤
                   sqrt(eps(T)) * norm(B)
+            if method === FactoredStiefelAdam
+                # the two parts of the first moment are those of the dense one at the new point
+                @test opt.state.A₁ == -opt.state.A₁'
+                @test norm(opt.state.A₁ - skew(Yd' * mem.B)) ≤ sqrt(eps(T)) * norm(B)
+                @test norm(opt.state.K₁ - horizontal(Yd, mem.B)) ≤ sqrt(eps(T)) * norm(B)
+                @test norm(Y.A' * opt.state.K₁) ≤ 20 * eps(T) * norm(opt.state.K₁)
+            end
         end
     end
 end
@@ -382,7 +398,7 @@ end
     Y = rand(rng, StiefelManifold{T}, 8, 2)
     opt = TrainingOptimizer(Y; algorithm = method(), linesearch = T(5.0e-2))
     optimization_step!(Y, opt, randn(rng, T, 8, 2))
-    Y₁, B₁ = copy(Y.A), copy(method === DirectMomentum ? opt.state.p : opt.state.B₁)
+    Y₁, B₁ = copy(Y.A), first_moment(opt.state)
     for bad in (T(NaN), T(Inf), -T(Inf))
         G = randn(rng, T, 8, 2)
         G[3, 1] = bad
@@ -390,8 +406,10 @@ end
               (ArgumentError, "the gradient has an entry that is not finite")
         @test opt.state.iterations == 1
         @test Y.A == Y₁
-        @test (method === DirectMomentum ? opt.state.p : opt.state.B₁) == B₁
+        @test first_moment(opt.state) == B₁
     end
+    # a gradient with no entry has no entry that is not finite
+    @test GeometricOptimizers._check_gradient(opt.method, zeros(T, 8, 0)) === nothing
     # the next finite gradient steps as from the state before the refused ones
     optimization_step!(Y, opt, randn(rng, T, 8, 2))
     @test opt.state.iterations == 2
@@ -401,6 +419,53 @@ end
 end
 
 const TRANSPORTS = (ProjectionTransport(), DifferentiatedCayleyTransport())
+
+# The cap reads `‖D‖_F` also where the sum of the squares of `D` overflows or is below `floatmin`.
+# With the smallest positive `δ` and a step size of the line search near `floatmax`, every capped
+# step here has norm `α_max`.
+@testset "the cap of the two Adam methods at the edges of the range of $T" for T in REAL_ELTYPES
+    for method in (DirectScalarMomentAdam, FactoredStiefelAdam)
+        m = change_precision(T, method(; α_max = 0.5, δ = Float64(nextfloat(zero(T)))))
+        α = floatmax(T) / 16
+        for scale in (floatmax(T) / 16, sqrt(floatmax(T)) * 4, T(1), sqrt(floatmin(T)) / 16,
+            floatmin(T) * 4)
+            D = fill(scale, 8, 2)
+            D[1, 1] = 2 * scale
+            expected = min(α, T(0.5) / (norm(D) + m.δ)) .* D
+            Δ = GeometricOptimizers._capped_step!(copy(D), α, m)
+            @test eltype(Δ) === T
+            @test all(isfinite, Δ)
+            @test norm(Δ + expected) ≤ 8 * eps(T) * norm(expected)
+        end
+    end
+end
+
+# `DirectMomentum` has no cap, and a finite gradient of a norm above about `√floatmax(T)` gives a
+# step whose factorization in `cayley_direct!` overflows. The momentum and the point are written only
+# after the retraction, so the next step is the step of a fresh optimizer.
+@testset "a step of DirectMomentum that cayley_direct! cannot take leaves the momentum as it was, $T" for T in REAL_ELTYPES,
+    transport in TRANSPORTS
+
+    method = DirectMomentum(; transport)
+    Y = rand(Random.Xoshiro(6), StiefelManifold{T}, 12, 3)
+    Y₀ = copy(Y.A)
+    opt = TrainingOptimizer(Y; algorithm = method, linesearch = T(1e-2))
+    Y_fresh = StiefelManifold(copy(Y.A))
+    fresh = TrainingOptimizer(Y_fresh; algorithm = method, linesearch = T(1e-2))
+    G = sqrt(floatmax(T)) * T(1e4) * randn(Random.Xoshiro(8), T, 12, 3)
+    @test all(isfinite, G)
+    @test message(() -> optimization_step!(Y, opt, G)) ==
+          (ArgumentError, "matrix contains Infs or NaNs")
+    @test iszero(opt.state.p)
+    @test Y.A == Y₀
+    G = randn(Random.Xoshiro(9), T, 12, 3)
+    optimization_step!(Y, opt, G)
+    optimization_step!(Y_fresh, fresh, G)
+    @test Y.A != Y₀
+    @test Y.A == Y_fresh.A
+    @test opt.state.p == fresh.state.p
+    @test eltype(Y.A) === T
+end
 
 # With a vertical gradient `G = YS`, the exact iterates stay in the span of the first point, the
 # horizontal second moment is zero and the step is vertical. The round-off of the horizontal part
