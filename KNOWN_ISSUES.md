@@ -502,8 +502,22 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   Infs or NaNs`. `MomentumMethod` moves and raises at the same two norms on the same leaf. The
   refused step leaves the momentum and the point as they were and moves the iteration number, and
   the next step, from a gradient of norm 1, moves. The two Adam methods cap the step at `α_max` and
-  do not raise; their docstrings state the limit `√floatmax(T)` of the gradient's norm, above which
-  their step is zero.
+  do not raise; their limit is K47.
+
+### K47 · A `DirectScalarMomentAdam` or `FactoredStiefelAdam` gradient of a norm above about `√floatmax(T)` makes every later step zero
+
+- location: `src/manifold_optimizers/direct_scalar_moment_adam_optimizer.jl`,
+  `src/manifold_optimizers/factored_stiefel_adam_optimizer.jl`
+- kind: found late
+- found: 2026-10-27
+- evidence: the second moment holds the squares of the gradient in `T`, so a finite gradient of a
+  norm above about `√floatmax(T)` makes it `Inf`, and with `β₂ > 0` it stays `Inf`. On `St(3, 12)`
+  in `Float32` with `linesearch = 1f-2`, after one step with `randn(Xoshiro(7), T, 12, 3)`, a step
+  with `G = s .* clamp.(randn(Xoshiro(8), T, 12, 3), -3, 3)` for `s` from `1f30` to
+  `floatmax(Float32) / 64` gives `‖Δ‖_F = 0`, and the next step with `randn(Xoshiro(9), T, 12, 3)`
+  gives `‖Δ‖_F = 0` again, for both methods (a cold process on Julia 1.13.3). Neither method raises,
+  and the point stays finite. The docstring of `DirectScalarMomentAdam` states the limit, and the
+  docstring of `FactoredStiefelAdam` refers to it.
 
 ## B. This package — observability
 

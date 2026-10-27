@@ -45,18 +45,18 @@ breaking release).
   the round-off of a part of the gradient that is zero, as for a loss that is invariant under
   `Y ↦ YR`, stays round-off and does not grow into a step of norm `α_max`. Each method takes a
   `metric` and a `transport` keyword; the two Adam methods also cap the Frobenius norm of a step
-  at `α_max`. A coefficient out of its range is an
-  `ArgumentError` at construction, and also where its conversion to the element type of the
-  parameters takes it out of its range. A gradient with an entry that is not finite is an
-  `ArgumentError` before the state moves, and in a `CompositeMethod` before any leaf moves.
-  `DirectScalarMomentAdam` and `FactoredStiefelAdam` are members of `AdamFamily`.
-  `TrainingOptimizer` steps them, alone on a `StiefelManifold` or as the `manifold` method of a
-  `CompositeMethod`, and builds a `DirectCayleyWorkspace` for them; it refuses a `retraction`
-  other than `Cayley()` with an `ArgumentError`. `Optimizer` does not take them. A step allocates
-  the same at `M = 200` and `M = 800` (`k = 4`, `Float32` and `Float64`, a cold process on Julia
-  1.13): 128 B with `ProjectionTransport`, alone and in a `CompositeMethod` with `Adam`, and
-  256 B with `DifferentiatedCayleyTransport`. Their states, `DirectMomentumState`, `DirectScalarMomentAdamState` and
-  `FactoredStiefelAdamState`, are exported.
+  at `α_max`. A coefficient out of its range is an `ArgumentError` at construction, and also where
+  its conversion to the element type of the parameters takes it out of its range. A gradient with
+  an entry that is not finite is an `ArgumentError` before the state moves, and in a
+  `CompositeMethod` before any leaf moves. `DirectScalarMomentAdam` and `FactoredStiefelAdam` are
+  members of `AdamFamily`. `TrainingOptimizer` steps them, alone on a `StiefelManifold` or as the
+  `manifold` method of a `CompositeMethod`, and builds a `DirectCayleyWorkspace` for them; it
+  refuses a `retraction` other than `Cayley()` with an `ArgumentError`. `Optimizer` does not take
+  them. A step allocates the same at `M = 200` and `M = 800` (`k = 4`, `Float32` and `Float64`, a
+  cold process on Julia 1.13): 128 B with `ProjectionTransport`, alone and in a `CompositeMethod`
+  with `Adam`, and 256 B with `DifferentiatedCayleyTransport`. Their states,
+  `DirectMomentumState`, `DirectScalarMomentAdamState` and `FactoredStiefelAdamState`, are
+  exported.
 
 ### Changed
 

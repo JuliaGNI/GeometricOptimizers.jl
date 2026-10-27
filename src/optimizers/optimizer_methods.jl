@@ -472,7 +472,8 @@ steps this method. Only a single `StiefelManifold` is a leaf of it.
 
 The second moment holds the squares of the gradient in the element type `T` of the parameters, so a
 gradient with ``\lVert{}G_\mathcal{R}\rVert_F`` above about ``\sqrt{\mathrm{floatmax}(T)}``,
-``1.8\cdot10^{19}`` in `Float32`, makes it infinite, and the step is zero.
+``1.8\cdot10^{19}`` in `Float32`, makes it infinite. For ``\beta_2 > 0`` it stays infinite, so
+that step and every later step are zero.
 """
 struct DirectScalarMomentAdam{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
        OptimizerMethod
