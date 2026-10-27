@@ -22,9 +22,6 @@ function _direct_gradient!(cache, Y, ∇L, metric, ws)
     _direct_rgrad!(gradient(cache), Y, ∇L, metric, ws)
 end
 
-# The weights of the bias-corrected moments of step `t`, as in `Adam`.
-_bias_corrected_weights(β, t) = ((β - β^t) / (1 - β^t), (1 - β) / (1 - β^t))
-
 # `D ← -min(α, α_max / (‖D‖_F + δ)) D`: the step size of the line search, capped so that the
 # Frobenius norm of the step is at most `α_max`. `‖D‖_F` is the root of the sum of the squares,
 # and `norm`, which scales the entries at several times the cost, only where that sum overflows or
