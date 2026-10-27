@@ -467,6 +467,45 @@ end
     @test eltype(Y.A) === T
 end
 
+_same(a::StiefelManifold, b::StiefelManifold) = a.A == b.A
+_same(a, b) = a == b
+function same_state(a, b)
+    typeof(a) === typeof(b) &&
+        all(f -> _same(getfield(a, f), getfield(b, f)), fieldnames(typeof(a)))
+end
+
+# The Adam methods cap `‖Δ‖_F` at `α_max`, so a step that `cayley_direct!` cannot take needs an
+# `α_max` above about `√floatmax(T)`. The step size of the second optimizer, which shares the cache
+# and the state of the first, makes the step as large as that. A step that is refused changes
+# nothing: neither the point, nor the iteration number, nor any moment.
+@testset "a step that cayley_direct! cannot take leaves the state as it was, $(nameof(method)), $T" for T in REAL_ELTYPES,
+    method in METHODS
+
+    huge = sqrt(floatmax(T)) * T(1e4)
+    m = method === DirectMomentum ? method() : method(; α_max = Float64(huge))
+    Y = rand(Random.Xoshiro(6), StiefelManifold{T}, 12, 3)
+    Y_fresh = StiefelManifold(copy(Y.A))
+    opt = TrainingOptimizer(Y; algorithm = m, linesearch = T(1e-2))
+    fresh = TrainingOptimizer(Y_fresh; algorithm = m, linesearch = T(1e-2))
+    G₁, G₂ = (randn(Random.Xoshiro(s), T, 12, 3) for s in (8, 9))
+    optimization_step!(Y, opt, G₁)
+    optimization_step!(Y_fresh, fresh, G₁)
+    before, Y₁ = deepcopy(opt.state), copy(Y.A)
+    overflowing = TrainingOptimizer(opt.method, opt.cache, opt.state,
+        GeometricOptimizers._training_step_size(T, huge), opt.retraction, opt.workspace,
+        opt.gradient_buffer, opt.observer)
+    @test message(() -> optimization_step!(Y, overflowing, G₂)) ==
+          (ArgumentError, "matrix contains Infs or NaNs")
+    @test Y.A == Y₁
+    @test same_state(opt.state, before)
+    # the next step is the step of an optimizer that took no refused step
+    optimization_step!(Y, opt, G₂)
+    optimization_step!(Y_fresh, fresh, G₂)
+    @test Y.A != Y₁
+    @test Y.A == Y_fresh.A
+    @test same_state(opt.state, fresh.state)
+end
+
 # With a vertical gradient `G = YS`, the exact iterates stay in the span of the first point, the
 # horizontal second moment is zero and the step is vertical. The round-off of the horizontal part
 # must not grow into a horizontal step.
@@ -595,18 +634,22 @@ function step_allocations(x::X, opt::O, dp::D) where {X, O, D}
     @allocated optimization_step!(x, opt, dp)
 end
 
-@testset "a CompositeMethod steps a Stiefel leaf with FactoredStiefelAdam, $T" for T in REAL_ELTYPES
+@testset "a CompositeMethod steps a Stiefel leaf with $(nameof(stiefel)), $T" for T in REAL_ELTYPES,
+    stiefel in METHODS
+
     ps = mixed_set(T, 20)
-    method = CompositeMethod(; manifold = FactoredStiefelAdam(), array = Adam())
+    method = CompositeMethod(; manifold = stiefel(), array = Adam())
     opt = TrainingOptimizer(ps; algorithm = method, linesearch = T(1e-3))
     @test opt.workspace.L1.weight isa DirectCayleyWorkspace{T}
     @test opt.workspace.L2.b isa NoWorkspace
     @test opt.gradient_buffer.L1.weight isa NoWorkspace
-    @test opt.cache.L1.weight isa FactoredStiefelAdamCache{T}
+    @test opt.cache.L1.weight isa
+          (stiefel === FactoredStiefelAdam ? FactoredStiefelAdamCache{T} :
+           DirectStiefelCache{T})
     @test !hasfield(typeof(opt.cache.L1.weight), :section)
     # the leaf moves as under a `TrainingOptimizer` of its own
     Y = StiefelManifold(copy(ps.L1.weight.A))
-    alone = TrainingOptimizer(Y; algorithm = FactoredStiefelAdam(), linesearch = T(1e-3))
+    alone = TrainingOptimizer(Y; algorithm = stiefel(), linesearch = T(1e-3))
     for s in 1:3
         dp = mixed_gradient(ps, s)
         W₀ = copy(ps.L2.W)

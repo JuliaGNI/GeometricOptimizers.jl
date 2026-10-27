@@ -211,7 +211,9 @@ end
 # The step of a direct Stiefel method, from the point `Y` of the state: the Riemannian gradient and
 # the step `Δ` in the tangent space at `Y`, the retraction `cayley_direct!`, and the transport of the
 # method's first moment from `Y` to the new point. The cache keeps `Y` and `Δ`, the state the new
-# point.
+# point. `_direct_step!` writes the cache only, and the state, its iteration number and its moments
+# are written after the retraction, so that a step that `cayley_direct!` refuses leaves the state as
+# it was.
 function optimization_step!(x::StiefelManifold{T},
         opt::TrainingOptimizer{
             <:DirectStiefelMethod, <:OptimizerCache, <:OptimizerState{T}},
@@ -219,14 +221,14 @@ function optimization_step!(x::StiefelManifold{T},
     _check_shape(x, dp)
     (; method, cache, state, workspace) = opt
     _check_gradient(method, dp)
-    increase_iteration_number!(state)
-    α = step_size(opt.linesearch, iteration_number(state))
+    α = step_size(opt.linesearch, iteration_number(state) + 1)
     Y, Y_new = solution(cache), solution(state)
     copyto!(Y.A, Y_new.A)
     _direct_gradient!(cache, Y, dp, method.metric, workspace)
     _direct_step!(cache, state, method, α)
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
         cayley_direct!(Y_new, Y, direction(cache), workspace)
+        increase_iteration_number!(state)
         _transport_moment!(state, cache, method, Y_new, Y, workspace)
         copyto!(x.A, Y_new.A)
     end

@@ -417,7 +417,7 @@ The step has no cap. A finite gradient whose step has ``\lVert\Delta\rVert_F`` a
 ``\sqrt{\mathrm{floatmax}(T)}``, ``1.8\cdot10^{19}`` in `Float32`, makes the factorization of
 [`cayley_direct!`](@ref) overflow, and the step raises `ArgumentError: matrix contains Infs or
 NaNs`, as a step of [`MomentumMethod`](@ref) does. The momentum ``p`` and the point are written
-only after the retraction, so they stay as they were; the iteration number moves.
+only after the retraction, with the iteration number, so they stay as they were.
 """
 struct DirectMomentum{T, MT <: StiefelMetric, TT <: AbstractVectorTransport} <:
        OptimizerMethod

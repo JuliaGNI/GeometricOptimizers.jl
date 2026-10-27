@@ -500,8 +500,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `linesearch = 1f-2` and a finite gradient of norm `‖G‖_F`, a cold process on Julia 1.13.3 gives:
   `‖G‖_F = 2e21` (`‖Δ‖_F = 1.9e19`) moves; `‖G‖_F = 4e21` raises `ArgumentError: matrix contains
   Infs or NaNs`. `MomentumMethod` moves and raises at the same two norms on the same leaf. The
-  refused step leaves the momentum and the point as they were and moves the iteration number, and
-  the next step, from a gradient of norm 1, moves. The two Adam methods cap the step at `α_max` and
+  refused step leaves the momentum, the point and the iteration number as they were, and the
+  next step, from a gradient of norm 1, moves. The two Adam methods cap the step at `α_max` and
   do not raise; their limit is K47.
 
 ### K47 · A `DirectScalarMomentAdam` gradient of a norm above about `√floatmax(T)`, or a `FactoredStiefelAdam` gradient with a vertical entry or a horizontal column norm above it, makes every later step zero

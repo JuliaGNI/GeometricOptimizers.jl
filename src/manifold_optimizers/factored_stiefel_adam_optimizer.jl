@@ -11,7 +11,9 @@ The cache of [`FactoredStiefelAdam`](@ref):
 - `Ã`: the scaled vertical part ``\\tilde{A}``, a skew-symmetric ``k\\times{}k`` matrix,
 - `K`: the horizontal part ``G_\\mathcal{R} - Y(Y^TG_\\mathcal{R})``, an `M × k` matrix,
 - `n²` and `d`: the squared column norms of `K`, and the factors that scale the columns of the
-  horizontal part of the first moment, two vectors of length ``k``.
+  horizontal part of the first moment, two vectors of length ``k``,
+- `A₁`, `V_W` and `v_K`: the vertical part of the first moment and the two second moments of the step
+  being taken. The state takes them after the retraction.
 """
 struct FactoredStiefelAdamCache{T, XT, AT, ST, VT} <: OptimizerCache{T}
     x::XT
@@ -23,6 +25,9 @@ struct FactoredStiefelAdamCache{T, XT, AT, ST, VT} <: OptimizerCache{T}
     K::AT
     n²::VT
     d::VT
+    A₁::ST
+    V_W::ST
+    v_K::VT
 end
 
 function FactoredStiefelAdamCache(x::StiefelManifold{T}) where {T}
@@ -31,7 +36,7 @@ function FactoredStiefelAdamCache(x::StiefelManifold{T}) where {T}
     vector() = fill!(similar(x.A, k), zero(T))
     FactoredStiefelAdamCache{T, typeof(x), typeof(x.A), typeof(small()), typeof(vector())}(
         _copy(x), zero(x.A), zero(x.A), small(), small(), small(), zero(x.A), vector(),
-        vector())
+        vector(), small(), small(), vector())
 end
 
 direction(cache::FactoredStiefelAdamCache) = cache.δ
@@ -101,27 +106,30 @@ _vertical_weight(::EuclideanMetric, T) = one(T) / 2
 # The state holds the first moment in its two parts at `Y`. `P_V(Y)B₁ = YA₁` and `P_H(Y)B₁ = K₁`
 # are linear in `B₁`, so the update `B₁ ← c₁₁B₁ + c₁₂G_R` is the same update of each part, with the
 # parts `A` and `K` of `G_R`.
+#
+# The moments of the step are not written to the state here: the cache takes the small ones, and
+# `K₁` is read from the state and the gradient, so that a step that `cayley_direct!` refuses
+# leaves the state as it was. `_transport_moment!` writes them after the retraction.
 function _direct_step!(
         cache::FactoredStiefelAdamCache{T}, state::FactoredStiefelAdamState{T},
         method::FactoredStiefelAdam{T}, α) where {T}
-    t = iteration_number(state)
+    t = iteration_number(state) + 1
     c₁₁, c₁₂ = _bias_corrected_weights(method.β₁, t)
     c₂₁, c₂₂ = _bias_corrected_weights(method.β₂, t)
     Y, A, K = cache.x.A, cache.A, cache.K
     # The second moments: entrywise on the vertical part `A`, whose square is symmetric, and
     # columnwise on the horizontal part `K`.
-    state.V_W .= c₂₁ .* state.V_W .+ c₂₂ .* A .^ 2
+    cache.V_W .= c₂₁ .* state.V_W .+ c₂₂ .* A .^ 2
     sum!(abs2, transpose(cache.n²), K)
-    state.v_K .= c₂₁ .* state.v_K .+ c₂₂ .* cache.n²
+    cache.v_K .= c₂₁ .* state.v_K .+ c₂₂ .* cache.n²
     # The floor `ε = √eps(T)·σ`, `σ² = ΣV_W + Σv_K`, in both denominators: a part of the first
     # moment whose own second moment is zero is round-off, and is not scaled up against the other.
-    ε = sqrt(eps(T)) * sqrt(sum(state.V_W) + sum(state.v_K))
-    state.A₁ .= c₁₁ .* state.A₁ .+ c₁₂ .* A
-    state.K₁ .= c₁₁ .* state.K₁ .+ c₁₂ .* K
+    ε = sqrt(eps(T)) * sqrt(sum(cache.V_W) + sum(cache.v_K))
+    cache.A₁ .= c₁₁ .* state.A₁ .+ c₁₂ .* A
     # each part scaled by its second moment, and `D = YÃ + K̃`
-    cache.Ã .= state.A₁ ./ (sqrt.(state.V_W) .+ method.δ .+ ε)
-    cache.d .= inv.(sqrt.(state.v_K) .+ method.δ .+ ε)
-    cache.δ .= state.K₁ .* transpose(cache.d)
+    cache.Ã .= cache.A₁ ./ (sqrt.(cache.V_W) .+ method.δ .+ ε)
+    cache.d .= inv.(sqrt.(cache.v_K) .+ method.δ .+ ε)
+    cache.δ .= (c₁₁ .* state.K₁ .+ c₁₂ .* K) .* transpose(cache.d)
     mul!(cache.δ, Y, cache.Ã, one(T), one(T))
     _capped_step!(cache.δ, α, method)
 end
@@ -133,6 +141,12 @@ function _transport_moment!(
         state::FactoredStiefelAdamState{T}, cache::FactoredStiefelAdamCache{T},
         method::FactoredStiefelAdam, Y_new, Y, ws) where {T}
     A₁, K₁, S, P = state.A₁, state.K₁, cache.S, cache.A
+    # the moments of the step just taken, before the transport
+    c₁₁, c₁₂ = _bias_corrected_weights(method.β₁, iteration_number(state))
+    copyto!(A₁, cache.A₁)
+    copyto!(state.V_W, cache.V_W)
+    copyto!(state.v_K, cache.v_K)
+    K₁ .= c₁₁ .* K₁ .+ c₁₂ .* cache.K
     mul!(P, Y_new.A', Y.A)
     _transport_vertical!(A₁, S, P, method.transport)
     _transport_horizontal!(K₁, Y_new, Y, cache.δ, method.transport, ws)
