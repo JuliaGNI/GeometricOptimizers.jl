@@ -78,12 +78,6 @@ end
 
 OptimizerState(::DirectMomentum, x::StiefelManifold) = DirectMomentumState(x)
 
-# The transport of the first moment of the state from `Y` to `Y_new`, along the step of the cache.
-function _transport_moment!(state, cache, method, Y_new, Y, ws)
-    B = _transported_moment(state)
-    transport!(B, Y_new, Y, direction(cache), B, method.transport, ws)
-end
-
 # `Δ = -η(αp + G_R)`, for the momentum `p` already transported to the point of the step. The state
 # is not written here: `p ← αp + G_R` comes after the retraction, as in `MomentumMethod`, so that a
 # step that `cayley_direct!` refuses leaves `p` as it was.

@@ -23,7 +23,10 @@ function OptimizerState(::DirectScalarMomentAdam, x::StiefelManifold)
     DirectScalarMomentAdamState(x)
 end
 
-_transported_moment(state::DirectScalarMomentAdamState) = state.B₁
+# The transport of the first moment from `Y` to `Y_new`, along the step of the cache.
+function _transport_moment!(state::DirectScalarMomentAdamState, cache, method, Y_new, Y, ws)
+    transport!(state.B₁, Y_new, Y, direction(cache), state.B₁, method.transport, ws)
+end
 
 function _direct_step!(cache::DirectStiefelCache{T}, state::DirectScalarMomentAdamState{T},
         method::DirectScalarMomentAdam{T}, α) where {T}

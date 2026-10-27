@@ -470,6 +470,11 @@ takes it out of its range. The coefficients carry no element type of the paramet
 learning rate is the `linesearch` of [`TrainingOptimizer`](@ref), which is the only optimizer that
 steps this method. Only a single `StiefelManifold` is a leaf of it.
 
+``\lVert{}D\rVert_F \approx 1``, so at the step size of [`Adam`](@ref), whose direction has
+``\lVert{}D\rVert_F \approx \sqrt{Mk}``, a step is about ``\sqrt{Mk}`` times shorter, as for
+[`ScalarMomentAdam`](@ref). Scale the learning rate before comparing this method with
+[`Adam`](@ref).
+
 The second moment holds the squares of the gradient in the element type `T` of the parameters, so a
 gradient with ``\lVert{}G_\mathcal{R}\rVert_F`` above about ``\sqrt{\mathrm{floatmax}(T)}``,
 ``1.8\cdot10^{19}`` in `Float32`, makes it infinite. For ``\beta_2 > 0`` it stays infinite, so
@@ -554,6 +559,10 @@ for ``Q \in O(M)``, so the iterates are left ``O(M)``-equivariant.
 The constraints on the coefficients, their element type and the learning rate are those of
 [`DirectScalarMomentAdam`](@ref). Only a single `StiefelManifold` is a leaf of this method, and only
 [`TrainingOptimizer`](@ref) steps it.
+
+Each off-diagonal entry of ``\tilde{A}`` and each column of ``\tilde{K}`` has a magnitude of about
+``1``, so ``\lVert{}D\rVert_F \approx k``. At the step size of [`Adam`](@ref), whose direction has
+``\lVert{}D\rVert_F \approx \sqrt{Mk}``, a step is about ``\sqrt{M/k}`` times shorter.
 
 The second moments hold the squares of the entries of ``A`` and of the column norms of ``K`` in
 `T`, so an entry of ``A`` or a column norm of ``K`` above about ``\sqrt{\mathrm{floatmax}(T)}``,
@@ -767,8 +776,13 @@ leafmethod(method::CompositeMethod, ::AbstractArray) = method.array
 The fixed step size a [`TrainingOptimizer`](@ref) takes for `method` if its `linesearch` keyword is
 not given: `1e-2` for [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and
 [`DirectMomentum`](@ref), and
-`DEFAULT_LEARNING_RATE = 1e-3` for the [`AdamFamily`](@ref), whose direction has magnitude
-``\\approx{}1`` per component whatever the gradient is.
+`DEFAULT_LEARNING_RATE = 1e-3` for the [`AdamFamily`](@ref), whose direction has a magnitude
+that does not depend on the gradient. That magnitude differs between the members: ``\\approx{}1``
+per component for [`Adam`](@ref), ``\\approx{}1`` in total for [`ScalarMomentAdam`](@ref) and
+[`DirectScalarMomentAdam`](@ref), and ``\\approx{}1`` per off-diagonal entry of the vertical part
+and per column of the horizontal part for [`FactoredStiefelAdam`](@ref), ``\\approx{}k`` in total on
+``\\mathrm{St}(k, M)``. At the same step size, their steps on a [`StiefelManifold`](@ref) are
+therefore shorter than [`Adam`](@ref)'s.
 
 A [`CompositeMethod`](@ref) steps all of its leaves at one step size, so its default is the one its
 two methods agree on, and an `ArgumentError` asking for `linesearch` where they disagree.
