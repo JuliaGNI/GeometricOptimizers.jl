@@ -24,10 +24,12 @@ Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 GeometricOptimizers = {path = ".."}
 
 [compat]
-Aqua = "0.8"
+Aqua = "0.8.14"
+Documenter = "1.8.1"
 ExplicitImports = "1.15"
 GPUArraysCore = "0.2"
 HDF5 = "0.17"
+JET = "0.10.1, 0.11, 0.12, 0.13"
 JLArrays = "0.3"
 Metal = "1.10"
 NaNMath = "1"
