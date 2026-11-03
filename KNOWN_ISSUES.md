@@ -528,6 +528,32 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `‖G‖_F = 2.6e19`, gives a nonzero step there and at each of the next 200. Neither method raises,
   and the point stays finite. The docstring of each method states its limit.
 
+### K48 · Does Goodfellow p. 301 give the `Adam` default `β₂ = 0.99`?
+
+- location: `src/optimizers/optimizer_methods.jl:137`
+- kind: not verified
+- found: 2026-11-04
+- evidence: this is a question and not a defect. The docstring of `Adam` and
+  `docs/src/optimizer_methods.md:95` cite Goodfellow, Bengio and Courville, page 301, for the
+  defaults `β₁ = 0.9` and `β₂ = 0.99`, and `Adam` has them at `src/optimizers/optimizer_methods.jl:180`.
+  Kingma and Ba give `β₂ = 0.999` in the text of their Algorithm 1. The book is not in the Library,
+  so nobody has checked the page. `ScalarMomentAdam`, `AdamWithEuclideanDecay`,
+  `DirectScalarMomentAdam` and `FactoredStiefelAdam` have the same default. If the page does not
+  give `0.99`, the citation is wrong; a change of the value changes every `Adam` run.
+
+### K49 · `DecayingStatic` has no floor after `n`, so a horizon that is too short takes the step far below `η₂`
+
+- location: `src/optimizers/decaying_static.jl:12`
+- kind: found late
+- found: 2026-11-04
+- evidence: the docstring states the choice, because a floor stops `Adam` from converging. The cost
+  is on a training loop that passes the number of epochs as the horizon: with `b` batches per epoch,
+  the step reaches `η₂` after `1/b` of the run and ends at `η₁(η₂/η₁)^b`. For `η₁ = 1e-2`,
+  `η₂ = 1e-6` and `b = 4` that is `1e-18`. `scripts/verify_adam_cayley_manual.jl` measures the
+  mechanism: `AdamOptimizerWithDecay(10; η₁ = 1e-2, η₂ = 1e-4)` takes a step of length `η₂` at step
+  10 and of length `1e-7` at step 25. The docstring of `AdamOptimizerWithDecay` says that its
+  argument counts steps. Whether a schedule should offer a floor as an option is open.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
@@ -833,6 +859,32 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   option here, and roughly 583 objective evaluations per iteration". The table on the same page
   gives `Bisection` 133 `BFGS` iterations against 95 for `Backtracking(expand = true)`, and 589
   evaluations per iteration.
+
+### K50 · The derivation of the exponential on "Retractions" drops the transpose of `B''`
+
+- location: `docs/src/retractions.md:357`
+- kind: docs
+- found: 2026-11-04
+- evidence: the line ends in `B'(…)B''` and `B'𝔄(B', B'')B''`. `B''` is `N × 2n`, so the product
+  needs `(B'')ᵀ`, which line 356 before it and the final expression at line 366 have.
+
+### K51 · The cost paragraph of "Retractions" says that `cayley` ends with a product of two `N × N` matrices
+
+- location: `docs/src/retractions.md:536`
+- kind: docs
+- found: 2026-11-04
+- evidence: `_cayley_matrix` in `src/retractions/retractions.jl` multiplies the `N × 2n` matrix
+  `B̂ * inv(M)` by the `2n × N` matrix `B̄'`. The docstring of `cayley(::StiefelLieAlgHorMatrix)`
+  names the dense `N × N` product as what this grouping avoids.
+
+### K52 · "Weight Decay on Manifolds" says that `GeometricMachineLearning` defines an `AdamOptimizerWithDecay`
+
+- location: `docs/src/weight_decay.md:160`
+- kind: docs
+- found: 2026-11-04
+- evidence: the section compares GML's method with `DecayingStatic` in the present tense, with its
+  field `n_epochs` and its `o.step`, and says that GML can delete its copy. GML's `src/` holds no
+  such method: it imports the name from this package and exports it again.
 
 ## D. Upstream
 

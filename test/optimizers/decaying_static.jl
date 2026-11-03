@@ -47,7 +47,7 @@ end
     @test o.algorithm.β₁ == 8.0e-1                  # β₁, β₂, δ go to Adam ...
     @test o.algorithm.β₂ == 9.0e-1
     @test o.algorithm.δ == 1.0e-6
-    @test o.linesearch.η₁ == 1.0e-1                 # ... η₁, η₂, n_epochs to the line search
+    @test o.linesearch.η₁ == 1.0e-1                 # ... η₁, η₂, n_steps to the line search
     @test o.linesearch.η₂ == 1.0e-4
     @test o.linesearch.n == 500
 

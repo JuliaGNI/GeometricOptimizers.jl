@@ -123,11 +123,11 @@ function Base.show(io::IO, alg::DecayingStatic)
 end
 
 @doc raw"""
-    AdamOptimizerWithDecay(n_epochs; η₁, η₂, kwargs...)
+    AdamOptimizerWithDecay(n_steps; η₁, η₂, kwargs...)
 
 [`Adam`](@ref) paired with a [`DecayingStatic`](@ref) line search whose learning rate decays
-geometrically from `η₁` to `η₂` over `n_epochs`, returned as a `NamedTuple` to splat into
-[`Optimizer`](@ref) or [`TrainingOptimizer`](@ref):
+geometrically from `η₁` to `η₂` over `n_steps` optimizer steps, returned as a `NamedTuple` to splat
+into [`Optimizer`](@ref) or [`TrainingOptimizer`](@ref):
 
 ```julia
 method = AdamOptimizerWithDecay(1000)
@@ -139,8 +139,13 @@ The state has to be built from `method.algorithm`, so the pairing is worth bindi
 than splatting it twice.
 
 There is no new type here and no schedule of its own: this is exactly `Adam()` and
-`DecayingStatic(; η₁, η₂, n = n_epochs)`, under the name of `GeometricMachineLearning`'s pairing.
+`DecayingStatic(; η₁, η₂, n = n_steps)`, under the name of `GeometricMachineLearning`'s pairing.
 Neither carries the element type of the parameters; the optimizer converts both.
+
+`n_steps` counts steps and not epochs: an iteration of [`solve!`](@ref) and a call of
+[`optimization_step!`](@ref) are one step each, so a training loop over `b` batches in each of `e`
+epochs takes `b * e` steps and passes that number. With a smaller `n_steps` the step size reaches
+`η₂` early and keeps falling, because [`DecayingStatic`](@ref) has no floor.
 
 # Why it exists
 
@@ -157,7 +162,7 @@ step size in a `SimpleSolvers.LinesearchMethod` — and this function is the one
 
 # Arguments
 
-`η₁`, `η₂` and `n_epochs` go to the line search; everything else is forwarded to [`Adam`](@ref), so
+`η₁`, `η₂` and `n_steps` go to the line search; everything else is forwarded to [`Adam`](@ref), so
 `β₁`, `β₂` and `δ` — GML's `ρ₁`, `ρ₂` and `δ` — keep `Adam`'s own defaults rather than a second copy
 of them.
 
@@ -179,6 +184,6 @@ AdamOptimizerWithDecay(1000).linesearch
 DecayingStatic from α = 0.01 to α = 1.0e-6 over 1000 iterations.
 ```
 """
-function AdamOptimizerWithDecay(n_epochs::Integer; η₁ = 1.0e-2, η₂ = 1.0e-6, kwargs...)
-    (algorithm = Adam(; kwargs...), linesearch = DecayingStatic(; η₁, η₂, n = n_epochs))
+function AdamOptimizerWithDecay(n_steps::Integer; η₁ = 1.0e-2, η₂ = 1.0e-6, kwargs...)
+    (algorithm = Adam(; kwargs...), linesearch = DecayingStatic(; η₁, η₂, n = n_steps))
 end
