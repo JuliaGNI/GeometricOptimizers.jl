@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Changed
+
+- **Lower bounds for the merged downgrade check.** The CI Downgrade job resolves `Project.toml`
+  and `test/Project.toml` together at their lower bounds and runs the suite there. These floors
+  rise so that the suite passes at them on Julia 1.12:
+  - `KernelAbstractions` 0.9.38 → 0.9.42. Before 0.9.42 the CPU launcher captures `len` and
+    `rem` in a closure, and JET reports the boxed variables and a runtime dispatch on
+    `__thread_run` for every kernel launch in `test/quality/jet.jl`.
+  - `Aqua` (test) 0.8 → 0.8.14. Older releases read `TypeName.mt`, which Julia 1.12 no longer
+    has, so `Aqua.test_piracies` throws; 0.8.14 reads `Core.methodtable`.
+  - `JET` (test), no bound before, now `0.10.1, 0.11, 0.12, 0.13`. JET 0.10.0 throws
+    `unhandled LimitedAccuracy` in its captured-variable pass; 0.10.1 calls `ignorelimited` there.
+  - `Documenter` (test), no bound before, now `1.8.1`. Without a bound the merged resolve picks
+    0.20.0, older than the exported `DocMeta` of 0.23.0; 1.8.1 is the first release whose
+    `DocMeta` respects the world age of bindings in Julia 1.12.
+
 ## [0.9.2]
 
 ### Added
