@@ -128,7 +128,6 @@ const DIRECT = (square = frobenius_square, δ_inside = false, capped = true,
     section_transport = false)
 
 function part_2()
-    scalar = train(ScalarMomentAdam())
     direct = train(DirectScalarMomentAdam())
     println("the loop against the package after $STEPS steps (controls, both at round-off):")
     @printf("  ScalarMomentAdam       %.2e, and %.2e with the complement Y⊥Q\n",
