@@ -26,7 +26,7 @@ leaf, when they are built.
 
 The horizontal space depends on the metric here, in contrast to the Stiefel case. For the Stiefel
 manifold, [edelman1998geometry](@cite) gives one horizontal space in its (2.21), with the blocks
-``A`` and ``-B^T``, and the canonical metric is the restriction of the metric of the orthogonal
+``A`` and ``-B^T``, and the canonical metric is half the restriction of the metric of the orthogonal
 group to it, (2.22) and (2.39). [bendokat2021real](@cite) gives two. The space below (3.4) is the
 complement of the vertical space with respect to the pseudo-Riemannian metric ``h`` of its (2.1),
 which is bi-invariant and not positive definite. The space in (3.13) is the complement with respect

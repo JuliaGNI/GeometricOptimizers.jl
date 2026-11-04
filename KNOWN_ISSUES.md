@@ -54,9 +54,10 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   | `Random.seed!(1)` against `Random.seed!(2)`, no complement written | 0.51 | at most 2.8e-15 |
 
   A stop shows this dependence too: with `Static(0.1)` on two Stiefel spheres, the seed decides
-  whether an `Adam` solve converges. So the exposure is every `Adam` run on a manifold with a
-  complement (`N > n`), as well as the direct `geodesic(Y, Δ)` / `cayley(Y, Δ)` API and anything
-  built on it.
+  whether an `Adam` solve converges. So the exposure is every `Adam` run on a manifold whose
+  complement has at least two columns (`N - n ≥ 2`). One column is fixed up to its sign, and a sign
+  change does not move `Adam`. The direct `geodesic(Y, Δ)` / `cayley(Y, Δ)` API and anything built
+  on it draw for every `N > n`.
 
   A section is not unique, so drawing one is legitimate; taking it from the *global* RNG without the
   caller being able to see or supply it is the problem. An `rng` argument threaded through
