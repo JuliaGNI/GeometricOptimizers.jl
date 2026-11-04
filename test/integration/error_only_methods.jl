@@ -4,11 +4,12 @@
 # build an array of the point's shape that is not a point. `Newton`'s scope check is the third: without
 # it `Newton` on a `Manifold` or a parameter set fails with an error that does not state the scope.
 # The fourth is on a `SymplecticStiefelManifold`, which has no horizontal lift: without it an optimizer
-# is built, and its first step raises a `MethodError` from `global_rep!`.
+# is built, and its first step raises a `MethodError` from `global_rep!`. The fifth is the weight-decay
+# guard of `AdamWithEuclideanDecay`.
 # The other refusals below are calls with no method, which raise `Base`'s `MethodError`.
 using GeometricOptimizers
 using GeometricOptimizers: NoHessian, OptimizerCache, hessian, inverse_hessian,
-                           OptimizerMethod, OptimizerState
+                           OptimizerMethod
 using Test
 import Random
 
@@ -49,6 +50,12 @@ end
         @test_throws message Optimizer(U, F; algorithm = method)
     end
     @test_throws message TrainingOptimizer(U; linesearch = T(1e-2))
+    # `TrainingOptimizer` takes no quasi-Newton method, so these reach `Optimizer` alone.
+    for method in (BFGS(), DFP())
+        @test_throws message OptimizerCache(method, U)
+        @test_throws message OptimizerState(method, U)
+        @test_throws message Optimizer(U, F; algorithm = method)
+    end
     # This method refuses the point with a guard of its own, on the weight decay.
     @test_throws "does not know whether Euclidean weight decay acts" TrainingOptimizer(
         U; algorithm = AdamWithEuclideanDecay())

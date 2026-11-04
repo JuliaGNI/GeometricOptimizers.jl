@@ -27,11 +27,12 @@ breaking release).
 ### Fixed
 
 - **An optimizer on a `SymplecticStiefelManifold` is refused when it is built.** `TrainingOptimizer`
-  and `Optimizer` built one for `Adam`, `GradientMethod` and `MomentumMethod`, and the first step
-  raised a `MethodError` from `global_rep!`, which names neither the type nor the reason. They now
-  raise an `ArgumentError` that says the package has no symplectic horizontal Lie algebra, for such
-  a point and for a parameter set with such a leaf, also under a `CompositeMethod`. No working call
-  changes. A23 stays open: the type still cannot be optimized over.
+  and `Optimizer` built one for `Adam`, `GradientMethod` and `MomentumMethod`, and `Optimizer` also
+  for `BFGS` and `DFP`, and the first step raised a `MethodError` from `global_rep!`, which names
+  neither the type nor the reason. They now raise an `ArgumentError` that says the package has no
+  symplectic horizontal Lie algebra, for such a point and for a parameter set with such a leaf, and
+  `TrainingOptimizer` also under a `CompositeMethod`. No working call changes. A23 stays open: the
+  type still cannot be optimized over.
 - **The metric of `SymplecticStiefelManifold` has the right source.** The docstrings of the type and
   of `metric` gave it as the metric of Gao et al. The code is (3.16) and (3.17) of Bendokat and
   Zimmermann, which has no `ρ` and is the canonical-like metric of Gao et al. only at the base point

@@ -53,9 +53,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   | a signed permutation | 6.8e-16 | at most 3.8e-15 |
   | `Random.seed!(1)` against `Random.seed!(2)`, no complement written | 0.51 | at most 2.8e-15 |
 
-  K31 is this dependence seen in a stop: the seed decides whether that `Adam` solve converges. So the
-  exposure is every `Adam` run on a manifold, as well as the direct `geodesic(Y, Δ)` / `cayley(Y, Δ)`
-  API and anything built on it.
+  A stop shows this dependence too: with `Static(0.1)` on two Stiefel spheres, the seed decides
+  whether an `Adam` solve converges. So the exposure is every `Adam` run on a manifold, as well as
+  the direct `geodesic(Y, Δ)` / `cayley(Y, Δ)` API and anything built on it.
 
   A section is not unique, so drawing one is legitimate; taking it from the *global* RNG without the
   caller being able to see or supply it is the problem. An `rng` argument threaded through
@@ -308,11 +308,12 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `zero(U)` is a plain `Matrix` of the shape of the point, as on the other two manifolds, and there
   is no zero tangent vector in the form of a lift.
 
-  So no optimizer can step this type, and each one says so when it is built. Every first-order cache
-  and state is sized by `_zero`, and `_zero(::SymplecticStiefelManifold)` raises an `ArgumentError`.
-  `TrainingOptimizer` and `Optimizer` therefore refuse such a point, and a parameter set with such a
-  leaf, also under a `CompositeMethod`. `AdamWithEuclideanDecay` refuses it with the `ErrorException`
-  of its weight-decay guard. `ScalarMomentAdam`, `DirectMomentum`, `DirectScalarMomentAdam` and
+  So no optimizer can step this type, and each one says so when it is built. Every first-order and
+  quasi-Newton cache and state is sized by `_zero`, and `_zero(::SymplecticStiefelManifold)` raises
+  an `ArgumentError`. `TrainingOptimizer` and `Optimizer` therefore refuse such a point, and a
+  parameter set with such a leaf. `TrainingOptimizer` does so also under a `CompositeMethod`, which
+  `Optimizer` does not take. `AdamWithEuclideanDecay` refuses it with the `ErrorException` of its
+  weight-decay guard. `ScalarMomentAdam`, `DirectMomentum`, `DirectScalarMomentAdam` and
   `FactoredStiefelAdam` take a `StiefelManifold` by their signature, so the call is a `MethodError`.
   This refusal is the state of the issue and not a fix of it.
 
@@ -1287,8 +1288,8 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   seeds of the global generator by 7.8e-16. The method written in the tangent space, with no section
   and with the first moment transported by `ξ ↦ Qξ` for the left translation `Q = cay(Ω(Δ))` of the
   step, reproduces `ScalarMomentAdam` to 2.6e-15 from either complement. So the section costs
-  `O(N³)` to build, `O(N(N-n)n)` per step, and a draw from the global generator (A5), and it changes
-  no iterate.
+  `O(N³)` to build, `O(N(N-n)n)` per step, and a draw from the global generator, and it changes no
+  iterate.
 
   **What to do**, a proposal: an `AbstractVectorTransport` that applies `Q` through the rank-`2n`
   factors of `cayley_direct!`, so that it reuses the factorisation of the step. With this transport,
