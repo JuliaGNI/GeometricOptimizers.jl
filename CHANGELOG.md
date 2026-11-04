@@ -12,8 +12,10 @@ breaking release).
 
 - **The `metal` test group checks the manifold operations.** The ten rows of
   `scripts/metal_check.jl` that CI did not run, `rand` on the device, `rgrad` and its refusal of a
-  host gradient, `metric` and both algorithms of `geodesic`, move to `scripts/device_manifolds.jl`.
-  `test/devices/metal.jl` asserts them, and `metal_check()` still prints them.
+  host gradient, `metric` and `geodesic` under `ScaledSquaring` and `NativePade`, move to
+  `scripts/device_manifolds.jl`. `test/devices/metal.jl` asserts them, and `metal_check()` still
+  prints them. The function seeds the global generator, so the `rand` rows draw the same matrices
+  on every run.
 - **Lower bounds for the merged downgrade check.** The CI Downgrade job resolves `Project.toml`
   and `test/Project.toml` together at their lower bounds and runs the suite there. These floors
   rise so that the suite passes at them on Julia 1.12:

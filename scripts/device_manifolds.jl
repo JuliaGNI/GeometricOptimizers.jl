@@ -1,11 +1,12 @@
 # The manifold operations on a device backend: a point drawn on the device, the operations at a point
-# against the same operations on its host copy, and the two exponential algorithms of `geodesic` on a
-# lift whose norm needs squarings.
+# against the same operations on its host copy, and `geodesic` under `ScaledSquaring()` and
+# `NativePade()` on a lift whose norm needs squarings.
 #
 # `device_manifolds(todevice)` takes the function that moves a host array onto the device and returns
-# one row per call: its name, `:pass`, `:wrong` (it ran and disagrees with the host twin, or its
+# one row per call: its name, `:pass`, `:wrong` (it ran and failed the check of its row, or its
 # result left the device) or the first line of the error it raised. Scalar indexing has to be off
-# for the rows to mean anything, and the function turns it off.
+# for the rows to mean anything, and the function turns it off. It also reseeds the global generator
+# with `seed`, for the `rand` rows; a caller that needs its own stream reseeds after it.
 #
 #     using Metal; device_manifolds(MtlArray)  # what `test/devices/metal.jl` asserts
 #
@@ -31,6 +32,7 @@ function device_manifolds(todevice; seed = 1234)
     allowscalar(false)
     backend = get_backend(todevice(zeros(Float32, 1)))
     rng = Random.Xoshiro(seed)
+    Random.seed!(seed)
     rows = Pair{String, Any}[]
     for M in (StiefelManifold, GrassmannManifold)
         name = string(nameof(M))
