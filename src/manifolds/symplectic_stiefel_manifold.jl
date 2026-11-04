@@ -19,9 +19,19 @@ at the base point for ``\rho = 2``, and for no ``\rho`` at a general point.
 the symplectic SR decomposition [`sr!`](@ref), which is the construction
 [gao2024optimization](@cite) uses for its retraction.
 
-No optimizer steps this type, because the package has no symplectic horizontal Lie algebra.
+No optimizer steps this type, because the package has no symplectic horizontal Lie algebra. The
+space is known: [bendokat2021real](@cite) gives it below its (3.4). Until a lift type implements it,
 [`TrainingOptimizer`](@ref) and [`Optimizer`](@ref) refuse a point, and a parameter set with such a
 leaf, when they are built.
+
+The horizontal space depends on the metric here, in contrast to the Stiefel case. For the Stiefel
+manifold, [edelman1998geometry](@cite) gives one horizontal space in its (2.21), with the blocks
+``A`` and ``-B^T``, and the canonical metric is the restriction of the metric of the orthogonal
+group to it, (2.22) and (2.39). [bendokat2021real](@cite) gives two. The space below (3.4) is the
+complement of the vertical space with respect to the pseudo-Riemannian metric ``h`` of its (2.1),
+which is bi-invariant and not positive definite. The space in (3.13) is the complement with respect
+to the right-invariant Riemannian metric ``g`` of its (2.2), under a condition that depends on
+``U``, and this is the horizontal space of the metric (3.16) that this type implements.
 
 !!! warning "The accuracy degrades with the size, and `Float32` is out of reach"
     A point is only as good as the decomposition it came from, and that decomposition has no

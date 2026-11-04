@@ -82,8 +82,9 @@ function part_1()
 
     haars = [norm(train(Adam(); λ = Y⊥) - train(Adam(); λ = Y⊥ * haar(RNG, N - n)))
              for _ in 1:32]
+    sorted = sort(haars)
     @printf("Adam over 32 Haar changes: min %.3f, median %.3f, max %.3f\n",
-        minimum(haars), sort(haars)[16], maximum(haars))
+        sorted[1], (sorted[16] + sorted[17]) / 2, sorted[32])
 
     seeded(m, s) = (Random.seed!(s); train(m()))
     println("‖Yₜ - Yₜ'‖_F after $STEPS steps, for Random.seed!(1) against Random.seed!(2), no complement written:")
