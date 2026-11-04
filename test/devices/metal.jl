@@ -1,6 +1,6 @@
-# The device sweeps of `device_products.jl` and `device_solve.jl` on a real Apple GPU, with
-# `MtlArray` in place of the `JLArrays` stand-in, and the direct Cayley retraction and its two
-# transports against the dense host reference. `runtests.jl` runs this file in the `metal`
+# The device sweeps of `device_manifolds.jl`, `device_products.jl` and `device_solve.jl` on a real
+# Apple GPU, with `MtlArray` in place of the `JLArrays` stand-in, and the direct Cayley retraction
+# and its two transports against the dense host reference. `runtests.jl` runs this file in the `metal`
 # group, which a default run on Apple silicon includes and `Pkg.test(test_args = ["metal"])`
 # selects anywhere.
 #
@@ -25,7 +25,16 @@ using Test
 
 if Metal.functional()
     include(joinpath(@__DIR__, "..", "..", "scripts", "device_products.jl"))
+    include(joinpath(@__DIR__, "..", "..", "scripts", "device_manifolds.jl"))
     include(joinpath(@__DIR__, "..", "..", "scripts", "device_solve.jl"))
+
+    @testset "the manifold operations run on Metal and match the host" begin
+        for (name, status) in device_manifolds(MtlArray)
+            @testset "$name" begin
+                @test status === :pass
+            end
+        end
+    end
 
     @testset "every product and sum runs on Metal and matches the host" begin
         @info "Metal device" Metal.device()
