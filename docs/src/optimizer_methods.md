@@ -92,11 +92,11 @@ If all the weights are on a vector space, then we directly compute updates for `
 1. ``B_1 \gets ((\rho_1 - \rho_1^t)/(1 - \rho_1^t))\cdot{}B_1 + (1 - \rho_1)/(1 - \rho_1^t)\cdot{}\nabla{}L,``
 2. ``B_2 \gets ((\rho_2 - \rho_2^t)/(1 - \rho_2^t))\cdot{}B_2 + (1 - \rho_2)/(1 - \rho_2^t)\cdot\nabla{}L\odot\nabla{}L,``
 
-where ``\odot:\mathbb{R}^n\times\mathbb{R}^n\to\mathbb{R}^n`` is the *Hadamard product*: ``[a\odot{}b]_i = a_ib_i.`` ``\rho_1`` and ``\rho_2`` are hyperparameters. Their defaults, ``\rho_1=0.9`` and ``\rho_2=0.99``, are taken from [goodfellow2016deep; page 301](@cite). After having updated the `cache` (i.e. ``B_1`` and ``B_2``) we compute a *velocity* with which the parameters of the network are then updated:
+where ``\odot:\mathbb{R}^n\times\mathbb{R}^n\to\mathbb{R}^n`` is the *Hadamard product*: ``[a\odot{}b]_i = a_ib_i.`` ``\rho_1`` and ``\rho_2`` are hyperparameters. Their defaults, ``\rho_1=0.9`` and ``\rho_2=0.99``, are those of the experiments in [Brantner:2023](@cite); [kingma2014adam](@cite) and [goodfellow2016deep; Algorithm 8.7](@cite) suggest ``\rho_2=0.999``. After having updated the `cache` (i.e. ``B_1`` and ``B_2``) we compute a *velocity* with which the parameters of the network are then updated:
 * ``W_t\gets -\eta{}B_1/(\sqrt{B_2} + \delta),``
 * ``Y^{(t+1)} \gets Y^{(t)} + W^{(t)},``
 
-where the last addition has to be replaced with appropriate operations when dealing with manifolds. Further ``\eta`` is the *learning rate* and ``\delta`` is a small constant that is added for stability. The division, square root and addition in the computation of ``W_t`` are performed element-wise.
+where the last addition has to be replaced with appropriate operations when dealing with manifolds. Further ``\eta`` is the *learning rate* and ``\delta`` is a small constant that is added for stability. The division, square root and addition in the computation of ``W_t`` are performed element-wise. Equation (12) of [Brantner:2023](@cite) has ``\delta`` under the square root.
 
 In the following we show a schematic update that Adam performs for the case when no elements are on manifolds (also compare this figure with the [general optimization framework](@ref "Generalization to Homogeneous Spaces")):
 
@@ -275,18 +275,18 @@ a genuine departure: transport by the global section and transport by re-project
 group and differ on a proper homogeneous space.
 
 ## The Adam Optimizer with Decay
-The Adam optimizer with decay is similar to the standard Adam optimizer with the difference that the learning rate ``\eta`` decays exponentially. We start with a relatively high learning rate ``\eta_1`` (e.g. ``10^{-2}``) and end with a low learning rate ``\eta_2`` (e.g. ``10^{-8}``). If we want to use this optimizer we have to tell it beforehand how many optimizer steps we take, one per batch and not one per epoch, such that it can adjust the learning rate decay accordingly:
+The Adam optimizer with decay is similar to the standard Adam optimizer with the difference that the learning rate ``\eta`` decays exponentially. We start with a relatively high learning rate ``\eta_1`` (e.g. ``10^{-2}``) and end with a low learning rate ``\eta_2`` (e.g. ``10^{-8}``). If we want to use this optimizer we have to tell it beforehand how many epochs we train for such that it can adjust the learning rate decay accordingly:
 
 There is no new method here and no schedule of its own: [`AdamOptimizerWithDecay`](@ref) is
 [`Adam`](@ref) paired with a [`DecayingStatic`](@ref) line search, returned as a `NamedTuple` to
-splat into an [`Optimizer`](@ref).
+splat into an [`Optimizer`](@ref). In this example one batch is the whole data set.
 
 ```@example optimizer_methods
 const η₁ = 1e-2
 const η₂ = 1e-6
-const n_steps = 1000
+const n_epochs = 1000
 
-pairing = AdamOptimizerWithDecay(n_steps; η₁ = η₁, η₂ = η₂)
+pairing = AdamOptimizerWithDecay(n_epochs; η₁ = η₁, η₂ = η₂)
 pairing.linesearch
 ```
 
@@ -345,7 +345,9 @@ framework it does that within is described [here](@ref "The optimizer framework,
 Pages = []
 Canonical = false
 
+Brantner:2023
 goodfellow2016deep
+kingma2014adam
 ```
 
 ```@raw latex

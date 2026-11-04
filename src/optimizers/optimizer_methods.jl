@@ -134,7 +134,8 @@ MomentumMethod(; α = DEFAULT_MOMENTUM_α) = MomentumMethod{typeof(float(α))}(f
 @doc raw"""
     Adam(; β₁, β₂, δ)
 
-The Adam optimizer, with the defaults suggested in [goodfellow2016deep; page 301](@cite).
+The Adam optimizer, with the defaults of the experiments in [Brantner:2023](@cite).
+[kingma2014adam](@cite) and [goodfellow2016deep; Algorithm 8.7](@cite) suggest ``\beta_2 = 0.999``.
 
 The cache consists of a first and a second moment, stored in *bias-corrected* form, i.e.
 updated in the ``t``-th iteration (counted from ``t = 1``) as

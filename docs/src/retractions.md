@@ -354,7 +354,7 @@ We further use the following:
 ```math
     \begin{aligned}
     \exp(B'(B'')^T) & = \sum_{n=0}^\infty \frac{1}{n!} (B'(B'')^T)^n = \mathbb{I} + \sum_{n=1}^\infty \frac{1}{n!} B'((B'')^TB')^{n-1}(B'')^T \\
-    & = \mathbb{I} + B'\left( \sum_{n=1}^\infty \frac{1}{n!} ((B'')^TB')^{n-1} \right)B'' =: \mathbb{I} + B'\mathfrak{A}(B', B'')B'',
+    & = \mathbb{I} + B'\left( \sum_{n=1}^\infty \frac{1}{n!} ((B'')^TB')^{n-1} \right)(B'')^T =: \mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T,
     \end{aligned}
 ```
 
@@ -533,9 +533,10 @@ difference between the Cayley curve and the geodesic. The exact differential fix
 while [`DEFAULT_STEP_CEILING`](@ref) fixed the excessive extrapolation. With both changes in place,
 the regression no longer depends on which retraction is selected.
 
-The cost balance depends on the dimensions. [`cayley`](@ref) finishes with a product of two
-``N\times{}N`` matrices, whereas [`geodesic`](@ref) assembles
-``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` from a ``2n\times{}2n`` matrix function. The benchmark
+The cost balance depends on the dimensions. [`cayley`](@ref) assembles
+``\mathbb{I} + B'(\mathbb{I} - \frac{1}{2}X)^{-1}(B'')^T`` from a ``2n\times{}2n`` inverse, whereas
+[`geodesic`](@ref) assembles ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` from a ``2n\times{}2n``
+matrix function. The benchmark
 under [What they cost](@ref) shows one representative comparison.
 
 That ``2n\times{}2n`` matrix function is the whole of what remains, and it is not a formula but a
