@@ -354,7 +354,7 @@ We further use the following:
 ```math
     \begin{aligned}
     \exp(B'(B'')^T) & = \sum_{n=0}^\infty \frac{1}{n!} (B'(B'')^T)^n = \mathbb{I} + \sum_{n=1}^\infty \frac{1}{n!} B'((B'')^TB')^{n-1}(B'')^T \\
-    & = \mathbb{I} + B'\left( \sum_{n=1}^\infty \frac{1}{n!} ((B'')^TB')^{n-1} \right)B'' =: \mathbb{I} + B'\mathfrak{A}(B', B'')B'',
+    & = \mathbb{I} + B'\left( \sum_{n=1}^\infty \frac{1}{n!} ((B'')^TB')^{n-1} \right)(B'')^T =: \mathbb{I} + B'\mathfrak{A}(B', B'')(B'')^T,
     \end{aligned}
 ```
 
@@ -371,7 +371,7 @@ The final expression we obtain is:
 For the Cayley retraction we leverage the decomposition of ``\bar{B} = B'(B'')^T\in\mathfrak{g}^\mathrm{hor}`` through the *Sherman-Morrison-Woodbury formula*:
 
 ```math
-(\mathbb{I} - \frac{1}{2}B'(B'')^T)^{-1} = \mathbb{I} + \frac{1}{2}B'(\mathbb{I} - \frac{1}{2}B'(B'')^T)^{-1}(B'')^T
+(\mathbb{I} - \frac{1}{2}B'(B'')^T)^{-1} = \mathbb{I} + \frac{1}{2}B'(\mathbb{I}_{2n} - \frac{1}{2}(B'')^TB')^{-1}(B'')^T
 ```
 
 So what we have to compute the inverse of:
@@ -384,7 +384,7 @@ So what we have to compute the inverse of:
 By leveraging the sparse structure of the matrices in ``\mathfrak{g}^\mathrm{hor}`` we arrive at the following expression for the Cayley retraction (similar to the case of the geodesic retraction):
 
 ```math
-\mathrm{Cayley}(\bar{B}) = \mathbb{I} + \frac{1}{2} B' \left(\mathbb{I}_{2n} - \frac{1}{2} (B'')^T B'\right)^{-1} (B'')^T \left(\mathbb{I} + \frac{1}{2} \bar{B}\right),
+\mathrm{Cayley}(\bar{B}) = \mathbb{I} + B' \left(\mathbb{I}_{2n} - \frac{1}{2} (B'')^T B'\right)^{-1} (B'')^T,
 ```
 
 where we have abbreviated ``\mathbb{I} := \mathbb{I}_N.`` We conclude with a remark:
@@ -533,10 +533,11 @@ difference between the Cayley curve and the geodesic. The exact differential fix
 while [`DEFAULT_STEP_CEILING`](@ref) fixed the excessive extrapolation. With both changes in place,
 the regression no longer depends on which retraction is selected.
 
-The cost balance depends on the dimensions. [`cayley`](@ref) finishes with a product of two
-``N\times{}N`` matrices, whereas [`geodesic`](@ref) assembles
-``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` from a ``2n\times{}2n`` matrix function. The benchmark
-under [What they cost](@ref) shows one representative comparison.
+The cost balance depends on the dimensions. [`cayley`](@ref) assembles
+``\mathbb{I} + B'(\mathbb{I}_{2n} - \frac{1}{2}X)^{-1}(B'')^T`` from a ``2n\times{}2n`` inverse,
+whereas [`geodesic`](@ref) assembles ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` from a
+``2n\times{}2n`` matrix function. The benchmark under [What they cost](@ref) shows one
+representative comparison.
 
 That ``2n\times{}2n`` matrix function is the whole of what remains, and it is not a formula but a
 numerical problem: which approximation to evaluate, and what to do when the argument is large. The
