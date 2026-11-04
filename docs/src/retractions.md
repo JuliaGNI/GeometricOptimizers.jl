@@ -371,7 +371,7 @@ The final expression we obtain is:
 For the Cayley retraction we leverage the decomposition of ``\bar{B} = B'(B'')^T\in\mathfrak{g}^\mathrm{hor}`` through the *Sherman-Morrison-Woodbury formula*:
 
 ```math
-(\mathbb{I} - \frac{1}{2}B'(B'')^T)^{-1} = \mathbb{I} + \frac{1}{2}B'(\mathbb{I} - \frac{1}{2}(B'')^TB')^{-1}(B'')^T
+(\mathbb{I} - \frac{1}{2}B'(B'')^T)^{-1} = \mathbb{I} + \frac{1}{2}B'(\mathbb{I}_{2n} - \frac{1}{2}(B'')^TB')^{-1}(B'')^T
 ```
 
 So what we have to compute the inverse of:
@@ -534,10 +534,10 @@ while [`DEFAULT_STEP_CEILING`](@ref) fixed the excessive extrapolation. With bot
 the regression no longer depends on which retraction is selected.
 
 The cost balance depends on the dimensions. [`cayley`](@ref) assembles
-``\mathbb{I} + B'(\mathbb{I} - \frac{1}{2}X)^{-1}(B'')^T`` from a ``2n\times{}2n`` inverse, whereas
-[`geodesic`](@ref) assembles ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` from a ``2n\times{}2n``
-matrix function. The benchmark
-under [What they cost](@ref) shows one representative comparison.
+``\mathbb{I} + B'(\mathbb{I}_{2n} - \frac{1}{2}X)^{-1}(B'')^T`` from a ``2n\times{}2n`` inverse,
+whereas [`geodesic`](@ref) assembles ``\mathbb{I} + B'\mathfrak{A}(X)(B'')^T`` from a
+``2n\times{}2n`` matrix function. The benchmark under [What they cost](@ref) shows one
+representative comparison.
 
 That ``2n\times{}2n`` matrix function is the whole of what remains, and it is not a formula but a
 numerical problem: which approximation to evaluate, and what to do when the argument is large. The
