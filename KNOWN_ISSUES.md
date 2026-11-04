@@ -552,32 +552,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `‖G‖_F = 2.6e19`, gives a nonzero step there and at each of the next 200. Neither method raises,
   and the point stays finite. The docstring of each method states its limit.
 
-### K53 · `ScalarMomentAdam` and `DirectScalarMomentAdam` are two methods, and the docs name only one of the differences between them
-
-- location: `src/optimizers/optimizer_methods.jl`, the docstring of `DirectScalarMomentAdam`
-- kind: docs
-- found: 2026-11-04
-- evidence: both docstrings call their method the Cayley Adam of Li et al. The docstring of
-  `DirectScalarMomentAdam` sets it against `ScalarMomentAdam` by where it steps and by the place of
-  `δ`. No page says that the two are one method, and none lists the differences. With the canonical
-  gradient `G_R = YA + Y_⊥B`, they are:
-
-  | | `ScalarMomentAdam` | `DirectScalarMomentAdam` |
-  |:--|:--|:--|
-  | second moment | `l2norm(Ḡ)² = ½‖A‖² + ‖B‖²`, or `‖∇L‖²_F` with `ambient_norm = true` | `‖G_R‖²_F = ‖A‖² + ‖B‖²` |
-  | denominator | `√(m₂ + δ)` | `√v + δ` |
-  | cap | none in `TrainingOptimizer`; `step_αmax` in `solve!` | `α_max` on `‖Δ‖_F` |
-  | transport of the first moment | `Q` of the section | `ProjectionTransport` or `DifferentiatedCayleyTransport` |
-
-  So `DirectScalarMomentAdam` uses a third norm: neither the default of `ScalarMomentAdam` nor the
-  `‖∇L‖²` of the source. `scripts/stiefel_adam_section.jl` writes the method once in the tangent space
-  with a switch for each row, and reproduces each of the two to 2.6e-15. On `St(3, 8)`, after 60
-  training steps at step size 0.01, the distance to `DirectScalarMomentAdam` in the Frobenius norm is
-  0.0092 for `ScalarMomentAdam`, 0.28 with `ambient_norm = true`, and for one switch alone 7.7e-3 (the
-  norm), 4.6e-3 (the transport), 5.6e-10 (`δ` inside the root) and round-off (no cap). The cap binds
-  at a larger step: at step size 4, removing it moves the iterate by 0.04. For a loss with `A = 0`
-  the norm switch does not move the iterate.
-
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
@@ -861,6 +835,32 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   plainly in the docstring that no such bound is claimed and that the threshold is a measured one — the
   latter is what is written today, and it is enough to use the algorithm honestly but not enough to
   close [#52]'s first acceptance criterion.
+
+### K53 · `ScalarMomentAdam` and `DirectScalarMomentAdam` are two methods, and the docs name only one of the differences between them
+
+- location: `src/optimizers/optimizer_methods.jl`, the docstring of `DirectScalarMomentAdam`
+- kind: docs
+- found: 2026-11-04
+- evidence: both docstrings call their method the Cayley Adam of Li et al. The docstring of
+  `DirectScalarMomentAdam` sets it against `ScalarMomentAdam` by where it steps and by the place of
+  `δ`. No page says that the two are one method, and none lists the differences. With the canonical
+  gradient `G_R = YA + Y_⊥B`, they are:
+
+  | | `ScalarMomentAdam` | `DirectScalarMomentAdam` |
+  |:--|:--|:--|
+  | second moment | `l2norm(Ḡ)² = ½‖A‖² + ‖B‖²`, or `‖∇L‖²_F` with `ambient_norm = true` | `‖G_R‖²_F = ‖A‖² + ‖B‖²` |
+  | denominator | `√(m₂ + δ)` | `√v + δ` |
+  | cap | none in `TrainingOptimizer`; `step_αmax` in `solve!` | `α_max` on `‖Δ‖_F` |
+  | transport of the first moment | `Q` of the section | `ProjectionTransport` or `DifferentiatedCayleyTransport` |
+
+  So `DirectScalarMomentAdam` uses a third norm: neither the default of `ScalarMomentAdam` nor the
+  `‖∇L‖²` of the source. `scripts/stiefel_adam_section.jl` writes the method once in the tangent space
+  with a switch for each row, and reproduces each of the two to 2.6e-15. On `St(3, 8)`, after 60
+  training steps at step size 0.01, the distance to `DirectScalarMomentAdam` in the Frobenius norm is
+  0.0092 for `ScalarMomentAdam`, 0.28 with `ambient_norm = true`, and for one switch alone 7.7e-3 (the
+  norm), 4.6e-3 (the transport), 5.6e-10 (`δ` inside the root) and round-off (no cap). The cap binds
+  at a larger step: at step size 4, removing it moves the iterate by 0.04. For a loss with `A = 0`
+  the norm switch does not move the iterate.
 
 ### K39 · Manual pages carry release history in their prose
 
