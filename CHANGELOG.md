@@ -24,6 +24,24 @@ breaking release).
     0.20.0, older than the exported `DocMeta` of 0.23.0; 1.8.1 is the first release whose
     `DocMeta` respects the world age of bindings in Julia 1.12.
 
+### Fixed
+
+- **An optimizer on a `SymplecticStiefelManifold` is refused when it is built.** `TrainingOptimizer`
+  and `Optimizer` built one for `Adam`, `GradientMethod` and `MomentumMethod`, and the first step
+  raised a `MethodError` from `global_rep!`, which names neither the type nor the reason. They now
+  raise an `ArgumentError` that says the package has no symplectic horizontal Lie algebra, for such
+  a point and for a parameter set with such a leaf, also under a `CompositeMethod`. No working call
+  changes. A23 stays open: the type still cannot be optimized over.
+- **The metric of `SymplecticStiefelManifold` has the right source.** The docstrings of the type and
+  of `metric` gave it as the metric of Gao et al. The code is (3.16) and (3.17) of Bendokat and
+  Zimmermann, which has no `ρ` and is the canonical-like metric of Gao et al. only at the base point
+  with `ρ = 2`. `rgrad` now names its source, and the code does not change.
+  `scripts/symplectic_metric_attribution.jl` checks both statements against the formulas of the two
+  papers.
+- **The horizontal lifts are printed with `-Bᵀ`.** The docstrings of `StiefelLieAlgHorMatrix` and
+  `GrassmannLieAlgHorMatrix` and the page "Global Tangent Spaces" printed `Bᵀ` in the upper right
+  block. That matrix is not skew-symmetric, and `getindex` returns `-Bᵀ` there.
+
 ## [0.9.2]
 
 ### Added

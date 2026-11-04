@@ -51,6 +51,11 @@ end
 _zero(a::AbstractArray) = zero(a)
 # the zero tangent vector at a point, which is a horizontal lift and not the point's own shape
 _zero(a::Union{StiefelManifold, GrassmannManifold}) = zero_tangent(a)
+# Every first-order cache and state is sized by the lift of the point, and this one has none. Falling
+# through to `zero(a)` builds an optimizer whose first step has no `global_rep!` method.
+function _zero(::SymplecticStiefelManifold)
+    throw(ArgumentError("a SymplecticStiefelManifold cannot be optimized over: this package has no symplectic horizontal Lie algebra to hold its gradient"))
+end
 _zero(a::NetworkParameters) = mapparameters(_zero, a)
 
 _copy(a::AbstractArray) = copy(a)

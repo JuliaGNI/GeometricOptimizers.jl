@@ -12,9 +12,16 @@ with ``\mathbb{J}`` the canonical Poisson tensor. Compare [`StiefelManifold`](@r
 constraint is ``Y^TY = \mathbb{I}``: the two agree in form and differ in which bilinear form the
 columns preserve.
 
-The metric is the one of [gao2021riemannian](@cite), and `rand` builds a point through the
-symplectic SR decomposition [`sr!`](@ref), which is the construction
-[gao2024optimization](@cite) uses for its retraction. See also [bendokat2021real](@cite).
+The metric and the Riemannian gradient are (3.16) and (3.17) of [bendokat2021real](@cite). The
+canonical-like metric of [gao2021riemannian](@cite) is a different metric: it agrees with this one
+at the base point for ``\rho = 2``, and for no ``\rho`` at a general point.
+`scripts/symplectic_metric_attribution.jl` checks both statements. `rand` builds a point through
+the symplectic SR decomposition [`sr!`](@ref), which is the construction
+[gao2024optimization](@cite) uses for its retraction.
+
+No optimizer steps this type, because the package has no symplectic horizontal Lie algebra.
+[`TrainingOptimizer`](@ref) and [`Optimizer`](@ref) refuse a point, and a parameter set with such a
+leaf, when they are built.
 
 !!! warning "The accuracy degrades with the size, and `Float32` is out of reach"
     A point is only as good as the decomposition it came from, and that decomposition has no
@@ -156,7 +163,12 @@ end
     rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
 
 The Riemannian gradient of a point of the symplectic Stiefel manifold, for the metric of
-[`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref).
+[`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref). This is (3.17) of
+[bendokat2021real](@cite):
+
+```math
+\mathrm{grad}\,L(U) = \nabla{}L\,U^TU + \mathbb{J}_{2N}U(\nabla{}L)^T\mathbb{J}_{2N}U.
+```
 
 ``\nabla{}L`` is the Euclidean gradient, i.e. the derivative of the loss with respect to the
 entries of `U` read as an unconstrained matrix.
@@ -169,8 +181,8 @@ end
 @doc raw"""
     metric(U::SymplecticStiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
 
-The Riemannian metric of the symplectic Stiefel manifold, taken from
-[gao2021riemannian](@cite):
+The Riemannian metric of the symplectic Stiefel manifold, (3.16) of [bendokat2021real](@cite) with
+the factors of the trace in another order:
 
 ```math
 g_U(\Delta_1, \Delta_2) = \mathrm{tr}\left( P \Delta_1^T \left(\mathbb{I}_{2N} - \frac{1}{2}\mathbb{J}_{2N}^TUPU^T\mathbb{J}_{2N}\right)\Delta_2 \right), \qquad P = (U^TU)^{-1}.
