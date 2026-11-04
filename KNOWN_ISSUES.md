@@ -38,14 +38,32 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
     fixed — which it is not, under any line search that adapts its trial count. Verified directly:
     `seed!(11); geodesic(Y, Δ); rand()` ≠ `seed!(11); rand()`.
 
-  The optimizer path is mostly insulated, because the section is built once at initialization and
-  thereafter parallel-transported by `update_section!`. The exposure is the direct `geodesic(Y, Δ)` /
-  `cayley(Y, Δ)` API and anything built on it.
+  The optimizer path is insulated only for a method whose iterates do not depend on the section, and
+  entrywise `Adam` is not one. The section is built once at initialization and thereafter carried by
+  `update_section!`, so a run does not draw again. But the entrywise moments of `Adam` live in the
+  coordinates of the complement, and the draw chooses those coordinates, so **the draw changes the
+  path**. On `St(3, 8)` with `f(Y) = -½ tr(YᵀSYD)`, 60 training steps at step size 0.01 and a fixed
+  complement (`scripts/stiefel_adam_section.jl`, Julia 1.13.3), the distance between the two iterates
+  in the Frobenius norm is:
+
+  | change of the complement | `Adam` | `GradientMethod`, `MomentumMethod`, `ScalarMomentAdam` |
+  |:--|:--|:--|
+  | one Haar change | 0.51 | at most 1.3e-14 |
+  | 32 Haar changes | 0.26 to 2.15, median 0.74 | — |
+  | a signed permutation | 6.8e-16 | at most 3.8e-15 |
+  | `Random.seed!(1)` against `Random.seed!(2)`, no complement written | 0.51 | at most 2.8e-15 |
+
+  A stop shows this dependence too: with `Static(0.1)` on two Stiefel spheres, the seed decides
+  whether an `Adam` solve converges. So the exposure is every `Adam` run on a manifold whose
+  complement has at least two columns (`N - n ≥ 2`). One column is fixed up to its sign, and a sign
+  change does not move `Adam`. The direct `geodesic(Y, Δ)` / `cayley(Y, Δ)` API and anything built
+  on it draw for every `N > n`.
 
   A section is not unique, so drawing one is legitimate; taking it from the *global* RNG without the
   caller being able to see or supply it is the problem. An `rng` argument threaded through
   `GlobalSection`, or a deterministic completion (a Householder completion of `Y`, which needs no
-  randomness at all), would close it.
+  randomness at all), would close it. Either one fixes the draw and leaves the dependence above: a
+  completion still chooses the coordinates of `Adam`.
 
 ### A6 · `ScaledSquaring` takes about twice the squarings it needs
 
@@ -278,7 +296,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   repair. Until then the type is documented as `Float64`-only at small sizes, in both the
   `SymplecticStiefelManifold` and `sr!` docstrings, and nothing in the package depends on it.
 
-### A23 · `SymplecticStiefelManifold` has no `Ω` and no `zero`, so it cannot be optimized over
+### A23 · `SymplecticStiefelManifold` has no `Ω` and no `zero_tangent`, so it cannot be optimized over
 
 - location: `src/lie_algebras/`
 - kind: defect
@@ -287,13 +305,21 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   **Severity: medium.** Opened by the change that added the type.
 
-  `StiefelManifold` implements `Ω` and `zero` in addition to `rand`, `rgrad`, `metric` and
-  `global_section`; `SymplecticStiefelManifold` implements neither. `Ω(U, Δ)` is a `MethodError`, and
-  `zero(U)` is worse than an error: it falls through to `zero(::AbstractMatrix)` and returns a plain
-  `Matrix`, where `zero(::StiefelManifold)` returns a `StiefelLieAlgHorMatrix`. An optimizer reaching
-  for either gets a wrong answer or a failure at its first step.
+  `StiefelManifold` implements `Ω` and `zero_tangent` in addition to `rand`, `rgrad`, `metric` and
+  `global_section`; `SymplecticStiefelManifold` implements neither. `Ω(U, Δ)` is a `MethodError`.
+  `zero(U)` is a plain `Matrix` of the shape of the point, as on the other two manifolds, and there
+  is no zero tangent vector in the form of a lift.
 
-  Both need the **symplectic horizontal Lie algebra**, which this package does not have:
+  So no optimizer can step this type, and each one says so when it is built. Every first-order and
+  quasi-Newton cache and state is sized by `_zero`, and `_zero(::SymplecticStiefelManifold)` raises
+  an `ArgumentError`. `TrainingOptimizer` and `Optimizer` therefore refuse such a point, and a
+  parameter set with such a leaf. `TrainingOptimizer` does so also under a `CompositeMethod`, which
+  `Optimizer` does not take. `AdamWithEuclideanDecay` refuses it with the `ErrorException` of its
+  weight-decay guard. `ScalarMomentAdam`, `DirectMomentum`, `DirectScalarMomentAdam` and
+  `FactoredStiefelAdam` take a `StiefelManifold` by their signature, so the call is a `MethodError`.
+  This refusal is the state of the issue and not a fix of it.
+
+  `Ω` and the lift need the **symplectic horizontal Lie algebra**, which this package does not have:
   `src/lie_algebras/` holds the Stiefel and Grassmann horizontal components and no symplectic one. A
   draft of the tangent-space projection `πₑ` exists in `GeometricMachineLearning`'s history at
   `6a8e19a7:legacy/arrays/sympl_st_E_ts.jl`, written against two Lie algebra types that were never
@@ -825,6 +851,32 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   latter is what is written today, and it is enough to use the algorithm honestly but not enough to
   close [#52]'s first acceptance criterion.
 
+### K53 · `ScalarMomentAdam` and `DirectScalarMomentAdam` are two methods, and the docs name only one of the differences between them
+
+- location: `src/optimizers/optimizer_methods.jl`, the docstring of `DirectScalarMomentAdam`
+- kind: docs
+- found: 2026-11-04
+- evidence: both docstrings call their method the Cayley Adam of Li et al. The docstring of
+  `DirectScalarMomentAdam` sets it against `ScalarMomentAdam` by where it steps and by the place of
+  `δ`. No page says that the two are one method, and none lists the differences. With the canonical
+  gradient `G_R = YA + Y_⊥B`, they are:
+
+  | | `ScalarMomentAdam` | `DirectScalarMomentAdam` |
+  |:--|:--|:--|
+  | second moment | `l2norm(Ḡ)² = ½‖A‖² + ‖B‖²`, or `‖∇L‖²_F` with `ambient_norm = true` | `‖G_R‖²_F = ‖A‖² + ‖B‖²` |
+  | denominator | `√(m₂ + δ)` | `√v + δ` |
+  | cap | none in `TrainingOptimizer`; `step_αmax` in `solve!` | `α_max` on `‖Δ‖_F` |
+  | transport of the first moment | `Q` of the section | `ProjectionTransport` or `DifferentiatedCayleyTransport` |
+
+  So `DirectScalarMomentAdam` uses a third norm: neither the default of `ScalarMomentAdam` nor the
+  `‖∇L‖²` of the source. `scripts/stiefel_adam_section.jl` writes the method once in the tangent space
+  with a switch for each row, and reproduces each of the two to 2.6e-15. On `St(3, 8)`, after 60
+  training steps at step size 0.01, the distance to `DirectScalarMomentAdam` in the Frobenius norm is
+  0.0092 for `ScalarMomentAdam`, 0.28 with `ambient_norm = true`, and for one switch alone 7.7e-3 (the
+  norm), 4.6e-3 (the transport), 5.6e-10 (`δ` inside the root) and round-off (no cap). The cap binds
+  at a larger step: at step size 4, removing it moves the iterate by 0.04. For a loss with `A = 0`
+  the norm switch does not move the iterate.
+
 ### K39 · Manual pages carry release history in their prose
 
 - location: `docs/src/retractions.md:494`
@@ -1240,6 +1292,24 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   buffer was reverted: a manifold gradient's destination is a lift, while `∇F!`'s contract for a
   manifold is the flat storage, so removing it needs a protocol change in `SimpleSolvers` rather
   than a local one.
+
+### K54 · `ScalarMomentAdam` holds an `N × N` section that its iterates do not depend on
+
+- location: `src/manifold_optimizers/scalar_moment_adam_optimizer.jl`
+- kind: found late
+- found: 2026-11-04
+- evidence: `scripts/stiefel_adam_section.jl`, on `St(3, 8)` after 60 training steps at step size
+  0.01: one Haar change of the complement moves the iterate by 5.8e-16 in the Frobenius norm, and two
+  seeds of the global generator by 7.8e-16. The method written in the tangent space, with no section
+  and with the first moment transported by `ξ ↦ Qξ` for the left translation `Q = cay(Ω(Δ))` of the
+  step, reproduces `ScalarMomentAdam` to 2.6e-15 from either complement. So the section costs
+  `O(N³)` to build, `O(N(N-n)n)` per step, and a draw from the global generator, and it changes no
+  iterate.
+
+  **What to do**, a proposal: an `AbstractVectorTransport` that applies `Q` through the rank-`2n`
+  factors of `cayley_direct!`, so that it reuses the factorisation of the step. With this transport,
+  the lift norm and `δ` inside the root, a tangent-space method is `ScalarMomentAdam` with no section.
+  The script's `Q` is a dense `N × N` matrix, so this form is not implemented or measured here.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40

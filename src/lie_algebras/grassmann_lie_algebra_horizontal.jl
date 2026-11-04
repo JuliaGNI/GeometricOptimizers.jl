@@ -21,7 +21,7 @@ V_1 \sim V_2 \iff \exists A\in\mathcal{S}_\mathrm{skew}(n) \text{ such that } V_
 An element of GrassmannLieAlgMatrix takes the form: 
 ```math
 \begin{pmatrix}
-\bar{\mathbb{O}} & B^T \\ B & \mathbb{O}
+\bar{\mathbb{O}} & -B^T \\ B & \mathbb{O}
 \end{pmatrix},
 ```
 where ``\bar{\mathbb{O}}\in\mathbb{R}^{n\times{}n}`` and ``\mathbb{O}\in\mathbb{R}^{(N - n)\times(N-n)}.``

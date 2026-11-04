@@ -59,7 +59,7 @@ Based on this, elements of the vector space ``\mathfrak{g}^{\mathrm{hor}, E} =: 
 
 ```math
 \bar{B} = \begin{pmatrix}
-A & B^T \\ B & \mathbb{O}
+A & -B^T \\ B & \mathbb{O}
 \end{pmatrix},
 ```
 

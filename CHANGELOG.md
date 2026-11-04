@@ -26,6 +26,26 @@ breaking release).
 
 ### Fixed
 
+- **An optimizer on a `SymplecticStiefelManifold` is refused when it is built.** `TrainingOptimizer`
+  and `Optimizer` built one for `Adam`, `GradientMethod` and `MomentumMethod`, and `Optimizer` also
+  for `BFGS` and `DFP`, and the first step raised a `MethodError` from `global_rep!`, which names
+  neither the type nor the reason. They now raise an `ArgumentError` that says the package does not
+  implement the symplectic horizontal Lie algebra, and names where Bendokat and Zimmermann give it,
+  for such a point and for a parameter set with such a leaf, and `TrainingOptimizer` also under a
+  `CompositeMethod`. No working call changes. A23 stays open: the type still cannot be optimized
+  over.
+- **The metric of `SymplecticStiefelManifold` has the right source.** The docstrings of the type and
+  of `metric` gave it as the metric of Gao et al. The code is (3.16) and (3.17) of Bendokat and
+  Zimmermann, which has no `ρ` and is the canonical-like metric of Gao et al. only at the base point
+  with `ρ = 2`. `rgrad` now names its source, and the code does not change.
+  `scripts/symplectic_metric_attribution.jl` checks both statements against the formulas of the two
+  papers. The docstring of the type also says which horizontal space belongs to which metric: the
+  space below (3.4) of Bendokat and Zimmermann to the pseudo-Riemannian metric, the space in (3.13)
+  to the metric that the type implements, against the one space of Edelman et al. on the Stiefel
+  manifold.
+- **The horizontal lifts are printed with `-Bᵀ`.** The docstrings of `StiefelLieAlgHorMatrix` and
+  `GrassmannLieAlgHorMatrix` and the page "Global Tangent Spaces" printed `Bᵀ` in the upper right
+  block. That matrix is not skew-symmetric, and `getindex` returns `-Bᵀ` there.
 - **The manual printed four formulas that disagree with the code.** The page "Standard Neural
   Network Optimizers" had `ρ₁^t` for `ρ₂^t` in the numerator of the weight of the Adam second
   moment, so its two weights did not sum to one, and `√(B₂ + δ)` for `√B₂ + δ` in the direction.

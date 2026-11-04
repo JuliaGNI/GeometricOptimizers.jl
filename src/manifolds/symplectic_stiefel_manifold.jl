@@ -12,9 +12,26 @@ with ``\mathbb{J}`` the canonical Poisson tensor. Compare [`StiefelManifold`](@r
 constraint is ``Y^TY = \mathbb{I}``: the two agree in form and differ in which bilinear form the
 columns preserve.
 
-The metric is the one of [gao2021riemannian](@cite), and `rand` builds a point through the
-symplectic SR decomposition [`sr!`](@ref), which is the construction
-[gao2024optimization](@cite) uses for its retraction. See also [bendokat2021real](@cite).
+The metric and the Riemannian gradient are (3.16) and (3.17) of [bendokat2021real](@cite). The
+canonical-like metric of [gao2021riemannian](@cite) is a different metric: it agrees with this one
+at the base point for ``\rho = 2``, and for no ``\rho`` at a general point.
+`scripts/symplectic_metric_attribution.jl` checks both statements. `rand` builds a point through
+the symplectic SR decomposition [`sr!`](@ref), which is the construction
+[gao2024optimization](@cite) uses for its retraction.
+
+No optimizer steps this type, because the package has no symplectic horizontal Lie algebra. The
+space is known: [bendokat2021real](@cite) gives it below its (3.4). Until a lift type implements it,
+[`TrainingOptimizer`](@ref) and [`Optimizer`](@ref) refuse a point, and a parameter set with such a
+leaf, when they are built.
+
+The horizontal space depends on the metric here, in contrast to the Stiefel case. For the Stiefel
+manifold, [edelman1998geometry](@cite) gives one horizontal space in its (2.21), with the blocks
+``A`` and ``-B^T``, and the canonical metric is half the restriction of the metric of the orthogonal
+group to it, (2.22) and (2.39). [bendokat2021real](@cite) gives two. The space below (3.4) is the
+complement of the vertical space with respect to the pseudo-Riemannian metric ``h`` of its (2.1),
+which is bi-invariant and not positive definite. The space in (3.13) is the complement with respect
+to the right-invariant Riemannian metric ``g`` of its (2.2), under a condition that depends on
+``U``, and this is the horizontal space of the metric (3.16) that this type implements.
 
 !!! warning "The accuracy degrades with the size, and `Float32` is out of reach"
     A point is only as good as the decomposition it came from, and that decomposition has no
@@ -156,7 +173,12 @@ end
     rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
 
 The Riemannian gradient of a point of the symplectic Stiefel manifold, for the metric of
-[`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref).
+[`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref). This is (3.17) of
+[bendokat2021real](@cite):
+
+```math
+\mathrm{grad}\,L(U) = \nabla{}L\,U^TU + \mathbb{J}_{2N}U(\nabla{}L)^T\mathbb{J}_{2N}U.
+```
 
 ``\nabla{}L`` is the Euclidean gradient, i.e. the derivative of the loss with respect to the
 entries of `U` read as an unconstrained matrix.
@@ -169,8 +191,8 @@ end
 @doc raw"""
     metric(U::SymplecticStiefelManifold, Δ₁::AbstractMatrix, Δ₂::AbstractMatrix)
 
-The Riemannian metric of the symplectic Stiefel manifold, taken from
-[gao2021riemannian](@cite):
+The Riemannian metric of the symplectic Stiefel manifold, (3.16) of [bendokat2021real](@cite) with
+the factors of the trace in another order:
 
 ```math
 g_U(\Delta_1, \Delta_2) = \mathrm{tr}\left( P \Delta_1^T \left(\mathbb{I}_{2N} - \frac{1}{2}\mathbb{J}_{2N}^TUPU^T\mathbb{J}_{2N}\right)\Delta_2 \right), \qquad P = (U^TU)^{-1}.

@@ -6,7 +6,7 @@ Build an instance of `StiefelLieAlgHorMatrix` based on a skew-symmetric matrix `
 An element of StiefelLieAlgMatrix takes the form:
 ```math
 \begin{pmatrix}
-A & B^T \\ B & \mathbb{O}
+A & -B^T \\ B & \mathbb{O}
 \end{pmatrix},
 ```
 where ``A`` is skew-symmetric (this is [`SkewSymMatrix`](@ref) in `GeometricOptimizers`).
