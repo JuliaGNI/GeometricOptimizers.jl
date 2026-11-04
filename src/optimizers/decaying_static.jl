@@ -140,7 +140,8 @@ than splatting it twice.
 
 There is no new type here and no schedule of its own: this is exactly `Adam()` and
 `DecayingStatic(; η₁, η₂, n = n_epochs)`, under the name of `GeometricMachineLearning`'s pairing.
-Neither carries the element type of the parameters; the optimizer converts both.
+Neither carries the element type of the parameters; the optimizer converts both. The schedule
+advances once per [`optimization_step!`](@ref).
 
 # Why it exists
 

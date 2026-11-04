@@ -46,6 +46,26 @@ breaking release).
 - **The horizontal lifts are printed with `-Bᵀ`.** The docstrings of `StiefelLieAlgHorMatrix` and
   `GrassmannLieAlgHorMatrix` and the page "Global Tangent Spaces" printed `Bᵀ` in the upper right
   block. That matrix is not skew-symmetric, and `getindex` returns `-Bᵀ` there.
+- **The manual printed four formulas that disagree with the code.** The page "Standard Neural
+  Network Optimizers" had `ρ₁^t` for `ρ₂^t` in the numerator of the weight of the Adam second
+  moment, so its two weights did not sum to one, and `√(B₂ + δ)` for `√B₂ + δ` in the direction.
+  The page now states the code, which has `δ` outside the root, and says that Eq. (12) of
+  Brantner (2023) has it under the root. The page "Retractions" had an `N × N` matrix for the
+  `2n × 2n` matrix `𝕀 - ½(B'')ᵀB'` in the Woodbury line, and a final Cayley formula that does not
+  equal the Cayley transform: a missing bracket lost a term `½B̄`. Both lines are now Eq. (37) and
+  Eq. (39) of Appendix D of that paper, and the final one, `𝕀 + B'(𝕀 - ½(B'')ᵀB')⁻¹(B'')ᵀ`, is
+  what `cayley` computes. The code does not change. `scripts/verify_adam_cayley_manual.jl` checks
+  each formula against a run of the code or the dense definition, with the printed form as a
+  control that fails.
+- **The Adam default `β₂ = 0.99` cites its source.** The docstring of `Adam` and the manual cited
+  Goodfellow et al., page 301, which does not mention Adam; Algorithm 8.7 of that book suggests
+  `0.999`, as Kingma and Ba do. The value comes from the experiments of Brantner (2023), and both
+  places now say so. The default does not change. This closes K48.
+- **Three more statements of the manual.** The derivation of the exponential on "Retractions" has
+  the transpose of `B''`, which closes K50. Its cost paragraph no longer says that `cayley` ends
+  with a product of two `N × N` matrices, which closes K51. "Weight Decay on Manifolds" no longer
+  says that `GeometricMachineLearning` defines an `AdamOptimizerWithDecay`: GML re-exports this
+  package's. This closes K52.
 
 ## [0.9.2]
 

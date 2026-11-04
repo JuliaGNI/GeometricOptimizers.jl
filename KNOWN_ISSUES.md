@@ -554,6 +554,19 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `‖G‖_F = 2.6e19`, gives a nonzero step there and at each of the next 200. Neither method raises,
   and the point stays finite. The docstring of each method states its limit.
 
+### K49 · `DecayingStatic` has no floor after `n`, so a horizon that is too short takes the step far below `η₂`
+
+- location: `src/optimizers/decaying_static.jl:12`
+- kind: found late
+- found: 2026-11-04
+- evidence: the docstring states the choice, because a floor stops `Adam` from converging. The cost
+  is on a training loop with several batches per epoch. `AdamOptimizerWithDecay(n_epochs)` advances
+  once per `optimization_step!`, and such a loop takes one step per batch. So with `b` batches per
+  epoch, the step reaches `η₂` after `1/b` of the run and ends at `η₁(η₂/η₁)^b`. For `η₁ = 1e-2`,
+  `η₂ = 1e-6` and `b = 4` that is `1e-18`. `scripts/verify_adam_cayley_manual.jl` measures the
+  mechanism: `AdamOptimizerWithDecay(10; η₁ = 1e-2, η₂ = 1e-4)` takes a step of length `η₂` at step
+  10 and of length `1e-7` at step 25. Whether a schedule should offer a floor as an option is open.
+
 ## B. This package — observability
 
 ### B1 · A line search failure is invisible in the returned status
