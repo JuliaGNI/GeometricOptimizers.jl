@@ -1,0 +1,27 @@
+/* Theme-paired content.
+ *
+ * The images of a themed pair, `x_light.*` and `x_dark.*`, are switched by GeometricFigures'
+ * `figures.css`, which `docs/make.jl` loads as a remote asset. It matches on the `_light`/`_dark`
+ * suffix alone, so that suffix *means* "one of a themed pair", and a figure that has only one
+ * variant must not carry it.
+ *
+ * The two `display-*-only` classes are for the same distinction spelled out by hand, in a `@raw
+ * html` block that has more than an image in it. They key on Documenter's own
+ * `theme--documenter-dark` class rather than on `prefers-color-scheme`, so they follow the in-page
+ * theme switcher. Nothing uses them yet. */
+
+.display-light-only {
+    display: block;
+}
+
+.display-dark-only {
+    display: none;
+}
+
+html.theme--documenter-dark .display-light-only {
+    display: none;
+}
+
+html.theme--documenter-dark .display-dark-only {
+    display: block;
+}
