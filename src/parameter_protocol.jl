@@ -31,6 +31,7 @@ end
 
 rebuild(::StiefelManifold, data) = StiefelManifold(data)
 rebuild(::GrassmannManifold, data) = GrassmannManifold(data)
+rebuild(::SymplecticStiefelManifold, data) = SymplecticStiefelManifold(data)
 
 rebuild(A::SymmetricMatrix, data) = SymmetricMatrix(data, A.n)
 rebuild(A::SkewSymMatrix, data) = SkewSymMatrix(data, A.n)
@@ -43,6 +44,9 @@ function rebuild(A::StiefelLieAlgHorMatrix, data)
     StiefelLieAlgHorMatrix(data[1], data[2], A.N, A.n)
 end
 rebuild(A::GrassmannLieAlgHorMatrix, data) = GrassmannLieAlgHorMatrix(data[1], A.N, A.n)
+function rebuild(A::SymplecticLieAlgHorMatrix, data)
+    SymplecticLieAlgHorMatrix(data[1], data[2], data[3], data[4], A.N, A.n)
+end
 
 # The storage gradient `∂L/∂S` from a cotangent `G` of the dense interface; see
 # `NeuralNetworkParameters.storage_gradient`. AD pairs `G` with the interface, and a stored number
@@ -152,6 +156,25 @@ end
 function storage_gradient(A::GrassmannLieAlgHorMatrix, G::AbstractMatrix)
     _check_cotangent_size(A, G)
     GrassmannLieAlgHorMatrix(_lift_block_gradient(A, G, A.N, A.n), A.N, A.n)
+end
+
+# The symplectic lift stores `A₁` at `(1:k, 1:k)` and, negated and transposed, at `(k+1:n, k+1:n)`;
+# `B₁` and `C₁` once each in the two off-diagonal blocks of `𝒜`, as `SymmetricMatrix`es; and `ℬ`
+# once in its own block and once, through the symplectic adjoint `-ℬ⁺`, in the block above it. The
+# adjoint of `ℬ ↦ -ℬ⁺` is `G ↦ -G⁺` again, so `∂L/∂ℬ` is the `ℬ` block of `G` less the symplectic
+# adjoint of its `-ℬ⁺` block.
+function storage_gradient(A::SymplecticLieAlgHorMatrix, G::AbstractMatrix)
+    N, n = A.N, A.n
+    k = n ÷ 2
+    _check_cotangent_size(A, G)
+    @views begin
+        A₁ = similar(G, eltype(A), k, k)
+        A₁ .= G[1:k, 1:k] .- transpose(G[(k + 1):n, (k + 1):n])
+        B = similar(G, eltype(A), N - n, n)
+        B .= G[(n + 1):N, 1:n] .- _symplectic_adjoint(G[1:n, (n + 1):N])
+        SymplecticLieAlgHorMatrix(A₁, storage_gradient(A.B₁, G[1:k, (k + 1):n]),
+            storage_gradient(A.C₁, G[(k + 1):n, 1:k]), B, N, n)
+    end
 end
 
 # in the element type of the lift `A`, as `_launch_storage_gradient`

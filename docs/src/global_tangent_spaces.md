@@ -145,9 +145,9 @@ So we draw ``(N - n)`` new columns randomly, subtract the part that is spanned b
 
 The last line is there because of rounding. The first projection leaves a rounding error in the span of ``Y``, and the orthonormalization multiplies it by the condition number of the projected draw, which is large now and then; in `Float32` the worst of a few thousand draws has ``\|Y^T\lambda\|`` of order ``10^{-2}``. ``\lambda`` is orthonormal, so projecting and orthonormalizing it again amplifies nothing, and ``Y_\perp`` is orthogonal to ``Y`` to rounding. The proof below is in exact arithmetic, where one pass is enough.
 
-The orthonormalization is **CholeskyQR2** — the Cholesky step shown twice above — and not `LinearAlgebra.qr`. `qr` is the textbook answer, but it is a host factorization for several of the backends supported here: `Metal` implements no `qr` for its array type at all, so a `qr` here would put [`GlobalSection`](@ref) and therefore [`Optimizer`](@ref) out of reach on such a device. CholeskyQR2 is expressible in matrix products, reductions and triangular solves alone, so it runs wherever the point already is, and its ``\|Q^TQ - \mathbb{I}\|`` is measured *smaller* than the host Householder QR's at every size tried. What the two give differs by the sign of each column, because CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
+The orthonormalization is **CholeskyQR2**, the Cholesky step shown twice above, and not `LinearAlgebra.qr`. `qr` is the textbook answer, but it is a host factorization for several of the backends supported here: `Metal` implements no `qr` for its array type at all, so a `qr` here would put [`GlobalSection`](@ref) and therefore [`Optimizer`](@ref) out of reach on such a device. CholeskyQR2 is expressible in matrix products, reductions and triangular solves alone, so it runs wherever the point already is, and its ``\|Q^TQ - \mathbb{I}\|`` is measured *smaller* than the host Householder QR's at every size tried. What the two give differs by the sign of each column, because CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
 
-The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in a hundred and twenty. Such a draw is *replaced* rather than repaired — it is Gaussian noise and carries no information — which is what [`GeometricOptimizers.orthonormal_columns`](@ref) does. A replacement fails at a somewhat higher rate again, so the redraw is bounded and raises rather than returning a result it did not produce cleanly.
+The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in a hundred and twenty. Such a draw is *replaced* rather than repaired, since it is Gaussian noise and carries no information; this is what [`GeometricOptimizers.orthonormal_columns`](@ref) does. A replacement fails at a somewhat higher rate again, so the redraw is bounded and raises rather than returning a result it did not produce cleanly.
 
 On a device, CholeskyQR2 keeps the point there; it is not the faster route. `scripts/orthonormalization_device_cost.jl` measures it on an M4 Max with Julia 1.13.1, Metal 1.11.1 and the development version of GeometricOptimizers after 0.8.0, in `Float32`, at the ``N\times(N-3)`` shape that [`global_section`](@ref) uses: a cold session, one warm-up, the median of five runs, `Metal.synchronize()` in the timed region, and the host on one BLAS thread.
 
@@ -232,10 +232,34 @@ This representation is based on the identification ``T_\mathcal{E}Gr(n,N)\to{}T_
 
 This is equivalent to the horizontal component of ``\mathfrak{g}`` for the Stiefel manifold for the case when ``A`` is zero. This is a reflection of the rotational invariance of the Grassmann manifold: the skew-symmetric matrices ``A`` are connected to the group of rotations ``O(n)`` which is factored out in the Grassmann manifold ``Gr(n,N)\simeq{}St(n,N)/O(n)``. In `GeometricOptimizers` we thus treat the Grassmann manifold as being embedded in the Stiefel manifold. In [bendokat2020grassmann](@cite) viewing the Grassmann manifold as a quotient space of the Stiefel manifold is important for "feasibility" in "practical computations". 
 
+## Global Tangent Space for the Symplectic Stiefel Manifold
+
+The [`SymplecticStiefelManifold`](@ref) ``Sp(2n, 2N) = \{U\in\mathbb{R}^{2N\times2n} : U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}\}`` is a homogeneous space of the symplectic group ``Sp(2N)``, and [bendokat2021real](@cite) give it the same structure as the Stiefel manifold: a projection ``M\mapsto{}ME`` from the group, a vertical space, and, below their (3.4), a horizontal space that is the same subspace of the Lie algebra ``\mathfrak{sp}(2N)`` at every point. It is the complement of the vertical space with respect to the bi-invariant pseudo-Riemannian metric ``h`` of their (2.1). The horizontal space (3.13) of their Riemannian metric ``g``, the one [`metric`](@ref) implements, depends on the point, so only the first gives a global tangent space.
+
+The section is stored as for the Stiefel manifold, ``\lambda(U) = [U\ \ U^s]`` with the point first, so ``E`` is the first ``2n`` columns. ``U^s`` is a symplectic completion: ``U^T\mathbb{J}_{2N}U^s = \mathbb{O}`` and ``(U^s)^T\mathbb{J}_{2N}U^s = \mathbb{J}_{2N-2n}``. In this basis the Poisson tensor is ``\bar{\mathbb{J}} = \mathrm{diag}(\mathbb{J}_{2n}, \mathbb{J}_{2N-2n})``, ``\lambda(U)^T\mathbb{J}_{2N}\lambda(U) = \bar{\mathbb{J}}``, and the horizontal space below (3.4) of [bendokat2021real](@cite) reads
+
+```math
+\mathfrak{g}^\mathrm{hor} = \left\{\begin{pmatrix} \mathcal{A} & -\mathcal{B}^+ \\ \mathcal{B} & \mathbb{O} \end{pmatrix}: \mathcal{A}\in\mathfrak{sp}(2n), \mathcal{B}\in\mathbb{R}^{(2N-2n)\times2n}\right\}, \qquad \mathcal{B}^+ = \mathbb{J}_{2n}^T\mathcal{B}^T\mathbb{J}_{2N-2n}.
+```
+
+This is the Stiefel case with the transpose replaced by the symplectic adjoint, and it is what [`SymplecticLieAlgHorMatrix`](@ref) stores. An element ``\Omega`` satisfies ``\Omega^T\bar{\mathbb{J}} + \bar{\mathbb{J}}\Omega = \mathbb{O}``, so its Cayley transform and its exponential preserve ``\bar{\mathbb{J}}``, ``\lambda(U)R`` is a section again for every retraction ``R`` of it, and ``\lambda(U)RE`` is a point of the manifold.
+
+The tangent space at ``U`` is ``\{\Delta : U^+\Delta\in\mathfrak{sp}(2n)\}`` with the symplectic inverse ``U^+ = \mathbb{J}_{2n}^TU^T\mathbb{J}_{2N}``. A horizontal element is determined by its first ``2n`` columns, and those of ``\lambda(U)^{-1}\Omega(U,\Delta)\lambda(U)`` are ``\lambda(U)^{-1}\Delta``, with ``\Omega`` the horizontal lift [`GeometricOptimizers.Ω`](@ref) of (3.7) of [bendokat2021real](@cite). So `global_rep` needs only
+
+```math
+\mathcal{A} = U^+\Delta, \qquad \mathcal{B} = (U^s)^+\Delta.
+```
+
+Two things differ from the Stiefel case.
+
+The first is the completion. The symplectic group is not compact, so a completion can be arbitrarily badly conditioned, and the coordinates of the lift, in which [`Adam`](@ref) and the quasi-Newton methods take their steps, are only as good as it. [`global_section`](@ref) therefore takes an orthonormal basis ``Q`` of the symplectic complement of ``U`` and brings the skew-symmetric ``Q^T\mathbb{J}_{2N}Q`` to its normal form with the eigenvectors of a Hermitian matrix, which rescales each column and keeps them orthogonal. Its condition number has not exceeded that of ``U`` on any point tried, and it is orthonormal where ``U`` is orthosymplectic.
+
+The second is the gradient. For the Stiefel manifold the inner product of two lifts, as [`GeometricOptimizers._dot`](@ref) takes it on their stored entries, is the canonical metric, so the lift of the Riemannian gradient pairs with the lift of a direction as the derivative of the loss along it. The metric of [`SymplecticStiefelManifold`](@ref) is only right-invariant, so no inner product on ``\mathfrak{g}^\mathrm{hor}`` reproduces it at every point, and this identity fails. The optimizers hold instead the lift [`GeometricOptimizers.gradient_rep!`](@ref) gives, the gradient of the loss with respect to the stored entries of a lift at the section. With it the slope of a line search is the derivative of its merit, and the step ``-\mathtt{gradient\_rep}`` is steepest descent with respect to the inner product the section pulls back from the lift.
+
 ## Library functions
 
 [`AbstractLieAlgHorMatrix`](@ref), [`StiefelLieAlgHorMatrix`](@ref),
-[`GrassmannLieAlgHorMatrix`](@ref), [`StiefelProjection`](@ref), [`GlobalSection`](@ref),
+[`GrassmannLieAlgHorMatrix`](@ref), [`SymplecticLieAlgHorMatrix`](@ref), [`StiefelProjection`](@ref), [`GlobalSection`](@ref),
 [`global_section`](@ref), [`global_rep`](@ref) and [`apply_section`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 [`GeometricMachineLearning`](@extref GeometricMachineLearning :doc:`index`) re-exports all of these,
@@ -261,6 +285,7 @@ Canonical = false
 absil2004riemannian
 absil2008optimization
 bendokat2020grassmann
+bendokat2021real
 Brantner:2023
 frankel2011geometry
 ```

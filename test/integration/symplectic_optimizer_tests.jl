@@ -1,0 +1,131 @@
+# The optimizers on the symplectic Stiefel manifold, through `SymplecticLieAlgHorMatrix`.
+#
+# The problem is the symplectic eigenvalue problem: minimize `tr(UᵀMU)` over `U ∈ Sp(2n, 2N)` for a
+# symmetric positive definite `M`. By Williamson's theorem its minimum is twice the sum of the `n`
+# smallest symplectic eigenvalues of `M`, the moduli of the eigenvalues of `𝕁M`, which gives the
+# answer in closed form. The tests run in `Float64`: a `Float32` point drawn through the symplectic
+# SR decomposition is not reliably on the manifold (issue #152), and the line searches here retract
+# many times per iteration.
+using GeometricOptimizers
+using GeometricOptimizers: Cayley, Geodesic, check, cache, gradient, problem, initialize!,
+                           update!, linesearch_problem, isconverged, section
+using SimpleSolvers: Static, Backtracking
+using NeuralNetworkParameters: NetworkParameters
+using LinearAlgebra: I, eigvals, norm, tr
+using Test
+import Random
+
+include("../helpers/symplectic_points.jl")
+
+const T = Float64
+const N2, n2 = 10, 4
+
+function spd(rng, N2)
+    A = randn(rng, T, N2, N2)
+    A * A' + I
+end
+
+function williamson_minimum(M, n2)
+    d = sort(abs.(imag.(eigvals(poisson(T, size(M, 1)) * M))))[1:2:end]
+    2 * sum(d[1:(n2 ÷ 2)])
+end
+
+const M = spd(Random.Xoshiro(1), N2)
+const FMIN = williamson_minimum(M, n2)
+objective(U) = tr(U' * M * U)
+
+start() = conditioned_point(Random.Xoshiro(2), T, N2, n2)
+
+# `φ'(α)` against a central difference of `φ(α)`, both from the `LinesearchProblem` the optimizer
+# builds, as `test/integration/manifold_linesearch_tests.jl` checks it for the Stiefel manifold. This
+# is what `gradient_rep!` is for: `global_rep!` of the Riemannian gradient does not pair to the
+# derivative on this manifold, which `test/global_sections/global_sections.jl` asserts.
+@testset "φ' is the derivative of φ on the symplectic Stiefel manifold, $(nameof(typeof(R)))" for R in (
+    Geodesic(), Cayley())
+
+    U = start()
+    opt = Optimizer(U, objective; algorithm = BFGS(), retraction = R, linesearch = Backtracking(T))
+    state = OptimizerState(BFGS(), U)
+    c = cache(opt)
+    initialize!(c, U)
+    update!(c, state, gradient(opt), GeometricOptimizers._direction_rule(opt), U)
+    ls = linesearch_problem(problem(opt), gradient(opt), c, R)
+    params = (x = U, state = state)
+
+    h = cbrt(eps(T))
+    for α in T.((0.0, 1e-3, 1e-2, 5e-2))
+        φ′ = ls.D(α, params)
+        difference = (ls.F(α + h, params) - ls.F(α - h, params)) / (2h)
+        @test abs(φ′ - difference) / abs(difference) < 10 * sqrt(eps(T))
+    end
+    @test ls.D(zero(T), params) < 0
+end
+
+# The two methods with a line search find the minimum, and every iterate stays on the manifold.
+@testset "$(nameof(typeof(algorithm))) finds the symplectic eigenvalues, $(nameof(typeof(R)))" for algorithm in (
+        GradientMethod(), BFGS()),
+    R in (Geodesic(), Cayley())
+
+    U = start()
+    opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Backtracking(T),
+        retraction = R, max_iterations = 5000)
+    result = solve!(U, OptimizerState(algorithm, U), opt)
+    @test U isa SymplecticStiefelManifold{T}
+    @test check(U) < 1e-9
+    @test isconverged(result.status)
+    @test abs(objective(U) - FMIN) < 1e-8 * FMIN
+end
+
+# A fixed step only crawls, so these are asked to decrease the objective and stay on the manifold.
+@testset "$(nameof(typeof(algorithm))) at a fixed step decreases the objective, $(nameof(typeof(R)))" for algorithm in (
+        Adam(), MomentumMethod()),
+    R in (Geodesic(), Cayley())
+
+    U = start()
+    f₀ = objective(U)
+    opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Static(T(1e-3)),
+        retraction = R, max_iterations = 500)
+    solve!(U, OptimizerState(algorithm, U), opt)
+    @test check(U) < 1e-9
+    @test objective(U) < f₀ - (f₀ - FMIN) / 2
+end
+
+# The training step takes the Euclidean gradient of the leaf, and a parameter set may hold a
+# symplectic leaf beside an ordinary one.
+@testset "a TrainingOptimizer steps a symplectic leaf, $(nameof(typeof(algorithm)))" for algorithm in (
+    GradientMethod(), MomentumMethod(), Adam())
+
+    U = start()
+    f₀ = objective(U)
+    opt = TrainingOptimizer(U; algorithm = algorithm, linesearch = T(1e-3))
+    for _ in 1:200
+        optimization_step!(U, opt, 2 * M * U.A)
+    end
+    @test check(U) < 1e-9
+    @test objective(U) < f₀
+    @test section(opt.state).Y == U
+
+    ps = NetworkParameters((U = start(), b = T[1, -2, 3]))
+    F(p) = objective(p.U) + sum(abs2, p.b)
+    F₀ = F(ps)
+    opt = TrainingOptimizer(ps; algorithm = algorithm, linesearch = T(1e-3))
+    for _ in 1:200
+        optimization_step!(ps, opt, NetworkParameters((U = 2 * M * ps.U.A, b = 2 * ps.b)))
+    end
+    @test ps.U isa SymplecticStiefelManifold{T}
+    @test check(ps.U) < 1e-9
+    @test F(ps) < F₀
+end
+
+@testset "a CompositeMethod steps a symplectic leaf" begin
+    ps = NetworkParameters((U = start(), b = T[1, -2, 3]))
+    F(p) = objective(p.U) + sum(abs2, p.b)
+    F₀ = F(ps)
+    opt = TrainingOptimizer(ps; algorithm = CompositeMethod(; manifold = Adam(), array = Adam()),
+        linesearch = T(1e-3))
+    for _ in 1:200
+        optimization_step!(ps, opt, NetworkParameters((U = 2 * M * ps.U.A, b = 2 * ps.b)))
+    end
+    @test check(ps.U) < 1e-9
+    @test F(ps) < F₀
+end

@@ -119,6 +119,18 @@ function map_to_S(A::AbstractMatrix{T}) where {T <: Integer}
     map_to_S(float.(A))
 end
 
+# `map_to_S` written into the storage of `S`, which the symplectic lift projects its blocks into.
+function _map_to_S!(S::SymmetricMatrix{T}, A::AbstractMatrix{T}) where {T}
+    n = size(A, 1)
+    @assert size(A) == (S.n, S.n)
+    sym_projection_kernel(KernelAbstractions.get_backend(S.S))(S.S, A; ndrange = (n, n))
+    S
+end
+
+function _round(A::SymmetricMatrix; kwargs...)
+    SymmetricMatrix(_round(A.S; kwargs...), A.n)
+end
+
 # A symmetric matrix is its own *transpose*, and only a real one is its own adjoint. Bound to `Real`
 # for the same reason `adjoint(::StrictlyLowerTriangular{<:Real})` in `upper_triangular.jl` is: the bound
 # does not reject a complex argument, it hands it to `LinearAlgebra`'s lazy `Adjoint`, which

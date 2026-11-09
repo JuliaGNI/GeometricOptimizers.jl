@@ -296,38 +296,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   repair. Until then the type is documented as `Float64`-only at small sizes, in both the
   `SymplecticStiefelManifold` and `sr!` docstrings, and nothing in the package depends on it.
 
-### A23 · `SymplecticStiefelManifold` has no `Ω` and no `zero_tangent`, so it cannot be optimized over
-
-- location: `src/lie_algebras/`
-- kind: defect
-- found: 2026-09-18
-- evidence:
-
-  **Severity: medium.** Opened by the change that added the type.
-
-  `StiefelManifold` implements `Ω` and `zero_tangent` in addition to `rand`, `rgrad`, `metric` and
-  `global_section`; `SymplecticStiefelManifold` implements neither. `Ω(U, Δ)` is a `MethodError`.
-  `zero(U)` is a plain `Matrix` of the shape of the point, as on the other two manifolds, and there
-  is no zero tangent vector in the form of a lift.
-
-  So no optimizer can step this type, and each one says so when it is built. Every first-order and
-  quasi-Newton cache and state is sized by `_zero`, and `_zero(::SymplecticStiefelManifold)` raises
-  an `ArgumentError`. `TrainingOptimizer` and `Optimizer` therefore refuse such a point, and a
-  parameter set with such a leaf. `TrainingOptimizer` does so also under a `CompositeMethod`, which
-  `Optimizer` does not take. `AdamWithEuclideanDecay` refuses it with the `ErrorException` of its
-  weight-decay guard. `ScalarMomentAdam`, `DirectMomentum`, `DirectScalarMomentAdam` and
-  `FactoredStiefelAdam` take a `StiefelManifold` by their signature, so the call is a `MethodError`.
-  This refusal is the state of the issue and not a fix of it.
-
-  `Ω` and the lift need the **symplectic horizontal Lie algebra**, which this package does not have:
-  `src/lie_algebras/` holds the Stiefel and Grassmann horizontal components and no symplectic one. A
-  draft of the tangent-space projection `πₑ` exists in `GeometricMachineLearning`'s history at
-  `6a8e19a7:legacy/arrays/sympl_st_E_ts.jl`, written against two Lie algebra types that were never
-  committed anywhere; it is a starting point, not a solution.
-
-  Until this closes, the type is a geometric object with a metric, a Riemannian gradient and a global
-  section — not an optimization target.
-
 ### A26 · `symplectic_normalize` and `symplectic_gram_schmidt!` are real-only by construction
 
 - location: —
@@ -347,40 +315,28 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   **What to do**: Write a complex-valued algorithm that computes the sign correctly,
   or replace both with a method that accepts only real input by type constraint.
 
-### A28 · `SymplecticStiefelManifold` has no `rebuild`, so `changebackend` refuses it
+### K7 · The three `zero_tangent` bodies differ only in the lift type
 
-- location: `src/parameter_protocol.jl`
-- kind: defect
-- found: 2026-09-24
-- evidence:
-
-  **Severity: low.** `src/parameter_protocol.jl` gives the symplectic Stiefel manifold a
-  `freeparameters` and no `rebuild`, so `mapstorage` raises an `ArgumentError` for it, and
-  `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
-  points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
-
-### K7 · The two `zero_tangent` bodies differ only in the lift type
-
-- location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`
+- location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`,
+  `src/manifolds/symplectic_stiefel_manifold.jl`
 - kind: found late
 - found: 2026-09-27
-- evidence: `zero_tangent(::StiefelManifold)` and `zero_tangent(::GrassmannManifold)` are the same
-  three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
-  type would serve both.
+- evidence: `zero_tangent(::StiefelManifold)`, `zero_tangent(::GrassmannManifold)` and
+  `zero_tangent(::SymplecticStiefelManifold)` are the same three lines with
+  `StiefelLieAlgHorMatrix`, `GrassmannLieAlgHorMatrix` and `SymplecticLieAlgHorMatrix`; one method on
+  the lift type would serve all three.
 
-### K24 · In `Float32`, `global_section` of a `SymplecticStiefelManifold` point raises the `DomainError` of A22 on a few draws in 2000
+### K55 · The step ceiling of a line search is a turn of a rotation, and the symplectic group has none
 
-- location: `src/manifolds/symplectic_stiefel_manifold.jl`, `global_section`
+- location: `src/optimizers/linesearch_problem.jl`, `step_αmax`
 - kind: found late
-- found: 2026-10-09; one issue with A22
-- evidence: over 2000 points from `rand(rng, SymplecticStiefelManifold{T}, N2, n2)` per size, with
-  the point's generator `Random.Xoshiro(987_654)` independent of the global one that the completion
-  draws from (`Random.seed!(1)`), Julia 1.13.1: in `Float32`, `global_section` raises the
-  `DomainError` of A22 on 0, 1 and 5 points at 4×2, 6×4 and 10×6 (and `rand` itself on 0, 3 and 1);
-  in `Float64` on none. Every section that returns has `‖UᵀJΛ‖ / (‖U‖² ‖Λ‖²)` under `1120 eps(T)`
-  in both precisions. The section is built with `sr!`, which has no re-orthogonalization step, so
-  the stabilized SR decomposition of A22 closes this too.
-
+- found: 2026-11-09
+- evidence: `step_αmax` caps the step at `c ⋅ 2π/‖δ‖` because a retraction of a Stiefel or
+  Grassmann lift is a rotation, which has nothing left to reach past one turn. A retraction of a
+  `SymplecticLieAlgHorMatrix` is a symplectic matrix, and the symplectic group is not compact, so
+  the reason does not carry over: the cap still bounds the step, but its scale is not one the
+  geometry supplies. The solves of `test/integration/symplectic_optimizer_tests.jl` converge under
+  it; no symplectic solve has been seen to stop at the ceiling.
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 
 - location: `src/manifolds/stiefel_manifold.jl`, `_complement_columns`

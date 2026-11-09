@@ -31,7 +31,11 @@ function leaves(T)
         upper = StrictlyUpperTriangular(randn(rng, T, n, n)),
         stiefhor = StiefelLieAlgHorMatrix(
             SkewSymMatrix(randn(rng, T, n, n)), randn(rng, T, N - n, n), N, n),
-        grasshor = GrassmannLieAlgHorMatrix(randn(rng, T, N - n, n), N, n)
+        grasshor = GrassmannLieAlgHorMatrix(randn(rng, T, N - n, n), N, n),
+        # a symplectic point and lift have even sizes, so they take `N × (n + 1)`
+        symplectic = SymplecticStiefelManifold(
+            T.(rand(rng, SymplecticStiefelManifold{Float64}, N, n + 1).A)),
+        symphor = rand(rng, SymplecticLieAlgHorMatrix{T}, N, n + 1)
     )
 end
 

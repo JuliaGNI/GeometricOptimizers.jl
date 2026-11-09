@@ -7,7 +7,6 @@ import Random
 
 include("../helpers/eltypes.jl")
 
-# `global_section` draws its completion from the global generator
 Random.seed!(1234)
 
 # Every bound below is `eps(T)` times a power of the condition number `κ = cond(U.A)` of the point,
@@ -25,17 +24,7 @@ Random.seed!(1234)
 # draw therefore take their point from `conditioned_point`, where `κ ≤ 4`.
 const SIZES = ((4, 2), (6, 4), (10, 6))
 
-# A point of the symplectic Stiefel manifold built without `sr!`, with `κ ≤ 4`: the orthosymplectic
-# point `[A -B; B A]` of a complex Stiefel point `A + iB`, times the symplectic `diag(D, D⁻¹)` on
-# the right, with the entries of `D` in `[1/2, 2]`. `D` is what makes `UᵀU ≠ I`, so that `P` in the
-# metric is not the identity.
-function conditioned_point(rng, T, N2, n2)
-    N, n = N2 ÷ 2, n2 ÷ 2
-    Q = Matrix(qr(randn(rng, Complex{T}, N, n)).Q)
-    A, B = real(Q), imag(Q)
-    d = exp2.(2 .* rand(rng, T, n) .- 1)
-    SymplecticStiefelManifold(hcat(vcat(A, B) .* d', vcat(-B, A) ./ d'))
-end
+include("../helpers/symplectic_points.jl")
 
 @testset "a random point lies on the manifold, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(1234)
@@ -159,22 +148,38 @@ end
         @test size(Λ) == (N2, N2 - n2)
         @test eltype(Λ) == T
 
-        # And it is a completion: symplectically orthogonal to the point. Asserting only the shape
-        # would pass for any matrix of the right size, so the shape alone pins nothing. The
-        # completion is made symplectic by `sr!`, whose factor is not orthogonal, so the residual
-        # scales with `‖Λ‖²` and has a heavy tail: measured at most `2540eps(T) * ‖U‖² ‖Λ‖²` over
-        # 2000 conditioned points per size in both precisions, median under `0.4`. A completion
-        # that skips the projection out of `U` exceeds the bound on every such point in `Float64`,
-        # and on 87 % (at `10 × 6`) to 99 % (at `4 × 2`) of them in `Float32`.
-        @test norm(U.A' * J * Λ) < 4096eps(T) * norm(U.A)^2 * norm(Λ)^2
+        # And it is a completion: symplectically orthogonal to the point, and symplectic itself.
+        # Asserting only the shape would pass for any matrix of the right size. The completion is an
+        # orthonormal basis rescaled column by column, so both residuals are a few roundings of the
+        # products: measured at most `2.2eps(T) * ‖U‖‖Λ‖` and `18.2eps(T) * ‖Λ‖²` over 2000
+        # conditioned points per size in both precisions.
+        @test norm(U.A' * J * Λ) < 8eps(T) * norm(U.A) * norm(Λ)
+        @test norm(Λ' * J * Λ - _poisson_tensor(T, N2 - n2)) < 32eps(T) * norm(Λ)^2
 
-        # Together they span the whole space symplectically. Measured at most
-        # `2330eps(T) * cond(full)^2` on the same points, median under `0.5`.
+        # Together they span the whole space symplectically.
         N, n = N2 ÷ 2, n2 ÷ 2
         m = N - n
         full = hcat(U.A[:, 1:n], Λ[:, 1:m], U.A[:, (n + 1):(2 * n)], Λ[:, (m + 1):(2 * m)])
-        @test norm(full' * J * full - J) < 4096eps(T) * cond(full)^2
+        @test norm(full' * J * full - J) < 64eps(T) * cond(full)^2
     end
+end
+
+# The completion is as well conditioned as the point it completes: its columns are orthogonal,
+# and over 3000 drawn points at three sizes `cond(Λ)` was at most `0.94 cond(U)`. A completion made
+# symplectic by `sr!` reaches `cond(Λ)` in the thousands at `10 × 4`, which is what stalls an
+# optimizer that measures its steps in the section's coordinates.
+@testset "global_section is no worse conditioned than the point, $T" for T in (Float64,)
+    rng = Random.Xoshiro(1241)
+    for (N2, n2) in ((6, 2), (10, 4), (20, 6)), _ in 1:100
+        U = rand(rng, SymplecticStiefelManifold{T}, N2, n2)
+        @test cond(global_section(U)) ≤ cond(U.A)
+    end
+end
+
+# A point with no complement has an empty one.
+@testset "global_section of a full-width point is empty, $T" for T in REAL_ELTYPES
+    U = conditioned_point(Random.Xoshiro(1242), T, 6, 6)
+    @test global_section(U) == zeros(T, 6, 0)
 end
 
 # `Base.copy(::Manifold)` builds `typeof(U)(…)`, i.e. the two-parameter constructor, and `_similar`

@@ -106,6 +106,32 @@ function lift_factors(B::GrassmannLieAlgHorMatrix)
     (B̂, B̄ᵗ')
 end
 
+# The symplectic lift in the same factorisation, with the Hamiltonian block `𝒜` for `A` and the
+# symplectic adjoint `ℬ⁺` for `Bᵀ`:
+#
+#     [𝒜 -ℬ⁺; ℬ 𝕆] = [½𝒜 𝕀; ℬ 𝕆] [𝕀 𝕆; ½𝒜 -ℬ⁺]
+function lift_factors(B::SymplecticLieAlgHorMatrix)
+    T = eltype(B)
+    N, n = B.N, B.n
+    backend = KernelAbstractions.get_backend(B)
+    unit = unit_matrix(backend, T, n)
+    𝒜 = _hamiltonian_block(B)
+
+    B̂ = KernelAbstractions.zeros(backend, T, N, 2n)
+    B̄ᵗ = KernelAbstractions.zeros(backend, T, 2n, N)
+
+    @views begin
+        B̂[1:n, 1:n] .= T(0.5) .* 𝒜
+        B̂[(n + 1):N, 1:n] .= B.B
+        B̂[1:n, (n + 1):(2n)] .= unit
+        B̄ᵗ[1:n, 1:n] .= unit
+        B̄ᵗ[(n + 1):(2n), 1:n] .= T(0.5) .* 𝒜
+        _symplectic_adjoint!(B̄ᵗ[(n + 1):(2n), (n + 1):N], B.B, -one(T))
+    end
+
+    (B̂, B̄ᵗ')
+end
+
 @doc raw"""
     geodesic(Y::Manifold, Δ, algorithm = ScaledSquaring())
 
@@ -209,6 +235,13 @@ function geodesic(B::AbstractLieAlgHorMatrix, ::ProjectedSkew)
     retracted = unit_matrix(backend, T, B.N)
     mul!(retracted, Q * (expM - unit_matrix(backend, T, k)), Q', one(T), one(T))
     manifold_type(B)(retracted)
+end
+
+# `ProjectedSkew` exponentiates in an orthonormal basis of the lift's range, where a skew-symmetric
+# lift is a small skew-symmetric matrix. A symplectic lift is Hamiltonian and not skew-symmetric, so
+# the eigendecomposition it relies on does not apply.
+function geodesic(::SymplecticLieAlgHorMatrix, ::ProjectedSkew)
+    throw(ArgumentError("ProjectedSkew exponentiates a skew-symmetric lift, and a SymplecticLieAlgHorMatrix is Hamiltonian; use Geodesic() with another exponential algorithm, or Cayley()"))
 end
 
 cayley(B::NetworkParameters) = mapparameters(cayley, B)
@@ -327,6 +360,18 @@ function cayley(B::GrassmannLieAlgHorMatrix)
 end
 
 @doc raw"""
+    cayley(B̄::SymplecticLieAlgHorMatrix)
+
+Compute the Cayley retraction of `B`, by the method of [`cayley(::StiefelLieAlgHorMatrix)`](@ref).
+
+The Cayley transform of a Hamiltonian matrix is symplectic, so the result preserves the Poisson
+tensor ``\bar{\mathbb{J}}`` of the basis [`SymplecticLieAlgHorMatrix`](@ref) describes.
+"""
+function cayley(B::SymplecticLieAlgHorMatrix)
+    SymplecticStiefelManifold(_cayley_matrix(B))
+end
+
+@doc raw"""
     retraction_differential(retraction, B, α)
 
 The horizontal lift ``D(\alpha)`` that generates the velocity of the curve a line search walks along.
@@ -358,7 +403,10 @@ and ``\varphi`` is affine in ``\alpha``.
 D(\alpha) = \mathrm{Cayley}(\alpha\bar{B})^{-1}M\bar{B}M = M^T\bar{B}M ,
 ```
 
-using ``M^T = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}`` for skew ``\bar{B}``. ``D`` is skew but
+using ``M^T = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}`` for skew ``\bar{B}``. For a
+[`SymplecticLieAlgHorMatrix`](@ref), which is Hamiltonian rather than skew, the same derivation
+gives ``D(\alpha) = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}\bar{B}M``, which is the expression
+evaluated below for every lift. ``D`` is skew but
 not horizontal; only its first ``n`` columns ever enter — ``D(\alpha)E`` — and the horizontal
 projection has the same ones, so what [`lift_from_columns`](@ref) is handed is that projection.
 
@@ -458,6 +506,10 @@ function lift_from_columns(B::GrassmannLieAlgHorMatrix, V::AbstractMatrix)
     GrassmannLieAlgHorMatrix(V[(B.n + 1):(B.N), :], B.N, B.n)
 end
 
+function lift_from_columns(B::SymplecticLieAlgHorMatrix, V::AbstractMatrix)
+    lift_from_columns!(similar(B), V)
+end
+
 # `lift_from_columns(D, V)` written into `D`. The skew block is `SkewSymMatrix`'s projection
 # `(V₁ - V₁ᵀ)/2` of the top `n × n` block, entry by entry into its packed storage, in the order and
 # with the arithmetic `map_to_Skew` uses.
@@ -472,6 +524,14 @@ function lift_from_columns!(D::StiefelLieAlgHorMatrix{T}, V::AbstractMatrix{T}) 
 end
 
 function lift_from_columns!(D::GrassmannLieAlgHorMatrix{T}, V::AbstractMatrix{T}) where {T}
+    @views D.B .= V[(D.n + 1):(D.N), :]
+    D
+end
+
+# The horizontal projection of an element of the symplectic Lie algebra keeps its first `n` columns,
+# so the lift is the Hamiltonian projection of the top block and the bottom block as it is.
+function lift_from_columns!(D::SymplecticLieAlgHorMatrix{T}, V::AbstractMatrix{T}) where {T}
+    @views _hamiltonian_projection!(D, V[1:(D.n), :])
     @views D.B .= V[(D.n + 1):(D.N), :]
     D
 end

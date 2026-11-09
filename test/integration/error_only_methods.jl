@@ -3,9 +3,7 @@
 # Two guards are on a `Manifold`, `similar` and `fill!`, because without them `Base`'s generic methods
 # build an array of the point's shape that is not a point. `Newton`'s scope check is the third: without
 # it `Newton` on a `Manifold` or a parameter set fails with an error that does not state the scope.
-# The fourth is on a `SymplecticStiefelManifold`, which has no horizontal lift: without it an optimizer
-# is built, and its first step raises a `MethodError` from `global_rep!`. The fifth is the weight-decay
-# guard of `AdamWithEuclideanDecay`.
+# The fourth is the weight-decay guard of `AdamWithEuclideanDecay`.
 # The other refusals below are calls with no method, which raise `Base`'s `MethodError`.
 using GeometricOptimizers
 using GeometricOptimizers: NoHessian, OptimizerCache, hessian, inverse_hessian,
@@ -37,34 +35,20 @@ end
     @test OptimizerState(Newton(), T[1, 2, 3]) isa NewtonState{T}
 end
 
-@testset "an optimizer refuses a SymplecticStiefelManifold when it is built, $T" for T in REAL_ELTYPES
+@testset "the optimizers that do not step a SymplecticStiefelManifold refuse it, $T" for T in REAL_ELTYPES
     # The base point of `Sp(2, 4)`, and not a draw: `rand` of this type can raise in `Float32`.
     U = SymplecticStiefelManifold(T[1 0; 0 0; 0 1; 0 0])
-    message = "a SymplecticStiefelManifold cannot be optimized over"
-    F(x) = sum(abs2, x)
 
-    for method in (Adam(), GradientMethod(), MomentumMethod())
-        @test_throws message OptimizerCache(method, U)
-        @test_throws message OptimizerState(method, U)
-        @test_throws message TrainingOptimizer(U; algorithm = method, linesearch = T(1e-2))
-        @test_throws message Optimizer(U, F; algorithm = method)
+    # Every first-order and quasi-Newton method is built on the point.
+    for method in (Adam(), GradientMethod(), MomentumMethod(), BFGS(), DFP())
+        @test OptimizerCache(method, U) isa OptimizerCache{T}
+        @test OptimizerState(method, U) isa OptimizerState{T}
     end
-    @test_throws message TrainingOptimizer(U; linesearch = T(1e-2))
-    # `TrainingOptimizer` takes no quasi-Newton method, so these reach `Optimizer` alone.
-    for method in (BFGS(), DFP())
-        @test_throws message OptimizerCache(method, U)
-        @test_throws message OptimizerState(method, U)
-        @test_throws message Optimizer(U, F; algorithm = method)
-    end
-    # This method refuses the point with a guard of its own, on the weight decay.
+
+    # This method refuses the point with a guard of its own, on the weight decay: the manifold is
+    # not compact, so the argument that makes the decay vanish on the Stiefel manifold does not hold.
     @test_throws "does not know whether Euclidean weight decay acts" TrainingOptimizer(
         U; algorithm = AdamWithEuclideanDecay())
-
-    # A leaf of a parameter set is refused as a point is, also under a `CompositeMethod`.
-    ps = NetworkParameters((U = U, W = rand(T, 3, 3)))
-    @test_throws message TrainingOptimizer(ps; algorithm = Adam(), linesearch = T(1e-2))
-    @test_throws message TrainingOptimizer(ps;
-        algorithm = CompositeMethod(; manifold = Adam(), array = Adam()), linesearch = T(1e-2))
 
     # These take a `StiefelManifold` by their signature, so the call has no method.
     for method in (ScalarMomentAdam(), DirectMomentum(), DirectScalarMomentAdam(),

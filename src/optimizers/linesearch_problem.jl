@@ -199,8 +199,9 @@ read.
 
 On a [`Manifold`](@ref) the gradient that `gradient_instance` produces lives in the tangent space of
 the embedding while `direction(cache)` is a horizontal lift, so the two are not even the same shape
-and have to be brought together by [`global_rep`](@ref) first — which is the same map
-`update!(::GradientCache, …)` applies to the gradient before storing it.
+and have to be brought together by [`GeometricOptimizers.gradient_rep!`](@ref) first. That is the
+map `update!(::GradientCache, …)` applies to the gradient before storing it, and it is
+[`global_rep`](@ref) except on a [`SymplecticStiefelManifold`](@ref).
 
 The pairing is then [`_dot`](@ref) and not `dot`: the `α` of the line search parameterizes a curve in
 the *intrinsic* coordinates of the lift, and `dot` on a lift is the ambient Frobenius product, which
@@ -242,7 +243,7 @@ end
 function _trial_slope(::Union{Manifold, NetworkParameters}, gradient_instance::Gradient,
         cache::OptimizerCache, retraction::AbstractRetraction, α, differential, workspace,
         lift)
-    _dot(global_rep!(lift, section(cache), gradient_instance(solution(cache))),
+    _dot(gradient_rep!(lift, section(cache), gradient_instance(solution(cache))),
         retraction_differential!(differential, workspace, retraction, direction(cache), α))
 end
 

@@ -35,7 +35,7 @@ tohost(x::Adjoint) = adjoint(tohost(parent(x)))
 tohost(x::Transpose) = transpose(tohost(parent(x)))
 tohost(x::StiefelProjection) = Array(x.A)
 tohost(x::Union{VectorStorageMatrix, AbstractLieAlgHorMatrix}) = mapstorage(tohost, x)
-# a point by its constructor: `SymplecticStiefelManifold` has no `rebuild`, so `mapstorage` refuses it
+# a point by its constructor, which serves every manifold alike
 tohost(x::Manifold) = Base.typename(typeof(x)).wrapper(tohost(x.A))
 tohost(x) = x
 
@@ -134,8 +134,8 @@ function device_products(todevice, ::Type{T} = Float32; seed = 1234) where {T}
         end
     end
 
-    # Back to the host. `SymplecticStiefelManifold` has no `rebuild`, so the parameter protocol that
-    # `changebackend` walks does not cover it; the adjoints are not parameters.
+    # Back to the host. The adjoints are not parameters. The symplectic point is left out of this sweep,
+    # whose rows are recorded without it; `test/integration/changebackend.jl` moves it.
     for (name, h) in ops
         (h isa Adjoint || h isa SymplecticStiefelManifold) && continue
         push!(rows,

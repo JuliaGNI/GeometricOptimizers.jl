@@ -221,6 +221,21 @@ function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T})
     nothing
 end
 
+function lift_factors!(ws::RetractionWorkspace{T}, B::SymplecticLieAlgHorMatrix{T}) where {T}
+    N, n = B.N, B.n
+    @assert (ws.N, ws.n) == (N, n)
+    _hamiltonian_block!(ws.A_mat, B)
+
+    @views begin
+        ws.B̂[1:n, 1:n] .= T(0.5) .* ws.A_mat
+        ws.B̂[(n + 1):N, 1:n] .= B.B
+        ws.B̄ᵗ[(n + 1):(2n), 1:n] .= T(0.5) .* ws.A_mat
+        _symplectic_adjoint!(ws.B̄ᵗ[(n + 1):(2n), (n + 1):N], B.B, -one(T))
+    end
+
+    nothing
+end
+
 # The dense form of a skew block. On the host a broadcast reads it entry by entry and allocates
 # nothing; anywhere else the product with the identity runs the backend's kernel, whose launch
 # allocates. The two write the same matrix.

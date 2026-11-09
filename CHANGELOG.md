@@ -30,16 +30,43 @@ breaking release).
     0.20.0, older than the exported `DocMeta` of 0.23.0; 1.8.1 is the first release whose
     `DocMeta` respects the world age of bindings in Julia 1.12.
 
+- **`global_section` of a `SymplecticStiefelManifold` is a well-conditioned completion, and no
+  longer random.** It drew a Gaussian matrix, projected it into the symplectic complement of the
+  point and made it symplectic with `sr!`, whose factor is not orthogonal: on one `10 × 4` point the
+  section `[U Uˢ]` had condition number `6.4e3`, and gradient descent measured in its coordinates
+  stalled far from the minimum. It now takes an orthonormal basis of the complement from a full QR
+  decomposition and brings the Poisson tensor in that basis to its normal form with a Hermitian
+  eigendecomposition. The columns stay orthogonal; the condition number of the completion was at
+  most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
+  is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
+  K24.
+
+### Added
+
+- **The optimizers step a `SymplecticStiefelManifold`.** The new lift type
+  `SymplecticLieAlgHorMatrix` implements the horizontal space that Bendokat and Zimmermann give
+  below their (3.4), the one subspace of the symplectic Lie algebra that is horizontal at every
+  point, in the basis `[U Uˢ]` that a `GlobalSection` stores. `global_rep`, `apply_section`,
+  `Ω`, `zero_tangent`, both retractions and their workspaces, `retraction_differential` and the
+  parameter protocol (`rebuild`, `storage_gradient`, loading from a file) cover it. `GradientMethod`,
+  `MomentumMethod`, `Adam`, `BFGS` and `DFP` under `Optimizer`, and the first three under
+  `TrainingOptimizer` and in a `CompositeMethod`, take such a point and a parameter set with such a
+  leaf, where they raised an `ArgumentError` before. `AdamWithEuclideanDecay` still refuses it, and
+  the methods that take a `StiefelManifold` by their signature still have no method for it.
+  `Geodesic(ProjectedSkew())` refuses a symplectic lift, which is Hamiltonian and not skew.
+  Closes A23 and A28.
+- **The optimizers hold the gradient as `gradient_rep!` gives it.** For the Stiefel and Grassmann
+  manifolds this is `global_rep!` of the Riemannian gradient, as before. For the symplectic Stiefel
+  manifold it is the gradient of the loss with respect to the stored entries of a lift at the
+  section, because the metric of that type is not invariant under the group and `global_rep!` of its
+  Riemannian gradient does not pair with a lift as the derivative of the loss. With it the slope of a
+  line search is the derivative of its merit. On the symplectic eigenvalue problem
+  (`test/integration/symplectic_optimizer_tests.jl`), `GradientMethod` and `BFGS` with
+  `Backtracking` reach the minimum of Williamson's theorem to a relative `1e-8` under both
+  retractions.
+
 ### Fixed
 
-- **An optimizer on a `SymplecticStiefelManifold` is refused when it is built.** `TrainingOptimizer`
-  and `Optimizer` built one for `Adam`, `GradientMethod` and `MomentumMethod`, and `Optimizer` also
-  for `BFGS` and `DFP`, and the first step raised a `MethodError` from `global_rep!`, which names
-  neither the type nor the reason. They now raise an `ArgumentError` that says the package does not
-  implement the symplectic horizontal Lie algebra, and names where Bendokat and Zimmermann give it,
-  for such a point and for a parameter set with such a leaf, and `TrainingOptimizer` also under a
-  `CompositeMethod`. No working call changes. A23 stays open: the type still cannot be optimized
-  over.
 - **The metric of `SymplecticStiefelManifold` has the right source.** The docstrings of the type and
   of `metric` gave it as the metric of Gao et al. The code is (3.16) and (3.17) of Bendokat and
   Zimmermann, which has no `ρ` and is the canonical-like metric of Gao et al. only at the base point
