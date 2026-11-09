@@ -6,10 +6,11 @@
 # Without the guard a mismatch is not a clean failure. On a backend that can fall back to the host —
 # `JLArrays` under `allowscalar(false)` is the one reachable from the test suite — a host/device pair
 # silently picks a side: `SkewSymMatrix(host) + SkewSymMatrix(device)` gives a device matrix,
-# `SkewSymMatrix(device) * host` a `JLArray`, and `StiefelManifold(device) * host` a **host**
+# `SkewSymMatrix(device) * host` a `JLArray`, and `SkewSymMatrix(host) * device` a **host**
 # `Matrix` — the device operand comes off the device and nothing says so. Which backend the answer
-# lands on follows the argument order. Where such a pair does raise instead, it says
-# `Scalar indexing is disallowed`, which names neither operand; on Metal it fails inside
+# lands on follows the argument order. Where such a pair does raise instead, as
+# `StiefelManifold(device) * host` does, it says `Illegal conversion of a JLArray to a Ptr`,
+# which names neither operand; on Metal it fails inside
 # `GPU compilation of MethodInstance for …broadcast_linear…`, which names neither backend nor the
 # mismatch.
 #
@@ -35,7 +36,7 @@ _check_same_backend(A, B, C) = (_check_same_backend(A, B); _check_same_backend(A
 # The backend of a solution, which is the backend of its storage: of the vector itself, of a
 # manifold point's matrix, and of every storage array of a parameter set, which must be one. A set
 # with leaves on two backends raises the "mixed backends" error above. A solution is on a device
-# where this is a `GPU`.
+# where this is not the `CPU`.
 _solution_backend(x::AbstractVector) = KernelAbstractions.get_backend(x)
 function _solution_backend(x)
     storage = foldstorage(_first_storage_on_one_backend, nothing, x)
@@ -54,7 +55,7 @@ end
 # route that builds a default gradient calls this first.
 function _refuse_default_gradient(x)
     backend = _solution_backend(x)
-    backend isa GPU && throw(ArgumentError(string(
+    backend isa CPU || throw(ArgumentError(string(
         "no default gradient for parameters on ", backend, ": `mode = :autodiff` and ",
         "`mode = :finitediff` both compute on the host. Supply the gradient: `∇F!` to ",
         "`Optimizer(x, F; ∇F! = …)`, or `gradient` to `Optimizer(x, problem; gradient = …)`.")))
@@ -73,6 +74,27 @@ function _flatten_on(backend, ::Type{T}, ps) where {T}
     v = KernelAbstractions.allocate(backend, T, flatlength(layout))
     flatten!(v, ps, layout), layout
 end
+
+# A kernel operand as the backend can take it. The `CPU` backend compiles its kernels (to SPIR-V,
+# run by PoCL), so an argument must convert to a device array: an `Array`, or a `Transpose`, an
+# `Adjoint`, a view or a reshape of one. Any other host matrix -- an owned structured type, a view of
+# one, a lazy factor such as the `R` of `sr` -- is made dense once before the launch. A compiled
+# kernel cannot hold an element type that is not `isbits`, such as `BigFloat`, so that is refused
+# here, with the operation named, rather than deep in the compiler. A device backend takes its
+# operands as they are.
+_kernel_operand(backend, A) = A
+function _kernel_operand(::CPU, A::AbstractArray)
+    isbitstype(eltype(A)) || throw(ArgumentError(string(
+        "the kernels of the CPU backend take an isbits element type, not ", eltype(A),
+        ": convert the matrix to a fixed-width type such as Float64 first.")))
+    _plain_host_array(A) ? A : Array(A)
+end
+
+_plain_host_array(::Array) = true
+function _plain_host_array(A::Union{Transpose, Adjoint, SubArray, Base.ReshapedArray})
+    _plain_host_array(parent(A))
+end
+_plain_host_array(::AbstractArray) = false
 
 # Writes the diagonal of an identity matrix. `unit_matrix` below is the only caller; a kernel is what
 # it takes to write a diagonal without scalar indexing, and that docstring says why that matters.

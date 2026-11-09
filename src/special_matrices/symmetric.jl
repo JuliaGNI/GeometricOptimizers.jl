@@ -110,7 +110,7 @@ function map_to_S(A::AbstractMatrix{T}) where {T <: Number}
     @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
     S = KernelAbstractions.allocate(backend, T, n*(n+1)÷2)
-    sym_projection_kernel(backend)(S, A; ndrange = (n, n))
+    sym_projection_kernel(backend)(S, _kernel_operand(backend, A); ndrange = (n, n))
     S
 end
 
@@ -224,7 +224,7 @@ function _lmul_into!(C::AbstractMatrix{T}, A::SymmetricMatrix{T}, B::AbstractMat
     @assert A.n == size(C, 1)
     backend = KernelAbstractions.get_backend(A.S)
     symmetric_mat_mul! = symmetric_mat_mul_kernel!(backend)
-    symmetric_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
+    symmetric_mat_mul!(C, A.S, _kernel_operand(backend, B), A.n, ndrange = size(C))
     C
 end
 

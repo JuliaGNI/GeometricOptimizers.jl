@@ -14,6 +14,7 @@ using Random: Random, Xoshiro
 using Test
 
 include("../helpers/eltypes.jl")
+include("../helpers/jlarray_cholesky.jl")
 
 GPUArraysCore.allowscalar(false)
 

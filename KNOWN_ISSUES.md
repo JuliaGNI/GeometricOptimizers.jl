@@ -513,8 +513,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   38715367722 (Julia 1.14.0-DEV.3705, at `07545d1`) each fail `Own-vs-own ambiguities` once, at
   `Test Failed at test/ambiguities.jl:22`, with two pairs: `global_sections.jl:97` against `:147`,
   and `:135` against `:147`. The pre job on Julia 1.13.2 of run 39127065561 passes the same testset.
-  Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests, so it is open
-  whether the current Julia reports the pairs.
+  Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests. With Metal 1.12
+  and LLVM 10 they reach the tests again: the pre job (Julia 1.14) of CI run 42667986055, on #183,
+  fails `Own-vs-own ambiguities` once at `test/ambiguities.jl:22` (6174 pass, 1 fail).
 
 ### K46 · A `DirectMomentum` step of a norm above about `√floatmax(T)` raises from `lu!`, as a `MomentumMethod` step does
 
@@ -1130,27 +1131,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `device()`; after one run of the same command outside the sandbox it gave `Broken 1`. The fix is
   upstream: a workload that skips the kernel compilation where no device exists.
 
-### K42 · The `Julia nightly` and `Julia pre` jobs fail in the precompilation of `GPUCompiler` and never reach the tests
-
-- location: `test/Project.toml:32` (`Metal = "1.10"`)
-- kind: upstream
-- found: 2026-10-24; one issue with K23
-- evidence: CI run 40089695637 at `fa92a28`. Both jobs resolve `LLVM` 9.13.2 and `LLVMExtra_jll`
-  0.0.47, because `Metal` 1.11.1 needs `LLVM` 7.2 to 9 (see K23). That `LLVMExtra_jll` has no build
-  for Julia 1.15.0-DEV (nightly) or Julia 1.14.0 (pre), both with LLVM 23. The nightly job:
-
-  ```
-  Error: LLVM extensions library unavailable for your platform:
-    x86_64-linux-gnu-libgfortran5-cxx11-julia_version+1.15.0-llvm_version+23
-  ERROR: LoadError: UndefVarError: `libLLVMExtra` not defined in `LLVM.API`
-  Failed to precompile GPUCompiler [61eb1bfa-7361-4325-ad38-22787b887f55] to "/home/runner/.julia/compiled/v1.15/GPUCompiler/jl_1VCVra" (ProcessExited(1)).
-  1 package was skipped because a dependency failed to precompile: Metal
-  ```
-
-  The nightly jobs of runs 39127065561 (Julia 1.14.0-DEV.3787) and 39923326569 (Julia
-  1.15.0-DEV.97) stop at the same precompilation. The fix is upstream: a `Metal` release that allows
-  `LLVM` 10.
-
 ## F. Loose ends from the geodesic-retraction review
 
 Not a defect in the code; a thing a later reader would otherwise have to rediscover.
@@ -1184,36 +1164,6 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   stays. Since #145 the files are `test/integration/manifold_linesearch_tests.jl` and
   `test/integration/device_solve.jl`. The bullets are not released, so the paths may be corrected.
 
-### K23 · The `Downgrade` job cannot resolve the test environment: its `LLVM` 10.1.0 excludes every `Metal` that `test/Project.toml` allows
-
-- location: `test/Project.toml:32` (`Metal = "1.10"`)
-- kind: defect
-- found: 2026-10-03
-- evidence: the advisory `Downgrade - ubuntu-latest` job fails before any test runs. CI run
-  37951076527 at `2114a3b` (Julia 1.12.7):
-
-  ```
-  ERROR: LoadError: Unsatisfiable requirements detected for package LLVM [929cbde3]:
-   LLVM [929cbde3] log:
-   ├─possible versions are: 0.9.0 - 10.1.0 or uninstalled
-   ├─restricted to versions 10.1.0 by an explicit requirement, leaving only versions: 10.1.0
-   └─restricted by compatibility requirements with Metal [dde4c033] to versions: 7.2.0 - 9.13.2 — no versions left
-     └─Metal [dde4c033] log:
-       ├─possible versions are: 0.0.1 - 1.11.1 or uninstalled
-       └─restricted to versions 1.10.0 - 1 by project [fff0a915], leaving only versions: 1.10.0 - 1.11.1
-  ```
-
-  The job resolves the direct dependencies of the root `Project.toml` to their floors and every
-  indirect dependency to its newest version, and keeps that manifest (`allow_reresolve: false`).
-  No floor pins `LLVM`: 10.1.0 is its newest version. The General registry's compat entries give
-  the chain: the `KernelAbstractions` floor 0.9.38 allows `Atomix` 1, `Atomix` 1.6.0 needs
-  `UnsafeAtomics` 0.4, and `UnsafeAtomics` 0.4.0 needs `LLVM` 10. The log does not print the
-  manifest, so the chain is read from the registry, not from the run. The test environment then
-  adds `Metal`, and `Metal` 1.11.1 needs `LLVM` 7.2 to 9. CI run 37122615676 at `0aa622b` (Julia
-  1.11.9) fails the same way; there the explicit requirement is `UnsafeAtomics` 0.3.3, its newest
-  version at that time, which restricts `LLVM` to 10.0.0. The required jobs resolve without the
-  floor manifest and pass.
-
 ### K34 · The exact-zero allocation assertion of `retraction_workspace.jl` failed in two rows of one count run under heavy machine load
 
 - location: `test/retractions/retraction_workspace.jl:105`
@@ -1228,6 +1178,19 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   suites on `4a6883c` (Julia 1.13.1 and the 1.12 floor, at a load of 3 to 5) pass the file 572/572.
   The cause is not established.
 
+### K55 · No test shows that `geodesic(B, ProjectedSkew())` keeps its own steps on a device backend
+
+- location: `test/integration/device_products.jl:24`
+- kind: missing test
+- found: 2026-11-09
+- evidence: the method calls the backend's `qr` and `eigen`, which neither `JLArrays` nor Metal
+  supplies. With `JLArrays` 0.3 the test ran it under `allowscalar(true)`, where the generic `qr`
+  and `eigen` read the `JLArray` through its pointer, and asserted that the result is a `JLArray`.
+  `JLArrays` 0.5 refuses the pointer: `geodesic(device, ProjectedSkew())` raises
+  `Illegal conversion of a JLArray to a Ptr` in LAPACK's `geqrt`, with scalar indexing allowed or
+  not, so the file now asserts only that error. A stand-in with a host-borrowed `qr` and `eigen`
+  that return device arrays would restore the check.
+
 ## I. This package — performance
 
 ### K35 · A training step on a parameter set with a `StiefelManifold` leaf allocates 6 kB in `Float32` and 11 kB in `Float64`
@@ -1235,19 +1198,20 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 - location: `src/retractions/retraction_workspace.jl:279`
 - kind: defect
 - found: 2026-10-11
-- evidence: `scripts/parameter_set_step_cost.jl` (Julia 1.13.2, `--check-bounds=auto`, one BLAS
-  thread) measures one `optimization_step!` on model A with a `64 × 8` `StiefelManifold` and a
-  `64 × 64` `SymmetricMatrix` weight: 5 968 bytes in `Float32` and 11 312 bytes in `Float64`, for
-  `GradientMethod`, `MomentumMethod` and the three `Adam` methods alike. The same set without the
-  Stiefel leaf allocates nothing. `scripts/parameter_set_step_cost.jl profile` (`Profile.Allocs`,
-  sample rate 1, 50 warm `GradientMethod` steps, `Float32`) names two frames per step:
+- evidence: `scripts/parameter_set_step_cost.jl` (Julia 1.13.3, KernelAbstractions 0.10.7,
+  `--check-bounds=auto`, one BLAS thread) measures one `optimization_step!` on model A with a
+  `64 × 8` `StiefelManifold` and a `64 × 64` `SymmetricMatrix` weight: 5 856 bytes in `Float32` and
+  11 200 bytes in `Float64`, for `GradientMethod`, `MomentumMethod` and the three `Adam` methods
+  alike. The same set without the Stiefel leaf allocates nothing. `scripts/parameter_set_step_cost.jl
+  profile` (`Profile.Allocs`, sample rate 1, 50 warm `GradientMethod` steps, `Float32`) names two
+  frames per step:
 
   | frame | what allocates | bytes | allocations |
   |:--|:--|--:|--:|
   | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:279` | `inv(ws.M)` | 5 448 | 8 |
-  | `_lift_A!` and `map_to_Skew!`, `src/global_sections/global_sections.jl:299`, `src/special_matrices/skew_symmetric.jl:299` | a temporary and the kernel launch | 416 | 5 |
+  | `_lift_A!`, `src/global_sections/global_sections.jl:299` | a temporary | 320 | 2 |
 
-  The two frames account for 5 864 of the 5 968 bytes. `inv(ws.M)` of the `2n × 2n` matrix stays
+  The two frames account for 5 768 of the 5 856 bytes. `inv(ws.M)` of the `2n × 2n` matrix stays
   an `inv`: `lu!` and `rdiv!` would take it in place on the host only, and a `KernelAbstractions`
   backend need not supply either (see the docstring of `RetractionWorkspace`). It does not grow
   with `N`.

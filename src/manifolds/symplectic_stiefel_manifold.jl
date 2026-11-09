@@ -156,7 +156,7 @@ end
 # draw is therefore a host draw and a transfer, which is a different operation from the device-native
 # one the other two manifolds offer. Refusing says so; returning a host-drawn point from a call that
 # named a device would not.
-function Base.rand(::AbstractRNG, backend::GPU, ::Type{MT},
+function Base.rand(::AbstractRNG, backend::KernelAbstractions.Backend, ::Type{MT},
         N2::Integer, n2::Integer) where {T, MT <: SymplecticStiefelManifold{T}}
     throw(ArgumentError("$(backend) cannot draw a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host. Draw on the host with rand(SymplecticStiefelManifold{$(T)}, $(N2), $(n2))."))
 end
@@ -253,7 +253,7 @@ The counterpart of that method, with the symplectic form in place of the Euclide
 
 [`rgrad`](@ref), [`metric`](@ref) and [`check`](@ref) run wherever the point is — [`metric`](@ref)
 as far as the backend supplies an `lu`, since it forms ``\mathrm{inv}(U^TU)``. This does not, and
-the reason is the same one that makes `rand(::AbstractRNG, ::GPU, ::Type{<:SymplecticStiefelManifold}, …)` refuse:
+the reason is the same one that makes `rand(::AbstractRNG, ::KernelAbstractions.Backend, ::Type{<:SymplecticStiefelManifold}, …)` refuse:
 the completion is orthogonalized by the symplectic SR decomposition [`sr!`](@ref), which is a host
 factorization — `_rand_symplectic_stiefel` calls `Matrix` on its factor. A device spelling would be
 a host computation with two transfers around it, which is a different operation from the
@@ -265,7 +265,7 @@ manifold nor the call.
 """
 function global_section(U::SymplecticStiefelManifold)
     backend = KernelAbstractions.get_backend(U)
-    backend isa GPU &&
+    backend isa CPU ||
         throw(ArgumentError("global_section is host-only for a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host, so a section of a $(backend) point would be a host computation with transfers around it. Move the point to the host first. rgrad and check do run on $(backend), and metric does wherever the backend supplies an lu."))
 
     N2, n2 = size(U)

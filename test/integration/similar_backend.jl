@@ -10,8 +10,8 @@
 # number: it is a `MethodError` at cache construction.
 #
 # `JLArray` stands in for the device here, as it does in `retractions/exponential_accuracy.jl`: its
-# backend is a `KernelAbstractions.GPU`, so it takes the same `zeros(::Backend, …)` methods a
-# `CuArray` does, and it is what makes the property checkable without a GPU.
+# backend is not the `CPU`, so an allocation on it takes the device methods a `CuArray` takes, and
+# it is what makes the property checkable without a GPU.
 #
 # `StiefelProjection` is deliberately not in the table below. It has a backend and it is an
 # `AbstractMatrix`, but `similar` and `zero` on it reach the generic fallbacks and return a host

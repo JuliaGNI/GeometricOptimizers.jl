@@ -12,6 +12,7 @@ using JLArrays: JLArray
 using Test
 
 include("../helpers/eltypes.jl")
+include("../helpers/jlarray_cholesky.jl")
 include(joinpath(@__DIR__, "..", "..", "scripts", "device_solve.jl"))
 
 # The host twin above runs the same `update_section!` as the device, so a wrong update of a

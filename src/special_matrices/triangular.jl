@@ -116,7 +116,7 @@ function _lmul_into!(C::AbstractMatrix{T}, A::AbstractTriangular{T}, B::Abstract
     backend = KernelAbstractions.get_backend(A)
 
     triangular_mat_mul! = mat_mul_kernel(A, backend)
-    triangular_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
+    triangular_mat_mul!(C, A.S, _kernel_operand(backend, B), A.n, ndrange = size(C))
     C
 end
 
