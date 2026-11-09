@@ -3,10 +3,10 @@
 #
 #     julia --startup-file=no --check-bounds=auto --project=<env> scripts/cpu_backend_cost.jl
 #
-# `<env>` holds this package and `NeuralNetworkParameters`. Each row is the minimum `@allocated`
-# over 5 calls and the median time over 200 samples of at least 20 µs each, after two warm-up
-# calls. BLAS runs on one thread. On KernelAbstractions 0.10 `CPU()` is the PoCL backend, so a
-# kernel launch costs a few µs; the rows show where that lands.
+# `<env>` holds this package, `KernelAbstractions` and `NeuralNetworkParameters`. Each row is the
+# minimum `@allocated` over 5 calls and the median time over 200 samples of at least 20 µs each,
+# after two warm-up calls. BLAS runs on one thread. On KernelAbstractions 0.10 `CPU()` is the PoCL
+# backend, so a kernel launch costs a few µs; the rows show where that lands.
 using GeometricOptimizers
 using GeometricOptimizers: map_to_Skew
 using KernelAbstractions: KernelAbstractions, CPU

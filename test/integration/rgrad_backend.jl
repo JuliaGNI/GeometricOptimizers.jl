@@ -65,8 +65,9 @@ const device = get_backend(JLArray(zeros(1)))
     # a device gradient at a host point is not refused by the guard: the products of the host point
     # with the device gradient are attempted, and `JLArrays`, as a real device does, refuses to hand
     # its array to the host BLAS, which raises an `ErrorException` and not the guard's
-    # `ArgumentError`
+    # `ArgumentError`; the message tells it from any other `ErrorException`
     @test_throws ErrorException rgrad(host_Y, JLArray(host_gradient))
+    @test_throws "Illegal conversion of a JLArray to a Ptr" rgrad(host_Y, JLArray(host_gradient))
 end
 
 function device_set(rng, ::Type{T}) where {T}
