@@ -45,7 +45,10 @@ breaking release).
   real device has from its vendor library. `test/integration/rgrad_backend.jl` states that a
   device gradient at a host point raises in the host BLAS and not in the guard, and
   `test/integration/device_products.jl` that `geodesic(B, ProjectedSkew())` on a `JLArray` raises
-  in LAPACK's `qr`; the check that its own steps stay on the device is gone (K55). CI runs the tests
+  in LAPACK's `qr`; the check that its own steps stay on the device is gone (K55). On Julia 1.15
+  the generic `lu` that `cayley` and `metric` reach on a `JLArray` calls LAPACK and does not
+  scalar-index, so the tests that pin where they stop accept `Illegal conversion of a JLArray to a
+  Ptr` beside `Scalar indexing is disallowed`. CI runs the tests
   with `check_bounds: auto`, as the canonical workflow does.
 - **`scripts/cpu_backend_cost.jl` measures the hot paths on `CPU()`.** Against the base commit
   `f593928` (KernelAbstractions 0.9.45), on 0.10.7, Julia 1.13.3, M4 Max, BLAS on one thread, each

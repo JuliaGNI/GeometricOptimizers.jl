@@ -515,7 +515,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   and `:135` against `:147`. The pre job on Julia 1.13.2 of run 39127065561 passes the same testset.
   Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests. With Metal 1.12
   and LLVM 10 they reach the tests again: the pre job (Julia 1.14) of CI run 42667986055, on #183,
-  fails `Own-vs-own ambiguities` once at `test/ambiguities.jl:22` (6174 pass, 1 fail).
+  fails `Own-vs-own ambiguities` once at `test/ambiguities.jl:22` (6174 pass, 1 fail). A local
+  full suite on Julia 1.15.0-DEV.617 (aarch64, macOS) fails it once there too, with the same two
+  pairs.
 
 ### K46 · A `DirectMomentum` step of a norm above about `√floatmax(T)` raises from `lu!`, as a `MomentumMethod` step does
 
@@ -1180,7 +1182,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K55 · No test shows that `geodesic(B, ProjectedSkew())` keeps its own steps on a device backend
 
-- location: `test/integration/device_products.jl:24`
+- location: `test/integration/device_products.jl:25`
 - kind: missing test
 - found: 2026-11-09
 - evidence: the method calls the backend's `qr` and `eigen`, which neither `JLArrays` nor Metal
