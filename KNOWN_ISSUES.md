@@ -504,7 +504,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   The lift-typed cotangent takes the dense `AbstractMatrix` method; only the Stiefel lift has a
   block method for a cotangent of its own type.
 
-### K43 · On Julia 1.14, the Stiefel and the Grassmann `apply_section!` methods are ambiguous with the method for a `Nothing` section
+### K43 · On Julia 1.14.0-DEV, the Stiefel and the Grassmann `apply_section!` methods are ambiguous with the method for a `Nothing` section
 
 - location: `src/global_sections/global_sections.jl:147`
 - kind: defect
@@ -513,37 +513,22 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   38715367722 (Julia 1.14.0-DEV.3705, at `07545d1`) each fail `Own-vs-own ambiguities` once, at
   `Test Failed at test/ambiguities.jl:22`, with two pairs: `global_sections.jl:97` against `:147`,
   and `:135` against `:147`. The pre job on Julia 1.13.2 of run 39127065561 passes the same testset.
-  The pre job of run 42667986055 (Julia 1.14.0-alpha2, at `88e91c4`) fails it with the same two
-  pairs: `Own-vs-own ambiguities`, 6174 passed and 1 failed, at `test/ambiguities.jl:22`.
+  Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests. With Metal 1.12
+  and LLVM 10 they reach the tests again: the pre job (Julia 1.14) of CI run 42667986055, on #183,
+  fails `Own-vs-own ambiguities` once at `test/ambiguities.jl:22` (6174 pass, 1 fail).
 
-### K56 · On Julia 1.15, the `metric` testset of `test/manifolds/symplectic_backend.jl` pins a message that `JLArrays` 0.5 does not raise
-
-- location: `test/manifolds/symplectic_backend.jl:105`
-- kind: defect
-- found: PR #183
-- evidence: the nightly job of CI run 42667986055 (Julia 1.15.0-DEV.623, `JLArrays` 0.5.0, at
-  `88e91c4`) fails the testset `metric stops in lu, which is JLArrays' gap and not this package's`
-  twice, at `symplectic_backend.jl:105`:
-
-  ```
-  Expected: "Scalar indexing is disallowed"
-   Message: "Illegal conversion of a JLArray to a Ptr"
-  ```
-
-  The `Julia 1` jobs (Julia 1.13) pass it. The review of PR #183 traces the call on Julia
-  1.15.0-DEV.617 from `metric` through `inv` and `lu` to LAPACK's `getrf!`, where `JLArrays` 0.5
-  refuses the pointer. The comments of the file say the generic fallback scalar-indexes (`:92`) and
-  name `rand(::GPU, …)` (`:13`), which the device methods no longer take.
-
-### K57 · A comment of `test/integration/similar_backend.jl` tells the `JLArray` backend from the `CPU` by `KernelAbstractions.GPU`
+### K56 · Two test comments tell the `JLArray` backend from the `CPU` by `KernelAbstractions.GPU`
 
 - location: `test/integration/similar_backend.jl:13`
 - kind: docs
 - found: PR #183
-- evidence: the comment says the `JLArray` backend "is a `KernelAbstractions.GPU`, so it takes the
-  same `zeros(::Backend, …)` methods a `CuArray` does". On KernelAbstractions 0.10, `GPU` is an
-  alias of `Backend`, so `CPU()` is a `GPU` too. `test/integration/rgrad_backend.jl:10` says "its
-  backend is not the `CPU`".
+- evidence: `test/integration/similar_backend.jl:13` says the `JLArray` backend "is a
+  `KernelAbstractions.GPU`, so it takes the same `zeros(::Backend, …)` methods a `CuArray` does",
+  and `test/manifolds/symplectic_backend.jl:13` names `rand(::GPU, ::Type{<:SymplecticStiefelManifold}, …)`.
+  On KernelAbstractions 0.10.7, `KernelAbstractions.GPU === KernelAbstractions.Backend` and
+  `CPU() isa KernelAbstractions.GPU` are both `true`, so neither sentence tells the device from the
+  host, and the device methods of `rand` take a `KernelAbstractions.Backend`.
+  `test/integration/rgrad_backend.jl:10` says "its backend is not the `CPU`".
 
 ### K46 · A `DirectMomentum` step of a norm above about `√floatmax(T)` raises from `lu!`, as a `MomentumMethod` step does
 
