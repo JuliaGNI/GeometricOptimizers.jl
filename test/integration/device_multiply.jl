@@ -36,6 +36,7 @@ using Random
 using Test
 
 include("../helpers/eltypes.jl")
+include("../helpers/jlarray_cholesky.jl")
 
 Random.seed!(2718)
 

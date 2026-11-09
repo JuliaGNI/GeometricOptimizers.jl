@@ -6,10 +6,11 @@
 # Without the guard a mismatch is not a clean failure. On a backend that can fall back to the host —
 # `JLArrays` under `allowscalar(false)` is the one reachable from the test suite — a host/device pair
 # silently picks a side: `SkewSymMatrix(host) + SkewSymMatrix(device)` gives a device matrix,
-# `SkewSymMatrix(device) * host` a `JLArray`, and `StiefelManifold(device) * host` a **host**
+# `SkewSymMatrix(device) * host` a `JLArray`, and `SkewSymMatrix(host) * device` a **host**
 # `Matrix` — the device operand comes off the device and nothing says so. Which backend the answer
-# lands on follows the argument order. Where such a pair does raise instead, it says
-# `Scalar indexing is disallowed`, which names neither operand; on Metal it fails inside
+# lands on follows the argument order. Where such a pair does raise instead, as
+# `StiefelManifold(device) * host` does, it says `Illegal conversion of a JLArray to a Ptr`,
+# which names neither operand; on Metal it fails inside
 # `GPU compilation of MethodInstance for …broadcast_linear…`, which names neither backend nor the
 # mismatch.
 #

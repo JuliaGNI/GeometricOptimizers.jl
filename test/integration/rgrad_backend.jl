@@ -7,7 +7,7 @@
 # are on two backends is refused when the `Optimizer` is built, and the gradient an `Optimizer`
 # computes for a device set has every leaf on the backend of its parameter leaf.
 #
-# `JLArray` stands in for the device: its backend is a `KernelAbstractions.GPU`.
+# `JLArray` stands in for the device: its backend is not the `CPU`.
 
 using GeometricOptimizers
 using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular, gradient, rgrad
