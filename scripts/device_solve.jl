@@ -8,6 +8,9 @@
 #     using JLArrays; device_solve(JLArray, Float64)                # what `test/integration/device_solve.jl` asserts
 #     using Metal;    device_solve(MtlArray, Float32; retraction = Cayley(), matched_rng = false)
 #
+# A `JLArray` has no Cholesky factorization of its own, which rows (b) and (c) need: include
+# `test/helpers/jlarray_cholesky.jl` before the `JLArray` run, as the test does.
+#
 # The runs are `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and `DFP`, each with a supplied
 # `∇F!`, on three iterates:
 #

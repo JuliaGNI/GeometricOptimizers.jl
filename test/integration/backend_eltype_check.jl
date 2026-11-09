@@ -9,7 +9,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: StiefelProjection, unit_matrix
-using KernelAbstractions: KernelAbstractions, CPU, GPU
+using KernelAbstractions: KernelAbstractions, Backend, CPU
 using Random
 using Test
 
@@ -17,7 +17,7 @@ include("../helpers/eltypes.jl")
 
 Random.seed!(2026)
 
-struct _Float64GPU <: GPU end
+struct _Float64GPU <: Backend end
 function KernelAbstractions.allocate(::_Float64GPU, ::Type{T}, dims::Tuple; kwargs...) where {T}
     Array{T}(undef, dims)
 end

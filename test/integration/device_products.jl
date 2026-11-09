@@ -11,35 +11,29 @@ using Test
 
 include(joinpath(@__DIR__, "..", "..", "scripts", "device_products.jl"))
 include("../helpers/eltypes.jl")
+include("../helpers/jlarray_cholesky.jl")
 
 # `cayley` inverts a matrix with `LinearAlgebra.inv`, and `JLArrays` supplies no `lu` for it. That is
 # the reference backend's gap, pinned in `device_multiply.jl`; Metal has an `lu`, and the rows pass
 # there.
 const JLARRAYS_GAPS = ("cayley(StiefelManifold, Δ)", "cayley(GrassmannManifold, Δ)")
 
-# `geodesic(B, ProjectedSkew())` calls the backend's own `qr` and `eigen`. `JLArrays` has neither, so
-# under `allowscalar(false)` it raises inside the generic `qr`, and that is where Metal stops too.
-# With scalar indexing allowed the generic ones run, and a result that is still a `JLArray` is what
-# says that no step copies to the host — the part of the method this package controls. `(6, 4)` has
-# `2n > N`, where the thin `Q` has `N` columns and not `2n`.
+# `geodesic(B, ProjectedSkew())` calls the backend's own `qr` and `eigen`. `JLArrays` has neither: it
+# refuses to hand a `JLArray` to LAPACK, so the `qr` raises, with scalar indexing allowed or not, and
+# that is where Metal stops too. `(6, 4)` has `2n > N`, where the thin `Q` has `N` columns and not
+# `2n`. That no step of the method copies to the host is untested (K55 in `KNOWN_ISSUES.md`).
 const PROJECTED_SKEW_SHAPES = ((6, 3), (6, 4))
 
-# `todev` of a lift moves its storage as it is, so the device lift is in `T` too. The host twin is
-# the same method on the host, and the default `≈` (`rtol = √eps(T)`) covers the two backends'
-# different summation orders.
-@testset "ProjectedSkew keeps every step on the lift's backend, $T, $N × $n" for T in REAL_ELTYPES,
+# `todev` of a lift moves its storage as it is, so the device lift is in `T` too.
+@testset "ProjectedSkew raises in the backend's qr, $T, $N × $n" for T in REAL_ELTYPES,
     (N, n) in PROJECTED_SKEW_SHAPES
 
     rng = Random.Xoshiro(4)
     host = StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix{T}, n), randn(rng, T, N - n, n), N, n)
     device = todev(JLArray, host)
 
-    @test_throws "Scalar indexing is disallowed" geodesic(device, GeometricOptimizers.ProjectedSkew())
-
-    Y = allowscalar(() -> geodesic(device, GeometricOptimizers.ProjectedSkew()))
-    @test Y.A isa JLArray{T, 2}
-    @test eltype(Y) == T
-    @test Array(Y.A) ≈ geodesic(host, GeometricOptimizers.ProjectedSkew()).A
+    @test_throws "Illegal conversion of a JLArray to a Ptr" geodesic(
+        device, GeometricOptimizers.ProjectedSkew())
 end
 
 # A row passes when its result is in the element type of its host twin, on the device, and agrees

@@ -24,6 +24,7 @@ using Random
 using Test
 
 include("../helpers/eltypes.jl")
+include("../helpers/jlarray_cholesky.jl")
 
 Random.seed!(4242)
 
@@ -35,9 +36,9 @@ allowscalar(false)
 # device draw's `check` stays under 4 `eps(T)`, a two-pass CholeskyQR2 under 12 `eps(T)`, a
 # `GlobalSection`'s blocks under 4 `eps(T)`.
 
-@testset "the device backend is a GPU as far as dispatch is concerned" begin
+@testset "the device backend is not the CPU as far as dispatch is concerned" begin
     # otherwise everything below would be exercising the host arm under another name
-    @test device isa KernelAbstractions.GPU
+    @test !(device isa KernelAbstractions.CPU)
 end
 
 @testset "a point is drawn on the device, and stays there, $T" for T in REAL_ELTYPES

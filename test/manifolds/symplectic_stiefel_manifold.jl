@@ -2,7 +2,7 @@ using Test
 using LinearAlgebra
 using GeometricOptimizers
 using GeometricOptimizers: _poisson_tensor, _similar, check
-using KernelAbstractions: CPU, GPU
+using KernelAbstractions: Backend, CPU
 import Random
 
 include("../helpers/eltypes.jl")
@@ -249,8 +249,9 @@ end
     @test_throws AssertionError _poisson_tensor(T, 5)
 end
 
-# A stand-in device, because the refusal below is a property of `GPU` and not of any one vendor.
-struct _StandInGPU <: GPU end
+# A stand-in device, because the refusal below is a property of every backend other than the `CPU`
+# and not of any one vendor.
+struct _StandInGPU <: Backend end
 
 # The generic `Manifold{T}` draw in `abstract_manifold.jl` orthonormalises a Gaussian matrix with
 # `qr`, which preserves the Euclidean form and not ``\mathbb{J}``. It matches this type as well, and
@@ -288,7 +289,7 @@ end
 
 # `sr!` is a host factorization -- `_rand_symplectic_stiefel` calls `Matrix` on its factor -- so
 # there is no device draw to fall back to. Refusing is the point: without these methods the generic
-# `rand(::GPU, ...)` answers with an orthonormal point instead.
+# `rand(::KernelAbstractions.Backend, ...)` answers with an orthonormal point instead.
 @testset "a device draw is refused rather than answered orthonormally" begin
     @test_throws ArgumentError rand(_StandInGPU(), SymplecticStiefelManifold{Float64}, 6, 4)
     @test_throws ArgumentError rand(_StandInGPU(), SymplecticStiefelManifold{Float32}, 6, 4)

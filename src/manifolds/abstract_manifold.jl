@@ -14,7 +14,7 @@ abstract type Manifold{T} <: AbstractMatrix{T} end
 # gradient for its backend, which keeps a gradient `KernelAbstractions` cannot place, such as a lazy
 # wrapper, on the host path. A device gradient at a host point is not refused here.
 function _check_gradient_backend(Y::Manifold, ∇L::AbstractMatrix)
-    KernelAbstractions.get_backend(Y) isa GPU && _check_same_backend(Y.A, ∇L)
+    KernelAbstractions.get_backend(Y) isa CPU || _check_same_backend(Y.A, ∇L)
     nothing
 end
 
@@ -162,7 +162,7 @@ function Base.rand(rng::AbstractRNG, ::CPU, ::Type{MT},
     (isconcretetype(MT) ? MT : MT{typeof(Q)})(Q)
 end
 
-function Base.rand(rng::AbstractRNG, backend::GPU, ::Type{MT},
+function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend, ::Type{MT},
         N::Integer, n::Integer) where {T, MT <: Manifold{T}}
     @assert N ≥ n
     Q = orthonormal_columns() do
@@ -198,7 +198,7 @@ A caller who wants a fixed width names it, in the parametric form
 function default_eltype end
 
 default_eltype(::CPU) = Float64
-default_eltype(::GPU) = Float32
+default_eltype(::KernelAbstractions.Backend) = Float32
 
 # `_round` rewraps, and is the only thing here that may: rounding a point's entries to a few decimals
 # is a *display* operation on a point that is already on the manifold, and the docstrings that print

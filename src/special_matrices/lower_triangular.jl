@@ -117,7 +117,7 @@ function map_to_lo(A::AbstractMatrix{T}) where {T}
     @assert size(A, 2) == n
     backend = KernelAbstractions.get_backend(A)
     S = KernelAbstractions.allocate(backend, T, n * (n - 1) ÷ 2)
-    lo_projection_kernel(backend)(S, A; ndrange = (n, n))
+    lo_projection_kernel(backend)(S, _kernel_operand(backend, A); ndrange = (n, n))
     S
 end
 
