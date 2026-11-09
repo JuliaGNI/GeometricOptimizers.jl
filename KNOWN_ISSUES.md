@@ -513,8 +513,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   38715367722 (Julia 1.14.0-DEV.3705, at `07545d1`) each fail `Own-vs-own ambiguities` once, at
   `Test Failed at test/ambiguities.jl:22`, with two pairs: `global_sections.jl:97` against `:147`,
   and `:135` against `:147`. The pre job on Julia 1.13.2 of run 39127065561 passes the same testset.
-  Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests, so it is open
-  whether the current Julia reports the pairs.
+  Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests. With Metal 1.12
+  and LLVM 10 they reach the tests again: the pre job (Julia 1.14) of CI run 42667986055, on #183,
+  fails `Own-vs-own ambiguities` once at `test/ambiguities.jl:22` (6174 pass, 1 fail).
 
 ### K46 · A `DirectMomentum` step of a norm above about `√floatmax(T)` raises from `lu!`, as a `MomentumMethod` step does
 
