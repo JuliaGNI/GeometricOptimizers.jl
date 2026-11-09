@@ -9,8 +9,8 @@
 #     the fourth testset below pins.
 #   * `global_section` orthogonalizes its completion with the symplectic SR decomposition, which is
 #     a host factorization — `sr!`'s factor is materialized with `Matrix`. A device point is refused
-#     with a message rather than left to fail inside `sr!`, which is the same answer
-#     `rand(::GPU, ::Type{<:SymplecticStiefelManifold}, …)` gives and for the same reason.
+#     with a message rather than left to fail inside `sr!`, which is the same answer `rand` of a
+#     `SymplecticStiefelManifold` gives on a backend that is not the `CPU`, and for the same reason.
 #
 # `JLArrays` stands in for the device, as it does in `similar_backend.jl` and
 # `device_orthonormalization.jl`, and `allowscalar(false)` is what makes this a test rather than a

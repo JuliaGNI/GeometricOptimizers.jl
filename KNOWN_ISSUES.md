@@ -517,19 +517,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   and LLVM 10 they reach the tests again: the pre job (Julia 1.14) of CI run 42667986055, on #183,
   fails `Own-vs-own ambiguities` once at `test/ambiguities.jl:22` (6174 pass, 1 fail).
 
-### K56 · Two test comments tell the `JLArray` backend from the `CPU` by `KernelAbstractions.GPU`
-
-- location: `test/integration/similar_backend.jl:13`
-- kind: docs
-- found: PR #183
-- evidence: `test/integration/similar_backend.jl:13` says the `JLArray` backend "is a
-  `KernelAbstractions.GPU`, so it takes the same `zeros(::Backend, …)` methods a `CuArray` does",
-  and `test/manifolds/symplectic_backend.jl:13` names `rand(::GPU, ::Type{<:SymplecticStiefelManifold}, …)`.
-  On KernelAbstractions 0.10.7, `KernelAbstractions.GPU === KernelAbstractions.Backend` and
-  `CPU() isa KernelAbstractions.GPU` are both `true`, so neither sentence tells the device from the
-  host, and the device methods of `rand` take a `KernelAbstractions.Backend`.
-  `test/integration/rgrad_backend.jl:10` says "its backend is not the `CPU`".
-
 ### K46 · A `DirectMomentum` step of a norm above about `√floatmax(T)` raises from `lu!`, as a `MomentumMethod` step does
 
 - location: `src/manifold_optimizers/direct_momentum_optimizer.jl`
