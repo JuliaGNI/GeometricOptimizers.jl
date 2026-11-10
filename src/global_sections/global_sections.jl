@@ -94,7 +94,9 @@ Apply `λY` to `Y₂` and store the result in `Y`.
 
 This is the inplace version of [`apply_section`](@ref).
 """
-function apply_section!(Y::AT, λY::GlobalSection{T, AT},
+# The lift is bound to an array, as `global_section(::StiefelManifold)` returns one; this keeps the
+# method disjoint from the `λ === nothing` one below. The same holds for the Grassmann method.
+function apply_section!(Y::AT, λY::GlobalSection{T, AT, <:AbstractArray},
         Y₂::MT) where {T, AT <: StiefelManifold{T}, MT <: StiefelManifold{T}}
     _apply_section!(Y.A, λY, Y₂.A)
 
@@ -132,7 +134,7 @@ function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {
     Y
 end
 
-function apply_section!(Y::AT, λY::GlobalSection{T, AT},
+function apply_section!(Y::AT, λY::GlobalSection{T, AT, <:AbstractArray},
         Y₂::MT) where {T, AT <: GrassmannManifold{T}, MT <: GrassmannManifold{T}}
     _apply_section!(Y.A, λY, Y₂.A)
 

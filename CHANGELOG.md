@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Fixed
+
+- **`apply_section!` has no ambiguous methods on Julia 1.14 and 1.15.** The Stiefel and the
+  Grassmann method took a section with any lift, and so met the vector-space method for a section
+  whose lift is `nothing`. On Julia 1.14.0-alpha2 and 1.15.0-DEV the test "no ambiguity between two
+  of this package's own methods" failed on the two pairs. A section of a Stiefel or a Grassmann
+  point always has an array lift, because `global_section` of both returns one, so the two methods
+  now take only such a section. No call changes. This closes K43.
+
 ## [0.10.0] — 2026-11-09
 
 ### Breaking Changes
