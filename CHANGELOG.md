@@ -6,9 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased]
+## [Unreleased] — targeting 0.10.1
 
 ### Fixed
+
+- **A sandboxed run of the `metal` group records the device skip, with no Metal cache built
+  outside the sandbox.** Metal.jl 1.11.1 ran its precompile workload where `Metal.devices()` is
+  empty, as in a sandbox, and `using Metal` failed with `Failed to precompile Metal`. Metal.jl
+  1.12, which `test/Project.toml` requires since 0.10.0, runs the workload only where a device
+  exists (JuliaGPU/Metal.jl#1000). This closes K15. No change to the package code.
 
 - **`apply_section!` has no ambiguous methods on Julia 1.14 and 1.15.** The Stiefel and the
   Grassmann method took a section with any lift, and so met the vector-space method for a section

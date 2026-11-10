@@ -38,8 +38,8 @@
 # `Metal.functional()` is `false` on Linux, on Windows, on a Mac without Apple silicon and on a
 # macOS runner older than 15. Where Metal loads but is not functional, the script says so and exits
 # 0 rather than failing. In a macOS sandbox that hides the GPU, `Metal.devices()` is empty even where
-# the hardware is present, and with no Metal cache for its flags `using Metal` fails at the
-# precompile before the check runs (K15 in `KNOWN_ISSUES.md`).
+# the hardware is present. Metal precompiles there, so the script loads and reports that Metal is
+# not functional; a device run goes through a Kaimon session.
 
 using GeometricOptimizers
 using GeometricOptimizers: StrictlyLowerTriangular, StiefelProjection, add!
