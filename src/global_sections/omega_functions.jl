@@ -94,7 +94,7 @@ Lie algebra has no structured type in this package. ``\Omega(U, \Delta)U = \Delt
 matrix; see there.
 """
 function Ω(U::SymplecticStiefelManifold{T}, Δ::AbstractMatrix{T}) where {T}
-    N, n = size(U)
+    N = size(U, 1)
     # `U⁺` and `Δ⁺` as `n × N` matrices, and `𝕀 - ½UU⁺` applied as a product rather than formed
     U⁺ = _poisson_tmul(U.A' * _poisson_tensor(U, N))
     Δ⁺ = _poisson_tmul(Δ' * _poisson_tensor(U, N))

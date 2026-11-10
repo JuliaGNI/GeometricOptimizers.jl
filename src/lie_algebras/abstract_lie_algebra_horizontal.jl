@@ -14,7 +14,7 @@ The manifold a retraction of `B` lands on.
 
 ``\mathfrak{g}^\mathrm{hor}`` is the horizontal component of the Lie algebra *of a specific
 homogeneous space*, so the lift already determines where the retraction maps to. This is what lets
-[`geodesic`](@ref) and [`cayley`](@ref) be written once for both manifolds rather than twice each.
+[`geodesic`](@ref) and [`cayley`](@ref) be written once for every manifold rather than once for each.
 """
 function manifold_type end
 
@@ -22,7 +22,8 @@ function manifold_type end
     parent(B::AbstractLieAlgHorMatrix)
 
 The tuple of blocks `B`'s free parameters are stored in — `(A, B)` for a
-[`StiefelLieAlgHorMatrix`](@ref), `(B,)` for a [`GrassmannLieAlgHorMatrix`](@ref) — and *not* the
+[`StiefelLieAlgHorMatrix`](@ref), `(B,)` for a [`GrassmannLieAlgHorMatrix`](@ref),
+`(A₁, B₁, C₁, B)` for a [`SymplecticLieAlgHorMatrix`](@ref) — and *not* the
 single array every other `parent` this package defines returns.
 
 Every operation on a lift that is elementwise *in the free parameters* — as opposed to in the ambient

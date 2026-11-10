@@ -549,8 +549,8 @@ them measures, and how to choose between them. Everything from here on is about 
 
 [`AbstractRetraction`](@ref), [`Geodesic`](@ref), [`Cayley`](@ref), [`geodesic`](@ref),
 [`cayley`](@ref) and [`retraction`](@ref). `geodesic` and `cayley` each have a method on an
-[`AbstractLieAlgHorMatrix`](@ref) — the efficient form this page derives, for both the Stiefel and
-the Grassmann lift — and one on a point together with a tangent vector, which is the classical
+[`AbstractLieAlgHorMatrix`](@ref) — the efficient form this page derives, for the Stiefel, the
+Grassmann and the symplectic lift — and one on a point together with a tangent vector, which is the classical
 retraction of the footnote above. Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 ## Reference

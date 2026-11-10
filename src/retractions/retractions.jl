@@ -43,10 +43,12 @@ Factor a horizontal lift into the two ``N\times{}2n`` matrices ``B'`` and ``B''`
 
 Every retraction in this package is built on this factorisation — it is what makes their cost scale
 with ``n`` rather than with ``N``, since the only matrix function either of them evaluates is on the
-``2n\times{}2n`` product ``(B'')^TB'``. Both [`geodesic`](@ref) and [`cayley`](@ref) use it, for both
-manifolds.
+``2n\times{}2n`` product ``(B'')^TB'``. Both [`geodesic`](@ref) and [`cayley`](@ref) use it, for every
+manifold.
 
 For a [`GrassmannLieAlgHorMatrix`](@ref) this is the same expression with ``A \equiv \mathbb{O}``.
+For a [`SymplecticLieAlgHorMatrix`](@ref) it is the same expression with the Hamiltonian block
+``\mathcal{A}`` for ``A`` and the symplectic adjoint ``\mathcal{B}^+`` for ``B^T``.
 
 # Implementation
 
@@ -406,7 +408,7 @@ D(\alpha) = \mathrm{Cayley}(\alpha\bar{B})^{-1}M\bar{B}M = M^T\bar{B}M ,
 using ``M^T = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}`` for skew ``\bar{B}``. For a
 [`SymplecticLieAlgHorMatrix`](@ref), which is Hamiltonian rather than skew, the same derivation
 gives ``D(\alpha) = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}\bar{B}M``, which is the expression
-evaluated below for every lift. ``D`` is skew but
+evaluated below for every lift. ``D`` is in the Lie algebra, skew or Hamiltonian, but
 not horizontal; only its first ``n`` columns ever enter — ``D(\alpha)E`` — and the horizontal
 projection has the same ones, so what [`lift_from_columns`](@ref) is handed is that projection.
 
@@ -457,7 +459,7 @@ function retraction_differential(::Cayley, B::AbstractLieAlgHorMatrix{T}, α) wh
 
     w₁ = E + B̂ * ((𝕀 - a * G) \ (a * (B̄' * E)))      # M E
     w₂ = B̂ * (B̄' * w₁)                                # B̄ M E
-    V = w₂ - B̂ * ((𝕀 + a * G) \ (a * (B̄' * w₂)))     # Mᵀ B̄ M E
+    V = w₂ - B̂ * ((𝕀 + a * G) \ (a * (B̄' * w₂)))     # (𝕀 + aB̄)⁻¹ B̄ M E
 
     lift_from_columns(B, V)
 end
@@ -492,8 +494,9 @@ end
     lift_from_columns(B, V)
 
 Rebuild a lift of the same type as `B` from the ``N\times{}n`` block `V`, i.e. from the first ``n``
-columns of a skew matrix. Used by [`retraction_differential`](@ref), which is the only place a lift
-has to be assembled from its action on ``E`` rather than from its own blocks.
+columns of a skew matrix, or of a Hamiltonian one for a [`SymplecticLieAlgHorMatrix`](@ref). Used
+by [`retraction_differential`](@ref), which is the only place a lift has to be assembled from its
+action on ``E`` rather than from its own blocks.
 
 Not to be confused with the *canonical horizontal lift* [`GeometricOptimizers.Ω`](@ref), which maps a
 tangent vector to an element of ``\mathfrak{g}^\mathrm{hor}``. This one takes the columns of a matrix

@@ -201,9 +201,9 @@ end
 
 [`lift_factors`](@ref) written into `ws`, returning nothing.
 
-Only the lift-dependent blocks are written — four for a Stiefel lift and two for a Grassmann one,
-whose ``A`` block is identically zero. The identity and zero blocks were written when the workspace
-was built. `ws` has to have been built for `B`'s shape.
+Only the lift-dependent blocks are written — four for a Stiefel or a symplectic lift and two for a
+Grassmann one, whose ``A`` block is identically zero. The identity and zero blocks were written when
+the workspace was built. `ws` has to have been built for `B`'s shape.
 """
 function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T}) where {T}
     N, n = B.N, B.n

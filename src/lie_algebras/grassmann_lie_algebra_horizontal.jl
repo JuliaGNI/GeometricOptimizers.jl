@@ -106,8 +106,8 @@ end
 # function for the `transpose` and for where the minus sits. This lift's `(1, 1)` block is the zero
 # matrix, so only the `-Bᵀ` block contributes.
 #
-# `C₁` goes unused here. It is taken so that both methods share one signature, which is what lets
-# `*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)` be written once for the two lifts.
+# `C₁` goes unused here. It is taken so that every method shares one signature, which is what lets
+# `*(::AbstractLieAlgHorMatrix, ::AbstractMatrix)` be written once for every lift.
 _hor_top_rows(B::GrassmannLieAlgHorMatrix, C₁, C₂) = -(transpose(B.B) * C₂)
 
 function Base.zeros(backend::KernelAbstractions.Backend,
