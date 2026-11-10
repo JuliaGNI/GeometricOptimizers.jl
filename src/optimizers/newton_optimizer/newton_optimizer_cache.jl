@@ -129,6 +129,7 @@ function initialize!(cache::NewtonOptimizerCache{T}, ::AbstractVector{T}) where 
     direction(cache) .= T(NaN)
     cache.g .= T(NaN)
     latest_gradient(cache) .= T(NaN)
+    cache.g̃_norm[] = T(NaN)
     invalidate_latest_gradient!(cache)
     cache.rhs .= T(NaN)
     hessian(cache) .= T(NaN)

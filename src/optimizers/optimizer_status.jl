@@ -157,7 +157,7 @@ solution_scale(ps::NetworkParameters) = √_sumsq_leaves(solution_scale, ps)
 # quadrature -- the same intrinsic-versus-ambient distinction `_dot` documents. Leaving it to the
 # `AbstractMatrix` fallback would give the ambient Frobenius norm, which counts each off-diagonal
 # block twice and so comes out `√2` times too large in `step_αmax`, `curvature_is_usable`, `rxₐ` and
-# `rg`. For a `StiefelLieAlgHorMatrix` this is `√(l2norm(a.A)^2 + l2norm(a.B)^2)`.
+# `rgₐ`. For a `StiefelLieAlgHorMatrix` this is `√(l2norm(a.A)^2 + l2norm(a.B)^2)`.
 #
 # `_sumsq_leaves` over the blocks, so that every quadrature sum in the package is the same fold.
 # `parent(a)` and not `a`: `foldparameters` treats a lift as a *leaf*, so the lift itself would call
@@ -270,8 +270,8 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
 
 !!! info "Which iterate `g_converged` is a statement about"
     `rg` is [`latest_gradient_norm`](@ref), i.e. ``\|\nabla{}f(x_{k+1})\|`` in the Riemannian norm at
-    the iterate the step ended at, for every method, and not at the iterate it started from or at the last point that the line
-    search probed.
+    the iterate the step ended at, for every method, and not at the iterate it started from or at the
+    last point that the line search probed.
 
     The distinction matters for a direction that carries momentum. Under
     [`SimpleSolvers.Static`](@extref) a stale `rg` is harmless, because the direction is a scaled

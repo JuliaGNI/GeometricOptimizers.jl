@@ -605,13 +605,13 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C1 · `f_converged_strong` is computed and thrown away
 
-- location: `src/optimizers/optimizer_status.jl:317`
+- location: `src/optimizers/optimizer_status.jl:318`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
 
-  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:317` and returns it at
-  `:323`; the `OptimizerStatus` constructor destructures it at `:121` and never stores it. Nothing else
+  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:318` and returns it at
+  `:324`; the `OptimizerStatus` constructor destructures it at `:122` and never stores it. Nothing else
   in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
   on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
   and `Options.f_stall_window` were meant to drive — both of which are also unread here.
@@ -638,7 +638,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   `ensure_descent!` tests `dot(rhs(cache), direction(cache)) > 0`. That works because `rhs` is
   ``-\nabla{}f`` on the (quasi-)Newton caches — but on the three first-order caches `rhs` is defined as
-  an *alias* for `direction` (`gradient_optimizer.jl:82`, `momentum_optimizer.jl:63`,
+  an *alias* for `direction` (`gradient_optimizer.jl:82`, `momentum_optimizer.jl:66`,
   `adam_optimizer.jl:72`), so the test reads `dot(δ, δ) > 0` and is true for every `δ` that is neither
   zero nor `NaN`.
 
@@ -1157,7 +1157,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K35 · A training step on a parameter set with a `StiefelManifold` leaf allocates 6 kB in `Float32` and 11 kB in `Float64`
 
-- location: `src/retractions/retraction_workspace.jl:279`
+- location: `src/retractions/retraction_workspace.jl:294`
 - kind: defect
 - found: 2026-10-11
 - evidence: `scripts/parameter_set_step_cost.jl` (Julia 1.13.3, KernelAbstractions 0.10.7,
@@ -1170,8 +1170,8 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
   | frame | what allocates | bytes | allocations |
   |:--|:--|--:|--:|
-  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:279` | `inv(ws.M)` | 5 448 | 8 |
-  | `_lift_A!`, `src/global_sections/global_sections.jl:301` | a temporary | 320 | 2 |
+  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:294` | `inv(ws.M)` | 5 448 | 8 |
+  | `_lift_A!`, `src/global_sections/global_sections.jl:322` | a temporary | 320 | 2 |
 
   The two frames account for 5 768 of the 5 856 bytes. `inv(ws.M)` of the `2n × 2n` matrix stays
   an `inv`: `lu!` and `rdiv!` would take it in place on the host only, and a `KernelAbstractions`
@@ -1247,7 +1247,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   `∇L` the same lift is two products, `Uᵀ∇L` and `(Uˢ)ᵀ∇L`. `scripts/symplectic_gradient_rep_direct.jl`
   measures the error of the Cholesky path at 7.2e-15 for `κ(U) = 576` in `Float64` (2.3e-6 in
   `Float32`), against 1e-16 (5e-8) for the direct product at every `κ`; the time per call at
-  `10 × 4` is 1.0 µs against 0.25 µs, and the two agree within 10 % from `1000 × 20` up. A direct path
+  `10 × 4` is 1.0 µs against 0.25 µs, and the two agree within 20 % from `1000 × 20` up. A direct path
   needs the Euclidean gradient at `gradient_rep!`, and with it `BFGS` and `DFP` would also skip the
   `rgrad` they now pay for (twice the time of `gradient_rep!` at `4000 × 40`). That is a change of the
   gradient protocol for every manifold, `TrainingOptimizer` included, which already receives `∇L`.

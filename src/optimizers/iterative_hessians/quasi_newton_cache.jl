@@ -250,6 +250,7 @@ function initialize!(cache::QuasiNewtonCache{T}, ::OptimizerSolution{T}) where {
     _fill!(direction(cache), T(NaN))
     _fill!(gradient(cache), T(NaN))
     _fill!(latest_gradient(cache), T(NaN))
+    cache.g̃_norm[] = T(NaN)
     invalidate_latest_gradient!(cache)
     _fill!(rhs(cache), T(NaN))
     cache

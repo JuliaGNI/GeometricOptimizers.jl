@@ -32,9 +32,10 @@ The array holding the *most recently evaluated* gradient: a line search trial po
 [`linesearch_problem`](@ref)'s ``\varphi'`` is being evaluated, and the accepted iterate once
 [`solver_step!`](@ref) has called [`refresh_latest_gradient!`](@ref) on it.
 
-[`OptimizerStatus`](@ref) reports its norm as `rg`, through [`latest_gradient_norm`](@ref). It is
-deliberately *not* [`gradient`](@ref): the latter is ``\nabla{}f(x_k)`` at the iterate the step is built from, which
-the direction and the state updates need to keep reading unchanged.
+[`OptimizerStatus`](@ref) reports the Riemannian norm of this gradient as `rg`, through
+[`latest_gradient_norm`](@ref); see there for why that is not the norm of this array. The array is
+deliberately *not* [`gradient`](@ref): the latter is ``\nabla{}f(x_k)`` at the iterate the step is
+built from, which the direction and the state updates need to keep reading unchanged.
 
 # Implementation
 
