@@ -63,8 +63,9 @@ const SHAPES = (:vector, :stiefel, :network)
         result = solve!(x, OptimizerState(algorithm, x), opt)
         @test eltype(x) === T
         @test minimum(result) isa T
+        # every numeric field; `descent` selects the gradient and holds no number
         @test all(getfield(opt.algorithm, f) isa T
-        for f in fieldnames(typeof(opt.algorithm)))
+        for f in fieldnames(typeof(opt.algorithm)) if f !== :descent)
     end
     Y = rand(Random.Xoshiro(3), StiefelManifold{T}, 5, 2)
     G(Y) = sum(abs2, Y.A .- 1)

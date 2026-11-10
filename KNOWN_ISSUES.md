@@ -582,6 +582,21 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   last two silently-ignored options. Belongs in one PR with B1 and C1 — all three are the same subject,
   the status object not saying enough.
 
+### K58 · On a `SymplecticStiefelManifold` the predicted decrease `Δf̃` of `OptimizerStatus` is not the derivative of the objective along the step
+
+- location: `src/optimizers/optimizer_status.jl`, `OptimizerStatus(state, cache, f; config)`
+- kind: defect
+- found: 2026-11-10
+- evidence: `Δf̃ = _dot(previous_gradient(state), direction(cache))` pairs the gradient the method
+  holds with the step under `_dot`. Under `MetricDescent` that gradient is `global_rep(rgrad)`, and
+  under `SectionDescent` the representative in `½tr(XᵀY)` of the dense lifts. On a symplectic lift
+  neither pairs under `_dot` to the derivative of the loss: only the flat `gradient_rep!` does, as
+  `test/global_sections/global_sections.jl` asserts. `scripts/symplectic_gradient_options.jl`, part
+  (vi), measures the gap for `SectionDescent` in metric (3.16) at 0.25. Only `f_converged_strong`
+  reads `Δf̃`, and no stop rule reads that, so no solve changes. A fix pairs the flat gradient with
+  the direction, at one more `gradient_rep!` per iteration, or stores the flat gradient beside the
+  held one.
+
 ## C. This package — dead code and bookkeeping
 
 ### C1 · `f_converged_strong` is computed and thrown away

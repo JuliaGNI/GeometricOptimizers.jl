@@ -1,7 +1,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: apply_section, global_rep, global_rep!, gradient_rep!,
                            StiefelProjection, _similar, _fill!, _dot
-using LinearAlgebra: norm
+using LinearAlgebra: Symmetric, cond, norm
 using NeuralNetworkParameters: NetworkParameters
 using Test
 import Random
@@ -320,4 +320,90 @@ end
     @test D.u == gradient_rep!(similar(reference.u), λ.u, gx.u)
     @test D.v.w == reference.v.w
     @test D.v.b == reference.v.b
+
+    # the descent of a first-order method acts on the symplectic leaf alone
+    method = GradientMethod(; descent = SectionDescent())
+    @test gradient_rep!(D, λ, gx, method) === D
+    @test D.u == gradient_rep!(similar(reference.u), λ.u, gx.u, method)
+    @test D.v.w == reference.v.w
+    @test D.v.b == reference.v.b
+    @test gradient_rep!(D, λ, gx, GradientMethod()) == reference
+end
+
+# The gradient each method holds, `gradient_rep!(D, λY, Δ, method)`, against what defines it rather
+# than against the code that computes it. `Δ = rgrad(U, ∇L)` and `⟨∇L, V⟩` is the derivative of the
+# loss along a tangent vector `V`.
+#
+# - A method without a `descent` holds the derivative with respect to the stored entries: the
+#   three-argument form.
+# - `MetricDescent` holds the lift whose tangent vector `λ(U)DE` is the Riesz representative of `∇L`
+#   in metric (3.16), `g_U(λ(U)DE, V) = ⟨∇L, V⟩` for every tangent `V`. It is `Δ` for every section.
+# - `SectionDescent` holds the lift whose pairing `½tr(DᵀB)` of the dense lifts with every lift `B`
+#   is `⟨∇L, λ(U)BE⟩`. It is not the Riesz representative, and a change of the section by
+#   `diag(I, S)`, which leaves the point where it is, changes its tangent vector: the two controls.
+#
+# The pairings are measured against `‖∇L‖‖V‖`, because a pairing of two random matrices can cancel.
+# The section change is `S = exp(𝕁H)`, `H` symmetric, which is symplectic; the round-off of a
+# section-independent tangent vector grows with `cond(S)`, measured at most `0.3eps(T)cond(S)`
+# in both precisions over 20 draws, and `SectionDescent` changes by at least 1.6 times its norm.
+@testset "the gradient of each descent on a SymplecticStiefelManifold{$T}" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(12)
+    E = StiefelProjection(T, 10, 4)
+    metric_methods = (GradientMethod(), MomentumMethod(), Adam())
+    section_methods = (GradientMethod(; descent = SectionDescent()),
+        MomentumMethod(; descent = SectionDescent()), Adam(; descent = SectionDescent()))
+    for _ in 1:10
+        U = conditioned_point(rng, T, 10, 4)
+        λU = GlobalSection(U)
+        ∇L = randn(rng, T, 10, 4)
+        Δ = rgrad(U, ∇L)
+        lift() = fill!(similar(global_rep(λU, Δ)), T(NaN))
+        flat = gradient_rep!(lift(), λU, Δ)
+        for method in (BFGS(), DFP())
+            @test gradient_rep!(lift(), λU, Δ, method) == flat
+        end
+
+        V = rgrad(U, randn(rng, T, 10, 4))
+        scale = norm(∇L) * norm(V)
+        for method in metric_methods
+            D = lift()
+            @test gradient_rep!(D, λU, Δ, method) === D
+            @test D == global_rep(λU, Δ)
+            @test isapprox(metric(U, Matrix(λU) * (D * E), V), sum(∇L .* V);
+                atol = 64eps(T) * scale)
+        end
+
+        B = rand(rng, SymplecticLieAlgHorMatrix{T}, 10, 4)
+        BE = Matrix(λU) * (B * E)
+        for method in section_methods
+            D = gradient_rep!(lift(), λU, Δ, method)
+            @test isapprox(sum(Matrix(D) .* Matrix(B)) / 2, sum(∇L .* BE);
+                atol = 64eps(T) * norm(∇L) * norm(BE))
+            @test !isapprox(metric(U, Matrix(λU) * (D * E), V), sum(∇L .* V);
+                atol = sqrt(eps(T)) * scale)
+        end
+
+        λ₂ = GlobalSection(U)
+        S = exp(poisson(T, 6) * T.(Symmetric(randn(rng, 6, 6))))
+        λ₂.λ .= λ₂.λ * S
+        tangent(λ, method) = Matrix(λ) * (gradient_rep!(lift(), λ, Δ, method) * E)
+        Δ₁ = tangent(λU, GradientMethod())
+        @test isapprox(tangent(λ₂, GradientMethod()), Δ₁; rtol = 8eps(T) * cond(S))
+        @test isapprox(Δ₁, Δ; rtol = 64eps(T))
+        method = GradientMethod(; descent = SectionDescent())
+        @test !isapprox(tangent(λ₂, method), tangent(λU, method); rtol = T(0.1))
+    end
+end
+
+# Where the point is orthosymplectic and the section is `global_section`'s, `½tr(XᵀY)` is metric
+# (3.16) on the lifts, and the two descents hold the same gradient: measured at most `4.7eps(T)`.
+@testset "SectionDescent is MetricDescent at an orthosymplectic point, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(13)
+    for _ in 1:10
+        U = orthosymplectic_point(rng, T, 10, 4)
+        λU = GlobalSection(U)
+        Δ = rgrad(U, randn(rng, T, 10, 4))
+        D = gradient_rep!(global_rep(λU, Δ), λU, Δ, Adam(; descent = SectionDescent()))
+        @test isapprox(Matrix(D), Matrix(global_rep(λU, Δ)); rtol = 64eps(T))
+    end
 end

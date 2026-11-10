@@ -3,15 +3,18 @@
 # The problem is the symplectic eigenvalue problem: minimize `tr(UᵀMU)` over `U ∈ Sp(2n, 2N)` for a
 # symmetric positive definite `M`. By Williamson's theorem its minimum is twice the sum of the `n`
 # smallest symplectic eigenvalues of `M`, the moduli of the eigenvalues of `𝕁M`, which gives the
-# answer in closed form. The tests run in `Float64`: a `Float32` point drawn through the symplectic
-# SR decomposition is not reliably on the manifold (issue #152), and the line searches here retract
-# many times per iteration.
+# answer in closed form. The starting points are built without the symplectic SR decomposition,
+# whose `Float32` draws are not reliably on the manifold (issue #152); the `Float32` solves at the end
+# take the median over seeded starts, as A22 of `KNOWN_ISSUES.md` asks of a residual on this manifold.
+#
+# `check` is read on every accepted iterate: the objective records it when it is called on the
+# solution `solve!` holds, which is the iterate and not a trial point of the line search.
 using GeometricOptimizers
 using GeometricOptimizers: Cayley, Geodesic, check, cache, gradient, problem, initialize!,
                            update!, linesearch_problem, isconverged, section
 using SimpleSolvers: Static, Backtracking
 using NeuralNetworkParameters: NetworkParameters
-using LinearAlgebra: I, eigvals, norm, tr
+using LinearAlgebra: I, cond, eigvals, norm, tr
 using Test
 import Random
 
@@ -24,6 +27,13 @@ function spd(rng, N2)
     A = randn(rng, T, N2, N2)
     A * A' + I
 end
+
+# the objective on `U`, which pushes `check(U)` into `checks` whenever it is called on `U` itself
+function recording_objective(U, M, checks)
+    V -> (V === U && push!(checks, check(V)); tr(V' * M * V))
+end
+
+const DESCENTS = (MetricDescent(), SectionDescent())
 
 function williamson_minimum(M, n2)
     d = sort(abs.(imag.(eigvals(poisson(T, size(M, 1)) * M))))[1:2:end]
@@ -42,9 +52,9 @@ start() = conditioned_point(Random.Xoshiro(2), T, N2, n2)
 # derivative on this manifold, which `test/global_sections/global_sections.jl` asserts.
 @testset "φ' is the derivative of φ on the symplectic Stiefel manifold, $(nameof(typeof(R)))" for R in (
     Geodesic(), Cayley())
-
     U = start()
-    opt = Optimizer(U, objective; algorithm = BFGS(), retraction = R, linesearch = Backtracking(T))
+    opt = Optimizer(
+        U, objective; algorithm = BFGS(), retraction = R, linesearch = Backtracking(T))
     state = OptimizerState(BFGS(), U)
     c = cache(opt)
     initialize!(c, U)
@@ -63,38 +73,80 @@ end
 
 # The two methods with a line search find the minimum, and every iterate stays on the manifold.
 @testset "$(nameof(typeof(algorithm))) finds the symplectic eigenvalues, $(nameof(typeof(R)))" for algorithm in (
-        GradientMethod(), BFGS()),
+        GradientMethod(), GradientMethod(; descent = SectionDescent()), BFGS()),
     R in (Geodesic(), Cayley())
 
     U = start()
-    opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Backtracking(T),
-        retraction = R, max_iterations = 5000)
+    U₀ = copy(U.A)
+    checks = T[]
+    opt = Optimizer(U, recording_objective(U, M, checks); algorithm = algorithm,
+        linesearch = Backtracking(T), retraction = R, max_iterations = 5000)
     result = solve!(U, OptimizerState(algorithm, U), opt)
     @test U isa SymplecticStiefelManifold{T}
-    @test check(U) < 1e-9
+    @test U.A != U₀
+    @test length(checks) > 2
+    @test maximum(checks) < 1e-9
     @test isconverged(result.status)
     @test abs(objective(U) - FMIN) < 1e-8 * FMIN
 end
 
 # A fixed step only crawls, so these are asked to decrease the objective and stay on the manifold.
 @testset "$(nameof(typeof(algorithm))) at a fixed step decreases the objective, $(nameof(typeof(R)))" for algorithm in (
-        Adam(), MomentumMethod()),
+        Adam(), MomentumMethod(), Adam(; descent = SectionDescent()),
+        MomentumMethod(; descent = SectionDescent())),
     R in (Geodesic(), Cayley())
 
     U = start()
     f₀ = objective(U)
-    opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Static(T(1e-3)),
-        retraction = R, max_iterations = 500)
+    checks = T[]
+    opt = Optimizer(U, recording_objective(U, M, checks); algorithm = algorithm,
+        linesearch = Static(T(1e-3)), retraction = R, max_iterations = 500)
     solve!(U, OptimizerState(algorithm, U), opt)
-    @test check(U) < 1e-9
+    @test length(checks) == 502
+    @test maximum(checks) < 1e-9
     @test objective(U) < f₀ - (f₀ - FMIN) / 2
+end
+
+# `Float32`, over nine seeded starts with `κ ≤ 4`. The bound on `check` is the one the tests of
+# `test/manifolds/symplectic_stiefel_manifold.jl` give a point, `8eps(T)κ²` for the `κ` of the start,
+# on the median over the starts of the largest `check` over the iterates of a solve. Measured
+# medians, Julia 1.13, `MetricDescent` and `SectionDescent`: 16eps(T) and 7eps(T) for
+# `GradientMethod`, 28eps(T) and 34eps(T) for `Adam`; the largest single value 65eps(T).
+# `GradientMethod` converges to the `Float64` minimum to `1e-5` relative on every start.
+@testset "$(nameof(typeof(algorithm))) on a Float32 point, $(nameof(typeof(descent)))" for algorithm in (
+        GradientMethod, Adam),
+    descent in DESCENTS
+
+    S = Float32
+    M₃₂ = S.(M)
+    bounds, maxima, decreases, errors = S[], S[], Bool[], S[]
+    for seed in 1:9
+        U = conditioned_point(Random.Xoshiro(100 + seed), S, N2, n2)
+        κ = cond(U.A)
+        f₀ = tr(U' * M₃₂ * U)
+        checks = S[]
+        method = algorithm(; descent = descent)
+        linesearch, iterations = algorithm === GradientMethod ? (Backtracking(S), 2000) :
+                                 (Static(S(1e-3)), 500)
+        opt = Optimizer(U, recording_objective(U, M₃₂, checks); algorithm = method,
+            linesearch = linesearch, max_iterations = iterations)
+        solve!(U, OptimizerState(method, U), opt)
+        f = tr(U' * M₃₂ * U)
+        push!(bounds, 8eps(S) * κ^2)
+        push!(maxima, maximum(checks))
+        push!(decreases, f < f₀ - (f₀ - FMIN) / 2)
+        push!(errors, abs(f - FMIN) / FMIN)
+    end
+    @test sort(maxima)[5] < sort(bounds)[5]
+    @test all(isfinite, maxima)
+    @test all(decreases)
+    algorithm === GradientMethod && @test maximum(errors) < 1e-5
 end
 
 # The training step takes the Euclidean gradient of the leaf, and a parameter set may hold a
 # symplectic leaf beside an ordinary one.
 @testset "a TrainingOptimizer steps a symplectic leaf, $(nameof(typeof(algorithm)))" for algorithm in (
     GradientMethod(), MomentumMethod(), Adam())
-
     U = start()
     f₀ = objective(U)
     opt = TrainingOptimizer(U; algorithm = algorithm, linesearch = T(1e-3))
@@ -121,7 +173,8 @@ end
     ps = NetworkParameters((U = start(), b = T[1, -2, 3]))
     F(p) = objective(p.U) + sum(abs2, p.b)
     F₀ = F(ps)
-    opt = TrainingOptimizer(ps; algorithm = CompositeMethod(; manifold = Adam(), array = Adam()),
+    opt = TrainingOptimizer(
+        ps; algorithm = CompositeMethod(; manifold = Adam(), array = Adam()),
         linesearch = T(1e-3))
     for _ in 1:200
         optimization_step!(ps, opt, NetworkParameters((U = 2 * M * ps.U.A, b = 2 * ps.b)))

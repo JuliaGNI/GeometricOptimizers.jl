@@ -14,7 +14,17 @@ function conditioned_point(rng, T, N2, n2)
     SymplecticStiefelManifold(hcat(vcat(A, B) .* d', vcat(-B, A) ./ d'))
 end
 
+# The orthosymplectic point `[A -B; B A]` of a complex Stiefel point `A + iB`: `UᵀU = I`.
+function orthosymplectic_point(rng, T, N2, n2)
+    N, n = N2 ÷ 2, n2 ÷ 2
+    Q = Matrix(qr(randn(rng, Complex{T}, N, n)).Q)
+    A, B = real(Q), imag(Q)
+    SymplecticStiefelManifold(hcat(vcat(A, B), vcat(-B, A)))
+end
+
 poisson(::Type{T}, n) where {T} = [zeros(T, n ÷ 2, n ÷ 2) I; -I zeros(T, n ÷ 2, n ÷ 2)]
 
 # the Poisson tensor `𝕁̄ = diag(𝕁ₙ, 𝕁_{N-n})` of the basis a symplectic section is stored in
-adapted_poisson(::Type{T}, N, n) where {T} = cat(poisson(T, n), poisson(T, N - n); dims = (1, 2))
+function adapted_poisson(::Type{T}, N, n) where {T}
+    cat(poisson(T, n), poisson(T, N - n); dims = (1, 2))
+end
