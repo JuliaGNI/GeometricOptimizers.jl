@@ -21,6 +21,7 @@ using SimpleSolvers: GradientAutodiff, GradientFiniteDifferences, Hessian, Stati
 using Random
 using Test
 include("../helpers/eltypes.jl")
+include("../helpers/jlarray_cholesky.jl")
 
 allowscalar(false)
 

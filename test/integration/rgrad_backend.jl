@@ -7,7 +7,7 @@
 # are on two backends is refused when the `Optimizer` is built, and the gradient an `Optimizer`
 # computes for a device set has every leaf on the backend of its parameter leaf.
 #
-# `JLArray` stands in for the device: its backend is a `KernelAbstractions.GPU`.
+# `JLArray` stands in for the device: its backend is not the `CPU`.
 
 using GeometricOptimizers
 using GeometricOptimizers: StrictlyLowerTriangular, StrictlyUpperTriangular, gradient, rgrad
@@ -20,6 +20,7 @@ using Random
 using Test
 
 include("../helpers/eltypes.jl")
+include("../helpers/jlarray_cholesky.jl")
 
 allowscalar(false)
 
@@ -61,11 +62,12 @@ const device = get_backend(JLArray(zeros(1)))
     @test rgrad(MT(view(point, :, 1:n)), OpaqueMatrix(host_gradient)) ≈
           rgrad(host_Y, host_gradient)
 
-    # a device gradient at a host point is not refused: on `JLArrays` the products of the host
-    # point with the device gradient run, and the projection comes back on the device
-    Δ_mixed = rgrad(host_Y, JLArray(host_gradient))
-    @test Δ_mixed isa JLArray{T, 2}
-    @test Array(Δ_mixed) ≈ rgrad(host_Y, host_gradient) rtol = √eps(T)
+    # a device gradient at a host point is not refused by the guard: the products of the host point
+    # with the device gradient are attempted, and `JLArrays`, as a real device does, refuses to hand
+    # its array to the host BLAS, which raises an `ErrorException` and not the guard's
+    # `ArgumentError`; the message tells it from any other `ErrorException`
+    @test_throws ErrorException rgrad(host_Y, JLArray(host_gradient))
+    @test_throws "Illegal conversion of a JLArray to a Ptr" rgrad(host_Y, JLArray(host_gradient))
 end
 
 function device_set(rng, ::Type{T}) where {T}

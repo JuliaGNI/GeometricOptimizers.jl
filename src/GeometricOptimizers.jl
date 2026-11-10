@@ -54,7 +54,7 @@ export update!
 
 using Printf: Printf, @printf
 
-using KernelAbstractions: KernelAbstractions, @index, @kernel, CPU, GPU
+using KernelAbstractions: KernelAbstractions, @index, @kernel, CPU
 using Random: Random, AbstractRNG, rand!, randn!
 using LinearAlgebra: Adjoint, Transpose, qr, norm, I, mul!, rmul!, dot
 using LinearAlgebra: cholesky, issuccess, Symmetric

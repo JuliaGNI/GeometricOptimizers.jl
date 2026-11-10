@@ -9,8 +9,8 @@
 #     the fourth testset below pins.
 #   * `global_section` builds its completion from a full QR decomposition and a Hermitian
 #     eigendecomposition, which run on the host. A device point is refused with a message rather
-#     than left to fail inside either, which is the answer
-#     `rand(::GPU, ::Type{<:SymplecticStiefelManifold}, …)` gives as well.
+#     than left to fail inside either, which is the answer `rand` of a `SymplecticStiefelManifold`
+#     gives on a backend that is not the `CPU` as well.
 #
 # `JLArrays` stands in for the device, as it does in `similar_backend.jl` and
 # `device_orthonormalization.jl`, and `allowscalar(false)` is what makes this a test rather than a
@@ -89,7 +89,8 @@ allowscalar(false)
 
     @testset "metric stops in lu, which is JLArrays' gap and not this package's" begin
         # `metric` forms `inv(U'U)`. `JLArrays` supplies no `lu`, so the generic fallback scalar-indexes
-        # — the same place `cayley` stops on this backend, and not a wrapper.
+        # — the same place `cayley` stops on this backend, and not a wrapper. From Julia 1.15 the
+        # fallback calls LAPACK instead, and stops where `JLArrays` refuses a pointer.
         #
         # **`Metal` does supply it and `metric` runs there**: measured on an M4 Max under
         # `Metal.allowscalar(false)`, see the pull request. Pinned here so that the day `JLArrays` gains
@@ -101,7 +102,8 @@ allowscalar(false)
         U = device_point()
         Δ = JLArray(rgrad(host_point, rand(rng, T, N2, n2)))
 
-        @test_throws "Scalar indexing is disallowed" metric(U, Δ, Δ)
+        @test_throws r"Scalar indexing is disallowed|Illegal conversion of a JLArray to a Ptr" metric(
+            U, Δ, Δ)
     end
 
     @testset "global_section refuses a device point, and says why" begin

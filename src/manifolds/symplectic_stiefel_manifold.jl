@@ -163,7 +163,7 @@ end
 # draw is therefore a host draw and a transfer, which is a different operation from the device-native
 # one the other two manifolds offer. Refusing says so; returning a host-drawn point from a call that
 # named a device would not.
-function Base.rand(::AbstractRNG, backend::GPU, ::Type{MT},
+function Base.rand(::AbstractRNG, backend::KernelAbstractions.Backend, ::Type{MT},
         N2::Integer, n2::Integer) where {T, MT <: SymplecticStiefelManifold{T}}
     throw(ArgumentError("$(backend) cannot draw a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host. Draw on the host with rand(SymplecticStiefelManifold{$(T)}, $(N2), $(n2))."))
 end
@@ -289,14 +289,15 @@ and made symplectic by [`sr!`](@ref) gave a section ``[U\ \ U^s]`` with conditio
 as far as the backend supplies an `lu`, since it forms ``\mathrm{inv}(U^TU)``. This does not: it
 needs a full QR decomposition and the eigendecomposition of a Hermitian matrix, which a
 `KernelAbstractions` backend is under no obligation to supply, and the points it is applied to are
-drawn on the host anyway, because `rand(::AbstractRNG, ::GPU, ::Type{<:SymplecticStiefelManifold}, …)`
-refuses.
+drawn on the host anyway, because
+`rand(::AbstractRNG, ::KernelAbstractions.Backend, ::Type{<:SymplecticStiefelManifold}, …)` refuses
+a backend other than the host.
 
 A device-backed point is therefore refused with an `ArgumentError` that says so.
 """
 function global_section(U::SymplecticStiefelManifold{T}) where {T}
     backend = KernelAbstractions.get_backend(U)
-    backend isa GPU &&
+    backend isa CPU ||
         throw(ArgumentError("global_section is host-only for a SymplecticStiefelManifold: the completion needs a full QR decomposition and a Hermitian eigendecomposition, which run on the host, so a section of a $(backend) point would be a host computation with transfers around it. Move the point to the host first. rgrad and check do run on $(backend), and metric does wherever the backend supplies an lu."))
 
     N2, n2 = size(U)

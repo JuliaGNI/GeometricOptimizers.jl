@@ -13,7 +13,7 @@
 using GeometricOptimizers
 using GeometricOptimizers: default_eltype
 using JLArrays: JLArray
-using KernelAbstractions: KernelAbstractions, CPU, GPU, supports_float64
+using KernelAbstractions: KernelAbstractions, Backend, CPU, supports_float64
 using Random
 using Test
 
@@ -24,12 +24,13 @@ Random.seed!(2026)
 const jl_backend = KernelAbstractions.get_backend(JLArray(zeros(Float32, 1)))
 
 # Two stand-in devices, so that both answers a real backend can give are checked where no device is
-# available. `Metal` declares `supports_float64` false itself; a backend that declares nothing takes
-# KernelAbstractions' `true`, which is what `CUDA` and the `JLArray` backend do.
-struct _NoFloat64GPU <: GPU end
+# available. A backend that declares nothing takes KernelInterface's `false`, which is what `Metal`
+# answers; `CUDA` and the `JLArray` backend, which runs on PoCL, answer `true`.
+struct _NoFloat64GPU <: Backend end
 KernelAbstractions.supports_float64(::_NoFloat64GPU) = false
 
-struct _Float64GPU <: GPU end
+struct _Float64GPU <: Backend end
+KernelAbstractions.supports_float64(::_Float64GPU) = true
 
 # `_Float64GPU` allocates host arrays, which makes it a device the whole device `rand` will actually
 # run on: the real method, the orthonormalization and the type application included. It is here for

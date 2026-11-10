@@ -23,6 +23,9 @@ using LinearAlgebra
 using Random
 using Statistics
 
+# the Cholesky factorization a `JLArray` lacks; the helper says why
+include(joinpath(@__DIR__, "..", "test", "helpers", "jlarray_cholesky.jl"))
+
 allowscalar(false)
 sig(x) = round(x; sigdigits = 2)
 

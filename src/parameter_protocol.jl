@@ -91,7 +91,7 @@ end
 function _launch_storage_gradient(kernel!, A, len::Integer, n::Integer, G)
     backend = KernelAbstractions.get_backend(G)
     S = KernelAbstractions.allocate(backend, eltype(A), len)
-    kernel!(backend)(S, G; ndrange = (n, n))
+    kernel!(backend)(S, _kernel_operand(backend, G); ndrange = (n, n))
     S
 end
 

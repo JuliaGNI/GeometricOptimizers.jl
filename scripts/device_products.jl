@@ -12,8 +12,7 @@
 #
 # `test/devices/metal.jl` runs in the `metal` test group, which a default run on Apple silicon
 # includes. Where Metal loads and is not functional, as inside a sandbox, it records one skip.
-# Where no device exists and no Metal cache was built, `using Metal` fails instead (K15 in
-# `KNOWN_ISSUES.md`). Run the sweep through a Kaimon session.
+# The sandbox cannot reach the device, so run the sweep through a Kaimon session.
 #
 # The element type `T` is `Float32` unless a caller names another, because Metal has no `Float64`.
 # The symplectic SR factor `Sfac` is absent: the decomposition that builds one runs on the host only.

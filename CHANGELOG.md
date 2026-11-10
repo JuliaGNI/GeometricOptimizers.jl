@@ -6,40 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
-## [Unreleased]
-
-### Changed
-
-- **The `metal` test group checks the manifold operations.** The ten rows of
-  `scripts/metal_check.jl` that CI did not run, `rand` on the device, `rgrad` and its refusal of a
-  host gradient, `metric` and `geodesic` under `ScaledSquaring` and `NativePade`, move to
-  `scripts/device_manifolds.jl`. `test/devices/metal.jl` asserts them, and `metal_check()` still
-  prints them. The function seeds the global generator, so the `rand` rows draw the same matrices
-  on every run.
-- **Lower bounds for the merged downgrade check.** The CI Downgrade job resolves `Project.toml`
-  and `test/Project.toml` together at their lower bounds and runs the suite there. These floors
-  rise so that the suite passes at them on Julia 1.12:
-  - `KernelAbstractions` 0.9.38 → 0.9.42. Before 0.9.42 the CPU launcher captures `len` and
-    `rem` in a closure, and JET reports the boxed variables and a runtime dispatch on
-    `__thread_run` for every kernel launch in `test/quality/jet.jl`.
-  - `Aqua` (test) 0.8 → 0.8.14. Older releases read `TypeName.mt`, which Julia 1.12 no longer
-    has, so `Aqua.test_piracies` throws; 0.8.14 reads `Core.methodtable`.
-  - `JET` (test), no bound before, now `0.10.1, 0.11, 0.12, 0.13`. JET 0.10.0 throws
-    `unhandled LimitedAccuracy` in its captured-variable pass; 0.10.1 calls `ignorelimited` there.
-  - `Documenter` (test), no bound before, now `1.8.1`. Without a bound the merged resolve picks
-    0.20.0, older than the exported `DocMeta` of 0.23.0; 1.8.1 is the first release whose
-    `DocMeta` respects the world age of bindings in Julia 1.12.
-
-- **`global_section` of a `SymplecticStiefelManifold` is a well-conditioned completion, and no
-  longer random.** It drew a Gaussian matrix, projected it into the symplectic complement of the
-  point and made it symplectic with `sr!`, whose factor is not orthogonal: on one `10 × 4` point the
-  section `[U Uˢ]` had condition number `6.4e3`, and gradient descent measured in its coordinates
-  stalled far from the minimum. It now takes an orthonormal basis of the complement from a full QR
-  decomposition and brings the Poisson tensor in that basis to its normal form with a Hermitian
-  eigendecomposition. The columns stay orthogonal; the condition number of the completion was at
-  most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
-  is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
-  K24.
+## [Unreleased] — targeting 0.10.1
 
 ### Added
 
@@ -55,18 +22,146 @@ breaking release).
   the methods that take a `StiefelManifold` by their signature still have no method for it.
   `Geodesic(ProjectedSkew())` refuses a symplectic lift, which is Hamiltonian and not skew.
   Closes A23 and A28.
-- **The optimizers hold the gradient as `gradient_rep!` gives it.** For the Stiefel and Grassmann
-  manifolds this is `global_rep!` of the Riemannian gradient, as before. For the symplectic Stiefel
-  manifold it is the gradient of the loss with respect to the stored entries of a lift at the
-  section, because the metric of that type is not invariant under the group and `global_rep!` of its
-  Riemannian gradient does not pair with a lift as the derivative of the loss. With it the slope of a
-  line search is the derivative of its merit. On the symplectic eigenvalue problem
-  (`test/integration/symplectic_optimizer_tests.jl`), `GradientMethod` and `BFGS` with
-  `Backtracking` reach the minimum of Williamson's theorem to a relative `1e-8` under both
-  retractions.
+- **`GradientMethod`, `MomentumMethod` and `Adam` take a keyword `descent`.** With
+  `MetricDescent()`, the default, the gradient they hold is `global_rep` of the Riemannian gradient
+  of the manifold's metric; with `SectionDescent()` it is the steepest descent of `½tr(XᵀY)` on the
+  lifts at the current section. The two are the same on a vector space, a `StiefelManifold` and a
+  `GrassmannManifold`, so no existing call changes. On a `SymplecticStiefelManifold` the first is
+  gradient descent in the metric (3.16) of Bendokat and Zimmermann, whose path does not depend on
+  the section; the second agrees with it where the point is orthosymplectic and the section is
+  `global_section`'s, and elsewhere changes with the section the optimizer has transported along
+  its path (K57). The line search, `BFGS` and `DFP` pair the derivative of the loss with respect to
+  the stored entries of a lift, which `gradient_rep!` gives; with it the slope of a line search is
+  the derivative of its merit on every manifold. `scripts/symplectic_gradient_options.jl` records
+  the choice between these and two other options, and measures what this entry states.
+
+### Changed
+
+- **`global_section` of a `SymplecticStiefelManifold` is a well-conditioned completion, and no
+  longer random.** It drew a Gaussian matrix, projected it into the symplectic complement of the
+  point and made it symplectic with `sr!`, whose factor is not orthogonal: on one `10 × 4` point the
+  section `[U Uˢ]` had condition number `6.4e3`, and gradient descent measured in its coordinates
+  stalled far from the minimum. It now takes an orthonormal basis of the complement from a full QR
+  decomposition and brings the Poisson tensor in that basis to its normal form with a Hermitian
+  eigendecomposition. The columns stay orthogonal; the condition number of the completion was at
+  most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
+  is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
+  K24.
 
 ### Fixed
 
+- **A sandboxed run of the `metal` group records the device skip, with no Metal cache built
+  outside the sandbox.** Metal.jl 1.11.1 ran its precompile workload where `Metal.devices()` is
+  empty, as in a sandbox, and `using Metal` failed with `Failed to precompile Metal`. Metal.jl
+  1.12, which `test/Project.toml` requires since 0.10.0, runs the workload only where a device
+  exists (JuliaGPU/Metal.jl#1000). This closes K15. No change to the package code.
+
+- **`apply_section!` has no ambiguous methods on Julia 1.14 and 1.15.** The Stiefel and the
+  Grassmann method took a section with any lift, and so met the vector-space method for a section
+  whose lift is `nothing`. On Julia 1.14.0-alpha2 and 1.15.0-DEV the test "no ambiguity between two
+  of this package's own methods" failed on the two pairs. A section of a Stiefel or a Grassmann
+  point always has an array lift, because `global_section` of both returns one, so the two methods
+  now take only such a section. No call changes. This closes K43.
+
+## [0.10.0] — 2026-11-09
+
+### Breaking Changes
+
+- **KernelAbstractions 0.10.** `[compat]` takes `KernelAbstractions = "0.10.5"` and no 0.9
+  release, so an environment that holds KernelAbstractions 0.9 does not resolve this version. On
+  0.10 the `CPU()` backend is PoCL, which compiles every kernel to SPIR-V. For a caller:
+  - The kernel-backed operations of the owned matrices on the host refuse an element type that is
+    not `isbits` with an `ArgumentError`: the products of `SymmetricMatrix`, `SkewSymMatrix`,
+    `StrictlyLowerTriangular` and `StrictlyUpperTriangular` with a matrix, the sum of a
+    `SkewSymMatrix` and a matrix, the projections `SymmetricMatrix(A)`, `SkewSymMatrix(A)` and the two triangular ones, and the
+    storage gradient of a symmetric or skew leaf. So a `BigFloat` matrix, and a `BigInt` one,
+    which projects to `BigFloat`, no longer project; on 0.9 they did. A compiled kernel cannot
+    hold such a number.
+  - A host operand of those operations that is not an `Array`, or a transpose, adjoint, view or
+    reshape of one, is made dense once before the kernel runs: an owned matrix, a view of one, the
+    `R` factor of `sr`. The results do not change. On 0.10 such an operand cannot be a kernel
+    argument, and `R * SkewSymMatrix`, `SkewSymMatrix(view(W, …))` for a `SkewSymMatrix` `W`, which
+    `StiefelLieAlgHorMatrix(W, n)` builds, and the projection of a `SkewSymMatrix` failed to compile.
+  - A device backend is a backend that is not `CPU()`. 0.10 deprecates `KernelAbstractions.GPU` as an
+    alias of `Backend`, the supertype of `CPU`, so `backend isa GPU` took the host for a device:
+    `Optimizer(x, F)` refused a default gradient for a host iterate, which is the doctest failure
+    of Dependabot PR #163. The device methods of `rand`, `default_eltype` and the
+    `SymplecticStiefelManifold` refusals take a `KernelAbstractions.Backend`, and the CPU methods
+    stay more specific.
+- **The extension needs AbstractNeuralNetworks 0.10**, its first release on KernelAbstractions
+  0.10: the `[weakdeps]` bound is `AbstractNeuralNetworks = "0.10"`.
+
+### Changed
+
+- **The test environment takes the GPU stack of KernelAbstractions 0.10.** `test/Project.toml` has
+  `JLArrays = "0.5"`, `Metal = "1.12"`, `GPUArraysCore = "0.2.1"` and `Zygote = "0.7.5"`: the
+  first releases that accept KernelAbstractions 0.10 or `GPUArrays` 12, which Metal 1.12 needs.
+  Zygote 0.7.0 to 0.7.4 bind `GPUArrays` at 11, so the Downgrade job could not resolve at the
+  old floor. JLArrays 0.5 refuses to hand a `JLArray` to LAPACK and BLAS, as a device array does,
+  so `test/helpers/jlarray_cholesky.jl` gives the stand-in device the Cholesky factorization a
+  real device has from its vendor library. `test/integration/rgrad_backend.jl` states that a
+  device gradient at a host point raises in the host BLAS and not in the guard, and
+  `test/integration/device_products.jl` that `geodesic(B, ProjectedSkew())` on a `JLArray` raises
+  in LAPACK's `qr`; the check that its own steps stay on the device is gone (K55). On Julia 1.15
+  the generic `lu` that `cayley` and `metric` reach on a `JLArray` calls LAPACK and does not
+  scalar-index, so the tests that pin where they stop accept `Illegal conversion of a JLArray to a
+  Ptr` beside `Scalar indexing is disallowed`. CI runs the tests
+  with `check_bounds: auto`, as the canonical workflow does.
+- **`scripts/cpu_backend_cost.jl` measures the hot paths on `CPU()`.** Against the base commit
+  `f593928` (KernelAbstractions 0.9.45), on 0.10.7, Julia 1.13.3, M4 Max, BLAS on one thread, each
+  script in two cold processes at a machine load of 9 to 12 (median time of 200 samples, minimum
+  `@allocated` of 5 calls):
+
+  | row, `Float64` | 0.9.45 | 0.10.7 |
+  |:--|--:|--:|
+  | `map_to_Skew`, 8 × 8 | 400 B, 0.12 µs | 288 B, 0.23 µs |
+  | `map_to_Skew`, 64 × 64 | 17 808 B, 15 µs | 16 448 B, 2.9 µs |
+  | `SkewSymMatrix(64) * B(64 × 8)` | 4 304 B, 15 µs | 4 176 B, 8.7 µs |
+  | `mul!(C, SkewSymMatrix(64), B)` | 128 B, 15 µs | 0 B, 8.4 µs |
+  | `SymmetricMatrix(64) * B` | 4 304 B, 17 µs | 4 176 B, 8.7 to 9.1 µs |
+  | `StrictlyLowerTriangular(64) * B` | 4 304 B, 7 to 11 µs | 4 176 B, 3.8 µs |
+  | one `Adam` step, Stiefel `64 × 8` and two `Dense(64, 64)` | 11 312 B, 45 µs | 11 200 B, 47 µs |
+
+  A launch on `CPU()` no longer allocates (128 B less per kernel), an 8 × 8 kernel takes about
+  0.1 µs longer, and a 64 × 64 kernel is 2 to 5 times faster. The training steps of
+  `GradientMethod`, `MomentumMethod` and `Adam` change by less than the spread of the runs, in both
+  precisions.
+
+- **The `metal` test group checks the manifold operations.** The ten rows of
+  `scripts/metal_check.jl` that CI did not run, `rand` on the device, `rgrad` and its refusal of a
+  host gradient, `metric` and `geodesic` under `ScaledSquaring` and `NativePade`, move to
+  `scripts/device_manifolds.jl`. `test/devices/metal.jl` asserts them, and `metal_check()` still
+  prints them. The function seeds the global generator, so the `rand` rows draw the same matrices
+  on every run.
+- **Lower bounds for the merged downgrade check.** The CI Downgrade job resolves `Project.toml`
+  and `test/Project.toml` together at their lower bounds and runs the suite there. These floors
+  rise so that the suite passes at them on Julia 1.12 (the `KernelAbstractions` floor is under
+  Breaking Changes):
+  - `Aqua` (test) 0.8 → 0.8.14. Older releases read `TypeName.mt`, which Julia 1.12 no longer
+    has, so `Aqua.test_piracies` throws; 0.8.14 reads `Core.methodtable`.
+  - `JET` (test), no bound before, now `0.10.1, 0.11, 0.12, 0.13`. JET 0.10.0 throws
+    `unhandled LimitedAccuracy` in its captured-variable pass; 0.10.1 calls `ignorelimited` there.
+  - `Documenter` (test), no bound before, now `1.8.1`. Without a bound the merged resolve picks
+    0.20.0, older than the exported `DocMeta` of 0.23.0; 1.8.1 is the first release whose
+    `DocMeta` respects the world age of bindings in Julia 1.12.
+
+### Fixed
+
+- **The Downgrade, `Julia pre` and `Julia nightly` jobs resolve the test environment again.**
+  `Metal` 1.11.1 needed `LLVM` 7.2 to 9, so the Downgrade job's `LLVM` 10 could not take it (K23),
+  and the `LLVMExtra_jll` of `LLVM` 9.13.2 has no build for the LLVM 23 of Julia 1.14 and 1.15
+  (K42). `Metal` 1.12 takes `LLVM` 10.4. The compat floors of `Project.toml` and
+  `test/Project.toml` resolve together on Julia 1.12 with `LLVM` 10.4.3, and on Julia
+  1.14.0-alpha2 and 1.15.0-DEV.617 (aarch64, macOS) `Metal` 1.12.0 resolves `LLVMExtra_jll` 0.0.56
+  and `GPUCompiler` precompiles. This closes K23 and K42.
+- **An optimizer on a `SymplecticStiefelManifold` is refused when it is built.** `TrainingOptimizer`
+  and `Optimizer` built one for `Adam`, `GradientMethod` and `MomentumMethod`, and `Optimizer` also
+  for `BFGS` and `DFP`, and the first step raised a `MethodError` from `global_rep!`, which names
+  neither the type nor the reason. They now raise an `ArgumentError` that says the package does not
+  implement the symplectic horizontal Lie algebra, and names where Bendokat and Zimmermann give it,
+  for such a point and for a parameter set with such a leaf, and `TrainingOptimizer` also under a
+  `CompositeMethod`. No working call changes. A23 stays open: the type still cannot be optimized
+  over.
 - **The metric of `SymplecticStiefelManifold` has the right source.** The docstrings of the type and
   of `metric` gave it as the metric of Gao et al. The code is (3.16) and (3.17) of Bendokat and
   Zimmermann, which has no `ρ` and is the canonical-like metric of Gao et al. only at the base point

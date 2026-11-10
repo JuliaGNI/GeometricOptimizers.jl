@@ -36,6 +36,7 @@ using Random
 using Test
 
 include("../helpers/eltypes.jl")
+include("../helpers/jlarray_cholesky.jl")
 
 Random.seed!(2718)
 
@@ -153,7 +154,8 @@ end
 @testset "cayley stops one step further on, and that is JLArrays' gap and not this package's, $T" for T in REAL_ELTYPES
     # `cayley` inverts a `2n × 2n` matrix with `LinearAlgebra.inv`. `JLArrays` supplies no `lu`, so
     # that falls through to the generic one, which scalar-indexes — and the retraction stops here
-    # rather than on a product. `geodesic` above needs no inverse and completes on either backend.
+    # rather than on a product. From Julia 1.15 the fallback calls LAPACK instead, and stops where
+    # `JLArrays` refuses a pointer. `geodesic` above needs no inverse and completes on either backend.
     #
     # **`Metal` does supply it, and `cayley` completes there**: measured on an M4 Max under
     # `Metal.allowscalar(false)`, `check(cayley(Y, Δ/100)) = 2.3e-7`. So this is the reference
@@ -166,7 +168,8 @@ end
 
     # matched on the message, not on `ErrorException`: the point of the assertion is *where* the
     # path stops, and every `error()` anywhere in `cayley` is an `ErrorException` too
-    @test_throws "Scalar indexing is disallowed" cayley(Y, Δ / 100)
+    @test_throws r"Scalar indexing is disallowed|Illegal conversion of a JLArray to a Ptr" cayley(
+        Y, Δ / 100)
 end
 
 # A lift on a device, built the way the retractions build one: `global_rep` of a Riemannian gradient

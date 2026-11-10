@@ -118,7 +118,7 @@ function _ladd(A::SkewSymMatrix{T}, B::AbstractMatrix{T}) where {T}
     backend = KernelAbstractions.get_backend(B)
     addition! = addition_kernel!(backend)
     C = KernelAbstractions.allocate(backend, T, size(A)...)
-    addition!(C, A.S, B; ndrange = size(A))
+    addition!(C, A.S, _kernel_operand(backend, B); ndrange = size(A))
 
     C
 end
@@ -180,7 +180,7 @@ function _lmul_into!(C::AbstractMatrix{T}, A::SkewSymMatrix{T}, B::AbstractMatri
     backend = KernelAbstractions.get_backend(A.S)
 
     skew_mat_mul! = skew_mat_mul_kernel!(backend)
-    skew_mat_mul!(C, A.S, B, A.n, ndrange = size(C))
+    skew_mat_mul!(C, A.S, _kernel_operand(backend, B), A.n, ndrange = size(C))
     C
 end
 
@@ -296,14 +296,15 @@ function map_to_Skew!(S::SkewSymMatrix{T}, A::AbstractMatrix{T}) where {T}
     n = size(A, 1)
     @assert size(A, 2) == n
     @assert S.n == n
-    skew_projection_kernel(KernelAbstractions.get_backend(A))(S.S, A; ndrange = (n, n))
+    backend = KernelAbstractions.get_backend(A)
+    skew_projection_kernel(backend)(S.S, _kernel_operand(backend, A); ndrange = (n, n))
     S
 end
 
 # The projection halves a difference, so an integer matrix has to become a float one first. `float`
 # and not a width chosen here: it is the function that answers "the float type this integer widens
-# to", it gives `Float64` for every fixed-width integer and `BigFloat` for a `BigInt`, and it is
-# what `zeros` and `rand` already follow.
+# to", it gives `Float64` for every fixed-width integer, and it is what `zeros` and `rand` already
+# follow. A `BigInt` widens to `BigFloat`, which the kernels of the CPU backend refuse.
 function map_to_Skew(A::AbstractMatrix{T}) where {T <: Integer}
     map_to_Skew(float.(A))
 end

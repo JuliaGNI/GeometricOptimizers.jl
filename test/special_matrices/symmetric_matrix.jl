@@ -85,13 +85,15 @@ end
 
 # see the note on the same testset in `skew_symmetric.jl`
 @testset "an integer matrix is projected into float(T)" begin
-    for T in (Int8, Int16, Int32, Int64, Int128, BigInt,
+    for T in (Int8, Int16, Int32, Int64, Int128,
         UInt8, UInt16, UInt32, UInt64, UInt128)
         A = T[0 1 2; 3 0 4; 5 6 0]
         @test eltype(map_to_S(A)) === float(T)
         @test eltype(SymmetricMatrix(A)) === float(T)
         @test SymmetricMatrix(A) ≈ (float(T).(A) .+ float(T).(A)') ./ 2
     end
+    @test_throws ArgumentError map_to_S(BigInt[0 1 2; 3 0 4; 5 6 0])
+    @test_throws ArgumentError SymmetricMatrix(BigFloat[0 1 2; 3 0 4; 5 6 0])
     A = Bool[0 1 1; 0 0 1; 1 0 0]
     @test eltype(map_to_S(A)) === Float64
     @test eltype(SymmetricMatrix(A)) === Float64
