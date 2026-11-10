@@ -119,6 +119,14 @@ function products(rng, N, n, T)
     @test B * c ≈ Matrix(B) * c
 end
 
+# `getindex` takes integers, so a slice goes through the `AbstractArray` fallback.
+function slices(rng, N, n, T)
+    B = rand(rng, SymplecticLieAlgHorMatrix{T}, N, n)
+    @test B[1:n, 1:n] == Matrix(B)[1:n, 1:n]
+    @test B[:, 1] == Matrix(B)[:, 1]
+    @test B[(n + 1):N, :] == Matrix(B)[(n + 1):N, :]
+end
+
 @testset "SymplecticLieAlgHorMatrix projection and arithmetic, $T" for T in REAL_ELTYPES
     rng = Random.Xoshiro(123)
     for (N, n) in SIZES
@@ -130,6 +138,7 @@ end
         zeros_array_generation(N, n, T)
         hamiltonian_structure(rng, N, n, T)
         products(rng, N, n, T)
+        slices(rng, N, n, T)
     end
 end
 

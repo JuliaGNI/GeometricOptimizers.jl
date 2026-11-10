@@ -51,7 +51,8 @@ and ``\lambda(U)RE`` a point of the manifold. A retraction itself, which [`cayle
 [`geodesic`](@ref) wrap in a [`SymplecticStiefelManifold`](@ref), preserves ``\bar{\mathbb{J}}`` and
 not ``\mathbb{J}_{2N}``, so [`check`](@ref) does not apply to it.
 """
-mutable struct SymplecticLieAlgHorMatrix{T, AT <: AbstractMatrix{T}, ST <: SymmetricMatrix{T},
+mutable struct SymplecticLieAlgHorMatrix{
+    T, AT <: AbstractMatrix{T}, ST <: SymmetricMatrix{T},
     BT <: AbstractMatrix{T}} <: AbstractLieAlgHorMatrix{T}
     A₁::AT
     B₁::ST
@@ -112,10 +113,10 @@ function SymplecticLieAlgHorMatrix(V::AbstractVector, N::Int, n::Int)
     s = k * (k + 1) ÷ 2
     @assert length(V) == k^2 + 2s + (N - n) * n
     SymplecticLieAlgHorMatrix(
-        reshape(@view(V[1:(k^2)]), k, k),
-        SymmetricMatrix(@view(V[(k^2 + 1):(k^2 + s)]), k),
-        SymmetricMatrix(@view(V[(k^2 + s + 1):(k^2 + 2s)]), k),
-        reshape(@view(V[(k^2 + 2s + 1):end]), N - n, n),
+        reshape(@view(V[1:(k ^ 2)]), k, k),
+        SymmetricMatrix(@view(V[(k ^ 2 + 1):(k ^ 2 + s)]), k),
+        SymmetricMatrix(@view(V[(k ^ 2 + s + 1):(k ^ 2 + 2s)]), k),
+        reshape(@view(V[(k ^ 2 + 2s + 1):end]), N - n, n),
         N,
         n
     )
@@ -151,7 +152,8 @@ function _symplectic_adjoint_entry(B::AbstractMatrix, i, j)
 end
 
 # The bounds check comes first for the reason `getindex(::StiefelLieAlgHorMatrix, …)` gives.
-function Base.getindex(A::SymplecticLieAlgHorMatrix{T}, i, j) where {T}
+function Base.getindex(
+        A::SymplecticLieAlgHorMatrix{T}, i::Integer, j::Integer) where {T}
     @boundscheck checkbounds(A, i, j)
     if i ≤ A.n
         j ≤ A.n && return _hamiltonian_entry(A, i, j)
@@ -242,7 +244,8 @@ end
 function Base.zeros(backend::KernelAbstractions.Backend,
         ::Type{SymplecticLieAlgHorMatrix{T}}, N::Integer, n::Integer) where {T}
     k = n ÷ 2
-    SymplecticLieAlgHorMatrix(_zeros(backend, T, k, k), zeros(backend, SymmetricMatrix{T}, k),
+    SymplecticLieAlgHorMatrix(
+        _zeros(backend, T, k, k), zeros(backend, SymmetricMatrix{T}, k),
         zeros(backend, SymmetricMatrix{T}, k), _zeros(backend, T, N - n, n), N, n)
 end
 

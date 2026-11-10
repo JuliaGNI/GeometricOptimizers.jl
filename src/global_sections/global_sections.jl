@@ -154,7 +154,7 @@ end
 # The product is the Stiefel one: the section is stored as `[U Uˢ]`, the point first, so `λ(U)E` is
 # its first `n` columns here as well. See `SymplecticLieAlgHorMatrix` for the basis this implies.
 function apply_section!(Y::AT,
-        λY::GlobalSection{T, AT},
+        λY::GlobalSection{T, AT, <:AbstractArray},
         Y₂::MT) where {
         T, AT <: SymplecticStiefelManifold{T}, MT <: SymplecticStiefelManifold{T}}
     _apply_section!(Y.A, λY, Y₂.A)
