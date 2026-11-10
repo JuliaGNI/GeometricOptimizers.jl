@@ -50,7 +50,9 @@ end
 # with a branch raises a `MethodError` that names the type.
 _zero(a::AbstractArray) = zero(a)
 # the zero tangent vector at a point, which is a horizontal lift and not the point's own shape
-_zero(a::Union{StiefelManifold, GrassmannManifold, SymplecticStiefelManifold}) = zero_tangent(a)
+function _zero(a::Union{StiefelManifold, GrassmannManifold, SymplecticStiefelManifold})
+    zero_tangent(a)
+end
 _zero(a::NetworkParameters) = mapparameters(_zero, a)
 
 _copy(a::AbstractArray) = copy(a)

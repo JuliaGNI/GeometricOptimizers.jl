@@ -97,9 +97,10 @@ function OptimizerStatus(state::OST, cache::OCT, f::T;
     gradient_difference!(cache, state)
 
     rgₐ = l2norm(cache.Δg)
-    # `latest_gradient` and not `cache.g`: this is `∇f` at the iterate the step ended at rather than
-    # at the one it started from. See `convergence_measures`.
-    rg = l2norm(latest_gradient(cache))
+    # the latest gradient and not `cache.g`: this is `∇f` at the iterate the step ended at rather than
+    # at the one it started from (see `convergence_measures`), in the Riemannian norm, which is the
+    # same for every method (see `latest_gradient_norm`)
+    rg = latest_gradient_norm(cache)
 
     # `f > f̄` and not `abs(f) > abs(f̄)`: the question is whether the objective went up, and for an
     # objective that takes negative values the two are different questions -- `-5 → -6` is a decrease
@@ -268,8 +269,8 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
 # Extended help
 
 !!! info "Which iterate `g_converged` is a statement about"
-    `rg` is [`latest_gradient`](@ref), i.e. ``\|\nabla{}f(x_{k+1})\|`` at the iterate the step ended
-    at, for every method, and not at the iterate it started from or at the last point that the line
+    `rg` is [`latest_gradient_norm`](@ref), i.e. ``\|\nabla{}f(x_{k+1})\|`` in the Riemannian norm at
+    the iterate the step ended at, for every method, and not at the iterate it started from or at the last point that the line
     search probed.
 
     The distinction matters for a direction that carries momentum. Under

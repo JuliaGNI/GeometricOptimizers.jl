@@ -15,6 +15,7 @@
   accepted iterate once [`solver_step!`](@ref) has refreshed it; see [`GradientCache`](@ref) for why
   this is a field of its own and not an alias for `g`,
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
+- `g̃_norm`: the norm of the gradient at `x`; see [`latest_gradient_norm`](@ref),
 - `Δg`: gradient difference (difference between `g̃` and `g`); this is used for computing the [`OptimizerStatus`](@ref),
 - `rhs`: the right hand side from which the update is computed,
 - `H`: the Hessian matrix evaluated at `x`,
@@ -27,6 +28,7 @@ struct NewtonOptimizerCache{T, AT, HT, GS} <: OptimizerCache{T}
     g::AT
     g̃::AT
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
     Δg::AT
     rhs::AT
     H::HT
@@ -38,7 +40,7 @@ struct NewtonOptimizerCache{T, AT, HT, GS} <: OptimizerCache{T}
         section = GlobalSection(x)
         cache = new{T, AT, typeof(h), typeof(section)}(
             similar(x), similar(x), similar(x), similar(x),
-            Ref(false), similar(x), similar(x), h, section)
+            Ref(false), Ref(T(NaN)), similar(x), similar(x), h, section)
         initialize!(cache, x)
         cache
     end

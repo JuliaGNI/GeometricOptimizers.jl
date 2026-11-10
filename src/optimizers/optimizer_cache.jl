@@ -32,8 +32,8 @@ The array holding the *most recently evaluated* gradient: a line search trial po
 [`linesearch_problem`](@ref)'s ``\varphi'`` is being evaluated, and the accepted iterate once
 [`solver_step!`](@ref) has called [`refresh_latest_gradient!`](@ref) on it.
 
-This is the array [`OptimizerStatus`](@ref) reports as `rg`, and it is deliberately *not*
-[`gradient`](@ref): the latter is ``\nabla{}f(x_k)`` at the iterate the step is built from, which
+[`OptimizerStatus`](@ref) reports its norm as `rg`, through [`latest_gradient_norm`](@ref). It is
+deliberately *not* [`gradient`](@ref): the latter is ``\nabla{}f(x_k)`` at the iterate the step is built from, which
 the direction and the state updates need to keep reading unchanged.
 
 # Implementation
@@ -47,11 +47,28 @@ may not be shared with `gradient`.
 latest_gradient(cache::OptimizerCache) = cache.g̃
 
 @doc raw"""
+    latest_gradient_norm(cache)
+
+The Riemannian norm ``\sqrt{g_x(\Delta, \Delta)}`` of the gradient ``\Delta`` at the iterate `cache`
+holds, as [`refresh_latest_gradient!`](@ref) last stored it: the Euclidean norm on a vector, the norm
+of [`metric`](@ref) on a [`Manifold`](@ref), and the two combined in quadrature over the leaves of a
+parameter set. [`OptimizerStatus`](@ref) reports it as `rg`, and the gradient stop reads it.
+
+It is the same number for every method. [`latest_gradient`](@ref) holds the gradient in the form the
+method takes it, see [`GeometricOptimizers.gradient_rep!`](@ref), and on a
+[`SymplecticStiefelManifold`](@ref) those forms have different norms, so a norm of that array would
+stop each method at a different point. On a vector, a [`StiefelManifold`](@ref) and a
+[`GrassmannManifold`](@ref) every form is [`global_rep`](@ref) of ``\Delta``, whose norm over its free
+parameters is the Riemannian one.
+"""
+latest_gradient_norm(cache::OptimizerCache) = cache.g̃_norm[]
+
+@doc raw"""
     refresh_latest_gradient!(cache, gradient_instance, method)
 
 Evaluate the gradient at the iterate `cache` currently holds and store it in
-[`latest_gradient`](@ref), in the form `method` holds it; see
-[`GeometricOptimizers.gradient_rep!`](@ref).
+[`latest_gradient`](@ref), in the form `method` holds it, and its Riemannian norm in
+[`latest_gradient_norm`](@ref); see [`GeometricOptimizers.gradient_rep!`](@ref).
 
 [`solver_step!`](@ref) calls this once the accepted step has been taken, so that `rg` is a statement
 about the point the solve is about to report rather than about the one it started the step from.
@@ -77,12 +94,26 @@ end
 function _refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::Gradient,
         ::OptimizerMethod)
     g(latest_gradient(cache), solution(cache))
+    cache.g̃_norm[] = l2norm(latest_gradient(cache))
 end
 
 function _refresh_latest_gradient!(
         ::Union{Manifold, NetworkParameters}, cache::OptimizerCache,
         g::Gradient, method::OptimizerMethod)
-    gradient_rep!(latest_gradient(cache), section(cache), g(solution(cache)), method)
+    Δ = g(solution(cache))
+    gradient_rep!(latest_gradient(cache), section(cache), Δ, method)
+    cache.g̃_norm[] = _riemannian_norm(solution(cache), Δ)
+end
+
+# `√g_x(Δ, Δ)` of a Riemannian gradient `Δ` at `x`. A leaf of a parameter set that is not a manifold
+# is a vector space, where the gradient is Euclidean.
+_riemannian_norm(::AbstractArray, Δ) = l2norm(Δ)
+_riemannian_norm(x::Manifold, Δ) = √metric(x, Δ, Δ)
+
+function _riemannian_norm(ps::NetworkParameters{T}, Δ::NetworkParameters{T}) where {T}
+    sumsq = Ref(zero(T))
+    foreachparameters((x, d) -> (sumsq[] += _riemannian_norm(x, d)^2), ps, Δ)
+    √sumsq[]
 end
 
 # The gradient each method holds; see `gradient_rep!`. Every method without a `descent` holds the

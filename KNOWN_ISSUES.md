@@ -582,7 +582,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   last two silently-ignored options. Belongs in one PR with B1 and C1 — all three are the same subject,
   the status object not saying enough.
 
-### K58 · On a `SymplecticStiefelManifold` the predicted decrease `Δf̃` of `OptimizerStatus` is not the derivative of the objective along the step
+### K58 · On a `SymplecticStiefelManifold` the predicted decrease `Δf̃` of `OptimizerStatus` is not the derivative of the objective along the step, and its gradient change `rgₐ` depends on the method
 
 - location: `src/optimizers/optimizer_status.jl`, `OptimizerStatus(state, cache, f; config)`
 - kind: defect
@@ -595,7 +595,11 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   (vi), measures the gap for `SectionDescent` in metric (3.16) at 0.25. Only `f_converged_strong`
   reads `Δf̃`, and no stop rule reads that, so no solve changes. A fix pairs the flat gradient with
   the direction, at one more `gradient_rep!` per iteration, or stores the flat gradient beside the
-  held one.
+  held one. `rgₐ = l2norm(cache.Δg)` is the norm of the difference of the held gradients at two
+  iterates, so on this manifold it depends on the method in the same way; only `show` prints it. A
+  Riemannian norm needs the two gradients in one tangent space, which a transport gives and the
+  difference of two lifts at two sections does not. `rg`, which the gradient stop reads, is the
+  Riemannian norm for every method (`latest_gradient_norm`).
 
 ## C. This package — dead code and bookkeeping
 
@@ -1232,6 +1236,21 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   factors of `cayley_direct!`, so that it reuses the factorisation of the step. With this transport,
   the lift norm and `δ` inside the root, a tangent-space method is `ScalarMomentAdam` with no section.
   The script's `Q` is a dense `N × N` matrix, so this form is not implemented or measured here.
+
+### K59 · The flat gradient of a symplectic lift undoes `rgrad` through `(UᵀU)⁻¹`, because the optimizer protocol does not pass the Euclidean gradient
+
+- location: `src/global_sections/global_sections.jl`, `gradient_rep!(::SymplecticLieAlgHorMatrix, …)`
+- kind: found late
+- found: 2026-11-11
+- evidence: A gradient applied to a `Manifold` returns `rgrad(U, ∇L)`, so `gradient_rep!` recovers
+  the Frobenius representative `K = ΔP − ½𝕁ᵀUPUᵀ𝕁ΔP`, `P = (UᵀU)⁻¹`, through a Cholesky factor. From
+  `∇L` the same lift is two products, `Uᵀ∇L` and `(Uˢ)ᵀ∇L`. `scripts/symplectic_gradient_rep_direct.jl`
+  measures the error of the Cholesky path at 7.2e-15 for `κ(U) = 576` in `Float64` (2.3e-6 in
+  `Float32`), against 1e-16 (5e-8) for the direct product at every `κ`; the time per call at
+  `10 × 4` is 1.0 µs against 0.25 µs, and the two agree within 10 % from `1000 × 20` up. A direct path
+  needs the Euclidean gradient at `gradient_rep!`, and with it `BFGS` and `DFP` would also skip the
+  `rgrad` they now pay for (twice the time of `gradient_rep!` at `4000 × 40`). That is a change of the
+  gradient protocol for every manifold, `TrainingOptimizer` included, which already receives `∇L`.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40

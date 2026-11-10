@@ -90,6 +90,28 @@ end
     @test abs(objective(U) - FMIN) < 1e-8 * FMIN
 end
 
+# The gradient stop reads `rg`, the Riemannian norm `√g(Δ, Δ)` of the gradient at the iterate, which
+# is the same for every method. The control is the norm of the array each method holds: the flat
+# lift of BFGS and DFP, `global_rep` of `MetricDescent` and the representative of `SectionDescent`
+# have different norms on this manifold, and `MetricDescent`'s differs from `rg` by orders of magnitude.
+@testset "rg is the Riemannian norm of the gradient, $(nameof(typeof(algorithm))), $(nameof(typeof(R)))" for algorithm in (
+        GradientMethod(), GradientMethod(; descent = SectionDescent()), MomentumMethod(),
+        Adam(), BFGS(), DFP()),
+    R in (Geodesic(), Cayley())
+
+    U = start()
+    opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Backtracking(T),
+        retraction = R, max_iterations = 1, warn_iterations = 0)
+    result = solve!(U, OptimizerState(algorithm, U), opt)
+    Δ = rgrad(U, 2 * M * U.A)
+    rg = GeometricOptimizers.g_residual(result.status)
+    @test rg ≈ sqrt(metric(U, Δ, Δ)) rtol = 64eps(T)
+    algorithm isa Union{GradientMethod{MetricDescent}, MomentumMethod, Adam} &&
+        @test !isapprox(
+            GeometricOptimizers.l2norm(GeometricOptimizers.latest_gradient(cache(opt))),
+            rg; rtol = T(0.1))
+end
+
 # A fixed step only crawls, so these are asked to decrease the objective and stay on the manifold.
 @testset "$(nameof(typeof(algorithm))) at a fixed step decreases the objective, $(nameof(typeof(R)))" for algorithm in (
         Adam(), MomentumMethod(), Adam(; descent = SectionDescent()),

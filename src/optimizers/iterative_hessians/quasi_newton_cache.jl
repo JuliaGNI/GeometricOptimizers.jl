@@ -10,7 +10,8 @@ and every step of [`update!`](@ref) but the update of the inverse Hessian, which
 
 `g̃` is the scratch for [`latest_gradient`](@ref) and `g̃_is_current` says whether it is the gradient at
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
-[`store_gradient!`](@ref).
+[`store_gradient!`](@ref). `g̃_norm` is the Riemannian norm of the gradient at `x`; see
+[`latest_gradient_norm`](@ref).
 
 `T1`, `T2`, `T3`, `ΔxΔg` and `ΔxΔx` are the ``n \\times n`` scratch of the update, where ``n`` is the
 intrinsic dimension; `DFP` needs four of the five, and builds ``\\gamma\\gamma^T`` in `T3`.
@@ -23,6 +24,7 @@ struct QuasiNewtonCache{T, M, VT, GT, MT, GS, FT} <: OptimizerCache{T}
     g::GT    # current gradient
     g̃::GT    # most recently evaluated gradient; see `latest_gradient`
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
 
     T1::MT
     T2::MT
@@ -55,7 +57,7 @@ struct QuasiNewtonCache{T, M, VT, GT, MT, GS, FT} <: OptimizerCache{T}
         # from the same `_zero(x)` as `n` above, and for the same reason
         flat = _flat_scratch(T, g)
         cache = new{T, M, AT, typeof(g), typeof(q), typeof(section), typeof(flat)}(
-            method, _copy(x), _similar(g), _similar(g), Ref(false), _similar(q),
+            method, _copy(x), _similar(g), _similar(g), Ref(false), Ref(T(NaN)), _similar(q),
             similar(q), similar(q), similar(q), similar(q),
             _similar(g), _similar(g), _similar(g), section, flat)
         initialize!(cache, x)

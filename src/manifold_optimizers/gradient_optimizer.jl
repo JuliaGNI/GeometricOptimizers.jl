@@ -22,6 +22,7 @@ Cache for the gradient optimizer.
 - `Δg`: difference in gradients,
 - `g̃`: scratch for [`latest_gradient`](@ref),
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
+- `g̃_norm`: the Riemannian norm of the gradient at `x`; see [`latest_gradient_norm`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 
 # Implementation
@@ -42,6 +43,7 @@ struct GradientCache{T, MT, VT, ST} <: OptimizerCache{T}
     Δg::VT
     g̃::VT
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
     section::ST
 end
 
@@ -50,7 +52,8 @@ function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    GradientCache{T, typeof(x), typeof(g), typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
+    GradientCache{T, typeof(x), typeof(g), typeof(sec)}(
+        x, g, δ, Δg, g̃, Ref(false), Ref(T(NaN)), sec)
 end
 
 function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {

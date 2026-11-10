@@ -33,7 +33,10 @@ breaking release).
   its path (K57). The line search, `BFGS` and `DFP` pair the derivative of the loss with respect to
   the stored entries of a lift, which `gradient_rep!` gives; with it the slope of a line search is
   the derivative of its merit on every manifold. `scripts/symplectic_gradient_options.jl` records
-  the choice between these and two other options, and measures what this entry states.
+  the choice between these and two other options, and measures what this entry states. The
+  gradient stop and `rg` of `OptimizerStatus` read the Riemannian norm of the gradient at the
+  iterate, `latest_gradient_norm`, which is the same for every method; on a vector, a
+  `StiefelManifold` and a `GrassmannManifold` it is the norm `rg` reported before.
 
 ### Changed
 

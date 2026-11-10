@@ -5,7 +5,8 @@
 # being orthogonal.
 using GeometricOptimizers
 using GeometricOptimizers: Cayley, Geodesic, ScaledSquaring, NativePade, AugmentedPade,
-                           TaylorSeries, ProjectedSkew, StiefelProjection, check, lift_factors,
+                           TaylorSeries, ProjectedSkew, StiefelProjection, check,
+                           lift_factors,
                            lift_factors!, retraction_matrix!, retraction_differential,
                            retraction_differential!, retraction_workspace
 using LinearAlgebra: I, norm
@@ -100,6 +101,7 @@ end
     h = T == Float32 ? T(1e-2) : T(1e-5)
     tolerance = T == Float32 ? T(1e-2) : T(1e-7)
     for R in (Geodesic(), Cayley()), α in T.((0.25, 0.5, 1.0, 2.0))
+
         difference = (frame(R, α + h) * E - frame(R, α - h) * E) / (2h)
         velocity = frame(R, α) * Matrix(retraction_differential(R, B, α)) * E
         @test eltype(velocity) == T
