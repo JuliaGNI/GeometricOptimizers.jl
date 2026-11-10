@@ -16,6 +16,13 @@ breaking release).
   1.12, which `test/Project.toml` requires since 0.10.0, runs the workload only where a device
   exists (JuliaGPU/Metal.jl#1000). This closes K15. No change to the package code.
 
+- **`apply_section!` has no ambiguous methods on Julia 1.14 and 1.15.** The Stiefel and the
+  Grassmann method took a section with any lift, and so met the vector-space method for a section
+  whose lift is `nothing`. On Julia 1.14.0-alpha2 and 1.15.0-DEV the test "no ambiguity between two
+  of this package's own methods" failed on the two pairs. A section of a Stiefel or a Grassmann
+  point always has an array lift, because `global_section` of both returns one, so the two methods
+  now take only such a section. No call changes. This closes K43.
+
 ## [0.10.0] — 2026-11-09
 
 ### Breaking Changes

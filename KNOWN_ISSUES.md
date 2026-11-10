@@ -504,21 +504,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   The lift-typed cotangent takes the dense `AbstractMatrix` method; only the Stiefel lift has a
   block method for a cotangent of its own type.
 
-### K43 · On Julia 1.14.0-DEV, the Stiefel and the Grassmann `apply_section!` methods are ambiguous with the method for a `Nothing` section
-
-- location: `src/global_sections/global_sections.jl:147`
-- kind: defect
-- found: 2026-10-13
-- evidence: the nightly jobs of CI runs 38445772866 (Julia 1.14.0-DEV.3647, at `78f76f4`) and
-  38715367722 (Julia 1.14.0-DEV.3705, at `07545d1`) each fail `Own-vs-own ambiguities` once, at
-  `Test Failed at test/ambiguities.jl:22`, with two pairs: `global_sections.jl:97` against `:147`,
-  and `:135` against `:147`. The pre job on Julia 1.13.2 of run 39127065561 passes the same testset.
-  Later nightly runs stop at the precompilation of `GPUCompiler`, before the tests. With Metal 1.12
-  and LLVM 10 they reach the tests again: the pre job (Julia 1.14) of CI run 42667986055, on #183,
-  fails `Own-vs-own ambiguities` once at `test/ambiguities.jl:22` (6174 pass, 1 fail). A local
-  full suite on Julia 1.15.0-DEV.617 (aarch64, macOS) fails it once there too, with the same two
-  pairs.
-
 ### K46 · A `DirectMomentum` step of a norm above about `√floatmax(T)` raises from `lu!`, as a `MomentumMethod` step does
 
 - location: `src/manifold_optimizers/direct_momentum_optimizer.jl`
@@ -1194,7 +1179,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   | frame | what allocates | bytes | allocations |
   |:--|:--|--:|--:|
   | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:279` | `inv(ws.M)` | 5 448 | 8 |
-  | `_lift_A!`, `src/global_sections/global_sections.jl:299` | a temporary | 320 | 2 |
+  | `_lift_A!`, `src/global_sections/global_sections.jl:301` | a temporary | 320 | 2 |
 
   The two frames account for 5 768 of the 5 856 bytes. `inv(ws.M)` of the `2n × 2n` matrix stays
   an `inv`: `lu!` and `rdiv!` would take it in place on the host only, and a `KernelAbstractions`
