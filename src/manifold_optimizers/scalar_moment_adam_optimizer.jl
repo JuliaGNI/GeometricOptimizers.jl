@@ -218,7 +218,7 @@ function update!(cache::ScalarMomentAdamCache{T},
         state::ScalarMomentAdamState{T}, gradient::Gradient{T},
         method::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`
-    store_gradient!(cache, state, gradient, x)
+    store_gradient!(cache, state, gradient, x, method)
     _copyto!(section(cache), section(state))
     _copyto!(solution(cache), x)
     t = state.iterations

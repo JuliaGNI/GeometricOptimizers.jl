@@ -132,10 +132,10 @@ end
 # `scalar_moment_adam_optimizer.jl`, the first file where all four state types exist.
 
 function update!(cache::GradientCache{T}, state::GradientState{T},
-        gradient::Gradient{T}, ::GradientMethod, x::OptimizerSolution{T}) where {T}
+        gradient::Gradient{T}, method::GradientMethod, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below: it compares `solution(cache)` against `x` and
     # `section(cache)` against `section(state)`, which those overwrite
-    store_gradient!(cache, state, gradient, x)
+    store_gradient!(cache, state, gradient, x, method)
     _copyto!(section(cache), section(state))
     _copyto!(solution(cache), x)
     _copyto!(direction(cache), gradient_array(cache))

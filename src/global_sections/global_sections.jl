@@ -139,7 +139,9 @@ function apply_section!(Y::AT, λY::GlobalSection{T, AT},
     Y
 end
 
-function apply_section(λY::GlobalSection{T, AT}, Y₂::AT) where {
+function apply_section(
+        λY::GlobalSection{
+            T, AT}, Y₂::AT) where {
         T, AT <: SymplecticStiefelManifold{T}}
     Y = SymplecticStiefelManifold(zero(Y₂.A))
     apply_section!(Y, λY, Y₂)
@@ -149,7 +151,9 @@ end
 
 # The product is the Stiefel one: the section is stored as `[U Uˢ]`, the point first, so `λ(U)E` is
 # its first `n` columns here as well. See `SymplecticLieAlgHorMatrix` for the basis this implies.
-function apply_section!(Y::AT, λY::GlobalSection{T, AT}, Y₂::MT) where {
+function apply_section!(Y::AT,
+        λY::GlobalSection{T, AT},
+        Y₂::MT) where {
         T, AT <: SymplecticStiefelManifold{T}, MT <: SymplecticStiefelManifold{T}}
     _apply_section!(Y.A, λY, Y₂.A)
 
@@ -394,7 +398,8 @@ B = global_rep(λU, Δ)
 true
 ```
 """
-function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {
+function global_rep(λY::GlobalSection{T, AT},
+        Δ::AbstractMatrix{T}) where {
         T, AT <: SymplecticStiefelManifold{T}}
     global_rep!(_zero_lift(SymplecticLieAlgHorMatrix{T}, λY.Y), λY, Δ)
 end
@@ -424,30 +429,39 @@ end
 
 @doc raw"""
     gradient_rep!(D, λY, Δ)
+    gradient_rep!(D, λY, Δ, method)
 
-Write the representation of the Riemannian gradient `Δ` in ``\mathfrak{g}^\mathrm{hor}`` into
-`D`, i.e. the lift the optimizers hold as their gradient.
-
-That lift is the one whose pairing with every lift ``B`` under [`_dot`](@ref) is the derivative
-of the loss along ``\lambda(Y)BE``:
+Write into `D` the lift whose pairing with every lift ``B`` under [`_dot`](@ref) is the derivative
+of the loss along ``\lambda(Y)BE``, i.e. the derivative of the loss with respect to the stored
+entries of a lift at the section:
 
 ```math
 \langle D, B\rangle = \langle\nabla{}L, \lambda(Y)BE\rangle_F \quad \forall{}B\in\mathfrak{g}^\mathrm{hor}.
 ```
 
-This is what makes [`trial_slope`](@ref) the derivative of the line search's merit, a descent
-check a statement about descent, and ``-D`` the direction of steepest descent in the coordinates
-the optimizers work in.
+`Δ` is the Riemannian gradient [`rgrad`](@ref), which is what a gradient of the optimizers returns.
+This lift is what makes [`trial_slope`](@ref) the derivative of the line search's merit and a
+descent check a statement about descent, and it is the gradient [`BFGS`](@ref) and [`DFP`](@ref)
+hold: their secant pairs and their ``Q`` live in the same coordinates.
 
-For the [`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref) this is
-[`global_rep!`](@ref) itself, because the inner product of [`_dot`](@ref) on a lift is the
-canonical metric. For the [`SymplecticStiefelManifold`](@ref) it is not: the metric
+The four-argument form writes the gradient that `method` holds. For [`BFGS`](@ref), [`DFP`](@ref)
+and every method without a `descent` it is the lift above. For [`GradientMethod`](@ref),
+[`MomentumMethod`](@ref) and [`Adam`](@ref) it is the gradient of their `descent`:
+[`global_rep`](@ref) of `Δ` for [`MetricDescent`](@ref), and for [`SectionDescent`](@ref) the
+lift above with the [`SymmetricMatrix`](@ref) blocks of a symplectic lift rescaled to the inner
+product ``\frac{1}{2}\mathrm{tr}(X^TY)`` of the dense lifts.
+
+# The symplectic Stiefel manifold
+
+For the [`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref) the lift above is
+[`global_rep`](@ref)`(λY, Δ)` itself, because the inner product of [`_dot`](@ref) on a lift is the
+canonical metric, and all of the forms above are the same. For the
+[`SymplecticStiefelManifold`](@ref) they are not: the metric
 [`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref) is not invariant
-under the symplectic group, so no inner product on the lift reproduces it at every point, and
-`global_rep!` of the Riemannian gradient would pair with a lift to something other than the
-derivative of the loss. This method instead recovers
-``\langle\nabla{}L, \cdot\rangle_F = g_U(\Delta, \cdot)`` on the tangent space from `Δ` and the
-metric, which is
+under the symplectic group, so no inner product on the lift reproduces it at every point.
+
+The method recovers ``\langle\nabla{}L, \cdot\rangle_F = g_U(\Delta, \cdot)`` on the tangent space
+from `Δ` and the metric, which is
 
 ```math
 K = \Delta{}P - \frac{1}{2}\mathbb{J}_{2N}^TUP\,U^T\mathbb{J}_{2N}\Delta{}P, \qquad P = (U^TU)^{-1},
@@ -456,11 +470,16 @@ K = \Delta{}P - \frac{1}{2}\mathbb{J}_{2N}^TUP\,U^T\mathbb{J}_{2N}\Delta{}P, \qq
 and writes the gradient of ``B \mapsto \langle{}K, U\mathcal{A} + U^s\mathcal{B}\rangle_F`` with
 respect to the stored blocks of ``B``. With ``X = U^TK`` in four ``n\times{}n`` blocks, that is
 ``A_1 = X_{11} - X_{22}^T``, the storage gradients of ``X_{12}`` and ``X_{21}`` for the two
-[`SymmetricMatrix`](@ref) blocks, and ``\mathcal{B} = (U^s)^TK = (U^s)^T\Delta{}P``.
+[`SymmetricMatrix`](@ref) blocks, and ``\mathcal{B} = (U^s)^TK = (U^s)^T\Delta{}P``. The metric enters
+because the gradient of the optimizers is the Riemannian one; it is applied through a Cholesky
+factor of ``U^TU`` and not through its inverse.
 
-The step ``-D`` is therefore steepest descent with respect to the inner product the section pulls
-back from the lift, not with respect to the metric of [bendokat2021real](@cite); the two agree in
-which directions decrease the loss, and differ in which of them is steepest.
+With [`MetricDescent`](@ref) the tangent vector ``\lambda(Y)DE`` of the held gradient is `Δ` for every
+section, so the path of [`GradientMethod`](@ref) does not depend on the section. With
+[`SectionDescent`](@ref) it depends on it: where the point is orthosymplectic and the section is
+[`global_section`](@ref)'s, the inner product ``\frac{1}{2}\mathrm{tr}(X^TY)`` is the metric and the
+two descents agree; elsewhere they differ, and a change of the section that leaves the point where it
+is changes the step. `scripts/symplectic_gradient_options.jl` measures both statements.
 """
 gradient_rep!(D, λY::GlobalSection, Δ) = global_rep!(D, λY, Δ)
 
@@ -479,17 +498,46 @@ function gradient_rep!(D::SymplecticLieAlgHorMatrix{T},
     k = D.n ÷ 2
     backend = KernelAbstractions.get_backend(G)
 
-    P = inv(U' * U)
-    GP = G * P
+    # `P = (UᵀU)⁻¹` applied through its Cholesky factor
+    C = cholesky(Symmetric(U' * U))
+    GP = G / C
     # `UᵀK`, with `Uᵀ𝕁ᵀU = -𝕁ₙ`; the `Uˢ` block has no second term, because `(Uˢ)ᵀ𝕁ᵀU = 𝕆`
-    X = U' * GP - _poisson_tmul(P * (U' * _poisson_mul(GP))) ./ 2
+    X = U' * GP - _poisson_tmul(C \ (U' * _poisson_mul(GP))) ./ 2
     @views begin
         D.A₁ .= X[1:k, 1:k] .- transpose(X[(k + 1):(2k), (k + 1):(2k)])
-        symmetric_storage_gradient_kernel!(backend)(D.B₁.S, X[1:k, (k + 1):(2k)]; ndrange = (k, k))
-        symmetric_storage_gradient_kernel!(backend)(D.C₁.S, X[(k + 1):(2k), 1:k]; ndrange = (k, k))
+        symmetric_storage_gradient_kernel!(backend)(D.B₁.S, X[1:k, (k + 1):(2k)]; ndrange = (
+            k, k))
+        symmetric_storage_gradient_kernel!(backend)(D.C₁.S, X[(k + 1):(2k), 1:k]; ndrange = (
+            k, k))
     end
     mul!(fill!(D.B, zero(T)), λY.λ', GP)
     D
+end
+
+# The derivative with respect to the stored entries, `gradient_rep!`, turned into the representative
+# in the inner product `½tr(XᵀY)` of the dense lifts. That inner product weighs every stored entry of a
+# symplectic lift by one except the diagonals of the two `SymmetricMatrix` blocks, which it weighs by
+# one half, so those are doubled. On every other lift `_dot` is that inner product already.
+_section_sharp!(D) = D
+
+function _section_sharp!(D::Union{NamedTuple, NetworkParameters})
+    foreachparameters(_section_sharp!, D)
+    D
+end
+
+function _section_sharp!(D::SymplecticLieAlgHorMatrix)
+    backend = KernelAbstractions.get_backend(D)
+    k = D.n ÷ 2
+    double_packed_diagonal_kernel!(backend)(D.B₁.S; ndrange = k)
+    double_packed_diagonal_kernel!(backend)(D.C₁.S; ndrange = k)
+    D
+end
+
+# the diagonal entry `(i, i)` of the packed storage of a `SymmetricMatrix` is at `i(i + 1)/2`
+@kernel function double_packed_diagonal_kernel!(S::AbstractVector{T}) where {T}
+    i = @index(Global)
+    j = i * (i + 1) ÷ 2
+    S[j] += S[j]
 end
 
 @doc raw"""

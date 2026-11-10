@@ -120,7 +120,7 @@ end
 function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T},
         method::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`
-    store_gradient!(cache, state, gradient, x)
+    store_gradient!(cache, state, gradient, x, method)
     _copyto!(section(cache), section(state))
     _copyto!(solution(cache), x)
     # The direction is `-p` for the momentum `p ← αp + ∇L` of the step that is being taken. The

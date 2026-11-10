@@ -139,9 +139,10 @@ end
 _bias_corrected_weights(β, t) = ((β - β^t) / (1 - β^t), (1 - β) / (1 - β^t))
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
-        β₁::T, β₂::T, δ::T, t::Integer, x::OptimizerSolution{T}) where {T}
+        method::OptimizerMethod, t::Integer, x::OptimizerSolution{T}) where {T}
+    β₁, β₂, δ = method.β₁, method.β₂, method.δ
     # first, and before the two `_copyto!`s below; see `store_gradient!`
-    store_gradient!(cache, state, gradient, x)
+    store_gradient!(cache, state, gradient, x, method)
     _copyto!(section(cache), section(state))
     _copyto!(solution(cache), x)
     # `t` is the iteration number and is counted from one: `solve!` calls
@@ -171,5 +172,5 @@ end
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
         method::Adam{T}, x::OptimizerSolution{T}) where {T}
-    update!(cache, state, gradient, method.β₁, method.β₂, method.δ, state.iterations, x)
+    update!(cache, state, gradient, method, state.iterations, x)
 end

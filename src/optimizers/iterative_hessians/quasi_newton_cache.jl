@@ -239,8 +239,8 @@ end
 # also called with a `g` of its own, from `update!(cache, state, x, g)` directly, which is why it
 # keeps the copy.
 function update!(cache::QuasiNewtonCache, state::OptimizerState,
-        grad::Gradient, ::QuasiNewtonOptimizerMethod, x::OptimizerSolution)
-    store_gradient!(cache, state, grad, x)
+        grad::Gradient, method::QuasiNewtonOptimizerMethod, x::OptimizerSolution)
+    store_gradient!(cache, state, grad, x, method)
     update!(cache, state, x, gradient(cache))
 end
 

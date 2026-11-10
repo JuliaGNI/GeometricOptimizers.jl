@@ -112,7 +112,7 @@ function update!(cache::NewtonOptimizerCache, state::OptimizerState,
     # five caches use, and going through it rather than calling `g(gradient(cache), x)` directly is
     # what makes `g̃_is_current` mean anything here -- only `store_gradient!` clears it, so without
     # this the flag stayed `true` across a whole step while `trial_slope` overwrote `g̃`.
-    store_gradient!(cache, state, g, x)
+    store_gradient!(cache, state, g, x, Newton())
     copyto!(section(cache), section(state))
     copyto!(solution(cache), x)
     copyto!(rhs(cache), gradient(cache))

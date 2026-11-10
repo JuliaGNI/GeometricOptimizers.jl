@@ -47,10 +47,11 @@ may not be shared with `gradient`.
 latest_gradient(cache::OptimizerCache) = cache.g̃
 
 @doc raw"""
-    refresh_latest_gradient!(cache, gradient_instance)
+    refresh_latest_gradient!(cache, gradient_instance, method)
 
 Evaluate the gradient at the iterate `cache` currently holds and store it in
-[`latest_gradient`](@ref).
+[`latest_gradient`](@ref), in the form `method` holds it; see
+[`GeometricOptimizers.gradient_rep!`](@ref).
 
 [`solver_step!`](@ref) calls this once the accepted step has been taken, so that `rg` is a statement
 about the point the solve is about to report rather than about the one it started the step from.
@@ -58,8 +59,8 @@ about the point the solve is about to report rather than about the one it starte
 It is also what establishes the pairing [`store_gradient!`](@ref) relies on. See
 [`latest_gradient`](@ref).
 """
-function refresh_latest_gradient!(cache::OptimizerCache, g::Gradient)
-    _refresh_latest_gradient!(solution(cache), cache, g)
+function refresh_latest_gradient!(cache::OptimizerCache, g::Gradient, method::OptimizerMethod)
+    _refresh_latest_gradient!(solution(cache), cache, g, method)
     cache.g̃_is_current[] = true
 
     cache
@@ -73,13 +74,27 @@ end
 # `global_rep` maps an ambient gradient to the horizontal lift on a `Manifold`, and on a plain array
 # it is the identity (`global_rep(::GlobalSection{T}, gx::AbstractVecOrMat{T}) = gx`), so there the gradient can
 # go straight into `latest_gradient` and the allocation the manifold branch needs is pure waste.
-function _refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::Gradient)
+function _refresh_latest_gradient!(::AbstractVector, cache::OptimizerCache, g::Gradient,
+        ::OptimizerMethod)
     g(latest_gradient(cache), solution(cache))
 end
 
-function _refresh_latest_gradient!(::Union{Manifold, NetworkParameters}, cache::OptimizerCache, g::Gradient)
-    gradient_rep!(latest_gradient(cache), section(cache), g(solution(cache)))
+function _refresh_latest_gradient!(
+        ::Union{Manifold, NetworkParameters}, cache::OptimizerCache,
+        g::Gradient, method::OptimizerMethod)
+    gradient_rep!(latest_gradient(cache), section(cache), g(solution(cache)), method)
 end
+
+# The gradient each method holds; see `gradient_rep!`. Every method without a `descent` holds the
+# derivative with respect to the stored entries, which its algebra pairs under `_dot`.
+gradient_rep!(D, λY, Δ, ::OptimizerMethod) = gradient_rep!(D, λY, Δ)
+
+function gradient_rep!(D, λY, Δ, method::Union{GradientMethod, MomentumMethod, Adam})
+    _descent_rep!(D, λY, Δ, method.descent)
+end
+
+_descent_rep!(D, λY, Δ, ::MetricDescent) = global_rep!(D, λY, Δ)
+_descent_rep!(D, λY, Δ, ::SectionDescent) = _section_sharp!(gradient_rep!(D, λY, Δ))
 
 @doc raw"""
     latest_gradient_is_current(cache, state, x)
@@ -112,10 +127,11 @@ Declare that [`latest_gradient`](@ref) is no longer the gradient at `solution(ca
 invalidate_latest_gradient!(cache::OptimizerCache) = (cache.g̃_is_current[] = false; cache)
 
 @doc raw"""
-    store_gradient!(cache, state, gradient_instance, x)
+    store_gradient!(cache, state, gradient_instance, x, method)
 
-Put ``\mathrm{global\_rep}(\mathrm{section}(state), \nabla{}f(x))`` into `gradient_array(cache)`,
-which is what the three first-order `update!(cache, ...)` methods build their direction from.
+Put the gradient at `x` in the form `method` holds it,
+[`GeometricOptimizers.gradient_rep!`](@ref)`(·, section(state), ∇f(x), method)`, into
+`gradient_array(cache)`, which is what the `update!(cache, ...)` methods build their direction from.
 
 # Implementation
 
@@ -135,14 +151,15 @@ the refresh *is* the step's gradient evaluation.
     `section(state)`, so calling it after `update!`'s `_copyto!(section(cache), section(state))` would
     compare each with itself and report `true` unconditionally.
 """
-function store_gradient!(cache::OptimizerCache, state::OptimizerState, g::Gradient, x::OptimizerSolution)
+function store_gradient!(cache::OptimizerCache, state::OptimizerState, g::Gradient,
+        x::OptimizerSolution, method::OptimizerMethod)
     if latest_gradient_is_current(cache, state, x)
         _copyto!(gradient_array(cache), latest_gradient(cache))
     else
         # `gradient_rep!` into the cache's own array, rather than into a fresh lift: the
         # destination already has the shape, so a gradient the step builds costs the products and
         # nothing else. On a vector space the write is a copy.
-        gradient_rep!(gradient_array(cache), section(state), g(x))
+        gradient_rep!(gradient_array(cache), section(state), g(x), method)
     end
     # consumed: from here to the next `refresh_latest_gradient!`, `solver_step!` and the line search
     # move `solution(cache)` around and nothing keeps `latest_gradient` in step with it

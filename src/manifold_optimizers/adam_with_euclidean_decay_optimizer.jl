@@ -117,7 +117,7 @@ end
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
         method::AdamWithEuclideanDecay{T}, x::OptimizerSolution{T}) where {T}
-    update!(cache, state, gradient, method.β₁, method.β₂, method.δ, state.iterations, x)
+    update!(cache, state, gradient, method, state.iterations, x)
     _weight_decay!(direction(cache), x, method.λ)
 
     cache

@@ -30,9 +30,12 @@ to the right-invariant Riemannian metric ``g`` of its (2.2), under a condition t
 
 The optimizers step this type through the first of the two, the one subspace of the Lie algebra
 that is horizontal at every point: [`SymplecticLieAlgHorMatrix`](@ref) implements it, and
-[`global_rep`](@ref) maps a tangent vector into it. The gradient they hold is the lift
-[`GeometricOptimizers.gradient_rep!`](@ref) gives, whose pairing with a lift is the derivative of
-the loss; the Riemannian gradient of the metric (3.16) enters only through it. Every first-order
+[`global_rep`](@ref) maps a tangent vector into it. [`GradientMethod`](@ref),
+[`MomentumMethod`](@ref) and [`Adam`](@ref) follow the Riemannian gradient of the metric (3.16) by
+default, [`MetricDescent`](@ref), or the steepest descent in the coordinates of the section,
+[`SectionDescent`](@ref); the line search, [`BFGS`](@ref) and [`DFP`](@ref) pair the derivative of
+the loss with respect to the stored entries of a lift. [`GeometricOptimizers.gradient_rep!`](@ref)
+gives each of them. Every first-order
 and quasi-Newton method of [`Optimizer`](@ref) and [`TrainingOptimizer`](@ref) takes a point, and a
 parameter set with such a leaf, except [`AdamWithEuclideanDecay`](@ref), whose weight decay is not
 defined here, and the methods that take a [`StiefelManifold`](@ref) by their signature.
