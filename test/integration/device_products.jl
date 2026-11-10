@@ -15,7 +15,8 @@ include("../helpers/jlarray_cholesky.jl")
 
 # `cayley` inverts a matrix with `LinearAlgebra.inv`, and `JLArrays` supplies no `lu` for it. That is
 # the reference backend's gap, pinned in `device_multiply.jl`; Metal has an `lu`, and the rows pass
-# there.
+# there. The generic fallback scalar-indexes; from Julia 1.15 it calls LAPACK instead, and stops
+# where `JLArrays` refuses a pointer.
 const JLARRAYS_GAPS = ("cayley(StiefelManifold, Δ)", "cayley(GrassmannManifold, Δ)")
 
 # `geodesic(B, ProjectedSkew())` calls the backend's own `qr` and `eigen`. `JLArrays` has neither: it
@@ -42,7 +43,9 @@ end
     for (name, status) in device_products(JLArray, T)
         @testset "$name" begin
             if name in JLARRAYS_GAPS
-                @test occursin("Scalar indexing is disallowed", string(status))
+                @test occursin(
+                    r"Scalar indexing is disallowed|Illegal conversion of a JLArray to a Ptr",
+                    string(status))
             else
                 @test status === :pass
             end
