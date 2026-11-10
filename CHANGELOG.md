@@ -14,9 +14,7 @@ breaking release).
   outside the sandbox.** Metal.jl 1.11.1 ran its precompile workload where `Metal.devices()` is
   empty, as in a sandbox, and `using Metal` failed with `Failed to precompile Metal`. Metal.jl
   1.12, which `test/Project.toml` requires since 0.10.0, runs the workload only where a device
-  exists (JuliaGPU/Metal.jl#1000). This closes K15, and the comments of `test/devices/metal.jl`,
-  `scripts/device_products.jl` and `scripts/metal_backend_refusal.jl` no longer cite it. A
-  test-only change.
+  exists (JuliaGPU/Metal.jl#1000). This closes K15. No change to the package code.
 
 ## [0.10.0] — 2026-11-09
 
