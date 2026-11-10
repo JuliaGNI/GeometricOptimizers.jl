@@ -7,8 +7,7 @@
 # Where `Metal.functional()` is `true` the file runs the sweep. Where Metal loads and
 # `Metal.functional()` is `false` the file runs no test and records one visible skip: on a Mac
 # without a usable device, and inside a sandbox, where `Metal.devices()` is empty although the
-# hardware is present. On Apple silicon with no device and no Metal cache for the flags of the
-# run, `using Metal` fails at the Metal precompile before the skip (K15 in `KNOWN_ISSUES.md`).
+# hardware is present. Metal precompiles there too, so the file loads and records its skip.
 # The skip does not fail the run, so `.github/workflows/Metal.yml` keeps the guarantee instead: a
 # step before the tests fails that job where Metal is not functional, so it cannot pass without
 # having run the sweeps.

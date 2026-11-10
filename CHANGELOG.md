@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased] — targeting 0.10.1
+
+### Fixed
+
+- **A sandboxed run of the `metal` group records the device skip, with no Metal cache built
+  outside the sandbox.** Metal.jl 1.11.1 ran its precompile workload where `Metal.devices()` is
+  empty, as in a sandbox, and `using Metal` failed with `Failed to precompile Metal`. Metal.jl
+  1.12, which `test/Project.toml` requires since 0.10.0, runs the workload only where a device
+  exists (JuliaGPU/Metal.jl#1000). This closes K15, and the comments of `test/devices/metal.jl`,
+  `scripts/device_products.jl` and `scripts/metal_backend_refusal.jl` no longer cite it. A
+  test-only change.
+
 ## [0.10.0] — 2026-11-09
 
 ### Breaking Changes
