@@ -39,10 +39,12 @@ const ArrayWrapper = Union{StiefelManifold, GrassmannManifold, SymplecticStiefel
     StiefelProjection}
 const OwnedWrapper = Union{ArrayWrapper, Adjoint{<:Any, <:ArrayWrapper}}
 
-# The adjoint of a real skew-symmetric matrix or horizontal lift is the matrix negated. `adjoint`
-# keeps it lazy, and these methods compute with the parent and the sign. A complex one is not owned,
-# and reaches `LinearAlgebra` as the plain matrix it is.
-const SkewAdjoint = Adjoint{<:Real, <:Union{SkewSymMatrix, AbstractLieAlgHorMatrix}}
+# The adjoint of a real skew-symmetric matrix, or of a real Stiefel or Grassmann lift, is the matrix
+# negated. `adjoint` keeps it lazy, and these methods compute with the parent and the sign. A complex
+# one is not owned, and neither is a `SymplecticLieAlgHorMatrix`, which is not skew-symmetric: each
+# reaches `LinearAlgebra` as the plain matrix it is.
+const SkewAdjoint = Adjoint{<:Real,
+    <:Union{SkewSymMatrix, StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix}}
 
 # The types that take part in a product, a sum or a difference.
 const OwnedMatrix = Union{SkewSymMatrix, SymmetricMatrix, AbstractTriangular,

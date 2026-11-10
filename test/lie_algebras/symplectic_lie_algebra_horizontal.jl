@@ -3,7 +3,7 @@
 # Poisson tensor `𝕁̄ = diag(𝕁ₙ, 𝕁_{N-n})` of the basis the section is stored in.
 using GeometricOptimizers
 using GeometricOptimizers: StiefelProjection
-using LinearAlgebra: I, Symmetric, cond, norm, rank
+using LinearAlgebra: I, Symmetric, cond, mul!, norm, rank
 using Test
 import Random
 
@@ -117,6 +117,14 @@ function products(rng, N, n, T)
     @test C' * B ≈ C' * Matrix(B)
     c = randn(rng, T, N)
     @test B * c ≈ Matrix(B) * c
+
+    # The adjoint of the lift is not the lift negated, as it is for a Stiefel or Grassmann lift.
+    Bᴴ = Matrix(B)'
+    D = randn(rng, T, 3, N)
+    @test B' * C ≈ Bᴴ * C
+    @test D * B' ≈ D * Bᴴ
+    @test c' * B' ≈ c' * Bᴴ
+    @test mul!(similar(C), B', C) ≈ Bᴴ * C
 end
 
 # `getindex` takes integers, so a slice goes through the `AbstractArray` fallback.
