@@ -33,7 +33,7 @@ breaking release).
   `global_section`'s, and elsewhere changes with the section the optimizer has transported along
   its path (K57). The page on global tangent spaces shows why no inner product on the lift gives a
   Riemannian metric through every section, so that `SectionDescent` is not a Riemannian method,
-  and that the retraction `λ exp(tB) E` is a retraction for (3.16) but not its geodesic;
+  and that the retraction `λ exp(tB) E` is a retraction for (3.16) but not its geodesic. It is the geodesic of the canonical connection of the second kind, whose parallel transport is the fixed cache, so it is kept rather than replaced by the geodesic (3.18). The same page restricts the conjugation `Z ↦ λ⁻¹Zλ` to bi-invariant metrics, proves that `Sp(2N)` has none, and states the isomorphism that holds without one (conjugate, then remove the vertical part), which is what `global_rep` computes;
   `scripts/symplectic_metric_invariance.jl` checks both without the package. The line search, `BFGS` and `DFP` pair the derivative of the loss with respect to
   the stored entries of a lift, which `gradient_rep!` gives; with it the slope of a line search is
   the derivative of its merit on every manifold. `scripts/symplectic_gradient_options.jl` records
