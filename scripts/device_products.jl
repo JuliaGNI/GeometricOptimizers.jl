@@ -60,12 +60,14 @@ function fixtures(rng, ::Type{T}) where {T}
     lift = StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix{T}, n), randn(rng, T, N - n, n), N, n)
     skew = rand(rng, SkewSymMatrix{T}, N)
     grass = rand(rng, GrassmannLieAlgHorMatrix{T}, N, n)
+    # a symplectic lift needs an even number of columns; `2n = 4` fits the `6 × 6` of the others
+    symp = rand(rng, SymplecticLieAlgHorMatrix{T}, N, 4)
     # the adjoints of the two triangulars are the other triangular, and a symmetric matrix is its own
     ["SkewSym" => skew, "SkewSym'" => skew', "Sym" => rand(rng, SymmetricMatrix{T}, N),
         "Lower" => rand(rng, StrictlyLowerTriangular{T}, N),
         "Upper" => rand(rng, StrictlyUpperTriangular{T}, N),
         "StiefelHor" => lift, "StiefelHor'" => lift', "GrassmannHor" => grass,
-        "GrassmannHor'" => grass',
+        "GrassmannHor'" => grass', "SymplecticHor" => symp, "SymplecticHor'" => symp',
         "Y" => StiefelManifold(Q[:, 1:n]), "Y'" => StiefelManifold(Q[:, 1:n])',
         "G" => GrassmannManifold(Q[:, 1:n]), "G'" => GrassmannManifold(Q[:, 1:n])',
         "U" => U, "U'" => U', "E" => StiefelProjection(T, N, n),

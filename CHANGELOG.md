@@ -20,8 +20,9 @@ breaking release).
   `TrainingOptimizer` and in a `CompositeMethod`, take such a point and a parameter set with such a
   leaf, where they raised an `ArgumentError` before. `AdamWithEuclideanDecay` still refuses it, and
   the methods that take a `StiefelManifold` by their signature still have no method for it.
-  `Geodesic(ProjectedSkew())` refuses a symplectic lift, which is Hamiltonian and not skew.
-  Closes A23 and A28.
+  `Geodesic(ProjectedSkew())` refuses a symplectic lift, which is Hamiltonian and not skew. The
+  products and sums of the lift and of its adjoint run on a device, against a plain array and
+  against every other owned type; `scripts/device_products.jl` sweeps both. Closes A23 and A28.
 - **`GradientMethod`, `MomentumMethod` and `Adam` take a keyword `descent`.** With
   `MetricDescent()`, the default, the gradient they hold is `global_rep` of the Riemannian gradient
   of the manifold's metric; with `SectionDescent()` it is the steepest descent of `½tr(XᵀY)` on the
