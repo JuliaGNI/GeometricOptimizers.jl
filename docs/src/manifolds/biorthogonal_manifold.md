@@ -99,43 +99,7 @@ a Sylvester equation with two symmetric positive definite coefficients, which is
 
 ## The global tangent space
 
-The Lie algebra ``\mathfrak{gl}(N) = \mathbb{R}^{N\times{}N}`` acts by ``X\cdot(\Phi, \Psi) = (X\Phi, -X^T\Psi)``, which at ``(E, E)`` is ``(XE, -X^TE)``: the first ``n`` columns and the first ``n`` rows of ``X``. The vertical space, on which both vanish, is the Lie algebra of ``GL(N-n)``, the matrices that are zero outside their lower right ``(N-n)\times(N-n)`` block, and its complement
-
-```math
-\mathfrak{g}^\mathrm{hor} = \left\{\begin{pmatrix} A & C \\ B & \mathbb{O} \end{pmatrix} : A\in\mathbb{R}^{n\times{}n},\ B\in\mathbb{R}^{(N-n)\times{}n},\ C\in\mathbb{R}^{n\times(N-n)}\right\}
-```
-
-is the same subspace at every point; [`BiorthogonalLieAlgHorMatrix`](@ref) stores it. It is the [`StiefelLieAlgHorMatrix`](@ref) with the two constraints of ``\mathfrak{so}(N)`` dropped: ``A`` is not skew-symmetric, and ``C`` is not ``-B^T``.
-
-The section is the completion of the transitivity proof above, with ``K`` an orthonormal basis of the kernel of ``\Psi^T``. Because ``GL(N)`` does not act by orthogonal matrices, ``\lambda(Y)^{-1}`` is not ``\lambda(Y)^T``, and the second half of a pair moves by the inverse transpose of what moves the first. So a [`GlobalSection`](@ref) stores the dual frame next to the frame ([`global_section(::BiorthogonalManifold)`](@ref)):
-
-```math
-\lambda(Y) = [\Phi\ \ K], \qquad \lambda(Y)^{-T} = [\Psi\ \ \tilde{K}], \qquad \tilde{K} = (\mathbb{I}_N - \Psi\Phi^T)K.
-```
-
-``\tilde{K}^T\Phi = \mathbb{O}`` and ``\tilde{K}^TK = \mathbb{I}_{N-n}`` are ``\lambda(Y)^{-1}\lambda(Y) = \mathbb{I}_N``. With both frames every map between a tangent space and ``\mathfrak{g}^\mathrm{hor}`` is a product with ``N\times{}n`` and ``N\times(N-n)`` blocks, and no ``N\times{}N`` matrix is inverted.
-
-A horizontal ``X`` moves ``Y`` along ``\lambda(Y)X\cdot(E, E) = (\lambda(Y)XE,\ -\lambda(Y)^{-T}X^TE)``, so [`global_rep`](@ref) reads its first ``n`` columns off ``\lambda(Y)^{-1}\Delta_\Phi`` and its first ``n`` rows off ``-\lambda(Y)^T\Delta_\Psi``:
-
-```math
-A = \Psi^T\Delta_\Phi = -\Delta_\Psi^T\Phi, \qquad B = \tilde{K}^T\Delta_\Phi, \qquad C = -\Delta_\Psi^TK.
-```
-
-The corresponding element of ``\mathfrak{gl}(N)`` at ``Y`` does not depend on the section: ``\lambda(Y)X\lambda(Y)^{-1}`` is the horizontal lift [`GeometricOptimizers.Ω`](@ref)
-
-```math
-\Omega(Y, \Delta) = \Delta_\Phi\Psi^T - \Phi\Delta_\Psi^T(\mathbb{I}_N - \Phi\Psi^T),
-```
-
-which at a Stiefel point ``\Phi = \Psi`` and a tangent vector ``(\Delta, \Delta)`` is the canonical horizontal lift of the Stiefel manifold.
-
-The derivative of a loss along ``\lambda(Y)X\cdot(E, E)`` is
-
-```math
-\langle\nabla_\Phi L, \Phi A + KB\rangle - \langle\nabla_\Psi L, \Psi A^T + \tilde{K}C^T\rangle = \langle\Phi^T\nabla_\Phi L - (\nabla_\Psi L)^T\Psi, A\rangle + \langle{}K^T\nabla_\Phi L, B\rangle + \langle-(\nabla_\Psi L)^T\tilde{K}, C\rangle,
-```
-
-the blocks of [`global_rep`](@ref) with the frame and the dual frame exchanged. This is what [`GeometricOptimizers.gradient_rep!`](@ref) writes, with the Riemannian gradient in place of ``\nabla{}L``, which pairs with every tangent vector as ``\nabla{}L`` does, since ``\mathrm{grad}\,L`` is its orthogonal projection.
+The global tangent space is introduced on the page [Global Tangent Spaces](@ref "The Global Tangent Space for the Biorthogonal Manifold") in the same five steps as for the Stiefel, the Grassmann and the symplectic Stiefel manifold: ``\mathfrak{g}^\mathrm{hor}`` is the complement ``\left\{\begin{pmatrix} A & C \\ B & \mathbb{O} \end{pmatrix}\right\}`` of the isotropy algebra ``\mathfrak{gl}(N-n)`` in ``\mathfrak{gl}(N)``, stored as a [`BiorthogonalLieAlgHorMatrix`](@ref), and the section stores the frame ``\lambda(Y) = [\Phi\ \ K]`` together with the dual frame ``\lambda(Y)^{-T} = [\Psi\ \ \tilde{K}]``, ``\tilde{K} = (\mathbb{I}_N - \Psi\Phi^T)K``. The retractions below act on these two frames.
 
 ## Retractions
 
@@ -151,19 +115,13 @@ Two things differ from the Stiefel case. The curve ``t\mapsto\lambda(Y)\exp(tX)\
 
 ## The relation to the symplectic Stiefel manifold
 
-Under ``X\mapsto\mathrm{diag}(X, -X^T)``, ``\mathfrak{gl}(N)`` is a subalgebra of ``\mathfrak{sp}(2N)``, and the section ``\mathrm{diag}(\lambda(Y), \lambda(Y)^{-T})`` of ``\mathrm{diag}(\Phi, \Psi)`` is symplectic. In the column order ``[\Phi\ \ \Psi\ \ K\ \ \tilde{K}]`` of a [`SymplecticLieAlgHorMatrix`](@ref), a biorthogonal lift is the symplectic lift with
-
-```math
-A_1 = A, \qquad B_1 = C_1 = \mathbb{O}, \qquad \mathcal{B} = \begin{pmatrix} B & \mathbb{O} \\ \mathbb{O} & -C^T \end{pmatrix},
-```
-
-and its retractions are the block-diagonal retractions of that lift. A symplectic optimizer started at ``\mathrm{diag}(\Phi, \Psi)`` would leave the block-diagonal points, because the gradient of a loss on ``Sp(2n, 2N)`` has components outside this subalgebra; optimizing on ``\mathcal{B}(n, N)`` keeps the structure and works with matrices of half the size.
+Under ``X\mapsto\mathrm{diag}(X, -X^T)``, ``\mathfrak{gl}(N)`` is a subalgebra of ``\mathfrak{sp}(2N)``, and the section ``\mathrm{diag}(\lambda(Y), \lambda(Y)^{-T})`` of ``\mathrm{diag}(\Phi, \Psi)`` is symplectic. A biorthogonal lift is then a [`SymplecticLieAlgHorMatrix`](@ref), as the page [Global Tangent Spaces](@ref "The Global Tangent Space for the Biorthogonal Manifold") states block by block, and its retractions are the block-diagonal retractions of that lift. A symplectic optimizer started at ``\mathrm{diag}(\Phi, \Psi)`` would leave the block-diagonal points, because the gradient of a loss on ``Sp(2n, 2N)`` has components outside this subalgebra; optimizing on ``\mathcal{B}(n, N)`` keeps the structure and works with matrices of half the size.
 
 ## The optimizers
 
-[`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`BFGS`](@ref) and [`DFP`](@ref) take a [`BiorthogonalManifold`](@ref) and a parameter set with such a leaf, under [`Optimizer`](@ref) and, for the first three, under [`TrainingOptimizer`](@ref) and in a [`CompositeMethod`](@ref). The line search, [`BFGS`](@ref) and [`DFP`](@ref) pair the derivative above with a direction, so the slope of a line search is the derivative of its merit.
+[`GradientMethod`](@ref), [`MomentumMethod`](@ref), [`Adam`](@ref), [`BFGS`](@ref) and [`DFP`](@ref) take a [`BiorthogonalManifold`](@ref) and a parameter set with such a leaf, under [`Optimizer`](@ref) and, for the first three, under [`TrainingOptimizer`](@ref) and in a [`CompositeMethod`](@ref). The line search, [`BFGS`](@ref) and [`DFP`](@ref) pair [`GeometricOptimizers.gradient_rep!`](@ref), the derivative of the loss with respect to the stored blocks, with a direction, so the slope of a line search is the derivative of its merit.
 
-With [`MetricDescent`](@ref), the default, the gradient [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and [`Adam`](@ref) hold is [`global_rep`](@ref) of the Riemannian gradient, and the path of [`GradientMethod`](@ref) does not depend on the section. With [`SectionDescent`](@ref) it is the derivative above, i.e. the steepest descent of ``\mathrm{tr}(X^TY)`` on the lifts at the section. For [`Adam`](@ref) the difference matters: its direction is close to the sign of the gradient it holds, entry by entry, and that is a descent direction in the coordinates the derivative pairs with, which are those of `SectionDescent`. With `MetricDescent` the coordinates are the dual frame's, and on the test problem of `test/integration/biorthogonal_optimizer_tests.jl` the result of a fixed number of steps then depends on the completion ``K`` drawn at the start, while with `SectionDescent` it does not. `Adam(; descent = SectionDescent())` is therefore the one to use here; on a [`StiefelManifold`](@ref) or a [`GrassmannManifold`](@ref) the two are the same, so a parameter set with leaves of several kinds loses nothing by it.
+With [`MetricDescent`](@ref), the default, the gradient [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and [`Adam`](@ref) hold is [`global_rep`](@ref) of the Riemannian gradient, and the path of [`GradientMethod`](@ref) does not depend on the section. With [`SectionDescent`](@ref) it is that derivative, i.e. the steepest descent of ``\mathrm{tr}(X^TY)`` on the lifts at the section. For [`Adam`](@ref) the difference matters: its direction is close to the sign of the gradient it holds, entry by entry, and that is a descent direction in the coordinates the derivative pairs with, which are those of `SectionDescent`. With `MetricDescent` the coordinates are the dual frame's, and on the test problem of `test/integration/biorthogonal_optimizer_tests.jl` the result of a fixed number of steps then depends on the completion ``K`` drawn at the start, while with `SectionDescent` it does not. `Adam(; descent = SectionDescent())` is therefore the one to use here; on a [`StiefelManifold`](@ref) or a [`GrassmannManifold`](@ref) the two are the same, so a parameter set with leaves of several kinds loses nothing by it.
 
 The section is transported along the path by elements of ``GL(N)``, so, unlike a Stiefel section, it does not stay orthogonal, and the coordinates of the lift are only as well conditioned as it is. [`AdamWithEuclideanDecay`](@ref) refuses the manifold: it is not compact, and what Euclidean weight decay should do on it is not decided.
 

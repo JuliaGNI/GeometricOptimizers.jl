@@ -461,7 +461,7 @@ The metric of [`BiorthogonalManifold`](@ref) is the Euclidean one, so `Δ` is th
 of ``\nabla{}L`` onto the tangent space and pairs with every tangent vector as ``\nabla{}L`` does. The
 lift above is then [`global_rep`](@ref)'s with the frame ``[\Phi\ \ K]`` and the dual frame
 ``[\Psi\ \ \tilde{K}]`` of the section exchanged: ``A = \Phi^T\Delta_\Phi - \Delta_\Psi^T\Psi``,
-``B = K^T\Delta_\Phi`` and ``C = -\Delta_\Psi^T\tilde{K}``; see [The Biorthogonal Manifold](@ref).
+``B = K^T\Delta_\Phi`` and ``C = -\Delta_\Psi^T\tilde{K}``; see [Global Tangent Spaces](@ref "The Global Tangent Space for the Biorthogonal Manifold").
 
 # The symplectic Stiefel manifold
 
