@@ -56,10 +56,10 @@ vertical(U) = nullspace(reduce(hcat, [vec(b * U) for b in basis]))   # coordinat
 complement(V, G) = nullspace(Matrix((G * V)'))
 function resid(A, B)
     Q = Matrix(qr(B).Q)[:, 1:size(B, 2)]
-    maximum(norm(A[:, k] - Q * (Q' * A[:, k])) / norm(A[:, k]) for k in 1:size(A, 2))
+    maximum(norm(A[:, k] - Q * (Q' * A[:, k])) / norm(A[:, k]) for k in axes(A, 2))
 end
 function lift(H, U, Δ)
-    mat(H * ((reduce(hcat, [vec(mat(H[:, k]) * U) for k in 1:size(H, 2)])) \ vec(Δ)))
+    mat(H * ((reduce(hcat, [vec(mat(H[:, k]) * U) for k in axes(H, 2)])) \ vec(Δ)))
 end
 
 VE = vertical(E)
@@ -72,7 +72,7 @@ println("(b) at E, h-complement = ½tr-complement:   ", resid(HorE_h, HorE_tr), 
 
 M = exp(0.6 * ham(N));
 U = M * E
-Ad(Λ, H) = reduce(hcat, [coords(Λ \ mat(H[:, k]) * Λ) for k in 1:size(H, 2)])
+Ad(Λ, H) = reduce(hcat, [coords(Λ \ mat(H[:, k]) * Λ) for k in axes(H, 2)])
 VU = vertical(U)
 HorU_tr = complement(VU, Gtr);
 HorU_h = complement(VU, Gh);
