@@ -102,3 +102,29 @@ function Ω(U::SymplecticStiefelManifold{T}, Δ::AbstractMatrix{T}) where {T}
     UΔ⁺ = U.A * Δ⁺
     (ΔU⁺ - U.A * (U⁺ * ΔU⁺) / 2) - (UΔ⁺ - (UΔ⁺ * U.A) * U⁺ / 2)
 end
+
+@doc raw"""
+    Ω(Y::BiorthogonalManifold{T}, Δ::AbstractMatrix{T}) where T
+
+Perform the horizontal lift for the manifold of biorthogonal pairs:
+
+```math
+    (\Delta_\Phi, \Delta_\Psi) \mapsto \Delta_\Phi\Psi^T - \Phi\Delta_\Psi^T(\mathbb{I} - \Phi\Psi^T).
+```
+
+The result ``\Omega`` is an ``N\times{}N`` matrix, i.e. an element of ``\mathfrak{gl}(N)``, with
+``\Omega\cdot(\Phi, \Psi) = (\Omega\Phi, -\Omega^T\Psi) = (\Delta_\Phi, \Delta_\Psi)`` for a tangent
+`Δ`, and it is returned dense. It is ``\lambda(Y)X\lambda(Y)^{-1}`` for the
+[`BiorthogonalLieAlgHorMatrix`](@ref) ``X`` that [`global_rep`](@ref) returns, for every section
+``\lambda``, because ``\lambda(Y)E\Psi^T + K\tilde{K}^T = \lambda(Y)\lambda(Y)^{-1} = \mathbb{I}``.
+
+At a point ``\Phi = \Psi = Y`` of the [`StiefelManifold`](@ref) and a tangent vector
+``(\Delta, \Delta)``, this is the canonical horizontal lift
+[`Ω(::StiefelManifold, ::AbstractMatrix)`](@ref) of ``\Delta``.
+"""
+function Ω(Y::BiorthogonalManifold{T}, Δ::AbstractMatrix{T}) where {T}
+    Φ, Ψ = _biorthogonal_halves(Y)
+    ΔΦ, ΔΨ = _biorthogonal_halves(Δ)
+    ΦΔΨᵀ = Φ * ΔΨ'
+    ΔΦ * Ψ' - ΦΔΨᵀ + (ΦΔΨᵀ * Φ) * Ψ'
+end

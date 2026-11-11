@@ -201,7 +201,8 @@ On a [`Manifold`](@ref) the gradient that `gradient_instance` produces lives in 
 the embedding while `direction(cache)` is a horizontal lift, so the two are not even the same shape
 and have to be brought together by [`GeometricOptimizers.gradient_rep!`](@ref) first. That is the
 map `update!(::GradientCache, …)` applies to the gradient before storing it, and it is
-[`global_rep`](@ref) except on a [`SymplecticStiefelManifold`](@ref).
+[`global_rep`](@ref) except on a [`SymplecticStiefelManifold`](@ref) and a
+[`BiorthogonalManifold`](@ref).
 
 The pairing is then [`_dot`](@ref) and not `dot`: the `α` of the line search parameterizes a curve in
 the *intrinsic* coordinates of the lift, and `dot` on a lift is the ambient Frobenius product, which

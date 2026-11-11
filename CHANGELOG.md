@@ -10,6 +10,26 @@ breaking release).
 
 ### Added
 
+- **The manifold of biorthogonal pairs, `BiorthogonalManifold`, and its global tangent space
+  `BiorthogonalLieAlgHorMatrix`.** A point is a pair `(Φ, Ψ)` of `N × n` matrices with `ΨᵀΦ = 𝕀`,
+  stored as `[Φ Ψ]`; it is the homogeneous space `GL(N)/GL(N - n)` of the action
+  `g⋅(Φ, Ψ) = (gΦ, g⁻ᵀΨ)`, contains the Stiefel manifold as the pairs with `Φ = Ψ`, and makes
+  `diag(Φ, Ψ)` a point of the symplectic Stiefel manifold. The lift is the complement `[A C; B 𝕆]` of
+  the isotropy algebra in `𝔤𝔩(N)`, and a `GlobalSection` of such a point holds the dual frame
+  `[Ψ K̃]` next to the frame `[Φ K]`, so `global_rep`, `gradient_rep!`, `apply_section`, `Ω`, both
+  retractions, their workspaces and the transport of the section take products of `N × n` and
+  `N × (N - n)` blocks and invert no `N × N` matrix. The retraction of a lift is the pair
+  `[g g⁻ᵀ]`, through `R(X)⁻¹ = R(-X)` for `Cayley` and `Geodesic`. `rand`, `check`, `rgrad` and
+  `metric` (the Euclidean one, whose gradient is the orthogonal projection through an `n × n`
+  Sylvester equation), the parameter protocol (`rebuild`, `storage_gradient`, loading from a file)
+  and `retraction_differential` cover it. `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and
+  `DFP` under `Optimizer`, and the first three under `TrainingOptimizer` and in a
+  `CompositeMethod`, take such a point and a parameter set with such a leaf; `AdamWithEuclideanDecay`
+  refuses it. `Adam` should be given `descent = SectionDescent()` here (K60). The manual has a new
+  page, *The Biorthogonal Manifold*, with the theory, which comes from
+  JuliaGNI/GeometricMachineLearning.jl#390, the use this manifold was added for. K60 and K61 record
+  what is open.
+
 - **The optimizers step a `SymplecticStiefelManifold`.** The new lift type
   `SymplecticLieAlgHorMatrix` implements the horizontal space that Bendokat and Zimmermann give
   below their (3.4), the one subspace of the symplectic Lie algebra that is horizontal at every

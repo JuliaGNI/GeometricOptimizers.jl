@@ -48,7 +48,8 @@ manifold.
 
 For a [`GrassmannLieAlgHorMatrix`](@ref) this is the same expression with ``A \equiv \mathbb{O}``.
 For a [`SymplecticLieAlgHorMatrix`](@ref) it is the same expression with the Hamiltonian block
-``\mathcal{A}`` for ``A`` and the symplectic adjoint ``\mathcal{B}^+`` for ``B^T``.
+``\mathcal{A}`` for ``A`` and the symplectic adjoint ``\mathcal{B}^+`` for ``B^T``, and for a
+[`BiorthogonalLieAlgHorMatrix`](@ref) the same expression with its block ``C`` for ``-B^T``.
 
 # Implementation
 
@@ -198,6 +199,12 @@ the choice of `algorithm` and [`GeometricOptimizers.𝔄`](@ref) for the impleme
 [`ScaledSquaring`](@ref) is accurate at every lift norm.
 """
 function geodesic(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgorithm = ScaledSquaring())
+    manifold_type(B)(_exp_matrix(B, algorithm))
+end
+
+# The `N × N` matrix `exp(B)` that `geodesic` wraps, which the biorthogonal lift needs twice, for `B`
+# and for `-B`.
+function _exp_matrix(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgorithm)
     T = eltype(B)
     B̂, B̄ = lift_factors(B)
 
@@ -207,7 +214,7 @@ function geodesic(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgo
     retracted = unit_matrix(KernelAbstractions.get_backend(B), T, B.N)
     mul!(retracted, B̂ * 𝔄(B̂, B̄, algorithm), B̄', one(T), one(T))
 
-    manifold_type(B)(retracted)
+    retracted
 end
 
 # Every step runs on the lift's backend: the `qr` and the `eigen` are the backend's own, and nothing

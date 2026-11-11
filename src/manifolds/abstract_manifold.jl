@@ -1,7 +1,7 @@
 @doc raw"""
     Manifold <: AbstractMatrix
 
-A manifold in `GeometricOptimizers` is a subtype of `AbstractMatrix`. All manifolds are matrix manifolds and therefore stored as matrices. More details can be found in the docstrings for the [`StiefelManifold`](@ref), the [`GrassmannManifold`](@ref) and the [`SymplecticStiefelManifold`](@ref).
+A manifold in `GeometricOptimizers` is a subtype of `AbstractMatrix`. All manifolds are matrix manifolds and therefore stored as matrices. More details can be found in the docstrings for the [`StiefelManifold`](@ref), the [`GrassmannManifold`](@ref), the [`SymplecticStiefelManifold`](@ref) and the [`BiorthogonalManifold`](@ref).
 """
 abstract type Manifold{T} <: AbstractMatrix{T} end
 
@@ -262,6 +262,8 @@ supply `qr` through CUSOLVER, takes the same route as everything else rather tha
 drawn on the host alone: its draw is the symplectic SR decomposition [`sr!`](@ref), which is a host
 factorization, so a device spelling would be a host draw followed by a transfer rather than the
 device-native draw the other two get. Naming a device for it throws an `ArgumentError` saying so.
+[`BiorthogonalManifold`](@ref) is drawn on every backend, through the products, the `cholesky` and
+the triangular solves the other two need.
 """
 Base.rand(::KernelAbstractions.Backend, ::Type{<:Manifold}, ::Integer, ::Integer)
 
@@ -311,14 +313,14 @@ Base.rand(::Type{<:Manifold}, ::Integer, ::Integer)
 
 Measure how far `Y` is from the manifold, as ``\|Y^TY - \mathbb{I}\|``.
 
-Two of the three manifolds this package provides store a representative whose columns are
+Two of the four manifolds this package provides store a representative whose columns are
 orthonormal — for [`StiefelManifold`](@ref) that is the point itself, for
 [`GrassmannManifold`](@ref) it is the representative of the equivalence class — so the same
 expression measures both. A retraction maps onto the manifold by construction, so in exact
 arithmetic this is zero and what it actually returns is accumulated round-off.
 
-[`SymplecticStiefelManifold`](@ref) is the third, and its constraint is a different bilinear form,
-so it carries its own method. Anything defining a further manifold has to decide which of the two
+[`SymplecticStiefelManifold`](@ref) and [`BiorthogonalManifold`](@ref) are the other two, and their
+constraints are different bilinear forms, so each carries its own method. Anything defining a further manifold has to decide which of the two
 it is rather than inherit this one by default.
 
 This is the assertion the manifold tests rest on, for every retraction path.

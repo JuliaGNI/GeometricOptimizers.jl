@@ -111,7 +111,9 @@ vector space, a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref) it i
 [`SectionDescent`](@ref). On a [`SymplecticStiefelManifold`](@ref) it is the descent of the metric
 [`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref), and the path of
 [`GradientMethod`](@ref) does not depend on the section; see
-[`GeometricOptimizers.gradient_rep!`](@ref).
+[`GeometricOptimizers.gradient_rep!`](@ref). On a [`BiorthogonalManifold`](@ref) it is the descent of
+the metric the pairs inherit from ``\mathbb{R}^{N\times2n}``, whose path does not depend on the
+section either.
 """
 struct MetricDescent end
 
@@ -128,7 +130,10 @@ On a vector space, a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref)
 lifts, which is the metric of the manifold where the point is orthosymplectic and the section is
 [`global_section`](@ref)'s. Elsewhere it is not a metric of the manifold: the optimizers transport
 the section along the path, and a change of the section that leaves the point where it is changes
-the step. See [`GeometricOptimizers.gradient_rep!`](@ref).
+the step. See [`GeometricOptimizers.gradient_rep!`](@ref). On a [`BiorthogonalManifold`](@ref) the
+inner product is ``\mathrm{tr}(X^TY)`` of the dense lifts, and the representative is the derivative
+of the loss with respect to the stored blocks; it is the descent to give [`Adam`](@ref) there, as
+[The Biorthogonal Manifold](@ref) explains.
 """
 struct SectionDescent end
 
@@ -138,7 +143,8 @@ const Descent = Union{MetricDescent, SectionDescent}
     GradientMethod(; descent = MetricDescent())
 
 The gradient descent algorithm. `descent` is [`MetricDescent`](@ref) or
-[`SectionDescent`](@ref); the two differ only on a [`SymplecticStiefelManifold`](@ref).
+[`SectionDescent`](@ref); the two differ only on a [`SymplecticStiefelManifold`](@ref) and a
+[`BiorthogonalManifold`](@ref).
 """
 struct GradientMethod{D <: Descent} <: OptimizerMethod
     descent::D

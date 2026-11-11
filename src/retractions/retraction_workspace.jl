@@ -283,8 +283,12 @@ wrong shape would scramble the layout of the answer instead of rejecting it.
 function retraction_matrix!(ws::RetractionWorkspace{T}, R::AbstractRetraction,
         B::AbstractLieAlgHorMatrix{T}) where {T}
     @assert (ws.N, ws.n) == (B.N, B.n)
-    copyto!(ws.retracted, retraction(R, B).A)
+    copyto!(ws.retracted, _group_matrix(retraction(R, B)))
 end
+
+# The `N × N` group element a retraction returns, wrapped in the manifold type of its lift. For every
+# manifold but the biorthogonal one that is the whole stored matrix.
+_group_matrix(Y::Manifold) = Y.A
 
 function retraction_matrix!(ws::RetractionWorkspace{T}, ::Cayley,
         B::AbstractLieAlgHorMatrix{T}) where {T}

@@ -336,7 +336,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `SymplecticLieAlgHorMatrix` is a symplectic matrix, and the symplectic group is not compact, so
   the reason does not carry over: the cap still bounds the step, but its scale is not one the
   geometry supplies. The solves of `test/integration/symplectic_optimizer_tests.jl` converge under
-  it; no symplectic solve has been seen to stop at the ceiling.
+  it; no symplectic solve has been seen to stop at the ceiling. The same holds for a
+  `BiorthogonalLieAlgHorMatrix`, whose retraction is an element of `GL(N)`, and for
+  `test/integration/biorthogonal_optimizer_tests.jl`.
 
 ### K57 · Under `SectionDescent` the step on a `SymplecticStiefelManifold` depends on the transported section
 
@@ -353,6 +355,37 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
   eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
   `MetricDescent`, the default, does not depend on the section.
+
+### K60 · On a `BiorthogonalManifold` the section is transported by `GL(N)`, and Adam under `MetricDescent` depends on it
+
+- location: `src/global_sections/biorthogonal_sections.jl`, `src/retractions/biorthogonal_retractions.jl`
+- kind: found late
+- found: 2026-11-11
+- evidence: The section `[Φ K]` of a biorthogonal pair is transported along the path by the
+  retraction, an element of `GL(N)`, so it does not stay orthogonal; on the test problem of
+  `test/integration/biorthogonal_optimizer_tests.jl` its condition number starts near 75 and
+  stays below about 200 over 500 steps, and long training runs are not measured. `Adam` under
+  `MetricDescent` takes the entrywise sign-like step of `global_rep(rgrad)`, which is held in the
+  coordinates of the dual frame `[Ψ K̃]`, while the derivative of the loss pairs with those of the
+  frame. That step is then not guaranteed to descend: over 25 seeds of the completion `K`, 500 steps
+  at `η = 1e-3` ended between `38` and `2137` from `1405` (minimum `19.85`), where
+  `Adam(; descent = SectionDescent())` ended between `34.4` and `35.6` on every seed. The manual
+  page *The Biorthogonal Manifold* recommends `SectionDescent` for `Adam`; the default stays
+  `MetricDescent` because it is one default for every manifold. A reset of the section to
+  `global_section(Y)` would bound its conditioning, as K57 says for the symplectic case.
+
+### K61 · `rgrad` of a `BiorthogonalManifold` needs a symmetric eigendecomposition on the point's backend
+
+- location: `src/manifolds/biorthogonal_manifold.jl`, `_sylvester_spd`
+- kind: found late
+- found: 2026-11-11
+- evidence: The projection onto the tangent space solves an `n × n` Sylvester equation in the
+  eigenbases of `ΨᵀΨ` and `ΦᵀΦ`, through `eigen(Symmetric(·))`. `Metal` supplies no such
+  decomposition, so `rgrad`, and with it every optimizer, raises for a point on that backend, while
+  `rand`, `global_section`, `global_rep`, the retractions and the transport of the section are
+  products, `cholesky` and triangular solves and run there. No device test covers this manifold.
+  The Sylvester equation could be solved through `cholesky` alone, as a linear system of size `n²`,
+  at `O(n⁶)` per step.
 
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 

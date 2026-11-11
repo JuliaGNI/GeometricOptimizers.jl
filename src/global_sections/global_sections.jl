@@ -451,7 +451,17 @@ and every method without a `descent` it is the lift above. For [`GradientMethod`
 [`MomentumMethod`](@ref) and [`Adam`](@ref) it is the gradient of their `descent`:
 [`global_rep`](@ref) of `Δ` for [`MetricDescent`](@ref), and for [`SectionDescent`](@ref) the
 lift above with the [`SymmetricMatrix`](@ref) blocks of a symplectic lift rescaled to the inner
-product ``\frac{1}{2}\mathrm{tr}(X^TY)`` of the dense lifts.
+product ``\frac{1}{2}\mathrm{tr}(X^TY)`` of the dense lifts. A [`BiorthogonalLieAlgHorMatrix`](@ref)
+stores each entry of its dense lift once, so for it the lift above is that representative for
+``\mathrm{tr}(X^TY)`` as it stands.
+
+# The biorthogonal manifold
+
+The metric of [`BiorthogonalManifold`](@ref) is the Euclidean one, so `Δ` is the orthogonal projection
+of ``\nabla{}L`` onto the tangent space and pairs with every tangent vector as ``\nabla{}L`` does. The
+lift above is then [`global_rep`](@ref)'s with the frame ``[\Phi\ \ K]`` and the dual frame
+``[\Psi\ \ \tilde{K}]`` of the section exchanged: ``A = \Phi^T\Delta_\Phi - \Delta_\Psi^T\Psi``,
+``B = K^T\Delta_\Phi`` and ``C = -\Delta_\Psi^T\tilde{K}``; see [The Biorthogonal Manifold](@ref).
 
 # The symplectic Stiefel manifold
 
