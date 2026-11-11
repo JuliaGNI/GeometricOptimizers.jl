@@ -228,8 +228,8 @@ function _hor_top_rows(B::SymplecticLieAlgHorMatrix, C₁, C₂)
 end
 
 # The product with the transpose, `BᵀC = [𝒜ᵀC₁ + ℬᵀC₂; -(ℬ⁺)ᵀC₁]`, block by block as `B * C` is.
-# The transposed blocks are `permutedims` copies, which a device product serves; they are `n × n`
-# and `n × (N - n)`, so they cost no more than the dense blocks `B * C` builds.
+# The transposed blocks are `permutedims` copies, which a device product serves; they are `n × n`,
+# `n × (N - n)` and `(N - n) × n`, each as large as a dense block that `B * C` builds.
 function _transpose_lmul_into!(D::AbstractMatrix{T}, B::SymplecticLieAlgHorMatrix{T},
         C::AbstractMatrix{T}) where {T}
     @assert B.N == size(C, 1) == size(D, 1)
@@ -237,7 +237,7 @@ function _transpose_lmul_into!(D::AbstractMatrix{T}, B::SymplecticLieAlgHorMatri
 
     C₁ = @view C[1:(B.n), :]
     C₂ = @view C[(B.n + 1):(B.N), :]
-    @views D[1:(B.n), :] .= permutedims(_hamiltonian_block(B)) * C₁ + permutedims(B.B) * C₂
+    @views D[1:(B.n), :] .= permutedims(_hamiltonian_block(B)) * C₁ .+ permutedims(B.B) * C₂
     @views D[(B.n + 1):(B.N), :] .= .-(permutedims(_symplectic_adjoint(B.B)) * C₁)
     D
 end

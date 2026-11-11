@@ -630,7 +630,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C7 · `ensure_descent!` is vacuous for `GradientMethod`
 
-- location: `gradient_optimizer.jl:82`
+- location: `gradient_optimizer.jl:79`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
@@ -640,8 +640,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   `ensure_descent!` tests `dot(rhs(cache), direction(cache)) > 0`. That works because `rhs` is
   ``-\nabla{}f`` on the (quasi-)Newton caches — but on the three first-order caches `rhs` is defined as
-  an *alias* for `direction` (`gradient_optimizer.jl:82`, `momentum_optimizer.jl:66`,
-  `adam_optimizer.jl:72`), so the test reads `dot(δ, δ) > 0` and is true for every `δ` that is neither
+  an *alias* for `direction` (`gradient_optimizer.jl:79`, `momentum_optimizer.jl:65`,
+  `adam_optimizer.jl:80`), so the test reads `dot(δ, δ) > 0` and is true for every `δ` that is neither
   zero nor `NaN`.
 
   Of the three, only `GradientCache` reaches it: `MomentumMethod` and `Adam` are `FirstOrderMethodWithState`
