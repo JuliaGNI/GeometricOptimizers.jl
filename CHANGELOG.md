@@ -31,7 +31,10 @@ breaking release).
   gradient descent in the metric (3.16) of Bendokat and Zimmermann, whose path does not depend on
   the section; the second agrees with it where the point is orthosymplectic and the section is
   `global_section`'s, and elsewhere changes with the section the optimizer has transported along
-  its path (K57). The line search, `BFGS` and `DFP` pair the derivative of the loss with respect to
+  its path (K57). The page on global tangent spaces shows why no inner product on the lift gives a
+  Riemannian metric through every section, so that `SectionDescent` is not a Riemannian method,
+  and that the retraction `λ exp(tB) E` is a retraction for (3.16) but not its geodesic;
+  `scripts/symplectic_metric_invariance.jl` checks both without the package. The line search, `BFGS` and `DFP` pair the derivative of the loss with respect to
   the stored entries of a lift, which `gradient_rep!` gives; with it the slope of a line search is
   the derivative of its merit on every manifold. `scripts/symplectic_gradient_options.jl` records
   the choice between these and two other options, and measures what this entry states. The
