@@ -349,7 +349,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `cond(S) = 1.7e3` on a `10 × 4` point. No positive-definite inner product on `ℬ` is invariant under
   the non-compact `Sp(2N − 2n)`, so this is a property of the option, not a defect of the code. On
   the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the section's
-  condition number grows from 1.35 to about 3.6 over a solve; long training runs are not measured.
+  condition number grows from 1.35 to about 3.6 over a solve. Over 10⁵ steps of `Adam` with a noisy
+  gradient it ends 1.0 to 1.6 times above a fresh `global_section`, and `GradientMethod` with the same
+  noise diverges, with a section condition number of 4e63 before the failure (issue #189).
   A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
   eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
   `MetricDescent`, the default, does not depend on the section.
