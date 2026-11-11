@@ -4,25 +4,29 @@ const SOLUTION_MAX_PRINT_LENGTH = 10
 @doc raw"""
     DEFAULT_STEP_CEILING
 
-How far along its direction a manifold solve may step, in multiples of ``2\pi``: the `c` of
-[`step_αmax`](@ref)`(c, δ)`, and so the `params.αmax` that [`solver_step!`](@ref) gives the line
-search through [`linesearch_parameters`](@ref). Set it per solve with
-`Optimizer(x, F; step_ceiling = …)`; `Inf` switches the ceiling off.
+How far along its direction a manifold solve may step, in multiples of the manifold's natural step scale
+(`2π` on [`StiefelManifold`](@ref) and [`GrassmannManifold`](@ref), `1` on
+[`SymplecticStiefelManifold`](@ref)): the `c` of [`step_αmax`](@ref)`(c, δ)`, and so the `params.αmax`
+that [`solver_step!`](@ref) gives the line search through [`linesearch_parameters`](@ref). Set it per
+solve with `Optimizer(x, F; step_ceiling = …)`; `Inf` switches the ceiling off.
 
 # Why the solver sets a ceiling
 
 A line search bounds its step by the merit: it stops when ``\varphi`` stops falling. On a compact
 manifold ``\varphi`` is bounded, so a step many turns too long can decrease the merit, and no test of
-the search rejects it. The retraction of such a lift leaves the manifold. The bound that exists is
-not a property of ``\varphi``: it is the ``2\pi`` of a rotation divided by ``\|\delta\|``, and it
-changes at every solver step. The `DEFAULT_LINESEARCH_αmax` of a line search method is a backstop
-for every problem, not this bound. The manual section
-[A bounded merit is not a bound on the step](@ref) gives the measurements on the SVD problem.
+the search rejects it. On [`SymplecticStiefelManifold`](@ref) a Hamiltonian lift can carry real
+eigenvalues up to ``\|\delta\|``, so [`Cayley`](@ref) has a real pole already at ``\alpha = 2/\|\delta\|``
+and [`Geodesic`](@ref) grows exponentially past ``1/\|\delta\|``. The bound that exists is not a property
+of ``\varphi``: it comes from the lift's geometry and changes at every solver step. The
+`DEFAULT_LINESEARCH_αmax` of a line search method is a backstop for every problem, not this bound. The
+manual section [A bounded merit is not a bound on the step](@ref) gives the measurements on the SVD
+problem.
 
 # Why `1`
 
-`1` says *"never step further along the direction than one full turn"*. That is the scale that the
-geometry gives, not a value tuned to one problem.
+`1` says *"at most one natural geometric unit along the direction"*: one full turn ``2\pi/\|\delta\|``
+on a compact orthogonal lift, and ``1/\|\delta\|`` — half the worst-case real `Cayley` pole — on a
+symplectic lift. That is the scale that the geometry supplies, not a value tuned to one problem.
 
 !!! info "This bounds the step, not the direction and not `α`"
     A short direction can take a large ``\alpha`` in an ordinary step, which a ceiling on ``\alpha``
@@ -37,7 +41,7 @@ geometry gives, not a value tuned to one problem.
 
 !!! info "One `α`, one ceiling per block"
     On a parameter set the same ``\alpha`` scales every block, so the ceiling is the *smallest* of the
-    per-block ceilings over the manifold blocks — [`_manifold_αmax`](@ref) — and not ``2\pi{}c`` over
+    per-block ceilings over the manifold blocks — [`_manifold_αmax`](@ref) — and not a single bound over
     the norm of the whole direction, which makes every block pay for its neighbours.
 """
 const DEFAULT_STEP_CEILING = 1.0

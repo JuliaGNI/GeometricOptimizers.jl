@@ -326,35 +326,27 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `StiefelLieAlgHorMatrix`, `GrassmannLieAlgHorMatrix` and `SymplecticLieAlgHorMatrix`; one method on
   the lift type would serve all three.
 
-### K56 · The step ceiling of a line search is a turn of a rotation, and the symplectic group has none
-
-- location: `src/optimizers/linesearch_problem.jl`, `step_αmax`
-- kind: found late
-- found: 2026-11-09
-- evidence: `step_αmax` caps the step at `c ⋅ 2π/‖δ‖` because a retraction of a Stiefel or
-  Grassmann lift is a rotation, which has nothing left to reach past one turn. A retraction of a
-  `SymplecticLieAlgHorMatrix` is a symplectic matrix, and the symplectic group is not compact, so
-  the reason does not carry over: the cap still bounds the step, but its scale is not one the
-  geometry supplies. The solves of `test/integration/symplectic_optimizer_tests.jl` converge under
-  it; no symplectic solve has been seen to stop at the ceiling.
-
-### K57 · Under `SectionDescent` the step on a `SymplecticStiefelManifold` depends on the transported section
+### K57 · Under `SectionDescent` — and under `Adam` with either descent — the step on a `SymplecticStiefelManifold` depends on the transported section
 
 - location: `src/global_sections/global_sections.jl`, `gradient_rep!` and `_section_sharp!`
 - kind: found late
 - found: 2026-11-10
 - evidence: `SectionDescent` takes the steepest descent of `½tr(XᵀY)` on the lifts at the section
-  the optimizer has transported along its path. A change of the section by `diag(I, S)`, `S`
-  symplectic, leaves the point where it is and changes the step: by a factor of 253 at
-  `cond(S) = 1.7e3` on a `10 × 4` point. No positive-definite inner product on `ℬ` is invariant under
-  the non-compact `Sp(2N − 2n)`, so this is a property of the option, not a defect of the code. On
-  the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the section's
-  condition number grows from 1.35 to about 3.6 over a solve. Over 10⁵ steps of `Adam` with a noisy
-  gradient it ends 1.0 to 1.6 times above a fresh `global_section`, and `GradientMethod` with the same
-  noise diverges, with a section condition number of 4e63 before the failure (issue #189).
-  A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
+  the optimizer has transported along its path. For `n < N`, a change of the section by
+  `diag(I, S)`, `S` symplectic, leaves the point where it is and changes the step: by a factor of
+  253 at `cond(S) = 1.7e3` on a `10 × 4` point. No positive-definite inner product on `ℬ` is
+  invariant under the non-compact `Sp(2N − 2n)`, so this is a property of the option, not a defect
+  of the code. On the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the
+  section's condition number grows from 1.35 to about 3.6 over a solve. Over 10⁵ steps of `Adam`
+  with a noisy gradient it ends 1.0 to 1.6 times above a fresh `global_section`, and
+  `GradientMethod` with the same noise diverges, with a section condition number of 4e63 before the
+  failure (issue #189; at a fixed step size `GradientMethod` can also diverge without noise from a
+  sufficiently ill-conditioned start, because the Riemannian gradient of `(3.16)` scales as
+  `O(‖U‖³)`). A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
   eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
-  `MetricDescent`, the default, does not depend on the section.
+  Under `MetricDescent`, the default, fixed-step `GradientMethod` and `MomentumMethod` do not
+  depend on the section in exact arithmetic, whereas `Adam`'s entrywise second moments on `ℬ`,
+  `step_αmax` and `rxₐ` still do.
 
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 
@@ -607,13 +599,13 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C1 · `f_converged_strong` is computed and thrown away
 
-- location: `src/optimizers/optimizer_status.jl:318`
+- location: `src/optimizers/optimizer_status.jl:322`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
 
-  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:318` and returns it at
-  `:324`; the `OptimizerStatus` constructor destructures it at `:122` and never stores it. Nothing else
+  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:322` and returns it at
+  `:328`; the `OptimizerStatus` constructor destructures it at `:123` and never stores it. Nothing else
   in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
   on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
   and `Options.f_stall_window` were meant to drive — both of which are also unread here.

@@ -15,7 +15,7 @@ using SimpleSolvers: LinesearchStatus, LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED,
                      LINESEARCH_NO_DESCENT,
                      LINESEARCH_DECREASED
 using GeometricOptimizers: isconverged
-using LinearAlgebra: norm, svd
+using LinearAlgebra: I, det, norm, svd
 using Test
 import Random
 
@@ -524,6 +524,44 @@ end
     @test step_αmax(c, T[NaN, 1]) == Inf            # a direction that has already gone wrong
     @test step_αmax(c, T[Inf, 1]) == Inf
     @test step_αmax(T(Inf), δ) == Inf               # the ceiling switched off
+end
+
+@testset "step_αmax on a SymplecticLieAlgHorMatrix is c/‖δ‖, inside the Cayley pole at 2/‖δ‖, $T" for T in REAL_ELTYPES
+    c = T(1.3)
+    δ_gen = rand(Random.Xoshiro(1234), SymplecticLieAlgHorMatrix{T}, 6, 4)
+    @test eltype(step_αmax(c, δ_gen)) == T
+    @test isapprox(step_αmax(c, δ_gen), c / l2norm(δ_gen); rtol = 8 * eps(T))
+    @test step_αmax(c, zeros(SymplecticLieAlgHorMatrix{T}, 6, 4)) == Inf
+    @test step_αmax(T(Inf), δ_gen) == Inf
+
+    # Sharp witness on `Sp(2, 4)` (`k = 1`): `A₁ = [1]`, `B₁ = C₁ = 𝕆`, `ℬ = 𝕆` has `l2norm(δ) == 1`
+    # and `Matrix(δ) = diag(1, -1, 0, 0)`, so `I - (α/2)δ` is singular at `α = 2 < 2π` (inside the
+    # compact `2π/‖δ‖` ceiling) and nonsingular at `step_αmax(1, δ) = 1`.
+    δ = SymplecticLieAlgHorMatrix(
+        reshape(T[1], 1, 1), SymmetricMatrix(zeros(T, 1), 1),
+        SymmetricMatrix(zeros(T, 1), 1), zeros(T, 2, 2), 4, 2)
+    @test l2norm(δ) == one(T)
+    @test det(I - (T(2) / 2) * Matrix(δ)) == zero(T)
+    α_ceil = step_αmax(one(T), δ)
+    @test α_ceil == one(T)
+    @test isapprox(det(I - (α_ceil / 2) * Matrix(δ)), T(3) / T(4); rtol = 8 * eps(T))
+    R = cayley(δ)
+    J̄ = T[0 1 0 0; -1 0 0 0; 0 0 0 1; 0 0 -1 0]
+    @test isapprox(R' * J̄ * R, J̄; rtol = 8 * eps(T))
+
+    # In a mixed container with equal unit-norm lifts, the symplectic block (`c`) binds ahead of the
+    # compact Stiefel block (`2πc`), and the Euclidean block contributes nothing.
+    rng = Random.Xoshiro(1234)
+    δ_st = rand(rng, StiefelLieAlgHorMatrix{T}, 4, 2)
+    δ_st = (one(T) / l2norm(δ_st)) * δ_st
+    sol = NetworkParameters((
+        U = SymplecticStiefelManifold(T[1 0; 0 0; 0 1; 0 0]),
+        Y = rand(rng, StiefelManifold{T}, 4, 2),
+        W = zeros(T, 3, 4)))
+    dirs = NetworkParameters((U = δ, Y = δ_st, W = T(1.0e3) .* ones(T, 3, 4)))
+    @test eltype(_manifold_αmax(sol, dirs, c)) == T
+    @test isapprox(_manifold_αmax(sol, dirs, c), c; rtol = 8 * eps(T))
+    @test _manifold_αmax(sol, dirs, c) < step_αmax(c, dirs.Y)
 end
 
 # `_manifold_αmax` is the block-wise half, and issue A15. One `α` is applied to every block of a

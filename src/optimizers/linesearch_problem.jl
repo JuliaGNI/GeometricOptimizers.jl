@@ -57,17 +57,26 @@ end
     step_αmax(c, δ)
 
 The ceiling on the line search's ``\alpha`` that a step ceiling of `c` imposes on the direction `δ`:
-``c\,2\pi/\|\delta\|``.
+``c\,2\pi/\|\delta\|`` for an orthogonal lift ([`StiefelLieAlgHorMatrix`](@ref) and
+[`GrassmannLieAlgHorMatrix`](@ref)) and ``c/\|\delta\|`` for a [`SymplecticLieAlgHorMatrix`](@ref).
 
-`c` is in multiples of ``2\pi`` because that is the scale the *geometry* supplies. Retracting a
-horizontal lift is a rotation, so ``\alpha\mapsto\mathrm{retract}(\alpha\bar{B})`` has nothing left to
-reach once ``\|\alpha\bar{B}\|`` passes ``2\pi`` — [`Cayley`](@ref) has converged to a fixed rotation
-by then and [`Geodesic`](@ref) is periodic. Everything past it is round-off, and on the SVD problem
-enough of it to leave the manifold; see [`DEFAULT_STEP_CEILING`](@ref).
+`c` is in multiples of the scale the *geometry* of the lift supplies:
 
-`δ` is one direction and not a `NamedTuple` of them: the ``2\pi`` is a property of *a* rotation, so a
-solution built of several blocks needs one ceiling per block and the smallest of them, which is
-[`_manifold_αmax`](@ref)'s job. See [`linesearch_parameters`](@ref).
+- Retracting an orthogonal horizontal lift is a rotation, so ``\alpha\mapsto\mathrm{retract}(\alpha\bar{B})``
+  has nothing left to reach once ``\|\alpha\bar{B}\|`` passes ``2\pi`` — [`Cayley`](@ref) has converged to
+  a fixed rotation by then and [`Geodesic`](@ref) is periodic. Everything past it is round-off, and on the
+  SVD problem enough of it to leave the manifold; see [`DEFAULT_STEP_CEILING`](@ref).
+- Retracting a [`SymplecticLieAlgHorMatrix`](@ref) acts in the non-compact group ``Sp(2N)``, where a
+  Hamiltonian lift ``B`` can carry real eigenvalues up to ``\rho(B) \leq \|B\|_F/\sqrt{2} \leq \|\delta\|``.
+  That bound is sharp (`A₁ = diag(1, 0, …, 0)` with all other blocks zero), so [`Cayley`](@ref) has a real
+  pole ``\det(\mathbb{I} - \frac{\alpha}{2}B) = 0`` already at ``\alpha = 2/\|\delta\| < 2\pi/\|\delta\|``,
+  and [`Geodesic`](@ref) stretches hyperbolic modes as ``\exp(\alpha\|\delta\|)``. Any ``c < 2`` keeps every
+  `Cayley` trial step inside the pole-free ball, and ``c = 1`` halves that worst-case pole radius while
+  bounding hyperbolic stretch per step by ``e``.
+
+`δ` is one direction and not a `NamedTuple` of them: a solution built of several blocks needs one ceiling
+per block and the smallest of them, which is [`_manifold_αmax`](@ref)'s job. See
+[`linesearch_parameters`](@ref).
 
 # Implementation
 
@@ -83,6 +92,11 @@ function step_αmax(c::T, δ) where {T}
     (isfinite(n) && n > zero(n)) ? c * T(2π) / T(n) : T(Inf)
 end
 
+function step_αmax(c::T, δ::SymplecticLieAlgHorMatrix) where {T}
+    n = l2norm(δ)
+    (isfinite(n) && n > zero(n)) ? c / T(n) : T(Inf)
+end
+
 @doc raw"""
     _manifold_αmax(solution, direction, c)
 
@@ -90,12 +104,12 @@ The ceiling a step ceiling of `c` imposes on a solution made of several blocks: 
 per-block [`step_αmax`](@ref) over the blocks that live on a [`Manifold`](@ref), and `Inf` where none
 does.
 
-One `\alpha` is applied to every block, so each manifold block needs ``\|\alpha\delta_i\| \leq 2\pi{}c``
-and the binding one is the largest ``\|\delta_i\|``. A block that is an ordinary array contributes
-nothing: the ``2\pi`` is the turn of a rotation and a vector space has no such scale, so it must
-neither impose a ceiling of its own nor inflate the norm that sets one for its neighbours. A ceiling
-of `step_αmax(c, direction(cache))` over the whole direction would do both: its `l2norm` combines the
-blocks in quadrature.
+One `\alpha` is applied to every block, so each manifold block imposes its own [`step_αmax`](@ref)`(c, δᵢ)`
+(`2πc / ‖δᵢ‖` on compact orthogonal lifts, `c / ‖δᵢ‖` on symplectic lifts) and the binding one is the
+smallest of them. A block that is an ordinary array contributes nothing: a vector space has no geometric
+step scale of its own, so it must neither impose a ceiling nor inflate the norm that sets one for its
+neighbours. A ceiling of `step_αmax(c, direction(cache))` over the whole direction would do both: its
+`l2norm` combines the blocks in quadrature.
 
 # Implementation
 

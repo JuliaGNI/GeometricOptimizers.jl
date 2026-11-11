@@ -78,9 +78,10 @@ end
 function OptimizerStatus(state::OST, cache::OCT, f::T;
         config::Options) where {T, OST <: OptimizerState{T}, OCT <: OptimizerCache{T}}
     rxₐ = l2norm(direction(cache))
-    # `solution_scale`, not `l2norm`: on a manifold the norm of the iterate is a constant the geometry
-    # supplies, and a measured norm that is not that constant means the iterate has left the manifold
-    # rather than that the problem has a large scale. See `solution_scale` and `convergence_measures`.
+    # `solution_scale`, not `l2norm`: on a compact manifold the norm of the iterate is a constant the
+    # geometry supplies, and a measured norm that is not that constant means the iterate has left the
+    # manifold rather than that the problem has a large scale (`SymplecticStiefelManifold` is non-compact
+    # and measures `l2norm(parent(U))`). See `solution_scale` and `convergence_measures`.
     rxᵣ = rxₐ / solution_scale(cache.x)
 
     # `solve!` has advanced `state` to `x` before it builds this, so `previous_value(state)` is the
@@ -132,22 +133,24 @@ The norm the *relative* change in the iterate is measured against, i.e. the deno
 ``\|x - x'\|/\|x'\|``.
 
 For an ordinary array this is the `l2norm` of the iterate, which is the only scale a Euclidean
-problem supplies. For a [`Manifold`](@ref) it is *not*: a point of ``St(N, n)`` or
+problem supplies. For a compact [`Manifold`](@ref) it is *not*: a point of ``St(N, n)`` or
 ``Gr(n, N)`` satisfies ``Y^TY = \mathbb{I}_n``, so ``\|Y\|_F = \sqrt{\mathrm{tr}(Y^TY)} = \sqrt{n}``
 exactly, and the scale is a constant the geometry supplies rather than something to be measured off
-the iterate.
+the iterate. [`SymplecticStiefelManifold`](@ref) is non-compact — ``\|U\|_F \geq \sqrt{2n}`` is
+unbounded on ``Sp(2n, 2N)`` — so it measures `l2norm(parent(U))` instead.
 
-That distinction is what keeps `x_converged` honest on a solve that has diverged; see
-[`convergence_measures`](@ref). While the iterate is on the manifold the two agree to round-off, so
-this changes no measurement of any converging solve — it changes what is reported once the iterate is
-somewhere ``\sqrt{n}`` no longer describes.
+That distinction is what keeps `x_converged` honest on a compact manifold solve that has diverged; see
+[`convergence_measures`](@ref). While a Stiefel or Grassmann iterate is on the manifold the two agree
+to round-off, so this changes no measurement of any converging solve — it changes what is reported once
+the iterate is somewhere ``\sqrt{n}`` no longer describes.
 
 A `NamedTuple` combines its blocks in quadrature, exactly as `l2norm` does, so a `NamedTuple` holding
-a manifold next to an ordinary array uses the nominal scale for the one and the measured scale for
-the other.
+a compact manifold next to an ordinary array or a symplectic leaf uses the nominal scale for the first
+and the measured scale for the others.
 """
 solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
+solution_scale(U::SymplecticStiefelManifold) = l2norm(parent(U))
 # A fold over the leaves, and not `map` + `sum` over one level: a container is a tree of layers, so the
 # scales to combine are at its *leaves*, at any depth. `_sumsq_leaves` is
 # `NeuralNetworkParameters.foldparameters`, which reaches a leaf at any depth and allocates nothing.
@@ -196,8 +199,8 @@ is linear in the number of children of a branch.
 
 `foldparameters` and not `foldstorage`, which is the pairing `_dot` wants and would be wrong here.
 `foldstorage` descends past a leaf into the numbers it stores, and
-[`solution_scale`](@ref)`(Y::Manifold)` is `√size(Y, 2)` — a *nominal* value that has nothing to do with
-those numbers.
+[`solution_scale`](@ref)`(Y::Manifold)` on a compact manifold is `√size(Y, 2)` — a *nominal* value that
+has nothing to do with those numbers.
 
 `false` and not `zero(T)` for the initial value: there is no `T` in scope, and `false` is the strong
 zero that takes its type from whatever it is added to, so a one-block set adds it to that block's value
@@ -285,12 +288,13 @@ Here `status` is an [`OptimizerStatus`](@ref) object and `config` is an [`Simple
     a diverging solve is the case where it is not: a large step from an iterate of magnitude
     ``10^{100}`` is a small *relative* change. Two guards, neither of which invents a tolerance:
 
-    - the denominator is [`solution_scale`](@ref) and not ``\|x'\|``. On a manifold the two are the
-      same number — ``\|Y\|_F = \sqrt{n}`` exactly — up to the point where the iterate leaves the
+    - the denominator is [`solution_scale`](@ref) and not ``\|x'\|``. On a compact manifold the two are
+      the same number — ``\|Y\|_F = \sqrt{n}`` exactly — up to the point where the iterate leaves the
       manifold, and there the constant is the true scale and the measured norm is the divergence.
     - `x_converged` also requires `!f_increased`. An iterate that has stopped moving is evidence of
-      convergence only if the objective did not just go up. This is the only guard of the
-      *Euclidean* case, because nothing there bounds ``\|x\|``.
+      convergence only if the objective did not just go up. This is the only guard on Euclidean
+      parameters and on [`SymplecticStiefelManifold`](@ref), where nothing bounds ``\|x\|`` on the
+      manifold itself.
 
     Not covered: a Euclidean solve that runs away *downhill*, where ``\|x\|`` grows without bound
     and `f` decreases at every step, has no scale to be measured against and is reported as

@@ -477,7 +477,9 @@ because the gradient of the optimizers is the Riemannian one; it is applied thro
 factor of ``U^TU`` and not through its inverse.
 
 With [`MetricDescent`](@ref) the tangent vector ``\lambda(Y)DE`` of the held gradient is `Δ` for every
-section, so the path of [`GradientMethod`](@ref) does not depend on the section. With
+section, so at a fixed step size the path of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
+does not depend on the section ([`Adam`](@ref)'s entrywise second moments and coordinate step ceilings
+still do). With
 [`SectionDescent`](@ref) it depends on it: where the point is orthosymplectic and the section is
 [`global_section`](@ref)'s, the inner product ``\frac{1}{2}\mathrm{tr}(X^TY)`` is the metric and the
 two descents agree; elsewhere they differ, and a change of the section that leaves the point where it

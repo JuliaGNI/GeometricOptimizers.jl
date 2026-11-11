@@ -45,10 +45,13 @@ end
         @test OptimizerState(method, U) isa OptimizerState{T}
     end
 
-    # This method refuses the point with a guard of its own, on the weight decay: the manifold is
-    # not compact, so the argument that makes the decay vanish on the Stiefel manifold does not hold.
-    @test_throws "does not know whether Euclidean weight decay acts" TrainingOptimizer(
-        U; algorithm = AdamWithEuclideanDecay())
+    # This method refuses the point — bare, at `λ = 0`, or after an ordinary leaf in a container —
+    # with an `ArgumentError` of its own: the manifold is not compact, so `rgrad(U, λU)` does not
+    # vanish away from orthosymplectic points, and a horizontal lift cannot apply `-λU` entrywise.
+    @test_throws ArgumentError TrainingOptimizer(U; algorithm = AdamWithEuclideanDecay())
+    @test_throws ArgumentError OptimizerCache(AdamWithEuclideanDecay(; λ = zero(T)), U)
+    @test_throws ArgumentError TrainingOptimizer(
+        NetworkParameters((b = ones(T, 3), U = U)); algorithm = AdamWithEuclideanDecay())
 
     # These take a `StiefelManifold` by their signature, so the call has no method.
     for method in (ScalarMomentAdam(), DirectMomentum(), DirectScalarMomentAdam(),

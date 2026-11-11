@@ -18,35 +18,43 @@ breaking release).
   parameter protocol (`rebuild`, `storage_gradient`, loading from a file) cover it. `GradientMethod`,
   `MomentumMethod`, `Adam`, `BFGS` and `DFP` under `Optimizer`, and the first three under
   `TrainingOptimizer` and in a `CompositeMethod`, take such a point and a parameter set with such a
-  leaf, where they raised an `ArgumentError` before. `AdamWithEuclideanDecay` still refuses it, and
-  the methods that take a `StiefelManifold` by their signature still have no method for it.
+  leaf, where they raised an `ArgumentError` before. `step_αmax(c, δ::SymplecticLieAlgHorMatrix)`
+  caps line-search trial steps at `c / l2norm(δ)` — half the worst-case real `Cayley` pole
+  `2 / l2norm(δ)`, since a Hamiltonian lift can carry real eigenvalues up to `l2norm(δ)` — and
+  `solution_scale(U::SymplecticStiefelManifold)` measures `l2norm(parent(U))` on the non-compact
+  manifold rather than the compact `√(2n)`. `AdamWithEuclideanDecay` refuses a
+  `SymplecticStiefelManifold` leaf (bare or inside a `NetworkParameters`) with an `ArgumentError`,
+  and the methods that take a `StiefelManifold` by their signature still have no method for it.
   `Geodesic(ProjectedSkew())` refuses a symplectic lift, which is Hamiltonian and not skew. The
   products and sums of the lift and of its adjoint run on a device, against a plain array and
-  against every other owned type; `scripts/device_products.jl` sweeps both. Closes A23 and A28.
+  against every other owned type; `scripts/device_products.jl` sweeps both. Closes A23, A28 and K56.
 - **`GradientMethod`, `MomentumMethod` and `Adam` take a keyword `descent`.** With
   `MetricDescent()`, the default, the gradient they hold is `global_rep` of the Riemannian gradient
   of the manifold's metric; with `SectionDescent()` it is the steepest descent of `½tr(XᵀY)` on the
   lifts at the current section. The two are the same on a vector space, a `StiefelManifold` and a
   `GrassmannManifold`, so no existing call changes. On a `SymplecticStiefelManifold` the first is
-  gradient descent in the metric (3.16) of Bendokat and Zimmermann, whose path does not depend on
-  the section; the second agrees with it where the point is orthosymplectic and the section is
-  `global_section`'s, and elsewhere changes with the section the optimizer has transported along
-  its path (K57). The page on global tangent spaces shows why no inner product on the lift gives a
-  Riemannian metric through every section, so that `SectionDescent` is not a Riemannian method,
-  and that the retraction `λ exp(tB) E` is a retraction for (3.16) but not its geodesic. It is the
-  geodesic of the canonical connection of the second kind, whose parallel transport is the fixed
-  cache; the geodesic (3.18) would need a section-dependent retraction and a transport that
-  recomputes the cache in every step. The same page restricts the conjugation `Z ↦ λ⁻¹Zλ` to
-  bi-invariant metrics, proves that `Sp(2N)` has none, and states the isomorphism that holds without
-  one (conjugate, then remove the vertical part), which is what `global_rep` computes;
-  `scripts/symplectic_metric_invariance.jl` checks both without the package. The line search, `BFGS`
-  and `DFP` pair the derivative of the loss with respect to the stored entries of a lift, which
-  `gradient_rep!` gives; with it the slope of a line search is the derivative of its merit on every
-  manifold. `scripts/symplectic_gradient_options.jl` records the choice between these and two other
-  options, and measures what this entry states. The gradient stop and `rg` of `OptimizerStatus` read
-  the Riemannian norm of the gradient at the iterate, `latest_gradient_norm`, which is the same for
-  every method; on a vector, a `StiefelManifold` and a `GrassmannManifold` it is the norm `rg`
-  reported before.
+  gradient descent in the metric (3.16) of Bendokat and Zimmermann, whose fixed-step path under
+  `GradientMethod` and `MomentumMethod` does not depend on the section (`Adam`'s entrywise second
+  moments on `ℬ`, `step_αmax` and `rxₐ` still do); the second agrees with it where the point is
+  orthosymplectic and the section is `global_section`'s, and elsewhere changes with the section the
+  optimizer has transported along its path (K57). The page on global tangent spaces shows why for
+  `n < N` no inner product on the lift gives a Riemannian metric through every section, so that
+  `SectionDescent` is not a Riemannian method, and that the retraction `λ exp(tB) E` is a retraction
+  for (3.16) but not its geodesic. It is the geodesic of Nomizu's canonical connection of the second
+  kind `∇⁽⁰⁾` (and of the first-kind `∇⁽¹/²⁾`), and `∇⁽⁰⁾`'s parallel transport is the fixed cache;
+  transporting cached directions along the geodesic (3.18) of (3.16) cannot keep a lift fixed and has
+  to recompute the cache in every step. The same page states when the projection
+  `Z ↦ pr(λ⁻¹Zλ)` reduces to conjugation (a bi-invariant metric with metric-orthogonal horizontal
+  complements), proves that `Sp(2N)` has no bi-invariant Riemannian metric, and states the
+  isomorphism that holds without one (conjugate, then remove the vertical part), which is what
+  `global_rep` computes; `scripts/symplectic_metric_invariance.jl` checks both without the package.
+  The line search, `BFGS` and `DFP` pair the derivative of the loss with respect to the stored
+  entries of a lift, which `gradient_rep!` gives; with it the slope of a line search is the
+  derivative of its merit on every manifold. `scripts/symplectic_gradient_options.jl` records the
+  choice between these and two other options, and measures what this entry states. The gradient stop
+  and `rg` of `OptimizerStatus` read the Riemannian norm of the gradient at the iterate,
+  `latest_gradient_norm`, which is the same for every method; on a vector, a `StiefelManifold` and a
+  `GrassmannManifold` it is the norm `rg` reported before.
 
 ### Changed
 
