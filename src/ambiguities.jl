@@ -109,10 +109,21 @@ _rmul(B::AbstractMatrix, A::SkewAdjoint) = -(B * parent(A))
 _lmul_into!(C, A::SkewAdjoint, B) = (mul!(C, parent(A), B); C .= .-C)
 _rmul_into!(C, B, A::SkewAdjoint) = (mul!(C, B, parent(A)); C .= .-C)
 
-# `BᵀC` is the lift's transposed product, and `CBᵀ = (BCᵀ)ᵀ` its plain one.
-_lmul(A::SymplecticAdjoint, C::AbstractMatrix) = _transpose_lmul(parent(A), C)
-_lmul(A::SymplecticAdjoint, c::AbstractVector) = vec(_lmul(A, reshape(c, length(c), 1)))
-_lmul_into!(D, A::SymplecticAdjoint, C) = _transpose_lmul_into!(D, parent(A), C)
+# `BᵀC` is the lift's transposed product, and `CBᵀ = (BCᵀ)ᵀ` its plain one. The left kernels take
+# one element type, as the lift's own do; any other pair reaches the untyped fallbacks above. The
+# right ones need no bound, because they hand the pair to the lift's own methods.
+function _lmul(A::Adjoint{T, <:SymplecticLieAlgHorMatrix{T}},
+        C::AbstractMatrix{T}) where {T <: Real}
+    _transpose_lmul(parent(A), C)
+end
+function _lmul(A::Adjoint{T, <:SymplecticLieAlgHorMatrix{T}},
+        c::AbstractVector{T}) where {T <: Real}
+    vec(_lmul(A, reshape(c, length(c), 1)))
+end
+function _lmul_into!(D::AbstractMatrix{T}, A::Adjoint{T, <:SymplecticLieAlgHorMatrix{T}},
+        C::AbstractMatrix{T}) where {T <: Real}
+    _transpose_lmul_into!(D, parent(A), C)
+end
 _rmul(C::AbstractMatrix, A::SymplecticAdjoint) = permutedims(parent(A) * permutedims(C))
 function _rmul(
         x::Union{Adjoint{<:Any, <:AbstractVector}, Transpose{<:Any, <:AbstractVector}},
