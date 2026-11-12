@@ -15,9 +15,10 @@
 #   (v)   the lift is in sp for 𝕁̄ (4e-15), its blocks are -ℬ⁺ and 𝕆 exactly, λXE = Δ (5e-16), and
 #         Δ ↦ X has rank 34 = 4Nn - n(2n - 1)
 #   (vi)  the package's global_rep is the lift (3e-17), its flat gradient_rep! the derivative with
-#         respect to the stored entries (2e-16), SectionDescent the Gram solution of ½tr(XᵀY)
-#         (2e-16), MetricDescent the Riesz representative in metric (3.16) (9e-17); the control,
-#         SectionDescent in metric (3.16), is off by 0.25
+#         respect to the stored entries (2e-16), MetricDescent the Riesz representative in metric
+#         (3.16) (9e-17), and _metric_apply! the Gram matrix of metric (3.16) in the stored entries
+#         (2e-16), whose inverse BFGS and DFP start from; the control, the Riesz representative in ½tr(XᵀY)
+#         of the dense lifts, is off by 0.25 in metric (3.16)
 using LinearAlgebra, Random
 using LinearAlgebra: rank
 
@@ -172,12 +173,14 @@ end
 
 # (vi) The package against the parts above, at a conditioned point and the package's own section:
 #      `global_rep` is the lift above; the flat gradient `gradient_rep!` is the derivative of
-#      `B ↦ ⟨∇L, λBE⟩` with respect to each stored entry of `B`; `SectionDescent` is the Riesz
-#      representative of that derivative in `½tr(XᵀY)` of the dense lifts, the solution of its Gram
-#      system; `MetricDescent` is `global_rep` of `rgrad`, whose tangent vector is the Riesz
-#      representative of `∇L` in metric (3.16).
+#      `B ↦ ⟨∇L, λBE⟩` with respect to each stored entry of `B`; `MetricDescent` is `global_rep` of
+#      `rgrad`, whose tangent vector is the Riesz representative of `∇L` in metric (3.16);
+#      `_metric_apply!` is the Gram matrix `g(λBᵢE, λBⱼE)` of metric (3.16) in the stored entries,
+#      whose inverse `BFGS` and `DFP` start from. The control is the Riesz representative of the
+#      derivative in `½tr(XᵀY)` of the dense lifts, the solution of that inner product's Gram system,
+#      which is not the Riemannian gradient.
 using GeometricOptimizers
-using GeometricOptimizers: gradient_rep!, StiefelProjection
+using GeometricOptimizers: gradient_rep!, StiefelProjection, _metric_apply!
 
 storage(D) = vcat(vec(D.A₁), parent(D.B₁), parent(D.C₁), vec(D.B))
 
@@ -202,18 +205,20 @@ let U = SymplecticStiefelManifold(point(rng, N2, n2; spread = 1.0))
 
     G = [tr(B₁' * B₂) / 2 for B₁ in Bs, B₂ in Bs]
     section_ref = G \ flat_ref
-    section = storage(gradient_rep!(global_rep(λU, Δ), λU, Δ,
-        GradientMethod(; descent = SectionDescent())))
-    println("(vi) SectionDescent: ‖package - Gram solution‖/‖Gram solution‖ = ",
-        norm(section - section_ref) / norm(section_ref))
+
+    lifts = [SymplecticLieAlgHorMatrix(Float64.(1:stored .== i), N2, n2) for i in 1:stored]
+    M_ref = [metric(U, λ * B₁ * E, λ * B₂ * E) for B₁ in Bs, B₂ in Bs]
+    M = reduce(hcat, [storage(_metric_apply!(global_rep(λU, Δ), λU, B)) for B in lifts])
+    println("(vi) _metric_apply!: ‖package - Gram matrix of (3.16)‖/‖Gram matrix‖ = ",
+        norm(M - M_ref) / norm(M_ref))
 
     Dm = gradient_rep!(global_rep(λU, Δ), λU, Δ, GradientMethod())
     W = tangent_vector(rng, U.A, λ[:, (n2 + 1):end])
     println("(vi) MetricDescent: |g(λDE, W) - ⟨∇L, W⟩|/(‖∇L‖‖W‖) = ",
         abs(metric(U, λ * (Dm * StiefelProjection(Float64, N2, n2)), W) - sum(∇L .* W)) /
         (norm(∇L) * norm(W)))
-    Ds = SymplecticLieAlgHorMatrix(section, N2, n2)
-    println("(vi) control, SectionDescent: |g(λDE, W) - ⟨∇L, W⟩|/(‖∇L‖‖W‖) = ",
+    Ds = SymplecticLieAlgHorMatrix(section_ref, N2, n2)
+    println("(vi) control, Riesz representative in ½tr(XᵀY): |g(λDE, W) - ⟨∇L, W⟩|/(‖∇L‖‖W‖) = ",
         abs(metric(U, λ * (Ds * StiefelProjection(Float64, N2, n2)), W) - sum(∇L .* W)) /
         (norm(∇L) * norm(W)))
 end

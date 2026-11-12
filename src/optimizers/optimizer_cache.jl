@@ -126,7 +126,6 @@ function gradient_rep!(D, λY, Δ, method::Union{GradientMethod, MomentumMethod,
 end
 
 _descent_rep!(D, λY, Δ, ::MetricDescent) = global_rep!(D, λY, Δ)
-_descent_rep!(D, λY, Δ, ::SectionDescent) = _section_sharp!(gradient_rep!(D, λY, Δ))
 
 @doc raw"""
     latest_gradient_is_current(cache, state, x)

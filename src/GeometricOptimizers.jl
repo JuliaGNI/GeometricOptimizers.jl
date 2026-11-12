@@ -236,7 +236,7 @@ include("optimizers/optimizer.jl")
 include("optimizers/named_tuple_wrapper.jl")
 
 export GradientMethod, GradientState
-export MetricDescent, SectionDescent
+export MetricDescent
 export MomentumMethod, MomentumState
 export Adam, AdamState, ScalarMomentAdam, ScalarMomentAdamState
 # `AdamWithEuclideanDecay` shares `Adam`'s cache and state, so there is no state to export

@@ -321,12 +321,7 @@ end
     @test D.v.w == reference.v.w
     @test D.v.b == reference.v.b
 
-    # the descent of a first-order method acts on the symplectic leaf alone
-    method = GradientMethod(; descent = SectionDescent())
-    @test gradient_rep!(D, λ, gx, method) === D
-    @test D.u == gradient_rep!(similar(reference.u), λ.u, gx.u, method)
-    @test D.v.w == reference.v.w
-    @test D.v.b == reference.v.b
+    # the descent of a first-order method is `global_rep` on every leaf
     @test gradient_rep!(D, λ, gx, GradientMethod()) == reference
 end
 
@@ -338,20 +333,18 @@ end
 #   three-argument form.
 # - `MetricDescent` holds the lift whose tangent vector `λ(U)DE` is the Riesz representative of `∇L`
 #   in metric (3.16), `g_U(λ(U)DE, V) = ⟨∇L, V⟩` for every tangent `V`. It is `Δ` for every section.
-# - `SectionDescent` holds the lift whose pairing `½tr(DᵀB)` of the dense lifts with every lift `B`
-#   is `⟨∇L, λ(U)BE⟩`. It is not the Riesz representative, and a change of the section by
-#   `diag(I, S)`, which leaves the point where it is, changes its tangent vector: the two controls.
+# - The derivative with respect to the stored entries, read as a lift, is not the Riesz
+#   representative, and a change of the section by `diag(I, S)`, which leaves the point where it is,
+#   changes its tangent vector: the two controls.
 #
 # The pairings are measured against `‖∇L‖‖V‖`, because a pairing of two random matrices can cancel.
 # The section change is `S = exp(𝕁H)`, `H` symmetric, which is symplectic; the round-off of a
 # section-independent tangent vector grows with `cond(S)`, measured at most `0.3eps(T)cond(S)`
-# in both precisions over 20 draws, and `SectionDescent` changes by at least 1.6 times its norm.
+# in both precisions over 20 draws.
 @testset "the gradient of each descent on a SymplecticStiefelManifold{$T}" for T in REAL_ELTYPES
     rng = Random.Xoshiro(12)
     E = StiefelProjection(T, 10, 4)
     metric_methods = (GradientMethod(), MomentumMethod(), Adam())
-    section_methods = (GradientMethod(; descent = SectionDescent()),
-        MomentumMethod(; descent = SectionDescent()), Adam(; descent = SectionDescent()))
     for _ in 1:10
         U = conditioned_point(rng, T, 10, 4)
         λU = GlobalSection(U)
@@ -373,15 +366,8 @@ end
                 atol = 64eps(T) * scale)
         end
 
-        B = rand(rng, SymplecticLieAlgHorMatrix{T}, 10, 4)
-        BE = Matrix(λU) * (B * E)
-        for method in section_methods
-            D = gradient_rep!(lift(), λU, Δ, method)
-            @test isapprox(sum(Matrix(D) .* Matrix(B)) / 2, sum(∇L .* BE);
-                atol = 64eps(T) * norm(∇L) * norm(BE))
-            @test !isapprox(metric(U, Matrix(λU) * (D * E), V), sum(∇L .* V);
-                atol = sqrt(eps(T)) * scale)
-        end
+        @test !isapprox(metric(U, Matrix(λU) * (flat * E), V), sum(∇L .* V);
+            atol = sqrt(eps(T)) * scale)
 
         λ₂ = GlobalSection(U)
         S = exp(poisson(T, 6) * T.(Symmetric(randn(rng, 6, 6))))
@@ -390,20 +376,6 @@ end
         Δ₁ = tangent(λU, GradientMethod())
         @test isapprox(tangent(λ₂, GradientMethod()), Δ₁; rtol = 8eps(T) * cond(S))
         @test isapprox(Δ₁, Δ; rtol = 64eps(T))
-        method = GradientMethod(; descent = SectionDescent())
-        @test !isapprox(tangent(λ₂, method), tangent(λU, method); rtol = T(0.1))
-    end
-end
-
-# Where the point is orthosymplectic and the section is `global_section`'s, `½tr(XᵀY)` is metric
-# (3.16) on the lifts, and the two descents hold the same gradient: measured at most `4.7eps(T)`.
-@testset "SectionDescent is MetricDescent at an orthosymplectic point, $T" for T in REAL_ELTYPES
-    rng = Random.Xoshiro(13)
-    for _ in 1:10
-        U = orthosymplectic_point(rng, T, 10, 4)
-        λU = GlobalSection(U)
-        Δ = rgrad(U, randn(rng, T, 10, 4))
-        D = gradient_rep!(global_rep(λU, Δ), λU, Δ, Adam(; descent = SectionDescent()))
-        @test isapprox(Matrix(D), Matrix(global_rep(λU, Δ)); rtol = 64eps(T))
+        @test !isapprox(tangent(λ₂, BFGS()), tangent(λU, BFGS()); rtol = T(0.1))
     end
 end

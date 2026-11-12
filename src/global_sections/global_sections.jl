@@ -448,10 +448,8 @@ hold: their secant pairs and their ``Q`` live in the same coordinates.
 
 The four-argument form writes the gradient that `method` holds. For [`BFGS`](@ref), [`DFP`](@ref)
 and every method without a `descent` it is the lift above. For [`GradientMethod`](@ref),
-[`MomentumMethod`](@ref) and [`Adam`](@ref) it is the gradient of their `descent`:
-[`global_rep`](@ref) of `Δ` for [`MetricDescent`](@ref), and for [`SectionDescent`](@ref) the
-lift above with the [`SymmetricMatrix`](@ref) blocks of a symplectic lift rescaled to the inner
-product ``\frac{1}{2}\mathrm{tr}(X^TY)`` of the dense lifts.
+[`MomentumMethod`](@ref) and [`Adam`](@ref) it is the gradient of their `descent`,
+[`global_rep`](@ref) of `Δ` for [`MetricDescent`](@ref).
 
 # The symplectic Stiefel manifold
 
@@ -479,11 +477,9 @@ factor of ``U^TU`` and not through its inverse.
 With [`MetricDescent`](@ref) the tangent vector ``\lambda(Y)DE`` of the held gradient is `Δ` for every
 section, so at a fixed step size the path of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
 does not depend on the section ([`Adam`](@ref)'s entrywise second moments and coordinate step ceilings
-still do). With
-[`SectionDescent`](@ref) it depends on it: where the point is orthosymplectic and the section is
-[`global_section`](@ref)'s, the inner product ``\frac{1}{2}\mathrm{tr}(X^TY)`` is the metric and the
-two descents agree; elsewhere they differ, and a change of the section that leaves the point where it
-is changes the step. `scripts/symplectic_gradient_options.jl` measures both statements.
+still do). [`BFGS`](@ref) and [`DFP`](@ref) start from this direction; see
+[`GeometricOptimizers._metric_inverse!`](@ref). `scripts/symplectic_gradient_options.jl` measures
+these statements.
 """
 gradient_rep!(D, λY::GlobalSection, Δ) = global_rep!(D, λY, Δ)
 
@@ -555,32 +551,6 @@ function _section_tangent(λY::GlobalSection{T, <:SymplecticStiefelManifold},
         B::SymplecticLieAlgHorMatrix{T}) where {T}
     𝒜 = vcat(hcat(B.A₁, Matrix(B.B₁)), hcat(Matrix(B.C₁), -transpose(B.A₁)))
     λY.Y.A * 𝒜 + λY.λ * B.B
-end
-
-# The derivative with respect to the stored entries, `gradient_rep!`, turned into the representative
-# in the inner product `½tr(XᵀY)` of the dense lifts. That inner product weighs every stored entry of a
-# symplectic lift by one except the diagonals of the two `SymmetricMatrix` blocks, which it weighs by
-# one half, so those are doubled. On every other lift `_dot` is that inner product already.
-_section_sharp!(D) = D
-
-function _section_sharp!(D::Union{NamedTuple, NetworkParameters})
-    foreachparameters(_section_sharp!, D)
-    D
-end
-
-function _section_sharp!(D::SymplecticLieAlgHorMatrix)
-    backend = KernelAbstractions.get_backend(D)
-    k = D.n ÷ 2
-    double_packed_diagonal_kernel!(backend)(D.B₁.S; ndrange = k)
-    double_packed_diagonal_kernel!(backend)(D.C₁.S; ndrange = k)
-    D
-end
-
-# the diagonal entry `(i, i)` of the packed storage of a `SymmetricMatrix` is at `i(i + 1)/2`
-@kernel function double_packed_diagonal_kernel!(S::AbstractVector{T}) where {T}
-    i = @index(Global)
-    j = i * (i + 1) ÷ 2
-    S[j] += S[j]
 end
 
 @doc raw"""

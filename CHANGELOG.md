@@ -28,18 +28,17 @@ breaking release).
   `Geodesic(ProjectedSkew())` refuses a symplectic lift, which is Hamiltonian and not skew. The
   products and sums of the lift and of its adjoint run on a device, against a plain array and
   against every other owned type; `scripts/device_products.jl` sweeps both. Closes A23, A28 and K56.
-- **`GradientMethod`, `MomentumMethod` and `Adam` take a keyword `descent`.** With
-  `MetricDescent()`, the default, the gradient they hold is `global_rep` of the Riemannian gradient
-  of the manifold's metric; with `SectionDescent()` it is the steepest descent of `½tr(XᵀY)` on the
-  lifts at the current section. The two are the same on a vector space, a `StiefelManifold` and a
-  `GrassmannManifold`, so no existing call changes. On a `SymplecticStiefelManifold` the first is
-  gradient descent in the metric (3.16) of Bendokat and Zimmermann, whose fixed-step path under
+- **`GradientMethod`, `MomentumMethod` and `Adam` take a keyword `descent`.** Its one value,
+  `MetricDescent()`, makes the gradient they hold `global_rep` of the Riemannian gradient of the
+  manifold's metric, which is what they held before on a vector space, a `StiefelManifold` and a
+  `GrassmannManifold`, so no existing call changes. On a `SymplecticStiefelManifold` it is gradient
+  descent in the metric (3.16) of Bendokat and Zimmermann, whose fixed-step path under
   `GradientMethod` and `MomentumMethod` does not depend on the section (`Adam`'s entrywise second
-  moments on `ℬ`, `step_αmax` and `rxₐ` still do); the second agrees with it where the point is
-  orthosymplectic and the section is `global_section`'s, and elsewhere changes with the section the
-  optimizer has transported along its path (K57). The page on global tangent spaces shows why for
-  `n < N` no inner product on the lift gives a Riemannian metric through every section, so that
-  `SectionDescent` is not a Riemannian method, and that the retraction `λ exp(tB) E` is a retraction
+  moments on `ℬ`, `step_αmax` and `rxₐ` still do, K57). The steepest descent of `½tr(XᵀY)` on the
+  lifts at the current section is not offered: for `n < N` it is not a Riemannian method and its
+  step changes with the section the optimizer has transported along its path. The page on global
+  tangent spaces shows why for `n < N` no inner product on the lift gives a Riemannian metric
+  through every section, and that the retraction `λ exp(tB) E` is a retraction
   for (3.16) but not its geodesic. It is the geodesic of Nomizu's canonical connection of the second
   kind `∇⁽⁰⁾` (and of the first-kind `∇⁽¹/²⁾`), and `∇⁽⁰⁾`'s parallel transport is the fixed cache;
   transporting cached directions along the geodesic (3.18) of (3.16) cannot keep a lift fixed and has

@@ -106,39 +106,21 @@ The steepest descent of a first-order method with respect to the metric of the m
 gradient the method holds is [`global_rep`](@ref) of the Riemannian gradient [`rgrad`](@ref), whose
 tangent vector ``\lambda(Y)BE`` is the same whatever section ``\lambda(Y)`` is used.
 
-This is the default of [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and [`Adam`](@ref). On a
-vector space, a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref) it is the same as
-[`SectionDescent`](@ref). On a [`SymplecticStiefelManifold`](@ref) it is the descent of the metric
+This is the descent of [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and [`Adam`](@ref), and
+the direction [`BFGS`](@ref) and [`DFP`](@ref) start from. On a [`SymplecticStiefelManifold`](@ref)
+it is the descent of the metric
 [`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref), and the path of
 [`GradientMethod`](@ref) does not depend on the section; see
 [`GeometricOptimizers.gradient_rep!`](@ref).
 """
 struct MetricDescent end
 
-@doc raw"""
-    SectionDescent()
-
-The steepest descent of a first-order method with respect to an inner product on the coordinates of
-the horizontal lift at the current section ``\lambda(Y)``: the gradient the method holds is the
-representative of the derivative of the loss in that inner product.
-
-On a vector space, a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref) it is the same as
-[`MetricDescent`](@ref), because the section is orthogonal there. On a
-[`SymplecticStiefelManifold`](@ref) the inner product is ``\frac{1}{2}\mathrm{tr}(X^TY)`` of the dense
-lifts, which is the metric of the manifold where the point is orthosymplectic and the section is
-[`global_section`](@ref)'s. Elsewhere it is not a metric of the manifold: the optimizers transport
-the section along the path, and a change of the section that leaves the point where it is changes
-the step. See [`GeometricOptimizers.gradient_rep!`](@ref).
-"""
-struct SectionDescent end
-
-const Descent = Union{MetricDescent, SectionDescent}
+const Descent = MetricDescent
 
 @doc raw"""
     GradientMethod(; descent = MetricDescent())
 
-The gradient descent algorithm. `descent` is [`MetricDescent`](@ref) or
-[`SectionDescent`](@ref); the two differ only on a [`SymplecticStiefelManifold`](@ref).
+The gradient descent algorithm. `descent` is [`MetricDescent`](@ref), the one descent.
 """
 struct GradientMethod{D <: Descent} <: OptimizerMethod
     descent::D
@@ -150,7 +132,7 @@ GradientMethod(; descent = MetricDescent()) = GradientMethod(descent)
     MomentumMethod(; α, descent = MetricDescent())
 
 The gradient descent algorithm with momentum, i.e. the *heavy ball* method. `descent` is
-[`MetricDescent`](@ref) or [`SectionDescent`](@ref), as for [`GradientMethod`](@ref).
+[`MetricDescent`](@ref), as for [`GradientMethod`](@ref).
 
 Stores the *momentum coefficient* `α`. The momentum is accumulated as
 ```math
@@ -184,8 +166,8 @@ end
 
 The Adam optimizer, with the defaults of the experiments in [Brantner:2023](@cite).
 [kingma2014adam](@cite) and [goodfellow2016deep; Algorithm 8.7](@cite) suggest ``\beta_2 = 0.999``.
-`descent` is [`MetricDescent`](@ref) or [`SectionDescent`](@ref), as for [`GradientMethod`](@ref):
-it selects the gradient ``\nabla{}L`` the moments below are taken of.
+`descent` is [`MetricDescent`](@ref), as for [`GradientMethod`](@ref): the moments below are taken
+of the gradient ``\nabla{}L`` it selects.
 
 The cache consists of a first and a second moment, stored in *bias-corrected* form, i.e.
 updated in the ``t``-th iteration (counted from ``t = 1``) as

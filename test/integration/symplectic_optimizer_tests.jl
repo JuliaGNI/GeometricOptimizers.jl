@@ -33,8 +33,6 @@ function recording_objective(U, M, checks)
     V -> (V === U && push!(checks, check(V)); tr(V' * M * V))
 end
 
-const DESCENTS = (MetricDescent(), SectionDescent())
-
 function williamson_minimum(M, n2)
     d = sort(abs.(imag.(eigvals(poisson(T, size(M, 1)) * M))))[1:2:end]
     2 * sum(d[1:(n2 ÷ 2)])
@@ -120,7 +118,7 @@ end
 
 # The two methods with a line search find the minimum, and every iterate stays on the manifold.
 @testset "$(nameof(typeof(algorithm))) finds the symplectic eigenvalues, $(nameof(typeof(R)))" for algorithm in (
-        GradientMethod(), GradientMethod(; descent = SectionDescent()), BFGS()),
+        GradientMethod(), BFGS()),
     R in (Geodesic(), Cayley())
 
     U = start()
@@ -139,11 +137,10 @@ end
 
 # The gradient stop reads `rg`, the Riemannian norm `√g(Δ, Δ)` of the gradient at the iterate, which
 # is the same for every method. The control is the norm of the array each method holds: the flat
-# lift of BFGS and DFP, `global_rep` of `MetricDescent` and the representative of `SectionDescent`
-# have different norms on this manifold, and `MetricDescent`'s differs from `rg` by orders of magnitude.
+# lift of BFGS and DFP and `global_rep` of `MetricDescent` have different norms on this manifold,
+# and `MetricDescent`'s differs from `rg` by orders of magnitude.
 @testset "rg is the Riemannian norm of the gradient, $(nameof(typeof(algorithm))), $(nameof(typeof(R)))" for algorithm in (
-        GradientMethod(), GradientMethod(; descent = SectionDescent()), MomentumMethod(),
-        Adam(), BFGS(), DFP()),
+        GradientMethod(), MomentumMethod(), Adam(), BFGS(), DFP()),
     R in (Geodesic(), Cayley())
 
     U = start()
@@ -161,8 +158,7 @@ end
 
 # A fixed step only crawls, so these are asked to decrease the objective and stay on the manifold.
 @testset "$(nameof(typeof(algorithm))) at a fixed step decreases the objective, $(nameof(typeof(R)))" for algorithm in (
-        Adam(), MomentumMethod(), Adam(; descent = SectionDescent()),
-        MomentumMethod(; descent = SectionDescent())),
+        Adam(), MomentumMethod()),
     R in (Geodesic(), Cayley())
 
     U = start()
@@ -179,13 +175,9 @@ end
 # `Float32`, over nine seeded starts with `κ ≤ 4`. The bound on `check` is the one the tests of
 # `test/manifolds/symplectic_stiefel_manifold.jl` give a point, `8eps(T)κ²` for the `κ` of the start,
 # on the median over the starts of the largest `check` over the iterates of a solve. Measured
-# medians, Julia 1.13, `MetricDescent` and `SectionDescent`: 16eps(T) and 7eps(T) for
-# `GradientMethod`, 28eps(T) and 34eps(T) for `Adam`; the largest single value 65eps(T).
+# medians, Julia 1.13: 16eps(T) for `GradientMethod` and 28eps(T) for `Adam`.
 # `GradientMethod` converges to the `Float64` minimum to `1e-5` relative on every start.
-@testset "$(nameof(typeof(algorithm))) on a Float32 point, $(nameof(typeof(descent)))" for algorithm in (
-        GradientMethod, Adam),
-    descent in DESCENTS
-
+@testset "$(nameof(algorithm)) on a Float32 point" for algorithm in (GradientMethod, Adam)
     S = Float32
     M₃₂ = S.(M)
     bounds, maxima, decreases, errors = S[], S[], Bool[], S[]
@@ -194,7 +186,7 @@ end
         κ = cond(U.A)
         f₀ = tr(U' * M₃₂ * U)
         checks = S[]
-        method = algorithm(; descent = descent)
+        method = algorithm()
         linesearch, iterations = algorithm === GradientMethod ? (Backtracking(S), 2000) :
                                  (Static(S(1e-3)), 500)
         opt = Optimizer(U, recording_objective(U, M₃₂, checks); algorithm = method,

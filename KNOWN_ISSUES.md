@@ -326,17 +326,18 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `StiefelLieAlgHorMatrix`, `GrassmannLieAlgHorMatrix` and `SymplecticLieAlgHorMatrix`; one method on
   the lift type would serve all three.
 
-### K57 · Under `SectionDescent` — and under `Adam` with either descent — the step on a `SymplecticStiefelManifold` depends on the transported section
+### K57 · Under `Adam`, and in the secant pairs of `BFGS` and `DFP`, the step on a `SymplecticStiefelManifold` depends on the transported section
 
-- location: `src/global_sections/global_sections.jl`, `gradient_rep!` and `_section_sharp!`
+- location: `src/global_sections/global_sections.jl`, `gradient_rep!`
 - kind: found late
 - found: 2026-11-10
-- evidence: `SectionDescent` takes the steepest descent of `½tr(XᵀY)` on the lifts at the section
-  the optimizer has transported along its path. For `n < N`, a change of the section by
-  `diag(I, S)`, `S` symplectic, leaves the point where it is and changes the step: by a factor of
-  253 at `cond(S) = 1.7e3` on a `10 × 4` point. No positive-definite inner product on `ℬ` is
-  invariant under the non-compact `Sp(2N − 2n)`, so this is a property of the option, not a defect
-  of the code. On the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the
+- evidence: for `n < N`, a change of the section by `diag(I, S)`, `S` symplectic, leaves the point
+  where it is and maps the coordinates `(𝒜, ℬ)` of a lift to `(𝒜, S⁻¹ℬ)`. No positive-definite inner
+  product on `ℬ` is invariant under the non-compact `Sp(2N − 2n)`, so every operation in these
+  coordinates that is not equivariant under this map depends on the section: `Adam`'s entrywise
+  second moments, the secant pairs of `BFGS` and `DFP` after their first step (which starts from the
+  metric, `_metric_inverse!`), `step_αmax` and `rxₐ`. This is a property of the manifold, not a
+  defect of the code. On the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the
   section's condition number grows from 1.35 to about 3.6 over a solve. Over 10⁵ steps of `Adam`
   with a noisy gradient it ends 1.0 to 1.6 times above a fresh `global_section`, and
   `GradientMethod` with the same noise diverges, with a section condition number of 4e63 before the
@@ -344,9 +345,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   sufficiently ill-conditioned start, because the Riemannian gradient of `(3.16)` scales as
   `O(‖U‖³)`). A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
   eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
-  Under `MetricDescent`, the default, fixed-step `GradientMethod` and `MomentumMethod` do not
-  depend on the section in exact arithmetic, whereas `Adam`'s entrywise second moments on `ℬ`,
-  `step_αmax` and `rxₐ` still do.
+  Fixed-step `GradientMethod` and `MomentumMethod` under `MetricDescent` do not depend on the
+  section in exact arithmetic.
 
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 
@@ -582,11 +582,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - kind: defect
 - found: 2026-11-10
 - evidence: `Δf̃ = _dot(previous_gradient(state), direction(cache))` pairs the gradient the method
-  holds with the step under `_dot`. Under `MetricDescent` that gradient is `global_rep(rgrad)`, and
-  under `SectionDescent` the representative in `½tr(XᵀY)` of the dense lifts. On a symplectic lift
-  neither pairs under `_dot` to the derivative of the loss: only the flat `gradient_rep!` does, as
-  `test/global_sections/global_sections.jl` asserts. `scripts/symplectic_gradient_options.jl`, part
-  (vi), measures the gap for `SectionDescent` in metric (3.16) at 0.25. Only `f_converged_strong`
+  holds with the step under `_dot`. Under `MetricDescent` that gradient is `global_rep(rgrad)`,
+  which on a symplectic lift does not pair under `_dot` to the derivative of the loss: only the flat
+  `gradient_rep!` does, as `test/global_sections/global_sections.jl` asserts. Only `f_converged_strong`
   reads `Δf̃`, and no stop rule reads that, so no solve changes. A fix pairs the flat gradient with
   the direction, at one more `gradient_rep!` per iteration, or stores the flat gradient beside the
   held one. `rgₐ = l2norm(cache.Δg)` is the norm of the difference of the held gradients at two
