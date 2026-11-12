@@ -72,9 +72,9 @@ end
 # BFGS and DFP hold the derivative with respect to the stored entries of the lift, `M` times the lift
 # `global_rep` of the Riemannian gradient for the Gram matrix `M` of the metric, and start `Q` at `M⁻¹`.
 # So their first direction, and the direction after a restart or a failed descent test, is
-# `-global_rep(Δ)`, the one `MetricDescent` takes, and its tangent vector is `-Δ` for every section.
+# `-global_rep(Δ)`, the one `GradientMethod` takes, and its tangent vector is `-Δ` for every section.
 # The control is the direction `-gradient_rep(Δ)` that `Q = I` would give.
-@testset "$(nameof(typeof(algorithm))) starts with the MetricDescent direction" for algorithm in (
+@testset "$(nameof(typeof(algorithm))) starts with the GradientMethod direction" for algorithm in (
     BFGS(), DFP())
     flat(B) = first(GeometricOptimizers.flatten(B))
     tangent = GeometricOptimizers._section_tangent
@@ -137,8 +137,8 @@ end
 
 # The gradient stop reads `rg`, the Riemannian norm `√g(Δ, Δ)` of the gradient at the iterate, which
 # is the same for every method. The control is the norm of the array each method holds: the flat
-# lift of BFGS and DFP and `global_rep` of `MetricDescent` have different norms on this manifold,
-# and `MetricDescent`'s differs from `rg` by orders of magnitude.
+# lift of BFGS and DFP and `global_rep` of the first-order methods have different norms on this
+# manifold, and the latter differs from `rg` by orders of magnitude.
 @testset "rg is the Riemannian norm of the gradient, $(nameof(typeof(algorithm))), $(nameof(typeof(R)))" for algorithm in (
         GradientMethod(), MomentumMethod(), Adam(), BFGS(), DFP()),
     R in (Geodesic(), Cayley())
@@ -150,7 +150,7 @@ end
     Δ = rgrad(U, 2 * M * U.A)
     rg = GeometricOptimizers.g_residual(result.status)
     @test rg ≈ sqrt(metric(U, Δ, Δ)) rtol = 64eps(T)
-    algorithm isa Union{GradientMethod{MetricDescent}, MomentumMethod, Adam} &&
+    algorithm isa Union{GradientMethod, MomentumMethod, Adam} &&
         @test !isapprox(
             GeometricOptimizers.l2norm(GeometricOptimizers.latest_gradient(cache(opt))),
             rg; rtol = T(0.1))

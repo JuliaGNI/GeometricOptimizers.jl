@@ -123,7 +123,7 @@ with ``e_i`` the ``i``-th flattened coordinate. This is where [`BFGS`](@ref) and
 The quasi-Newton methods hold the derivative with respect to the stored entries,
 [`GeometricOptimizers.gradient_rep!`](@ref), because their secant pairs, their ``Q`` and their
 descent test pair it with [`GeometricOptimizers._dot`](@ref). That lift is ``M`` times the lift
-[`global_rep`](@ref) of the Riemannian gradient, which [`MetricDescent`](@ref) holds. Starting from
+[`global_rep`](@ref) of the Riemannian gradient, which [`GradientMethod`](@ref) holds. Starting from
 ``Q = M^{-1}`` therefore makes the first direction, and every direction after a restart,
 ``-M^{-1}\,\mathtt{gradient\_rep}(\Delta) = -\mathtt{global\_rep}(\Delta)``: the steepest descent of
 the metric, the same lift for every method, and independent of the section.

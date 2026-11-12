@@ -447,9 +447,8 @@ descent check a statement about descent, and it is the gradient [`BFGS`](@ref) a
 hold: their secant pairs and their ``Q`` live in the same coordinates.
 
 The four-argument form writes the gradient that `method` holds. For [`BFGS`](@ref), [`DFP`](@ref)
-and every method without a `descent` it is the lift above. For [`GradientMethod`](@ref),
-[`MomentumMethod`](@ref) and [`Adam`](@ref) it is the gradient of their `descent`,
-[`global_rep`](@ref) of `Δ` for [`MetricDescent`](@ref).
+and every other method it is the lift above. For [`GradientMethod`](@ref),
+[`MomentumMethod`](@ref) and [`Adam`](@ref) it is [`global_rep`](@ref) of `Δ`.
 
 # The symplectic Stiefel manifold
 
@@ -474,7 +473,7 @@ respect to the stored blocks of ``B``. With ``X = U^TK`` in four ``n\times{}n`` 
 because the gradient of the optimizers is the Riemannian one; it is applied through a Cholesky
 factor of ``U^TU`` and not through its inverse.
 
-With [`MetricDescent`](@ref) the tangent vector ``\lambda(Y)DE`` of the held gradient is `Δ` for every
+With [`global_rep`](@ref) the tangent vector ``\lambda(Y)DE`` of the held gradient is `Δ` for every
 section, so at a fixed step size the path of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
 does not depend on the section ([`Adam`](@ref)'s entrywise second moments and coordinate step ceilings
 still do). [`BFGS`](@ref) and [`DFP`](@ref) start from this direction; see

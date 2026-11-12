@@ -15,7 +15,7 @@
 #   (v)   the lift is in sp for 𝕁̄ (4e-15), its blocks are -ℬ⁺ and 𝕆 exactly, λXE = Δ (5e-16), and
 #         Δ ↦ X has rank 34 = 4Nn - n(2n - 1)
 #   (vi)  the package's global_rep is the lift (3e-17), its flat gradient_rep! the derivative with
-#         respect to the stored entries (2e-16), MetricDescent the Riesz representative in metric
+#         respect to the stored entries (2e-16), GradientMethod's the Riesz representative in metric
 #         (3.16) (9e-17), and _metric_apply! the Gram matrix of metric (3.16) in the stored entries
 #         (2e-16), whose inverse BFGS and DFP start from; the control, the Riesz representative in ½tr(XᵀY)
 #         of the dense lifts, is off by 0.25 in metric (3.16)
@@ -173,7 +173,7 @@ end
 
 # (vi) The package against the parts above, at a conditioned point and the package's own section:
 #      `global_rep` is the lift above; the flat gradient `gradient_rep!` is the derivative of
-#      `B ↦ ⟨∇L, λBE⟩` with respect to each stored entry of `B`; `MetricDescent` is `global_rep` of
+#      `B ↦ ⟨∇L, λBE⟩` with respect to each stored entry of `B`; `GradientMethod`'s is `global_rep` of
 #      `rgrad`, whose tangent vector is the Riesz representative of `∇L` in metric (3.16);
 #      `_metric_apply!` is the Gram matrix `g(λBᵢE, λBⱼE)` of metric (3.16) in the stored entries,
 #      whose inverse `BFGS` and `DFP` start from. The control is the Riesz representative of the
@@ -214,7 +214,7 @@ let U = SymplecticStiefelManifold(point(rng, N2, n2; spread = 1.0))
 
     Dm = gradient_rep!(global_rep(λU, Δ), λU, Δ, GradientMethod())
     W = tangent_vector(rng, U.A, λ[:, (n2 + 1):end])
-    println("(vi) MetricDescent: |g(λDE, W) - ⟨∇L, W⟩|/(‖∇L‖‖W‖) = ",
+    println("(vi) GradientMethod: |g(λDE, W) - ⟨∇L, W⟩|/(‖∇L‖‖W‖) = ",
         abs(metric(U, λ * (Dm * StiefelProjection(Float64, N2, n2)), W) - sum(∇L .* W)) /
         (norm(∇L) * norm(W)))
     Ds = SymplecticLieAlgHorMatrix(section_ref, N2, n2)

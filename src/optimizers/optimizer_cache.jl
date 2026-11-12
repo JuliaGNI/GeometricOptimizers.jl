@@ -117,15 +117,13 @@ function _riemannian_norm(ps::NetworkParameters{T}, Δ::NetworkParameters{T}) wh
     √sumsq[]
 end
 
-# The gradient each method holds; see `gradient_rep!`. Every method without a `descent` holds the
-# derivative with respect to the stored entries, which its algebra pairs under `_dot`.
+# The gradient each method holds; see `gradient_rep!`. `GradientMethod`, `MomentumMethod` and `Adam`
+# hold `global_rep` of the Riemannian gradient; every other method holds the derivative with respect
+# to the stored entries, which its algebra pairs under `_dot`.
 gradient_rep!(D, λY, Δ, ::OptimizerMethod) = gradient_rep!(D, λY, Δ)
-
-function gradient_rep!(D, λY, Δ, method::Union{GradientMethod, MomentumMethod, Adam})
-    _descent_rep!(D, λY, Δ, method.descent)
+function gradient_rep!(D, λY, Δ, ::Union{GradientMethod, MomentumMethod, Adam})
+    global_rep!(D, λY, Δ)
 end
-
-_descent_rep!(D, λY, Δ, ::MetricDescent) = global_rep!(D, λY, Δ)
 
 @doc raw"""
     latest_gradient_is_current(cache, state, x)

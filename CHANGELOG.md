@@ -28,10 +28,10 @@ breaking release).
   `Geodesic(ProjectedSkew())` refuses a symplectic lift, which is Hamiltonian and not skew. The
   products and sums of the lift and of its adjoint run on a device, against a plain array and
   against every other owned type; `scripts/device_products.jl` sweeps both. Closes A23, A28 and K56.
-- **`GradientMethod`, `MomentumMethod` and `Adam` take a keyword `descent`.** Its one value,
-  `MetricDescent()`, makes the gradient they hold `global_rep` of the Riemannian gradient of the
-  manifold's metric, which is what they held before on a vector space, a `StiefelManifold` and a
-  `GrassmannManifold`, so no existing call changes. On a `SymplecticStiefelManifold` it is gradient
+- **`GradientMethod`, `MomentumMethod` and `Adam` follow the Riemannian gradient of the manifold's
+  metric.** The gradient they hold is `global_rep` of the Riemannian gradient, which is what they
+  held before on a vector space, a `StiefelManifold` and a `GrassmannManifold`, so no existing call
+  changes. On a `SymplecticStiefelManifold` it is gradient
   descent in the metric (3.16) of Bendokat and Zimmermann, whose fixed-step path under
   `GradientMethod` and `MomentumMethod` does not depend on the section (`Adam`'s entrywise second
   moments on `ℬ`, `step_αmax` and `rxₐ` still do, K57). The steepest descent of `½tr(XᵀY)` on the
@@ -58,7 +58,7 @@ breaking release).
   and a restart puts it back there, for the Gram matrix `M` of the manifold's metric in the stored
   entries of a lift at the section (`_metric_apply!`, `_metric_inverse!`). Their first step, the
   step after a restart and the substitute for a direction that does not descend are therefore
-  `-global_rep` of the Riemannian gradient, the `MetricDescent` step, while the secant pairs keep the
+  `-global_rep` of the Riemannian gradient, the `GradientMethod` step, while the secant pairs keep the
   derivative with respect to the stored entries that `gradient_rep!` gives. `M` is the identity on a
   vector space, a `StiefelManifold` and a `GrassmannManifold`, so no existing call changes; on a
   `SymplecticStiefelManifold` the first step no longer depends on the section, where it changed by a

@@ -92,7 +92,7 @@ Note that the section is *not* recomputed at every step. It is built once, when 
 
 ## The algorithm on the symplectic Stiefel manifold
 
-The same algorithm runs on the [`SymplecticStiefelManifold`](@ref) ``\{U\in\mathbb{R}^{2N\times2n} : U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}\}``, a homogeneous space of the symplectic group ``Sp(2N)`` (see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref)). The section is ``\Lambda = \lambda(U) = [U\ \ U^s] \in Sp(2N)``, built by [`global_section(::SymplecticStiefelManifold{T}) where {T}`](@ref), and ``U^+ = \mathbb{J}_{2n}^TU^T\mathbb{J}_{2N}`` is the symplectic inverse. One step of [`GradientMethod`](@ref), [`MomentumMethod`](@ref) or [`Adam`](@ref) with the default [`MetricDescent`](@ref) is
+The same algorithm runs on the [`SymplecticStiefelManifold`](@ref) ``\{U\in\mathbb{R}^{2N\times2n} : U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}\}``, a homogeneous space of the symplectic group ``Sp(2N)`` (see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref)). The section is ``\Lambda = \lambda(U) = [U\ \ U^s] \in Sp(2N)``, built by [`global_section(::SymplecticStiefelManifold{T}) where {T}`](@ref), and ``U^+ = \mathbb{J}_{2n}^TU^T\mathbb{J}_{2N}`` is the symplectic inverse. One step of [`GradientMethod`](@ref), [`MomentumMethod`](@ref) or [`Adam`](@ref) is
 
 ```math
 \begin{aligned}

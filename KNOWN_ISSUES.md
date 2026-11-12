@@ -345,8 +345,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   sufficiently ill-conditioned start, because the Riemannian gradient of `(3.16)` scales as
   `O(‖U‖³)`). A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
   eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
-  Fixed-step `GradientMethod` and `MomentumMethod` under `MetricDescent` do not depend on the
-  section in exact arithmetic.
+  Fixed-step `GradientMethod` and `MomentumMethod` do not depend on the section in exact
+  arithmetic.
 
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 
@@ -582,8 +582,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - kind: defect
 - found: 2026-11-10
 - evidence: `Δf̃ = _dot(previous_gradient(state), direction(cache))` pairs the gradient the method
-  holds with the step under `_dot`. Under `MetricDescent` that gradient is `global_rep(rgrad)`,
-  which on a symplectic lift does not pair under `_dot` to the derivative of the loss: only the flat
+  holds with the step under `_dot`. For `GradientMethod`, `MomentumMethod` and `Adam` that
+  gradient is `global_rep(rgrad)`, which on a symplectic lift does not pair under `_dot` to the derivative of the loss: only the flat
   `gradient_rep!` does, as `test/global_sections/global_sections.jl` asserts. Only `f_converged_strong`
   reads `Δf̃`, and no stop rule reads that, so no solve changes. A fix pairs the flat gradient with
   the direction, at one more `gradient_rep!` per iteration, or stores the flat gradient beside the

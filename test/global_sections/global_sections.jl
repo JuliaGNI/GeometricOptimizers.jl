@@ -329,9 +329,9 @@ end
 # than against the code that computes it. `Δ = rgrad(U, ∇L)` and `⟨∇L, V⟩` is the derivative of the
 # loss along a tangent vector `V`.
 #
-# - A method without a `descent` holds the derivative with respect to the stored entries: the
-#   three-argument form.
-# - `MetricDescent` holds the lift whose tangent vector `λ(U)DE` is the Riesz representative of `∇L`
+# - A method other than `GradientMethod`, `MomentumMethod` and `Adam` holds the derivative with
+#   respect to the stored entries: the three-argument form.
+# - `GradientMethod` holds the lift whose tangent vector `λ(U)DE` is the Riesz representative of `∇L`
 #   in metric (3.16), `g_U(λ(U)DE, V) = ⟨∇L, V⟩` for every tangent `V`. It is `Δ` for every section.
 # - The derivative with respect to the stored entries, read as a lift, is not the Riesz
 #   representative, and a change of the section by `diag(I, S)`, which leaves the point where it is,

@@ -31,8 +31,8 @@ to the right-invariant Riemannian metric ``g`` of its (2.2), under a condition t
 The optimizers step this type through the first of the two, the one subspace of the Lie algebra
 that is horizontal at every point: [`SymplecticLieAlgHorMatrix`](@ref) implements it, and
 [`global_rep`](@ref) maps a tangent vector into it. [`GradientMethod`](@ref),
-[`MomentumMethod`](@ref) and [`Adam`](@ref) follow the Riemannian gradient of the metric (3.16),
-[`MetricDescent`](@ref); the line search, [`BFGS`](@ref) and [`DFP`](@ref) pair the derivative of
+[`MomentumMethod`](@ref) and [`Adam`](@ref) follow the Riemannian gradient of the metric (3.16);
+the line search, [`BFGS`](@ref) and [`DFP`](@ref) pair the derivative of
 the loss with respect to the stored entries of a lift, and the quasi-Newton methods start from the
 Riemannian gradient. [`GeometricOptimizers.gradient_rep!`](@ref)
 gives each of them. Every first-order
