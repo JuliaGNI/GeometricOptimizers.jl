@@ -14,7 +14,7 @@ using GeometricOptimizers: Cayley, Geodesic, check, cache, gradient, problem, in
                            update!, linesearch_problem, isconverged, section
 using SimpleSolvers: Static, Backtracking
 using NeuralNetworkParameters: NetworkParameters
-using LinearAlgebra: I, cond, eigvals, norm, tr
+using LinearAlgebra: Diagonal, I, cond, eigvals, norm, tr
 using Test
 import Random
 
@@ -69,6 +69,53 @@ start() = conditioned_point(Random.Xoshiro(2), T, N2, n2)
         @test abs(φ′ - difference) / abs(difference) < 10 * sqrt(eps(T))
     end
     @test ls.D(zero(T), params) < 0
+end
+
+# BFGS and DFP hold the derivative with respect to the stored entries of the lift, `M` times the lift
+# `global_rep` of the Riemannian gradient for the Gram matrix `M` of the metric, and start `Q` at `M⁻¹`.
+# So their first direction, and the direction after a restart or a failed descent test, is
+# `-global_rep(Δ)`, the one `MetricDescent` takes, and its tangent vector is `-Δ` for every section.
+# The control is the direction `-gradient_rep(Δ)` that `Q = I` would give.
+@testset "$(nameof(typeof(algorithm))) starts with the MetricDescent direction" for algorithm in (
+    BFGS(), DFP())
+    flat(B) = first(GeometricOptimizers.flatten(B))
+    tangent = GeometricOptimizers._section_tangent
+    U = start()
+    Δ = rgrad(U, 2 * M * U.A)
+    opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Backtracking(T))
+    c = cache(opt)
+
+    first_direction(state) = begin
+        initialize!(c, U)
+        update!(c, state, gradient(opt), GeometricOptimizers._direction_rule(opt), U)
+        GeometricOptimizers.direction(c)
+    end
+
+    state = OptimizerState(algorithm, U)
+    G = global_rep(section(state), Δ)
+    δ = first_direction(state)
+    @test flat(δ) ≈ -flat(G) rtol = 1e-10
+    @test tangent(section(state), δ) ≈ -Δ rtol = 1e-10
+    @test !(flat(GeometricOptimizers.rhs(c)) ≈ -flat(G))
+
+    # another section over the same point, `λ ↦ λ diag(𝕀, S)` for a symplectic `S` with `κ(S) ≈ 30`
+    k = (N2 - n2) ÷ 2
+    d = exp2.(range(-2.5, 2.5; length = k))
+    S = cat(Diagonal(d), Diagonal(inv.(d)); dims = (1, 2))
+    section(state).λ .= section(state).λ * S
+    GeometricOptimizers.restart!(state)
+    δ = first_direction(state)
+    @test tangent(section(state), δ) ≈ -Δ rtol = 1e-9
+    @test flat(δ) ≈ -flat(global_rep(section(state), Δ)) rtol = 1e-9
+
+    # a restart, and the substitute for a direction that does not descend
+    GeometricOptimizers.restart!(state)
+    GeometricOptimizers.steepest_descent!(c, state)
+    @test tangent(section(state), GeometricOptimizers.direction(c)) ≈ -Δ rtol = 1e-9
+    GeometricOptimizers._copyto!(GeometricOptimizers.direction(c), GeometricOptimizers.rhs(c))
+    GeometricOptimizers._rmul!(GeometricOptimizers.direction(c), -1)
+    GeometricOptimizers.ensure_descent!(c, state, algorithm, GeometricOptimizers.config(opt))
+    @test tangent(section(state), GeometricOptimizers.direction(c)) ≈ -Δ rtol = 1e-9
 end
 
 # The two methods with a line search find the minimum, and every iterate stays on the manifold.

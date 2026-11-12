@@ -175,6 +175,16 @@ nothing # hide
 
 Note that the angle between the two vector is preserved as we go along the geodesic.
 
+## Parallel transport on the symplectic Stiefel manifold
+
+The same transport runs on the [`SymplecticStiefelManifold`](@ref): the cache ``B_2\in\mathfrak{g}^\mathrm{hor}`` stays fixed while the section moves to ``\lambda(U)\exp(tB)``, so that the transported vector is
+
+```math
+\Delta_2 \mapsto \exp(t\Omega(U, \Delta))\Delta_2 = \lambda(U)\exp(tB)B_2E, \qquad B = \lambda(U)^{-1}\Omega(U, \Delta)\lambda(U),
+```
+
+with ``\Omega`` the horizontal lift [`GeometricOptimizers.Ω(::SymplecticStiefelManifold{T}, ::AbstractMatrix{T}) where {T}`](@ref) of the pseudo-Riemannian metric ``h`` of [bendokat2021real](@cite). This is the parallel transport of Nomizu's canonical connection of the second kind along its geodesic ``\exp(t\Omega(U, \Delta))U`` [nomizu1954invariant, schlarb2024covariant](@cite), as on the Stiefel manifold; it needs no metric, only the reductive decomposition of the Lie algebra. What it no longer is, is an isometry. On the Stiefel manifold the angle between the two vectors above is preserved because ``SO(N)`` acts by isometries of the canonical metric. The symplectic group preserves ``h``, which is indefinite, but no Riemannian metric, and in particular not [`metric`](@ref), so the cache keeps its coordinates while its length in [`metric`](@ref) changes. The curve it is transported along is a retraction of first order for [`metric`](@ref), not its geodesic. [Global Tangent Space for the Symplectic Stiefel Manifold](@ref) has the argument, and [The algorithm on the symplectic Stiefel manifold](@ref) the division of the work between the two metrics.
+
 
 ```@raw latex
 \section*{Chapter Summary}

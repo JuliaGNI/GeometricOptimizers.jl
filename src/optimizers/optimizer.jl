@@ -447,7 +447,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
     # solve H δx = - ∇f
     # rhs is -g
     update!(cache(opt), state, gradient(opt), _direction_rule(opt), x)
-    ensure_descent!(cache(opt), algorithm(opt), config(opt))
+    ensure_descent!(cache(opt), state, algorithm(opt), config(opt))
 
     for _ in 1:config(opt).nan_max_iterations
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
@@ -503,7 +503,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
         config(opt).verbosity ≥ 2 &&
             @warn "the line search returned $(outcome(ls_status)), i.e. no step along the $(algorithm(opt)) direction decreased the merit; restarting the inverse Hessian and searching along the steepest-descent direction instead." maxlog = 1
         restart!(state)
-        steepest_descent!(cache(opt))
+        steepest_descent!(cache(opt), state)
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
             update_section!(section(cache(opt)), section(state), direction(cache(opt)),
                 opt.retraction, retraction_workspace(opt))
@@ -650,9 +650,15 @@ function initialize_state!(state::OptimizerState, opt::Optimizer, x::OptimizerSo
     state.iterations = 0
     _copyto!(solution(state), x)
     _start_section!(section(state), x)
+    _start_inverse_hessian!(state)
     state.f = f
     state
 end
+
+# `Q` of a quasi-Newton state at the section `solve!` has just placed, which `initialize_state!`
+# could not see; see `_metric_inverse!`. Every other state has nothing that depends on the section.
+_start_inverse_hessian!(state::OptimizerState) = state
+_start_inverse_hessian!(state::BFGSState) = _reset_inverse_hessian!(state)
 
 # The memory a method keeps between steps, as its constructor builds it. The momentum and moment
 # states have their method beside their constructor.

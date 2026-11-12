@@ -189,6 +189,11 @@ The Riemannian gradient of a point of the symplectic Stiefel manifold, for the m
 
 ``\nabla{}L`` is the Euclidean gradient, i.e. the derivative of the loss with respect to the
 entries of `U` read as an unconstrained matrix.
+
+The manifold is not compact, and the gradient grows with the point: like ``\|U\|^3`` where
+``\nabla{}L`` grows like ``\|U\|``, along a hyperbolic direction such as
+``U\,\mathrm{diag}(s\mathbb{I}, s^{-1}\mathbb{I})``. A fixed step size can therefore diverge from an
+ill-conditioned start; see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref).
 """
 function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
     J = _poisson_tensor(U, size(U, 1))

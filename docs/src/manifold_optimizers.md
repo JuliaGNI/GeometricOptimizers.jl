@@ -90,6 +90,33 @@ For [`Geodesic`](@ref) that function is ``\mathfrak{A}(X) = \sum_{n\geq1} X^{n-1
 
 Note that the section is *not* recomputed at every step. It is built once, when the optimizer is initialized (the ``QR`` decomposition above), and thereafter parallel-transported along the optimization trajectory by `update_section`.
 
+## The algorithm on the symplectic Stiefel manifold
+
+The same algorithm runs on the [`SymplecticStiefelManifold`](@ref) ``\{U\in\mathbb{R}^{2N\times2n} : U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}\}``, a homogeneous space of the symplectic group ``Sp(2N)`` (see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref)). The section is ``\Lambda = \lambda(U) = [U\ \ U^s] \in Sp(2N)``, built by [`global_section(::SymplecticStiefelManifold{T}) where {T}`](@ref), and ``U^+ = \mathbb{J}_{2n}^TU^T\mathbb{J}_{2N}`` is the symplectic inverse. One step of [`GradientMethod`](@ref), [`MomentumMethod`](@ref) or [`Adam`](@ref) with the default [`MetricDescent`](@ref) is
+
+```math
+\begin{aligned}
+\Delta^{(t)}     &\gets \mathtt{rgrad}(U^{(t)}, \nabla{}L) = \nabla{}L\,U^TU + \mathbb{J}_{2N}U\,\nabla{}L^T\mathbb{J}_{2N}U && \text{(3.17) of [bendokat2021real]} \\
+\mathcal{B}^{(t)} &\gets \mathtt{global\_rep}(\Lambda^{(t)}, \Delta^{(t)}), \quad \mathcal{A} = U^+\Delta^{(t)},\ \mathcal{B} = (U^s)^+\Delta^{(t)} && \lambda^{-1}\Omega(U, \Delta)\lambda \text{ for the lift } \Omega \text{ of } h \\
+\mathtt{cache}   &\gets \mathtt{update}(\mathtt{cache}, \mathcal{B}^{(t)}, t, \Xi) && \text{unchanged} \\
+W^{(t)}          &\gets \mathtt{velocity}(\mathtt{cache}, \Xi) && \text{unchanged} \\
+\Lambda^{(t+1)}  &\gets \mathtt{update\_section}(\Lambda^{(t)}, W^{(t)}) = \Lambda^{(t)}\,\mathrm{retraction}(W^{(t)}) && \\
+U^{(t+1)}        &\gets \Lambda^{(t+1)}E &&
+\end{aligned}
+```
+
+The lines are those of the Stiefel manifold one by one; only what [`rgrad(::SymplecticStiefelManifold, ::AbstractMatrix)`](@ref), [`global_rep`](@ref) and the retraction compute has changed. A horizontal lift of the symplectic Stiefel manifold, [`SymplecticLieAlgHorMatrix`](@ref), factors through two ``2N\times4n`` matrices ([`lift_factors`](@ref)), so [`Cayley`](@ref), the default, and [`Geodesic`](@ref) evaluate their matrix function on a ``4n\times4n`` argument, where the Stiefel manifold needs ``2n\times2n``. The retraction matrix is then formed as a ``2N\times2N`` matrix and multiplied onto the section. Every method takes the lift of the second line as its steepest-descent direction. [`BFGS`](@ref) and [`DFP`](@ref) also need the derivative with respect to the stored entries for their secant pairs, which is that lift times the Gram matrix ``M`` of the metric at the section ([`GeometricOptimizers.gradient_rep!`](@ref)); they start their inverse Hessian at ``M^{-1}`` ([`GeometricOptimizers._metric_inverse!`](@ref)), so that their first step, and their step after a restart, is the one in the second line. [`SectionDescent`](@ref) is the one option that holds another lift. [`solve!`](@ref) scales ``W^{(t)}`` by a line search whose step is capped by [`GeometricOptimizers.step_αmax`](@ref).
+
+!!! info "Two metrics instead of one"
+    On the Stiefel manifold one metric serves every line of the algorithm. The canonical metric is induced by a bi-invariant metric on ``SO(N)``, and with respect to it the gradient is the Riemannian gradient, [`global_rep`](@ref) is an isometry onto ``\mathfrak{g}^\mathrm{hor}``, the curves ``\lambda\exp(tW)E`` are its geodesics, and keeping the cache fixed while the section moves is an isometric parallel transport.
+
+    The symplectic group has no bi-invariant Riemannian metric: its ``\mathrm{Ad}``-invariant forms are the multiples of ``\mathrm{tr}(XY)``, which are indefinite. For ``n < N`` no Riemannian metric on the symplectic Stiefel manifold is even invariant under ``Sp(2N)``, because the stabilizer ``Sp(2N-2n)`` is not compact. So the work is split between two metrics of [bendokat2021real](@cite):
+
+    - the right-invariant Riemannian metric ``g`` of their (3.16), [`metric`](@ref), gives the gradient in the first line, and nothing else;
+    - the bi-invariant pseudo-Riemannian metric ``h`` of their (2.1) gives the global tangent space ``\mathfrak{g}^\mathrm{hor}``, the lift ``\Omega`` of their (3.7) behind [`global_rep`](@ref), the curves ``\lambda\exp(tW)E = \exp(t\Omega)U``, which are its geodesics (3.9), and the fixed cache, which is the parallel transport of the canonical connection of the second kind. The space is reductive, and naturally reductive for ``h``, but for no Riemannian metric.
+
+    The construction of [Brantner:2023](@cite) stays as it is: the global tangent space, the section, the cache and its update in ``\mathfrak{g}^\mathrm{hor}``, the split of the retraction into `update_section` and `apply_section`, and the fixed cache. What is lost is the agreement between the two metrics. For ``g`` the retraction agrees with the Riemannian geodesic (3.18) only to first order, the fixed cache changes the length of the cache, and the coordinates in ``\mathfrak{g}^\mathrm{hor}`` depend on the section. [Global Tangent Space for the Symplectic Stiefel Manifold](@ref) has the details.
+
 ## The Euclidean case falls out
 
 If ``\mathcal{M}`` is a vector space ``\mathcal{V}`` then ``\mathcal{M} \equiv T_Y\mathcal{M} \equiv \mathfrak{g}^\mathrm{hor} = \mathcal{V}``, the distinct element is ``E = \mathbb{O}``, `rgrad` and `global_rep` are the identity, and the extended retraction is addition. The algorithm above collapses to textbook Adam. This is why the same [`Adam`](@ref), [`MomentumMethod`](@ref) and `GradientMethod` in this package work on a plain `Array` and on a [`StiefelManifold`](@ref) without any change on the caller's side: the method supplies `update` and `velocity`, the parameter type supplies everything else.

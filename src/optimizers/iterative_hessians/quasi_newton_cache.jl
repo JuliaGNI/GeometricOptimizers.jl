@@ -255,3 +255,34 @@ function initialize!(cache::QuasiNewtonCache{T}, ::OptimizerSolution{T}) where {
     _fill!(rhs(cache), T(NaN))
     cache
 end
+
+# The quasi-Newton methods of `ensure_descent!` and `steepest_descent!`, here because the two types are
+# defined after `descent_direction.jl`: the steepest descent of the metric, `M⁻¹ rhs`; see
+# `_metric_inverse!`.
+function ensure_descent!(cache::QuasiNewtonCache, state::BFGSState,
+        method::QuasiNewtonOptimizerMethod, config::Options)
+    δ = direction(cache)
+    r = rhs(cache)
+    # the test is the one of the three-argument method; see the comment there on `_dot`
+    if !(_dot(r, δ) > 0)
+        config.verbosity ≥ 2 &&
+            @warn "the $(method) direction is not a descent direction, so the Hessian is not positive definite here; using the steepest-descent direction for this step." maxlog = 1
+        # `M⁻¹ r`, with `M⁻¹` in the cache's own `n × n` scratch, and `Q` is left alone, as the
+        # three-argument method leaves it; `restart!` is what discards it. Where `M` is the identity this
+        # is the copy of the three-argument method, which allocates nothing.
+        if _metric_is_identity(state.x)
+            _copyto!(δ, r)
+        else
+            _metric_inverse!(cache.T1, state.x, state.section)
+            _flat_mul!(δ, cache.T1, r, cache.flat)
+        end
+    end
+
+    cache
+end
+
+function steepest_descent!(cache::QuasiNewtonCache, state::BFGSState)
+    _flat_mul!(direction(cache), inverse_hessian(state), rhs(cache), cache.flat)
+
+    cache
+end

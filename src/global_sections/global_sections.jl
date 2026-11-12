@@ -518,6 +518,45 @@ function gradient_rep!(D::SymplecticLieAlgHorMatrix{T},
     D
 end
 
+@doc raw"""
+    _metric_apply!(D, λY, B)
+
+Write into `D` the lift ``MB``, where ``M`` is the Gram matrix of the metric in the stored entries of
+a lift at the section `λY`, so that
+
+```math
+\langle{}MB, C\rangle = g\big(\lambda(Y)BE,\ \lambda(Y)CE\big) \quad \forall{}C\in\mathfrak{g}^\mathrm{hor},
+```
+
+with ``\langle\cdot,\cdot\rangle`` the pairing of [`GeometricOptimizers._dot`](@ref). On every lift but
+a [`SymplecticLieAlgHorMatrix`](@ref) that pairing is the metric and ``M`` is the identity, as it is on
+a vector space. On a symplectic lift it is [`GeometricOptimizers.gradient_rep!`](@ref) of the tangent
+vector ``\lambda(U)BE = U\mathcal{A} + U^s\mathcal{B}``, so ``M`` takes the lift
+[`global_rep`](@ref) of a Riemannian gradient to the lift `gradient_rep!` of the same gradient.
+[`GeometricOptimizers._metric_inverse!`](@ref) builds ``M`` from it.
+"""
+_metric_apply!(D, ::GlobalSection, B) = _copyto!(D, B)
+
+function _metric_apply!(D::Union{NamedTuple, NetworkParameters}, λY::NamedTuple,
+        B::Union{NamedTuple, NetworkParameters})
+    mapparameters!(_metric_apply!, D, λY, B)
+    D
+end
+
+function _metric_apply!(D::SymplecticLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:SymplecticStiefelManifold, <:AbstractArray},
+        B::SymplecticLieAlgHorMatrix{T}) where {T}
+    gradient_rep!(D, λY, _section_tangent(λY, B))
+end
+
+# The tangent vector `λ(U)BE = U𝒜 + Uˢℬ` of a symplectic lift at the section `λY`. Host only, as the
+# section is; see `global_section`.
+function _section_tangent(λY::GlobalSection{T, <:SymplecticStiefelManifold},
+        B::SymplecticLieAlgHorMatrix{T}) where {T}
+    𝒜 = vcat(hcat(B.A₁, Matrix(B.B₁)), hcat(Matrix(B.C₁), -transpose(B.A₁)))
+    λY.Y.A * 𝒜 + λY.λ * B.B
+end
+
 # The derivative with respect to the stored entries, `gradient_rep!`, turned into the representative
 # in the inner product `½tr(XᵀY)` of the dense lifts. That inner product weighs every stored entry of a
 # symplectic lift by one except the diagonals of the two `SymmetricMatrix` blocks, which it weighs by
