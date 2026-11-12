@@ -328,6 +328,8 @@ bendokat2020grassmann
 bendokat2021real
 Brantner:2023
 frankel2011geometry
+nomizu1954invariant
+schlarb2024covariant
 ```
 
 ```@raw latex
@@ -354,6 +356,8 @@ bendokat2020grassmann
 frankel2011geometry
 o1983semi
 bendokat2021real
+nomizu1954invariant
+schlarb2024covariant
 ```
 
 ```@raw html

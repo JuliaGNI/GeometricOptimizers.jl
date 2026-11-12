@@ -1174,10 +1174,10 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K36 · The `SymmetricMatrix` product kernel is about 7 times slower than BLAS on the dense matrix
 
-- location: `src/special_matrices/symmetric.jl:200`
+- location: `src/special_matrices/symmetric.jl:235`
 - kind: defect
 - found: 2026-10-05
-- evidence: `symmetric_mat_mul_kernel!` (`src/special_matrices/symmetric.jl:200-212`) forms each
+- evidence: `symmetric_mat_mul_kernel!` (`src/special_matrices/symmetric.jl:235-247`) forms each
   entry of `S * B` from the packed storage, one product per entry and no BLAS. Measured on Julia
   1.12.7, `--check-bounds=auto`, one BLAS thread, a `64 × 64` `SymmetricMatrix{Float32}` times a
   `64 × 256` `Matrix{Float32}`, median of `@benchmark`: 393 µs with owned storage and 433 µs over a
