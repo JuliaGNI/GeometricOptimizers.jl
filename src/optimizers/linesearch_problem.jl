@@ -58,7 +58,8 @@ end
 
 The ceiling on the line search's ``\alpha`` that a step ceiling of `c` imposes on the direction `δ`:
 ``c\,2\pi/\|\delta\|`` for an orthogonal lift ([`StiefelLieAlgHorMatrix`](@ref) and
-[`GrassmannLieAlgHorMatrix`](@ref)) and ``c/\|\delta\|`` for a [`SymplecticLieAlgHorMatrix`](@ref).
+[`GrassmannLieAlgHorMatrix`](@ref)) and ``c/\rho(\delta)`` for a [`SymplecticLieAlgHorMatrix`](@ref),
+with ``\rho`` the spectral radius.
 
 `c` is in multiples of the scale the *geometry* of the lift supplies:
 
@@ -67,12 +68,17 @@ The ceiling on the line search's ``\alpha`` that a step ceiling of `c` imposes o
   a fixed rotation by then and [`Geodesic`](@ref) is periodic. Everything past it is round-off, and on the
   SVD problem enough of it to leave the manifold; see [`DEFAULT_STEP_CEILING`](@ref).
 - Retracting a [`SymplecticLieAlgHorMatrix`](@ref) acts in the non-compact group ``Sp(2N)``, where a
-  Hamiltonian lift ``B`` can carry real eigenvalues up to ``\rho(B) \leq \|B\|_F/\sqrt{2} \leq \|\delta\|``.
-  That bound is sharp (`A₁ = diag(1, 0, …, 0)` with all other blocks zero), so [`Cayley`](@ref) has a real
-  pole ``\det(\mathbb{I} - \frac{\alpha}{2}B) = 0`` already at ``\alpha = 2/\|\delta\| < 2\pi/\|\delta\|``,
-  and [`Geodesic`](@ref) stretches hyperbolic modes as ``\exp(\alpha\|\delta\|)``. Any ``c < 2`` keeps every
-  `Cayley` trial step inside the pole-free ball, and ``c = 1`` halves that worst-case pole radius while
-  bounding hyperbolic stretch per step by ``e``.
+  Hamiltonian lift ``B`` can have real eigenvalues. [`Cayley`](@ref) has a real pole
+  ``\det(\mathbb{I} - \frac{\alpha}{2}B) = 0`` at ``\alpha = 2/\mu`` for every real eigenvalue
+  ``\mu > 0`` of ``B``, so at no ``\alpha < 2/\rho(B)``, and [`Geodesic`](@ref) stretches a mode of
+  ``B`` by at most ``\exp(\alpha\rho(B))``. Any ``c < 2`` keeps every `Cayley` trial step short of the
+  pole, and ``c = 1`` stops at half the distance to the nearest pole that ``\rho(B)`` allows, with a
+  stretch of a mode by at most ``e``. The scale is ``\rho(B)`` and not ``\|\delta\|``: a change of the
+  section ``\lambda\mapsto\lambda h`` takes the lift to ``h^{-1}Bh``, which has the eigenvalues of
+  ``B`` but another norm, so a ceiling in ``\|\delta\|`` would make the path of the optimizer depend on
+  the section. ``\rho(B) \leq \|B\|_F/\sqrt{2} \leq \|\delta\|``, so this ceiling is never lower than
+  ``c/\|\delta\|``. A nonzero nilpotent lift has ``\rho(B) = 0`` and no ceiling: its retraction is
+  polynomial in ``\alpha`` and has no pole.
 
 `δ` is one direction and not a `NamedTuple` of them: a solution built of several blocks needs one ceiling
 per block and the smallest of them, which is [`_manifold_αmax`](@ref)'s job. See
@@ -94,7 +100,16 @@ end
 
 function step_αmax(c::T, δ::SymplecticLieAlgHorMatrix) where {T}
     n = l2norm(δ)
-    (isfinite(n) && n > zero(n)) ? c / T(n) : T(Inf)
+    (isfinite(n) && n > zero(n)) || return T(Inf)
+    ρ = _spectral_radius(δ)
+    ρ > zero(ρ) ? c / T(ρ) : T(Inf)
+end
+
+# `ρ(B)` from the factors `B = B̂B̄ᵗ` of `lift_factors`: `B̄ᵗB̂` is `4n × 4n` and has the nonzero
+# eigenvalues of `B`. On the host, as the matrix is small.
+function _spectral_radius(B::SymplecticLieAlgHorMatrix)
+    B̂, B̄ = lift_factors(B)
+    maximum(abs, LinearAlgebra.eigvals(Array(B̄' * B̂)))
 end
 
 @doc raw"""
@@ -105,7 +120,7 @@ per-block [`step_αmax`](@ref) over the blocks that live on a [`Manifold`](@ref)
 does.
 
 One `\alpha` is applied to every block, so each manifold block imposes its own [`step_αmax`](@ref)`(c, δᵢ)`
-(`2πc / ‖δᵢ‖` on compact orthogonal lifts, `c / ‖δᵢ‖` on symplectic lifts) and the binding one is the
+(`2πc / ‖δᵢ‖` on compact orthogonal lifts, `c / ρ(δᵢ)` on symplectic lifts) and the binding one is the
 smallest of them. A block that is an ordinary array contributes nothing: a vector space has no geometric
 step scale of its own, so it must neither impose a ceiling nor inflate the norm that sets one for its
 neighbours. A ceiling of `step_αmax(c, direction(cache))` over the whole direction would do both: its

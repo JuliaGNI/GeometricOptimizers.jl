@@ -116,6 +116,38 @@ end
     @test tangent(section(state), GeometricOptimizers.direction(c)) ≈ -Δ rtol = 1e-9
 end
 
+# The path under a line search does not depend on the section. Two solves start at one point, one at
+# `global_section`'s section `λ` and one at `λ diag(𝕀, S)` for a symplectic `S` with `κ(S) ≈ 32`.
+# The step ceiling reads the spectral radius of the lift, which the section change keeps, and BFGS
+# starts at the inverse of the metric, which the section change transforms with the coordinates. The
+# control is the same pair of solves under a ceiling in `l2norm(δ)` of the section's coordinates,
+# measured at 0.8 apart after 15 steps; without any ceiling the paths agree to 1e-14.
+@testset "the path of $(nameof(typeof(algorithm))) does not depend on the section" for algorithm in (
+    GradientMethod(), BFGS())
+    k = (N2 - n2) ÷ 2
+    d = exp2.(range(-2.5, 2.5; length = k))
+    S = cat(Diagonal(d), Diagonal(inv.(d)); dims = (1, 2))
+    function path(h)
+        U = start()
+        opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Backtracking(T))
+        state = OptimizerState(algorithm, U)
+        GeometricOptimizers._start_section!(section(state), U)
+        section(state).λ .= section(state).λ * h
+        GeometricOptimizers._start_inverse_hessian!(state)
+        iterates = Matrix{T}[]
+        for _ in 1:15
+            GeometricOptimizers.increase_iteration_number!(state)
+            GeometricOptimizers.solver_step!(U, state, opt)
+            update!(state, opt, U, objective(U))
+            push!(iterates, copy(U.A))
+        end
+        iterates
+    end
+    a, b = path(Matrix{T}(I, N2 - n2, N2 - n2)), path(S)
+    @test !(a[end] ≈ start().A)
+    @test maximum(norm.(a .- b) ./ norm.(a)) < 1e-10
+end
+
 # The two methods with a line search find the minimum, and every iterate stays on the manifold.
 @testset "$(nameof(typeof(algorithm))) finds the symplectic eigenvalues, $(nameof(typeof(R)))" for algorithm in (
         GradientMethod(), BFGS()),

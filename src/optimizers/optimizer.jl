@@ -14,9 +14,9 @@ solve with `Optimizer(x, F; step_ceiling = …)`; `Inf` switches the ceiling off
 
 A line search bounds its step by the merit: it stops when ``\varphi`` stops falling. On a compact
 manifold ``\varphi`` is bounded, so a step many turns too long can decrease the merit, and no test of
-the search rejects it. On [`SymplecticStiefelManifold`](@ref) a Hamiltonian lift can carry real
-eigenvalues up to ``\|\delta\|``, so [`Cayley`](@ref) has a real pole already at ``\alpha = 2/\|\delta\|``
-and [`Geodesic`](@ref) grows exponentially past ``1/\|\delta\|``. The bound that exists is not a property
+the search rejects it. On [`SymplecticStiefelManifold`](@ref) a Hamiltonian lift ``B`` can have real
+eigenvalues, so [`Cayley`](@ref) can have a real pole at ``\alpha = 2/\rho(B)``, and [`Geodesic`](@ref)
+grows exponentially at a rate of up to ``\rho(B)``. The bound that exists is not a property
 of ``\varphi``: it comes from the lift's geometry and changes at every solver step. The
 `DEFAULT_LINESEARCH_αmax` of a line search method is a backstop for every problem, not this bound. The
 manual section [A bounded merit is not a bound on the step](@ref) gives the measurements on the SVD
@@ -25,8 +25,8 @@ problem.
 # Why `1`
 
 `1` says *"at most one natural geometric unit along the direction"*: one full turn ``2\pi/\|\delta\|``
-on a compact orthogonal lift, and ``1/\|\delta\|`` — half the worst-case real `Cayley` pole — on a
-symplectic lift. That is the scale that the geometry supplies, not a value tuned to one problem.
+on a compact orthogonal lift, and ``1/\rho(B)`` — half the distance to the nearest real `Cayley` pole
+that the spectral radius allows — on a symplectic lift. That is the scale that the geometry supplies, not a value tuned to one problem.
 
 !!! info "This bounds the step, not the direction and not `α`"
     A short direction can take a large ``\alpha`` in an ordinary step, which a ceiling on ``\alpha``

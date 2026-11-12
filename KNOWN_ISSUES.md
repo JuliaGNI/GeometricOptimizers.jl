@@ -326,17 +326,24 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `StiefelLieAlgHorMatrix`, `GrassmannLieAlgHorMatrix` and `SymplecticLieAlgHorMatrix`; one method on
   the lift type would serve all three.
 
-### K57 · Under `Adam`, and in the secant pairs of `BFGS` and `DFP`, the step on a `SymplecticStiefelManifold` depends on the transported section
+### K57 · Under `Adam` the step on a `SymplecticStiefelManifold` depends on the transported section
 
-- location: `src/global_sections/global_sections.jl`, `gradient_rep!`
+- location: `src/manifold_optimizers/adam_optimizer.jl`
 - kind: found late
 - found: 2026-11-10
 - evidence: for `n < N`, a change of the section by `diag(I, S)`, `S` symplectic, leaves the point
   where it is and maps the coordinates `(𝒜, ℬ)` of a lift to `(𝒜, S⁻¹ℬ)`. No positive-definite inner
   product on `ℬ` is invariant under the non-compact `Sp(2N − 2n)`, so every operation in these
-  coordinates that is not equivariant under this map depends on the section: `Adam`'s entrywise
-  second moments, the secant pairs of `BFGS` and `DFP` after their first step (which starts from the
-  metric, `_metric_inverse!`), `step_αmax` and `rxₐ`. This is a property of the manifold, not a
+  coordinates that is not equivariant under this map depends on the section. `Adam`'s entrywise
+  second moments are such an operation, and they change the step. Two others change no step in a
+  generic solve: the tolerance `CURVATURE_TOLERANCE * l2norm(Δx) * l2norm(Δg)` of
+  `curvature_is_usable`, which `BFGS` and `DFP` read only near a pair it rejects, and `rxₐ` of
+  `OptimizerStatus`. The secant pairs of `BFGS` and `DFP` do not make the step depend on the section:
+  `Q` starts at `M⁻¹` (`_metric_inverse!`), which transforms with the coordinates, and the BFGS update
+  is the same in every linear coordinate system. `step_αmax` reads the spectral radius of the lift,
+  which the change keeps. `test/integration/symplectic_optimizer_tests.jl` asserts that the paths of
+  `GradientMethod` and `BFGS` under a line search agree to `1e-10` for two sections with
+  `κ(S) ≈ 32`. This is a property of the manifold, not a
   defect of the code. On the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the
   section's condition number grows from 1.35 to about 3.6 over a solve. Over 10⁵ steps of `Adam`
   with a noisy gradient it ends 1.0 to 1.6 times above a fresh `global_section`, and
@@ -345,8 +352,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   sufficiently ill-conditioned start, because the Riemannian gradient of `(3.16)` scales as
   `O(‖U‖³)`). A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
   eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
-  Fixed-step `GradientMethod` and `MomentumMethod` do not depend on the section in exact
-  arithmetic.
+  `GradientMethod`, `MomentumMethod`, `BFGS` and `DFP` do not depend on the section in exact
+  arithmetic, at a fixed step and under a line search.
 
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 

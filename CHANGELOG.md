@@ -19,8 +19,11 @@ breaking release).
   `MomentumMethod`, `Adam`, `BFGS` and `DFP` under `Optimizer`, and the first three under
   `TrainingOptimizer` and in a `CompositeMethod`, take such a point and a parameter set with such a
   leaf, where they raised an `ArgumentError` before. `step_αmax(c, δ::SymplecticLieAlgHorMatrix)`
-  caps line-search trial steps at `c / l2norm(δ)` — half the worst-case real `Cayley` pole
-  `2 / l2norm(δ)`, since a Hamiltonian lift can carry real eigenvalues up to `l2norm(δ)` — and
+  caps line-search trial steps at `c / ρ(δ)` for the spectral radius `ρ` of the lift, half the
+  distance to the nearest real `Cayley` pole that `ρ` allows. A Hamiltonian lift can have real
+  eigenvalues, so the `2πc / l2norm(δ)` of a rotation does not apply; `ρ` and not `l2norm(δ)`,
+  because a change of the section keeps the eigenvalues of the lift and changes its norm. `ρ` is
+  computed from the `4n × 4n` product of the factors of `lift_factors`, and `c / ρ(δ) ≥ c / l2norm(δ)`.
   `solution_scale(U::SymplecticStiefelManifold)` measures `l2norm(parent(U))` on the non-compact
   manifold rather than the compact `√(2n)`. `AdamWithEuclideanDecay` refuses a
   `SymplecticStiefelManifold` leaf (bare or inside a `NetworkParameters`) with an `ArgumentError`,
@@ -32,9 +35,9 @@ breaking release).
   metric.** The gradient they hold is `global_rep` of the Riemannian gradient, which is what they
   held before on a vector space, a `StiefelManifold` and a `GrassmannManifold`, so no existing call
   changes. On a `SymplecticStiefelManifold` it is gradient
-  descent in the metric (3.16) of Bendokat and Zimmermann, whose fixed-step path under
-  `GradientMethod` and `MomentumMethod` does not depend on the section (`Adam`'s entrywise second
-  moments on `ℬ`, `step_αmax` and `rxₐ` still do, K57). The steepest descent of `½tr(XᵀY)` on the
+  descent in the metric (3.16) of Bendokat and Zimmermann, whose path under `GradientMethod` and
+  `MomentumMethod`, at a fixed step and under a line search, does not depend on the section
+  (`Adam`'s entrywise second moments on `ℬ` still do, K57). The steepest descent of `½tr(XᵀY)` on the
   lifts at the current section is not offered: for `n < N` it is not a Riemannian method and its
   step changes with the section the optimizer has transported along its path. The page on global
   tangent spaces shows why for `n < N` no inner product on the lift gives a Riemannian metric
