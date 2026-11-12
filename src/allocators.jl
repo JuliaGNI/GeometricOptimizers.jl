@@ -29,7 +29,7 @@ end
 # One method per bare type, generated, and not one method on a `Union` of `Type`s: Julia does not
 # specialize on an argument of such a `Union`, and the result would infer as `Any`.
 for X in (SkewSymMatrix, SymmetricMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular,
-    StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix,
+    StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SymplecticLieAlgHorMatrix,
     StiefelManifold, GrassmannManifold, SymplecticStiefelManifold)
     X <: Manifold || @eval function Base.zeros(backend::KernelAbstractions.Backend,
             ::Type{$X}, d::Integer, dims::Integer...)

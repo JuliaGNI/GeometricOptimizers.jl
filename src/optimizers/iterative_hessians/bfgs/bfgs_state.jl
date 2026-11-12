@@ -82,8 +82,10 @@ inverse_hessian(state::BFGSState) = state.Q
 @doc raw"""
     restart!(state::BFGSState)
 
-Reset the inverse-Hessian approximation to the identity, so that the next direction is the
-steepest-descent one.
+Reset the inverse-Hessian approximation to the inverse ``M^{-1}`` of the metric in the coordinates
+of the section, so that the next direction is the steepest-descent one; see
+[`GeometricOptimizers._metric_inverse!`](@ref). On every parameter but a
+[`SymplecticStiefelManifold`](@ref), ``M`` is the identity.
 
 This is the `BFGSState` method of [`restart!`](@ref); `DFPState` is an alias for `BFGSState`, so it
 covers `DFP` as well. [`solver_step!`](@ref) calls it when a line search reports that it could not
@@ -96,8 +98,71 @@ decrease the merit — see [`linesearch_rejected`](@ref).
     negative for the rest of the solve. Discarding ``Q`` is what recovers.
 """
 function restart!(state::BFGSState)
-    _identity!(inverse_hessian(state))
+    _reset_inverse_hessian!(state)
     state
+end
+
+# `Q ← M⁻¹` at the iterate and the section of `state`.
+function _reset_inverse_hessian!(state::BFGSState)
+    _metric_inverse!(inverse_hessian(state), state.x, state.section)
+end
+
+@doc raw"""
+    _metric_inverse!(Q, x, λY)
+
+Write into `Q` the inverse ``M^{-1}`` of the Gram matrix of the metric in the flattened coordinates
+of the lifts at the section `λY` of `x`:
+
+```math
+M_{ij} = g_x\big(\lambda(x)e_iE,\ \lambda(x)e_jE\big),
+```
+
+with ``e_i`` the ``i``-th flattened coordinate. This is where [`BFGS`](@ref) and [`DFP`](@ref) start
+``Q``, and where [`restart!(::BFGSState)`](@ref) puts it back.
+
+The quasi-Newton methods hold the derivative with respect to the stored entries,
+[`GeometricOptimizers.gradient_rep!`](@ref), because their secant pairs, their ``Q`` and their
+descent test pair it with [`GeometricOptimizers._dot`](@ref). That lift is ``M`` times the lift
+[`global_rep`](@ref) of the Riemannian gradient, which [`GradientMethod`](@ref) holds. Starting from
+``Q = M^{-1}`` therefore makes the first direction, and every direction after a restart,
+``-M^{-1}\,\mathtt{gradient\_rep}(\Delta) = -\mathtt{global\_rep}(\Delta)``: the steepest descent of
+the metric, the same lift for every method, and independent of the section.
+
+On the [`StiefelManifold`](@ref), the [`GrassmannManifold`](@ref) and a vector space,
+[`GeometricOptimizers._dot`](@ref) is the metric, ``M`` is the identity, and `Q` is set to it without
+forming ``M``. On the [`SymplecticStiefelManifold`](@ref) the metric is not invariant under the
+symplectic group, ``M`` depends on the point and the section, and it is built one column per
+coordinate, with [`GeometricOptimizers._metric_apply!`](@ref), and inverted through its Cholesky
+factor: ``O(d)`` lift products and ``O(d^3)`` for the inverse, where ``d`` is the length of the
+flattening, against the ``O(d^2)`` of one update of ``Q``. It is done at the start of a solve and at a
+restart, not at every step.
+"""
+function _metric_inverse!(Q::AbstractMatrix{T}, x::OptimizerSolution{T}, λY) where {T}
+    _metric_is_identity(x) && return _identity!(Q)
+    B, MB = _zero(x), _zero(x)
+    e = FlatParameters(_flatten_on_backend(T, B)...)
+    Me = similar(e)
+    M = similar(Q)
+    for j in axes(M, 2)
+        fill!(parent(e), zero(T))
+        parent(e)[j] = one(T)
+        unflatten!(B, e)
+        _metric_apply!(MB, λY, B)
+        flatten!(Me, MB)
+        M[:, j] .= parent(Me)
+    end
+    Q .= inv(cholesky(Symmetric(M)))
+    Q
+end
+
+# Whether `_dot` on the lifts of `x` is its metric; see `_metric_inverse!`.
+_metric_is_identity(::AbstractArray) = true
+_metric_is_identity(::Manifold) = true
+_metric_is_identity(::SymplecticStiefelManifold) = false
+function _metric_is_identity(ps::NetworkParameters)
+    identity = Ref(true)
+    foreachparameters(p -> (identity[] &= _metric_is_identity(p)), ps)
+    identity[]
 end
 
 # `unit_matrix` and not `Base.one`, whose diagonal loop indexes one entry at a time and so raises on a
@@ -105,15 +170,17 @@ end
 _identity!(Q::AbstractMatrix) = (Q .= unit_matrix(Q); Q)
 
 # The one initialisation, which the constructor and `initialize_state!` share: the tangents and the
-# objectives read `NaN` up to the first step, which writes them, and `Q` starts at the identity. The
-# points are not filled, because a manifold point cannot hold `NaN`. The first secant pair is then `NaN`
-# and `curvature_is_usable` rejects it, so the first step is steepest descent.
+# objectives read `NaN` up to the first step, which writes them, and `Q` starts at the inverse of the
+# metric, the identity on every parameter but a symplectic one; see `_metric_inverse!`. The points are
+# not filled, because a manifold point cannot hold `NaN`. The first secant pair is then `NaN` and
+# `curvature_is_usable` rejects it, so the first step is steepest descent. `solve!` places the section
+# after this has run, and `_start_inverse_hessian!` sets `Q` again at the section it placed.
 function _poison!(state::BFGSState{T}) where {T}
     _fill!(state.s, T(NaN))
     _fill!(state.ḡ, T(NaN))
     state.f = T(NaN)
     state.f̄ = T(NaN)
-    _identity!(inverse_hessian(state))
+    _reset_inverse_hessian!(state)
 
     state
 end

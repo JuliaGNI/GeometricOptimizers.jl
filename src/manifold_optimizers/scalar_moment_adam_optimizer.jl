@@ -43,6 +43,7 @@ The fields are [`AdamCache`](@ref)'s, except that `m₂` is a single number rath
 - `Δg`: difference in gradients, needed for [`OptimizerStatus`](@ref),
 - `g̃`: scratch for [`latest_gradient`](@ref); see [`GradientCache`](@ref),
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
+- `g̃_norm`: the Riemannian norm of the gradient at `x`; see [`latest_gradient_norm`](@ref),
 - `m₁`: the first moment, a horizontal lift, stored bias-corrected,
 - `m₂::T`: the second moment, the *scalar* of [li2020efficient](@cite), stored bias-corrected,
 - `m̃₂::T`: `√(m₂ + method.δ)`, the scalar the direction is divided by. The `δ` in it is
@@ -56,6 +57,7 @@ mutable struct ScalarMomentAdamCache{T, XT, VT, ST} <: OptimizerCache{T}
     Δg::VT
     g̃::VT
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
     m₁::VT
     m₂::T
     m̃₂::T
@@ -75,7 +77,7 @@ function ScalarMomentAdamCache(x::StiefelManifold{T}) where {T}
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
     ScalarMomentAdamCache{T, typeof(x), typeof(g), typeof(sec)}(
-        _copy(x), g, δ, Δg, g̃, Ref(false), _zero(g), zero(T), zero(T), sec)
+        _copy(x), g, δ, Δg, g̃, Ref(false), Ref(T(NaN)), _zero(g), zero(T), zero(T), sec)
 end
 
 direction(cache::ScalarMomentAdamCache) = cache.δ
@@ -218,7 +220,7 @@ function update!(cache::ScalarMomentAdamCache{T},
         state::ScalarMomentAdamState{T}, gradient::Gradient{T},
         method::ScalarMomentAdam{T}, x::StiefelManifold{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`
-    store_gradient!(cache, state, gradient, x)
+    store_gradient!(cache, state, gradient, x, method)
     _copyto!(section(cache), section(state))
     _copyto!(solution(cache), x)
     t = state.iterations

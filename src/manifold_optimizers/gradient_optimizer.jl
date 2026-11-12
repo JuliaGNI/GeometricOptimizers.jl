@@ -22,6 +22,7 @@ Cache for the gradient optimizer.
 - `Δg`: difference in gradients,
 - `g̃`: scratch for [`latest_gradient`](@ref),
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
+- `g̃_norm`: the Riemannian norm of the gradient at `x`; see [`latest_gradient_norm`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 
 # Implementation
@@ -42,6 +43,7 @@ struct GradientCache{T, MT, VT, ST} <: OptimizerCache{T}
     Δg::VT
     g̃::VT
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
     section::ST
 end
 
@@ -50,7 +52,8 @@ function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    GradientCache{T, typeof(x), typeof(g), typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
+    GradientCache{T, typeof(x), typeof(g), typeof(sec)}(
+        x, g, δ, Δg, g̃, Ref(false), Ref(T(NaN)), sec)
 end
 
 function GradientCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {
@@ -132,10 +135,10 @@ end
 # `scalar_moment_adam_optimizer.jl`, the first file where all four state types exist.
 
 function update!(cache::GradientCache{T}, state::GradientState{T},
-        gradient::Gradient{T}, ::GradientMethod, x::OptimizerSolution{T}) where {T}
+        gradient::Gradient{T}, method::GradientMethod, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below: it compares `solution(cache)` against `x` and
     # `section(cache)` against `section(state)`, which those overwrite
-    store_gradient!(cache, state, gradient, x)
+    store_gradient!(cache, state, gradient, x, method)
     _copyto!(section(cache), section(state))
     _copyto!(solution(cache), x)
     _copyto!(direction(cache), gradient_array(cache))

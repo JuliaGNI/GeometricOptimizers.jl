@@ -201,9 +201,9 @@ end
 
 [`lift_factors`](@ref) written into `ws`, returning nothing.
 
-Only the lift-dependent blocks are written — four for a Stiefel lift and two for a Grassmann one,
-whose ``A`` block is identically zero. The identity and zero blocks were written when the workspace
-was built. `ws` has to have been built for `B`'s shape.
+Only the lift-dependent blocks are written — four for a Stiefel or a symplectic lift and two for a
+Grassmann one, whose ``A`` block is identically zero. The identity and zero blocks were written when
+the workspace was built. `ws` has to have been built for `B`'s shape.
 """
 function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T}) where {T}
     N, n = B.N, B.n
@@ -216,6 +216,21 @@ function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T})
         ws.B̂[(n + 1):N, 1:n] .= B.B
         ws.B̄ᵗ[(n + 1):(2n), 1:n] .= T(0.5) .* ws.A_mat
         ws.B̄ᵗ[(n + 1):(2n), (n + 1):N] .= .-transpose(B.B)
+    end
+
+    nothing
+end
+
+function lift_factors!(ws::RetractionWorkspace{T}, B::SymplecticLieAlgHorMatrix{T}) where {T}
+    N, n = B.N, B.n
+    @assert (ws.N, ws.n) == (N, n)
+    _hamiltonian_block!(ws.A_mat, B)
+
+    @views begin
+        ws.B̂[1:n, 1:n] .= T(0.5) .* ws.A_mat
+        ws.B̂[(n + 1):N, 1:n] .= B.B
+        ws.B̄ᵗ[(n + 1):(2n), 1:n] .= T(0.5) .* ws.A_mat
+        _symplectic_adjoint!(ws.B̄ᵗ[(n + 1):(2n), (n + 1):N], B.B, -one(T))
     end
 
     nothing

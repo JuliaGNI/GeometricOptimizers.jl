@@ -28,7 +28,7 @@ end
 # [`Optimizer`](@ref) builds that is [`RiemannianGradient`](@ref).
 function (grad::Gradient{T})(g::NetworkParameters{T}, x::NetworkParameters{T},
         state::OptimizerState{T}) where {T}
-    global_rep!(g, section(state), grad(x))
+    gradient_rep!(g, section(state), grad(x))
 end
 
 # `NeuralNetworkParameters.mapparameters` and not `map`, here and in every primitive below. `map`
@@ -50,13 +50,8 @@ end
 # with a branch raises a `MethodError` that names the type.
 _zero(a::AbstractArray) = zero(a)
 # the zero tangent vector at a point, which is a horizontal lift and not the point's own shape
-_zero(a::Union{StiefelManifold, GrassmannManifold}) = zero_tangent(a)
-# Every first-order and quasi-Newton cache and state is sized by the lift of the point, and this one
-# has none: the symplectic horizontal Lie algebra is known, below (3.4) of Bendokat and Zimmermann,
-# and no type here implements it. Falling through to `zero(a)` builds an optimizer whose first step
-# has no `global_rep!` method.
-function _zero(::SymplecticStiefelManifold)
-    throw(ArgumentError("a SymplecticStiefelManifold cannot be optimized over: this package does not implement the symplectic horizontal Lie algebra (Bendokat and Zimmermann, below their Eq. (3.4)) that would hold its gradient"))
+function _zero(a::Union{StiefelManifold, GrassmannManifold, SymplecticStiefelManifold})
+    zero_tangent(a)
 end
 _zero(a::NetworkParameters) = mapparameters(_zero, a)
 

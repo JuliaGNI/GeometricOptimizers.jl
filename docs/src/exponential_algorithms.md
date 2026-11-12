@@ -1508,7 +1508,7 @@ GeometricOptimizers.𝔄(X::AbstractMatrix, ::NewAlgorithm)
 ```
 
 Everything above it — [`geodesic`](@ref) for lifts and for tangent vectors, `retraction`,
-`update_section!`, the optimizer — then follows, for both manifolds, with no further methods. An
+`update_section!`, the optimizer — then follows, for every manifold, with no further methods. An
 algorithm that does not evaluate ``\mathfrak{A}`` at all supplies
 
 ```julia

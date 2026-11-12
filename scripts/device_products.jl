@@ -34,7 +34,7 @@ tohost(x::Adjoint) = adjoint(tohost(parent(x)))
 tohost(x::Transpose) = transpose(tohost(parent(x)))
 tohost(x::StiefelProjection) = Array(x.A)
 tohost(x::Union{VectorStorageMatrix, AbstractLieAlgHorMatrix}) = mapstorage(tohost, x)
-# a point by its constructor: `SymplecticStiefelManifold` has no `rebuild`, so `mapstorage` refuses it
+# a point by its constructor, which serves every manifold alike
 tohost(x::Manifold) = Base.typename(typeof(x)).wrapper(tohost(x.A))
 tohost(x) = x
 
@@ -60,12 +60,14 @@ function fixtures(rng, ::Type{T}) where {T}
     lift = StiefelLieAlgHorMatrix(rand(rng, SkewSymMatrix{T}, n), randn(rng, T, N - n, n), N, n)
     skew = rand(rng, SkewSymMatrix{T}, N)
     grass = rand(rng, GrassmannLieAlgHorMatrix{T}, N, n)
+    # a symplectic lift needs an even number of columns; `2n = 4` fits the `6 × 6` of the others
+    symp = rand(rng, SymplecticLieAlgHorMatrix{T}, N, 4)
     # the adjoints of the two triangulars are the other triangular, and a symmetric matrix is its own
     ["SkewSym" => skew, "SkewSym'" => skew', "Sym" => rand(rng, SymmetricMatrix{T}, N),
         "Lower" => rand(rng, StrictlyLowerTriangular{T}, N),
         "Upper" => rand(rng, StrictlyUpperTriangular{T}, N),
         "StiefelHor" => lift, "StiefelHor'" => lift', "GrassmannHor" => grass,
-        "GrassmannHor'" => grass',
+        "GrassmannHor'" => grass', "SymplecticHor" => symp, "SymplecticHor'" => symp',
         "Y" => StiefelManifold(Q[:, 1:n]), "Y'" => StiefelManifold(Q[:, 1:n])',
         "G" => GrassmannManifold(Q[:, 1:n]), "G'" => GrassmannManifold(Q[:, 1:n])',
         "U" => U, "U'" => U', "E" => StiefelProjection(T, N, n),
@@ -133,8 +135,8 @@ function device_products(todevice, ::Type{T} = Float32; seed = 1234) where {T}
         end
     end
 
-    # Back to the host. `SymplecticStiefelManifold` has no `rebuild`, so the parameter protocol that
-    # `changebackend` walks does not cover it; the adjoints are not parameters.
+    # Back to the host. The adjoints are not parameters. The symplectic point is left out of this sweep,
+    # whose rows are recorded without it; `test/integration/changebackend.jl` moves it.
     for (name, h) in ops
         (h isa Adjoint || h isa SymplecticStiefelManifold) && continue
         push!(rows,

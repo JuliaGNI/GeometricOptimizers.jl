@@ -19,11 +19,6 @@ at the base point for ``\rho = 2``, and for no ``\rho`` at a general point.
 the symplectic SR decomposition [`sr!`](@ref), which is the construction
 [gao2024optimization](@cite) uses for its retraction.
 
-No optimizer steps this type, because the package has no symplectic horizontal Lie algebra. The
-space is known: [bendokat2021real](@cite) gives it below its (3.4). Until a lift type implements it,
-[`TrainingOptimizer`](@ref) and [`Optimizer`](@ref) refuse a point, and a parameter set with such a
-leaf, when they are built.
-
 The horizontal space depends on the metric here, in contrast to the Stiefel case. For the Stiefel
 manifold, [edelman1998geometry](@cite) gives one horizontal space in its (2.21), with the blocks
 ``A`` and ``-B^T``, and the canonical metric is half the restriction of the metric of the orthogonal
@@ -32,6 +27,18 @@ complement of the vertical space with respect to the pseudo-Riemannian metric ``
 which is bi-invariant and not positive definite. The space in (3.13) is the complement with respect
 to the right-invariant Riemannian metric ``g`` of its (2.2), under a condition that depends on
 ``U``, and this is the horizontal space of the metric (3.16) that this type implements.
+
+The optimizers step this type through the first of the two, the one subspace of the Lie algebra
+that is horizontal at every point: [`SymplecticLieAlgHorMatrix`](@ref) implements it, and
+[`global_rep`](@ref) maps a tangent vector into it. [`GradientMethod`](@ref),
+[`MomentumMethod`](@ref) and [`Adam`](@ref) follow the Riemannian gradient of the metric (3.16);
+the line search, [`BFGS`](@ref) and [`DFP`](@ref) pair the derivative of
+the loss with respect to the stored entries of a lift, and the quasi-Newton methods start from the
+Riemannian gradient. [`GeometricOptimizers.gradient_rep!`](@ref)
+gives each of them. Every first-order
+and quasi-Newton method of [`Optimizer`](@ref) and [`TrainingOptimizer`](@ref) takes a point, and a
+parameter set with such a leaf, except [`AdamWithEuclideanDecay`](@ref), whose weight decay is not
+defined here, and the methods that take a [`StiefelManifold`](@ref) by their signature.
 
 !!! warning "The accuracy degrades with the size, and `Float32` is out of reach"
     A point is only as good as the decomposition it came from, and that decomposition has no
@@ -182,6 +189,11 @@ The Riemannian gradient of a point of the symplectic Stiefel manifold, for the m
 
 ``\nabla{}L`` is the Euclidean gradient, i.e. the derivative of the loss with respect to the
 entries of `U` read as an unconstrained matrix.
+
+The manifold is not compact, and the gradient grows with the point: like ``\|U\|^3`` where
+``\nabla{}L`` grows like ``\|U\|``, along a hyperbolic direction such as
+``U\,\mathrm{diag}(s\mathbb{I}, s^{-1}\mathbb{I})``. A fixed step size can therefore diverge from an
+ill-conditioned start; see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref).
 """
 function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
     J = _poisson_tensor(U, size(U, 1))
@@ -239,44 +251,72 @@ function check(U::SymplecticStiefelManifold)
                        _poisson_tensor(U, size(U, 2)))
 end
 
+# The zero horizontal lift at `U`, as `zero_tangent(::StiefelManifold)`.
+function zero_tangent(U::SymplecticStiefelManifold{T}) where {T}
+    N, n = size(U)
+    zeros(KernelAbstractions.get_backend(U.A), SymplecticLieAlgHorMatrix{T}, N, n)
+end
+
 @doc raw"""
     global_section(U::SymplecticStiefelManifold)
 
-A symplectic completion of `U`: the remaining ``2N - 2n`` directions, drawn at random and made
-symplectic against `U`. The result is ``2N\times(2N - 2n)``, as
+A symplectic completion of `U`: ``2N - 2n`` columns ``U^s`` with ``U^T\mathbb{J}_{2N}U^s = \mathbb{O}``
+and ``(U^s)^T\mathbb{J}_{2N}U^s = \mathbb{J}_{2N - 2n}``. The result is ``2N\times(2N - 2n)``, as
 [`global_section(::StiefelManifold)`](@ref) is ``N\times(N - n)``, and it is what `GlobalSection`
-expects.
+expects: ``[U\ \ U^s]`` is symplectic in the basis [`SymplecticLieAlgHorMatrix`](@ref) describes.
 
-The counterpart of that method, with the symplectic form in place of the Euclidean one.
+# Implementation
+
+The completion spans the symplectic complement ``\{x : U^T\mathbb{J}_{2N}x = 0\}`` of `U`, which is
+the orthogonal complement of the range of ``\mathbb{J}_{2N}^TU``. A full QR decomposition of that
+matrix gives an orthonormal basis ``Q`` of it, and in this basis the Poisson tensor is the
+skew-symmetric ``S = Q^T\mathbb{J}_{2N}Q``. The eigenvectors ``v_j = a_j + ib_j`` of the Hermitian
+``iS`` for its ``N - n`` positive eigenvalues ``\sigma_j`` have ``Sa_j = \sigma_jb_j``, and their real and
+imaginary parts are orthogonal to each other and of norm ``1/\sqrt{2}``, so
+
+```math
+U^s = Q\begin{bmatrix} \frac{\sqrt{2}b_1}{\sqrt{\sigma_1}} & \cdots & \frac{\sqrt{2}a_1}{\sqrt{\sigma_1}} & \cdots \end{bmatrix}
+```
+
+satisfies both conditions. This is the Schur-type normal form of a skew-symmetric matrix that
+[bendokat2021real](@cite) use to build a point from a projector on the symplectic Grassmann
+manifold. Its columns are orthogonal, with norms ``1/\sqrt{\sigma_j}``, so the
+condition number of ``U^s`` is ``\sqrt{\sigma_\mathrm{max}/\sigma_\mathrm{min}}``, and ``U^s`` is
+orthonormal where `U` is orthosymplectic. The optimizers transport the section from there, and its
+conditioning is what the coordinates of the lift, and so the steps of [`Adam`](@ref) and of the
+quasi-Newton methods, are measured in. On one ``10\times{}4`` point, a completion drawn at random
+and made symplectic by [`sr!`](@ref) gave a section ``[U\ \ U^s]`` with condition number
+``6.4\times10^3``, and gradient descent measured in it stalled far from the minimum.
 
 # This one is host-only, and the other three of this type's operations are not
 
-[`rgrad`](@ref), [`metric`](@ref) and [`check`](@ref) run wherever the point is — [`metric`](@ref)
-as far as the backend supplies an `lu`, since it forms ``\mathrm{inv}(U^TU)``. This does not, and
-the reason is the same one that makes `rand(::AbstractRNG, ::KernelAbstractions.Backend, ::Type{<:SymplecticStiefelManifold}, …)` refuse:
-the completion is orthogonalized by the symplectic SR decomposition [`sr!`](@ref), which is a host
-factorization — `_rand_symplectic_stiefel` calls `Matrix` on its factor. A device spelling would be
-a host computation with two transfers around it, which is a different operation from the
-device-native section [`global_section(::StiefelManifold)`](@ref) gives.
+[`rgrad`](@ref), [`metric`](@ref) and [`check`](@ref) run wherever the point is, [`metric`](@ref)
+as far as the backend supplies an `lu`, since it forms ``\mathrm{inv}(U^TU)``. This does not: it
+needs a full QR decomposition and the eigendecomposition of a Hermitian matrix, which a
+`KernelAbstractions` backend is under no obligation to supply, and the points it is applied to are
+drawn on the host anyway, because
+`rand(::AbstractRNG, ::KernelAbstractions.Backend, ::Type{<:SymplecticStiefelManifold}, …)` refuses
+a backend other than the host.
 
-A device-backed point is therefore refused with an `ArgumentError` that says so, rather than left
-to fail inside `sr!` with `Cannot access the contents of a private buffer`, which names neither the
-manifold nor the call.
+A device-backed point is therefore refused with an `ArgumentError` that says so.
 """
-function global_section(U::SymplecticStiefelManifold)
+function global_section(U::SymplecticStiefelManifold{T}) where {T}
     backend = KernelAbstractions.get_backend(U)
     backend isa CPU ||
-        throw(ArgumentError("global_section is host-only for a SymplecticStiefelManifold: the symplectic SR decomposition runs on the host, so a section of a $(backend) point would be a host computation with transfers around it. Move the point to the host first. rgrad and check do run on $(backend), and metric does wherever the backend supplies an lu."))
+        throw(ArgumentError("global_section is host-only for a SymplecticStiefelManifold: the completion needs a full QR decomposition and a Hermitian eigendecomposition, which run on the host, so a section of a $(backend) point would be a host computation with transfers around it. Move the point to the host first. rgrad and check do run on $(backend), and metric does wherever the backend supplies an lu."))
 
     N2, n2 = size(U)
-    N, n = N2 ÷ 2, n2 ÷ 2
-    m = N - n
-    A = randn(eltype(U), N2, N2 - n2)
-    J₁ = _poisson_tensor(U, N2)
-    J₂ = _poisson_tensor(U, n2)
-    A -= U * J₂ * U' * J₁' * A
-    # `sr!` returns the full `2N x 2N` symplectic factor; the completion is `m` of its columns from
-    # each half, the same slice `_rand_symplectic_stiefel` takes. Returning the whole factor would
-    # not be a completion at all -- `‖UᵀJΛ‖` over it is `O(100)` rather than zero.
-    Matrix(sr!(A).S)[:, vcat(1:m, (N + 1):(N + m))]
+    m = (N2 - n2) ÷ 2
+    # a full-width point has an empty completion, and LAPACK refuses the eigendecomposition of a
+    # `0 × 0` matrix
+    iszero(m) && return zeros(T, N2, 0)
+    # an orthonormal basis of the orthogonal complement of the range of `𝕁ᵀU`
+    Q = (qr(_poisson_tensor(U, N2)' * U.A).Q * Matrix{T}(LinearAlgebra.I, N2, N2))[:, (n2 + 1):N2]
+    S = Q' * (_poisson_tensor(U, N2) * Q)
+    # skew up to round-off; make it exactly so, as `geodesic(::AbstractLieAlgHorMatrix, ::ProjectedSkew)` does
+    S = (S - S') / 2
+    σ, V = eigen(Hermitian(im .* S))
+    # `eigen` sorts ascending, so the positive half is the last `m`
+    scale = transpose(sqrt.(T(2) ./ σ[(m + 1):(2m)]))
+    @views Q * hcat(imag.(V[:, (m + 1):(2m)]) .* scale, real.(V[:, (m + 1):(2m)]) .* scale)
 end

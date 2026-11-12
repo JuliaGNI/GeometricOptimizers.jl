@@ -140,11 +140,13 @@ include("special_matrices/lower_triangular.jl")
 include("special_matrices/upper_triangular.jl")
 include("special_matrices/vector_storage_matrix.jl")
 
-export StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, AbstractLieAlgHorMatrix
+export StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SymplecticLieAlgHorMatrix,
+       AbstractLieAlgHorMatrix
 include("lie_algebras/abstract_lie_algebra_horizontal.jl")
 include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
 include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
-# The method families both lifts share, written once over the block tuple; the file needs both
+include("lie_algebras/symplectic_lie_algebra_horizontal.jl")
+# The method families the lifts share, written once over the block tuple; the file needs the
 # concrete types, so it is included after them.
 include("lie_algebras/lift_families.jl")
 include("lie_algebras/stiefel_projection.jl")
@@ -270,6 +272,8 @@ include("optimizers/composite_method.jl")
 function __init__()
     register_parameter_type!("StiefelManifold", (S, md) -> StiefelManifold(_dense(S)))
     register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(_dense(S)))
+    register_parameter_type!(
+        "SymplecticStiefelManifold", (S, md) -> SymplecticStiefelManifold(_dense(S)))
     register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
     register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
     lower = (S, md) -> StrictlyLowerTriangular(_vector(S, md)...)
@@ -287,6 +291,8 @@ function __init__()
         (S, md) -> StiefelLieAlgHorMatrix(S[1], S[2], md.N, md.n))
     register_parameter_type!("GrassmannLieAlgHorMatrix",
         (S, md) -> GrassmannLieAlgHorMatrix(S[1], md.N, md.n))
+    register_parameter_type!("SymplecticLieAlgHorMatrix",
+        (S, md) -> SymplecticLieAlgHorMatrix(S[1], S[2], S[3], S[4], md.N, md.n))
 end
 
 end

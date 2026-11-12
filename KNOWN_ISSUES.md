@@ -296,38 +296,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   repair. Until then the type is documented as `Float64`-only at small sizes, in both the
   `SymplecticStiefelManifold` and `sr!` docstrings, and nothing in the package depends on it.
 
-### A23 · `SymplecticStiefelManifold` has no `Ω` and no `zero_tangent`, so it cannot be optimized over
-
-- location: `src/lie_algebras/`
-- kind: defect
-- found: 2026-09-18
-- evidence:
-
-  **Severity: medium.** Opened by the change that added the type.
-
-  `StiefelManifold` implements `Ω` and `zero_tangent` in addition to `rand`, `rgrad`, `metric` and
-  `global_section`; `SymplecticStiefelManifold` implements neither. `Ω(U, Δ)` is a `MethodError`.
-  `zero(U)` is a plain `Matrix` of the shape of the point, as on the other two manifolds, and there
-  is no zero tangent vector in the form of a lift.
-
-  So no optimizer can step this type, and each one says so when it is built. Every first-order and
-  quasi-Newton cache and state is sized by `_zero`, and `_zero(::SymplecticStiefelManifold)` raises
-  an `ArgumentError`. `TrainingOptimizer` and `Optimizer` therefore refuse such a point, and a
-  parameter set with such a leaf. `TrainingOptimizer` does so also under a `CompositeMethod`, which
-  `Optimizer` does not take. `AdamWithEuclideanDecay` refuses it with the `ErrorException` of its
-  weight-decay guard. `ScalarMomentAdam`, `DirectMomentum`, `DirectScalarMomentAdam` and
-  `FactoredStiefelAdam` take a `StiefelManifold` by their signature, so the call is a `MethodError`.
-  This refusal is the state of the issue and not a fix of it.
-
-  `Ω` and the lift need the **symplectic horizontal Lie algebra**, which this package does not have:
-  `src/lie_algebras/` holds the Stiefel and Grassmann horizontal components and no symplectic one. A
-  draft of the tangent-space projection `πₑ` exists in `GeometricMachineLearning`'s history at
-  `6a8e19a7:legacy/arrays/sympl_st_E_ts.jl`, written against two Lie algebra types that were never
-  committed anywhere; it is a starting point, not a solution.
-
-  Until this closes, the type is a geometric object with a metric, a Riemannian gradient and a global
-  section — not an optimization target.
-
 ### A26 · `symplectic_normalize` and `symplectic_gram_schmidt!` are real-only by construction
 
 - location: —
@@ -347,39 +315,45 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   **What to do**: Write a complex-valued algorithm that computes the sign correctly,
   or replace both with a method that accepts only real input by type constraint.
 
-### A28 · `SymplecticStiefelManifold` has no `rebuild`, so `changebackend` refuses it
+### K7 · The three `zero_tangent` bodies differ only in the lift type
 
-- location: `src/parameter_protocol.jl`
-- kind: defect
-- found: 2026-09-24
-- evidence:
-
-  **Severity: low.** `src/parameter_protocol.jl` gives the symplectic Stiefel manifold a
-  `freeparameters` and no `rebuild`, so `mapstorage` raises an `ArgumentError` for it, and
-  `changebackend`, which walks the parameter protocol, raises with it. The Stiefel and Grassmann
-  points and every structured matrix move between backends. Found by `scripts/device_products.jl`.
-
-### K7 · The two `zero_tangent` bodies differ only in the lift type
-
-- location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`
+- location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`,
+  `src/manifolds/symplectic_stiefel_manifold.jl`
 - kind: found late
 - found: 2026-09-27
-- evidence: `zero_tangent(::StiefelManifold)` and `zero_tangent(::GrassmannManifold)` are the same
-  three lines with `StiefelLieAlgHorMatrix` and `GrassmannLieAlgHorMatrix`; one method on the lift
-  type would serve both.
+- evidence: `zero_tangent(::StiefelManifold)`, `zero_tangent(::GrassmannManifold)` and
+  `zero_tangent(::SymplecticStiefelManifold)` are the same three lines with
+  `StiefelLieAlgHorMatrix`, `GrassmannLieAlgHorMatrix` and `SymplecticLieAlgHorMatrix`; one method on
+  the lift type would serve all three.
 
-### K24 · In `Float32`, `global_section` of a `SymplecticStiefelManifold` point raises the `DomainError` of A22 on a few draws in 2000
+### K57 · Under `Adam` the step on a `SymplecticStiefelManifold` depends on the transported section
 
-- location: `src/manifolds/symplectic_stiefel_manifold.jl`, `global_section`
+- location: `src/manifold_optimizers/adam_optimizer.jl`
 - kind: found late
-- found: 2026-10-09; one issue with A22
-- evidence: over 2000 points from `rand(rng, SymplecticStiefelManifold{T}, N2, n2)` per size, with
-  the point's generator `Random.Xoshiro(987_654)` independent of the global one that the completion
-  draws from (`Random.seed!(1)`), Julia 1.13.1: in `Float32`, `global_section` raises the
-  `DomainError` of A22 on 0, 1 and 5 points at 4×2, 6×4 and 10×6 (and `rand` itself on 0, 3 and 1);
-  in `Float64` on none. Every section that returns has `‖UᵀJΛ‖ / (‖U‖² ‖Λ‖²)` under `1120 eps(T)`
-  in both precisions. The section is built with `sr!`, which has no re-orthogonalization step, so
-  the stabilized SR decomposition of A22 closes this too.
+- found: 2026-11-10
+- evidence: for `n < N`, a change of the section by `diag(I, S)`, `S` symplectic, leaves the point
+  where it is and maps the coordinates `(𝒜, ℬ)` of a lift to `(𝒜, S⁻¹ℬ)`. No positive-definite inner
+  product on `ℬ` is invariant under the non-compact `Sp(2N − 2n)`, so every operation in these
+  coordinates that is not equivariant under this map depends on the section. `Adam`'s entrywise
+  second moments are such an operation, and they change the step. Two others change no step in a
+  generic solve: the tolerance `CURVATURE_TOLERANCE * l2norm(Δx) * l2norm(Δg)` of
+  `curvature_is_usable`, which `BFGS` and `DFP` read only near a pair it rejects, and `rxₐ` of
+  `OptimizerStatus`. The secant pairs of `BFGS` and `DFP` do not make the step depend on the section:
+  `Q` starts at `M⁻¹` (`_metric_inverse!`), which transforms with the coordinates, and the BFGS update
+  is the same in every linear coordinate system. `step_αmax` reads the spectral radius of the lift,
+  which the change keeps. `test/integration/symplectic_optimizer_tests.jl` asserts that the paths of
+  `GradientMethod` and `BFGS` under a line search agree to `1e-10` for two sections with
+  `κ(S) ≈ 32`. This is a property of the manifold, not a
+  defect of the code. On the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the
+  section's condition number grows from 1.35 to about 3.6 over a solve. Over 10⁵ steps of `Adam`
+  with a noisy gradient it ends 1.0 to 1.6 times above a fresh `global_section`, and
+  `GradientMethod` with the same noise diverges, with a section condition number of 4e63 before the
+  failure (issue #189; at a fixed step size `GradientMethod` can also diverge without noise from a
+  sufficiently ill-conditioned start, because the Riemannian gradient of `(3.16)` scales as
+  `O(‖U‖³)`). A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
+  eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
+  `GradientMethod`, `MomentumMethod`, `BFGS` and `DFP` do not depend on the section in exact
+  arithmetic, at a fixed step and under a line search.
 
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 
@@ -609,17 +583,34 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   last two silently-ignored options. Belongs in one PR with B1 and C1 — all three are the same subject,
   the status object not saying enough.
 
+### K58 · On a `SymplecticStiefelManifold` the predicted decrease `Δf̃` of `OptimizerStatus` is not the derivative of the objective along the step, and its gradient change `rgₐ` depends on the method
+
+- location: `src/optimizers/optimizer_status.jl`, `OptimizerStatus(state, cache, f; config)`
+- kind: defect
+- found: 2026-11-10
+- evidence: `Δf̃ = _dot(previous_gradient(state), direction(cache))` pairs the gradient the method
+  holds with the step under `_dot`. For `GradientMethod`, `MomentumMethod` and `Adam` that
+  gradient is `global_rep(rgrad)`, which on a symplectic lift does not pair under `_dot` to the derivative of the loss: only the flat
+  `gradient_rep!` does, as `test/global_sections/global_sections.jl` asserts. Only `f_converged_strong`
+  reads `Δf̃`, and no stop rule reads that, so no solve changes. A fix pairs the flat gradient with
+  the direction, at one more `gradient_rep!` per iteration, or stores the flat gradient beside the
+  held one. `rgₐ = l2norm(cache.Δg)` is the norm of the difference of the held gradients at two
+  iterates, so on this manifold it depends on the method in the same way; only `show` prints it. A
+  Riemannian norm needs the two gradients in one tangent space, which a transport gives and the
+  difference of two lifts at two sections does not. `rg`, which the gradient stop reads, is the
+  Riemannian norm for every method (`latest_gradient_norm`).
+
 ## C. This package — dead code and bookkeeping
 
 ### C1 · `f_converged_strong` is computed and thrown away
 
-- location: `src/optimizers/optimizer_status.jl:317`
+- location: `src/optimizers/optimizer_status.jl:322`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
 
-  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:317` and returns it at
-  `:323`; the `OptimizerStatus` constructor destructures it at `:121` and never stores it. Nothing else
+  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:322` and returns it at
+  `:328`; the `OptimizerStatus` constructor destructures it at `:123` and never stores it. Nothing else
   in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
   on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
   and `Options.f_stall_window` were meant to drive — both of which are also unread here.
@@ -636,7 +627,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C7 · `ensure_descent!` is vacuous for `GradientMethod`
 
-- location: `gradient_optimizer.jl:82`
+- location: `gradient_optimizer.jl:79`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
@@ -646,8 +637,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   `ensure_descent!` tests `dot(rhs(cache), direction(cache)) > 0`. That works because `rhs` is
   ``-\nabla{}f`` on the (quasi-)Newton caches — but on the three first-order caches `rhs` is defined as
-  an *alias* for `direction` (`gradient_optimizer.jl:82`, `momentum_optimizer.jl:63`,
-  `adam_optimizer.jl:72`), so the test reads `dot(δ, δ) > 0` and is true for every `δ` that is neither
+  an *alias* for `direction` (`gradient_optimizer.jl:79`, `momentum_optimizer.jl:65`,
+  `adam_optimizer.jl:80`), so the test reads `dot(δ, δ) > 0` and is true for every `δ` that is neither
   zero nor `NaN`.
 
   Of the three, only `GradientCache` reaches it: `MomentumMethod` and `Adam` are `FirstOrderMethodWithState`
@@ -1165,7 +1156,7 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K35 · A training step on a parameter set with a `StiefelManifold` leaf allocates 6 kB in `Float32` and 11 kB in `Float64`
 
-- location: `src/retractions/retraction_workspace.jl:279`
+- location: `src/retractions/retraction_workspace.jl:294`
 - kind: defect
 - found: 2026-10-11
 - evidence: `scripts/parameter_set_step_cost.jl` (Julia 1.13.3, KernelAbstractions 0.10.7,
@@ -1178,8 +1169,8 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
   | frame | what allocates | bytes | allocations |
   |:--|:--|--:|--:|
-  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:279` | `inv(ws.M)` | 5 448 | 8 |
-  | `_lift_A!`, `src/global_sections/global_sections.jl:301` | a temporary | 320 | 2 |
+  | `retraction_matrix!(ws, ::Cayley, B)`, `src/retractions/retraction_workspace.jl:294` | `inv(ws.M)` | 5 448 | 8 |
+  | `_lift_A!`, `src/global_sections/global_sections.jl:322` | a temporary | 320 | 2 |
 
   The two frames account for 5 768 of the 5 856 bytes. `inv(ws.M)` of the `2n × 2n` matrix stays
   an `inv`: `lu!` and `rdiv!` would take it in place on the host only, and a `KernelAbstractions`
@@ -1188,10 +1179,10 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K36 · The `SymmetricMatrix` product kernel is about 7 times slower than BLAS on the dense matrix
 
-- location: `src/special_matrices/symmetric.jl:200`
+- location: `src/special_matrices/symmetric.jl:235`
 - kind: defect
 - found: 2026-10-05
-- evidence: `symmetric_mat_mul_kernel!` (`src/special_matrices/symmetric.jl:200-212`) forms each
+- evidence: `symmetric_mat_mul_kernel!` (`src/special_matrices/symmetric.jl:235-247`) forms each
   entry of `S * B` from the packed storage, one product per entry and no BLAS. Measured on Julia
   1.12.7, `--check-bounds=auto`, one BLAS thread, a `64 × 64` `SymmetricMatrix{Float32}` times a
   `64 × 256` `Matrix{Float32}`, median of `@benchmark`: 393 µs with owned storage and 433 µs over a
@@ -1244,6 +1235,21 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   factors of `cayley_direct!`, so that it reuses the factorisation of the step. With this transport,
   the lift norm and `δ` inside the root, a tangent-space method is `ScalarMomentAdam` with no section.
   The script's `Q` is a dense `N × N` matrix, so this form is not implemented or measured here.
+
+### K59 · The flat gradient of a symplectic lift undoes `rgrad` through `(UᵀU)⁻¹`, because the optimizer protocol does not pass the Euclidean gradient
+
+- location: `src/global_sections/global_sections.jl`, `gradient_rep!(::SymplecticLieAlgHorMatrix, …)`
+- kind: found late
+- found: 2026-11-11
+- evidence: A gradient applied to a `Manifold` returns `rgrad(U, ∇L)`, so `gradient_rep!` recovers
+  the Frobenius representative `K = ΔP − ½𝕁ᵀUPUᵀ𝕁ΔP`, `P = (UᵀU)⁻¹`, through a Cholesky factor. From
+  `∇L` the same lift is two products, `Uᵀ∇L` and `(Uˢ)ᵀ∇L`. `scripts/symplectic_gradient_rep_direct.jl`
+  measures the error of the Cholesky path at 7.2e-15 for `κ(U) = 576` in `Float64` (2.3e-6 in
+  `Float32`), against 1e-16 (5e-8) for the direct product at every `κ`; the time per call at
+  `10 × 4` is 1.0 µs against 0.25 µs, and the two agree within 20 % from `1000 × 20` up. A direct path
+  needs the Euclidean gradient at `gradient_rep!`, and with it `BFGS` and `DFP` would also skip the
+  `rgrad` they now pay for (twice the time of `gradient_rep!` at `4000 × 40`). That is a change of the
+  gradient protocol for every manifold, `TrainingOptimizer` included, which already receives `∇L`.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40

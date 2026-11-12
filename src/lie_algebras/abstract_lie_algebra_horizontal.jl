@@ -14,7 +14,7 @@ The manifold a retraction of `B` lands on.
 
 ``\mathfrak{g}^\mathrm{hor}`` is the horizontal component of the Lie algebra *of a specific
 homogeneous space*, so the lift already determines where the retraction maps to. This is what lets
-[`geodesic`](@ref) and [`cayley`](@ref) be written once for both manifolds rather than twice each.
+[`geodesic`](@ref) and [`cayley`](@ref) be written once for every manifold rather than once for each.
 """
 function manifold_type end
 
@@ -22,7 +22,8 @@ function manifold_type end
     parent(B::AbstractLieAlgHorMatrix)
 
 The tuple of blocks `B`'s free parameters are stored in — `(A, B)` for a
-[`StiefelLieAlgHorMatrix`](@ref), `(B,)` for a [`GrassmannLieAlgHorMatrix`](@ref) — and *not* the
+[`StiefelLieAlgHorMatrix`](@ref), `(B,)` for a [`GrassmannLieAlgHorMatrix`](@ref),
+`(A₁, B₁, C₁, B)` for a [`SymplecticLieAlgHorMatrix`](@ref) — and *not* the
 single array every other `parent` this package defines returns.
 
 Every operation on a lift that is elementwise *in the free parameters* — as opposed to in the ambient
@@ -80,17 +81,19 @@ third wrapper in this package to meet that gap, after [`StiefelProjection`](@ref
 [`GeometricOptimizers.AbstractTriangular`](@ref)s.
 
 A lift is block ``\begin{pmatrix} A & -B^T \\ B & \mathbb{O} \end{pmatrix}``, with ``A`` absent for
-a [`GrassmannLieAlgHorMatrix`](@ref), so the product against an ``N\times{}m`` matrix is three
-block products — two for a Grassmann lift — and nothing else. **No kernel is needed and none is
-written**, which is where this differs from the triangulars: those hold a packed vector their
-`getindex` unpacks, while a lift holds ordinary blocks and a [`SkewSymMatrix`](@ref) that already
-carries a kernel-backed product of its own. The per-type part is the first ``n`` rows,
-`_hor_top_rows`, beside each concrete lift.
+a [`GrassmannLieAlgHorMatrix`](@ref), and with the Hamiltonian ``\mathcal{A}`` and the symplectic
+adjoint ``\mathcal{B}^+`` in place of ``A`` and ``B^T`` for a [`SymplecticLieAlgHorMatrix`](@ref).
+So the product against an ``N\times{}m`` matrix is three block products — two for a Grassmann
+lift — and nothing else. **No kernel is needed and none is written**, which is where this differs
+from the triangulars: those hold a packed vector their `getindex` unpacks, while a lift holds
+ordinary blocks and a [`SkewSymMatrix`](@ref) that already carries a kernel-backed product of its
+own. The per-type part is the first ``n`` rows, `_hor_top_rows`, beside each concrete lift.
 
-`*(C, B)` is written `-transpose(B * permutedims(C))`, on the identity ``B^T = -B``; a row vector
-`x` takes `transpose(x)` in place of `permutedims(C)`, and the vector form goes through the matrix
-one as a single column. `transpose` and `permutedims`, and not `adjoint`, wherever one appears,
-for the reason the comment on `_rmul(::AbstractMatrix, ::SkewSymMatrix)` in
+`*(C, B)` is written `-transpose(B * permutedims(C))`, on the identity ``B^T = -B`` of a Stiefel and
+a Grassmann lift. A symplectic lift does not satisfy it and takes its own `_rmul` on the blocks. A
+row vector `x` takes `transpose(x)` in place of `permutedims(C)`, and the vector form goes through
+the matrix one as a single column. `transpose` and `permutedims`, and not `adjoint`, wherever one
+appears, for the reason the comment on `_rmul(::AbstractMatrix, ::SkewSymMatrix)` in
 `special_matrices/skew_symmetric.jl` gives at length: the identity is a statement about the
 transpose, and `getindex` builds the off-diagonal blocks entrywise without conjugating. The two
 agree on a real element type and disagree on a complex one.

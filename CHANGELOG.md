@@ -8,6 +8,81 @@ breaking release).
 
 ## [Unreleased] — targeting 0.10.1
 
+### Added
+
+- **The optimizers step a `SymplecticStiefelManifold`.** The new lift type
+  `SymplecticLieAlgHorMatrix` implements the horizontal space that Bendokat and Zimmermann give
+  below their (3.4), the one subspace of the symplectic Lie algebra that is horizontal at every
+  point, in the basis `[U Uˢ]` that a `GlobalSection` stores. `global_rep`, `apply_section`,
+  `Ω`, `zero_tangent`, both retractions and their workspaces, `retraction_differential` and the
+  parameter protocol (`rebuild`, `storage_gradient`, loading from a file) cover it. `GradientMethod`,
+  `MomentumMethod`, `Adam`, `BFGS` and `DFP` under `Optimizer`, and the first three under
+  `TrainingOptimizer` and in a `CompositeMethod`, take such a point and a parameter set with such a
+  leaf, where they raised an `ArgumentError` before. `step_αmax(c, δ::SymplecticLieAlgHorMatrix)`
+  caps line-search trial steps at `c / ρ(δ)` for the spectral radius `ρ` of the lift, half the
+  distance to the nearest real `Cayley` pole that `ρ` allows. A Hamiltonian lift can have real
+  eigenvalues, so the `2πc / l2norm(δ)` of a rotation does not apply; `ρ` and not `l2norm(δ)`,
+  because a change of the section keeps the eigenvalues of the lift and changes its norm. `ρ` is
+  computed from the `4n × 4n` product of the factors of `lift_factors`, and `c / ρ(δ) ≥ c / l2norm(δ)`.
+  `solution_scale(U::SymplecticStiefelManifold)` measures `l2norm(parent(U))` on the non-compact
+  manifold rather than the compact `√(2n)`. `AdamWithEuclideanDecay` refuses a
+  `SymplecticStiefelManifold` leaf (bare or inside a `NetworkParameters`) with an `ArgumentError`,
+  and the methods that take a `StiefelManifold` by their signature still have no method for it.
+  `Geodesic(ProjectedSkew())` refuses a symplectic lift, which is Hamiltonian and not skew. The
+  products and sums of the lift and of its adjoint run on a device, against a plain array and
+  against every other owned type; `scripts/device_products.jl` sweeps both. Closes A23, A28 and K56.
+- **`GradientMethod`, `MomentumMethod` and `Adam` follow the Riemannian gradient of the manifold's
+  metric.** The gradient they hold is `global_rep` of the Riemannian gradient, which is what they
+  held before on a vector space, a `StiefelManifold` and a `GrassmannManifold`, so no existing call
+  changes. On a `SymplecticStiefelManifold` it is gradient
+  descent in the metric (3.16) of Bendokat and Zimmermann, whose path under `GradientMethod` and
+  `MomentumMethod`, at a fixed step and under a line search, does not depend on the section
+  (`Adam`'s entrywise second moments on `ℬ` still do, K57). The steepest descent of `½tr(XᵀY)` on the
+  lifts at the current section is not offered: for `n < N` it is not a Riemannian method and its
+  step changes with the section the optimizer has transported along its path. The page on global
+  tangent spaces shows why for `n < N` no inner product on the lift gives a Riemannian metric
+  through every section, and that the retraction `λ exp(tB) E` is a retraction
+  for (3.16) but not its geodesic. It is the geodesic of Nomizu's canonical connection of the second
+  kind `∇⁽⁰⁾` (and of the first-kind `∇⁽¹/²⁾`), and `∇⁽⁰⁾`'s parallel transport is the fixed cache;
+  transporting cached directions along the geodesic (3.18) of (3.16) cannot keep a lift fixed and has
+  to recompute the cache in every step. The same page states when the projection
+  `Z ↦ pr(λ⁻¹Zλ)` reduces to conjugation (a bi-invariant metric with metric-orthogonal horizontal
+  complements), proves that `Sp(2N)` has no bi-invariant Riemannian metric, and states the
+  isomorphism that holds without one (conjugate, then remove the vertical part), which is what
+  `global_rep` computes; `scripts/symplectic_metric_invariance.jl` checks both without the package.
+  The line search, `BFGS` and `DFP` pair the derivative of the loss with respect to the stored
+  entries of a lift, which `gradient_rep!` gives; with it the slope of a line search is the
+  derivative of its merit on every manifold. `scripts/symplectic_gradient_options.jl` records the
+  choice between these and two other options, and measures what this entry states. The gradient stop
+  and `rg` of `OptimizerStatus` read the Riemannian norm of the gradient at the iterate,
+  `latest_gradient_norm`, which is the same for every method; on a vector, a `StiefelManifold` and a
+  `GrassmannManifold` it is the norm `rg` reported before.
+- **`BFGS` and `DFP` start from the inverse of the metric.** Their inverse Hessian starts at `M⁻¹`,
+  and a restart puts it back there, for the Gram matrix `M` of the manifold's metric in the stored
+  entries of a lift at the section (`_metric_apply!`, `_metric_inverse!`). Their first step, the
+  step after a restart and the substitute for a direction that does not descend are therefore
+  `-global_rep` of the Riemannian gradient, the `GradientMethod` step, while the secant pairs keep the
+  derivative with respect to the stored entries that `gradient_rep!` gives. `M` is the identity on a
+  vector space, a `StiefelManifold` and a `GrassmannManifold`, so no existing call changes; on a
+  `SymplecticStiefelManifold` the first step no longer depends on the section, where it changed by a
+  factor of 89 between two sections over one point. The page on optimization on homogeneous spaces
+  states the algorithm on the symplectic Stiefel manifold and why it takes two metrics, the page on
+  parallel transport adds the symplectic case, and the citations of (3.19) and (3.9) of Bendokat and
+  Zimmermann are corrected (#191). Issues #192 and #193 record two follow-ups.
+
+### Changed
+
+- **`global_section` of a `SymplecticStiefelManifold` is a well-conditioned completion, and no
+  longer random.** It drew a Gaussian matrix, projected it into the symplectic complement of the
+  point and made it symplectic with `sr!`, whose factor is not orthogonal: on one `10 × 4` point the
+  section `[U Uˢ]` had condition number `6.4e3`, and gradient descent measured in its coordinates
+  stalled far from the minimum. It now takes an orthonormal basis of the complement from a full QR
+  decomposition and brings the Poisson tensor in that basis to its normal form with a Hermitian
+  eigendecomposition. The columns stay orthogonal; the condition number of the completion was at
+  most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
+  is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
+  K24.
+
 ### Fixed
 
 - **A sandboxed run of the `metal` group records the device skip, with no Metal cache built

@@ -10,7 +10,8 @@ and every step of [`update!`](@ref) but the update of the inverse Hessian, which
 
 `g̃` is the scratch for [`latest_gradient`](@ref) and `g̃_is_current` says whether it is the gradient at
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
-[`store_gradient!`](@ref).
+[`store_gradient!`](@ref). `g̃_norm` is the Riemannian norm of the gradient at `x`; see
+[`latest_gradient_norm`](@ref).
 
 `T1`, `T2`, `T3`, `ΔxΔg` and `ΔxΔx` are the ``n \\times n`` scratch of the update, where ``n`` is the
 intrinsic dimension; `DFP` needs four of the five, and builds ``\\gamma\\gamma^T`` in `T3`.
@@ -23,6 +24,7 @@ struct QuasiNewtonCache{T, M, VT, GT, MT, GS, FT} <: OptimizerCache{T}
     g::GT    # current gradient
     g̃::GT    # most recently evaluated gradient; see `latest_gradient`
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
 
     T1::MT
     T2::MT
@@ -55,7 +57,7 @@ struct QuasiNewtonCache{T, M, VT, GT, MT, GS, FT} <: OptimizerCache{T}
         # from the same `_zero(x)` as `n` above, and for the same reason
         flat = _flat_scratch(T, g)
         cache = new{T, M, AT, typeof(g), typeof(q), typeof(section), typeof(flat)}(
-            method, _copy(x), _similar(g), _similar(g), Ref(false), _similar(q),
+            method, _copy(x), _similar(g), _similar(g), Ref(false), Ref(T(NaN)), _similar(q),
             similar(q), similar(q), similar(q), similar(q),
             _similar(g), _similar(g), _similar(g), section, flat)
         initialize!(cache, x)
@@ -239,8 +241,8 @@ end
 # also called with a `g` of its own, from `update!(cache, state, x, g)` directly, which is why it
 # keeps the copy.
 function update!(cache::QuasiNewtonCache, state::OptimizerState,
-        grad::Gradient, ::QuasiNewtonOptimizerMethod, x::OptimizerSolution)
-    store_gradient!(cache, state, grad, x)
+        grad::Gradient, method::QuasiNewtonOptimizerMethod, x::OptimizerSolution)
+    store_gradient!(cache, state, grad, x, method)
     update!(cache, state, x, gradient(cache))
 end
 
@@ -248,7 +250,39 @@ function initialize!(cache::QuasiNewtonCache{T}, ::OptimizerSolution{T}) where {
     _fill!(direction(cache), T(NaN))
     _fill!(gradient(cache), T(NaN))
     _fill!(latest_gradient(cache), T(NaN))
+    cache.g̃_norm[] = T(NaN)
     invalidate_latest_gradient!(cache)
     _fill!(rhs(cache), T(NaN))
+    cache
+end
+
+# The quasi-Newton methods of `ensure_descent!` and `steepest_descent!`, here because the two types are
+# defined after `descent_direction.jl`: the steepest descent of the metric, `M⁻¹ rhs`; see
+# `_metric_inverse!`.
+function ensure_descent!(cache::QuasiNewtonCache, state::BFGSState,
+        method::QuasiNewtonOptimizerMethod, config::Options)
+    δ = direction(cache)
+    r = rhs(cache)
+    # the test is the one of the three-argument method; see the comment there on `_dot`
+    if !(_dot(r, δ) > 0)
+        config.verbosity ≥ 2 &&
+            @warn "the $(method) direction is not a descent direction, so the Hessian is not positive definite here; using the steepest-descent direction for this step." maxlog = 1
+        # `M⁻¹ r`, with `M⁻¹` in the cache's own `n × n` scratch, and `Q` is left alone, as the
+        # three-argument method leaves it; `restart!` is what discards it. Where `M` is the identity this
+        # is the copy of the three-argument method, which allocates nothing.
+        if _metric_is_identity(state.x)
+            _copyto!(δ, r)
+        else
+            _metric_inverse!(cache.T1, state.x, state.section)
+            _flat_mul!(δ, cache.T1, r, cache.flat)
+        end
+    end
+
+    cache
+end
+
+function steepest_descent!(cache::QuasiNewtonCache, state::BFGSState)
+    _flat_mul!(direction(cache), inverse_hessian(state), rhs(cache), cache.flat)
+
     cache
 end

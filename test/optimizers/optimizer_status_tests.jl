@@ -1,6 +1,6 @@
 using GeometricOptimizers
 using GeometricOptimizers: GradientCache, GradientState, OptimizerStatus, solution_scale,
-                           l2norm,
+                           l2norm, check,
                            _zero, _rmul!, isconverged
 using LinearAlgebra: norm
 using Test
@@ -47,12 +47,24 @@ off_scale(::Type{T}) where {T} = T(1.0e4) / eps(T)
     @test solution_scale(T[3, 4]) == 5
     @test solution_scale(ones(T, 2, 2)) == 2
 
-    # a whole set combines in quadrature, using the nominal scale for its manifold blocks and the
-    # measured one for the rest
+    # a whole set combines in quadrature, using the nominal scale for its compact manifold blocks and
+    # the measured one for non-compact `SymplecticStiefelManifold` and Euclidean leaves
     ps = NetworkParameters((w = rand(rng, StiefelManifold{T}, 6, 3), b = ones(T, 4)))
     @test eltype(solution_scale(ps)) == T
     @test solution_scale(ps) ≈ √T(3 + 4)
     @test solution_scale(NetworkParameters((w = off, b = ones(T, 4)))) ≈ √T(3 + 4)
+
+    # `SymplecticStiefelManifold` is non-compact: `U = [t 0; 0 0; 0 1/t; 0 0]` is on `Sp(2, 4)` for
+    # every `t ≠ 0`, with `‖U‖_F = √(t² + t⁻²) > √2`, so its scale is measured off `parent(U)`.
+    t = T(4)
+    U = SymplecticStiefelManifold(T[t 0; 0 0; 0 inv(t); 0 0])
+    @test check(U) ≤ 8 * eps(T)
+    @test eltype(solution_scale(U)) == T
+    @test isapprox(solution_scale(U), √(t^2 + inv(t)^2); rtol = 8 * eps(T))
+    @test solution_scale(U) > √T(size(U, 2))
+    ps_symp = NetworkParameters((u = U, w = off, b = T[3, 4]))
+    @test eltype(solution_scale(ps_symp)) == T
+    @test isapprox(solution_scale(ps_symp), √(t^2 + inv(t)^2 + 3 + 25); rtol = 8 * eps(T))
 end
 
 # `l2norm` of a parameter set is `GeometricBase`'s method as of 0.6.1 — the quadrature fold moved

@@ -15,6 +15,7 @@
   accepted iterate once [`solver_step!`](@ref) has refreshed it; see [`GradientCache`](@ref) for why
   this is a field of its own and not an alias for `g`,
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
+- `g̃_norm`: the norm of the gradient at `x`; see [`latest_gradient_norm`](@ref),
 - `Δg`: gradient difference (difference between `g̃` and `g`); this is used for computing the [`OptimizerStatus`](@ref),
 - `rhs`: the right hand side from which the update is computed,
 - `H`: the Hessian matrix evaluated at `x`,
@@ -27,6 +28,7 @@ struct NewtonOptimizerCache{T, AT, HT, GS} <: OptimizerCache{T}
     g::AT
     g̃::AT
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
     Δg::AT
     rhs::AT
     H::HT
@@ -38,7 +40,7 @@ struct NewtonOptimizerCache{T, AT, HT, GS} <: OptimizerCache{T}
         section = GlobalSection(x)
         cache = new{T, AT, typeof(h), typeof(section)}(
             similar(x), similar(x), similar(x), similar(x),
-            Ref(false), similar(x), similar(x), h, section)
+            Ref(false), Ref(T(NaN)), similar(x), similar(x), h, section)
         initialize!(cache, x)
         cache
     end
@@ -112,7 +114,7 @@ function update!(cache::NewtonOptimizerCache, state::OptimizerState,
     # five caches use, and going through it rather than calling `g(gradient(cache), x)` directly is
     # what makes `g̃_is_current` mean anything here -- only `store_gradient!` clears it, so without
     # this the flag stayed `true` across a whole step while `trial_slope` overwrote `g̃`.
-    store_gradient!(cache, state, g, x)
+    store_gradient!(cache, state, g, x, Newton())
     copyto!(section(cache), section(state))
     copyto!(solution(cache), x)
     copyto!(rhs(cache), gradient(cache))
@@ -127,6 +129,7 @@ function initialize!(cache::NewtonOptimizerCache{T}, ::AbstractVector{T}) where 
     direction(cache) .= T(NaN)
     cache.g .= T(NaN)
     latest_gradient(cache) .= T(NaN)
+    cache.g̃_norm[] = T(NaN)
     invalidate_latest_gradient!(cache)
     cache.rhs .= T(NaN)
     hessian(cache) .= T(NaN)

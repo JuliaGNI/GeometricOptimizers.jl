@@ -12,19 +12,35 @@ We then have a decomposition of ``\mathfrak{g}`` into a vertical part ``\mathfra
     \mathfrak{g}^{\mathrm{hor}, Y} = \{\Omega(\Delta): \Delta\in{}T_Y\mathcal{M} \}.
 ```
 
-We now identify a special element ``E \in \mathcal{M}`` and designate the horizontal component ``\mathfrak{g}^{\mathrm{hor}, E}`` as our *global tangent space*. We will refer to this global tangent space by ``\mathfrak{g}^\mathrm{hor}``. We can now find a transformation from any ``\mathfrak{g}^{\mathrm{hor}, Y}`` to ``\mathfrak{g}^\mathrm{hor}`` and vice-versa (these spaces are isomorphic).
+We now identify a special element ``E \in \mathcal{M}`` and designate the horizontal component ``\mathfrak{g}^{\mathrm{hor}, E}`` as our *global tangent space*. We will refer to this global tangent space by ``\mathfrak{g}^\mathrm{hor}``. We can now find a transformation from any ``\mathfrak{g}^{\mathrm{hor}, Y}`` to ``\mathfrak{g}^\mathrm{hor}`` and vice-versa (these spaces are isomorphic). If the metric on ``G`` is bi-invariant, as the canonical metric on ``SO(N)`` is, this transformation is a conjugation:
 
 ```@eval
-Main.theorem(raw"Let ``A\in{}G`` an element such that ``AE = Y``. Then we have
+Main.theorem(raw"Let the metric on ``G`` be bi-invariant, and let ``A\in{}G`` an element such that ``AE = Y``. Then we have
 " * Main.indentation * raw"```math
 " * Main.indentation * raw"A^{-1}\cdot\mathfrak{g}^{\mathrm{hor},Y}\cdot{}A = \mathfrak{g}^\mathrm{hor},
 " * Main.indentation * raw"```
-" * Main.indentation * raw"i.e. for every element ``B\in\mathfrak{g}^\mathrm{hor}`` we can find a ``B^Y \in \mathfrak{g}^{\mathrm{hor},Y}`` s.t. ``B = A^{-1}B^YA`` (and vice-versa).")
+" * Main.indentation * raw"i.e. for every element ``B\in\mathfrak{g}^\mathrm{hor}`` we can find a ``B^Y \in \mathfrak{g}^{\mathrm{hor},Y}`` s.t. ``B = A^{-1}B^YA`` (and vice-versa). The map ``B^Y\mapsto{}A^{-1}B^YA`` is an isometry.")
 ```
 
 ```@eval
-Main.proof(raw"We first show that for every ``B^Y\in\mathfrak{g}^{\mathrm{hor},Y}`` the element ``A^{-1}B^YA`` is in ``\mathfrak{g}^{\mathrm{hor}}``. First note that ``A^{-1}B^YA\in\mathfrak{g}`` by a fundamental theorem of Lie group theory (closedness of the Lie algebra under adjoint action). Now assume that ``A^{-1}B^YA`` is not fully contained in ``\mathfrak{g}^\mathrm{hor}``, i.e. it also has a vertical component. So we would lose information when performing ``A^{-1}B^YA \mapsto A^{-1}B^YAE = A^{-1}B^YY``, but this contradicts the fact that ``B^Y\in\mathfrak{g}^{\mathrm{hor},Y}.`` We now have to proof that for every ``B\in\mathfrak{g}^\mathrm{hor}`` we can find an element in ``\mathfrak{g}^{\mathrm{hor}, Y}`` such that this element is mapped to ``B``. By a argument similar to the one above we can show that ``ABA^{-1}\in\mathfrak{g}^\mathrm{hor, Y}`` and this element maps to ``B``. Proofing that the map is injective is now trivial.")
+Main.proof(raw"For ``V\in\mathfrak{g}`` we have ``AVA^{-1}Y = AVE``, so ``V\mapsto{}AVA^{-1}`` maps ``\mathfrak{g}^{\mathrm{ver},E}`` onto ``\mathfrak{g}^{\mathrm{ver},Y}``. Because the metric is bi-invariant, its inner product on ``\mathfrak{g}`` is invariant under ``V\mapsto{}AVA^{-1}``, so this map also sends the orthogonal complement ``\mathfrak{g}^\mathrm{hor}`` of ``\mathfrak{g}^{\mathrm{ver},E}`` onto the orthogonal complement ``\mathfrak{g}^{\mathrm{hor},Y}`` of ``\mathfrak{g}^{\mathrm{ver},Y}``. Its inverse is the map of the theorem.")
 ```
+
+Without bi-invariance the conjugation of an element of ``\mathfrak{g}^{\mathrm{hor},Y}`` in general has a vertical part, so the statement above fails (an example is the [symplectic Stiefel manifold](@ref "Global Tangent Space for the Symplectic Stiefel Manifold") with its Riemannian metric). The two spaces are still isomorphic for every complement of the vertical space, if the vertical part is removed:
+
+```@eval
+Main.theorem(raw"Let ``\mathfrak{g}^{\mathrm{hor},Y}`` be any complement of ``\mathfrak{g}^{\mathrm{ver},Y}``, ``\mathfrak{g}^\mathrm{hor}`` any complement of ``\mathfrak{g}^{\mathrm{ver},E}``, and ``A\in{}G`` an element such that ``AE = Y``. Then
+" * Main.indentation * raw"```math
+" * Main.indentation * raw"\mathfrak{g}^{\mathrm{hor},Y}\to\mathfrak{g}^\mathrm{hor}, \quad B^Y\mapsto\mathrm{pr}_{\mathfrak{g}^\mathrm{hor}}(A^{-1}B^YA),
+" * Main.indentation * raw"```
+" * Main.indentation * raw"where ``\mathrm{pr}_{\mathfrak{g}^\mathrm{hor}}`` is the projection along ``\mathfrak{g}^{\mathrm{ver},E}``, is an isomorphism. Its image ``B`` satisfies ``ABE = B^YY``, and when the metric is bi-invariant and ``\mathfrak{g}^{\mathrm{hor},Y}`` and ``\mathfrak{g}^\mathrm{hor}`` are the orthogonal complements of the vertical spaces, it is the conjugation of the theorem above.")
+```
+
+```@eval
+Main.proof(raw"Write ``A^{-1}B^YA = V + B`` with ``V\in\mathfrak{g}^{\mathrm{ver},E}`` and ``B\in\mathfrak{g}^\mathrm{hor}``. Then ``ABE = A(V + B)E = B^YAE = B^YY``. If ``B = 0``, then ``B^YY = 0``, so ``B^Y`` is vertical and horizontal at ``Y``, and ``B^Y = 0``. The map is therefore injective, and the two spaces have the same dimension as ``T_Y\mathcal{M}``. Under the hypotheses of the first theorem ``A^{-1}B^YA\in\mathfrak{g}^\mathrm{hor}``, so ``V = 0``.")
+```
+
+The isomorphism of the second theorem is not an isometry in general: it carries the inner product of ``\mathfrak{g}^{\mathrm{hor},Y}`` to an inner product on ``\mathfrak{g}^\mathrm{hor}`` that can depend on ``A``.
 
 We should note that we have written all Lie group and Lie algebra actions as simple matrix multiplications, like ``AE = Y``. For some Lie groups and Lie algebras, as the Lie group of isomorphisms on some domain ``\mathcal{D}``, this notation may not be appropriate [holm2009geometric](@cite). These Lie groups are however not relevant for what we use in `GeometricOptimizers` and we will stick to regular matrix notation.
 
@@ -232,10 +248,58 @@ This representation is based on the identification ``T_\mathcal{E}Gr(n,N)\to{}T_
 
 This is equivalent to the horizontal component of ``\mathfrak{g}`` for the Stiefel manifold for the case when ``A`` is zero. This is a reflection of the rotational invariance of the Grassmann manifold: the skew-symmetric matrices ``A`` are connected to the group of rotations ``O(n)`` which is factored out in the Grassmann manifold ``Gr(n,N)\simeq{}St(n,N)/O(n)``. In `GeometricOptimizers` we thus treat the Grassmann manifold as being embedded in the Stiefel manifold. In [bendokat2020grassmann](@cite) viewing the Grassmann manifold as a quotient space of the Stiefel manifold is important for "feasibility" in "practical computations". 
 
+## Global Tangent Space for the Symplectic Stiefel Manifold
+
+The [`SymplecticStiefelManifold`](@ref) ``Sp(2n, 2N) = \{U\in\mathbb{R}^{2N\times2n} : U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}\}`` is a homogeneous space of the symplectic group ``Sp(2N)``, and [bendokat2021real](@cite) give it the same structure as the Stiefel manifold: a projection ``M\mapsto{}ME`` from the group, a vertical space, and, below their (3.4), a horizontal space that is the same subspace of the Lie algebra ``\mathfrak{sp}(2N)`` at every point. It is the complement of the vertical space with respect to the bi-invariant pseudo-Riemannian metric ``h`` of their (2.1). The horizontal space (3.13) of their Riemannian metric ``g``, the one [`metric`](@ref) implements, depends on the point, so only the first gives a global tangent space.
+
+The section is stored as for the Stiefel manifold, ``\lambda(U) = [U\ \ U^s]`` with the point first, so ``E`` is the first ``2n`` columns. ``U^s`` is a symplectic completion: ``U^T\mathbb{J}_{2N}U^s = \mathbb{O}`` and ``(U^s)^T\mathbb{J}_{2N}U^s = \mathbb{J}_{2N-2n}``. In this basis the Poisson tensor is ``\bar{\mathbb{J}} = \mathrm{diag}(\mathbb{J}_{2n}, \mathbb{J}_{2N-2n})``, ``\lambda(U)^T\mathbb{J}_{2N}\lambda(U) = \bar{\mathbb{J}}``, and the horizontal space below (3.4) of [bendokat2021real](@cite) reads
+
+```math
+\mathfrak{g}^\mathrm{hor} = \left\{\begin{pmatrix} \mathcal{A} & -\mathcal{B}^+ \\ \mathcal{B} & \mathbb{O} \end{pmatrix}: \mathcal{A}\in\mathfrak{sp}(2n), \mathcal{B}\in\mathbb{R}^{(2N-2n)\times2n}\right\}, \qquad \mathcal{B}^+ = \mathbb{J}_{2n}^T\mathcal{B}^T\mathbb{J}_{2N-2n}.
+```
+
+This is the Stiefel case with the transpose replaced by the symplectic adjoint, and it is what [`SymplecticLieAlgHorMatrix`](@ref) stores. An element ``\Omega`` satisfies ``\Omega^T\bar{\mathbb{J}} + \bar{\mathbb{J}}\Omega = \mathbb{O}``, so its Cayley transform and its exponential preserve ``\bar{\mathbb{J}}``, ``\lambda(U)R`` is a section again for every retraction ``R`` of it, and ``\lambda(U)RE`` is a point of the manifold.
+
+The tangent space at ``U`` is ``\{\Delta : U^+\Delta\in\mathfrak{sp}(2n)\}`` with the symplectic inverse ``U^+ = \mathbb{J}_{2n}^TU^T\mathbb{J}_{2N}``. A horizontal element is determined by its first ``2n`` columns, and those of ``\lambda(U)^{-1}\Omega(U,\Delta)\lambda(U)`` are ``\lambda(U)^{-1}\Delta``, with ``\Omega`` the horizontal lift [`GeometricOptimizers.Ω`](@ref) of (3.7) of [bendokat2021real](@cite). So `global_rep` needs only
+
+```math
+\mathcal{A} = U^+\Delta, \qquad \mathcal{B} = (U^s)^+\Delta.
+```
+
+This is the isomorphism of the second theorem at the top of this page, whatever horizontal space at ``U`` one starts from: the element ``B`` of ``\mathfrak{g}^\mathrm{hor}`` with ``\lambda(U)BE = \Delta`` is unique, so the vertical part of ``\lambda(U)^{-1}Z\lambda(U)`` is removed for the lift ``Z`` of (3.15) of [bendokat2021real](@cite), whose horizontal space is that of [`metric`](@ref), as it is for ``\Omega`` of (3.7), for which that part is zero. The first theorem, the conjugation, does not apply to the lift of (3.15): ``Sp(2N)`` has no bi-invariant Riemannian metric (see below), and at a generic point the conjugate of that lift has a vertical part.
+
+Two things differ from the Stiefel case.
+
+The first is the completion. The symplectic group is not compact, so a completion can be arbitrarily badly conditioned, and the coordinates of the lift, in which [`Adam`](@ref) and the quasi-Newton methods take their steps, are only as good as it. [`global_section`](@ref) therefore takes an orthonormal basis ``Q`` of the symplectic complement of ``U`` and brings the skew-symmetric ``Q^T\mathbb{J}_{2N}Q`` to its normal form with the eigenvectors of a Hermitian matrix, which rescales each column and keeps them orthogonal. Its condition number has not exceeded that of ``U`` on any point tried, and it is orthonormal where ``U`` is orthosymplectic.
+
+!!! note "The symplectic group is not compact, and the sections can be ill-conditioned"
+    On ``SO(N)`` every section is orthogonal, so its condition number is one. ``Sp(2N)`` is not compact, and for ``n < N`` neither is the stabilizer ``Sp(2N-2n)`` of a point (at ``n = N`` the stabilizer is trivial and ``\lambda(U) = U`` is unique). For ``n < N``, two sections at one point differ by ``h = \mathrm{diag}(\mathbb{I}, S)`` with ``S\in{}Sp(2N-2n)``. Already ``S = \mathrm{diag}(t\mathbb{I}, t^{-1}\mathbb{I})`` has condition number ``t^2``, so the sections over one point have no bound on their conditioning. This enters in three places:
+
+    - **The coordinates of the lift.** ``h`` sends ``(\mathcal{A}, \mathcal{B})`` to ``(\mathcal{A}, S^{-1}\mathcal{B})``. Everything held in these coordinates changes with the section. Where an operation is not equivariant under this map, the step changes too: the entrywise moments of [`Adam`](@ref) are such an operation. The secant pairs and ``Q`` of [`BFGS`](@ref) and [`DFP`](@ref) change with the coordinates, but their step does not, because ``Q`` starts at the inverse of the metric and the update is the same in every linear coordinate system. [`GeometricOptimizers.step_αmax`](@ref) reads the spectral radius of the lift, which ``h^{-1}Bh`` keeps. The coordinate step length `rxₐ` of [`GeometricOptimizers.OptimizerStatus`](@ref) changes, and no step reads it.
+    - **Rounding.** `apply_section`, `global_rep` and the section update multiply by ``\lambda(U)`` or its inverse ``\bar{\mathbb{J}}^T\lambda(U)^T\mathbb{J}_{2N}``, so their rounding error grows with the condition number of the section. This holds also for fixed-step [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), whose iterates do not depend on the section in exact arithmetic.
+    - **The transported section.** The optimizers carry the section along their path and never reset it to [`global_section`](@ref), so its conditioning drifts from that of a fresh one.
+
+    The manifold itself is unbounded too: an iterate can leave every bounded set, which a Stiefel or Grassmann iterate cannot. For ``n < N`` no choice of metric removes any of this, since no positive-definite inner product on ``\mathfrak{g}^\mathrm{hor}`` is invariant under the stabilizer (below).
+
+    On the ``10\times4`` eigenvalue problem of the tests, the transported section goes from condition number 1.35 to 3.4–3.6 in the first 5000 steps of every method and then stays there. A fresh section of the final point has 2.83. With a noisy gradient ``2(M + \sigma(G + G^T)/2)U``, ``G`` Gaussian, over ``10^5`` steps of size ``10^{-2}``:
+
+    - [`Adam`](@ref) ends at 4.31 against a fresh 2.78 (``\sigma = 1``), and at 6.15 against 5.28 (``\sigma = 10``).
+    - [`GradientMethod`](@ref) diverges. Before its last step at ``\sigma = 1`` (step 7106), ``\|U\| = 1.3\cdot10^{25}``, ``\mathrm{cond}(U) = 2.1\cdot10^{10}``, and the section's condition number is ``3.7\cdot10^{63}``. At a fixed step size it can also diverge without noise from a sufficiently ill-conditioned start, because the Riemannian gradient of [`metric`](@ref) scales as ``O(\|U\|^3)`` along hyperbolic directions.
+
+    A reset of the section to [`global_section`](@ref), with the caches carried over by ``\mathcal{B}\mapsto{}S\mathcal{B}``, would bound the drift, but the optimizers do not do it. Issue [#189](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/189) discusses this.
+
+The second is the gradient. For the Stiefel manifold the inner product of two lifts, as [`GeometricOptimizers._dot`](@ref) takes it on their stored entries, is the canonical metric, so the lift of the Riemannian gradient pairs with the lift of a direction as the derivative of the loss along it. The metric of [`SymplecticStiefelManifold`](@ref) is only right-invariant, so no inner product on ``\mathfrak{g}^\mathrm{hor}`` reproduces it at every point, and this identity fails. Two lifts therefore take separate roles.
+
+For ``n < N``, no other Riemannian metric can be reproduced that way either. Two sections at one point differ by ``h = \mathrm{diag}(\mathbb{I}, S)`` with ``S\in{}Sp(2N-2n)``, which sends ``(\mathcal{A}, \mathcal{B})`` to ``(\mathcal{A}, S^{-1}\mathcal{B})``. An inner product that gave the same value through every section would be invariant under this map. With ``S = \mathrm{diag}(t\mathbb{I}, t^{-1}\mathbb{I})`` and a ``\mathcal{B}`` that is zero below its first ``N - n`` rows, ``S^{-1}\mathcal{B} = \mathcal{B}/t``, so its quadratic form ``q`` satisfies ``q(\mathcal{B}) = q(\mathcal{B})/t^2`` for every ``t``, and ``q(\mathcal{B}) = 0``. The obstruction is the non-compact stabilizer of the point, not the metric chosen on ``Sp(2N)`` (at ``n = N`` the stabilizer is trivial, ``\lambda(U) = U`` is unique, and ``\frac{1}{2}\mathrm{tr}(\mathcal{A}^T\mathcal{A})`` defines a left-invariant Riemannian metric on ``Sp(2N)``). The same argument shows that ``Sp(2N)`` has no bi-invariant Riemannian metric, which would need an inner product on ``\mathfrak{sp}(2N)`` invariant under ``X\mapsto{}MXM^{-1}`` for every ``M\in{}Sp(2N)``. Take ``M = \exp(tD)`` with ``D = \mathrm{diag}(\mathbb{I}_N, -\mathbb{I}_N)\in\mathfrak{sp}(2N)``, so ``M = \mathrm{diag}(e^t\mathbb{I}_N, e^{-t}\mathbb{I}_N)``, and ``X = \begin{pmatrix}\mathbb{O} & K\\ \mathbb{O} & \mathbb{O}\end{pmatrix}`` with ``K = K^T\neq\mathbb{O}``, which is in ``\mathfrak{sp}(2N)``. Then ``MXM^{-1} = e^{2t}X``, so an invariant quadratic form ``q`` satisfies ``q(X) = e^{4t}q(X)`` for every ``t``, and ``q(X) = 0``. ``\mathfrak{sp}(2N)`` is simple, so the forms on it that are invariant under the whole group are the multiples of the trace form, and these are indefinite: the trace form gives the pseudo-Riemannian metric (3.8) of [bendokat2021real](@cite), whose horizontal space is the ``\mathfrak{g}^\mathrm{hor}`` above. `scripts/symplectic_metric_invariance.jl` checks these statements without the package.
+
+The line search, [`BFGS`](@ref) and [`DFP`](@ref) pair a gradient with a direction, and they use the lift [`GeometricOptimizers.gradient_rep!`](@ref) gives: the derivative of the loss with respect to the stored entries of a lift at the section. With it the slope of a line search is the derivative of its merit, and the secant pairs of the quasi-Newton methods are in the coordinates their ``Q`` lives in. That lift is ``MB``, where ``B`` is [`global_rep`](@ref) of the Riemannian gradient and ``M`` the Gram matrix of [`metric`](@ref) in the stored entries at the section ([`GeometricOptimizers._metric_apply!`](@ref)). The quasi-Newton methods therefore start ``Q`` at ``M^{-1}`` ([`GeometricOptimizers._metric_inverse!`](@ref)) and put it back there on a restart, so that their first direction, the direction after a restart, and the substitute for a direction that does not descend are ``-B``: the same lift and the same tangent vector as for [`GradientMethod`](@ref), for every section. On the Stiefel and Grassmann manifolds ``M`` is the identity.
+
+[`GradientMethod`](@ref), [`MomentumMethod`](@ref) and [`Adam`](@ref) build their direction from the gradient itself, and it is [`global_rep`](@ref) of the Riemannian gradient of [`metric`](@ref). Its tangent vector ``\lambda(U)BE`` does not depend on the section, and neither does the retraction ``\lambda(U)\exp(tB)E`` of a horizontal lift: a change ``\lambda\mapsto\lambda h`` with ``h = \mathrm{diag}(\mathbb{I}, S)`` sends ``B`` to ``h^{-1}Bh``, and ``\lambda h\exp(th^{-1}Bh)E = \lambda\exp(tB)E``. The path of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), at a fixed step size and under a line search, is therefore a property of the point and the metric alone, because [`GeometricOptimizers.step_αmax`](@ref) reads the spectral radius of ``B`` (but [`Adam`](@ref) takes entrywise second moments on ``\mathcal{B}``). That retraction is ``\exp(t\Omega(U,\Delta))U``, the geodesic (3.9) of the pseudo-Riemannian metric (3.8) (Proposition 3.7 of [bendokat2021real](@cite); Proposition 3.8 evaluates it without a section, as (3.11)), and not the geodesic (3.18) of [`metric`](@ref): the two curves agree to first order in ``t`` and differ at second order. So it is a retraction for [`metric`](@ref), not its exponential map. Both Nomizu's canonical connection of the second kind ``\nabla^{(0)}`` (which needs no metric, only a horizontal space stabilized by the isotropy subgroup, Lemma 3.4 of [bendokat2021real](@cite), and carries torsion ``T(X, Y) = -[X, Y]_{\mathfrak{g}^\mathrm{hor}}`` on horizontal vectors) and the canonical connection of the first kind ``\nabla^{(1/2)}`` (the torsion-free Levi-Civita connection of the pseudo-Riemannian metric (3.8)) have ``\exp(t\Omega(U,\Delta))U`` as their geodesic [nomizu1954invariant, schlarb2024covariant](@cite), while it is ``\nabla^{(0)}`` whose parallel transport along ``\exp(t\Omega(U,\Delta))U`` is ``\Delta_2\mapsto\exp(t\Omega(U,\Delta))\Delta_2 = \lambda(U)\exp(tB)B_2E`` — exactly what the optimizers do when they keep a cache ``B_2\in\mathfrak{g}^\mathrm{hor}`` fixed while the section moves to ``\lambda(U)\exp(tB)``, as in [Parallel Transport](@ref "Parallel Transport") for the Stiefel manifold. So retraction and ``\nabla^{(0)}``-transport form one consistent pair, and the metric enters only through the gradient. The geodesic (3.18) of [`metric`](@ref) forms another pair, with the parallel transport of the Levi-Civita connection of [`metric`](@ref), and it costs more. With ``C = \lambda(U)^{-1}Z\lambda(U)``, where ``Z`` is the lift of (3.15), and ``P = \lambda(U)^T\lambda(U)``, (3.18) reads ``\lambda(U)\exp(t(C - P^{-1}C^TP))\exp(tP^{-1}C^TP)E``. Although (3.19) of [bendokat2021real](@cite), their Proposition 3.13, evaluates that same geodesic directly from ``(U, \Delta)`` without a section, through one ``8n\times8n`` and one ``4n\times4n`` matrix exponential, inside the global-tangent-space framework ``C`` is not in ``\mathfrak{g}^\mathrm{hor}`` and ``P`` depends on the section, so the retraction is no longer a map on ``\mathfrak{g}^\mathrm{hor}`` alone and transporting a cache cannot keep ``B_2`` fixed: keeping ``B_2`` fixed while the section follows the horizontal lift of (3.18) changes its norm in [`metric`](@ref) and does not carry the initial velocity to the velocity of (3.18), so the cache has to be recomputed in every step. [#188](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/188) tracks this pair as an option. The steepest descent of ``\frac{1}{2}\mathrm{tr}(X^TY)`` on the dense lifts at the section is not offered: by the statement above, for ``n < N`` that form defines no metric on the manifold, so its step would be steepest descent at one section of the fibre over the point, not at the point, and it would change with a change of the section that leaves the point where it is. In the coordinates of [`global_section`](@ref) the metric is block-diagonal in ``(\mathcal{A}, \mathcal{B})`` at every point, and at an orthosymplectic point it is exactly ``\frac{1}{2}\mathrm{tr}(\mathcal{A}^T\mathcal{A}) + \mathrm{tr}(\mathcal{B}^T\mathcal{B})``, the only place where the two descents agree. `scripts/symplectic_gradient_options.jl` measures these statements.
+
 ## Library functions
 
 [`AbstractLieAlgHorMatrix`](@ref), [`StiefelLieAlgHorMatrix`](@ref),
-[`GrassmannLieAlgHorMatrix`](@ref), [`StiefelProjection`](@ref), [`GlobalSection`](@ref),
+[`GrassmannLieAlgHorMatrix`](@ref), [`SymplecticLieAlgHorMatrix`](@ref), [`StiefelProjection`](@ref), [`GlobalSection`](@ref),
 [`global_section`](@ref), [`global_rep`](@ref) and [`apply_section`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 [`GeometricMachineLearning`](@extref GeometricMachineLearning :doc:`index`) re-exports all of these,
@@ -261,8 +325,11 @@ Canonical = false
 absil2004riemannian
 absil2008optimization
 bendokat2020grassmann
+bendokat2021real
 Brantner:2023
 frankel2011geometry
+nomizu1954invariant
+schlarb2024covariant
 ```
 
 ```@raw latex
@@ -289,6 +356,8 @@ bendokat2020grassmann
 frankel2011geometry
 o1983semi
 bendokat2021real
+nomizu1954invariant
+schlarb2024covariant
 ```
 
 ```@raw html

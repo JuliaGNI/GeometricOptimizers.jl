@@ -16,29 +16,41 @@ An ordinary array is decayable and a `NamedTuple` is decayable as soon as one of
 which is the case [`AdamWithEuclideanDecay`](@ref) exists for. The
 [`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref) are not: ``\lambda{}x`` is the
 gradient of ``\frac{\lambda}{2}||x||^2``, which is constant on them, so the decay vanishes there
-identically (see the [Weight Decay on Manifolds](@ref) page).
+identically (see the [Weight Decay on Manifolds](@ref) page). [`SymplecticStiefelManifold`](@ref)
+is non-compact — ``\|U\|_F^2`` is unbounded on ``Sp(2n, 2N)`` and ``\mathrm{rgrad}(U, \lambda{}U)``
+vanishes only at orthosymplectic points — while its direction is a horizontal lift that cannot subtract
+``\lambda{}U`` entrywise, so [`AdamWithEuclideanDecay`](@ref) refuses it with an `ArgumentError`.
 
 # Implementation
 
 This is the *only* place that geometric fact is recorded — [`_weight_decay!`](@ref) consults it
 rather than restating it, so the no-op and the warning in `OptimizerCache` cannot drift apart.
 
-It is declared on the two concrete manifolds and not on [`Manifold`](@ref) on purpose. What makes
-the decay vanish is that these two are *compact*, with ``||Y||_F^2 = \mathrm{tr}(Y^TY) = n``; it
-is not a consequence of being a manifold, and on a noncompact one Euclidean decay may well do
-something. A manifold added later therefore has to decide for itself, and gets an error saying so
-rather than inheriting a silent no-op that may be wrong for it.
+It is declared on the concrete manifolds and not on [`Manifold`](@ref) on purpose. What makes the
+decay vanish on [`StiefelManifold`](@ref) and [`GrassmannManifold`](@ref) is that both are *compact*,
+with ``||Y||_F^2 = \mathrm{tr}(Y^TY) = n``; it is not a consequence of being a manifold, as
+[`SymplecticStiefelManifold`](@ref) illustrates. A manifold added later therefore has to decide for
+itself, and gets an error saying so rather than inheriting a silent no-op that may be wrong for it.
 """
 _is_decayable(::StiefelManifold) = false
 _is_decayable(::GrassmannManifold) = false
+function _is_decayable(::SymplecticStiefelManifold)
+    throw(ArgumentError(
+        "`AdamWithEuclideanDecay` does not step a `SymplecticStiefelManifold`: `Sp(2n, 2N)` " *
+        "is not compact, so `rgrad(U, λU)` does not vanish away from orthosymplectic points, " *
+        "and a horizontal lift cannot apply `-λU` entrywise. Use `Adam` instead."))
+end
 _is_decayable(::AbstractArray) = true
-# `any` over the values and not over the leaves: a block that is itself a branch is asked recursively,
-# which is what a container needs -- its top-level values are layers, never parameters. Written on
-# Two methods, because this one recurses through `values` itself rather than through
-# `mapparameters`: it meets a container's *layers* -- plain `NamedTuple`s -- on the way down and needs
-# a method for each shape.
-_is_decayable(ps::NetworkParameters) = any(_is_decayable, values(ps))
-_is_decayable(layer::NamedTuple) = any(_is_decayable, values(layer))
+# An eager fold over every leaf and not short-circuiting `any`: a `SymplecticStiefelManifold` or an
+# undecided `Manifold` placed after an ordinary array in a container still has to raise when the
+# cache is built rather than mid-step in `_weight_decay!`. Two methods so a plain `NamedTuple` layer
+# works beside `NetworkParameters`.
+function _is_decayable(ps::NetworkParameters)
+    foldparameters((acc, y) -> _is_decayable(y) || acc, false, ps)
+end
+function _is_decayable(layer::NamedTuple)
+    foldl((acc, y) -> _is_decayable(y) || acc, values(layer); init = false)
+end
 
 # no `Manifold` fallback: see the docstring above. Without this method the `AbstractArray` one
 # would catch a new manifold (`Manifold <: AbstractMatrix`) and claim it *is* decayable, which is
@@ -53,14 +65,16 @@ function _is_decayable(Y::Manifold)
 end
 
 function OptimizerCache(method::AdamWithEuclideanDecay, x::OptimizerSolution)
-    # A `λ` that cannot reach a single weight is almost certainly not what was meant, and it is
+    # Checked unconditionally so that an unsupported manifold raises here even when `λ = 0`.
+    # A `λ ≠ 0` that cannot reach a single weight is almost certainly not what was meant, and it is
     # invisible otherwise: the run is `Adam`, it converges, and nothing anywhere says that the
     # decay was dropped. Warning here rather than at every step costs one check per optimizer.
-    if !iszero(method.λ) && !_is_decayable(x)
+    decayable = _is_decayable(x)
+    if !iszero(method.λ) && !decayable
         @warn "`AdamWithEuclideanDecay` was given λ = $(method.λ), but none of the parameters " *
-              "can be decayed by it: Euclidean weight decay is identically zero on a manifold " *
-              "(`rgrad(Y, λY) = 𝕆`), so this run is exactly `Adam`. Use `Adam` if that is what " *
-              "is wanted; see https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28."
+              "can be decayed by it: Euclidean weight decay is identically zero on a compact " *
+              "manifold (`rgrad(Y, λY) = 𝕆`), so this run is exactly `Adam`. Use `Adam` if that " *
+              "is what is wanted; see https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/28."
     end
     AdamCache(_copy(x), _zero(x), _zero(x))
 end
@@ -117,7 +131,7 @@ end
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
         method::AdamWithEuclideanDecay{T}, x::OptimizerSolution{T}) where {T}
-    update!(cache, state, gradient, method.β₁, method.β₂, method.δ, state.iterations, x)
+    update!(cache, state, gradient, method, state.iterations, x)
     _weight_decay!(direction(cache), x, method.λ)
 
     cache

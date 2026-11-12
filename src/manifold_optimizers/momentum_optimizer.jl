@@ -20,6 +20,7 @@ Cache for the gradient optimizer.
 - `g̃`: scratch for [`latest_gradient`](@ref); see [`GradientCache`](@ref) for why it is separate
   from `g`, and note that this is the cache the separation was measured on,
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
+- `g̃_norm`: the Riemannian norm of the gradient at `x`; see [`latest_gradient_norm`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 """
 struct MomentumCache{T, MT, VT, ST} <: OptimizerCache{T}
@@ -29,6 +30,7 @@ struct MomentumCache{T, MT, VT, ST} <: OptimizerCache{T}
     Δg::VT
     g̃::VT
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
     section::ST
 end
 
@@ -37,7 +39,8 @@ function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
     sec = GlobalSection(_copy(x))
     g̃ = _similar(g)
     _fill!(g̃, T(NaN))
-    MomentumCache{T, typeof(x), typeof(g), typeof(sec)}(x, g, δ, Δg, g̃, Ref(false), sec)
+    MomentumCache{T, typeof(x), typeof(g), typeof(sec)}(
+        x, g, δ, Δg, g̃, Ref(false), Ref(T(NaN)), sec)
 end
 
 function MomentumCache(x::OptimizerSolution{T}, g::AT, δ::AT) where {
@@ -120,7 +123,7 @@ end
 function update!(cache::MomentumCache{T}, state::MomentumState{T}, gradient::Gradient{T},
         method::MomentumMethod{T}, x::OptimizerSolution{T}) where {T}
     # first, and before the two `_copyto!`s below; see `store_gradient!`
-    store_gradient!(cache, state, gradient, x)
+    store_gradient!(cache, state, gradient, x, method)
     _copyto!(section(cache), section(state))
     _copyto!(solution(cache), x)
     # The direction is `-p` for the momentum `p ← αp + ∇L` of the step that is being taken. The

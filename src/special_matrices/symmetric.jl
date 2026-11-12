@@ -119,6 +119,35 @@ function map_to_S(A::AbstractMatrix{T}) where {T <: Integer}
     map_to_S(float.(A))
 end
 
+# `map_to_S` written into the storage of `S`, which the symplectic lift projects its blocks
+# into: a loop on `CPU`, so `retraction_differential!` in a workspace allocates nothing, and
+# the projection kernel elsewhere.
+function _map_to_S!(S::SymmetricMatrix{T}, A::AbstractMatrix{T}) where {T}
+    @assert size(A) == (S.n, S.n)
+    _map_to_S!(_check_same_backend(S.S, A), S, A)
+end
+
+function _map_to_S!(::CPU, S::SymmetricMatrix{T}, A::AbstractMatrix{T}) where {T}
+    data = S.S
+    n = S.n
+    for i in 1:n
+        for j in 1:i
+            data[i * (i - 1) ÷ 2 + j] = T(0.5) * (A[i, j] + A[j, i])
+        end
+    end
+    S
+end
+
+function _map_to_S!(backend, S::SymmetricMatrix{T}, A::AbstractMatrix{T}) where {T}
+    n = S.n
+    sym_projection_kernel(backend)(S.S, _kernel_operand(backend, A); ndrange = (n, n))
+    S
+end
+
+function _round(A::SymmetricMatrix; kwargs...)
+    SymmetricMatrix(_round(A.S; kwargs...), A.n)
+end
+
 # A symmetric matrix is its own *transpose*, and only a real one is its own adjoint. Bound to `Real`
 # for the same reason `adjoint(::StrictlyLowerTriangular{<:Real})` in `upper_triangular.jl` is: the bound
 # does not reject a complex argument, it hands it to `LinearAlgebra`'s lazy `Adjoint`, which

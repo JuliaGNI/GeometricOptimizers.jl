@@ -4,25 +4,29 @@ const SOLUTION_MAX_PRINT_LENGTH = 10
 @doc raw"""
     DEFAULT_STEP_CEILING
 
-How far along its direction a manifold solve may step, in multiples of ``2\pi``: the `c` of
-[`step_αmax`](@ref)`(c, δ)`, and so the `params.αmax` that [`solver_step!`](@ref) gives the line
-search through [`linesearch_parameters`](@ref). Set it per solve with
-`Optimizer(x, F; step_ceiling = …)`; `Inf` switches the ceiling off.
+How far along its direction a manifold solve may step, in multiples of the manifold's natural step scale
+(`2π` on [`StiefelManifold`](@ref) and [`GrassmannManifold`](@ref), `1` on
+[`SymplecticStiefelManifold`](@ref)): the `c` of [`step_αmax`](@ref)`(c, δ)`, and so the `params.αmax`
+that [`solver_step!`](@ref) gives the line search through [`linesearch_parameters`](@ref). Set it per
+solve with `Optimizer(x, F; step_ceiling = …)`; `Inf` switches the ceiling off.
 
 # Why the solver sets a ceiling
 
 A line search bounds its step by the merit: it stops when ``\varphi`` stops falling. On a compact
 manifold ``\varphi`` is bounded, so a step many turns too long can decrease the merit, and no test of
-the search rejects it. The retraction of such a lift leaves the manifold. The bound that exists is
-not a property of ``\varphi``: it is the ``2\pi`` of a rotation divided by ``\|\delta\|``, and it
-changes at every solver step. The `DEFAULT_LINESEARCH_αmax` of a line search method is a backstop
-for every problem, not this bound. The manual section
-[A bounded merit is not a bound on the step](@ref) gives the measurements on the SVD problem.
+the search rejects it. On [`SymplecticStiefelManifold`](@ref) a Hamiltonian lift ``B`` can have real
+eigenvalues, so [`Cayley`](@ref) can have a real pole at ``\alpha = 2/\rho(B)``, and [`Geodesic`](@ref)
+grows exponentially at a rate of up to ``\rho(B)``. The bound that exists is not a property
+of ``\varphi``: it comes from the lift's geometry and changes at every solver step. The
+`DEFAULT_LINESEARCH_αmax` of a line search method is a backstop for every problem, not this bound. The
+manual section [A bounded merit is not a bound on the step](@ref) gives the measurements on the SVD
+problem.
 
 # Why `1`
 
-`1` says *"never step further along the direction than one full turn"*. That is the scale that the
-geometry gives, not a value tuned to one problem.
+`1` says *"at most one natural geometric unit along the direction"*: one full turn ``2\pi/\|\delta\|``
+on a compact orthogonal lift, and ``1/\rho(B)`` — half the distance to the nearest real `Cayley` pole
+that the spectral radius allows — on a symplectic lift. That is the scale that the geometry supplies, not a value tuned to one problem.
 
 !!! info "This bounds the step, not the direction and not `α`"
     A short direction can take a large ``\alpha`` in an ordinary step, which a ceiling on ``\alpha``
@@ -37,7 +41,7 @@ geometry gives, not a value tuned to one problem.
 
 !!! info "One `α`, one ceiling per block"
     On a parameter set the same ``\alpha`` scales every block, so the ceiling is the *smallest* of the
-    per-block ceilings over the manifold blocks — [`_manifold_αmax`](@ref) — and not ``2\pi{}c`` over
+    per-block ceilings over the manifold blocks — [`_manifold_αmax`](@ref) — and not a single bound over
     the norm of the whole direction, which makes every block pay for its neighbours.
 """
 const DEFAULT_STEP_CEILING = 1.0
@@ -443,7 +447,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
     # solve H δx = - ∇f
     # rhs is -g
     update!(cache(opt), state, gradient(opt), _direction_rule(opt), x)
-    ensure_descent!(cache(opt), algorithm(opt), config(opt))
+    ensure_descent!(cache(opt), state, algorithm(opt), config(opt))
 
     for _ in 1:config(opt).nan_max_iterations
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
@@ -499,7 +503,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
         config(opt).verbosity ≥ 2 &&
             @warn "the line search returned $(outcome(ls_status)), i.e. no step along the $(algorithm(opt)) direction decreased the merit; restarting the inverse Hessian and searching along the steepest-descent direction instead." maxlog = 1
         restart!(state)
-        steepest_descent!(cache(opt))
+        steepest_descent!(cache(opt), state)
         observe_optimizer_phase(step_observer(opt), :retraction_application) do
             update_section!(section(cache(opt)), section(state), direction(cache(opt)),
                 opt.retraction, retraction_workspace(opt))
@@ -533,7 +537,7 @@ function solver_step!(x::OptimizerSolution{T}, state::OptimizerState{T},
     # `rg` is measured at the iterate this step *ended* at, not at the one it started from; see
     # `refresh_latest_gradient!` and the note on `convergence_measures`. Costs one gradient
     # evaluation per iteration.
-    refresh_latest_gradient!(cache(opt), gradient(opt))
+    refresh_latest_gradient!(cache(opt), gradient(opt), opt.algorithm)
 
     x
 end
@@ -646,9 +650,15 @@ function initialize_state!(state::OptimizerState, opt::Optimizer, x::OptimizerSo
     state.iterations = 0
     _copyto!(solution(state), x)
     _start_section!(section(state), x)
+    _start_inverse_hessian!(state)
     state.f = f
     state
 end
+
+# `Q` of a quasi-Newton state at the section `solve!` has just placed, which `initialize_state!`
+# could not see; see `_metric_inverse!`. Every other state has nothing that depends on the section.
+_start_inverse_hessian!(state::OptimizerState) = state
+_start_inverse_hessian!(state::BFGSState) = _reset_inverse_hessian!(state)
 
 # The memory a method keeps between steps, as its constructor builds it. The momentum and moment
 # states have their method beside their constructor.

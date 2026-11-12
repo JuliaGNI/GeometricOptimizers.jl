@@ -141,6 +141,27 @@ function apply_section!(Y::AT, λY::GlobalSection{T, AT, <:AbstractArray},
     Y
 end
 
+function apply_section(
+        λY::GlobalSection{
+            T, AT}, Y₂::AT) where {
+        T, AT <: SymplecticStiefelManifold{T}}
+    Y = SymplecticStiefelManifold(zero(Y₂.A))
+    apply_section!(Y, λY, Y₂)
+
+    Y
+end
+
+# The product is the Stiefel one: the section is stored as `[U Uˢ]`, the point first, so `λ(U)E` is
+# its first `n` columns here as well. See `SymplecticLieAlgHorMatrix` for the basis this implies.
+function apply_section!(Y::AT,
+        λY::GlobalSection{T, AT, <:AbstractArray},
+        Y₂::MT) where {
+        T, AT <: SymplecticStiefelManifold{T}, MT <: SymplecticStiefelManifold{T}}
+    _apply_section!(Y.A, λY, Y₂.A)
+
+    Y
+end
+
 function apply_section(λY::GlobalSection{T}, Y₂::AbstractVecOrMat{T}) where {T}
     Y = copy(Y₂)
     apply_section!(Y, λY, Y₂)
@@ -337,6 +358,198 @@ _round(global_rep(λY, Δ); digits = 3)
 function global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {
         T, AT <: GrassmannManifold{T}}
     global_rep!(_zero_lift(GrassmannLieAlgHorMatrix{T}, λY.Y), λY, Δ)
+end
+
+@doc raw"""
+    global_rep(λY::GlobalSection{T, AT}, Δ::AbstractMatrix{T}) where {T, AT<:SymplecticStiefelManifold{T}}
+
+Express `Δ` (an element of the tangent space of `U`) as an instance of
+[`SymplecticLieAlgHorMatrix`](@ref).
+
+This is the map ``\Delta \mapsto \lambda(U)^{-1}\Omega(U, \Delta)\lambda(U)``, with ``\Omega``
+the horizontal lift [`GeometricOptimizers.Ω`](@ref) of the symplectic Stiefel manifold, as for the
+[`StiefelManifold`](@ref). A horizontal element is determined by its first ``2n`` columns, and those
+are ``\lambda(U)^{-1}\Delta``, so the blocks are
+
+```math
+\mathcal{A} = U^+\Delta, \qquad \mathcal{B} = (U^s)^+\Delta,
+```
+
+with ``U^+ = \mathbb{J}_{2n}^TU^T\mathbb{J}_{2N}`` the symplectic inverse and ``\lambda(U) = [U\ \ U^s]``.
+``\mathcal{A}`` is Hamiltonian for a tangent `Δ`; the Hamiltonian projection is taken all the
+same, as [`global_rep`](@ref) takes the skew-symmetric one for the Stiefel manifold.
+
+# Examples
+
+```jldoctest
+using GeometricOptimizers
+using GeometricOptimizers: apply_section, StiefelProjection
+import Random
+
+Random.seed!(123)
+
+U = rand(SymplecticStiefelManifold, 6, 4)
+Δ = rgrad(U, randn(6, 4))
+λU = GlobalSection(U)
+B = global_rep(λU, Δ)
+
+λU.Y * (B * StiefelProjection(6, 4))[1:4, :] + λU.λ * (B * StiefelProjection(6, 4))[5:6, :] ≈ Δ
+
+# output
+
+true
+```
+"""
+function global_rep(λY::GlobalSection{T, AT},
+        Δ::AbstractMatrix{T}) where {
+        T, AT <: SymplecticStiefelManifold{T}}
+    global_rep!(_zero_lift(SymplecticLieAlgHorMatrix{T}, λY.Y), λY, Δ)
+end
+
+# `𝕁X` and `𝕁ᵀX` for the Poisson tensor of the size of `X`'s rows, without building it: the two halves
+# of the rows swap and one of them changes sign.
+function _poisson_mul(X::AbstractMatrix)
+    h = size(X, 1) ÷ 2
+    @views vcat(X[(h + 1):(2h), :], .-X[1:h, :])
+end
+
+function _poisson_tmul(X::AbstractMatrix)
+    h = size(X, 1) ÷ 2
+    @views vcat(.-X[(h + 1):(2h), :], X[1:h, :])
+end
+
+function global_rep!(D::SymplecticLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:SymplecticStiefelManifold, <:AbstractArray},
+        Δ::AbstractMatrix{T}) where {T}
+    ∇L = _ambient(Δ)
+    @assert (D.N, D.n) == size(λY.Y) == size(∇L)
+    JΔ = _poisson_mul(∇L)
+    _hamiltonian_projection!(D, _poisson_tmul(λY.Y.A' * JΔ))
+    D.B .= _poisson_tmul(λY.λ' * JΔ)
+    D
+end
+
+@doc raw"""
+    gradient_rep!(D, λY, Δ)
+    gradient_rep!(D, λY, Δ, method)
+
+Write into `D` the lift whose pairing with every lift ``B`` under [`_dot`](@ref) is the derivative
+of the loss along ``\lambda(Y)BE``, i.e. the derivative of the loss with respect to the stored
+entries of a lift at the section:
+
+```math
+\langle D, B\rangle = \langle\nabla{}L, \lambda(Y)BE\rangle_F \quad \forall{}B\in\mathfrak{g}^\mathrm{hor}.
+```
+
+`Δ` is the Riemannian gradient [`rgrad`](@ref), which is what a gradient of the optimizers returns.
+This lift is what makes [`trial_slope`](@ref) the derivative of the line search's merit and a
+descent check a statement about descent, and it is the gradient [`BFGS`](@ref) and [`DFP`](@ref)
+hold: their secant pairs and their ``Q`` live in the same coordinates.
+
+The four-argument form writes the gradient that `method` holds. For [`BFGS`](@ref), [`DFP`](@ref)
+and every other method it is the lift above. For [`GradientMethod`](@ref),
+[`MomentumMethod`](@ref) and [`Adam`](@ref) it is [`global_rep`](@ref) of `Δ`.
+
+# The symplectic Stiefel manifold
+
+For the [`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref) the lift above is
+[`global_rep`](@ref)`(λY, Δ)` itself, because the inner product of [`_dot`](@ref) on a lift is the
+canonical metric, and all of the forms above are the same. For the
+[`SymplecticStiefelManifold`](@ref) they are not: the metric
+[`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref) is not invariant
+under the symplectic group, so no inner product on the lift reproduces it at every point.
+
+The method recovers ``\langle\nabla{}L, \cdot\rangle_F = g_U(\Delta, \cdot)`` on the tangent space
+from `Δ` and the metric, which is
+
+```math
+K = \Delta{}P - \frac{1}{2}\mathbb{J}_{2N}^TUP\,U^T\mathbb{J}_{2N}\Delta{}P, \qquad P = (U^TU)^{-1},
+```
+
+and writes the gradient of ``B \mapsto \langle{}K, U\mathcal{A} + U^s\mathcal{B}\rangle_F`` with
+respect to the stored blocks of ``B``. With ``X = U^TK`` in four ``n\times{}n`` blocks, that is
+``A_1 = X_{11} - X_{22}^T``, the storage gradients of ``X_{12}`` and ``X_{21}`` for the two
+[`SymmetricMatrix`](@ref) blocks, and ``\mathcal{B} = (U^s)^TK = (U^s)^T\Delta{}P``. The metric enters
+because the gradient of the optimizers is the Riemannian one; it is applied through a Cholesky
+factor of ``U^TU`` and not through its inverse.
+
+With [`global_rep`](@ref) the tangent vector ``\lambda(Y)DE`` of the held gradient is `Δ` for every
+section, so at a fixed step size the path of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
+does not depend on the section ([`Adam`](@ref)'s entrywise second moments and coordinate step ceilings
+still do). [`BFGS`](@ref) and [`DFP`](@ref) start from this direction; see
+[`GeometricOptimizers._metric_inverse!`](@ref). `scripts/symplectic_gradient_options.jl` measures
+these statements.
+"""
+gradient_rep!(D, λY::GlobalSection, Δ) = global_rep!(D, λY, Δ)
+
+function gradient_rep!(D::Union{NamedTuple, NetworkParameters}, λY::NamedTuple,
+        gx::Union{NamedTuple, NetworkParameters})
+    mapparameters!(gradient_rep!, D, λY, gx)
+    D
+end
+
+function gradient_rep!(D::SymplecticLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:SymplecticStiefelManifold, <:AbstractArray},
+        Δ::AbstractMatrix{T}) where {T}
+    G = _ambient(Δ)
+    U = λY.Y.A
+    @assert (D.N, D.n) == size(U) == size(G)
+    k = D.n ÷ 2
+    backend = KernelAbstractions.get_backend(G)
+
+    # `P = (UᵀU)⁻¹` applied through its Cholesky factor
+    C = cholesky(Symmetric(U' * U))
+    GP = G / C
+    # `UᵀK`, with `Uᵀ𝕁ᵀU = -𝕁ₙ`; the `Uˢ` block has no second term, because `(Uˢ)ᵀ𝕁ᵀU = 𝕆`
+    X = U' * GP - _poisson_tmul(C \ (U' * _poisson_mul(GP))) ./ 2
+    @views begin
+        D.A₁ .= X[1:k, 1:k] .- transpose(X[(k + 1):(2k), (k + 1):(2k)])
+        symmetric_storage_gradient_kernel!(backend)(D.B₁.S, X[1:k, (k + 1):(2k)]; ndrange = (
+            k, k))
+        symmetric_storage_gradient_kernel!(backend)(D.C₁.S, X[(k + 1):(2k), 1:k]; ndrange = (
+            k, k))
+    end
+    mul!(fill!(D.B, zero(T)), λY.λ', GP)
+    D
+end
+
+@doc raw"""
+    _metric_apply!(D, λY, B)
+
+Write into `D` the lift ``MB``, where ``M`` is the Gram matrix of the metric in the stored entries of
+a lift at the section `λY`, so that
+
+```math
+\langle{}MB, C\rangle = g\big(\lambda(Y)BE,\ \lambda(Y)CE\big) \quad \forall{}C\in\mathfrak{g}^\mathrm{hor},
+```
+
+with ``\langle\cdot,\cdot\rangle`` the pairing of [`GeometricOptimizers._dot`](@ref). On every lift but
+a [`SymplecticLieAlgHorMatrix`](@ref) that pairing is the metric and ``M`` is the identity, as it is on
+a vector space. On a symplectic lift it is [`GeometricOptimizers.gradient_rep!`](@ref) of the tangent
+vector ``\lambda(U)BE = U\mathcal{A} + U^s\mathcal{B}``, so ``M`` takes the lift
+[`global_rep`](@ref) of a Riemannian gradient to the lift `gradient_rep!` of the same gradient.
+[`GeometricOptimizers._metric_inverse!`](@ref) builds ``M`` from it.
+"""
+_metric_apply!(D, ::GlobalSection, B) = _copyto!(D, B)
+
+function _metric_apply!(D::Union{NamedTuple, NetworkParameters}, λY::NamedTuple,
+        B::Union{NamedTuple, NetworkParameters})
+    mapparameters!(_metric_apply!, D, λY, B)
+    D
+end
+
+function _metric_apply!(D::SymplecticLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:SymplecticStiefelManifold, <:AbstractArray},
+        B::SymplecticLieAlgHorMatrix{T}) where {T}
+    gradient_rep!(D, λY, _section_tangent(λY, B))
+end
+
+# The tangent vector `λ(U)BE = U𝒜 + Uˢℬ` of a symplectic lift at the section `λY`. Host only, as the
+# section is; see `global_section`.
+function _section_tangent(λY::GlobalSection{T, <:SymplecticStiefelManifold},
+        B::SymplecticLieAlgHorMatrix{T}) where {T}
+    𝒜 = vcat(hcat(B.A₁, Matrix(B.B₁)), hcat(Matrix(B.C₁), -transpose(B.A₁)))
+    λY.Y.A * 𝒜 + λY.λ * B.B
 end
 
 @doc raw"""

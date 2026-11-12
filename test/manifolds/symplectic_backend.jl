@@ -7,10 +7,10 @@
 #     the point's backend, so they run there. `metric` also forms `inv(U'U)`, so it needs an `lu`
 #     from the backend on top of that — `Metal` supplies one and `JLArrays` does not, which is what
 #     the fourth testset below pins.
-#   * `global_section` orthogonalizes its completion with the symplectic SR decomposition, which is
-#     a host factorization — `sr!`'s factor is materialized with `Matrix`. A device point is refused
-#     with a message rather than left to fail inside `sr!`, which is the same answer `rand` of a
-#     `SymplecticStiefelManifold` gives on a backend that is not the `CPU`, and for the same reason.
+#   * `global_section` builds its completion from a full QR decomposition and a Hermitian
+#     eigendecomposition, which run on the host. A device point is refused with a message rather
+#     than left to fail inside either, which is the answer `rand` of a `SymplecticStiefelManifold`
+#     gives on a backend that is not the `CPU` as well.
 #
 # `JLArrays` stands in for the device, as it does in `similar_backend.jl` and
 # `device_orthonormalization.jl`, and `allowscalar(false)` is what makes this a test rather than a
@@ -26,7 +26,6 @@ using Test
 
 include("../helpers/eltypes.jl")
 
-# `global_section` draws its completion from the global generator
 Random.seed!(1618)
 
 const N2, n2 = 6, 4
@@ -119,7 +118,7 @@ allowscalar(false)
             e
         end
         # the message has to name the reason and the way out, since raising it here rather than letting
-        # `sr!` fail is the whole point
+        # a host factorization fail is the whole point
         @test occursin("host", err.msg)
         @test occursin("SymplecticStiefelManifold", err.msg)
 

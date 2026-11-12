@@ -1,5 +1,6 @@
 @doc raw"""
     ensure_descent!(cache, method, config)
+    ensure_descent!(cache, state, method, config)
 
 Replace the direction stored in `cache` by the steepest-descent direction if it does not descend.
 
@@ -16,6 +17,12 @@ Descent is tested as ``\nabla{}f\cdot\delta < 0``. [`rhs`](@ref) stores ``-\nabl
 ``\mathrm{rhs}\cdot\delta > 0``; a direction that fails it — including a `NaN` one, for which every
 comparison is `false` — is replaced by `rhs`, which always descends. The substitution is reported at
 `config.verbosity ≥ 2`.
+
+The four-argument form is what [`solver_step!`](@ref) calls. For [`BFGS`](@ref) and [`DFP`](@ref) the
+replacement is ``M^{-1}\,\mathrm{rhs}``, the steepest descent of the metric at the section of
+`state`, as after [`restart!(::BFGSState)`](@ref); see [`GeometricOptimizers._metric_inverse!`](@ref).
+It is `rhs` wherever ``M`` is the identity, i.e. on every parameter but a
+[`SymplecticStiefelManifold`](@ref). For every other method it is the three-argument form.
 
 !!! info "Only the (quasi-)Newton methods are safeguarded"
     [`Adam`](@ref) and [`MomentumMethod`](@ref) build their direction from a moving average, which is
@@ -59,6 +66,9 @@ function ensure_descent!(cache::OptimizerCache, method::OptimizerMethod, config:
 
     cache
 end
+
+ensure_descent!(cache::OptimizerCache, ::OptimizerState, method, config) =
+    ensure_descent!(cache, method, config)
 
 # The `FirstOrderMethodWithState` methods are exempt: their direction is a moving average and is
 # allowed not to descend on an individual step.
@@ -140,6 +150,7 @@ end
 
 @doc raw"""
     steepest_descent!(cache)
+    steepest_descent!(cache, state)
 
 Replace the direction stored in `cache` by ``-\nabla{}f``, the one direction that always descends.
 
@@ -151,12 +162,19 @@ It is not on the three first-order caches, where `rhs` is an alias for [`directi
 copying would be a silent no-op. `GradientCache`'s direction already *is* ``-\nabla{}f`` and the
 no-op is correct there; `MomentumCache` and `AdamCache` hold a moving average and have to be given
 the gradient explicitly.
+
+The two-argument form is what [`solver_step!`](@ref) calls after [`restart!`](@ref). For
+[`BFGS`](@ref) and [`DFP`](@ref) it is ``Q\,\mathrm{rhs}`` with the ``Q = M^{-1}`` that `restart!`
+has just set, the steepest descent of the metric; see
+[`GeometricOptimizers._metric_inverse!`](@ref). For every other cache it is the one-argument form.
 """
 function steepest_descent!(cache::OptimizerCache)
     _copyto!(direction(cache), rhs(cache))
 
     cache
 end
+
+steepest_descent!(cache::OptimizerCache, ::OptimizerState) = steepest_descent!(cache)
 
 function _steepest_descent_from_gradient!(cache::OptimizerCache)
     _copyto!(direction(cache), gradient_array(cache))
@@ -168,7 +186,7 @@ end
 """
     restart!(state)
 
-Discard whatever curvature information `state` has accumulated and start again from the identity.
+Discard whatever curvature information `state` has accumulated and start again from the metric.
 
 Only the quasi-Newton states carry any, so this is a no-op for everything else. See
 [`restart!(::BFGSState)`](@ref) and [`solver_step!`](@ref).

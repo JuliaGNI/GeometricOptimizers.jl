@@ -99,15 +99,26 @@ the optimizer travels along it is the line search's business.
 """
 struct BFGS <: QuasiNewtonOptimizerMethod end
 
-"""
-The gradient descent algorithm.
+@doc raw"""
+    GradientMethod()
+
+The gradient descent algorithm: the steepest descent with respect to the metric of the manifold.
+The gradient it holds is [`global_rep`](@ref) of the Riemannian gradient [`rgrad`](@ref), whose
+tangent vector ``\lambda(Y)BE`` is the same whatever section ``\lambda(Y)`` is used.
+
+[`MomentumMethod`](@ref) and [`Adam`](@ref) hold the same gradient, and [`BFGS`](@ref) and
+[`DFP`](@ref) start from its direction. On a [`SymplecticStiefelManifold`](@ref) it is the descent of
+the metric [`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref), and the
+path of `GradientMethod` does not depend on the section; see
+[`GeometricOptimizers.gradient_rep!`](@ref).
 """
 struct GradientMethod <: OptimizerMethod end
 
 @doc raw"""
     MomentumMethod(; α)
 
-The gradient descent algorithm with momentum, i.e. the *heavy ball* method.
+The gradient descent algorithm with momentum, i.e. the *heavy ball* method. It holds the gradient
+of [`GradientMethod`](@ref).
 
 Stores the *momentum coefficient* `α`. The momentum is accumulated as
 ```math
@@ -136,6 +147,7 @@ MomentumMethod(; α = DEFAULT_MOMENTUM_α) = MomentumMethod{typeof(float(α))}(f
 
 The Adam optimizer, with the defaults of the experiments in [Brantner:2023](@cite).
 [kingma2014adam](@cite) and [goodfellow2016deep; Algorithm 8.7](@cite) suggest ``\beta_2 = 0.999``.
+The moments below are taken of the gradient ``\nabla{}L`` of [`GradientMethod`](@ref).
 
 The cache consists of a first and a second moment, stored in *bias-corrected* form, i.e.
 updated in the ``t``-th iteration (counted from ``t = 1``) as

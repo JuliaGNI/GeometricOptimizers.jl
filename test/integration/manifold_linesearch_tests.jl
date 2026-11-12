@@ -15,7 +15,7 @@ using SimpleSolvers: LinesearchStatus, LINESEARCH_FLOOR, LINESEARCH_EXHAUSTED,
                      LINESEARCH_NO_DESCENT,
                      LINESEARCH_DECREASED
 using GeometricOptimizers: isconverged
-using LinearAlgebra: norm, svd
+using LinearAlgebra: Diagonal, I, cond, det, eigvals, norm, svd
 using Test
 import Random
 
@@ -524,6 +524,61 @@ end
     @test step_αmax(c, T[NaN, 1]) == Inf            # a direction that has already gone wrong
     @test step_αmax(c, T[Inf, 1]) == Inf
     @test step_αmax(T(Inf), δ) == Inf               # the ceiling switched off
+end
+
+@testset "step_αmax on a SymplecticLieAlgHorMatrix is c/ρ(δ), inside the Cayley pole at 2/ρ(δ), $T" for T in REAL_ELTYPES
+    c = T(1.3)
+    rng = Random.Xoshiro(1234)
+    δ_gen = rand(rng, SymplecticLieAlgHorMatrix{T}, 10, 4)
+    ρ = maximum(abs, eigvals(Float64.(Matrix(δ_gen))))   # from the dense lift, not from its factors
+    @test eltype(step_αmax(c, δ_gen)) == T
+    @test isapprox(step_αmax(c, δ_gen), c / ρ; rtol = 64 * eps(T))
+    @test step_αmax(c, δ_gen) ≥ c / l2norm(δ_gen)          # ρ(B) ≤ ‖B‖_F/√2 ≤ ‖δ‖
+    @test step_αmax(c, zeros(SymplecticLieAlgHorMatrix{T}, 10, 4)) == Inf
+    @test step_αmax(T(Inf), δ_gen) == Inf
+
+    # The ceiling does not depend on the section: `λ ↦ λ diag(𝕀, S)` takes the lift `(𝒜, ℬ)` to
+    # `(𝒜, S⁻¹ℬ)`, which has the eigenvalues of the first. The control is `c/‖δ‖`, which changes.
+    d = T.(exp2.(range(-2.5, 2.5; length = 3)))
+    S⁻¹ = Matrix(Diagonal(vcat(inv.(d), d)))
+    δ_h = SymplecticLieAlgHorMatrix(δ_gen.A₁, δ_gen.B₁, δ_gen.C₁, S⁻¹ * δ_gen.B, 10, 4)
+    @test isapprox(step_αmax(c, δ_h), step_αmax(c, δ_gen); rtol = 64 * eps(T) * cond(S⁻¹))
+    @test !isapprox(l2norm(δ_h), l2norm(δ_gen); rtol = T(0.1))
+
+    # A nonzero nilpotent lift has no pole and no ceiling: `ℬ = e₁e₁ᵀ`, all other blocks zero.
+    δ_nil = zeros(SymplecticLieAlgHorMatrix{T}, 10, 4)
+    δ_nil.B[1, 1] = one(T)
+    @test iszero(Matrix(δ_nil)^2)
+    @test step_αmax(c, δ_nil) == Inf
+
+    # Sharp witness on `Sp(2, 4)` (`k = 1`): `A₁ = [1]`, `B₁ = C₁ = 𝕆`, `ℬ = 𝕆` has `ρ(δ) == 1`
+    # and `Matrix(δ) = diag(1, -1, 0, 0)`, so `I - (α/2)δ` is singular at `α = 2 < 2π` (inside the
+    # compact `2π/‖δ‖` ceiling) and nonsingular at `step_αmax(1, δ) = 1`.
+    δ = SymplecticLieAlgHorMatrix(
+        reshape(T[1], 1, 1), SymmetricMatrix(zeros(T, 1), 1),
+        SymmetricMatrix(zeros(T, 1), 1), zeros(T, 2, 2), 4, 2)
+    @test l2norm(δ) == one(T)
+    @test det(I - (T(2) / 2) * Matrix(δ)) == zero(T)
+    α_ceil = step_αmax(one(T), δ)
+    @test α_ceil == one(T)
+    @test isapprox(det(I - (α_ceil / 2) * Matrix(δ)), T(3) / T(4); rtol = 8 * eps(T))
+    R = cayley(δ)
+    J̄ = T[0 1 0 0; -1 0 0 0; 0 0 0 1; 0 0 -1 0]
+    @test isapprox(R' * J̄ * R, J̄; rtol = 8 * eps(T))
+
+    # In a mixed container with lifts of unit norm and unit spectral radius, the symplectic block
+    # (`c`) binds ahead of the compact Stiefel block (`2πc`), and the Euclidean block contributes
+    # nothing.
+    δ_st = rand(rng, StiefelLieAlgHorMatrix{T}, 4, 2)
+    δ_st = (one(T) / l2norm(δ_st)) * δ_st
+    sol = NetworkParameters((
+        U = SymplecticStiefelManifold(T[1 0; 0 0; 0 1; 0 0]),
+        Y = rand(rng, StiefelManifold{T}, 4, 2),
+        W = zeros(T, 3, 4)))
+    dirs = NetworkParameters((U = δ, Y = δ_st, W = T(1.0e3) .* ones(T, 3, 4)))
+    @test eltype(_manifold_αmax(sol, dirs, c)) == T
+    @test isapprox(_manifold_αmax(sol, dirs, c), c; rtol = 8 * eps(T))
+    @test _manifold_αmax(sol, dirs, c) < step_αmax(c, dirs.Y)
 end
 
 # `_manifold_αmax` is the block-wise half, and issue A15. One `α` is applied to every block of a

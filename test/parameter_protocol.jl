@@ -246,3 +246,33 @@ end
     @test eltype(sym) == T
     @test parent(sym) == T[3]
 end
+
+# The symplectic lift and the symplectic Stiefel point, which the set above does not hold: the
+# storage gradient of the lift from a dense cotangent against a central difference on its flat
+# storage, and a flatten round trip of both.
+@testset "the storage gradient of a symplectic lift, and the symplectic leaves round-trip" begin
+    rng = Random.Xoshiro(9)
+    B = rand(rng, SymplecticLieAlgHorMatrix{Float64}, 8, 4)
+    X = randn(rng, 8, 8)
+    L(A) = sum(sin.(Matrix(A) * X))
+    G = cos.(Matrix(B) * X) * X'
+
+    v, layout = flatten(NetworkParameters((B = B,)))
+    difference = map(eachindex(v)) do k
+        p, m = copy(v), copy(v)
+        p[k] += 1e-6
+        m[k] -= 1e-6
+        (L(unflatten(layout, p).B) - L(unflatten(layout, m).B)) / 2e-6
+    end
+    gradient = storage_gradient(B, G)
+    @test gradient isa SymplecticLieAlgHorMatrix{Float64}
+    @test flatten(NetworkParameters((B = gradient,)))[1] ≈ difference rtol = 1e-7
+
+    U = rand(rng, SymplecticStiefelManifold{Float64}, 8, 4)
+    ps = NetworkParameters((B = B, U = U))
+    v, layout = flatten(ps)
+    back = unflatten(layout, v)
+    @test back.B == B
+    @test back.U isa SymplecticStiefelManifold{Float64}
+    @test back.U == U
+end

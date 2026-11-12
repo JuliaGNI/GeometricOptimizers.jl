@@ -390,10 +390,10 @@ By leveraging the sparse structure of the matrices in ``\mathfrak{g}^\mathrm{hor
 where we have abbreviated ``\mathbb{I} := \mathbb{I}_N.`` We conclude with a remark:
 
 ```@eval
-Main.remark(raw"As mentioned previously the Lie group ``SO(N)``, i.e. the one corresponding to the Stiefel manifold and the Grassmann manifold, has a bi-invariant Riemannian metric associated with it: ``(B_1,B_2)\mapsto \mathrm{Tr}(B_1^TB_2)``. For other Lie groups (e.g. the symplectic group) the situation is slightly more difficult.")
+Main.remark(raw"As mentioned previously the Lie group ``SO(N)``, i.e. the one corresponding to the Stiefel manifold and the Grassmann manifold, has a bi-invariant Riemannian metric associated with it: ``(B_1,B_2)\mapsto \mathrm{Tr}(B_1^TB_2)``. For other Lie groups (e.g. the symplectic group) there is no such metric.")
 ```
 
-One of such Lie groups is the *group of symplectic matrices* [bendokat2021real](@cite); for this group the expressions presented here are more complicated.
+The *group of symplectic matrices* [bendokat2021real](@cite) is one of them: it has no bi-invariant Riemannian metric, see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref). The two retractions above still apply to its horizontal lift, [`SymplecticLieAlgHorMatrix`](@ref), with a ``4n\times4n`` matrix function in place of the ``2n\times2n`` one. They are the geodesic and the Cayley transform of the pseudo-Riemannian metric of [bendokat2021real](@cite), and retractions of first order, not the geodesic, for its Riemannian metric; [The algorithm on the symplectic Stiefel manifold](@ref) says how the two metrics divide the work.
 
 ## Where a retraction sits in the algorithm
 
@@ -549,8 +549,8 @@ them measures, and how to choose between them. Everything from here on is about 
 
 [`AbstractRetraction`](@ref), [`Geodesic`](@ref), [`Cayley`](@ref), [`geodesic`](@ref),
 [`cayley`](@ref) and [`retraction`](@ref). `geodesic` and `cayley` each have a method on an
-[`AbstractLieAlgHorMatrix`](@ref) — the efficient form this page derives, for both the Stiefel and
-the Grassmann lift — and one on a point together with a tangent vector, which is the classical
+[`AbstractLieAlgHorMatrix`](@ref) — the efficient form this page derives, for the Stiefel, the
+Grassmann and the symplectic lift — and one on a point together with a tangent vector, which is the classical
 retraction of the footnote above. Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 ## Reference

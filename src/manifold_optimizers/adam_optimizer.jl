@@ -17,6 +17,7 @@ Cache for the gradient optimizer.
 - `Δg`: difference in gradients, needed for [`OptimizerStatus`](@ref),
 - `g̃`: scratch for [`latest_gradient`](@ref); see [`GradientCache`](@ref),
 - `g̃_is_current`: whether `g̃` is the gradient at `x`; see [`store_gradient!`](@ref),
+- `g̃_norm`: the Riemannian norm of the gradient at `x`; see [`latest_gradient_norm`](@ref),
 - `section`: the [`GlobalSection`](@ref).
 """
 struct AdamCache{T, MT, VT, ST} <: OptimizerCache{T}
@@ -26,6 +27,7 @@ struct AdamCache{T, MT, VT, ST} <: OptimizerCache{T}
     Δg::VT
     g̃::VT
     g̃_is_current::Base.RefValue{Bool}
+    g̃_norm::Base.RefValue{T}
     m₁::VT
     m₂::VT
     section::ST
@@ -44,7 +46,8 @@ second_moment(cache::AdamCache) = cache.m₂
 # the cost, where a `@noinline` on the composing body does not.
 @noinline function _adam_cache(x::OptimizerSolution{T}, g::VT, δ::VT, Δg::VT, g̃::VT,
         m₁::VT, m₂::VT, sec::ST) where {T, VT, ST}
-    AdamCache{T, typeof(x), VT, ST}(x, g, δ, Δg, g̃, Ref(false), m₁, m₂, sec)
+    AdamCache{T, typeof(x), VT, ST}(
+        x, g, δ, Δg, g̃, Ref(false), Ref(T(NaN)), m₁, m₂, sec)
 end
 
 function AdamCache(x::OptimizerSolution{T}, g::AT, δ::AT, Δg::AT) where {
@@ -139,9 +142,10 @@ end
 _bias_corrected_weights(β, t) = ((β - β^t) / (1 - β^t), (1 - β) / (1 - β^t))
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
-        β₁::T, β₂::T, δ::T, t::Integer, x::OptimizerSolution{T}) where {T}
+        method::OptimizerMethod, t::Integer, x::OptimizerSolution{T}) where {T}
+    β₁, β₂, δ = method.β₁, method.β₂, method.δ
     # first, and before the two `_copyto!`s below; see `store_gradient!`
-    store_gradient!(cache, state, gradient, x)
+    store_gradient!(cache, state, gradient, x, method)
     _copyto!(section(cache), section(state))
     _copyto!(solution(cache), x)
     # `t` is the iteration number and is counted from one: `solve!` calls
@@ -171,5 +175,5 @@ end
 
 function update!(cache::AdamCache{T}, state::AdamState{T}, gradient::Gradient{T},
         method::Adam{T}, x::OptimizerSolution{T}) where {T}
-    update!(cache, state, gradient, method.β₁, method.β₂, method.δ, state.iterations, x)
+    update!(cache, state, gradient, method, state.iterations, x)
 end

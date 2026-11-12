@@ -1,8 +1,7 @@
 using GeometricOptimizers
-using GeometricOptimizers: apply_section, global_rep, global_rep!, StiefelProjection,
-                           _similar,
-                           _fill!
-using LinearAlgebra: norm
+using GeometricOptimizers: apply_section, global_rep, global_rep!, gradient_rep!,
+                           StiefelProjection, _similar, _fill!, _dot
+using LinearAlgebra: Symmetric, cond, norm
 using NeuralNetworkParameters: NetworkParameters
 using Test
 import Random
@@ -13,6 +12,7 @@ include("../helpers/eltypes.jl")
 Random.seed!(123)
 
 include("../helpers/grassmann_test_help.jl")
+include("../helpers/symplectic_points.jl")
 
 # The section's first `n` columns span `Y`, so projecting onto them gives `Y` back to the round-off of
 # two products: measured at most `1.03eps(T)` in both precisions over 200 seeds of this sweep.
@@ -190,4 +190,192 @@ end
     D = _fill!(_similar(reference), T(NaN))
     @test global_rep!(D, λ, gx) === D
     @test D == reference
+end
+
+# The tests of `GlobalSection and global_rep` above, for the symplectic Stiefel manifold: `λ(U)E` is
+# `U`, the section is symplectic in the adapted basis, and `global_rep` is inverted by applying the
+# section to `BE`.
+function symplectic_global_section(rng, N2, n2, T)
+    U = conditioned_point(rng, T, N2, n2)
+    λU = GlobalSection(U)
+
+    E = SymplecticStiefelManifold(Matrix{T}(StiefelProjection(T, N2, n2)))
+    U₂ = apply_section(λU, E)
+    @test U₂ isa SymplecticStiefelManifold{T}
+    M = Matrix(λU)
+    @test eltype(M) == T
+    @test norm(M' * poisson(T, N2) * M - adapted_poisson(T, N2, n2)) < 64eps(T) * norm(M)^2
+    isapprox(U₂, U)
+end
+
+function symplectic_global_tangent_space_rep(rng, N2, n2, T)
+    U = conditioned_point(rng, T, N2, n2)
+    λU = GlobalSection(U)
+
+    Δ = rgrad(U, rand(rng, T, N2, n2))
+    B = global_rep(λU, Δ)
+    @test B isa SymplecticLieAlgHorMatrix{T}
+    BE = B * StiefelProjection(T, N2, n2)
+    # the same abuse of notation as in `global_tangent_space_rep`
+    Δ₂ = apply_section(λU, SymplecticStiefelManifold(BE))
+
+    isapprox(Δ₂.A, Δ)
+end
+
+const SYMPLECTIC_SIZES = ((4, 2), (6, 2), (6, 4), (8, 4), (10, 4), (6, 6))
+
+@testset "GlobalSection and global_rep of a SymplecticStiefelManifold, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(123)
+    for (N2, n2) in SYMPLECTIC_SIZES
+        @test symplectic_global_section(rng, N2, n2, T)
+        @test symplectic_global_tangent_space_rep(rng, N2, n2, T)
+    end
+end
+
+# `apply_section!` into a separate destination is the two `mul!`s of the Stiefel method, and into its
+# own input the materialised products.
+@testset "apply_section! on a SymplecticStiefelManifold, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(124)
+    λU = GlobalSection(conditioned_point(rng, T, 10, 4))
+    U₂ = conditioned_point(rng, T, 10, 4)
+    reference = reference_apply_section(λU, U₂.A, 4, 10)
+
+    U = SymplecticStiefelManifold(zeros(T, 10, 4))
+    @test apply_section!(U, λU, U₂) === U
+    @test isapprox(U.A, reference; rtol = 100eps(T))
+    aliased = SymplecticStiefelManifold(copy(U₂.A))
+    apply_section!(aliased, λU, aliased)
+    @test aliased.A == reference
+end
+
+# The reference of the `NaN` test above, for the symplectic lift: the blocks `U⁺Δ` and `(Uˢ)⁺Δ` with
+# the Poisson tensors written out.
+function reference_lift(λY::GlobalSection{T, <:SymplecticStiefelManifold}, Δ) where {T}
+    N2, n2 = size(λY.Y)
+    J = poisson(T, N2)
+    𝒜 = poisson(T, n2)' * λY.Y.A' * J * Δ
+    ℬ = poisson(T, N2 - n2)' * λY.λ' * J * Δ
+    D = zeros(T, N2, N2)
+    D[1:n2, 1:n2] .= 𝒜
+    D[(n2 + 1):N2, 1:n2] .= ℬ
+    SymplecticLieAlgHorMatrix(D, n2)
+end
+
+@testset "global_rep! overwrites a NaN-filled lift, SymplecticStiefelManifold{$T}" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(9)
+    for (N2, n2) in ((6, 2), (10, 4))
+        U = conditioned_point(rng, T, N2, n2)
+        λU = GlobalSection(U)
+        Δ = rgrad(U, randn(rng, T, N2, n2))
+        D = fill!(similar(reference_lift(λU, Δ)), T(NaN))
+        @test global_rep!(D, λU, Δ) === D
+        @test D ≈ reference_lift(λU, Δ)
+        @test global_rep(λU, Δ) == D
+    end
+end
+
+# The lift the optimizers hold as the gradient pairs with every lift `B` under `_dot` as the
+# derivative of the loss along `λ(U)BE` does: `⟨∇L, λ(U)BE⟩`. For the Stiefel and the Grassmann
+# manifold this is `global_rep` of the Riemannian gradient; for the symplectic Stiefel manifold it is
+# not, and `global_rep` of the Riemannian gradient pairs to something else, which the last assertion
+# states.
+@testset "gradient_rep! pairs as the derivative of the loss, $(nameof(M)){$T}" for T in REAL_ELTYPES,
+    M in (StiefelManifold, GrassmannManifold, SymplecticStiefelManifold)
+
+    rng = Random.Xoshiro(11)
+    for _ in 1:5
+        Y = M === SymplecticStiefelManifold ? conditioned_point(rng, T, 10, 4) :
+            rand(rng, M{T}, 10, 4)
+        λY = GlobalSection(Y)
+        ∇L = randn(rng, T, 10, 4)
+        Δ = rgrad(Y, ∇L)
+        D = fill!(similar(global_rep(λY, Δ)), T(NaN))
+        @test gradient_rep!(D, λY, Δ) === D
+
+        B = rand(rng, typeof(D).name.wrapper{T}, 10, 4)
+        derivative = sum(∇L .* (Matrix(λY) * (B * StiefelProjection(T, 10, 4))))
+        @test _dot(D, B) ≈ derivative rtol = 64eps(T) * 10
+        if M === SymplecticStiefelManifold
+            @test !isapprox(_dot(global_rep(λY, Δ), B), derivative; rtol = sqrt(eps(T)))
+        else
+            @test D ≈ global_rep(λY, Δ)
+        end
+    end
+end
+
+@testset "global_rep! and gradient_rep! on a parameter set with a symplectic leaf, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(10)
+    ps = NetworkParameters((u = conditioned_point(rng, T, 6, 2),
+        v = (w = rand(rng, StiefelManifold{T}, 5, 2), b = randn(rng, T, 4))))
+    gx = NetworkParameters((u = randn(rng, T, 6, 2),
+        v = (w = randn(rng, T, 5, 2), b = randn(rng, T, 4))))
+    λ = GlobalSection(ps)
+    reference = global_rep(λ, gx)
+    @test reference.u isa SymplecticLieAlgHorMatrix{T}
+    D = _fill!(_similar(reference), T(NaN))
+    @test global_rep!(D, λ, gx) === D
+    @test D == reference
+
+    @test gradient_rep!(D, λ, gx) === D
+    @test D.u == gradient_rep!(similar(reference.u), λ.u, gx.u)
+    @test D.v.w == reference.v.w
+    @test D.v.b == reference.v.b
+
+    # the descent of a first-order method is `global_rep` on every leaf
+    @test gradient_rep!(D, λ, gx, GradientMethod()) == reference
+end
+
+# The gradient each method holds, `gradient_rep!(D, λY, Δ, method)`, against what defines it rather
+# than against the code that computes it. `Δ = rgrad(U, ∇L)` and `⟨∇L, V⟩` is the derivative of the
+# loss along a tangent vector `V`.
+#
+# - A method other than `GradientMethod`, `MomentumMethod` and `Adam` holds the derivative with
+#   respect to the stored entries: the three-argument form.
+# - `GradientMethod` holds the lift whose tangent vector `λ(U)DE` is the Riesz representative of `∇L`
+#   in metric (3.16), `g_U(λ(U)DE, V) = ⟨∇L, V⟩` for every tangent `V`. It is `Δ` for every section.
+# - The derivative with respect to the stored entries, read as a lift, is not the Riesz
+#   representative, and a change of the section by `diag(I, S)`, which leaves the point where it is,
+#   changes its tangent vector: the two controls.
+#
+# The pairings are measured against `‖∇L‖‖V‖`, because a pairing of two random matrices can cancel.
+# The section change is `S = exp(𝕁H)`, `H` symmetric, which is symplectic; the round-off of a
+# section-independent tangent vector grows with `cond(S)`, measured at most `0.3eps(T)cond(S)`
+# in both precisions over 20 draws.
+@testset "the gradient of each descent on a SymplecticStiefelManifold{$T}" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(12)
+    E = StiefelProjection(T, 10, 4)
+    metric_methods = (GradientMethod(), MomentumMethod(), Adam())
+    for _ in 1:10
+        U = conditioned_point(rng, T, 10, 4)
+        λU = GlobalSection(U)
+        ∇L = randn(rng, T, 10, 4)
+        Δ = rgrad(U, ∇L)
+        lift() = fill!(similar(global_rep(λU, Δ)), T(NaN))
+        flat = gradient_rep!(lift(), λU, Δ)
+        for method in (BFGS(), DFP())
+            @test gradient_rep!(lift(), λU, Δ, method) == flat
+        end
+
+        V = rgrad(U, randn(rng, T, 10, 4))
+        scale = norm(∇L) * norm(V)
+        for method in metric_methods
+            D = lift()
+            @test gradient_rep!(D, λU, Δ, method) === D
+            @test D == global_rep(λU, Δ)
+            @test isapprox(metric(U, Matrix(λU) * (D * E), V), sum(∇L .* V);
+                atol = 64eps(T) * scale)
+        end
+
+        @test !isapprox(metric(U, Matrix(λU) * (flat * E), V), sum(∇L .* V);
+            atol = sqrt(eps(T)) * scale)
+
+        λ₂ = GlobalSection(U)
+        S = exp(poisson(T, 6) * T.(Symmetric(randn(rng, 6, 6))))
+        λ₂.λ .= λ₂.λ * S
+        tangent(λ, method) = Matrix(λ) * (gradient_rep!(lift(), λ, Δ, method) * E)
+        Δ₁ = tangent(λU, GradientMethod())
+        @test isapprox(tangent(λ₂, GradientMethod()), Δ₁; rtol = 8eps(T) * cond(S))
+        @test isapprox(Δ₁, Δ; rtol = 64eps(T))
+        @test !isapprox(tangent(λ₂, BFGS()), tangent(λU, BFGS()); rtol = T(0.1))
+    end
 end
