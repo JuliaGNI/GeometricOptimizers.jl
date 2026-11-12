@@ -55,6 +55,18 @@ breaking release).
   and `rg` of `OptimizerStatus` read the Riemannian norm of the gradient at the iterate,
   `latest_gradient_norm`, which is the same for every method; on a vector, a `StiefelManifold` and a
   `GrassmannManifold` it is the norm `rg` reported before.
+- **`BFGS` and `DFP` start from the inverse of the metric.** Their inverse Hessian starts at `M⁻¹`,
+  and a restart puts it back there, for the Gram matrix `M` of the manifold's metric in the stored
+  entries of a lift at the section (`_metric_apply!`, `_metric_inverse!`). Their first step, the
+  step after a restart and the substitute for a direction that does not descend are therefore
+  `-global_rep` of the Riemannian gradient, the `MetricDescent` step, while the secant pairs keep the
+  derivative with respect to the stored entries that `gradient_rep!` gives. `M` is the identity on a
+  vector space, a `StiefelManifold` and a `GrassmannManifold`, so no existing call changes; on a
+  `SymplecticStiefelManifold` the first step no longer depends on the section, where it changed by a
+  factor of 89 between two sections over one point. The page on optimization on homogeneous spaces
+  states the algorithm on the symplectic Stiefel manifold and why it takes two metrics, the page on
+  parallel transport adds the symplectic case, and the citations of (3.19) and (3.9) of Bendokat and
+  Zimmermann are corrected (#191). Issues #192 and #193 record two follow-ups.
 
 ### Changed
 
