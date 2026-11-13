@@ -147,7 +147,7 @@ makedocs(;
             asset("https://juliagni.github.io/GeometricFigures.jl/figures.css"; islocal = false)
         ],
         # `api.md` is one `@autodocs` over the whole package and is above the default 200 KiB.
-        size_threshold = 600 * 2^10
+        size_threshold = 2^20
     ),
     pages = [
         "Home" => "index.md",
