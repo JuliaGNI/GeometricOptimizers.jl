@@ -1,8 +1,9 @@
 using SafeTestsets
 
 const GROUPS = isempty(ARGS) ?
-               (Sys.isapple() && Sys.ARCH === :aarch64 ? ["core", "slow", "metal"] :
-                ["core", "slow"]) : ARGS
+               (Sys.isapple() && Sys.ARCH === :aarch64 ?
+                ["core", "backends", "optimizers", "slow", "metal"] :
+                ["core", "backends", "optimizers", "slow"]) : ARGS
 
 if "core" in GROUPS
     @safetestset "Exports                      " include("integration/exports.jl")
@@ -65,7 +66,9 @@ if "core" in GROUPS
     @safetestset "NeuralNetworkParameters      " include("integration/neural_network_parameters_protocol.jl")
     @safetestset "Container Parameters         " include("integration/network_parameters_optimizer.jl")
     @safetestset "Flat Buffer Allocations      " include("integration/flat_buffer_allocations.jl")
-    @safetestset "changebackend                " include("integration/changebackend.jl")
+end
+if "backends" in GROUPS
+    @safetestset "changebackend               " include("integration/changebackend.jl")
     @safetestset "similar keeps the backend    " include("integration/similar_backend.jl")
     @safetestset "rgrad and the backend        " include("integration/rgrad_backend.jl")
     @safetestset "Default gradient             " include("integration/default_gradient.jl")
@@ -76,14 +79,16 @@ if "core" in GROUPS
     @safetestset "device multiply              " include("integration/device_multiply.jl")
     @safetestset "device products and sums     " include("integration/device_products.jl")
     @safetestset "mixed-backend refusal        " include("integration/mixed_backend_refusal.jl")
+    @safetestset "device solve!                " include("integration/device_solve.jl")
 end
-if "slow" in GROUPS
+if "optimizers" in GROUPS
     @safetestset "Optimizers                   " include("integration/optimizer_tests.jl")
     @safetestset "Manifold Line Search         " include("integration/manifold_linesearch_tests.jl")
     @safetestset "Grassmann Optimizers         " include("integration/grassmann_optimizer_tests.jl")
     @safetestset "Symplectic Optimizers        " include("integration/symplectic_optimizer_tests.jl")
-    @safetestset "device solve!                " include("integration/device_solve.jl")
-    @safetestset "Optimizer Convergence        " include("verification/svd_optim.jl")
+end
+if "slow" in GROUPS
+    @safetestset "Optimizer Convergence       " include("verification/svd_optim.jl")
     @safetestset "Own-vs-own ambiguities       " include("ambiguities.jl")
 end
 if "doctests" in GROUPS
