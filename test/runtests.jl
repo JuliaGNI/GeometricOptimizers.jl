@@ -68,7 +68,7 @@ if "core" in GROUPS
     @safetestset "Flat Buffer Allocations      " include("integration/flat_buffer_allocations.jl")
 end
 if "backends" in GROUPS
-    @safetestset "changebackend               " include("integration/changebackend.jl")
+    @safetestset "changebackend                " include("integration/changebackend.jl")
     @safetestset "similar keeps the backend    " include("integration/similar_backend.jl")
     @safetestset "rgrad and the backend        " include("integration/rgrad_backend.jl")
     @safetestset "Default gradient             " include("integration/default_gradient.jl")
@@ -88,7 +88,7 @@ if "optimizers" in GROUPS
     @safetestset "Symplectic Optimizers        " include("integration/symplectic_optimizer_tests.jl")
 end
 if "slow" in GROUPS
-    @safetestset "Optimizer Convergence       " include("verification/svd_optim.jl")
+    @safetestset "Optimizer Convergence        " include("verification/svd_optim.jl")
     @safetestset "Own-vs-own ambiguities       " include("ambiguities.jl")
 end
 if "doctests" in GROUPS
