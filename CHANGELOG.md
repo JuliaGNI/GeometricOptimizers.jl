@@ -82,6 +82,12 @@ breaking release).
   most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
   is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
   K24.
+- **The API reference is an overview and six pages, one per part of the manual.** It was one `@autodocs` page over
+  the whole package, which had grown past Documenter's 200 KiB `size_threshold`; `docs/make.jl`
+  raised the threshold to 600 KiB, and the docstrings of the biorthogonal manifold (#187) took the
+  page past that too. The overview keeps the old URL, `api/`, and the index of every docstring.
+  The pages are Manifolds, Special Matrices, Retractions, Optimizers, Optimizer Methods and
+  Linesearch, each listing its source files, and the threshold is Documenter's default again.
 
 ### Fixed
 
