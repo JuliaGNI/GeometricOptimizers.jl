@@ -6,7 +6,7 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: StiefelProjection, sr!
-using LinearAlgebra: qr!
+using LinearAlgebra: mul!, qr!
 using Test
 import Random
 
@@ -123,10 +123,14 @@ end
 @testset "mixed element types" begin
     for A in (rand(SkewSymMatrix{Float32}, N), rand(SymmetricMatrix{Float32}, N),
         rand(StrictlyLowerTriangular{Float32}, N), rand(StiefelLieAlgHorMatrix{Float32}, N, n),
-        StiefelManifold(Float32.(Matrix(qr!(randn(N, N)).Q))))
+        StiefelManifold(Float32.(Matrix(qr!(randn(N, N)).Q))),
+        rand(SymplecticLieAlgHorMatrix{Float32}, N, n),
+        rand(SymplecticLieAlgHorMatrix{Float32}, N, n)')
         M, v = randn(N, N), randn(N)
         B = rand(SkewSymMatrix, N)
         @test A * M ≈ Matrix(A) * M
+        @test mul!(zeros(N, N), A, M) ≈ Matrix(A) * M
+        @test mul!(zeros(N, N), M, A) ≈ M * Matrix(A)
         @test M * A ≈ M * Matrix(A)
         @test A * v ≈ Matrix(A) * v
         @test v' * A ≈ v' * Matrix(A)

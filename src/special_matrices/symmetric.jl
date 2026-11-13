@@ -119,11 +119,28 @@ function map_to_S(A::AbstractMatrix{T}) where {T <: Integer}
     map_to_S(float.(A))
 end
 
-# `map_to_S` written into the storage of `S`, which the symplectic lift projects its blocks into.
+# `map_to_S` written into the storage of `S`, which the symplectic lift projects its blocks
+# into: a loop on `CPU`, so `retraction_differential!` in a workspace allocates nothing, and
+# the projection kernel elsewhere.
 function _map_to_S!(S::SymmetricMatrix{T}, A::AbstractMatrix{T}) where {T}
-    n = size(A, 1)
     @assert size(A) == (S.n, S.n)
-    sym_projection_kernel(KernelAbstractions.get_backend(S.S))(S.S, A; ndrange = (n, n))
+    _map_to_S!(_check_same_backend(S.S, A), S, A)
+end
+
+function _map_to_S!(::CPU, S::SymmetricMatrix{T}, A::AbstractMatrix{T}) where {T}
+    data = S.S
+    n = S.n
+    for i in 1:n
+        for j in 1:i
+            data[i * (i - 1) ÷ 2 + j] = T(0.5) * (A[i, j] + A[j, i])
+        end
+    end
+    S
+end
+
+function _map_to_S!(backend, S::SymmetricMatrix{T}, A::AbstractMatrix{T}) where {T}
+    n = S.n
+    sym_projection_kernel(backend)(S.S, _kernel_operand(backend, A); ndrange = (n, n))
     S
 end
 

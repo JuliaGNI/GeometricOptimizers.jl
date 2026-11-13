@@ -447,13 +447,8 @@ descent check a statement about descent, and it is the gradient [`BFGS`](@ref) a
 hold: their secant pairs and their ``Q`` live in the same coordinates.
 
 The four-argument form writes the gradient that `method` holds. For [`BFGS`](@ref), [`DFP`](@ref)
-and every method without a `descent` it is the lift above. For [`GradientMethod`](@ref),
-[`MomentumMethod`](@ref) and [`Adam`](@ref) it is the gradient of their `descent`:
-[`global_rep`](@ref) of `Δ` for [`MetricDescent`](@ref), and for [`SectionDescent`](@ref) the
-lift above with the [`SymmetricMatrix`](@ref) blocks of a symplectic lift rescaled to the inner
-product ``\frac{1}{2}\mathrm{tr}(X^TY)`` of the dense lifts. A [`BiorthogonalLieAlgHorMatrix`](@ref)
-stores each entry of its dense lift once, so for it the lift above is that representative for
-``\mathrm{tr}(X^TY)`` as it stands.
+and every other method it is the lift above. For [`GradientMethod`](@ref),
+[`MomentumMethod`](@ref) and [`Adam`](@ref) it is [`global_rep`](@ref) of `Δ`.
 
 # The biorthogonal manifold
 
@@ -486,12 +481,12 @@ respect to the stored blocks of ``B``. With ``X = U^TK`` in four ``n\times{}n`` 
 because the gradient of the optimizers is the Riemannian one; it is applied through a Cholesky
 factor of ``U^TU`` and not through its inverse.
 
-With [`MetricDescent`](@ref) the tangent vector ``\lambda(Y)DE`` of the held gradient is `Δ` for every
-section, so the path of [`GradientMethod`](@ref) does not depend on the section. With
-[`SectionDescent`](@ref) it depends on it: where the point is orthosymplectic and the section is
-[`global_section`](@ref)'s, the inner product ``\frac{1}{2}\mathrm{tr}(X^TY)`` is the metric and the
-two descents agree; elsewhere they differ, and a change of the section that leaves the point where it
-is changes the step. `scripts/symplectic_gradient_options.jl` measures both statements.
+With [`global_rep`](@ref) the tangent vector ``\lambda(Y)DE`` of the held gradient is `Δ` for every
+section, so at a fixed step size the path of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
+does not depend on the section ([`Adam`](@ref)'s entrywise second moments and coordinate step ceilings
+still do). [`BFGS`](@ref) and [`DFP`](@ref) start from this direction; see
+[`GeometricOptimizers._metric_inverse!`](@ref). `scripts/symplectic_gradient_options.jl` measures
+these statements.
 """
 gradient_rep!(D, λY::GlobalSection, Δ) = global_rep!(D, λY, Δ)
 
@@ -526,30 +521,43 @@ function gradient_rep!(D::SymplecticLieAlgHorMatrix{T},
     D
 end
 
-# The derivative with respect to the stored entries, `gradient_rep!`, turned into the representative
-# in the inner product `½tr(XᵀY)` of the dense lifts. That inner product weighs every stored entry of a
-# symplectic lift by one except the diagonals of the two `SymmetricMatrix` blocks, which it weighs by
-# one half, so those are doubled. On every other lift `_dot` is that inner product already.
-_section_sharp!(D) = D
+@doc raw"""
+    _metric_apply!(D, λY, B)
 
-function _section_sharp!(D::Union{NamedTuple, NetworkParameters})
-    foreachparameters(_section_sharp!, D)
+Write into `D` the lift ``MB``, where ``M`` is the Gram matrix of the metric in the stored entries of
+a lift at the section `λY`, so that
+
+```math
+\langle{}MB, C\rangle = g\big(\lambda(Y)BE,\ \lambda(Y)CE\big) \quad \forall{}C\in\mathfrak{g}^\mathrm{hor},
+```
+
+with ``\langle\cdot,\cdot\rangle`` the pairing of [`GeometricOptimizers._dot`](@ref). On every lift but
+a [`SymplecticLieAlgHorMatrix`](@ref) that pairing is the metric and ``M`` is the identity, as it is on
+a vector space. On a symplectic lift it is [`GeometricOptimizers.gradient_rep!`](@ref) of the tangent
+vector ``\lambda(U)BE = U\mathcal{A} + U^s\mathcal{B}``, so ``M`` takes the lift
+[`global_rep`](@ref) of a Riemannian gradient to the lift `gradient_rep!` of the same gradient.
+[`GeometricOptimizers._metric_inverse!`](@ref) builds ``M`` from it.
+"""
+_metric_apply!(D, ::GlobalSection, B) = _copyto!(D, B)
+
+function _metric_apply!(D::Union{NamedTuple, NetworkParameters}, λY::NamedTuple,
+        B::Union{NamedTuple, NetworkParameters})
+    mapparameters!(_metric_apply!, D, λY, B)
     D
 end
 
-function _section_sharp!(D::SymplecticLieAlgHorMatrix)
-    backend = KernelAbstractions.get_backend(D)
-    k = D.n ÷ 2
-    double_packed_diagonal_kernel!(backend)(D.B₁.S; ndrange = k)
-    double_packed_diagonal_kernel!(backend)(D.C₁.S; ndrange = k)
-    D
+function _metric_apply!(D::SymplecticLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:SymplecticStiefelManifold, <:AbstractArray},
+        B::SymplecticLieAlgHorMatrix{T}) where {T}
+    gradient_rep!(D, λY, _section_tangent(λY, B))
 end
 
-# the diagonal entry `(i, i)` of the packed storage of a `SymmetricMatrix` is at `i(i + 1)/2`
-@kernel function double_packed_diagonal_kernel!(S::AbstractVector{T}) where {T}
-    i = @index(Global)
-    j = i * (i + 1) ÷ 2
-    S[j] += S[j]
+# The tangent vector `λ(U)BE = U𝒜 + Uˢℬ` of a symplectic lift at the section `λY`. Host only, as the
+# section is; see `global_section`.
+function _section_tangent(λY::GlobalSection{T, <:SymplecticStiefelManifold},
+        B::SymplecticLieAlgHorMatrix{T}) where {T}
+    𝒜 = vcat(hcat(B.A₁, Matrix(B.B₁)), hcat(Matrix(B.C₁), -transpose(B.A₁)))
+    λY.Y.A * 𝒜 + λY.λ * B.B
 end
 
 @doc raw"""

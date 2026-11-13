@@ -92,6 +92,11 @@ end
     end
 end
 
+function _measured_differential!(D, ws, R, B, α)
+    retraction_differential!(D, ws, R, B, α)
+    @allocated retraction_differential!(D, ws, R, B, α)
+end
+
 # `D(α)` against a central difference of the retraction it is the derivative of, as the Stiefel and
 # Grassmann lifts are checked in `test/integration/manifold_linesearch_tests.jl`.
 @testset "retraction_differential is d/dα retract(αB), $T" for T in REAL_ELTYPES
@@ -114,4 +119,5 @@ end
     D = similar(B)
     @test retraction_differential!(D, ws, Cayley(), B, T(0.5)) ≈
           retraction_differential(Cayley(), B, T(0.5))
+    @test _measured_differential!(D, ws, Cayley(), B, T(0.5)) == 0
 end

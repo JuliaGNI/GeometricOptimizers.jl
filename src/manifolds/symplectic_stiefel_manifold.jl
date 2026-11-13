@@ -31,10 +31,10 @@ to the right-invariant Riemannian metric ``g`` of its (2.2), under a condition t
 The optimizers step this type through the first of the two, the one subspace of the Lie algebra
 that is horizontal at every point: [`SymplecticLieAlgHorMatrix`](@ref) implements it, and
 [`global_rep`](@ref) maps a tangent vector into it. [`GradientMethod`](@ref),
-[`MomentumMethod`](@ref) and [`Adam`](@ref) follow the Riemannian gradient of the metric (3.16) by
-default, [`MetricDescent`](@ref), or the steepest descent in the coordinates of the section,
-[`SectionDescent`](@ref); the line search, [`BFGS`](@ref) and [`DFP`](@ref) pair the derivative of
-the loss with respect to the stored entries of a lift. [`GeometricOptimizers.gradient_rep!`](@ref)
+[`MomentumMethod`](@ref) and [`Adam`](@ref) follow the Riemannian gradient of the metric (3.16);
+the line search, [`BFGS`](@ref) and [`DFP`](@ref) pair the derivative of
+the loss with respect to the stored entries of a lift, and the quasi-Newton methods start from the
+Riemannian gradient. [`GeometricOptimizers.gradient_rep!`](@ref)
 gives each of them. Every first-order
 and quasi-Newton method of [`Optimizer`](@ref) and [`TrainingOptimizer`](@ref) takes a point, and a
 parameter set with such a leaf, except [`AdamWithEuclideanDecay`](@ref), whose weight decay is not
@@ -189,6 +189,11 @@ The Riemannian gradient of a point of the symplectic Stiefel manifold, for the m
 
 ``\nabla{}L`` is the Euclidean gradient, i.e. the derivative of the loss with respect to the
 entries of `U` read as an unconstrained matrix.
+
+The manifold is not compact, and the gradient grows with the point: like ``\|U\|^3`` where
+``\nabla{}L`` grows like ``\|U\|``, along a hyperbolic direction such as
+``U\,\mathrm{diag}(s\mathbb{I}, s^{-1}\mathbb{I})``. A fixed step size can therefore diverge from an
+ill-conditioned start; see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref).
 """
 function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
     J = _poisson_tensor(U, size(U, 1))

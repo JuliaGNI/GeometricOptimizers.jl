@@ -227,18 +227,37 @@ function _hor_top_rows(B::SymplecticLieAlgHorMatrix, C₁, C₂)
     _hamiltonian_block(B) * C₁ - _symplectic_adjoint(B.B) * C₂
 end
 
-# The product from the right, `[C₁ C₂]B = [C₁𝒜 + C₂ℬ  -C₁ℬ⁺]`. The method on
-# `AbstractLieAlgHorMatrix` goes through `B * Cᵀ` and the identity `Bᵀ = -B`, which a Hamiltonian
-# lift does not satisfy.
+# The product with the transpose, `BᵀC = [𝒜ᵀC₁ + ℬᵀC₂; -(ℬ⁺)ᵀC₁]`, block by block as `B * C` is.
+# The transposed blocks are `permutedims` copies, which a device product serves; they are `n × n`,
+# `n × (N - n)` and `(N - n) × n`, each as large as a dense block that `B * C` builds.
+function _transpose_lmul_into!(D::AbstractMatrix{T}, B::SymplecticLieAlgHorMatrix{T},
+        C::AbstractMatrix{T}) where {T}
+    @assert B.N == size(C, 1) == size(D, 1)
+    @assert size(C, 2) == size(D, 2)
+
+    C₁ = @view C[1:(B.n), :]
+    C₂ = @view C[(B.n + 1):(B.N), :]
+    @views D[1:(B.n), :] .= permutedims(_hamiltonian_block(B)) * C₁ .+ permutedims(B.B) * C₂
+    @views D[(B.n + 1):(B.N), :] .= .-(permutedims(_symplectic_adjoint(B.B)) * C₁)
+    D
+end
+
+function _transpose_lmul(B::SymplecticLieAlgHorMatrix{T}, C::AbstractMatrix{T}) where {T}
+    backend = KernelAbstractions.get_backend(B)
+    _transpose_lmul_into!(KernelAbstractions.allocate(backend, T, B.N, size(C, 2)), B, C)
+end
+
+# The product from the right, `CB = (BᵀCᵀ)ᵀ`. The method on `AbstractLieAlgHorMatrix` goes through
+# the identity `Bᵀ = -B`, which a Hamiltonian lift does not satisfy. `permutedims` and not a view of
+# `C`, for the reason given at `_rmul(::AbstractMatrix, ::AbstractLieAlgHorMatrix)`: `C` can be the
+# adjoint of a device array, as `Y' * B` passes it on.
 function _rmul(C::AbstractMatrix{T}, B::SymplecticLieAlgHorMatrix{T}) where {T}
-    @assert size(C, 2) == B.N
-    @views C₁, C₂ = C[:, 1:(B.n)], C[:, (B.n + 1):(B.N)]
-    hcat(C₁ * _hamiltonian_block(B) + C₂ * B.B, -(C₁ * _symplectic_adjoint(B.B)))
+    permutedims(_transpose_lmul(B, permutedims(C)))
 end
 
 function _rmul(x::Union{Adjoint{T, <:AbstractVector}, Transpose{T, <:AbstractVector}},
         B::SymplecticLieAlgHorMatrix{T}) where {T}
-    transpose(vec(_rmul(reshape(collect(x), 1, length(x)), B)))
+    transpose(vec(_transpose_lmul(B, reshape(transpose(x), length(x), 1))))
 end
 
 function Base.zeros(backend::KernelAbstractions.Backend,

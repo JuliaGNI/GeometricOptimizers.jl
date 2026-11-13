@@ -8,7 +8,7 @@
 #   accuracy at 10 × 4, median relative error of 20 draws against the direct product in BigFloat
 #   (the Cholesky column includes the rounding of Δ itself):
 #     Float64  κ(U) = 2.2 / 24 / 576   Cholesky 3.4e-16 / 7.4e-16 / 7.2e-15   direct 1.3e-16 / 1.2e-16 / 1.0e-16
-#     Float32  κ(U) = 2.2 / 24 / 576   Cholesky 1.5e-7 / 3.1e-7 / 2.3e-6      direct 5.9e-8 / 6.1e-8 / 5.4e-8
+#     Float32  κ(U) = 2.2 / 24 / 576   Cholesky 1.5e-7 / 3.1e-7 / 2.3e-6      direct 5.4e-8 / 5.0e-8 / 5.0e-8
 #   time per call, Float64, minimum of 200 calls:
 #     10 × 4      Cholesky 1.0e-6 s   direct 2.5e-7 s   rgrad 4.6e-7 s
 #     100 × 10    Cholesky 1.3e-5 s   direct 5.7e-6 s   rgrad 1.5e-5 s
@@ -18,16 +18,30 @@ using GeometricOptimizers, LinearAlgebra, Random, Printf
 using GeometricOptimizers: gradient_rep!, global_rep, symmetric_storage_gradient_kernel!
 import KernelAbstractions
 
+function sym_storage_gradient!(S::AbstractVector{BigFloat}, G)
+    n = size(G, 1)
+    for i in 1:n
+        for j in 1:i
+            S[i * (i - 1) ÷ 2 + j] = i == j ? G[i, i] : G[i, j] + G[j, i]
+        end
+    end
+    S
+end
+
+function sym_storage_gradient!(S, G)
+    n = size(G, 1)
+    backend = KernelAbstractions.get_backend(G)
+    symmetric_storage_gradient_kernel!(backend)(S, G; ndrange = (n, n))
+    S
+end
+
 # the stored blocks of the flat gradient from X = UᵀG and Y = (Uˢ)ᵀG, G a Frobenius representative
 function from_products!(D::SymplecticLieAlgHorMatrix{T}, X, Y) where {T}
     k = D.n ÷ 2
-    backend = KernelAbstractions.get_backend(X)
     @views begin
         D.A₁ .= X[1:k, 1:k] .- transpose(X[(k + 1):(2k), (k + 1):(2k)])
-        symmetric_storage_gradient_kernel!(backend)(D.B₁.S, X[1:k, (k + 1):(2k)];
-            ndrange = (k, k))
-        symmetric_storage_gradient_kernel!(backend)(D.C₁.S, X[(k + 1):(2k), 1:k];
-            ndrange = (k, k))
+        sym_storage_gradient!(D.B₁.S, X[1:k, (k + 1):(2k)])
+        sym_storage_gradient!(D.C₁.S, X[(k + 1):(2k), 1:k])
     end
     D.B .= Y
     D
@@ -58,8 +72,8 @@ for T in (Float64, Float32), spread in (1.0, 4.0, 8.0)
         Δ = rgrad(U, ∇L)
         Dc = gradient_rep!(global_rep(λY, Δ), λY, Δ)
         Dd = direct!(global_rep(λY, Δ), λY, ∇L)
-        Dref = from_products!(global_rep(λY, Δ), big.(U.A)' * big.(∇L), big.(λY.λ)' *
-                                                                        big.(∇L))
+        D₀ = zeros(SymplecticLieAlgHorMatrix{BigFloat}, 10, 4)
+        Dref = from_products!(D₀, big.(U.A)' * big.(∇L), big.(λY.λ)' * big.(∇L))
         ref = Float64.(storage(Dref))
         push!(e_chol, norm(Float64.(storage(Dc)) - ref) / norm(ref))
         push!(e_direct, norm(Float64.(storage(Dd)) - ref) / norm(ref))

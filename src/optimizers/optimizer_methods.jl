@@ -100,63 +100,27 @@ the optimizer travels along it is the line search's business.
 struct BFGS <: QuasiNewtonOptimizerMethod end
 
 @doc raw"""
-    MetricDescent()
+    GradientMethod()
 
-The steepest descent of a first-order method with respect to the metric of the manifold: the
-gradient the method holds is [`global_rep`](@ref) of the Riemannian gradient [`rgrad`](@ref), whose
+The gradient descent algorithm: the steepest descent with respect to the metric of the manifold.
+The gradient it holds is [`global_rep`](@ref) of the Riemannian gradient [`rgrad`](@ref), whose
 tangent vector ``\lambda(Y)BE`` is the same whatever section ``\lambda(Y)`` is used.
 
-This is the default of [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and [`Adam`](@ref). On a
-vector space, a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref) it is the same as
-[`SectionDescent`](@ref). On a [`SymplecticStiefelManifold`](@ref) it is the descent of the metric
-[`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref), and the path of
-[`GradientMethod`](@ref) does not depend on the section; see
+[`MomentumMethod`](@ref) and [`Adam`](@ref) hold the same gradient, and [`BFGS`](@ref) and
+[`DFP`](@ref) start from its direction. On a [`SymplecticStiefelManifold`](@ref) it is the descent of
+the metric [`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref), and the
+path of `GradientMethod` does not depend on the section; see
 [`GeometricOptimizers.gradient_rep!`](@ref). On a [`BiorthogonalManifold`](@ref) it is the descent of
 the metric the pairs inherit from ``\mathbb{R}^{N\times2n}``, whose path does not depend on the
 section either.
 """
-struct MetricDescent end
+struct GradientMethod <: OptimizerMethod end
 
 @doc raw"""
-    SectionDescent()
+    MomentumMethod(; α)
 
-The steepest descent of a first-order method with respect to an inner product on the coordinates of
-the horizontal lift at the current section ``\lambda(Y)``: the gradient the method holds is the
-representative of the derivative of the loss in that inner product.
-
-On a vector space, a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref) it is the same as
-[`MetricDescent`](@ref), because the section is orthogonal there. On a
-[`SymplecticStiefelManifold`](@ref) the inner product is ``\frac{1}{2}\mathrm{tr}(X^TY)`` of the dense
-lifts, which is the metric of the manifold where the point is orthosymplectic and the section is
-[`global_section`](@ref)'s. Elsewhere it is not a metric of the manifold: the optimizers transport
-the section along the path, and a change of the section that leaves the point where it is changes
-the step. See [`GeometricOptimizers.gradient_rep!`](@ref). On a [`BiorthogonalManifold`](@ref) the
-inner product is ``\mathrm{tr}(X^TY)`` of the dense lifts, and the representative is the derivative
-of the loss with respect to the stored blocks; it is the descent to give [`Adam`](@ref) there, as
-[The Biorthogonal Manifold](@ref) explains.
-"""
-struct SectionDescent end
-
-const Descent = Union{MetricDescent, SectionDescent}
-
-@doc raw"""
-    GradientMethod(; descent = MetricDescent())
-
-The gradient descent algorithm. `descent` is [`MetricDescent`](@ref) or
-[`SectionDescent`](@ref); the two differ only on a [`SymplecticStiefelManifold`](@ref) and a
-[`BiorthogonalManifold`](@ref).
-"""
-struct GradientMethod{D <: Descent} <: OptimizerMethod
-    descent::D
-end
-
-GradientMethod(; descent = MetricDescent()) = GradientMethod(descent)
-
-@doc raw"""
-    MomentumMethod(; α, descent = MetricDescent())
-
-The gradient descent algorithm with momentum, i.e. the *heavy ball* method. `descent` is
-[`MetricDescent`](@ref) or [`SectionDescent`](@ref), as for [`GradientMethod`](@ref).
+The gradient descent algorithm with momentum, i.e. the *heavy ball* method. It holds the gradient
+of [`GradientMethod`](@ref).
 
 Stores the *momentum coefficient* `α`. The momentum is accumulated as
 ```math
@@ -172,26 +136,20 @@ convert it once, with `change_precision`, to the element type of the parameters 
     the optimizer goes along it is the line search's business. A fixed learning rate ``\eta``
     is therefore expressed as `linesearch = η`, or `linesearch = Static(η)`.
 """
-struct MomentumMethod{T, D <: Descent} <: OptimizerMethod
+struct MomentumMethod{T} <: OptimizerMethod
     α::T
-    descent::D
 
-    function MomentumMethod{T}(α, descent::D = MetricDescent()) where {T, D <: Descent}
-        new{T, D}(α, descent)
-    end
+    MomentumMethod{T}(α) where {T} = new{T}(α)
 end
 
-function MomentumMethod(; α = DEFAULT_MOMENTUM_α, descent = MetricDescent())
-    MomentumMethod{typeof(float(α))}(float(α), descent)
-end
+MomentumMethod(; α = DEFAULT_MOMENTUM_α) = MomentumMethod{typeof(float(α))}(float(α))
 
 @doc raw"""
-    Adam(; β₁, β₂, δ, descent = MetricDescent())
+    Adam(; β₁, β₂, δ)
 
 The Adam optimizer, with the defaults of the experiments in [Brantner:2023](@cite).
 [kingma2014adam](@cite) and [goodfellow2016deep; Algorithm 8.7](@cite) suggest ``\beta_2 = 0.999``.
-`descent` is [`MetricDescent`](@ref) or [`SectionDescent`](@ref), as for [`GradientMethod`](@ref):
-it selects the gradient ``\nabla{}L`` the moments below are taken of.
+The moments below are taken of the gradient ``\nabla{}L`` of [`GradientMethod`](@ref).
 
 The cache consists of a first and a second moment, stored in *bias-corrected* form, i.e.
 updated in the ``t``-th iteration (counted from ``t = 1``) as
@@ -224,22 +182,19 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     are keyword arguments, so that a positional `Adam(1e-3)` meant as a learning rate fails instead
     of setting `β₁`.
 """
-struct Adam{T, D <: Descent} <: OptimizerMethod
+struct Adam{T} <: OptimizerMethod
     β₁::T
     β₂::T
     δ::T
-    descent::D
 
-    function Adam{T}(β₁, β₂, δ, descent::D = MetricDescent()) where {T, D <: Descent}
-        new{T, D}(β₁, β₂, δ, descent)
-    end
+    Adam{T}(β₁, β₂, δ) where {T} = new{T}(β₁, β₂, δ)
 end
 
 # The defaults are `Float64` literals, so that `change_precision(Float32, Adam())` holds `0.9f0` and
 # not a `Float32` rounded from a `Float32` literal.
-function Adam(; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8, descent = MetricDescent())
+function Adam(; β₁ = 9.0e-1, β₂ = 9.9e-1, δ = 1.0e-8)
     β₁, β₂, δ = promote(float(β₁), float(β₂), float(δ))
-    Adam{typeof(δ)}(β₁, β₂, δ, descent)
+    Adam{typeof(δ)}(β₁, β₂, δ)
 end
 
 @doc raw"""
@@ -863,12 +818,8 @@ end
 # The conversion `Optimizer` and `TrainingOptimizer` apply once, to the element type of the
 # parameters. A method without coefficients is returned as it is.
 change_precision(::Type, method::OptimizerMethod) = method
-function change_precision(::Type{T}, m::MomentumMethod) where {T}
-    MomentumMethod{T}(T(m.α), m.descent)
-end
-function change_precision(::Type{T}, m::Adam) where {T}
-    Adam{T}(T(m.β₁), T(m.β₂), T(m.δ), m.descent)
-end
+change_precision(::Type{T}, m::MomentumMethod) where {T} = MomentumMethod{T}(T(m.α))
+change_precision(::Type{T}, m::Adam) where {T} = Adam{T}(T(m.β₁), T(m.β₂), T(m.δ))
 function change_precision(::Type{T}, m::ScalarMomentAdam) where {T}
     ScalarMomentAdam{T}(T(m.β₁), T(m.β₂), T(m.δ), m.ambient_norm)
 end

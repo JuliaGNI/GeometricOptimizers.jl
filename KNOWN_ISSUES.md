@@ -326,35 +326,34 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `StiefelLieAlgHorMatrix`, `GrassmannLieAlgHorMatrix` and `SymplecticLieAlgHorMatrix`; one method on
   the lift type would serve all three.
 
-### K56 · The step ceiling of a line search is a turn of a rotation, and the symplectic group has none
+### K57 · Under `Adam` the step on a `SymplecticStiefelManifold` depends on the transported section
 
-- location: `src/optimizers/linesearch_problem.jl`, `step_αmax`
-- kind: found late
-- found: 2026-11-09
-- evidence: `step_αmax` caps the step at `c ⋅ 2π/‖δ‖` because a retraction of a Stiefel or
-  Grassmann lift is a rotation, which has nothing left to reach past one turn. A retraction of a
-  `SymplecticLieAlgHorMatrix` is a symplectic matrix, and the symplectic group is not compact, so
-  the reason does not carry over: the cap still bounds the step, but its scale is not one the
-  geometry supplies. The solves of `test/integration/symplectic_optimizer_tests.jl` converge under
-  it; no symplectic solve has been seen to stop at the ceiling. The same holds for a
-  `BiorthogonalLieAlgHorMatrix`, whose retraction is an element of `GL(N)`, and for
-  `test/integration/biorthogonal_optimizer_tests.jl`.
-
-### K57 · Under `SectionDescent` the step on a `SymplecticStiefelManifold` depends on the transported section
-
-- location: `src/global_sections/global_sections.jl`, `gradient_rep!` and `_section_sharp!`
+- location: `src/manifold_optimizers/adam_optimizer.jl`
 - kind: found late
 - found: 2026-11-10
-- evidence: `SectionDescent` takes the steepest descent of `½tr(XᵀY)` on the lifts at the section
-  the optimizer has transported along its path. A change of the section by `diag(I, S)`, `S`
-  symplectic, leaves the point where it is and changes the step: by a factor of 253 at
-  `cond(S) = 1.7e3` on a `10 × 4` point. No positive-definite inner product on `ℬ` is invariant under
-  the non-compact `Sp(2N − 2n)`, so this is a property of the option, not a defect of the code. On
-  the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the section's
-  condition number grows from 1.35 to about 3.6 over a solve; long training runs are not measured.
-  A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
+- evidence: for `n < N`, a change of the section by `diag(I, S)`, `S` symplectic, leaves the point
+  where it is and maps the coordinates `(𝒜, ℬ)` of a lift to `(𝒜, S⁻¹ℬ)`. No positive-definite inner
+  product on `ℬ` is invariant under the non-compact `Sp(2N − 2n)`, so every operation in these
+  coordinates that is not equivariant under this map depends on the section. `Adam`'s entrywise
+  second moments are such an operation, and they change the step. Two others change no step in a
+  generic solve: the tolerance `CURVATURE_TOLERANCE * l2norm(Δx) * l2norm(Δg)` of
+  `curvature_is_usable`, which `BFGS` and `DFP` read only near a pair it rejects, and `rxₐ` of
+  `OptimizerStatus`. The secant pairs of `BFGS` and `DFP` do not make the step depend on the section:
+  `Q` starts at `M⁻¹` (`_metric_inverse!`), which transforms with the coordinates, and the BFGS update
+  is the same in every linear coordinate system. `step_αmax` reads the spectral radius of the lift,
+  which the change keeps. `test/integration/symplectic_optimizer_tests.jl` asserts that the paths of
+  `GradientMethod` and `BFGS` under a line search agree to `1e-10` for two sections with
+  `κ(S) ≈ 32`. This is a property of the manifold, not a
+  defect of the code. On the eigenvalue problem of `test/integration/symplectic_optimizer_tests.jl` the
+  section's condition number grows from 1.35 to about 3.6 over a solve. Over 10⁵ steps of `Adam`
+  with a noisy gradient it ends 1.0 to 1.6 times above a fresh `global_section`, and
+  `GradientMethod` with the same noise diverges, with a section condition number of 4e63 before the
+  failure (issue #189; at a fixed step size `GradientMethod` can also diverge without noise from a
+  sufficiently ill-conditioned start, because the Riemannian gradient of `(3.16)` scales as
+  `O(‖U‖³)`). A reset of the section to `global_section(U)` would bound it, at a QR and a Hermitian
   eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
-  `MetricDescent`, the default, does not depend on the section.
+  `GradientMethod`, `MomentumMethod`, `BFGS` and `DFP` do not depend on the section in exact
+  arithmetic, at a fixed step and under a line search.
 
 ### K60 · On a `BiorthogonalManifold` the section is transported by `GL(N)`, and Adam under `MetricDescent` depends on it
 
@@ -621,11 +620,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - kind: defect
 - found: 2026-11-10
 - evidence: `Δf̃ = _dot(previous_gradient(state), direction(cache))` pairs the gradient the method
-  holds with the step under `_dot`. Under `MetricDescent` that gradient is `global_rep(rgrad)`, and
-  under `SectionDescent` the representative in `½tr(XᵀY)` of the dense lifts. On a symplectic lift
-  neither pairs under `_dot` to the derivative of the loss: only the flat `gradient_rep!` does, as
-  `test/global_sections/global_sections.jl` asserts. `scripts/symplectic_gradient_options.jl`, part
-  (vi), measures the gap for `SectionDescent` in metric (3.16) at 0.25. Only `f_converged_strong`
+  holds with the step under `_dot`. For `GradientMethod`, `MomentumMethod` and `Adam` that
+  gradient is `global_rep(rgrad)`, which on a symplectic lift does not pair under `_dot` to the derivative of the loss: only the flat
+  `gradient_rep!` does, as `test/global_sections/global_sections.jl` asserts. Only `f_converged_strong`
   reads `Δf̃`, and no stop rule reads that, so no solve changes. A fix pairs the flat gradient with
   the direction, at one more `gradient_rep!` per iteration, or stores the flat gradient beside the
   held one. `rgₐ = l2norm(cache.Δg)` is the norm of the difference of the held gradients at two
@@ -638,13 +635,13 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C1 · `f_converged_strong` is computed and thrown away
 
-- location: `src/optimizers/optimizer_status.jl:318`
+- location: `src/optimizers/optimizer_status.jl:322`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
 
-  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:318` and returns it at
-  `:324`; the `OptimizerStatus` constructor destructures it at `:122` and never stores it. Nothing else
+  `convergence_measures` computes it at `src/optimizers/optimizer_status.jl:322` and returns it at
+  `:328`; the `OptimizerStatus` constructor destructures it at `:123` and never stores it. Nothing else
   in the package mentions it. It is `Δf ≤ f_mindec ⋅ Δf̃`, i.e. an Armijo-style sufficient-decrease test
   on the *outer* iteration, so it plausibly belongs with the stall detection that `Options.max_stalls`
   and `Options.f_stall_window` were meant to drive — both of which are also unread here.
@@ -661,7 +658,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
 ### C7 · `ensure_descent!` is vacuous for `GradientMethod`
 
-- location: `gradient_optimizer.jl:82`
+- location: `gradient_optimizer.jl:79`
 - kind: dead code
 - found: 2026-08-14
 - evidence:
@@ -671,8 +668,8 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 
   `ensure_descent!` tests `dot(rhs(cache), direction(cache)) > 0`. That works because `rhs` is
   ``-\nabla{}f`` on the (quasi-)Newton caches — but on the three first-order caches `rhs` is defined as
-  an *alias* for `direction` (`gradient_optimizer.jl:82`, `momentum_optimizer.jl:66`,
-  `adam_optimizer.jl:72`), so the test reads `dot(δ, δ) > 0` and is true for every `δ` that is neither
+  an *alias* for `direction` (`gradient_optimizer.jl:79`, `momentum_optimizer.jl:65`,
+  `adam_optimizer.jl:80`), so the test reads `dot(δ, δ) > 0` and is true for every `δ` that is neither
   zero nor `NaN`.
 
   Of the three, only `GradientCache` reaches it: `MomentumMethod` and `Adam` are `FirstOrderMethodWithState`
@@ -1213,10 +1210,10 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
 
 ### K36 · The `SymmetricMatrix` product kernel is about 7 times slower than BLAS on the dense matrix
 
-- location: `src/special_matrices/symmetric.jl:200`
+- location: `src/special_matrices/symmetric.jl:235`
 - kind: defect
 - found: 2026-10-05
-- evidence: `symmetric_mat_mul_kernel!` (`src/special_matrices/symmetric.jl:200-212`) forms each
+- evidence: `symmetric_mat_mul_kernel!` (`src/special_matrices/symmetric.jl:235-247`) forms each
   entry of `S * B` from the packed storage, one product per entry and no BLAS. Measured on Julia
   1.12.7, `--check-bounds=auto`, one BLAS thread, a `64 × 64` `SymmetricMatrix{Float32}` times a
   `64 × 256` `Matrix{Float32}`, median of `@benchmark`: 393 µs with owned storage and 433 µs over a

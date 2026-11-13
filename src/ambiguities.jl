@@ -41,14 +41,18 @@ const OwnedWrapper = Union{ArrayWrapper, Adjoint{<:Any, <:ArrayWrapper}}
 
 # The adjoint of a real skew-symmetric matrix, or of a real Stiefel or Grassmann lift, is the matrix
 # negated. `adjoint` keeps it lazy, and these methods compute with the parent and the sign. A complex
-# one is not owned, and neither is a `SymplecticLieAlgHorMatrix`, which is not skew-symmetric: each
-# reaches `LinearAlgebra` as the plain matrix it is.
+# one is not owned, and reaches `LinearAlgebra` as the plain matrix it is. A
+# `SymplecticLieAlgHorMatrix` is not skew-symmetric, and its adjoint is `SymplecticAdjoint` below.
 const SkewAdjoint = Adjoint{<:Real,
     <:Union{SkewSymMatrix, StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix}}
 
+# The adjoint of a real symplectic lift is its transpose, which has its own block products. Left to
+# `LinearAlgebra`, it is read one entry at a time, which a device does not serve.
+const SymplecticAdjoint = Adjoint{<:Real, <:SymplecticLieAlgHorMatrix}
+
 # The types that take part in a product, a sum or a difference.
 const OwnedMatrix = Union{SkewSymMatrix, SymmetricMatrix, AbstractTriangular,
-    AbstractLieAlgHorMatrix, Sfac, SkewAdjoint, OwnedWrapper}
+    AbstractLieAlgHorMatrix, Sfac, SkewAdjoint, SymplecticAdjoint, OwnedWrapper}
 
 function Base.:*(A::OwnedMatrix, B::AbstractMatrix)
     _check_same_backend(A, B)
@@ -105,10 +109,32 @@ _rmul(B::AbstractMatrix, A::SkewAdjoint) = -(B * parent(A))
 _lmul_into!(C, A::SkewAdjoint, B) = (mul!(C, parent(A), B); C .= .-C)
 _rmul_into!(C, B, A::SkewAdjoint) = (mul!(C, B, parent(A)); C .= .-C)
 
+# `BᵀC` is the lift's transposed product, and `CBᵀ = (BCᵀ)ᵀ` its plain one. The left kernels take
+# one element type, as the lift's own do; any other pair reaches the untyped fallbacks above. The
+# right ones need no bound, because they hand the pair to the lift's own methods.
+function _lmul(A::Adjoint{T, <:SymplecticLieAlgHorMatrix{T}},
+        C::AbstractMatrix{T}) where {T <: Real}
+    _transpose_lmul(parent(A), C)
+end
+function _lmul(A::Adjoint{T, <:SymplecticLieAlgHorMatrix{T}},
+        c::AbstractVector{T}) where {T <: Real}
+    vec(_lmul(A, reshape(c, length(c), 1)))
+end
+function _lmul_into!(D::AbstractMatrix{T}, A::Adjoint{T, <:SymplecticLieAlgHorMatrix{T}},
+        C::AbstractMatrix{T}) where {T <: Real}
+    _transpose_lmul_into!(D, parent(A), C)
+end
+_rmul(C::AbstractMatrix, A::SymplecticAdjoint) = permutedims(parent(A) * permutedims(C))
+function _rmul(
+        x::Union{Adjoint{<:Any, <:AbstractVector}, Transpose{<:Any, <:AbstractVector}},
+        A::SymplecticAdjoint)
+    transpose(parent(A) * transpose(x))
+end
+
 # `adjoint` again, and not the dense matrix `Base` gives: this is what `LinearAlgebra` does for `-`
 # on an `Adjoint`, and it keeps the scalar product on the packed storage.
-Base.:*(α::Real, A::SkewAdjoint) = adjoint(α * parent(A))
-Base.:*(A::SkewAdjoint, α::Real) = adjoint(parent(A) * α)
+Base.:*(α::Real, A::Union{SkewAdjoint, SymplecticAdjoint}) = adjoint(α * parent(A))
+Base.:*(A::Union{SkewAdjoint, SymplecticAdjoint}, α::Real) = adjoint(parent(A) * α)
 
 # A scalar product or a negation of a wrapper is one of the array it holds. `Base` gives the same
 # dense result through `getindex`, one entry at a time.
@@ -119,6 +145,7 @@ Base.:-(A::OwnedWrapper) = -_unwrap(A)
 _materialize(B) = B * one(B)
 _materialize(S::Sfac) = Matrix(S)
 _materialize(A::SkewAdjoint) = -_materialize(parent(A))
+_materialize(A::SymplecticAdjoint) = permutedims(_materialize(parent(A)))
 
 # Two computing operands whose element types differ meet no kernel either way, so they go to the
 # generic product directly rather than through a materialized copy; an `Sfac`'s kernels take any
@@ -164,7 +191,7 @@ _rmul_into!(C, A, B) = mul!(C, A, B, true, false)
 # five-argument `mul!`, which reads `A` through `getindex` and allocates nothing, as `_dense` does.
 function _rmul_into!(C::AbstractMatrix{T}, B::AbstractMatrix{T},
         A::Union{SkewSymMatrix{T}, SymmetricMatrix{T}, AbstractTriangular{T},
-            AbstractLieAlgHorMatrix{T}}) where {T}
+            AbstractLieAlgHorMatrix{T}, Adjoint{T, <:SymplecticLieAlgHorMatrix{T}}}) where {T}
     KernelAbstractions.get_backend(A) isa CPU && return mul!(C, B, A, true, false)
     C .= _rmul(B, A)
 end

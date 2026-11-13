@@ -14,7 +14,7 @@ using GeometricOptimizers: Cayley, Geodesic, check, cache, gradient, problem, in
                            update!, linesearch_problem, isconverged, section
 using SimpleSolvers: Static, Backtracking
 using NeuralNetworkParameters: NetworkParameters
-using LinearAlgebra: I, cond, eigvals, norm, tr
+using LinearAlgebra: Diagonal, I, cond, eigvals, norm, tr
 using Test
 import Random
 
@@ -32,8 +32,6 @@ end
 function recording_objective(U, M, checks)
     V -> (V === U && push!(checks, check(V)); tr(V' * M * V))
 end
-
-const DESCENTS = (MetricDescent(), SectionDescent())
 
 function williamson_minimum(M, n2)
     d = sort(abs.(imag.(eigvals(poisson(T, size(M, 1)) * M))))[1:2:end]
@@ -71,9 +69,88 @@ start() = conditioned_point(Random.Xoshiro(2), T, N2, n2)
     @test ls.D(zero(T), params) < 0
 end
 
+# BFGS and DFP hold the derivative with respect to the stored entries of the lift, `M` times the lift
+# `global_rep` of the Riemannian gradient for the Gram matrix `M` of the metric, and start `Q` at `M⁻¹`.
+# So their first direction, and the direction after a restart or a failed descent test, is
+# `-global_rep(Δ)`, the one `GradientMethod` takes, and its tangent vector is `-Δ` for every section.
+# The control is the direction `-gradient_rep(Δ)` that `Q = I` would give.
+@testset "$(nameof(typeof(algorithm))) starts with the GradientMethod direction" for algorithm in (
+    BFGS(), DFP())
+    flat(B) = first(GeometricOptimizers.flatten(B))
+    tangent = GeometricOptimizers._section_tangent
+    U = start()
+    Δ = rgrad(U, 2 * M * U.A)
+    opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Backtracking(T))
+    c = cache(opt)
+
+    first_direction(state) = begin
+        initialize!(c, U)
+        update!(c, state, gradient(opt), GeometricOptimizers._direction_rule(opt), U)
+        GeometricOptimizers.direction(c)
+    end
+
+    state = OptimizerState(algorithm, U)
+    G = global_rep(section(state), Δ)
+    δ = first_direction(state)
+    @test flat(δ) ≈ -flat(G) rtol = 1e-10
+    @test tangent(section(state), δ) ≈ -Δ rtol = 1e-10
+    @test !(flat(GeometricOptimizers.rhs(c)) ≈ -flat(G))
+
+    # another section over the same point, `λ ↦ λ diag(𝕀, S)` for a symplectic `S` with `κ(S) ≈ 30`
+    k = (N2 - n2) ÷ 2
+    d = exp2.(range(-2.5, 2.5; length = k))
+    S = cat(Diagonal(d), Diagonal(inv.(d)); dims = (1, 2))
+    section(state).λ .= section(state).λ * S
+    GeometricOptimizers.restart!(state)
+    δ = first_direction(state)
+    @test tangent(section(state), δ) ≈ -Δ rtol = 1e-9
+    @test flat(δ) ≈ -flat(global_rep(section(state), Δ)) rtol = 1e-9
+
+    # a restart, and the substitute for a direction that does not descend
+    GeometricOptimizers.restart!(state)
+    GeometricOptimizers.steepest_descent!(c, state)
+    @test tangent(section(state), GeometricOptimizers.direction(c)) ≈ -Δ rtol = 1e-9
+    GeometricOptimizers._copyto!(GeometricOptimizers.direction(c), GeometricOptimizers.rhs(c))
+    GeometricOptimizers._rmul!(GeometricOptimizers.direction(c), -1)
+    GeometricOptimizers.ensure_descent!(c, state, algorithm, GeometricOptimizers.config(opt))
+    @test tangent(section(state), GeometricOptimizers.direction(c)) ≈ -Δ rtol = 1e-9
+end
+
+# The path under a line search does not depend on the section. Two solves start at one point, one at
+# `global_section`'s section `λ` and one at `λ diag(𝕀, S)` for a symplectic `S` with `κ(S) ≈ 32`.
+# The step ceiling reads the spectral radius of the lift, which the section change keeps, and BFGS
+# starts at the inverse of the metric, which the section change transforms with the coordinates. The
+# control is the same pair of solves under a ceiling in `l2norm(δ)` of the section's coordinates,
+# measured at 0.8 apart after 15 steps; without any ceiling the paths agree to 1e-14.
+@testset "the path of $(nameof(typeof(algorithm))) does not depend on the section" for algorithm in (
+    GradientMethod(), BFGS())
+    k = (N2 - n2) ÷ 2
+    d = exp2.(range(-2.5, 2.5; length = k))
+    S = cat(Diagonal(d), Diagonal(inv.(d)); dims = (1, 2))
+    function path(h)
+        U = start()
+        opt = Optimizer(U, objective; algorithm = algorithm, linesearch = Backtracking(T))
+        state = OptimizerState(algorithm, U)
+        GeometricOptimizers._start_section!(section(state), U)
+        section(state).λ .= section(state).λ * h
+        GeometricOptimizers._start_inverse_hessian!(state)
+        iterates = Matrix{T}[]
+        for _ in 1:15
+            GeometricOptimizers.increase_iteration_number!(state)
+            GeometricOptimizers.solver_step!(U, state, opt)
+            update!(state, opt, U, objective(U))
+            push!(iterates, copy(U.A))
+        end
+        iterates
+    end
+    a, b = path(Matrix{T}(I, N2 - n2, N2 - n2)), path(S)
+    @test !(a[end] ≈ start().A)
+    @test maximum(norm.(a .- b) ./ norm.(a)) < 1e-10
+end
+
 # The two methods with a line search find the minimum, and every iterate stays on the manifold.
 @testset "$(nameof(typeof(algorithm))) finds the symplectic eigenvalues, $(nameof(typeof(R)))" for algorithm in (
-        GradientMethod(), GradientMethod(; descent = SectionDescent()), BFGS()),
+        GradientMethod(), BFGS()),
     R in (Geodesic(), Cayley())
 
     U = start()
@@ -92,11 +169,10 @@ end
 
 # The gradient stop reads `rg`, the Riemannian norm `√g(Δ, Δ)` of the gradient at the iterate, which
 # is the same for every method. The control is the norm of the array each method holds: the flat
-# lift of BFGS and DFP, `global_rep` of `MetricDescent` and the representative of `SectionDescent`
-# have different norms on this manifold, and `MetricDescent`'s differs from `rg` by orders of magnitude.
+# lift of BFGS and DFP and `global_rep` of the first-order methods have different norms on this
+# manifold, and the latter differs from `rg` by orders of magnitude.
 @testset "rg is the Riemannian norm of the gradient, $(nameof(typeof(algorithm))), $(nameof(typeof(R)))" for algorithm in (
-        GradientMethod(), GradientMethod(; descent = SectionDescent()), MomentumMethod(),
-        Adam(), BFGS(), DFP()),
+        GradientMethod(), MomentumMethod(), Adam(), BFGS(), DFP()),
     R in (Geodesic(), Cayley())
 
     U = start()
@@ -106,7 +182,7 @@ end
     Δ = rgrad(U, 2 * M * U.A)
     rg = GeometricOptimizers.g_residual(result.status)
     @test rg ≈ sqrt(metric(U, Δ, Δ)) rtol = 64eps(T)
-    algorithm isa Union{GradientMethod{MetricDescent}, MomentumMethod, Adam} &&
+    algorithm isa Union{GradientMethod, MomentumMethod, Adam} &&
         @test !isapprox(
             GeometricOptimizers.l2norm(GeometricOptimizers.latest_gradient(cache(opt))),
             rg; rtol = T(0.1))
@@ -114,8 +190,7 @@ end
 
 # A fixed step only crawls, so these are asked to decrease the objective and stay on the manifold.
 @testset "$(nameof(typeof(algorithm))) at a fixed step decreases the objective, $(nameof(typeof(R)))" for algorithm in (
-        Adam(), MomentumMethod(), Adam(; descent = SectionDescent()),
-        MomentumMethod(; descent = SectionDescent())),
+        Adam(), MomentumMethod()),
     R in (Geodesic(), Cayley())
 
     U = start()
@@ -132,13 +207,9 @@ end
 # `Float32`, over nine seeded starts with `κ ≤ 4`. The bound on `check` is the one the tests of
 # `test/manifolds/symplectic_stiefel_manifold.jl` give a point, `8eps(T)κ²` for the `κ` of the start,
 # on the median over the starts of the largest `check` over the iterates of a solve. Measured
-# medians, Julia 1.13, `MetricDescent` and `SectionDescent`: 16eps(T) and 7eps(T) for
-# `GradientMethod`, 28eps(T) and 34eps(T) for `Adam`; the largest single value 65eps(T).
+# medians, Julia 1.13: 16eps(T) for `GradientMethod` and 28eps(T) for `Adam`.
 # `GradientMethod` converges to the `Float64` minimum to `1e-5` relative on every start.
-@testset "$(nameof(typeof(algorithm))) on a Float32 point, $(nameof(typeof(descent)))" for algorithm in (
-        GradientMethod, Adam),
-    descent in DESCENTS
-
+@testset "$(nameof(algorithm)) on a Float32 point" for algorithm in (GradientMethod, Adam)
     S = Float32
     M₃₂ = S.(M)
     bounds, maxima, decreases, errors = S[], S[], Bool[], S[]
@@ -147,7 +218,7 @@ end
         κ = cond(U.A)
         f₀ = tr(U' * M₃₂ * U)
         checks = S[]
-        method = algorithm(; descent = descent)
+        method = algorithm()
         linesearch, iterations = algorithm === GradientMethod ? (Backtracking(S), 2000) :
                                  (Static(S(1e-3)), 500)
         opt = Optimizer(U, recording_objective(U, M₃₂, checks); algorithm = method,
