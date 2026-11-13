@@ -145,9 +145,7 @@ makedocs(;
         assets = [
             "assets/extra_styles.css",
             asset("https://juliagni.github.io/GeometricFigures.jl/figures.css"; islocal = false)
-        ],
-        # `api.md` is one `@autodocs` over the whole package and is above the default 200 KiB.
-        size_threshold = 600 * 2^10
+        ]
     ),
     pages = [
         "Home" => "index.md",
@@ -181,7 +179,18 @@ makedocs(;
             "Weight Decay on Manifolds" => "weight_decay.md"
         ],
         "References" => "references.md",
-        "API" => "api.md"
+        # One page per part of the manual, so that no page reaches Documenter's default 200 KiB
+        # `size_threshold`. Each page lists its source files, and a file on no page fails the build
+        # in `checkdocs`.
+        "API" => [
+            "Overview" => "api/index.md",
+            "Manifolds" => "api/manifolds.md",
+            "Special Matrices" => "api/special_matrices.md",
+            "Retractions" => "api/retractions.md",
+            "Optimizers" => "api/optimizers.md",
+            "Optimizer Methods" => "api/optimizer_methods.md",
+            "Linesearch" => "api/linesearch.md"
+        ]
     ]
 )
 
