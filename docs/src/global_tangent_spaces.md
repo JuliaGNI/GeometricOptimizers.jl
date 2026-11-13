@@ -26,7 +26,7 @@ Main.theorem(raw"Let the metric on ``G`` be bi-invariant, and let ``A\in{}G`` an
 Main.proof(raw"For ``V\in\mathfrak{g}`` we have ``AVA^{-1}Y = AVE``, so ``V\mapsto{}AVA^{-1}`` maps ``\mathfrak{g}^{\mathrm{ver},E}`` onto ``\mathfrak{g}^{\mathrm{ver},Y}``. Because the metric is bi-invariant, its inner product on ``\mathfrak{g}`` is invariant under ``V\mapsto{}AVA^{-1}``, so this map also sends the orthogonal complement ``\mathfrak{g}^\mathrm{hor}`` of ``\mathfrak{g}^{\mathrm{ver},E}`` onto the orthogonal complement ``\mathfrak{g}^{\mathrm{hor},Y}`` of ``\mathfrak{g}^{\mathrm{ver},Y}``. Its inverse is the map of the theorem.")
 ```
 
-Without bi-invariance the conjugation of an element of ``\mathfrak{g}^{\mathrm{hor},Y}`` in general has a vertical part, so the statement above fails (an example is the [symplectic Stiefel manifold](@ref "Global Tangent Space for the Symplectic Stiefel Manifold") with its Riemannian metric). The two spaces are still isomorphic for every complement of the vertical space, if the vertical part is removed:
+Without bi-invariance the conjugation of an element of ``\mathfrak{g}^{\mathrm{hor},Y}`` in general has a vertical part, so the statement above fails (an example is the [symplectic Stiefel manifold](@ref "The Global Tangent Space for the Symplectic Stiefel Manifold") with its Riemannian metric). The two spaces are still isomorphic for every complement of the vertical space, if the vertical part is removed:
 
 ```@eval
 Main.theorem(raw"Let ``\mathfrak{g}^{\mathrm{hor},Y}`` be any complement of ``\mathfrak{g}^{\mathrm{ver},Y}``, ``\mathfrak{g}^\mathrm{hor}`` any complement of ``\mathfrak{g}^{\mathrm{ver},E}``, and ``A\in{}G`` an element such that ``AE = Y``. Then
@@ -72,8 +72,8 @@ The sections below introduce ``\mathfrak{g}^\mathrm{hor}`` for each manifold in 
 
 | manifold | group ``G`` | ``\mathfrak{g}^\mathrm{hor}`` | chosen as the complement | section ``\lambda(Y)`` | ``\lambda(Y)^{-1}`` | lift type |
 |---|---|---|---|---|---|---|
-| [`StiefelManifold`](@ref) | ``SO(N)`` | ``\begin{pmatrix} A & -B^T \\ B & \mathbb{O} \end{pmatrix}``, ``A`` skew | orthogonal in ``\frac{1}{2}\mathrm{tr}(X^TY)`` | ``[Y\ \ Y_\perp]`` | ``\lambda(Y)^T`` | [`StiefelLieAlgHorMatrix`](@ref) |
-| [`GrassmannManifold`](@ref) | ``SO(N)`` | ``\begin{pmatrix} \mathbb{O} & -B^T \\ B & \mathbb{O} \end{pmatrix}`` | orthogonal in ``\frac{1}{2}\mathrm{tr}(X^TY)`` | ``[Y\ \ Y_\perp]`` | ``\lambda(Y)^T`` | [`GrassmannLieAlgHorMatrix`](@ref) |
+| [`StiefelManifold`](@ref) | ``O(N)`` | ``\begin{pmatrix} A & -B^T \\ B & \mathbb{O} \end{pmatrix}``, ``A`` skew | orthogonal in ``\frac{1}{2}\mathrm{tr}(X^TY)`` | ``[Y\ \ Y_\perp]`` | ``\lambda(Y)^T`` | [`StiefelLieAlgHorMatrix`](@ref) |
+| [`GrassmannManifold`](@ref) | ``O(N)`` | ``\begin{pmatrix} \mathbb{O} & -B^T \\ B & \mathbb{O} \end{pmatrix}`` | orthogonal in ``\frac{1}{2}\mathrm{tr}(X^TY)`` | ``[Y\ \ Y_\perp]`` | ``\lambda(Y)^T`` | [`GrassmannLieAlgHorMatrix`](@ref) |
 | [`SymplecticStiefelManifold`](@ref) | ``Sp(2N)`` | ``\begin{pmatrix} \mathcal{A} & -\mathcal{B}^+ \\ \mathcal{B} & \mathbb{O} \end{pmatrix}``, ``\mathcal{A}`` Hamiltonian | orthogonal in the pseudo-metric ``h`` | ``[U\ \ U^s]`` | ``\bar{\mathbb{J}}^T\lambda(U)^T\mathbb{J}_{2N}`` | [`SymplecticLieAlgHorMatrix`](@ref) |
 | [`BiorthogonalManifold`](@ref) | ``GL(N)`` | ``\begin{pmatrix} A & C \\ B & \mathbb{O} \end{pmatrix}`` | the matrices that vanish where the vertical ones do not | ``[\Phi\ \ K]`` | ``[\Psi\ \ \tilde{K}]^T`` | [`BiorthogonalLieAlgHorMatrix`](@ref) |
 
@@ -81,7 +81,7 @@ In all four, ``\mathfrak{g}^\mathrm{hor}`` is the same subspace of the Lie algeb
 
 ## The Global Tangent Space for the Stiefel Manifold
 
-1. **Group and distinct element.** ``SO(N)`` acts on ``St(n, N)`` by ``Y\mapsto{}QY``, and ``E`` is the first ``n`` columns of ``\mathbb{I}_N``.
+1. **Group and distinct element.** ``O(N)`` acts on ``St(n, N)`` by ``Y\mapsto{}QY``, and ``E`` is the first ``n`` columns of ``\mathbb{I}_N``. For ``n < N`` the subgroup ``SO(N)`` acts transitively as well; for ``n = N`` it does not, because ``St(N, N) = O(N)`` has two components.
 2. **Vertical space.** ``X\in\mathfrak{so}(N)`` with ``XE = \mathbb{O}`` has its first ``n`` columns, and by skew-symmetry its first ``n`` rows, equal to zero: ``\mathfrak{g}^\mathrm{ver} = \{\mathrm{diag}(\mathbb{O}, C) : C\in\mathfrak{so}(N-n)\}``, the Lie algebra of the stabilizer ``\mathrm{diag}(\mathbb{I}_n, SO(N-n))``.
 3. **Horizontal space.** The orthogonal complement in the canonical inner product ``\frac{1}{2}\mathrm{tr}(X^TY)``, the matrices ``\begin{pmatrix} A & -B^T \\ B & \mathbb{O} \end{pmatrix}`` with ``A\in\mathfrak{so}(n)``; [`StiefelLieAlgHorMatrix`](@ref) stores ``(A, B)``.
 4. **Section.** ``\lambda(Y) = [Y\ \ Y_\perp]`` with ``Y_\perp`` an orthonormal basis of the orthogonal complement of the columns of ``Y``; ``\lambda(Y)^{-1} = \lambda(Y)^T``.
@@ -248,7 +248,7 @@ We now discuss the global tangent space for the Grassmann manifold. This is simi
 
 ## The Global Tangent Space for the Grassmann Manifold
 
-1. **Group and distinct element.** ``SO(N)`` acts on ``Gr(n, N)`` by ``\mathrm{span}(Y)\mapsto\mathrm{span}(QY)``, and the distinct element is ``\mathcal{E} = \mathrm{span}(E)``.
+1. **Group and distinct element.** ``O(N)`` acts on ``Gr(n, N)`` by ``\mathrm{span}(Y)\mapsto\mathrm{span}(QY)``, and the distinct element is ``\mathcal{E} = \mathrm{span}(E)``.
 2. **Vertical space.** The stabilizer of ``\mathcal{E}`` is ``S(O(n)\times{}O(N-n))``, so ``\mathfrak{g}^\mathrm{ver} = \{\mathrm{diag}(A, C) : A\in\mathfrak{so}(n), C\in\mathfrak{so}(N-n)\}``.
 3. **Horizontal space.** The orthogonal complement in ``\frac{1}{2}\mathrm{tr}(X^TY)``, the matrices ``\begin{pmatrix} \mathbb{O} & -B^T \\ B & \mathbb{O} \end{pmatrix}``; [`GrassmannLieAlgHorMatrix`](@ref) stores ``B``.
 4. **Section.** As for the Stiefel manifold, ``\lambda(Y) = [Y\ \ Y_\perp]`` for the orthonormal representative ``Y``, and ``\lambda(Y)^{-1} = \lambda(Y)^T``.

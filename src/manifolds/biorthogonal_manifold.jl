@@ -49,8 +49,19 @@ mutable struct BiorthogonalManifold{T, AT <: AbstractMatrix{T}} <: Manifold{T}
     function BiorthogonalManifold(A::AbstractMatrix)
         @assert iseven(size(A, 2))
         @assert size(A, 1) ≥ size(A, 2) ÷ 2
+        _check_real_pair(eltype(A))
         new{eltype(A), typeof(A)}(A)
     end
+end
+
+# The dual frame moves by `g⁻ᵀ` and is formed with `transpose`, which is the right map for the
+# constraint `ΨᵀΦ = 𝕀` of a real pair. A complex pair would need the adjoint in every one of those
+# places, and `check` and the metric would have to agree on which constraint is meant, so a complex
+# element type is refused rather than given a wrong answer.
+function _check_real_pair(::Type{T}) where {T}
+    T <: Real || throw(ArgumentError(
+        "a BiorthogonalManifold has a real element type, and $(T) is not real"))
+    nothing
 end
 
 # The inner constructor suppresses the default `BiorthogonalManifold{T, AT}(A)`, which the generic
@@ -86,6 +97,7 @@ Base.rand(::Type{<:BiorthogonalManifold}, ::Integer, ::Integer)
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend, ::Type{MT},
         N::Integer, n2::Integer) where {T, MT <: BiorthogonalManifold{T}}
     @assert iseven(n2) && N ≥ n2 ÷ 2
+    _check_real_pair(T)
     n = n2 ÷ 2
     Φ = KernelAbstractions.allocate(backend, T, N, n)
     W = KernelAbstractions.allocate(backend, T, N, n)
@@ -100,6 +112,7 @@ end
 function Base.rand(rng::AbstractRNG, ::CPU, ::Type{MT},
         N::Integer, n2::Integer) where {T, MT <: BiorthogonalManifold{T}}
     @assert iseven(n2) && N ≥ n2 ÷ 2
+    _check_real_pair(T)
     n = n2 ÷ 2
     Φ = randn(rng, T, N, n)
     W = randn(rng, T, N, n)
@@ -119,7 +132,7 @@ function check(Y::BiorthogonalManifold)
     norm(Ψ' * Φ - I)
 end
 
-# The size guard of `rgrad` and `metric`: every matrix argument has the shape of the point.
+# The size guard of `rgrad`, `metric` and `Ω`: every matrix argument has the shape of the point.
 function _check_point_size(Y::BiorthogonalManifold, X::AbstractMatrix)
     size(X) == size(Y.A) || throw(DimensionMismatch(
         "a matrix of size $(size(X)) at a point of size $(size(Y.A))"))
@@ -217,10 +230,14 @@ both, as [`update_section!`](@ref) describes. At a point ``\Phi = \Psi`` of the
 
 ``K`` is drawn as that function draws it, from the orthonormal basis of the span of ``\Psi`` that
 [`_cholesky_qr2`](@ref GeometricOptimizers._cholesky_qr2) gives, so it runs on the same backends.
+CholeskyQR2 squares the condition number of ``\Psi``, and a valid pair can have a ``\Psi`` whose
+squared condition number exceeds the precision of its element type. For such a ``\Psi`` the basis
+comes from a Householder QR instead, which is a host factorization.
 """
 function global_section(Y::BiorthogonalManifold)
     Φ, Ψ = _biorthogonal_halves(Y)
-    K = _complement_columns(something(_cholesky_qr2(Ψ)))
+    Q = _cholesky_qr2(Ψ)
+    K = _complement_columns(Q === nothing ? Matrix(qr(Ψ).Q) : Q)
     K̃ = K - Ψ * (Φ' * K)
     λ = hcat(K, K̃)
     # the storage type of the point, for the reason `global_section(::StiefelManifold)` gives

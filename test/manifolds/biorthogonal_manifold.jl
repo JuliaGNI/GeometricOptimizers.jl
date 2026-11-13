@@ -7,7 +7,7 @@ using GeometricOptimizers
 using GeometricOptimizers: check, global_section, Ω, apply_section, gradient_rep!,
                            retraction_differential, retraction_differential!,
                            update_section!, RetractionWorkspace, StiefelProjection, _dot,
-                           zero_tangent
+                           zero_tangent, solution_scale
 using LinearAlgebra: I, cond, dot, norm
 using Test
 import Random
@@ -41,6 +41,16 @@ end
     # a Stiefel point is a biorthogonal pair
     U = rand(rng, StiefelManifold{T}, N, n)
     @test check(BiorthogonalManifold(hcat(U.A, U.A))) < 100eps(T)
+    # the manifold is not compact, so the scale of a relative change is measured; it is `√(2n)` at
+    # a Stiefel point and above it elsewhere
+    @test solution_scale(Y) ≈ norm(Y.A)
+    @test solution_scale(Y) > √T(2n)
+    @test solution_scale(BiorthogonalManifold(hcat(U.A, U.A))) ≈ √T(2n)
+end
+
+@testset "a complex element type is refused" begin
+    @test_throws ArgumentError BiorthogonalManifold(zeros(ComplexF64, 6, 4))
+    @test_throws ArgumentError rand(BiorthogonalManifold{ComplexF64}, 6, 4)
 end
 
 @testset "rgrad is the orthogonal projection onto the tangent space, $(N)×$(n)" for (N, n) in SIZES
@@ -86,6 +96,20 @@ end
     @test frame(λU)' * frame(λU) ≈ I atol = 100eps(T)
 end
 
+# A valid pair whose `ΨᵀΨ` rounds to a singular matrix, so that CholeskyQR2 cannot orthonormalize `Ψ`
+# and the section takes the Householder QR.
+@testset "the section of a pair CholeskyQR2 cannot orthonormalize" begin
+    Ψ = [1.0 1.0; 0.0 2.0^-30; 0.0 0.0]
+    Φ = [1.0 0.0; -2.0^30 2.0^30; 0.0 0.0]
+    @test Ψ' * Φ == I
+    @test GeometricOptimizers._cholesky_qr2(Ψ) === nothing
+    λY = GlobalSection(BiorthogonalManifold(hcat(Φ, Ψ)))
+    K, K̃ = halves(λY.λ)
+    @test K' * K ≈ I atol = 8eps()
+    @test norm(Ψ' * K) < 8eps() * norm(Ψ)
+    @test norm(dual_frame(λY)' * frame(λY) - I) < 8eps() * norm(Φ) * norm(Ψ)
+end
+
 @testset "global_rep, gradient_rep! and Ω, $(N)×$(n)" for (N, n) in SIZES
     rng = Random.Xoshiro(4)
     Y = rand(rng, BiorthogonalManifold{Float64}, N, 2n)
@@ -113,6 +137,14 @@ end
     foreach(b -> fill!(b, NaN), parent(D))
     GeometricOptimizers.global_rep!(D, λY, Δ)
     @test D ≈ X
+
+    # `_dot` on the stored blocks is not the metric, and `_metric_apply!` is its Gram matrix
+    B, C = (rand(rng, BiorthogonalLieAlgHorMatrix{Float64}, N, n) for _ in 1:2)
+    MB = GeometricOptimizers._metric_apply!(zero_tangent(Y), λY, B)
+    @test _dot(MB, C) ≈ metric(Y, tangent(λY, B), tangent(λY, C))
+    @test !(_dot(B, C) ≈ metric(Y, tangent(λY, B), tangent(λY, C)))
+
+    @test_throws DimensionMismatch Ω(Y, randn(rng, N, 2n + 1))
 end
 
 @testset "Ω reduces to the canonical lift of the Stiefel manifold" begin

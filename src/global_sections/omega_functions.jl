@@ -123,6 +123,7 @@ At a point ``\Phi = \Psi = Y`` of the [`StiefelManifold`](@ref) and a tangent ve
 [`Ω(::StiefelManifold, ::AbstractMatrix)`](@ref) of ``\Delta``.
 """
 function Ω(Y::BiorthogonalManifold{T}, Δ::AbstractMatrix{T}) where {T}
+    _check_point_size(Y, Δ)
     Φ, Ψ = _biorthogonal_halves(Y)
     ΔΦ, ΔΨ = _biorthogonal_halves(Δ)
     ΦΔΨᵀ = Φ * ΔΨ'

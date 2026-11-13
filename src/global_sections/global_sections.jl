@@ -532,11 +532,13 @@ a lift at the section `λY`, so that
 ```
 
 with ``\langle\cdot,\cdot\rangle`` the pairing of [`GeometricOptimizers._dot`](@ref). On every lift but
-a [`SymplecticLieAlgHorMatrix`](@ref) that pairing is the metric and ``M`` is the identity, as it is on
-a vector space. On a symplectic lift it is [`GeometricOptimizers.gradient_rep!`](@ref) of the tangent
-vector ``\lambda(U)BE = U\mathcal{A} + U^s\mathcal{B}``, so ``M`` takes the lift
-[`global_rep`](@ref) of a Riemannian gradient to the lift `gradient_rep!` of the same gradient.
-[`GeometricOptimizers._metric_inverse!`](@ref) builds ``M`` from it.
+a [`SymplecticLieAlgHorMatrix`](@ref) and a [`BiorthogonalLieAlgHorMatrix`](@ref) that pairing is the
+metric and ``M`` is the identity, as it is on a vector space. On a symplectic lift it is
+[`GeometricOptimizers.gradient_rep!`](@ref) of the tangent vector
+``\lambda(U)BE = U\mathcal{A} + U^s\mathcal{B}``, and on a biorthogonal lift `gradient_rep!` of the
+tangent vector ``\lambda(Y)B\cdot(E, E) = (\Phi{}A + KB,\ -(\Psi{}A^T + \tilde{K}C^T))``, so ``M``
+takes the lift [`global_rep`](@ref) of a Riemannian gradient to the lift `gradient_rep!` of the same
+gradient. [`GeometricOptimizers._metric_inverse!`](@ref) builds ``M`` from it.
 """
 _metric_apply!(D, ::GlobalSection, B) = _copyto!(D, B)
 

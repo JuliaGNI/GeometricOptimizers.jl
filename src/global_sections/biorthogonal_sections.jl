@@ -125,9 +125,7 @@ end
 #
 #     ⟨ΔΦ, ΦA + KB⟩ - ⟨ΔΨ, ΨAᵀ + K̃Cᵀ⟩ = ⟨ΦᵀΔΦ - ΔΨᵀΨ, A⟩ + ⟨KᵀΔΦ, B⟩ + ⟨-ΔΨᵀK̃, C⟩.
 #
-# These are `global_rep!`'s blocks with the frame and the dual frame exchanged. Every block is stored
-# once, so the flat inner product of `_dot` is `tr(XᵀY)` on the dense lifts and `_section_sharp!`
-# has nothing to rescale.
+# These are `global_rep!`'s blocks with the frame and the dual frame exchanged.
 function gradient_rep!(D::BiorthogonalLieAlgHorMatrix{T},
         λY::GlobalSection{T, <:BiorthogonalManifold, <:AbstractArray},
         Δ::AbstractMatrix{T}) where {T}
@@ -141,6 +139,23 @@ function gradient_rep!(D::BiorthogonalLieAlgHorMatrix{T},
     mul!(fill!(D.B, zero(T)), K', ΔΦ)
     mul!(fill!(D.C, zero(T)), ΔΨ', K̃, -one(T), zero(T))
     D
+end
+
+# `M B` for the Gram matrix `M` of the metric in the stored blocks of a lift; see `_metric_apply!`.
+# The metric is the Euclidean one, so this is `gradient_rep!` of the tangent vector of `B`.
+function _metric_apply!(D::BiorthogonalLieAlgHorMatrix{T},
+        λY::GlobalSection{T, <:BiorthogonalManifold, <:AbstractArray},
+        B::BiorthogonalLieAlgHorMatrix{T}) where {T}
+    gradient_rep!(D, λY, _section_tangent(λY, B))
+end
+
+# The tangent vector `λ(Y)B⋅(E, E) = (ΦA + KB, -(ΨAᵀ + K̃Cᵀ))` of a biorthogonal lift at the section
+# `λY`, stored as the point is.
+function _section_tangent(λY::GlobalSection{T, <:BiorthogonalManifold},
+        B::BiorthogonalLieAlgHorMatrix{T}) where {T}
+    Φ, Ψ = _biorthogonal_halves(λY.Y)
+    K, K̃ = _biorthogonal_halves(λY.λ)
+    hcat(Φ * B.A + K * B.B, -(Ψ * transpose(B.A) + K̃ * transpose(B.C)))
 end
 
 # The transport of the section along a step: `λ(Y) ← λ(Y)g` and `λ(Y)⁻ᵀ ← λ(Y)⁻ᵀg⁻ᵀ`, with `g` the
