@@ -82,6 +82,12 @@ breaking release).
   most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
   is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
   K24.
+- **The `Adam` docstring and the Weights on Manifolds docs warn that the iterates of `Adam` depend
+  on the section.** The entrywise moments do not commute with a change of the section, so on every
+  manifold the path of `Adam` depends on the random completion that `global_section` draws (A5).
+  `scripts/stiefel_adam_section.jl` gains a third part that measures what this does to the gap to
+  the minimum on `St(3, 8)` over 32 sections: a factor of 2 to 4 while `Adam` still descends, and
+  about 200 at step size `0.1` after 600 steps. The docs page has the table.
 
 ### Fixed
 

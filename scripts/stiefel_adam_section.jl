@@ -16,6 +16,11 @@
 # the second moment, the place of `δ`, the cap and the transport. Set one way the loop must reproduce
 # `ScalarMomentAdam`, set the other way `DirectScalarMomentAdam`, and these two controls are what
 # make the differences below it mean anything. Each switch is then thrown alone.
+#
+# Part 3 asks whether the dependence changes what `Adam` reaches: the gap `f(Yₜ) - f⋆` to the minimum
+# `f⋆ = -½ Σᵢ dᵢλᵢ` of the largest eigenvalues, over 32 Haar changes of the complement, at three step
+# sizes and two run lengths, with `GradientMethod`, which does not depend on the section, beside it.
+# Its own `Xoshiro(1402)` draws the changes, so it does not depend on what parts 1 and 2 draw.
 
 using GeometricOptimizers
 using GeometricOptimizers: section
@@ -161,5 +166,24 @@ function part_2()
              scalar_loop(; DIRECT..., gradient = invariant)))
 end
 
+f(Y) = -tr(Y' * S * Y * D) / 2
+const f_min = -sum(diag(D) .* [8.0, 7.0, 6.0]) / 2
+
+function part_3()
+    rng = Xoshiro(1402)
+    Qs = [haar(rng, N - n) for _ in 1:32]
+    @printf("f(Y₀) - f⋆ = %.3f; f(Yₜ) - f⋆ for Adam over 32 Haar changes, and GradientMethod:\n",
+        f(Y₀) - f_min)
+    for step_size in (1.0e-3, 1.0e-2, 1.0e-1)
+        for steps in (STEPS, 10STEPS)
+            gaps = sort([f(train(Adam(); steps, step_size, λ = Y⊥ * Q)) - f_min for Q in Qs])
+            reference = f(train(GradientMethod(); steps, step_size, λ = Y⊥)) - f_min
+            @printf("  η = %.0e, %4d steps: Adam min %.2e, median %.2e, max %.2e   GradientMethod %.2e\n",
+                step_size, steps, gaps[1], (gaps[16] + gaps[17]) / 2, gaps[32], reference)
+        end
+    end
+end
+
 part_1()
 part_2()
+part_3()
