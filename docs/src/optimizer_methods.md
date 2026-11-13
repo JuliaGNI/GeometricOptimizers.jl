@@ -132,6 +132,31 @@ basis changes the update, so these operations do not define intrinsic operations
 [global tangent space representation](@ref "Global Tangent Spaces"). A similar approach is shown in
 [kong2023momentum](@cite).
 
+!!! warning "The iterates of `Adam` depend on the section"
+    The global tangent space representation does not make these operations intrinsic either: it
+    moves the choice of basis into the choice of the section ``\lambda(Y)``, which is unique only up
+    to ``\lambda\mapsto\lambda{}h`` with ``h`` in the isotropy group. The lift goes to
+    ``h^{-1}Bh``, and the entrywise operations do not commute with that unless ``h`` permutes
+    coordinates and flips their signs. [`global_section`](@ref) draws the completion at random, so on
+    every manifold the path of [`Adam`](@ref) depends on that draw. [`GradientMethod`](@ref),
+    [`MomentumMethod`](@ref) and, on the Stiefel manifold, [`ScalarMomentAdam`](@ref) do not.
+
+    On ``St(3, 8)`` with ``f(Y) = -\frac{1}{2}\mathrm{tr}(Y^TSYD)``, one start and 32 Haar changes
+    of the complement (`scripts/stiefel_adam_section.jl`), the gap ``f(Y_t) - f^\star``, from
+    ``10.06`` at the start, is:
+
+    | ``\eta`` | steps | `Adam`, min | median | max | [`GradientMethod`](@ref) |
+    |:--|--:|--:|--:|--:|--:|
+    | ``10^{-3}`` | 600 | 0.24 | 0.48 | 0.97 | 0.56 |
+    | ``10^{-2}`` | 60 | 0.28 | 0.52 | 1.05 | 0.55 |
+    | ``10^{-2}`` | 600 | ``<10^{-13}`` | ``<10^{-13}`` | ``1.0\cdot10^{-6}`` | ``3.7\cdot10^{-4}`` |
+    | ``10^{-1}`` | 60 | ``3.5\cdot10^{-3}`` | ``7.1\cdot10^{-3}`` | ``1.1\cdot10^{-2}`` | ``3.9\cdot10^{-4}`` |
+    | ``10^{-1}`` | 600 | ``1.5\cdot10^{-5}`` | ``2.7\cdot10^{-4}`` | ``2.9\cdot10^{-3}`` | 0.50 |
+
+    So the section decides how far `Adam` gets by a factor of 2 to 4 while it is still descending,
+    and by two orders of magnitude where the fixed step leaves it short of the minimum; at
+    ``\eta = 10^{-2}`` every section reaches it. Which section `Adam` should take is open.
+
 ### Cayley ADAM: a scalar second moment
 
 [`ScalarMomentAdam`](@ref) is the other published answer to that problem, available here as a

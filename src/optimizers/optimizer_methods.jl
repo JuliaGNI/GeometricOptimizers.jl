@@ -179,6 +179,19 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     `linesearch = Static(η)`, and [`default_linesearch`](@ref) is the default. `β₁`, `β₂` and `δ`
     are keyword arguments, so that a positional `Adam(1e-3)` meant as a learning rate fails instead
     of setting `β₁`.
+
+!!! warning "On a manifold, the iterates depend on the section"
+    The moments are taken of the lift in ``\mathfrak{g}^\mathrm{hor}``, and the section
+    ``\lambda(Y)`` that defines the lift is unique only up to ``\lambda\mapsto\lambda{}h`` with ``h``
+    in the isotropy group, under which the lift goes to ``h^{-1}Bh``. ``m_1`` transforms the same way,
+    but the entrywise ``\nabla{}L\odot\nabla{}L``, ``\sqrt{m_2}`` and the division do not, so the
+    direction and the path depend on the section. This holds on every manifold of this package.
+    [`global_section`](@ref) draws the completion at random from the global RNG, so the iterates of
+    `Adam` depend on that draw, where those of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
+    at a fixed step size do not. Only an ``h`` that permutes coordinates and flips their signs
+    leaves `Adam` alone, which is all a single complementary column admits. Euclidean parameters are
+    not affected. Which section `Adam` should take is open; [Weights on Manifolds](@ref) has the
+    measurement on the Stiefel manifold.
 """
 struct Adam{T} <: OptimizerMethod
     β₁::T
