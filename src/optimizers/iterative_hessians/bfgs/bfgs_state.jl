@@ -85,7 +85,7 @@ inverse_hessian(state::BFGSState) = state.Q
 Reset the inverse-Hessian approximation to the inverse ``M^{-1}`` of the metric in the coordinates
 of the section, so that the next direction is the steepest-descent one; see
 [`GeometricOptimizers._metric_inverse!`](@ref). On every parameter but a
-[`SymplecticStiefelManifold`](@ref), ``M`` is the identity.
+[`SymplecticStiefelManifold`](@ref) and a [`BiorthogonalManifold`](@ref), ``M`` is the identity.
 
 This is the `BFGSState` method of [`restart!`](@ref); `DFPState` is an alias for `BFGSState`, so it
 covers `DFP` as well. [`solver_step!`](@ref) calls it when a line search reports that it could not
@@ -130,10 +130,10 @@ the metric, the same lift for every method, and independent of the section.
 
 On the [`StiefelManifold`](@ref), the [`GrassmannManifold`](@ref) and a vector space,
 [`GeometricOptimizers._dot`](@ref) is the metric, ``M`` is the identity, and `Q` is set to it without
-forming ``M``. On the [`SymplecticStiefelManifold`](@ref) the metric is not invariant under the
-symplectic group, ``M`` depends on the point and the section, and it is built one column per
-coordinate, with [`GeometricOptimizers._metric_apply!`](@ref), and inverted through its Cholesky
-factor: ``O(d)`` lift products and ``O(d^3)`` for the inverse, where ``d`` is the length of the
+forming ``M``. On the [`SymplecticStiefelManifold`](@ref) and the [`BiorthogonalManifold`](@ref) the
+metric is not invariant under the group, ``M`` depends on the point and the section, and it is
+built one column per coordinate, with [`GeometricOptimizers._metric_apply!`](@ref), and inverted
+through its Cholesky factor: ``O(d)`` lift products and ``O(d^3)`` for the inverse, where ``d`` is the length of the
 flattening, against the ``O(d^2)`` of one update of ``Q``. It is done at the start of a solve and at a
 restart, not at every step.
 """
@@ -159,6 +159,7 @@ end
 _metric_is_identity(::AbstractArray) = true
 _metric_is_identity(::Manifold) = true
 _metric_is_identity(::SymplecticStiefelManifold) = false
+_metric_is_identity(::BiorthogonalManifold) = false
 function _metric_is_identity(ps::NetworkParameters)
     identity = Ref(true)
     foreachparameters(p -> (identity[] &= _metric_is_identity(p)), ps)
@@ -171,8 +172,8 @@ _identity!(Q::AbstractMatrix) = (Q .= unit_matrix(Q); Q)
 
 # The one initialisation, which the constructor and `initialize_state!` share: the tangents and the
 # objectives read `NaN` up to the first step, which writes them, and `Q` starts at the inverse of the
-# metric, the identity on every parameter but a symplectic one; see `_metric_inverse!`. The points are
-# not filled, because a manifold point cannot hold `NaN`. The first secant pair is then `NaN` and
+# metric, the identity on every parameter but a symplectic or a biorthogonal one; see
+# `_metric_inverse!`. The points are not filled, because a manifold point cannot hold `NaN`. The first secant pair is then `NaN` and
 # `curvature_is_usable` rejects it, so the first step is steepest descent. `solve!` places the section
 # after this has run, and `_start_inverse_hessian!` sets `Q` again at the section it placed.
 function _poison!(state::BFGSState{T}) where {T}

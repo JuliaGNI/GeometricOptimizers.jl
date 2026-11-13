@@ -315,16 +315,19 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   **What to do**: Write a complex-valued algorithm that computes the sign correctly,
   or replace both with a method that accepts only real input by type constraint.
 
-### K7 · The three `zero_tangent` bodies differ only in the lift type
+### K7 · The four `zero_tangent` bodies differ only in the lift type and the size of the pair
 
 - location: `src/manifolds/stiefel_manifold.jl`, `src/manifolds/grassmann_manifold.jl`,
-  `src/manifolds/symplectic_stiefel_manifold.jl`
+  `src/manifolds/symplectic_stiefel_manifold.jl`, `src/manifolds/biorthogonal_manifold.jl`
 - kind: found late
 - found: 2026-09-27
 - evidence: `zero_tangent(::StiefelManifold)`, `zero_tangent(::GrassmannManifold)` and
   `zero_tangent(::SymplecticStiefelManifold)` are the same three lines with
-  `StiefelLieAlgHorMatrix`, `GrassmannLieAlgHorMatrix` and `SymplecticLieAlgHorMatrix`; one method on
-  the lift type would serve all three.
+  `StiefelLieAlgHorMatrix`, `GrassmannLieAlgHorMatrix` and `SymplecticLieAlgHorMatrix`.
+  `zero_tangent(::BiorthogonalManifold)` is a fourth copy with `BiorthogonalLieAlgHorMatrix`, which
+  reads the size `(N, n)` of the pair from `_pair_size` rather than from `size`. One method on the
+  lift type, with a map from the manifold type to its lift type and to the size of the lift, would
+  serve all four; no such map exists yet.
 
 ### K57 · Under `Adam` the step on a `SymplecticStiefelManifold` depends on the transported section
 
@@ -354,6 +357,54 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   eigendecomposition per reset, and would need the optimizer caches carried over by `ℬ ↦ Sℬ`.
   `GradientMethod`, `MomentumMethod`, `BFGS` and `DFP` do not depend on the section in exact
   arithmetic, at a fixed step and under a line search.
+
+### K60 · On a `BiorthogonalManifold` the result of `Adam` depends on the section, and does not always descend
+
+- location: `src/manifold_optimizers/adam_optimizer.jl`, `src/global_sections/biorthogonal_sections.jl`
+- kind: found late
+- found: 2026-11-11
+- evidence: `Adam` holds `global_rep(rgrad)`, as on every manifold, and its entrywise second
+  moments make its step depend on the section, as K57 says for the symplectic case. Its sign-like
+  direction is taken in the coordinates of `global_rep`, which are not the ones the derivative of
+  the loss pairs with, so it need not descend. On the test problem of
+  `test/integration/biorthogonal_optimizer_tests.jl`, from one point and the completions `K` that
+  `Random.seed!(1:50)` draws, 500 steps at `η = 1e-3` under `Geodesic` end between `44.9` and `8982`
+  from `1405` (minimum `19.85`): 4 of the 50 end above the start and 6 above a fifth of it. Over the
+  first 25 of these seeds `Cayley` gives the same figures to 4 digits. No fixed step avoids it: 500
+  steps end above a fifth of the start on 1 of 25 seeds at `3e-3`, 3 of 50 at `5e-3` and 2 of 50
+  at `1e-2`; 200 steps of a `TrainingOptimizer` end above half the start on 4 of 50 seeds at
+  `1e-3`, and at `3e-3` one of 25 seeds ends at 2.66 times the start. The transported section
+  does not explain which seeds fail: the condition number of `[Φ K]` is 77.1 at the start for
+  every seed, because two completions differ by an orthogonal `Q` in `K ↦ KQ`, and its largest value
+  over the 500 steps is 84.7 to 145 on the six failing seeds and up to 112 on the others. So a
+  reset of the section to `global_section(Y)` is not known to help. `GradientMethod`,
+  `MomentumMethod`, `BFGS` and `DFP` do not depend on the section; the tests assert this for
+  `GradientMethod` and `BFGS` under a line search.
+
+### K61 · `rgrad` of a `BiorthogonalManifold` needs a symmetric eigendecomposition on the point's backend
+
+- location: `src/manifolds/biorthogonal_manifold.jl`, `_sylvester_spd`
+- kind: found late
+- found: 2026-11-11
+- evidence: The projection onto the tangent space solves an `n × n` Sylvester equation in the
+  eigenbases of `ΨᵀΨ` and `ΦᵀΦ`, through `eigen(Symmetric(·))`. `Metal` supplies no such
+  decomposition, so `rgrad`, and with it every optimizer, raises for a point on that backend, while
+  `rand`, `global_section`, `global_rep`, the retractions and the transport of the section are
+  products, `cholesky` and triangular solves and run there. No device test covers this manifold.
+  The Sylvester equation could be solved through `cholesky` alone, as a linear system of size `n²`,
+  at `O(n⁶)` per step.
+
+### K62 · `global_section` of a biorthogonal device point whose `Ψ` breaks CholeskyQR2 raises
+
+- location: `src/manifolds/biorthogonal_manifold.jl`, `global_section`
+- kind: found late
+- found: 2026-11-13
+- evidence: `global_section(::BiorthogonalManifold)` orthonormalizes the fixed columns `Ψ`, which
+  cannot be redrawn, so where `_cholesky_qr2(Ψ)` returns `nothing` it falls back to a Householder
+  `qr`. A valid pair reaches that: `Ψ = [1 1; 0 2⁻³⁰; 0 0]`, `Φ = [1 0; -2³⁰ 2³⁰; 0 0]` has
+  `ΨᵀΦ = 𝕀` and a `ΨᵀΨ` that rounds to a singular matrix in `Float64`. `qr` is a host
+  factorization, and `Metal` implements none, so on that backend such a point raises instead of
+  getting a section. No device test covers this manifold (K61).
 
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 

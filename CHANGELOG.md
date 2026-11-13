@@ -10,6 +10,38 @@ breaking release).
 
 ### Added
 
+- **The manifold of biorthogonal pairs, `BiorthogonalManifold`, and its global tangent space
+  `BiorthogonalLieAlgHorMatrix`.** A point is a pair `(Φ, Ψ)` of `N × n` matrices with `ΨᵀΦ = 𝕀`,
+  stored as `[Φ Ψ]`; it is the homogeneous space `GL(N)/GL(N - n)` of the action
+  `g⋅(Φ, Ψ) = (gΦ, g⁻ᵀΨ)`, contains the Stiefel manifold as the pairs with `Φ = Ψ`, and makes
+  `diag(Φ, Ψ)` a point of the symplectic Stiefel manifold. The lift is the complement `[A C; B 𝕆]` of
+  the isotropy algebra in `𝔤𝔩(N)`, and a `GlobalSection` of such a point holds the dual frame
+  `[Ψ K̃]` next to the frame `[Φ K]`, so `global_rep`, `gradient_rep!`, `apply_section`, `Ω`, both
+  retractions, their workspaces and the transport of the section take products of `N × n` and
+  `N × (N - n)` blocks and invert no `N × N` matrix. The retraction of a lift is the pair
+  `[g g⁻ᵀ]`, through `R(X)⁻¹ = R(-X)` for `Cayley` and `Geodesic`. `rand`, `check`, `rgrad` and
+  `metric` (the Euclidean one, whose gradient is the orthogonal projection through an `n × n`
+  Sylvester equation), the parameter protocol (`rebuild`, `storage_gradient`, loading from a file)
+  and `retraction_differential` cover it. `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and
+  `DFP` under `Optimizer`, and the first three under `TrainingOptimizer` and in a
+  `CompositeMethod`, take such a point and a parameter set with such a leaf. `BFGS` and `DFP` start
+  their inverse Hessian at the inverse of the metric here too: the metric is the Euclidean one, whose
+  Gram matrix in the stored blocks is not the identity, not even at a Stiefel point. So under a line
+  search the paths of `GradientMethod` and `BFGS` do not depend on the section, which the tests
+  assert for a non-orthogonal change of section with condition number 32. `step_αmax(c, δ)` caps a
+  step along a biorthogonal lift at `c / ρ(δ)`, as for the symplectic lift, and not at the
+  `2πc / ‖δ‖` of a rotation, which can lie past the pole of the `Cayley` transform (`A = [1]`,
+  `B = C = 0` has the pole at `α = 2` and the generic cap `2π`). A complex element type is refused
+  with an `ArgumentError` by the constructor and by `rand`, because the dual frame uses the transpose,
+  which is right for a real pair only. `global_section` of a valid pair whose `Ψ` CholeskyQR2 cannot
+  orthonormalize falls back to a Householder `qr` on the host; `Ω` checks the size of the tangent
+  with a `DimensionMismatch`. `solution_scale` measures `l2norm(parent(Y))` on this non-compact
+  manifold, as on a `SymplecticStiefelManifold`, and `AdamWithEuclideanDecay` refuses it with an
+  `ArgumentError`. The result of `Adam` depends on the section here and does not always descend
+  (K60). The manual has a new page, *The Biorthogonal Manifold*, with the theory, which comes from
+  JuliaGNI/GeometricMachineLearning.jl#390, the use this manifold was added for. K60, K61 and K62
+  record what is open.
+
 - **The optimizers step a `SymplecticStiefelManifold`.** The new lift type
   `SymplecticLieAlgHorMatrix` implements the horizontal space that Bendokat and Zimmermann give
   below their (3.4), the one subspace of the symplectic Lie algebra that is horizontal at every

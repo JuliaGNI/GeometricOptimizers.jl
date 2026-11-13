@@ -193,7 +193,8 @@ entries of `U` read as an unconstrained matrix.
 The manifold is not compact, and the gradient grows with the point: like ``\|U\|^3`` where
 ``\nabla{}L`` grows like ``\|U\|``, along a hyperbolic direction such as
 ``U\,\mathrm{diag}(s\mathbb{I}, s^{-1}\mathbb{I})``. A fixed step size can therefore diverge from an
-ill-conditioned start; see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref).
+ill-conditioned start; see
+[Global Tangent Space for the Symplectic Stiefel Manifold](@ref "The Global Tangent Space for the Symplectic Stiefel Manifold").
 """
 function rgrad(U::SymplecticStiefelManifold, ∇L::AbstractMatrix)
     J = _poisson_tensor(U, size(U, 1))

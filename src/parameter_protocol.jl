@@ -32,6 +32,7 @@ end
 rebuild(::StiefelManifold, data) = StiefelManifold(data)
 rebuild(::GrassmannManifold, data) = GrassmannManifold(data)
 rebuild(::SymplecticStiefelManifold, data) = SymplecticStiefelManifold(data)
+rebuild(::BiorthogonalManifold, data) = BiorthogonalManifold(data)
 
 rebuild(A::SymmetricMatrix, data) = SymmetricMatrix(data, A.n)
 rebuild(A::SkewSymMatrix, data) = SkewSymMatrix(data, A.n)
@@ -46,6 +47,9 @@ end
 rebuild(A::GrassmannLieAlgHorMatrix, data) = GrassmannLieAlgHorMatrix(data[1], A.N, A.n)
 function rebuild(A::SymplecticLieAlgHorMatrix, data)
     SymplecticLieAlgHorMatrix(data[1], data[2], data[3], data[4], A.N, A.n)
+end
+function rebuild(A::BiorthogonalLieAlgHorMatrix, data)
+    BiorthogonalLieAlgHorMatrix(data[1], data[2], data[3], A.N, A.n)
 end
 
 # The storage gradient `∂L/∂S` from a cotangent `G` of the dense interface; see
@@ -175,6 +179,23 @@ function storage_gradient(A::SymplecticLieAlgHorMatrix, G::AbstractMatrix)
         SymplecticLieAlgHorMatrix(A₁, storage_gradient(A.B₁, G[1:k, (k + 1):n]),
             storage_gradient(A.C₁, G[(k + 1):n, 1:k]), B, N, n)
     end
+end
+
+# The biorthogonal lift stores each of its three blocks once in the dense `[A C; B 0]`, so the storage
+# gradient is the three blocks of `G` as they are, and a cotangent of the lift's own type is its own
+# storage gradient.
+function storage_gradient(A::BiorthogonalLieAlgHorMatrix, G::AbstractMatrix)
+    N, n = A.N, A.n
+    _check_cotangent_size(A, G)
+    block(rows, cols) = (X = similar(G, eltype(A), length(rows), length(cols)); X .= @view G[rows, cols])
+    BiorthogonalLieAlgHorMatrix(
+        block(1:n, 1:n), block((n + 1):N, 1:n), block(1:n, (n + 1):N), N, n)
+end
+
+function storage_gradient(A::BiorthogonalLieAlgHorMatrix, G::BiorthogonalLieAlgHorMatrix)
+    _check_cotangent_size(A, G, _leaf_shape)
+    BiorthogonalLieAlgHorMatrix(
+        map(X -> copyto!(similar(X, eltype(A)), X), parent(G))..., A.N, A.n)
 end
 
 # in the element type of the lift `A`, as `_launch_storage_gradient`

@@ -110,7 +110,9 @@ tangent vector ``\lambda(Y)BE`` is the same whatever section ``\lambda(Y)`` is u
 [`DFP`](@ref) start from its direction. On a [`SymplecticStiefelManifold`](@ref) it is the descent of
 the metric [`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref), and the
 path of `GradientMethod` does not depend on the section; see
-[`GeometricOptimizers.gradient_rep!`](@ref).
+[`GeometricOptimizers.gradient_rep!`](@ref). On a [`BiorthogonalManifold`](@ref) it is the descent of
+the metric the pairs inherit from ``\mathbb{R}^{N\times2n}``, whose path does not depend on the
+section either.
 """
 struct GradientMethod <: OptimizerMethod end
 

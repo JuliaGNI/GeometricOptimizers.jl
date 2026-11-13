@@ -30,7 +30,8 @@ end
 # specialize on an argument of such a `Union`, and the result would infer as `Any`.
 for X in (SkewSymMatrix, SymmetricMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular,
     StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SymplecticLieAlgHorMatrix,
-    StiefelManifold, GrassmannManifold, SymplecticStiefelManifold)
+    BiorthogonalLieAlgHorMatrix,
+    StiefelManifold, GrassmannManifold, SymplecticStiefelManifold, BiorthogonalManifold)
     X <: Manifold || @eval function Base.zeros(backend::KernelAbstractions.Backend,
             ::Type{$X}, d::Integer, dims::Integer...)
         zeros(backend, $X{default_eltype(backend)}, d, dims...)

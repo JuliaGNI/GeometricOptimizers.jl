@@ -36,7 +36,7 @@
 
 # The wrappers of rule 1.
 const ArrayWrapper = Union{StiefelManifold, GrassmannManifold, SymplecticStiefelManifold,
-    StiefelProjection}
+    BiorthogonalManifold, StiefelProjection}
 const OwnedWrapper = Union{ArrayWrapper, Adjoint{<:Any, <:ArrayWrapper}}
 
 # The adjoint of a real skew-symmetric matrix, or of a real Stiefel or Grassmann lift, is the matrix

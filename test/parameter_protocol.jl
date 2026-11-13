@@ -276,3 +276,35 @@ end
     @test back.U isa SymplecticStiefelManifold{Float64}
     @test back.U == U
 end
+
+# The biorthogonal lift and point: the storage gradient of the lift from a dense cotangent against a
+# central difference on its flat storage, the cotangent of the lift's own type, and a flatten round
+# trip of both.
+@testset "the storage gradient of a biorthogonal lift, and the biorthogonal leaves round-trip" begin
+    rng = Random.Xoshiro(10)
+    B = rand(rng, BiorthogonalLieAlgHorMatrix{Float64}, 7, 3)
+    X = randn(rng, 7, 7)
+    L(A) = sum(sin.(Matrix(A) * X))
+    G = cos.(Matrix(B) * X) * X'
+
+    v, layout = flatten(NetworkParameters((B = B,)))
+    difference = map(eachindex(v)) do k
+        p, m = copy(v), copy(v)
+        p[k] += 1e-6
+        m[k] -= 1e-6
+        (L(unflatten(layout, p).B) - L(unflatten(layout, m).B)) / 2e-6
+    end
+    gradient = storage_gradient(B, G)
+    @test gradient isa BiorthogonalLieAlgHorMatrix{Float64}
+    @test flatten(NetworkParameters((B = gradient,)))[1] ≈ difference rtol = 1e-7
+    @test storage_gradient(B, gradient) == gradient
+    @test eltype(storage_gradient(B, Float32.(G))) == Float64
+
+    Y = rand(rng, BiorthogonalManifold{Float64}, 7, 6)
+    ps = NetworkParameters((B = B, Y = Y))
+    v, layout = flatten(ps)
+    back = unflatten(layout, v)
+    @test back.B == B
+    @test back.Y isa BiorthogonalManifold{Float64}
+    @test back.Y == Y
+end

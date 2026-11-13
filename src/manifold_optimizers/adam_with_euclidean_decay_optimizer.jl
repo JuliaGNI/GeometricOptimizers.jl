@@ -19,7 +19,9 @@ gradient of ``\frac{\lambda}{2}||x||^2``, which is constant on them, so the deca
 identically (see the [Weight Decay on Manifolds](@ref) page). [`SymplecticStiefelManifold`](@ref)
 is non-compact — ``\|U\|_F^2`` is unbounded on ``Sp(2n, 2N)`` and ``\mathrm{rgrad}(U, \lambda{}U)``
 vanishes only at orthosymplectic points — while its direction is a horizontal lift that cannot subtract
-``\lambda{}U`` entrywise, so [`AdamWithEuclideanDecay`](@ref) refuses it with an `ArgumentError`.
+``\lambda{}U`` entrywise, so [`AdamWithEuclideanDecay`](@ref) refuses it with an `ArgumentError`. It
+refuses [`BiorthogonalManifold`](@ref) for the same two reasons: ``\|[\Phi\ \ \Psi]\|_F^2`` is
+unbounded on it, and its direction is a lift in ``\mathfrak{gl}(N)``.
 
 # Implementation
 
@@ -39,6 +41,12 @@ function _is_decayable(::SymplecticStiefelManifold)
         "`AdamWithEuclideanDecay` does not step a `SymplecticStiefelManifold`: `Sp(2n, 2N)` " *
         "is not compact, so `rgrad(U, λU)` does not vanish away from orthosymplectic points, " *
         "and a horizontal lift cannot apply `-λU` entrywise. Use `Adam` instead."))
+end
+function _is_decayable(::BiorthogonalManifold)
+    throw(ArgumentError(
+        "`AdamWithEuclideanDecay` does not step a `BiorthogonalManifold`: the manifold is not " *
+        "compact, so `λ‖Y‖²/2` is not constant on it, and a horizontal lift cannot apply `-λY` " *
+        "entrywise. Use `Adam` instead."))
 end
 _is_decayable(::AbstractArray) = true
 # An eager fold over every leaf and not short-circuiting `any`: a `SymplecticStiefelManifold` or an

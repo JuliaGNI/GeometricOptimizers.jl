@@ -22,7 +22,8 @@ The four-argument form is what [`solver_step!`](@ref) calls. For [`BFGS`](@ref) 
 replacement is ``M^{-1}\,\mathrm{rhs}``, the steepest descent of the metric at the section of
 `state`, as after [`restart!(::BFGSState)`](@ref); see [`GeometricOptimizers._metric_inverse!`](@ref).
 It is `rhs` wherever ``M`` is the identity, i.e. on every parameter but a
-[`SymplecticStiefelManifold`](@ref). For every other method it is the three-argument form.
+[`SymplecticStiefelManifold`](@ref) and a [`BiorthogonalManifold`](@ref). For every other method it
+is the three-argument form.
 
 !!! info "Only the (quasi-)Newton methods are safeguarded"
     [`Adam`](@ref) and [`MomentumMethod`](@ref) build their direction from a moving average, which is

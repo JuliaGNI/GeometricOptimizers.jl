@@ -58,8 +58,8 @@ end
 
 The ceiling on the line search's ``\alpha`` that a step ceiling of `c` imposes on the direction `δ`:
 ``c\,2\pi/\|\delta\|`` for an orthogonal lift ([`StiefelLieAlgHorMatrix`](@ref) and
-[`GrassmannLieAlgHorMatrix`](@ref)) and ``c/\rho(\delta)`` for a [`SymplecticLieAlgHorMatrix`](@ref),
-with ``\rho`` the spectral radius.
+[`GrassmannLieAlgHorMatrix`](@ref)) and ``c/\rho(\delta)`` for a [`SymplecticLieAlgHorMatrix`](@ref)
+and a [`BiorthogonalLieAlgHorMatrix`](@ref), with ``\rho`` the spectral radius.
 
 `c` is in multiples of the scale the *geometry* of the lift supplies:
 
@@ -79,6 +79,13 @@ with ``\rho`` the spectral radius.
   the section. ``\rho(B) \leq \|B\|_F/\sqrt{2} \leq \|\delta\|``, so this ceiling is never lower than
   ``c/\|\delta\|``. A nonzero nilpotent lift has ``\rho(B) = 0`` and no ceiling: its retraction is
   polynomial in ``\alpha`` and has no pole.
+- Retracting a [`BiorthogonalLieAlgHorMatrix`](@ref) acts in ``GL(N)``, which is not compact either,
+  and the reasons above carry over: a real eigenvalue ``\mu`` of the lift puts a pole of
+  ``\mathrm{Cayley}(\alpha{}B)`` at ``\alpha = 2/\mu`` for ``\mu > 0`` and of its inverse
+  ``\mathrm{Cayley}(-\alpha{}B)`` at ``\alpha = 2/|\mu|`` for ``\mu < 0``, and a change of the section
+  ``\lambda\mapsto\lambda\,\mathrm{diag}(\mathbb{I}, h)``, ``h\in{}GL(N - n)``, takes the lift to
+  ``\mathrm{diag}(\mathbb{I}, h)^{-1}B\,\mathrm{diag}(\mathbb{I}, h)``, which keeps its eigenvalues.
+  Here ``\rho(B)`` is bounded by the Frobenius norm of the dense lift, which is ``\|\delta\|``.
 
 `δ` is one direction and not a `NamedTuple` of them: a solution built of several blocks needs one ceiling
 per block and the smallest of them, which is [`_manifold_αmax`](@ref)'s job. See
@@ -98,16 +105,18 @@ function step_αmax(c::T, δ) where {T}
     (isfinite(n) && n > zero(n)) ? c * T(2π) / T(n) : T(Inf)
 end
 
-function step_αmax(c::T, δ::SymplecticLieAlgHorMatrix) where {T}
+function step_αmax(c::T,
+        δ::Union{SymplecticLieAlgHorMatrix, BiorthogonalLieAlgHorMatrix}) where {T}
     n = l2norm(δ)
     (isfinite(n) && n > zero(n)) || return T(Inf)
     ρ = _spectral_radius(δ)
     ρ > zero(ρ) ? c / T(ρ) : T(Inf)
 end
 
-# `ρ(B)` from the factors `B = B̂B̄ᵗ` of `lift_factors`: `B̄ᵗB̂` is `4n × 4n` and has the nonzero
-# eigenvalues of `B`. On the host, as the matrix is small.
-function _spectral_radius(B::SymplecticLieAlgHorMatrix)
+# `ρ(B)` from the factors `B = B̂B̄ᵗ` of `lift_factors`: `B̄ᵗB̂` is `4n × 4n` for a symplectic lift and
+# `2n × 2n` for a biorthogonal one, and has the nonzero eigenvalues of `B`. On the host, as the
+# matrix is small.
+function _spectral_radius(B::Union{SymplecticLieAlgHorMatrix, BiorthogonalLieAlgHorMatrix})
     B̂, B̄ = lift_factors(B)
     maximum(abs, LinearAlgebra.eigvals(Array(B̄' * B̂)))
 end
@@ -230,7 +239,8 @@ On a [`Manifold`](@ref) the gradient that `gradient_instance` produces lives in 
 the embedding while `direction(cache)` is a horizontal lift, so the two are not even the same shape
 and have to be brought together by [`GeometricOptimizers.gradient_rep!`](@ref) first. That is the
 map `update!(::GradientCache, …)` applies to the gradient before storing it, and it is
-[`global_rep`](@ref) except on a [`SymplecticStiefelManifold`](@ref).
+[`global_rep`](@ref) except on a [`SymplecticStiefelManifold`](@ref) and a
+[`BiorthogonalManifold`](@ref).
 
 The pairing is then [`_dot`](@ref) and not `dot`: the `α` of the line search parameterizes a curve in
 the *intrinsic* coordinates of the lift, and `dot` on a lift is the ambient Frobenius product, which

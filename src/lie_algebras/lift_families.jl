@@ -1,4 +1,4 @@
-# The method families the three horizontal lifts share, written once over the block tuple `parent`
+# The method families the four horizontal lifts share, written once over the block tuple `parent`
 # returns. `parent`'s docstring in `abstract_lie_algebra_horizontal.jl` says why an elementwise
 # operation on a lift is written over the tuple rather than over the ambient `N × N` matrix.
 #
@@ -6,7 +6,8 @@
 # of different species have different blocks, and their sum falls through to the dense
 # `_owned_add(A, B)` of `ambiguities.jl`. `zeros` and `rand` stay in each type's own file, because a
 # caller may name the storage arrays in the type it passes.
-for L in (:StiefelLieAlgHorMatrix, :GrassmannLieAlgHorMatrix, :SymplecticLieAlgHorMatrix)
+for L in (:StiefelLieAlgHorMatrix, :GrassmannLieAlgHorMatrix, :SymplecticLieAlgHorMatrix,
+    :BiorthogonalLieAlgHorMatrix)
     @eval begin
         _owned_add(A::$L, B::$L) = $L(map(+, parent(A), parent(B))..., A.N, A.n)
         _owned_sub(A::$L, B::$L) = $L(map(-, parent(A), parent(B))..., A.N, A.n)

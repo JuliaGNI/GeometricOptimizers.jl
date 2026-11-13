@@ -112,6 +112,7 @@ include("decompositions/symplectic_gram_schmidt.jl")
 # `ProjectionTransport` are the metrics and the transport that `Manifolds.jl` exports as well.
 # The cost is the same: a `Main` that loads both packages has to qualify these three names.
 export Manifold, StiefelManifold, GrassmannManifold, SymplecticStiefelManifold
+export BiorthogonalManifold
 export rgrad, metric, Ω
 # The metric a Stiefel gradient and dot product are taken in, as the last argument of both.
 export StiefelMetric, CanonicalMetric, EuclideanMetric
@@ -129,6 +130,7 @@ include("manifolds/abstract_manifold.jl")
 include("manifolds/stiefel_manifold.jl")
 include("manifolds/grassmann_manifold.jl")
 include("manifolds/symplectic_stiefel_manifold.jl")
+include("manifolds/biorthogonal_manifold.jl")
 
 export SkewSymMatrix, SymmetricMatrix, StrictlyLowerTriangular, StrictlyUpperTriangular
 export AbstractTriangular, StiefelProjection
@@ -141,11 +143,12 @@ include("special_matrices/upper_triangular.jl")
 include("special_matrices/vector_storage_matrix.jl")
 
 export StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SymplecticLieAlgHorMatrix,
-       AbstractLieAlgHorMatrix
+       BiorthogonalLieAlgHorMatrix, AbstractLieAlgHorMatrix
 include("lie_algebras/abstract_lie_algebra_horizontal.jl")
 include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
 include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
 include("lie_algebras/symplectic_lie_algebra_horizontal.jl")
+include("lie_algebras/biorthogonal_lie_algebra_horizontal.jl")
 # The method families the lifts share, written once over the block tuple; the file needs the
 # concrete types, so it is included after them.
 include("lie_algebras/lift_families.jl")
@@ -169,6 +172,7 @@ export GlobalSection, global_section, global_rep
 export apply_section, apply_section!, update_section!
 include("global_sections/global_sections.jl")
 include("global_sections/omega_functions.jl")
+include("global_sections/biorthogonal_sections.jl")
 
 # The retraction interface, likewise: `Geodesic` and `Cayley` are what a caller passes as
 # `retraction = …`, and `geodesic`/`cayley`/`retraction` are what applies one.
@@ -179,6 +183,7 @@ include("retractions/modified_exponential.jl")
 include("retractions/retraction_types.jl")
 include("retractions/retractions.jl")
 include("retractions/retraction_workspace.jl")
+include("retractions/biorthogonal_retractions.jl")
 
 # The Cayley retraction of a Stiefel tangent vector without a global section, and the two vector
 # transports along it: `O(Mk²)` per step, and no `M × M` array.
@@ -274,6 +279,8 @@ function __init__()
     register_parameter_type!("GrassmannManifold", (S, md) -> GrassmannManifold(_dense(S)))
     register_parameter_type!(
         "SymplecticStiefelManifold", (S, md) -> SymplecticStiefelManifold(_dense(S)))
+    register_parameter_type!(
+        "BiorthogonalManifold", (S, md) -> BiorthogonalManifold(_dense(S)))
     register_parameter_type!("SymmetricMatrix", (S, md) -> SymmetricMatrix(_vector(S, md)...))
     register_parameter_type!("SkewSymMatrix", (S, md) -> SkewSymMatrix(_vector(S, md)...))
     lower = (S, md) -> StrictlyLowerTriangular(_vector(S, md)...)
@@ -293,6 +300,8 @@ function __init__()
         (S, md) -> GrassmannLieAlgHorMatrix(S[1], md.N, md.n))
     register_parameter_type!("SymplecticLieAlgHorMatrix",
         (S, md) -> SymplecticLieAlgHorMatrix(S[1], S[2], S[3], S[4], md.N, md.n))
+    register_parameter_type!("BiorthogonalLieAlgHorMatrix",
+        (S, md) -> BiorthogonalLieAlgHorMatrix(S[1], S[2], S[3], md.N, md.n))
 end
 
 end

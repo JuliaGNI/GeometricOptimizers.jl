@@ -147,7 +147,7 @@ makedocs(;
             asset("https://juliagni.github.io/GeometricFigures.jl/figures.css"; islocal = false)
         ],
         # `api.md` is one `@autodocs` over the whole package and is above the default 200 KiB.
-        size_threshold = 600 * 2^10
+        size_threshold = 2^20
     ),
     pages = [
         "Home" => "index.md",
@@ -160,7 +160,8 @@ makedocs(;
             "General Theory on Manifolds" => "manifolds/manifolds.md",
             "Differential Equations and the EAU theorem" => "manifolds/existence_and_uniqueness_theorem.md",
             "Riemannian Manifolds" => "manifolds/riemannian_manifolds.md",
-            "Homogeneous Spaces" => "manifolds/homogeneous_spaces.md"
+            "Homogeneous Spaces" => "manifolds/homogeneous_spaces.md",
+            "The Biorthogonal Manifold" => "manifolds/biorthogonal_manifold.md"
         ],
         "Special Matrices" => [
             "Symmetric, Skew-Symmetric and Triangular Matrices" => "special_matrices.md",
