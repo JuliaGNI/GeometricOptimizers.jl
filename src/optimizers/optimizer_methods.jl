@@ -59,7 +59,7 @@ Q \gets Q - \frac{Q\gamma\gamma^TQ}{\gamma^TQ\gamma} + \frac{\delta\delta^T}{\de
 update itself lives in [`QuasiNewtonCache`](@ref), which symmetrizes ``Q\gamma\gamma^TQ`` explicitly and
 skips the update when the secant pair fails [`curvature_is_usable`](@ref).
 
-[`BFGS`](@ref) is the default. `DFP` is here because it is
+[`BFGS`](@ref) is the default `algorithm` of [`Optimizer`](@ref). `DFP` is here because it is
 the other classical member of the family and because the two differ in exactly the way that shows
 what the line search is doing: DFP's direction is systematically *under*-scaled, so it wants a
 median ``\alpha`` well above 1 and is starved by a search that cannot exceed it. See
@@ -167,8 +167,8 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     Because the direction has magnitude ``\approx{}1`` per component whatever the gradient is,
     a step that does not shrink leaves `Adam` circling the minimiser at that distance rather
     than settling on it. A *searching* line search does not fix that — it picks each step from
-    the merit and has no reason to drive the sequence to zero — it only changes how each step is
-    chosen: on the two-sphere problem of `test/integration/manifold_linesearch_tests.jl` the searching
+    the merit and has no reason to drive the sequence to zero — it only sets the length of each
+    step: on the two-sphere problem of `test/integration/manifold_linesearch_tests.jl` the searching
     options need 251–331 iterations where [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
     need 9–64. [`DecayingStatic`](@ref) is the setting under which `Adam` terminates on a
     criterion by construction, because its schedule drives the step to zero itself.

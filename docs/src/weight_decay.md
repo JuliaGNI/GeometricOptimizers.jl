@@ -127,8 +127,8 @@ about the iterates, and it has to be asked of each method separately.
 
 That distinction matters because manifold-flavoured optimizers for large language models are an
 active area — Mano ([gu2026mano](@cite)) projects the momentum onto the tangent space of the
-parameters and constrains it on a rotational oblique manifold, and compares it with AdamW and Muon,
-memory and compute cost included. This package takes the other route, following
+parameters and constrains it on a rotational oblique manifold, and the paper compares Mano with
+AdamW and Muon, memory and compute cost included. This package takes the other route, following
 [Brantner:2023](@cite): the constraint is part of the model, maintained at every
 iterate, rather than a projection wrapped around an essentially unconstrained solution. Its cost
 is kept down in the retraction instead — [`cayley`](@ref) needs only a ``2n\times{}2n`` solve, not
