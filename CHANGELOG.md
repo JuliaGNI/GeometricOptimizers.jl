@@ -109,7 +109,11 @@ breaking release).
   conditions, in place of ranking words such as "better", "beat", "weaker", "a poor thing to
   search along" and "outperforming". `ScalarMomentAdam` now says that which of
   it and `Adam` reaches a lower loss depends on the objective, the step size and the number of
-  steps. The measured comparisons with their conditions stay as they were.
+  steps. The measured comparisons with their conditions stay as they were. The warning against a
+  searching line search in the docstring of `AdamWithEuclideanDecay` and the matching item of
+  Weight Decay on Manifolds give the same two facts in the same words: the merit of the search is
+  the bare objective, so the search undoes the decay, and an `α` that varies from step to step
+  makes the regularization strength vary with it.
 
 ### Fixed
 

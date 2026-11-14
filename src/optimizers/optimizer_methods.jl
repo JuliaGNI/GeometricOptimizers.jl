@@ -370,14 +370,14 @@ rate ``\eta`` is *not* stored here: it is the `α` of the line search, i.e. `lin
 exactly as in [loshchilov2019decoupled](@cite), where the two are decoupled from each other but
 the decay is still scaled by the schedule.
 
-!!! warning "Do not pass a searching line search"
-    For [`Adam`](@ref) a sufficient-decrease search is merely wasted work. Here it is worse than
-    that, because the merit the line search minimizes is the *bare* objective ``f`` and not
-    ``f + \frac{\lambda}{2}||x||^2``: the penalty this method exists to apply is not part of the
-    function whose decrease the search insists on, so the search picks its ``\alpha`` in order to
-    undo the decay's contribution as far as it can. On top of that ``\alpha`` then varies from
-    step to step, and since the decay per step is ``\alpha\lambda``, the regularization strength
-    would be whatever the search happened to choose rather than what was asked for.
+!!! warning "A searching line search changes what `λ` means"
+    The merit the line search minimizes is the *bare* objective ``f`` and not
+    ``f + \frac{\lambda}{2}||x||^2``: the penalty is never assembled anywhere, which is what
+    *decoupled* means. So the search picks its ``\alpha`` to undo the decay's contribution to ``f``
+    as far as it can. The decay per step is ``\alpha\lambda``, so an ``\alpha`` that varies from
+    step to step makes the effective regularization strength whatever the search picked on that
+    step. This holds in addition to what the docstring of [`Adam`](@ref) says about searching
+    along its direction.
 
     A fixed `Static(η)` — the default — is the setting in which ``\lambda`` means what
     [loshchilov2019decoupled](@cite) says it means. [`DecayingStatic`](@ref) is also well defined

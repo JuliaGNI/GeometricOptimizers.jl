@@ -109,11 +109,13 @@ knob. See [`default_linesearch`](@ref):
 - `Static(η)`, the default, gives the decay of the paper with ``\eta`` fixed.
 - [`DecayingStatic`](@ref) is the schedule case, and equally well defined: ``\lambda`` keeps its
   meaning relative to ``\eta`` while both go to zero.
-- A *searching* line search changes what ``\lambda`` means, apart from what the docstring of
-  [`Adam`](@ref) says about searching along its direction. The merit it minimizes is the bare objective ``f``, not
-  ``f + \frac{\lambda}{2}||x||^2`` — the penalty is never assembled anywhere, which is what
-  *decoupled* means — so the search spends its ``\alpha`` undoing the decay's contribution to
-  ``f``, and the effective regularization strength becomes whatever ``\alpha`` it settled on.
+- A *searching* line search changes what ``\lambda`` means. The merit the line search minimizes is
+  the *bare* objective ``f`` and not ``f + \frac{\lambda}{2}||x||^2``: the penalty is never
+  assembled anywhere, which is what *decoupled* means. So the search picks its ``\alpha`` to undo
+  the decay's contribution to ``f`` as far as it can. The decay per step is ``\alpha\lambda``, so
+  an ``\alpha`` that varies from step to step makes the effective regularization strength whatever
+  the search picked on that step. This holds in addition to what the docstring of [`Adam`](@ref)
+  says about searching along its direction.
 
 ## What the argument does and does not depend on
 
