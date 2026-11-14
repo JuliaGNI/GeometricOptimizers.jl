@@ -103,6 +103,12 @@ breaking release).
   run the `metal` group, and the jobs of the `Metal` workflow become required checks.
   `.github/workflows/CI.yml`, `codecov.yml` and the git hooks in `.githooks/` follow the Harness
   template, which runs one CI job per group and checks the group files.
+- **The docstrings and the docs no longer rank one optimization method above another.** The
+  docstrings of `DFP`, `Adam` and `ScalarMomentAdam` and the pages Linesearches on Manifolds and
+  Weight Decay on Manifolds state what a method does, or which quantity differs and under which
+  conditions, in place of "better", "beat" and "weaker". `ScalarMomentAdam` now says that which of
+  it and `Adam` reaches a lower loss depends on the objective, the step size and the number of
+  steps. The measured comparisons with their conditions stay as they were.
 
 ### Fixed
 

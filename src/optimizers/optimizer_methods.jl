@@ -59,7 +59,7 @@ Q \gets Q - \frac{Q\gamma\gamma^TQ}{\gamma^TQ\gamma} + \frac{\delta\delta^T}{\de
 update itself lives in [`QuasiNewtonCache`](@ref), which symmetrizes ``Q\gamma\gamma^TQ`` explicitly and
 skips the update when the secant pair fails [`curvature_is_usable`](@ref).
 
-Where [`BFGS`](@ref) is the better-conditioned choice and the default, `DFP` is here because it is
+[`BFGS`](@ref) is the default. `DFP` is here because it is
 the other classical member of the family and because the two differ in exactly the way that shows
 what the line search is doing: DFP's direction is systematically *under*-scaled, so it wants a
 median ``\alpha`` well above 1 and is starved by a search that cannot exceed it. See
@@ -167,8 +167,8 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     Because the direction has magnitude ``\approx{}1`` per component whatever the gradient is,
     a step that does not shrink leaves `Adam` circling the minimiser at that distance rather
     than settling on it. A *searching* line search does not fix that — it picks each step from
-    the merit and has no reason to drive the sequence to zero — it only makes each step a
-    better one: on the two-sphere problem of `test/integration/manifold_linesearch_tests.jl` the searching
+    the merit and has no reason to drive the sequence to zero — it only changes how each step is
+    chosen: on the two-sphere problem of `test/integration/manifold_linesearch_tests.jl` the searching
     options need 251–331 iterations where [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
     need 9–64. [`DecayingStatic`](@ref) is the setting under which `Adam` terminates on a
     criterion by construction, because its schedule drives the step to zero itself.
@@ -239,8 +239,9 @@ representation](@ref "Global Tangent Spaces"), and the direction is
 That one scalar is the entire difference from [`Adam`](@ref), and it is what the name says:
 ``\lVert\bar{G}\rVert^2`` is a squared gradient *norm* where Adam's ``m_2`` is a squared *gradient*,
 so the second moment carries no direction and the method assigns one adaptive learning rate to the
-whole matrix instead of one per coordinate. That is a reproduction of a published algorithm and not a
-straw man — on some objectives it will beat [`Adam`](@ref).
+whole matrix instead of one per coordinate. That is a reproduction of a published algorithm, and
+which of it and [`Adam`](@ref) reaches a lower loss depends on the objective, the step size and the
+number of steps.
 
 Only a single `StiefelManifold{T}` solution is supported; ordinary arrays, `NamedTuple`s, Grassmann
 solutions and mixed parameter trees throw a `MethodError`. As for [`Adam`](@ref), the
