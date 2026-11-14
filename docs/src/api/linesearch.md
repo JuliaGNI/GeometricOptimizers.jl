@@ -4,5 +4,5 @@ The line search problem an optimizer hands to `SimpleSolvers`, and the decaying 
 
 ```@autodocs
 Modules = [GeometricOptimizers]
-Pages = ["optimizers/linesearch_problem.jl", "optimizers/decaying_static.jl"]
+Pages = ["/optimizers/linesearch_problem.jl", "/optimizers/decaying_static.jl"]
 ```
