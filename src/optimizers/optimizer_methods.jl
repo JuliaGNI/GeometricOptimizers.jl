@@ -189,8 +189,9 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     where those of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref) at a fixed step size do
     not. Only an ``h`` that permutes coordinates and flips their signs leaves `Adam` alone, which is
     all a single complementary column (``N - n = 1``) of a Stiefel point admits. On a Grassmann
-    point the isotropy group also rotates the representative, ``Y\mapsto{}YQ``, and that moves
-    `Adam` for ``N - n = 1`` too. On a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref),
+    point the isotropy group also rotates the representative, ``Y\mapsto{}YQ``, and for ``n \geq 2``
+    that moves `Adam` for ``N - n = 1`` too; for ``n = 1`` the rotation is a sign. On a
+    [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref),
     [`global_section`](@ref) draws the completion at random from the global RNG, so the iterates of
     `Adam` depend on that draw (A5 in `KNOWN_ISSUES.md`). On a [`SymplecticStiefelManifold`](@ref),
     `global_section` is deterministic, but the iterates of `Adam` still depend on the completion it

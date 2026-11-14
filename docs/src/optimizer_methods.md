@@ -138,11 +138,12 @@ approach is shown in [kong2023momentum](@cite).
     ``\lambda(Y)`` is unique only up to ``\lambda\mapsto\lambda{}h`` with ``h`` in the isotropy
     group. The lift goes to ``h^{-1}Bh``, and the entrywise operations do not commute with that
     unless ``h`` permutes coordinates and flips their signs. So on every manifold of this package
-    the path of [`Adam`](@ref) depends on the section. The one exception is a Stiefel point with a
-    single complementary column (``N - n = 1``): there the only change of section is a sign, which
-    does not move `Adam`. On a Grassmann point the isotropy group also rotates the representative,
-    ``Y\mapsto{}YQ``, and that moves `Adam` for ``N - n = 1`` too, where the sign of the completion
-    does not. On a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref),
+    the path of [`Adam`](@ref) depends on the section. The exceptions are a Stiefel point with a
+    single complementary column (``N - n = 1``) and the Grassmann manifold ``Gr(1, 2)``: there the
+    only change of section is a sign, which does not move `Adam`. On a Grassmann point with
+    ``n \geq 2`` the isotropy group also rotates the representative, ``Y\mapsto{}YQ``, and that
+    moves `Adam` for ``N - n = 1`` too, where the sign of the completion does not. On a
+    [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref),
     [`global_section`](@ref) draws the completion at random from the global RNG, so the path of
     `Adam` depends on that draw (A5 in `KNOWN_ISSUES.md`). On a [`SymplecticStiefelManifold`](@ref),
     `global_section` is deterministic, but the path of `Adam` still depends on the completion it
