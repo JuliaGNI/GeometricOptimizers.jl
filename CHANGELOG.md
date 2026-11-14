@@ -86,7 +86,8 @@ breaking release).
   on the section.** The entrywise moments do not commute with a change of the section, so on every
   manifold the path of `Adam` depends on the section, except on a Stiefel point with at most one
   complementary column (`N - n ≤ 1`) and on `Gr(1, 2)`; on a Grassmann point with `n ≥ 2` a change
-  of the representative `Y ↦ YQ` moves it for every `N - n`. On `StiefelManifold` and
+  of the representative `Y ↦ YQ` moves it for every `N - n`; `scripts/adam_section_exceptions.jl`
+  checks these cases and exits with status 1 when one fails. On `StiefelManifold` and
   `GrassmannManifold`, `global_section` draws the completion at random, so the path depends on
   that draw (A5). On `SymplecticStiefelManifold` the completion is deterministic, and the path
   depends on it and on the transported section (K57). `scripts/stiefel_adam_section.jl` gains a

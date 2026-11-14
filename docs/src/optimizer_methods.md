@@ -142,7 +142,8 @@ approach is shown in [kong2023momentum](@cite).
     most one complementary column (``N - n \leq 1``) and the Grassmann manifold ``Gr(1, 2)``: there
     a change of section is at most a sign, which does not move `Adam`. On a Grassmann point with
     ``n \geq 2`` the isotropy group also rotates the representative, ``Y\mapsto{}YQ``, and that
-    moves `Adam` for ``N - n = 1`` too, where the sign of the completion does not. On a
+    moves `Adam` for ``N - n = 1`` too, where the sign of the completion does not
+    (`scripts/adam_section_exceptions.jl`). On a
     [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref),
     [`global_section`](@ref) draws the completion at random from the global RNG, so the path of
     `Adam` depends on that draw (A5 in `KNOWN_ISSUES.md`). On a [`SymplecticStiefelManifold`](@ref),
@@ -189,9 +190,9 @@ W_t \gets -\frac{m_1}{\sqrt{m_2 + \delta}}.
 ```
 
 So the whole matrix gets one adaptive learning rate instead of one per coordinate, and the second
-moment carries no direction — which is what the method is named for, and the reason this is a
-baseline rather than the package's recommended method. It is nonetheless a reproduction of a
-published algorithm, not a straw man: on a given objective it may well beat [`Adam`](@ref).
+moment carries no direction — which is what the method is named for. It is a reproduction of a
+published algorithm, and which of it and [`Adam`](@ref) reaches a lower loss depends on the
+objective, the step size and the number of steps.
 
 The source does not require a global tangent space representation: its scalar second moment is
 already independent of the choice of coordinates. This implementation nevertheless uses the same
