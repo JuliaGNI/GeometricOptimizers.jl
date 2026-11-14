@@ -84,8 +84,9 @@ breaking release).
   K24.
 - **The `Adam` docstring and the Weights on Manifolds docs warn that the iterates of `Adam` depend
   on the section.** The entrywise moments do not commute with a change of the section, so on every
-  manifold the path of `Adam` depends on the section, except on a Stiefel or Grassmann point with
-  one complementary column (`N - n = 1`). On `StiefelManifold` and `GrassmannManifold`,
+  manifold the path of `Adam` depends on the section, except on a Stiefel point with one
+  complementary column (`N - n = 1`); on a Grassmann point a change of the representative `Y ↦ YQ`
+  moves it for every `N - n`. On `StiefelManifold` and `GrassmannManifold`,
   `global_section` draws the completion at random, so the path depends on that draw (A5). On
   `SymplecticStiefelManifold` the completion is deterministic, and the path depends on it and on
   the transported section (K57). `scripts/stiefel_adam_section.jl` gains a third part that measures

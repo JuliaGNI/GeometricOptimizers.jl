@@ -188,13 +188,15 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     direction and the path depend on the section. This holds on every manifold of this package,
     where those of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref) at a fixed step size do
     not. Only an ``h`` that permutes coordinates and flips their signs leaves `Adam` alone, which is
-    all a single complementary column (``N - n = 1``) of a Stiefel or Grassmann point admits. On a
-    [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref), [`global_section`](@ref) draws the
-    completion at random from the global RNG, so the iterates of `Adam` depend on that draw (A5 in
-    `KNOWN_ISSUES.md`). On a [`SymplecticStiefelManifold`](@ref), `global_section` is deterministic,
-    but the iterates of `Adam` still depend on the completion it chooses and on the transported
-    section (K57). Euclidean parameters are not affected. Which section `Adam` should take is open;
-    [Weights on Manifolds](@ref) has the measurement on the Stiefel manifold.
+    all a single complementary column (``N - n = 1``) of a Stiefel point admits. On a Grassmann
+    point the isotropy group also rotates the representative, ``Y\mapsto{}YQ``, and that moves
+    `Adam` for ``N - n = 1`` too. On a [`StiefelManifold`](@ref) and a [`GrassmannManifold`](@ref),
+    [`global_section`](@ref) draws the completion at random from the global RNG, so the iterates of
+    `Adam` depend on that draw (A5 in `KNOWN_ISSUES.md`). On a [`SymplecticStiefelManifold`](@ref),
+    `global_section` is deterministic, but the iterates of `Adam` still depend on the completion it
+    chooses and on the transported section (K57). Euclidean parameters are not affected. Which
+    section `Adam` should take is open; [Weights on Manifolds](@ref) has the measurement on the
+    Stiefel manifold.
 """
 struct Adam{T} <: OptimizerMethod
     β₁::T
