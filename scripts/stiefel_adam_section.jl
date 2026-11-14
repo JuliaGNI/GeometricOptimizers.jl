@@ -169,17 +169,22 @@ end
 f(Y) = -tr(Y' * S * Y * D) / 2
 const f_min = -sum(diag(D) .* sort(eigvals(Symmetric(S)); rev = true)[1:n]) / 2
 
+# A gap at the precision of the table in `docs/src/optimizer_methods.md`, so that the table is copied
+# and not rounded a second time: two decimals from 0.1 up, two significant digits below.
+cell(x) = x ≥ 0.1 ? @sprintf("%.2f", x) : @sprintf("%.1e", x)
+
 function part_3()
     rng = Xoshiro(1402)
     Qs = [haar(rng, N - n) for _ in 1:32]
-    @printf("f(Y₀) - f⋆ = %.3f; f(Yₜ) - f⋆ for Adam over 32 Haar changes, and GradientMethod:\n",
+    @printf("f(Y₀) - f⋆ = %.2f; f(Yₜ) - f⋆ for Adam over 32 Haar changes, and GradientMethod:\n",
         f(Y₀) - f_min)
     for step_size in (1.0e-3, 1.0e-2, 1.0e-1)
         for steps in (STEPS, 10STEPS)
             gaps = sort([f(train(Adam(); steps, step_size, λ = Y⊥ * Q)) - f_min for Q in Qs])
             reference = f(train(GradientMethod(); steps, step_size, λ = Y⊥)) - f_min
-            @printf("  η = %.0e, %4d steps: Adam min %.2e, median %.2e, max %.2e   GradientMethod %.2e\n",
-                step_size, steps, gaps[1], (gaps[16] + gaps[17]) / 2, gaps[32], reference)
+            @printf("  η = %.0e, %4d steps: Adam min %s, median %s, max %s   GradientMethod %s\n",
+                step_size, steps, cell(gaps[1]), cell((gaps[16] + gaps[17]) / 2),
+                cell(gaps[32]), cell(reference))
         end
     end
 end

@@ -4,11 +4,13 @@
 #
 #   julia --startup-file=no --project=. scripts/adam_section_exceptions.jl
 #
-# Part 1 runs `Adam` on `St(n, N)` for `N - n = 0, 1, 2` after `Random.seed!(1)` and after
-# `Random.seed!(2)`, so that `global_section` draws two completions. With at most one complementary
-# column a change of the completion is at most a sign, and the two paths must agree; with two they
-# must not. Two seeds can draw the same sign, so on `St(3, 4)` the one complementary column is also
-# flipped by hand. `f(Y) = -½ tr(YᵀSYD)`, and a fresh `Xoshiro(7)` draws `S` and `Y₀` for each size.
+# Part 1 runs `Adam` on `St(n, N)` after two seeds of the global RNG, so that `global_section` draws
+# two completions, and checks that the two completions differ before it compares the paths. On
+# `St(3, 4)` the one complementary column is `±Y⊥`, and seeds 1 and 4 draw opposite signs: the two
+# paths must agree. On `St(2, 4)` seeds 1 and 2 draw completions that differ by more than a sign, and
+# the paths must not agree. On `St(3, 4)` the column is also flipped by hand after seed 1. `St(4, 4)`
+# is a structural case, not a comparison: its complement is empty, so `global_section` draws nothing.
+# `f(Y) = -½ tr(YᵀSYD)`, and a fresh `Xoshiro(7)` draws `S` and `Y₀` for each size.
 #
 # Part 2 runs `Adam` and `GradientMethod` on `Gr(n, N)` for `N - n = 1`, with the completion `Y⊥`
 # written into the section, and compares the projection `YYᵀ` after a change of the representative
@@ -42,23 +44,45 @@ function stiefel_path(N, n, seed; flip = false)
     Y = StiefelManifold(copy(Y₀))
     opt = TrainingOptimizer(Y; algorithm = Adam(), linesearch = η)
     flip && (section(opt.state).λ .*= -1)
+    λ = copy(section(opt.state).λ)
     for _ in 1:STEPS
         optimization_step!(Y, opt, -S * Y.A * D)
     end
-    Matrix(Y.A)
+    Matrix(Y.A), λ
 end
 
 function part_1()
-    println("St(n, N), Adam: ‖Yₜ - Yₜ'‖_F after $STEPS steps, Random.seed!(1) against Random.seed!(2):")
-    for (N, n) in ((4, 4), (4, 3), (4, 2))
-        d = norm(stiefel_path(N, n, 1) - stiefel_path(N, n, 2))
-        @printf("  St(%d, %d), N - n = %d   %.2e\n", n, N, N - n, d)
-        N - n ≤ 1 ? check(d ≤ TOL, "St($n, $N) moved: $d") :
-        check(d > TOL, "St($n, $N) did not move: $d")
-    end
-    # Two seeds may draw the same sign, so flip the one complementary column of `St(3, 4)` as well.
-    d = norm(stiefel_path(4, 3, 1) - stiefel_path(4, 3, 1; flip = true))
-    @printf("  St(3, 4), completion Y⊥ against -Y⊥   %.2e\n", d)
+    println("St(n, N), Adam: ‖Yₜ - Yₜ'‖_F after $STEPS steps:")
+    Y₁, λ₁ = stiefel_path(4, 4, 1)
+    Y₂, λ₂ = stiefel_path(4, 4, 2)
+    d = norm(Y₁ - Y₂)
+    @printf("  St(4, 4), N - n = 0, seed 1 against seed 2   %.2e   (structural: the complement is 4 × %d, nothing is drawn)\n",
+        d, size(λ₁, 2))
+    check(size(λ₁, 2) == 0 && size(λ₂, 2) == 0, "St(4, 4) has a non-empty complement")
+    check(d ≤ TOL, "St(4, 4) moved: $d")
+
+    Y₁, λ₁ = stiefel_path(4, 3, 1)
+    Y₄, λ₄ = stiefel_path(4, 3, 4)
+    d = norm(Y₁ - Y₄)
+    @printf("  St(3, 4), N - n = 1, seed 1 against seed 4   %.2e   (completions: ‖λ₁ + λ₄‖ = %.2e)\n",
+        d, norm(λ₁ + λ₄))
+    check(norm(λ₁ + λ₄) ≤ TOL, "St(3, 4): seeds 1 and 4 do not draw opposite completions")
+    check(d ≤ TOL, "St(3, 4) moved: $d")
+
+    Y₁, λ₁ = stiefel_path(4, 2, 1)
+    Y₂, λ₂ = stiefel_path(4, 2, 2)
+    d = norm(Y₁ - Y₂)
+    @printf("  St(2, 4), N - n = 2, seed 1 against seed 2   %.2e   (completions: ‖λ₁ - λ₂‖ = %.2e)\n",
+        d, norm(λ₁ - λ₂))
+    check(norm(λ₁ - λ₂) > TOL, "St(2, 4): seeds 1 and 2 draw the same completion")
+    check(d > TOL, "St(2, 4) did not move: $d")
+
+    Y₁, λ₁ = stiefel_path(4, 3, 1)
+    Y₋, λ₋ = stiefel_path(4, 3, 1; flip = true)
+    d = norm(Y₁ - Y₋)
+    @printf("  St(3, 4), completion Y⊥ against -Y⊥          %.2e   (completions: ‖λ₁ + λ₋‖ = %.2e, ‖λ₁‖ = %.2f)\n",
+        d, norm(λ₁ + λ₋), norm(λ₁))
+    check(norm(λ₁ + λ₋) ≤ TOL && norm(λ₁) > TOL, "St(3, 4): the flip did not negate the completion")
     check(d ≤ TOL, "St(3, 4) moved under -Y⊥: $d")
 end
 
@@ -83,6 +107,8 @@ function part_2()
         Q = Matrix(qr(randn(rng, n, n)).Q)
         # `qr` of a 1 × 1 matrix gives `Q = 1`; `O(1) = {±1}`, so take the element that moves `Y`.
         isone(Q) && (Q = -Q)
+        check(norm(Y₀ * Q - Y₀) > TOL, "Gr($n, $N): Y₀Q equals Y₀")
+        check(norm(Y⊥) > TOL, "Gr($n, $N): the completion is empty")
         for (name, method) in (("Adam", Adam), ("GradientMethod", GradientMethod))
             P = grassmann_projection(method(), Y₀, Y⊥, S)
             representative = norm(P - grassmann_projection(method(), Y₀ * Q, Y⊥, S))
