@@ -1,6 +1,7 @@
 # Linesearch API
 
-The line search problem an optimizer hands to `SimpleSolvers`, and the decaying fixed step.
+The line search problem an optimizer hands to `SimpleSolvers`, the decaying fixed step, and
+`AdamOptimizerWithDecay`, which pairs that step with `Adam`.
 
 ```@autodocs
 Modules = [GeometricOptimizers]
