@@ -82,6 +82,13 @@ breaking release).
   most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
   is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
   K24.
+- **CI runs the tests as the groups `core`, `backends`, `optimizers` and `slow`, one job each.**
+  `test/ci-groups.toml` lists them, and empty `ARGS` still runs all four (and `metal` on Apple
+  silicon). The tests on another array backend and `device solve!` move to `backends`; the
+  optimizer integration tests move from `slow` to `optimizers`. The `macOS-latest` jobs no longer
+  run the `metal` group, and the jobs of the `Metal` workflow become required checks.
+  `.github/workflows/CI.yml`, `codecov.yml` and the git hooks in `.githooks/` follow the Harness
+  template, which runs one CI job per group and checks the group files.
 
 ### Fixed
 
