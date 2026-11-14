@@ -128,18 +128,25 @@ GeometricOptimizers.second_moment(state).A
 The problem with generalizing Adam to manifolds is that the Hadamard product ``\odot`` and the
 other element-wise operations (``/``, ``\sqrt{}`` and ``+``) are coordinate-dependent: changing the
 basis changes the update, so these operations do not define intrinsic operations on tangent vectors.
-`GeometricOptimizers` resolves this for [`Adam`](@ref) by applying them in the
-[global tangent space representation](@ref "Global Tangent Spaces"). A similar approach is shown in
-[kong2023momentum](@cite).
+`GeometricOptimizers` applies them for [`Adam`](@ref) in the
+[global tangent space representation](@ref "Global Tangent Spaces"), which moves the choice of
+basis into the choice of a section; the warning below says what that leaves open. A similar
+approach is shown in [kong2023momentum](@cite).
 
 !!! warning "The iterates of `Adam` depend on the section"
-    The global tangent space representation does not make these operations intrinsic either: it
-    moves the choice of basis into the choice of the section ``\lambda(Y)``, which is unique only up
-    to ``\lambda\mapsto\lambda{}h`` with ``h`` in the isotropy group. The lift goes to
-    ``h^{-1}Bh``, and the entrywise operations do not commute with that unless ``h`` permutes
-    coordinates and flips their signs. [`global_section`](@ref) draws the completion at random, so on
-    every manifold the path of [`Adam`](@ref) depends on that draw. [`GradientMethod`](@ref),
-    [`MomentumMethod`](@ref) and, on the Stiefel manifold, [`ScalarMomentAdam`](@ref) do not.
+    The global tangent space representation does not make these operations intrinsic: the section
+    ``\lambda(Y)`` is unique only up to ``\lambda\mapsto\lambda{}h`` with ``h`` in the isotropy
+    group. The lift goes to ``h^{-1}Bh``, and the entrywise operations do not commute with that
+    unless ``h`` permutes coordinates and flips their signs. So on every manifold of this package
+    the path of [`Adam`](@ref) depends on the section. The one exception is a Stiefel or Grassmann
+    point with a single complementary column (``N - n = 1``): there the only change of section is a
+    sign, which does not move `Adam`. On a [`StiefelManifold`](@ref) and a
+    [`GrassmannManifold`](@ref), [`global_section`](@ref) draws the completion at random from the
+    global RNG, so the path of `Adam` depends on that draw (A5 in `KNOWN_ISSUES.md`). On a
+    [`SymplecticStiefelManifold`](@ref), `global_section` is deterministic, but the path of `Adam`
+    still depends on the completion it chooses and on the transported section (K57).
+    [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and, on the Stiefel manifold,
+    [`ScalarMomentAdam`](@ref) do not depend on the section.
 
     On ``St(3, 8)`` with ``f(Y) = -\frac{1}{2}\mathrm{tr}(Y^TSYD)``, one start and 32 Haar changes
     of the complement (`scripts/stiefel_adam_section.jl`), the gap ``f(Y_t) - f^\star``, from
@@ -147,15 +154,20 @@ basis changes the update, so these operations do not define intrinsic operations
 
     | ``\eta`` | steps | `Adam`, min | median | max | [`GradientMethod`](@ref) |
     |:--|--:|--:|--:|--:|--:|
+    | ``10^{-3}`` | 60 | 8.09 | 8.28 | 8.53 | 4.97 |
     | ``10^{-3}`` | 600 | 0.24 | 0.48 | 0.97 | 0.56 |
     | ``10^{-2}`` | 60 | 0.28 | 0.52 | 1.05 | 0.55 |
     | ``10^{-2}`` | 600 | ``<10^{-13}`` | ``<10^{-13}`` | ``1.0\cdot10^{-6}`` | ``3.7\cdot10^{-4}`` |
     | ``10^{-1}`` | 60 | ``3.5\cdot10^{-3}`` | ``7.1\cdot10^{-3}`` | ``1.1\cdot10^{-2}`` | ``3.9\cdot10^{-4}`` |
     | ``10^{-1}`` | 600 | ``1.5\cdot10^{-5}`` | ``2.7\cdot10^{-4}`` | ``2.9\cdot10^{-3}`` | 0.50 |
 
-    So the section decides how far `Adam` gets by a factor of 2 to 4 while it is still descending,
-    and by two orders of magnitude where the fixed step leaves it short of the minimum; at
-    ``\eta = 10^{-2}`` every section reaches it. Which section `Adam` should take is open.
+    In the rows where `Adam` is still descending (60 steps, and ``\eta = 10^{-3}`` at 600 steps),
+    the largest gap over the 32 sections is 1.05 to 4.0 times the smallest. At
+    ``\eta = 10^{-1}`` after 600 steps it is about 200 times the smallest, and at
+    ``\eta = 10^{-2}`` after 600 steps every section reaches the minimum. The `GradientMethod`
+    column at ``\eta = 10^{-1}`` is no converged baseline: gradient descent is unstable at this step
+    size, and its gap grows from ``3.9\cdot10^{-4}`` after 60 steps to 0.50 after 600. Which
+    section `Adam` should take is open.
 
 ### Cayley ADAM: a scalar second moment
 

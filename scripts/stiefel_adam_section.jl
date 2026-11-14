@@ -167,7 +167,7 @@ function part_2()
 end
 
 f(Y) = -tr(Y' * S * Y * D) / 2
-const f_min = -sum(diag(D) .* [8.0, 7.0, 6.0]) / 2
+const f_min = -sum(diag(D) .* sort(eigvals(Symmetric(S)); rev = true)[1:n]) / 2
 
 function part_3()
     rng = Xoshiro(1402)

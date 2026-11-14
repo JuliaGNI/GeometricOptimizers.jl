@@ -84,10 +84,14 @@ breaking release).
   K24.
 - **The `Adam` docstring and the Weights on Manifolds docs warn that the iterates of `Adam` depend
   on the section.** The entrywise moments do not commute with a change of the section, so on every
-  manifold the path of `Adam` depends on the random completion that `global_section` draws (A5).
-  `scripts/stiefel_adam_section.jl` gains a third part that measures what this does to the gap to
-  the minimum on `St(3, 8)` over 32 sections: a factor of 2 to 4 while `Adam` still descends, and
-  about 200 at step size `0.1` after 600 steps. The docs page has the table.
+  manifold the path of `Adam` depends on the section, except on a Stiefel or Grassmann point with
+  one complementary column (`N - n = 1`). On `StiefelManifold` and `GrassmannManifold`,
+  `global_section` draws the completion at random, so the path depends on that draw (A5). On
+  `SymplecticStiefelManifold` the completion is deterministic, and the path depends on it and on
+  the transported section (K57). `scripts/stiefel_adam_section.jl` gains a third part that measures
+  what this does to the gap to the minimum on `St(3, 8)` over 32 sections: the largest gap is 1.05
+  to 4.0 times the smallest while `Adam` still descends, and about 200 times at step size `0.1`
+  after 600 steps. The docs page has the table.
 - **CI runs the tests as the groups `core`, `backends`, `optimizers` and `slow`, one job each.**
   `test/ci-groups.toml` lists them, and empty `ARGS` still runs all four (and `metal` on Apple
   silicon). The tests on another array backend and `device solve!` move to `backends`; the
