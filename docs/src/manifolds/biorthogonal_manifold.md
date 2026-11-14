@@ -63,7 +63,7 @@ Hence
 
 ``2Nn`` entries and ``n^2`` conditions ``\Psi^T\Phi = \mathbb{I}_n``. This is the counterpart of ``St(n, N)\cong{}O(N)/O(N-n)``: the involution ``g\mapsto{}g^{-T}`` of ``GL(N)`` fixes exactly ``O(N)``, and the involution ``(\Phi, \Psi)\mapsto(\Psi, \Phi)`` of ``\mathcal{B}(n, N)`` fixes exactly the pairs with ``\Phi = \Psi`` and ``\Phi^T\Phi = \mathbb{I}_n``, i.e. ``St(n, N)``. For ``n = N`` the manifold is ``GL(N)`` itself, as the pairs ``(g, g^{-T})``.
 
-Neither ``GL(N)`` nor the isotropy group ``GL(N - n)`` is compact, and ``\mathcal{B}(n, N)`` is not compact either: for a pair ``(\Phi, \Psi)`` the curve ``t\mapsto(t\Phi, t^{-1}\Psi)``, ``t > 0``, lies in ``\mathcal{B}(n, N)`` and is unbounded.
+``GL(N)`` is not compact, nor, for ``n < N``, is the isotropy group ``GL(N - n)`` (for ``n = N`` it is trivial), and ``\mathcal{B}(n, N)`` is not compact either: for a pair ``(\Phi, \Psi)`` the curve ``t\mapsto(t\Phi, t^{-1}\Psi)``, ``t > 0``, lies in ``\mathcal{B}(n, N)`` and is unbounded.
 
 ## The bundle over the first factor
 
