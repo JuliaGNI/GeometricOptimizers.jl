@@ -222,26 +222,37 @@ end
     @test check(cayley(step_αmax(one(T), δ₁) * δ₁)) < 8eps(T)
 end
 
-# At a fixed step the result of Adam depends on the section drawn at the start (K60): its sign-like
-# direction is taken entrywise in the coordinates of `global_rep`, which are not the ones the
-# derivative of the loss pairs with. Over the seeds 1 to 50, 500 steps at `1e-3` under `Geodesic` end
-# between 44.9 and 8982 from 1405, and 6 of them above a fifth of the start; these are the first five
-# seeds, which end below 56. Momentum is not normalised and takes a smaller step, and its path does not depend on the
+# Momentum is not normalised and takes a smaller step than Adam, and its path does not depend on the
 # section.
-@testset "Adam and Momentum at a fixed step, $(algorithm), $(nameof(typeof(R)))" for (algorithm, η) in (
-        (Adam(), 1e-3), (MomentumMethod(), 1e-4)),
-    R in (Geodesic(), Cayley())
-
+@testset "Momentum at a fixed step decreases the objective, $(nameof(typeof(R)))" for R in (
+    Geodesic(), Cayley())
     finals = map(1:5) do seed
         Random.seed!(seed)
         Y = start()
-        opt = Optimizer(Y, objective; algorithm = algorithm, linesearch = Static(T(η)),
-            retraction = R, max_iterations = 500, warn_iterations = 1000)
-        solve!(Y, OptimizerState(algorithm, Y), opt)
+        opt = Optimizer(Y, objective; algorithm = MomentumMethod(),
+            linesearch = Static(T(1e-4)), retraction = R, max_iterations = 500,
+            warn_iterations = 1000)
+        solve!(Y, OptimizerState(MomentumMethod(), Y), opt)
         @test check(Y) < 1e-12
         objective(Y)
     end
     @test maximum(finals) < objective(start()) / 5
+end
+
+# At a fixed step the result of Adam depends on the section drawn at the start, and need not descend
+# (K60): its sign-like direction is taken entrywise in the coordinates of `global_rep`, which are not
+# the ones the derivative of the loss pairs with. So the test asserts what holds for every section:
+# the iterate moves and stays on the manifold. `scripts/biorthogonal_adam_seeds.jl` measures the
+# result over 50 sections.
+@testset "Adam at a fixed step stays on the manifold, $(nameof(typeof(R)))" for R in (
+    Geodesic(), Cayley())
+    Random.seed!(1)
+    Y = start()
+    opt = Optimizer(Y, objective; algorithm = Adam(), linesearch = Static(T(1e-3)),
+        retraction = R, max_iterations = 500, warn_iterations = 1000)
+    solve!(Y, OptimizerState(Adam(), Y), opt)
+    @test check(Y) < 1e-12
+    @test Y.A != start().A
 end
 
 @testset "Adam at the default settings stays on the manifold" begin
@@ -253,9 +264,9 @@ end
 end
 
 # The training step takes the Euclidean gradient of the leaf, and a parameter set may hold a
-# biorthogonal leaf beside an ordinary one. The section is seeded because Adam's result depends on it
-# (K60): over the seeds 1 to 50, 200 steps at `1e-3` end above half the start on 4 of them for the
-# leaf and on 5 for the parameter set, and on seed 1 at 0.15 and 0.33 of it.
+# biorthogonal leaf beside an ordinary one. The result of Adam depends on the section and need not
+# descend (K60), so for Adam the test asserts only that the iterate moves and stays on the manifold;
+# `scripts/biorthogonal_adam_seeds.jl` measures the result over 50 sections.
 @testset "a TrainingOptimizer steps a biorthogonal leaf, $(algorithm)" for (algorithm, η) in (
     (GradientMethod(), 1e-4), (MomentumMethod(), 1e-4), (Adam(), 1e-3))
     Random.seed!(1)
@@ -266,7 +277,8 @@ end
         optimization_step!(Y, opt, euclidean_gradient(Y))
     end
     @test check(Y) < 1e-12
-    @test objective(Y) < f₀ / 2
+    @test Y.A != start().A
+    algorithm isa Adam || @test objective(Y) < f₀ / 2
     @test section(opt.state).Y == Y
 
     ps = NetworkParameters((Y = start(), b = T[1, -2, 3]))
@@ -279,7 +291,8 @@ end
     end
     @test ps.Y isa BiorthogonalManifold{T}
     @test check(ps.Y) < 1e-12
-    @test F(ps) < F₀ / 2
+    @test ps.Y.A != start().A
+    algorithm isa Adam || @test F(ps) < F₀ / 2
 end
 
 # Each leaf takes the method of its kind. The manifold method is `GradientMethod`, whose path does not
@@ -308,6 +321,6 @@ end
 
 @testset "AdamWithEuclideanDecay refuses a biorthogonal point" begin
     Y = start()
-    @test_throws ArgumentError Optimizer(
+    @test_throws r"^ArgumentError: `AdamWithEuclideanDecay` does not step a `BiorthogonalManifold`" Optimizer(
         Y, objective; algorithm = AdamWithEuclideanDecay(; λ = T(0.1)))
 end

@@ -66,10 +66,14 @@ end
 
 # The inner constructor suppresses the default `BiorthogonalManifold{T, AT}(A)`, which the generic
 # `Base.copy(::Manifold)` calls; see the same method of `SymplecticStiefelManifold`.
-BiorthogonalManifold{T, AT}(A::AT) where {T, AT <: AbstractMatrix{T}} = BiorthogonalManifold(A)
+function BiorthogonalManifold{T, AT}(A::AT) where {T, AT <: AbstractMatrix{T}}
+    BiorthogonalManifold(A)
+end
 
 # The two halves of a point, as views of its storage.
-_biorthogonal_halves(A::AbstractMatrix) = (n = size(A, 2) ÷ 2; @views (A[:, 1:n], A[:, (n + 1):(2n)]))
+function _biorthogonal_halves(A::AbstractMatrix)
+    (n = size(A, 2) ÷ 2; @views (A[:, 1:n], A[:, (n + 1):(2n)]))
+end
 _biorthogonal_halves(Y::BiorthogonalManifold) = _biorthogonal_halves(Y.A)
 
 # The sizes `(N, n)` of the pair, which are not `size(Y)`: the stored matrix has `2n` columns.
@@ -96,26 +100,27 @@ Base.rand(::Type{<:BiorthogonalManifold}, ::Integer, ::Integer)
 
 function Base.rand(rng::AbstractRNG, backend::KernelAbstractions.Backend, ::Type{MT},
         N::Integer, n2::Integer) where {T, MT <: BiorthogonalManifold{T}}
-    @assert iseven(n2) && N ≥ n2 ÷ 2
-    _check_real_pair(T)
-    n = n2 ÷ 2
-    Φ = KernelAbstractions.allocate(backend, T, N, n)
-    W = KernelAbstractions.allocate(backend, T, N, n)
-    randn!(rng, Φ)
-    randn!(rng, W)
-    # `Φ(ΦᵀΦ)⁻¹`, the dual basis of `Φ` inside its own span
-    Φ⁺ᵀ = Φ / cholesky(Symmetric(Φ' * Φ))
-    BiorthogonalManifold(hcat(Φ, Φ⁺ᵀ + W - Φ⁺ᵀ * (Φ' * W)))
+    _rand_biorthogonal(N, n2, T) do
+        Φ = KernelAbstractions.allocate(backend, T, N, n2 ÷ 2)
+        randn!(rng, Φ)
+    end
 end
 
-# The host draw names no backend for its arrays, as the other manifolds' host draws do.
+# Without this method `rand(rng, ::CPU, ::Type{<:BiorthogonalManifold}, …)` is ambiguous between the
+# method above and the host draw `rand(rng, ::CPU, ::Type{MT}) where MT <: Manifold` of
+# `abstract_manifold.jl`.
 function Base.rand(rng::AbstractRNG, ::CPU, ::Type{MT},
         N::Integer, n2::Integer) where {T, MT <: BiorthogonalManifold{T}}
+    _rand_biorthogonal(() -> randn(rng, T, N, n2 ÷ 2), N, n2, T)
+end
+
+# The draw both methods share: `Φ` and `W` from two calls of `draw`, and `Ψ` from them.
+function _rand_biorthogonal(draw, N::Integer, n2::Integer, ::Type{T}) where {T}
     @assert iseven(n2) && N ≥ n2 ÷ 2
     _check_real_pair(T)
-    n = n2 ÷ 2
-    Φ = randn(rng, T, N, n)
-    W = randn(rng, T, N, n)
+    Φ = draw()
+    W = draw()
+    # `Φ(ΦᵀΦ)⁻¹`, the dual basis of `Φ` inside its own span
     Φ⁺ᵀ = Φ / cholesky(Symmetric(Φ' * Φ))
     BiorthogonalManifold(hcat(Φ, Φ⁺ᵀ + W - Φ⁺ᵀ * (Φ' * W)))
 end

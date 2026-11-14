@@ -320,8 +320,9 @@ expression measures both. A retraction maps onto the manifold by construction, s
 arithmetic this is zero and what it actually returns is accumulated round-off.
 
 [`SymplecticStiefelManifold`](@ref) and [`BiorthogonalManifold`](@ref) are the other two, and their
-constraints are different bilinear forms, so each carries its own method. Anything defining a further manifold has to decide which of the two
-it is rather than inherit this one by default.
+constraints are different bilinear forms, so each carries its own method. Anything defining a
+further manifold has to decide whether its stored matrix has orthonormal columns rather than inherit
+this method by default.
 
 This is the assertion the manifold tests rest on, for every retraction path.
 

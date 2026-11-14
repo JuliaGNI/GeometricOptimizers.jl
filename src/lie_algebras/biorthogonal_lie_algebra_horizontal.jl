@@ -33,7 +33,8 @@ Under ``\mathfrak{gl}(N)\to\mathfrak{sp}(2N)``, ``X\mapsto\mathrm{diag}(X, -X^T)
 [`SymplecticLieAlgHorMatrix`](@ref) with ``B_1 = C_1 = \mathbb{O}``, ``A_1 = A`` and the block-diagonal
 ``\mathcal{B} = \mathrm{diag}(B, -C^T)``.
 """
-mutable struct BiorthogonalLieAlgHorMatrix{T, AT <: AbstractMatrix{T}, BT <: AbstractMatrix{T},
+mutable struct BiorthogonalLieAlgHorMatrix{
+    T, AT <: AbstractMatrix{T}, BT <: AbstractMatrix{T},
     CT <: AbstractMatrix{T}} <: AbstractLieAlgHorMatrix{T}
     A::AT
     B::BT
@@ -73,7 +74,8 @@ The vertical space is the lower right block, so the projection drops it and keep
 function BiorthogonalLieAlgHorMatrix(D::AbstractMatrix, n::Integer)
     N = size(D, 1)
     @assert N ≥ n
-    @views BiorthogonalLieAlgHorMatrix(D[1:n, 1:n], D[(n + 1):N, 1:n], D[1:n, (n + 1):N], N, n)
+    @views BiorthogonalLieAlgHorMatrix(
+        D[1:n, 1:n], D[(n + 1):N, 1:n], D[1:n, (n + 1):N], N, n)
 end
 
 function BiorthogonalLieAlgHorMatrix(V::AbstractVector, N::Int, n::Int)

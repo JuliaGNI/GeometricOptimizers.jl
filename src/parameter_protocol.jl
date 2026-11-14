@@ -187,7 +187,8 @@ end
 function storage_gradient(A::BiorthogonalLieAlgHorMatrix, G::AbstractMatrix)
     N, n = A.N, A.n
     _check_cotangent_size(A, G)
-    block(rows, cols) = (X = similar(G, eltype(A), length(rows), length(cols)); X .= @view G[rows, cols])
+    block(rows, cols) = (
+        X = similar(G, eltype(A), length(rows), length(cols)); X .= @view G[rows, cols])
     BiorthogonalLieAlgHorMatrix(
         block(1:n, 1:n), block((n + 1):N, 1:n), block(1:n, (n + 1):N), N, n)
 end

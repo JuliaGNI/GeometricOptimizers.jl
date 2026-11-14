@@ -366,7 +366,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
 - evidence: `Adam` holds `global_rep(rgrad)`, as on every manifold, and its entrywise second
   moments make its step depend on the section, as K57 says for the symplectic case. Its sign-like
   direction is taken in the coordinates of `global_rep`, which are not the ones the derivative of
-  the loss pairs with, so it need not descend. On the test problem of
+  the loss pairs with, so it need not descend. The tests therefore assert for `Adam` only that the
+  iterate moves and stays on the manifold, and `scripts/biorthogonal_adam_seeds.jl` measures the
+  result over the sections. On the test problem of
   `test/integration/biorthogonal_optimizer_tests.jl`, from one point and the completions `K` that
   `Random.seed!(1:50)` draws, 500 steps at `η = 1e-3` under `Geodesic` end between `44.9` and `8982`
   from `1405` (minimum `19.85`): 4 of the 50 end above the start and 6 above a fifth of it. Over the

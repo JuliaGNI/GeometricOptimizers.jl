@@ -10,7 +10,9 @@
 # blocks, with no `N × N` inverse anywhere.
 
 # The group element `λ(Y) = [Φ K]`, not the stored `[Φ Ψ K K̃]`.
-Base.size(λY::GlobalSection{T, <:BiorthogonalManifold}) where {T} = (size(λY.Y, 1), size(λY.Y, 1))
+function Base.size(λY::GlobalSection{T, <:BiorthogonalManifold}) where {T}
+    (size(λY.Y, 1), size(λY.Y, 1))
+end
 
 @doc raw"""
     Matrix(λY::GlobalSection{T, <:BiorthogonalManifold})

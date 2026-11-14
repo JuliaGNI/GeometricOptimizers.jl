@@ -26,6 +26,7 @@ function tangent(λY, X)
 end
 
 @testset "points, $(T), $(N)×$(n)" for T in REAL_ELTYPES, (N, n) in SIZES
+
     rng = Random.Xoshiro(1)
     Y = rand(rng, BiorthogonalManifold{T}, N, 2n)
     @test Y isa BiorthogonalManifold{T, Matrix{T}}
@@ -49,8 +50,10 @@ end
 end
 
 @testset "a complex element type is refused" begin
-    @test_throws ArgumentError BiorthogonalManifold(zeros(ComplexF64, 6, 4))
-    @test_throws ArgumentError rand(BiorthogonalManifold{ComplexF64}, 6, 4)
+    @test_throws r"^ArgumentError: a BiorthogonalManifold has a real element type" BiorthogonalManifold(zeros(
+        ComplexF64, 6, 4))
+    @test_throws r"^ArgumentError: a BiorthogonalManifold has a real element type" rand(
+        BiorthogonalManifold{ComplexF64}, 6, 4)
 end
 
 @testset "rgrad is the orthogonal projection onto the tangent space, $(N)×$(n)" for (N, n) in SIZES
@@ -75,6 +78,7 @@ end
 end
 
 @testset "the section and its dual, $(T), $(N)×$(n)" for T in REAL_ELTYPES, (N, n) in SIZES
+
     rng = Random.Xoshiro(3)
     Y = rand(rng, BiorthogonalManifold{T}, N, 2n)
     λ = global_section(Y)
@@ -220,6 +224,39 @@ end
     @test check(λ₁.Y) < 1e-12
 end
 
+# A retraction this package does not ship takes the fallback, which asks `retraction` for the pair and
+# transposes its second half for `g⁻¹`. Wrapping `cayley`, it transports the section as `Cayley()`.
+struct WrappedCayley <: GeometricOptimizers.AbstractRetraction end
+GeometricOptimizers.retraction(::WrappedCayley, x::AbstractArray) = cayley(x)
+
+@testset "a retraction the package does not ship transports the section as Cayley, $(N)×$(n)" for (
+        N, n) in SIZES
+    rng = Random.Xoshiro(10)
+    X = rand(rng, BiorthogonalLieAlgHorMatrix{Float64}, N, n) * 0.3
+    Y = rand(rng, BiorthogonalManifold{Float64}, N, 2n)
+    λ₀ = GlobalSection(Y)
+    function moved(R, workspace)
+        λ = GlobalSection(Y)
+        copyto!(λ.λ, λ₀.λ)
+        workspace ? update_section!(λ, X, R, RetractionWorkspace(Y, R)) :
+        update_section!(λ, X, R)
+        λ
+    end
+    for workspace in (false, true)
+        λ, λ_cayley = moved(WrappedCayley(), workspace), moved(Cayley(), workspace)
+        @test frame(λ) ≈ frame(λ_cayley) rtol = 8eps()
+        @test dual_frame(λ) ≈ dual_frame(λ_cayley) rtol = 8eps()
+        @test λ.Y.A != Y.A
+    end
+end
+
+@testset "zero of a point is the zero matrix of its storage" begin
+    Y = rand(Random.Xoshiro(11), BiorthogonalManifold{Float32}, 6, 4)
+    Z = zero(Y)
+    @test Z isa Matrix{Float32}
+    @test Z == zeros(Float32, 6, 4)
+end
+
 @testset "the Cayley differential, $(N)×$(n)" for (N, n) in SIZES
     rng = Random.Xoshiro(8)
     X = rand(rng, BiorthogonalLieAlgHorMatrix{Float64}, N, n) * 0.3
@@ -245,7 +282,8 @@ end
 
 @testset "ProjectedSkew refuses a biorthogonal lift" begin
     X = rand(BiorthogonalLieAlgHorMatrix{Float64}, 5, 2)
-    @test_throws ArgumentError geodesic(X, GeometricOptimizers.ProjectedSkew())
+    @test_throws r"^ArgumentError: ProjectedSkew exponentiates a skew-symmetric lift" geodesic(
+        X, GeometricOptimizers.ProjectedSkew())
 end
 
 # Under `X ↦ diag(X, -Xᵀ)` the biorthogonal lift is a symplectic one, in the basis `[Φ Ψ K K̃]` that a
