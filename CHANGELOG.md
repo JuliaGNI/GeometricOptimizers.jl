@@ -21,8 +21,9 @@ breaking release).
   `N × (N - n)` blocks and invert no `N × N` matrix. The retraction of a lift is the pair
   `[g g⁻ᵀ]`, through `R(X)⁻¹ = R(-X)` for `Cayley` and `Geodesic`. `rand`, `check`, `rgrad` and
   `metric` (the Euclidean one, whose gradient is the orthogonal projection through an `n × n`
-  Sylvester equation, which `rgrad` solves on the host so that it runs on a device point), the parameter protocol (`rebuild`, `storage_gradient`, loading from a file)
-  and `retraction_differential` cover it. `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and
+  Sylvester equation, which `rgrad` solves on the host so that it runs on a device point), the
+  parameter protocol (`rebuild`, `storage_gradient`, loading from a file) and
+  `retraction_differential` cover it. `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and
   `DFP` under `Optimizer`, and the first three under `TrainingOptimizer` and in a
   `CompositeMethod`, take such a point and a parameter set with such a leaf. `BFGS` and `DFP` start
   their inverse Hessian at the inverse of the metric here too: the metric is the Euclidean one, whose
