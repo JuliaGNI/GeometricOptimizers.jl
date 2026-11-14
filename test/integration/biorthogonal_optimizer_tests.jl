@@ -261,6 +261,7 @@ end
         max_iterations = 100, warn_iterations = 1000)
     solve!(Y, OptimizerState(Adam(), Y), opt)
     @test check(Y) < 1e-12
+    @test Y.A != start().A
 end
 
 # The training step takes the Euclidean gradient of the leaf, and a parameter set may hold a

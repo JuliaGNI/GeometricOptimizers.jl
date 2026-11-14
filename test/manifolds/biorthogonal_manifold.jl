@@ -8,7 +8,7 @@ using GeometricOptimizers: check, global_section, Ω, apply_section, gradient_re
                            retraction_differential, retraction_differential!,
                            update_section!, RetractionWorkspace, StiefelProjection, _dot,
                            zero_tangent, solution_scale
-using LinearAlgebra: I, Symmetric, cond, dot, eigen, norm
+using LinearAlgebra: I, cond, dot, norm, opnorm, qr
 using Test
 import Random
 
@@ -77,27 +77,47 @@ end
     @test_throws DimensionMismatch rgrad(Y, randn(N, n))
 end
 
-# `rgrad` copies the three `n × n` matrices of its Sylvester equation to the host, so that it runs on
-# any device storage; on the host that copy must leave the result as it was.
-@testset "rgrad solves its Sylvester equation on the host as before, $(T), $(N)×$(n)" for T in REAL_ELTYPES,
-    (N, n) in SIZES
+# The properties that define the result of `rgrad`, in every element type, with no recomputation of
+# its solve. Each residual is measured against the rounding of the products that form it, so the
+# bound is a few units of `eps(T)` whatever the condition of the pair.
+@testset "rgrad on the host, $(T), $(N)×$(n)" for T in REAL_ELTYPES, (N, n) in SIZES
 
     rng = Random.Xoshiro(3)
     Y = rand(rng, BiorthogonalManifold{T}, N, 2n)
     Φ, Ψ = halves(Y)
     ∇L = randn(rng, T, N, 2n)
     ∇Φ, ∇Ψ = halves(∇L)
-    P, Q, R = Ψ' * Ψ, Φ' * Φ, Ψ' * ∇Φ + ∇Ψ' * Φ
-    # the solve as `rgrad` took it before, with `eigen` on the products themselves
-    λ₁, V₁ = eigen(Symmetric(P))
-    λ₂, V₂ = eigen(Symmetric(Q))
-    M = V₁ * ((V₁' * R * V₂) ./ (λ₁ .+ transpose(λ₂))) * V₂'
     Δ = rgrad(Y, ∇L)
     @test Δ isa Matrix{T}
-    @test isapprox(Δ, hcat(∇Φ - Ψ * M, ∇Ψ - Φ * M'); rtol = 8 * eps(T))
-    M̂ = GeometricOptimizers._sylvester_spd(P, Q, R)
-    @test M̂ isa Matrix{T}
-    @test isapprox(M̂, M; rtol = 8 * eps(T))
+    ΔΦ, ΔΨ = halves(Δ)
+
+    # `M` solves `ΨᵀΨ M + M ΦᵀΦ = R`
+    P, Q, R = Ψ' * Ψ, Φ' * Φ, Ψ' * ∇Φ + ∇Ψ' * Φ
+    M = GeometricOptimizers._sylvester_spd(P, Q, R)
+    @test M isa Matrix{T}
+    @test norm(P * M + M * Q - R) ≤
+          8 * eps(T) * ((opnorm(P) + opnorm(Q)) * norm(M) + norm(R))
+
+    # `Δ` is tangent: `ΨᵀΔ_Φ + Δ_ΨᵀΦ = 0`, up to the rounding of `∇L - (ΨM, ΦMᵀ)` and its products
+    scale = opnorm(Ψ) * (norm(∇Φ) + opnorm(Ψ) * norm(M)) +
+            opnorm(Φ) * (norm(∇Ψ) + opnorm(Φ) * norm(M))
+    @test norm(Ψ' * ΔΦ + ΔΨ' * Φ) ≤ 8 * eps(T) * scale
+
+    # `∇L - Δ` is orthogonal in the metric to every tangent vector.
+    # `V = (A, -ΨAᵀΨ + (𝕀 - Π_Φ)B)`, with `Π_Φ` the orthogonal projection onto the span of `Φ`, is
+    # tangent wherever `ΨᵀΦ = 𝕀`, and these vectors span the tangent space. The point satisfies
+    # `ΨᵀΦ = 𝕀` only up to rounding, so `V` misses the tangent space by `τ = ΨᵀV_Φ + V_ΨᵀΦ`, and the
+    # pairing of `∇L - Δ = (ΨM, ΦMᵀ)` with `V` is `tr(Mᵀτ)`, so its bound adds `‖M‖‖τ‖` to the
+    # rounding.
+    Qf = Matrix(qr(Φ).Q)[:, 1:n]
+    for _ in 1:3
+        A, B = randn(rng, T, N, n), randn(rng, T, N, n)
+        V = hcat(A, -Ψ * (A' * Ψ) + (B - Qf * (Qf' * B)))
+        VΦ, VΨ = halves(V)
+        τ = Ψ' * VΦ + VΨ' * Φ
+        @test abs(metric(Y, ∇L - Δ, V)) ≤
+              norm(M) * norm(τ) + 8 * eps(T) * (norm(∇L) + norm(Δ)) * norm(V)
+    end
 end
 
 @testset "the section and its dual, $(T), $(N)×$(n)" for T in REAL_ELTYPES, (N, n) in SIZES
