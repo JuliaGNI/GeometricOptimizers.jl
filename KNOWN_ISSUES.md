@@ -383,20 +383,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `MomentumMethod`, `BFGS` and `DFP` do not depend on the section; the tests assert this for
   `GradientMethod` and `BFGS` under a line search.
 
-### K61 · `rgrad` of a `BiorthogonalManifold` needs a symmetric eigendecomposition on the point's backend
-
-- location: `src/manifolds/biorthogonal_manifold.jl`, `_sylvester_spd`
-- kind: found late
-- found: 2026-11-11
-- evidence: The projection onto the tangent space solves an `n × n` Sylvester equation in the
-  eigenbases of `ΨᵀΨ` and `ΦᵀΦ`, through `eigen(Symmetric(·))`. `Metal` supplies no such
-  decomposition, so `rgrad`, and with it every optimizer, raises for a point on that backend, while
-  `rand`, `global_section`, `global_rep`, the retractions and the transport of the section are
-  products, `cholesky` and triangular solves and run there. The only device test of this manifold
-  is the `rand` row of `scripts/device_manifolds.jl`, which `test/devices/metal.jl` asserts.
-  The Sylvester equation could be solved through `cholesky` alone, as a linear system of size `n²`,
-  at `O(n⁶)` per step.
-
 ### K62 · `global_section` of a biorthogonal device point whose `Ψ` breaks CholeskyQR2 raises
 
 - location: `src/manifolds/biorthogonal_manifold.jl`, `global_section`
@@ -407,7 +393,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `qr`. A valid pair reaches that: `Ψ = [1 1; 0 2⁻³⁰; 0 0]`, `Φ = [1 0; -2³⁰ 2³⁰; 0 0]` has
   `ΨᵀΦ = 𝕀` and a `ΨᵀΨ` that rounds to a singular matrix in `Float64`. `qr` is a host
   factorization, and `Metal` implements none, so on that backend such a point raises instead of
-  getting a section. No device test covers `global_section` of this manifold (K61).
+  getting a section. No device test covers `global_section` of this manifold.
 
 ### K25 · `global_section` of a Stiefel or Grassmann point loses orthogonality to the point, up to 2e4 eps, when its completion draws the numbers the point was drawn from
 

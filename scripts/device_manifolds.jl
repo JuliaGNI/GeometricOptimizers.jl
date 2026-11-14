@@ -79,5 +79,14 @@ function device_manifolds(todevice; seed = 1234)
                         Array(parent(Y)) ≈ parent(geodesic(B, algorithm))
                 end))
     end
+    # a biorthogonal `rgrad` solves its `n × n` Sylvester equation on the host and returns to the
+    # device
+    push!(rows,
+        check_row("rgrad(BiorthogonalManifold, ∇L)",
+            () -> let Y = rand(rng, BiorthogonalManifold{Float32}, 20, 6)
+                ∇L = randn(rng, Float32, 20, 6)
+                r = rgrad(BiorthogonalManifold(todevice(parent(Y))), todevice(∇L))
+                get_backend(r) == backend && Array(r) ≈ rgrad(Y, ∇L)
+            end))
     rows
 end

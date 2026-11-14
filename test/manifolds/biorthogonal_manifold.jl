@@ -8,7 +8,7 @@ using GeometricOptimizers: check, global_section, Ω, apply_section, gradient_re
                            retraction_differential, retraction_differential!,
                            update_section!, RetractionWorkspace, StiefelProjection, _dot,
                            zero_tangent, solution_scale
-using LinearAlgebra: I, cond, dot, norm
+using LinearAlgebra: I, Symmetric, cond, dot, eigen, norm
 using Test
 import Random
 
@@ -75,6 +75,29 @@ end
         @test metric(Y, Δ, V) ≈ dot(∇L, V)
     end
     @test_throws DimensionMismatch rgrad(Y, randn(N, n))
+end
+
+# `rgrad` copies the three `n × n` matrices of its Sylvester equation to the host, so that it runs on
+# any device storage; on the host that copy must leave the result as it was.
+@testset "rgrad solves its Sylvester equation on the host as before, $(T), $(N)×$(n)" for T in REAL_ELTYPES,
+    (N, n) in SIZES
+
+    rng = Random.Xoshiro(3)
+    Y = rand(rng, BiorthogonalManifold{T}, N, 2n)
+    Φ, Ψ = halves(Y)
+    ∇L = randn(rng, T, N, 2n)
+    ∇Φ, ∇Ψ = halves(∇L)
+    P, Q, R = Ψ' * Ψ, Φ' * Φ, Ψ' * ∇Φ + ∇Ψ' * Φ
+    # the solve as `rgrad` took it before, with `eigen` on the products themselves
+    λ₁, V₁ = eigen(Symmetric(P))
+    λ₂, V₂ = eigen(Symmetric(Q))
+    M = V₁ * ((V₁' * R * V₂) ./ (λ₁ .+ transpose(λ₂))) * V₂'
+    Δ = rgrad(Y, ∇L)
+    @test Δ isa Matrix{T}
+    @test isapprox(Δ, hcat(∇Φ - Ψ * M, ∇Ψ - Φ * M'); rtol = 8 * eps(T))
+    M̂ = GeometricOptimizers._sylvester_spd(P, Q, R)
+    @test M̂ isa Matrix{T}
+    @test isapprox(M̂, M; rtol = 8 * eps(T))
 end
 
 @testset "the section and its dual, $(T), $(N)×$(n)" for T in REAL_ELTYPES, (N, n) in SIZES

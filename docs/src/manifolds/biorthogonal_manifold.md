@@ -89,7 +89,7 @@ Differentiating ``\Psi^T\Phi = \mathbb{I}_n`` gives the tangent space at ``(\Phi
 T_{(\Phi, \Psi)}\mathcal{B}(n, N) = \{(\Delta_\Phi, \Delta_\Psi) : \Psi^T\Delta_\Phi + \Delta_\Psi^T\Phi = \mathbb{O}\}.
 ```
 
-The manifold carries the metric of ``\mathbb{R}^{N\times2n}``, [`metric(::BiorthogonalManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref). No metric is invariant under the action, because the isotropy group is not compact; the Euclidean one is the simplest, and at the Stiefel manifold it is twice the Euclidean metric of ``St(n, N)``. Its normal space at ``(\Phi, \Psi)`` is ``\{(\Psi M, \Phi M^T) : M\in\mathbb{R}^{n\times{}n}\}``, and [`rgrad(::BiorthogonalManifold, ::AbstractMatrix)`](@ref) is the orthogonal projection onto the tangent space,
+The manifold carries the metric of ``\mathbb{R}^{N\times2n}``, [`metric(::BiorthogonalManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref). For ``n < N`` no metric is invariant under the action, because the isotropy group ``GL(N - n)`` at ``(E, E)`` contains ``\mathrm{diag}(\mathbb{I}_n, t\mathbb{I}_{N-n})``, which multiplies the tangent vectors ``(\Delta_\Phi, \mathbb{O})`` with ``E^T\Delta_\Phi = \mathbb{O}`` by ``t``; for ``n = N`` the manifold is ``GL(N)``, and its left-invariant metrics are invariant. The Euclidean one is the simplest, and at the Stiefel manifold it is twice the Euclidean metric of ``St(n, N)``. Its normal space at ``(\Phi, \Psi)`` is ``\{(\Psi M, \Phi M^T) : M\in\mathbb{R}^{n\times{}n}\}``, and [`rgrad(::BiorthogonalManifold, ::AbstractMatrix)`](@ref) is the orthogonal projection onto the tangent space,
 
 ```math
 \mathrm{grad}\,L = (\nabla_\Phi L - \Psi M,\ \nabla_\Psi L - \Phi M^T), \qquad \Psi^T\Psi M + M\Phi^T\Phi = \Psi^T\nabla_\Phi L + (\nabla_\Psi L)^T\Phi,

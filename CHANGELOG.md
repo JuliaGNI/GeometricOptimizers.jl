@@ -21,7 +21,7 @@ breaking release).
   `N × (N - n)` blocks and invert no `N × N` matrix. The retraction of a lift is the pair
   `[g g⁻ᵀ]`, through `R(X)⁻¹ = R(-X)` for `Cayley` and `Geodesic`. `rand`, `check`, `rgrad` and
   `metric` (the Euclidean one, whose gradient is the orthogonal projection through an `n × n`
-  Sylvester equation), the parameter protocol (`rebuild`, `storage_gradient`, loading from a file)
+  Sylvester equation, which `rgrad` solves on the host so that it runs on a device point), the parameter protocol (`rebuild`, `storage_gradient`, loading from a file)
   and `retraction_differential` cover it. `GradientMethod`, `MomentumMethod`, `Adam`, `BFGS` and
   `DFP` under `Optimizer`, and the first three under `TrainingOptimizer` and in a
   `CompositeMethod`, take such a point and a parameter set with such a leaf. `BFGS` and `DFP` start
@@ -39,7 +39,7 @@ breaking release).
   manifold, as on a `SymplecticStiefelManifold`, and `AdamWithEuclideanDecay` refuses it with an
   `ArgumentError`. The result of `Adam` depends on the section here and does not always descend
   (K60). The manual has a new page, *The Biorthogonal Manifold*, with the theory, which comes from
-  JuliaGNI/GeometricMachineLearning.jl#390, the use this manifold was added for. K60, K61 and K62
+  JuliaGNI/GeometricMachineLearning.jl#390, the use this manifold was added for. K60 and K62
   record what is open.
 
 - **The optimizers step a `SymplecticStiefelManifold`.** The new lift type

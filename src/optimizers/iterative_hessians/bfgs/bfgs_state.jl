@@ -133,9 +133,9 @@ On the [`StiefelManifold`](@ref), the [`GrassmannManifold`](@ref) and a vector s
 forming ``M``. On the [`SymplecticStiefelManifold`](@ref) and the [`BiorthogonalManifold`](@ref) the
 metric is not invariant under the group, ``M`` depends on the point and the section, and it is
 built one column per coordinate, with [`GeometricOptimizers._metric_apply!`](@ref), and inverted
-through its Cholesky factor: ``O(d)`` lift products and ``O(d^3)`` for the inverse, where ``d`` is the length of the
-flattening, against the ``O(d^2)`` of one update of ``Q``. It is done at the start of a solve and at a
-restart, not at every step.
+through its Cholesky factor: ``O(d)`` lift products and ``O(d^3)`` for the inverse, where ``d`` is
+the length of the flattening, against the ``O(d^2)`` of one update of ``Q``. It is done at the start
+of a solve and at a restart, not at every step.
 """
 function _metric_inverse!(Q::AbstractMatrix{T}, x::OptimizerSolution{T}, λY) where {T}
     _metric_is_identity(x) && return _identity!(Q)
@@ -173,9 +173,10 @@ _identity!(Q::AbstractMatrix) = (Q .= unit_matrix(Q); Q)
 # The one initialisation, which the constructor and `initialize_state!` share: the tangents and the
 # objectives read `NaN` up to the first step, which writes them, and `Q` starts at the inverse of the
 # metric, the identity on every parameter but a symplectic or a biorthogonal one; see
-# `_metric_inverse!`. The points are not filled, because a manifold point cannot hold `NaN`. The first secant pair is then `NaN` and
-# `curvature_is_usable` rejects it, so the first step is steepest descent. `solve!` places the section
-# after this has run, and `_start_inverse_hessian!` sets `Q` again at the section it placed.
+# `_metric_inverse!`. The points are not filled, because a manifold point cannot hold `NaN`. The
+# first secant pair is then `NaN` and `curvature_is_usable` rejects it, so the first step is
+# steepest descent. `solve!` places the section after this has run, and `_start_inverse_hessian!`
+# sets `Q` again at the section it placed.
 function _poison!(state::BFGSState{T}) where {T}
     _fill!(state.s, T(NaN))
     _fill!(state.ḡ, T(NaN))

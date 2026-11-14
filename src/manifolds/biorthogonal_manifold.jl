@@ -72,7 +72,8 @@ end
 
 # The two halves of a point, as views of its storage.
 function _biorthogonal_halves(A::AbstractMatrix)
-    (n = size(A, 2) ÷ 2; @views (A[:, 1:n], A[:, (n + 1):(2n)]))
+    n = size(A, 2) ÷ 2
+    @views (A[:, 1:n], A[:, (n + 1):(2n)])
 end
 _biorthogonal_halves(Y::BiorthogonalManifold) = _biorthogonal_halves(Y.A)
 
@@ -155,8 +156,12 @@ g_{(\Phi, \Psi)}(\Delta_1, \Delta_2) = \mathrm{tr}(\Delta_{1,\Phi}^T\Delta_{2,\P
 
 with ``\Delta = [\Delta_\Phi\ \ \Delta_\Psi]`` stored as the point is.
 
-The general linear group does not act by isometries, and no metric on ``\mathcal{B}(n, N)`` is
-invariant under it, because the isotropy group ``GL(N - n)`` is not compact. This one is the
+The general linear group does not act by isometries. For ``n < N`` no metric on
+``\mathcal{B}(n, N)`` is invariant under it: at the point ``(E, E)``, with ``E`` the first ``n``
+columns of the identity, the isotropy group ``GL(N - n)`` contains
+``\mathrm{diag}(\mathbb{I}_n, t\mathbb{I}_{N-n})``, which multiplies a tangent vector
+``(\Delta_\Phi, \mathbb{O})`` with ``E^T\Delta_\Phi = \mathbb{O}`` by ``t``. For ``n = N``
+the manifold is ``GL(N)`` and the left-invariant metrics are invariant. This one is the
 simplest; at the [`StiefelManifold`](@ref) it restricts to twice the Euclidean metric of the Stiefel
 manifold, because a pair ``(\Delta, \Delta)`` counts ``\Delta`` twice.
 """
@@ -191,8 +196,9 @@ of the differential of ``(\Phi, \Psi)\mapsto\Psi^T\Phi``, so
 The Sylvester equation for ``M`` is ``n\times{}n`` and its two coefficients are symmetric positive
 definite. It is solved in the eigenbases of ``\Psi^T\Psi = V_1\Lambda_1V_1^T`` and
 ``\Phi^T\Phi = V_2\Lambda_2V_2^T``, where it is diagonal:
-``M = V_1\left[(V_1^TRV_2)_{ij}/(\lambda_{1,i} + \lambda_{2,j})\right]V_2^T``. The backend has to supply
-the eigendecomposition of a symmetric matrix, which the host does and `Metal` does not.
+``M = V_1\left[(V_1^TRV_2)_{ij}/(\lambda_{1,i} + \lambda_{2,j})\right]V_2^T``. Its three
+coefficients are ``n\times{}n``, so it is solved on the host and ``M`` is copied back to the storage of
+the gradient. `rgrad` therefore runs on every backend that supplies the matrix products.
 """
 function rgrad(Y::BiorthogonalManifold, ∇L::AbstractMatrix)
     _check_point_size(Y, ∇L)
@@ -203,11 +209,13 @@ function rgrad(Y::BiorthogonalManifold, ∇L::AbstractMatrix)
     hcat(∇Φ - Ψ * M, ∇Ψ - Φ * M')
 end
 
-# The solution `M` of `P M + M Q = R` for symmetric positive definite `P` and `Q`.
+# The solution `M` of `P M + M Q = R` for symmetric positive definite `P` and `Q`, in the storage of
+# `R`. On the host, as the matrices are small, as `_spectral_radius` does.
 function _sylvester_spd(P::AbstractMatrix, Q::AbstractMatrix, R::AbstractMatrix)
-    λ₁, V₁ = eigen(Symmetric(P))
-    λ₂, V₂ = eigen(Symmetric(Q))
-    V₁ * ((V₁' * R * V₂) ./ (λ₁ .+ transpose(λ₂))) * V₂'
+    λ₁, V₁ = eigen(Symmetric(Array(P)))
+    λ₂, V₂ = eigen(Symmetric(Array(Q)))
+    M = V₁ * ((V₁' * Array(R) * V₂) ./ (λ₁ .+ transpose(λ₂))) * V₂'
+    copyto!(similar(R), M)
 end
 
 @doc raw"""

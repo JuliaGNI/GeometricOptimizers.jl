@@ -79,7 +79,9 @@ function geodesic(B::BiorthogonalLieAlgHorMatrix,
 end
 
 function geodesic(::BiorthogonalLieAlgHorMatrix, ::ProjectedSkew)
-    throw(ArgumentError("ProjectedSkew exponentiates a skew-symmetric lift, and a BiorthogonalLieAlgHorMatrix is not skew-symmetric; use Geodesic() with another exponential algorithm, or Cayley()"))
+    throw(ArgumentError("ProjectedSkew exponentiates a skew-symmetric lift, and a " *
+                        "BiorthogonalLieAlgHorMatrix is not skew-symmetric; use Geodesic() " *
+                        "with another exponential algorithm, or Cayley()"))
 end
 
 @doc raw"""
