@@ -63,6 +63,13 @@ function device_manifolds(todevice; seed = 1234)
             check_row("metric($name, Δ₁, Δ₂)",
                 () -> metric(dY, todevice(Δ₁), todevice(Δ₂)) ≈ metric(Y, Δ₁, Δ₂)))
     end
+    # a biorthogonal pair is drawn through `cholesky` and triangular solves, which the `JLArray`
+    # stand-in lacks, so only a real device runs this row
+    push!(rows,
+        check_row("rand(backend, BiorthogonalManifold{Float32}, 20, 6)",
+            () -> let Y = rand(backend, BiorthogonalManifold{Float32}, 20, 6)
+                get_backend(parent(Y)) == backend && check(Y) < 1.0f-4
+            end))
     for algorithm in (ScaledSquaring(), NativePade())
         push!(rows,
             check_row("geodesic(60 * lift, $(nameof(typeof(algorithm))))",
