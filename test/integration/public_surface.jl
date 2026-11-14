@@ -213,6 +213,15 @@ end
     end
 end
 
+# The exponential algorithms a caller passes to `Geodesic`, and the result of `solve!` with its status.
+@testset "the exponential algorithms and the solve result are public and not exported" begin
+    for s in (:ScaledSquaring, :NativePade, :AugmentedPade, :ProjectedSkew, :TaylorSeries,
+        :OptimizerResult, :OptimizerStatus)
+        @test Base.ispublic(GeometricOptimizers, s)
+        @test !Base.isexported(GeometricOptimizers, s)
+    end
+end
+
 # A fresh process each, because the clash only shows in a `Main` that has `using`'d both modules.
 function _in_fresh_process(code)
     project = dirname(Base.active_project())

@@ -174,6 +174,9 @@ include("global_sections/omega_functions.jl")
 # `retraction = …`, and `geodesic`/`cayley`/`retraction` are what applies one.
 export AbstractRetraction, Geodesic, Cayley
 export geodesic, cayley, retraction
+# The exponential algorithms are what a caller passes to `Geodesic(…)` to choose how the exponential
+# is evaluated, so they are public. They are not exported: a caller imports the one it uses.
+public ScaledSquaring, NativePade, AugmentedPade, ProjectedSkew, TaylorSeries
 include("retractions/exponential_algorithms.jl")
 include("retractions/modified_exponential.jl")
 include("retractions/retraction_types.jl")
@@ -206,6 +209,9 @@ import SimpleSolvers: solve!, solve
 # `solver_step!` scratch, and nothing outside a step should be reading one.
 export solve!, solve, Newton, BFGS, DFP, BFGSState, DFPState
 public value, gradient
+# What `solve!` returns, and the status a caller reads off it. Its accessors `solution`, `status` and
+# `trace` stay internal.
+public OptimizerResult, OptimizerStatus
 
 include("optimizer_solution.jl")
 include("optimizers/optimizer_problems.jl")
