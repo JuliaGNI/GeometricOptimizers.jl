@@ -195,8 +195,8 @@ Measured on the SVD problem, `Quadratic` returned ``\alpha = 4.3\times10^7`` on 
 ``\|\delta\|`` was in the same range as the two steps before it and ``Q`` was well conditioned
 (``\lambda_\mathrm{max} = 3.86``) — and two iterations later, after [`restart!`](@ref) had put ``Q``
 back to the identity so that the direction *was* ``-\nabla{}f``, the same search handed back
-``8.6\times10^7`` on steepest descent. So a better direction was never the remedy; a bound on the step
-was.
+``8.6\times10^7`` on steepest descent. So the direction was not the cause; the missing bound on the
+step was.
 
 ### The bound, and why it takes two packages
 
@@ -281,7 +281,7 @@ average that is deliberately *not* required to descend on any individual step, s
 sufficient-decrease search has nothing to work with and would spend every step reporting that it found
 no descent direction.
 
-[`DecayingStatic`](@ref) is the weaker of the two ways to make such a solve terminate. It drives
+[`DecayingStatic`](@ref) is one of the two ways to make such a solve terminate. It drives
 the step to zero geometrically, so the solve does stop on a criterion, but the schedule is
 summable: it stops short at
 ``\|\nabla f\| \approx 10^{-3}`` with ``\|\Delta x\|`` already around ``10^{-13}``. A searching line

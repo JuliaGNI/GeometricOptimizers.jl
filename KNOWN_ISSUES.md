@@ -878,6 +878,18 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   gives `Bisection` 133 `BFGS` iterations against 95 for `Backtracking(expand = true)`, and 589
   evaluations per iteration.
 
+### K63 · `docs/make.jl` names local inventory files under `docs/inventories/`, and the repository tracks none of them
+
+- location: `docs/make.jl:18`
+- kind: docs
+- found: #197
+- evidence: the three `InterLinks` entries of `docs/make.jl` name a local fallback file beside their
+  URL: `docs/make.jl:18` (`NeuralNetworkParameters.toml`), `:23` (`SimpleSolvers.toml`) and `:35`
+  (`GeometricMachineLearning.toml`), each `joinpath(@__DIR__, "inventories", …)`.
+  `git ls-files docs/inventories` prints nothing, and `git check-ignore` does not ignore the
+  paths, so the files were never added. A docs build with no network access therefore has no
+  inventory to fall back to, every `@extref` fails, and `makedocs` stops at the external links.
+
 ## D. Upstream
 
 ### D1 · Julia 1.12: nested `kwargs...` feeding a call in the same inferred body
