@@ -69,6 +69,14 @@ breaking release).
   states the algorithm on the symplectic Stiefel manifold and why it takes two metrics, the page on
   parallel transport adds the symplectic case, and the citations of (3.19) and (3.9) of Bendokat and
   Zimmermann are corrected (#191). Issues #192 and #193 record two follow-ups.
+- **The exponential algorithms and the result of `solve!` are `public`.** `ScaledSquaring`,
+  `NativePade`, `AugmentedPade`, `ProjectedSkew` and `TaylorSeries` are what a caller passes to
+  `Geodesic(…)` to choose how the exponential is evaluated, and `OptimizerResult` and
+  `OptimizerStatus` are what `solve!` returns and what a caller reads off it. The manual and the
+  docstrings already showed callers using all seven; they are now part of the stable API, covered
+  by semantic versioning. None is exported, so a caller still writes
+  `using GeometricOptimizers: ProjectedSkew` or the qualified name; no existing call changes.
+  `solution`, `status` and `trace`, the accessors of `OptimizerResult`, stay internal.
 
 ### Changed
 
