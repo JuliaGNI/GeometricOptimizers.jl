@@ -64,7 +64,10 @@ function leaves_in(::Type{T}) where {T}
         stiefhor = StiefelLieAlgHorMatrix(
             SkewSymMatrix(rand(rng, T, n, n)), rand(rng, T, N - n, n), N, n),
         grasshor = GrassmannLieAlgHorMatrix(rand(rng, T, N - n, n), N, n),
-        plain = rand(rng, T, 2, 2))
+        plain = rand(rng, T, 2, 2),
+        biorthogonal = rand(rng, BiorthogonalManifold{T}, N, 2n),
+        biorthhor = BiorthogonalLieAlgHorMatrix(
+            rand(rng, T, n, n), rand(rng, T, N - n, n), rand(rng, T, n, N - n), N, n))
 end
 
 leaves = leaves_in(Float64)
@@ -131,15 +134,16 @@ end
     ps = NetworkParameters((L1 = leaves,))
 
     # n(n+1)/2 for the symmetric matrix; n(n-1)/2 for the skew-symmetric one and for each of the two
-    # triangulars, which keep the strict triangle; N*n for each manifold element; and the horizontal
-    # lifts' blocks
+    # triangulars, which keep the strict triangle; N*n for each manifold element, N*2n for the
+    # biorthogonal pair; and the horizontal lifts' blocks
     expected = length(parent(leaves.stiefel)) + length(parent(leaves.grassmann)) +
                length(parent(leaves.symmetric)) + length(parent(leaves.skew)) +
                length(parent(leaves.lower)) + length(parent(leaves.upper)) +
                length(freeparameters(parent(leaves.stiefhor)[1])) +
                length(parent(leaves.stiefhor)[2]) +
                length(parent(leaves.grasshor)[1]) +
-               length(leaves.plain)
+               length(leaves.plain) + length(parent(leaves.biorthogonal)) +
+               sum(length, parent(leaves.biorthhor))
     @test flatlength(ps) == expected
 
     v, layout = flatten(ps)

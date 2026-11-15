@@ -201,9 +201,9 @@ end
 
 [`lift_factors`](@ref) written into `ws`, returning nothing.
 
-Only the lift-dependent blocks are written — four for a Stiefel or a symplectic lift and two for a
-Grassmann one, whose ``A`` block is identically zero. The identity and zero blocks were written when
-the workspace was built. `ws` has to have been built for `B`'s shape.
+Only the lift-dependent blocks are written — four for a Stiefel, a symplectic or a biorthogonal lift
+and two for a Grassmann one, whose ``A`` block is identically zero. The identity and zero blocks
+were written when the workspace was built. `ws` has to have been built for `B`'s shape.
 """
 function lift_factors!(ws::RetractionWorkspace{T}, B::StiefelLieAlgHorMatrix{T}) where {T}
     N, n = B.N, B.n
@@ -283,8 +283,12 @@ wrong shape would scramble the layout of the answer instead of rejecting it.
 function retraction_matrix!(ws::RetractionWorkspace{T}, R::AbstractRetraction,
         B::AbstractLieAlgHorMatrix{T}) where {T}
     @assert (ws.N, ws.n) == (B.N, B.n)
-    copyto!(ws.retracted, retraction(R, B).A)
+    copyto!(ws.retracted, _group_matrix(retraction(R, B)))
 end
+
+# The `N × N` group element a retraction returns, wrapped in the manifold type of its lift. For every
+# manifold but the biorthogonal one that is the whole stored matrix.
+_group_matrix(Y::Manifold) = Y.A
 
 function retraction_matrix!(ws::RetractionWorkspace{T}, ::Cayley,
         B::AbstractLieAlgHorMatrix{T}) where {T}

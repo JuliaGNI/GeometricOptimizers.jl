@@ -137,7 +137,8 @@ problem supplies. For a compact [`Manifold`](@ref) it is *not*: a point of ``St(
 ``Gr(n, N)`` satisfies ``Y^TY = \mathbb{I}_n``, so ``\|Y\|_F = \sqrt{\mathrm{tr}(Y^TY)} = \sqrt{n}``
 exactly, and the scale is a constant the geometry supplies rather than something to be measured off
 the iterate. [`SymplecticStiefelManifold`](@ref) is non-compact — ``\|U\|_F \geq \sqrt{2n}`` is
-unbounded on ``Sp(2n, 2N)`` — so it measures `l2norm(parent(U))` instead.
+unbounded on ``Sp(2n, 2N)`` — so it measures `l2norm(parent(U))` instead, and so does
+[`BiorthogonalManifold`](@ref), on which ``\|[\Phi\ \ \Psi]\|_F \geq \sqrt{2n}`` is unbounded too.
 
 That distinction is what keeps `x_converged` honest on a compact manifold solve that has diverged; see
 [`convergence_measures`](@ref). While a Stiefel or Grassmann iterate is on the manifold the two agree
@@ -150,7 +151,9 @@ and the measured scale for the others.
 """
 solution_scale(x::AbstractVecOrMat) = l2norm(x)
 solution_scale(Y::Manifold{T}) where {T} = √T(size(Y, 2))
-solution_scale(U::SymplecticStiefelManifold) = l2norm(parent(U))
+function solution_scale(U::Union{SymplecticStiefelManifold, BiorthogonalManifold})
+    l2norm(parent(U))
+end
 # A fold over the leaves, and not `map` + `sum` over one level: a container is a tree of layers, so the
 # scales to combine are at its *leaves*, at any depth. `_sumsq_leaves` is
 # `NeuralNetworkParameters.foldparameters`, which reaches a leaf at any depth and allocates nothing.

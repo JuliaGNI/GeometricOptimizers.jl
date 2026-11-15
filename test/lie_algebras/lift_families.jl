@@ -42,7 +42,8 @@ end
 end
 
 @testset "similar gives a zero lift of the same type, $L, $T" for L in (
-        StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SymplecticLieAlgHorMatrix),
+        StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SymplecticLieAlgHorMatrix,
+        BiorthogonalLieAlgHorMatrix),
     T in REAL_ELTYPES
 
     B = rand(Random.Xoshiro(2), L{T}, 6, 2)
@@ -54,7 +55,8 @@ end
 # The last line of each `getindex` answers `zero(T)` for the zero block, so an index outside the
 # matrix has to raise before it, not reach it.
 @testset "an index outside a lift raises, $L" for L in (
-    StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SymplecticLieAlgHorMatrix)
+    StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SymplecticLieAlgHorMatrix,
+    BiorthogonalLieAlgHorMatrix)
     B = rand(Random.Xoshiro(3), L{Float64}, 6, 2)
     for (i, j) in ((0, 1), (-1, 2), (7, 1), (1, 7), (7, 7))
         @test_throws BoundsError B[i, j]

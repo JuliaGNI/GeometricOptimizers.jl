@@ -7,5 +7,5 @@ Modules = [GeometricOptimizers]
 Pages = ["/retractions/exponential_algorithms.jl", "/retractions/modified_exponential.jl",
          "/retractions/retraction_types.jl", "/retractions/retractions.jl",
          "/retractions/retraction_workspace.jl", "/retractions/direct_cayley.jl",
-         "/retractions/vector_transport.jl"]
+         "/retractions/vector_transport.jl", "/retractions/biorthogonal_retractions.jl"]
 ```

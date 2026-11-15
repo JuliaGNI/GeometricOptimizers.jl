@@ -48,7 +48,8 @@ manifold.
 
 For a [`GrassmannLieAlgHorMatrix`](@ref) this is the same expression with ``A \equiv \mathbb{O}``.
 For a [`SymplecticLieAlgHorMatrix`](@ref) it is the same expression with the Hamiltonian block
-``\mathcal{A}`` for ``A`` and the symplectic adjoint ``\mathcal{B}^+`` for ``B^T``.
+``\mathcal{A}`` for ``A`` and the symplectic adjoint ``\mathcal{B}^+`` for ``B^T``, and for a
+[`BiorthogonalLieAlgHorMatrix`](@ref) the same expression with its block ``C`` for ``-B^T``.
 
 # Implementation
 
@@ -198,6 +199,12 @@ the choice of `algorithm` and [`GeometricOptimizers.𝔄`](@ref) for the impleme
 [`ScaledSquaring`](@ref) is accurate at every lift norm.
 """
 function geodesic(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgorithm = ScaledSquaring())
+    manifold_type(B)(_exp_matrix(B, algorithm))
+end
+
+# The `N × N` matrix `exp(B)` that `geodesic` wraps, which the biorthogonal lift needs twice, for `B`
+# and for `-B`.
+function _exp_matrix(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgorithm)
     T = eltype(B)
     B̂, B̄ = lift_factors(B)
 
@@ -207,7 +214,7 @@ function geodesic(B::AbstractLieAlgHorMatrix, algorithm::AbstractExponentialAlgo
     retracted = unit_matrix(KernelAbstractions.get_backend(B), T, B.N)
     mul!(retracted, B̂ * 𝔄(B̂, B̄, algorithm), B̄', one(T), one(T))
 
-    manifold_type(B)(retracted)
+    retracted
 end
 
 # Every step runs on the lift's backend: the `qr` and the `eigen` are the backend's own, and nothing
@@ -409,8 +416,10 @@ using ``M^T = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}`` for skew ``\bar{B}``
 [`SymplecticLieAlgHorMatrix`](@ref), which is Hamiltonian rather than skew, the same derivation
 gives ``D(\alpha) = (\mathbb{I} + \frac{\alpha}{2}\bar{B})^{-1}\bar{B}M``, which is the expression
 evaluated below for every lift. ``D`` is in the Lie algebra, skew or Hamiltonian, but
-not horizontal; only its first ``n`` columns ever enter — ``D(\alpha)E`` — and the horizontal
-projection has the same ones, so what [`lift_from_columns`](@ref) is handed is that projection.
+not horizontal; for these lifts only its first ``n`` columns ever enter — ``D(\alpha)E`` — and the
+horizontal projection has the same ones, so what [`lift_from_columns`](@ref) is handed is that
+projection. A [`BiorthogonalLieAlgHorMatrix`](@ref) needs the first ``n`` rows as well, and has a
+method of its own.
 
 For a [`GrassmannLieAlgHorMatrix`](@ref) the top ``n\times{}n`` block is dropped rather than kept,
 and that is not an approximation. ``M``, ``M^T`` and ``\bar{B}`` are all rational functions of
@@ -474,8 +483,9 @@ shape, and returned.
 has, or `nothing`. A [`Cayley`](@ref) lift at ``\alpha \neq 0`` with a workspace on a host `Matrix`
 of a LAPACK element type, `Float32`, `Float64` or their complex types, is evaluated in that
 workspace and allocates nothing: its two solves are `LAPACK.getrf!` and `LAPACK.getrs!` on workspace
-buffers, which are the two calls `\` makes, so the answer is the allocating method's to the bit.
-Every other case copies the allocating method's answer into `D` — at ``\alpha = 0``, under
+buffers, which are the two calls `\` makes, so the answer is the allocating method's to the bit. A
+[`BiorthogonalLieAlgHorMatrix`](@ref) is the exception: it takes the allocating method. Every other
+case copies the allocating method's answer into `D` — at ``\alpha = 0``, under
 [`Geodesic`](@ref) and for an ordinary array that is a copy of `B` — including a workspace on any
 other array type, where `\` stays.
 """

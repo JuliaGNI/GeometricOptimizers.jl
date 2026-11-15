@@ -92,7 +92,7 @@ Note that the section is *not* recomputed at every step. It is built once, when 
 
 ## The algorithm on the symplectic Stiefel manifold
 
-The same algorithm runs on the [`SymplecticStiefelManifold`](@ref) ``\{U\in\mathbb{R}^{2N\times2n} : U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}\}``, a homogeneous space of the symplectic group ``Sp(2N)`` (see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref)). The section is ``\Lambda = \lambda(U) = [U\ \ U^s] \in Sp(2N)``, built by [`global_section(::SymplecticStiefelManifold{T}) where {T}`](@ref), and ``U^+ = \mathbb{J}_{2n}^TU^T\mathbb{J}_{2N}`` is the symplectic inverse. One step of [`GradientMethod`](@ref), [`MomentumMethod`](@ref) or [`Adam`](@ref) is
+The same algorithm runs on the [`SymplecticStiefelManifold`](@ref) ``\{U\in\mathbb{R}^{2N\times2n} : U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}\}``, a homogeneous space of the symplectic group ``Sp(2N)`` (see [Global Tangent Space for the Symplectic Stiefel Manifold](@ref "The Global Tangent Space for the Symplectic Stiefel Manifold")). The section is ``\Lambda = \lambda(U) = [U\ \ U^s] \in Sp(2N)``, built by [`global_section(::SymplecticStiefelManifold{T}) where {T}`](@ref), and ``U^+ = \mathbb{J}_{2n}^TU^T\mathbb{J}_{2N}`` is the symplectic inverse. One step of [`GradientMethod`](@ref), [`MomentumMethod`](@ref) or [`Adam`](@ref) is
 
 ```math
 \begin{aligned}
@@ -115,7 +115,7 @@ The lines are those of the Stiefel manifold one by one; only what [`rgrad(::Symp
     - the right-invariant Riemannian metric ``g`` of their (3.16), [`metric`](@ref), gives the gradient in the first line, and nothing else;
     - the bi-invariant pseudo-Riemannian metric ``h`` of their (2.1) gives the global tangent space ``\mathfrak{g}^\mathrm{hor}``, the lift ``\Omega`` of their (3.7) behind [`global_rep`](@ref), the curves ``\lambda\exp(tW)E = \exp(t\Omega)U``, which are its geodesics (3.9), and the fixed cache, which is the parallel transport of the canonical connection of the second kind. The space is reductive, and naturally reductive for ``h``, but for no Riemannian metric.
 
-    The construction of [Brantner:2023](@cite) stays as it is: the global tangent space, the section, the cache and its update in ``\mathfrak{g}^\mathrm{hor}``, the split of the retraction into `update_section` and `apply_section`, and the fixed cache. What is lost is the agreement between the two metrics. For ``g`` the retraction agrees with the Riemannian geodesic (3.18) only to first order, the fixed cache changes the length of the cache, and the coordinates in ``\mathfrak{g}^\mathrm{hor}`` depend on the section. [Global Tangent Space for the Symplectic Stiefel Manifold](@ref) has the details.
+    The construction of [Brantner:2023](@cite) stays as it is: the global tangent space, the section, the cache and its update in ``\mathfrak{g}^\mathrm{hor}``, the split of the retraction into `update_section` and `apply_section`, and the fixed cache. What is lost is the agreement between the two metrics. For ``g`` the retraction agrees with the Riemannian geodesic (3.18) only to first order, the fixed cache changes the length of the cache, and the coordinates in ``\mathfrak{g}^\mathrm{hor}`` depend on the section. [Global Tangent Space for the Symplectic Stiefel Manifold](@ref "The Global Tangent Space for the Symplectic Stiefel Manifold") has the details.
 
 ## The Euclidean case falls out
 

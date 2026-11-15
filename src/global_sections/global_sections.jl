@@ -450,6 +450,14 @@ The four-argument form writes the gradient that `method` holds. For [`BFGS`](@re
 and every other method it is the lift above. For [`GradientMethod`](@ref),
 [`MomentumMethod`](@ref) and [`Adam`](@ref) it is [`global_rep`](@ref) of `Δ`.
 
+# The biorthogonal manifold
+
+The metric of [`BiorthogonalManifold`](@ref) is the Euclidean one, so `Δ` is the orthogonal projection
+of ``\nabla{}L`` onto the tangent space and pairs with every tangent vector as ``\nabla{}L`` does. The
+lift above is then [`global_rep`](@ref)'s with the frame ``[\Phi\ \ K]`` and the dual frame
+``[\Psi\ \ \tilde{K}]`` of the section exchanged: ``A = \Phi^T\Delta_\Phi - \Delta_\Psi^T\Psi``,
+``B = K^T\Delta_\Phi`` and ``C = -\Delta_\Psi^T\tilde{K}``; see [Global Tangent Spaces](@ref "The Global Tangent Space for the Biorthogonal Manifold").
+
 # The symplectic Stiefel manifold
 
 For the [`StiefelManifold`](@ref) and the [`GrassmannManifold`](@ref) the lift above is
@@ -524,11 +532,13 @@ a lift at the section `λY`, so that
 ```
 
 with ``\langle\cdot,\cdot\rangle`` the pairing of [`GeometricOptimizers._dot`](@ref). On every lift but
-a [`SymplecticLieAlgHorMatrix`](@ref) that pairing is the metric and ``M`` is the identity, as it is on
-a vector space. On a symplectic lift it is [`GeometricOptimizers.gradient_rep!`](@ref) of the tangent
-vector ``\lambda(U)BE = U\mathcal{A} + U^s\mathcal{B}``, so ``M`` takes the lift
-[`global_rep`](@ref) of a Riemannian gradient to the lift `gradient_rep!` of the same gradient.
-[`GeometricOptimizers._metric_inverse!`](@ref) builds ``M`` from it.
+a [`SymplecticLieAlgHorMatrix`](@ref) and a [`BiorthogonalLieAlgHorMatrix`](@ref) that pairing is the
+metric and ``M`` is the identity, as it is on a vector space. On a symplectic lift it is
+[`GeometricOptimizers.gradient_rep!`](@ref) of the tangent vector
+``\lambda(U)BE = U\mathcal{A} + U^s\mathcal{B}``, and on a biorthogonal lift `gradient_rep!` of the
+tangent vector ``\lambda(Y)B\cdot(E, E) = (\Phi{}A + KB,\ -(\Psi{}A^T + \tilde{K}C^T))``, so ``M``
+takes the lift [`global_rep`](@ref) of a Riemannian gradient to the lift `gradient_rep!` of the same
+gradient. [`GeometricOptimizers._metric_inverse!`](@ref) builds ``M`` from it.
 """
 _metric_apply!(D, ::GlobalSection, B) = _copyto!(D, B)
 

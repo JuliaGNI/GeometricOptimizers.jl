@@ -63,6 +63,13 @@ function device_manifolds(todevice; seed = 1234)
             check_row("metric($name, Δ₁, Δ₂)",
                 () -> metric(dY, todevice(Δ₁), todevice(Δ₂)) ≈ metric(Y, Δ₁, Δ₂)))
     end
+    # a biorthogonal pair is drawn through `cholesky` and triangular solves, which the `JLArray`
+    # stand-in lacks, so only a real device runs this row
+    push!(rows,
+        check_row("rand(backend, BiorthogonalManifold{Float32}, 20, 6)",
+            () -> let Y = rand(backend, BiorthogonalManifold{Float32}, 20, 6)
+                get_backend(parent(Y)) == backend && check(Y) < 1.0f-4
+            end))
     for algorithm in (ScaledSquaring(), NativePade())
         push!(rows,
             check_row("geodesic(60 * lift, $(nameof(typeof(algorithm))))",
@@ -72,5 +79,14 @@ function device_manifolds(todevice; seed = 1234)
                         Array(parent(Y)) ≈ parent(geodesic(B, algorithm))
                 end))
     end
+    # a biorthogonal `rgrad` solves its `n × n` Sylvester equation on the host and returns to the
+    # device
+    push!(rows,
+        check_row("rgrad(BiorthogonalManifold, ∇L)",
+            () -> let Y = rand(rng, BiorthogonalManifold{Float32}, 20, 6)
+                ∇L = randn(rng, Float32, 20, 6)
+                r = rgrad(BiorthogonalManifold(todevice(parent(Y))), todevice(∇L))
+                get_backend(r) == backend && Array(r) ≈ rgrad(Y, ∇L)
+            end))
     rows
 end

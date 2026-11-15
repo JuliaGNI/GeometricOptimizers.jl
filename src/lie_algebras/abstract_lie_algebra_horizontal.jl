@@ -3,7 +3,7 @@
 
 `AbstractLieAlgHorMatrix` is a supertype for various horizontal components of Lie algebras. We usually call this ``\mathfrak{g}^\mathrm{hor}``.
 
-See [`StiefelLieAlgHorMatrix`](@ref) and [`GrassmannLieAlgHorMatrix`](@ref) for concrete examples.
+See [`StiefelLieAlgHorMatrix`](@ref), [`GrassmannLieAlgHorMatrix`](@ref), [`SymplecticLieAlgHorMatrix`](@ref) and [`BiorthogonalLieAlgHorMatrix`](@ref) for concrete examples.
 """
 abstract type AbstractLieAlgHorMatrix{T} <: AbstractMatrix{T} end
 
@@ -23,7 +23,8 @@ function manifold_type end
 
 The tuple of blocks `B`'s free parameters are stored in — `(A, B)` for a
 [`StiefelLieAlgHorMatrix`](@ref), `(B,)` for a [`GrassmannLieAlgHorMatrix`](@ref),
-`(A₁, B₁, C₁, B)` for a [`SymplecticLieAlgHorMatrix`](@ref) — and *not* the
+`(A₁, B₁, C₁, B)` for a [`SymplecticLieAlgHorMatrix`](@ref), `(A, B, C)` for a
+[`BiorthogonalLieAlgHorMatrix`](@ref) — and *not* the
 single array every other `parent` this package defines returns.
 
 Every operation on a lift that is elementwise *in the free parameters* — as opposed to in the ambient
@@ -82,7 +83,8 @@ third wrapper in this package to meet that gap, after [`StiefelProjection`](@ref
 
 A lift is block ``\begin{pmatrix} A & -B^T \\ B & \mathbb{O} \end{pmatrix}``, with ``A`` absent for
 a [`GrassmannLieAlgHorMatrix`](@ref), and with the Hamiltonian ``\mathcal{A}`` and the symplectic
-adjoint ``\mathcal{B}^+`` in place of ``A`` and ``B^T`` for a [`SymplecticLieAlgHorMatrix`](@ref).
+adjoint ``\mathcal{B}^+`` in place of ``A`` and ``B^T`` for a [`SymplecticLieAlgHorMatrix`](@ref),
+and with a block ``C`` of its own in place of ``-B^T`` for a [`BiorthogonalLieAlgHorMatrix`](@ref).
 So the product against an ``N\times{}m`` matrix is three block products — two for a Grassmann
 lift — and nothing else. **No kernel is needed and none is written**, which is where this differs
 from the triangulars: those hold a packed vector their `getindex` unpacks, while a lift holds
@@ -90,7 +92,8 @@ ordinary blocks and a [`SkewSymMatrix`](@ref) that already carries a kernel-back
 own. The per-type part is the first ``n`` rows, `_hor_top_rows`, beside each concrete lift.
 
 `*(C, B)` is written `-transpose(B * permutedims(C))`, on the identity ``B^T = -B`` of a Stiefel and
-a Grassmann lift. A symplectic lift does not satisfy it and takes its own `_rmul` on the blocks. A
+a Grassmann lift. A symplectic and a biorthogonal lift do not satisfy it and take their own `_rmul`
+on the blocks. A
 row vector `x` takes `transpose(x)` in place of `permutedims(C)`, and the vector form goes through
 the matrix one as a single column. `transpose` and `permutedims`, and not `adjoint`, wherever one
 appears, for the reason the comment on `_rmul(::AbstractMatrix, ::SkewSymMatrix)` in

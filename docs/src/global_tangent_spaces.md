@@ -26,7 +26,7 @@ Main.theorem(raw"Let the metric on ``G`` be bi-invariant, and let ``A\in{}G`` an
 Main.proof(raw"For ``V\in\mathfrak{g}`` we have ``AVA^{-1}Y = AVE``, so ``V\mapsto{}AVA^{-1}`` maps ``\mathfrak{g}^{\mathrm{ver},E}`` onto ``\mathfrak{g}^{\mathrm{ver},Y}``. Because the metric is bi-invariant, its inner product on ``\mathfrak{g}`` is invariant under ``V\mapsto{}AVA^{-1}``, so this map also sends the orthogonal complement ``\mathfrak{g}^\mathrm{hor}`` of ``\mathfrak{g}^{\mathrm{ver},E}`` onto the orthogonal complement ``\mathfrak{g}^{\mathrm{hor},Y}`` of ``\mathfrak{g}^{\mathrm{ver},Y}``. Its inverse is the map of the theorem.")
 ```
 
-Without bi-invariance the conjugation of an element of ``\mathfrak{g}^{\mathrm{hor},Y}`` in general has a vertical part, so the statement above fails (an example is the [symplectic Stiefel manifold](@ref "Global Tangent Space for the Symplectic Stiefel Manifold") with its Riemannian metric). The two spaces are still isomorphic for every complement of the vertical space, if the vertical part is removed:
+Without bi-invariance the conjugation of an element of ``\mathfrak{g}^{\mathrm{hor},Y}`` in general has a vertical part, so the statement above fails (an example is the [symplectic Stiefel manifold](@ref "The Global Tangent Space for the Symplectic Stiefel Manifold") with its Riemannian metric). The two spaces are still isomorphic for every complement of the vertical space, if the vertical part is removed:
 
 ```@eval
 Main.theorem(raw"Let ``\mathfrak{g}^{\mathrm{hor},Y}`` be any complement of ``\mathfrak{g}^{\mathrm{ver},Y}``, ``\mathfrak{g}^\mathrm{hor}`` any complement of ``\mathfrak{g}^{\mathrm{ver},E}``, and ``A\in{}G`` an element such that ``AE = Y``. Then
@@ -58,11 +58,36 @@ Main.definition(raw"We call a mapping ``\lambda`` from a homogeneous space ``\ma
 " * Main.indentation * raw"where ``E`` is the distinct element of the homogeneous space.")
 ```
 
-Note that in general global sections are not unique because the rank of ``G`` is in general greater than that of ``\mathcal{M}``. We give an example of how to construct such a global section for the Stiefel and the Grassmann manifolds below. 
+Note that in general global sections are not unique because the rank of ``G`` is in general greater than that of ``\mathcal{M}``.
+
+## The Four Global Tangent Spaces
+
+The sections below introduce ``\mathfrak{g}^\mathrm{hor}`` for each manifold in the same five steps:
+
+1. **Group and distinct element**: the Lie group ``G`` that acts transitively, and the element ``E`` (always built from [`StiefelProjection`](@ref)).
+2. **Vertical space**: the Lie algebra of the stabilizer of ``E``, on which the action at ``E`` vanishes.
+3. **Horizontal space**: the complement of the vertical space that serves as ``\mathfrak{g}^\mathrm{hor}``, how it is chosen, and the lift type that stores it.
+4. **Section**: what [`global_section`](@ref) completes ``Y`` with, and the inverse ``\lambda(Y)^{-1}``.
+5. **`global_rep`**: the blocks of ``\lambda(Y)^{-1}\Omega(Y, \Delta)\lambda(Y)``, computed from ``\Delta`` without forming ``\Omega``.
+
+| manifold | group ``G`` | ``\mathfrak{g}^\mathrm{hor}`` | chosen as the complement | section ``\lambda(Y)`` | ``\lambda(Y)^{-1}`` | lift type |
+|---|---|---|---|---|---|---|
+| [`StiefelManifold`](@ref) | ``O(N)`` | ``\begin{pmatrix} A & -B^T \\ B & \mathbb{O} \end{pmatrix}``, ``A`` skew | orthogonal in ``\frac{1}{2}\mathrm{tr}(X^TY)`` | ``[Y\ \ Y_\perp]`` | ``\lambda(Y)^T`` | [`StiefelLieAlgHorMatrix`](@ref) |
+| [`GrassmannManifold`](@ref) | ``O(N)`` | ``\begin{pmatrix} \mathbb{O} & -B^T \\ B & \mathbb{O} \end{pmatrix}`` | orthogonal in ``\frac{1}{2}\mathrm{tr}(X^TY)`` | ``[Y\ \ Y_\perp]`` | ``\lambda(Y)^T`` | [`GrassmannLieAlgHorMatrix`](@ref) |
+| [`SymplecticStiefelManifold`](@ref) | ``Sp(2N)`` | ``\begin{pmatrix} \mathcal{A} & -\mathcal{B}^+ \\ \mathcal{B} & \mathbb{O} \end{pmatrix}``, ``\mathcal{A}`` Hamiltonian | orthogonal in the pseudo-metric ``h`` | ``[U\ \ U^s]`` | ``\bar{\mathbb{J}}^T\lambda(U)^T\mathbb{J}_{2N}`` | [`SymplecticLieAlgHorMatrix`](@ref) |
+| [`BiorthogonalManifold`](@ref) | ``GL(N)`` | ``\begin{pmatrix} A & C \\ B & \mathbb{O} \end{pmatrix}`` | the matrices that vanish where the vertical ones do not | ``[\Phi\ \ K]`` | ``[\Psi\ \ \tilde{K}]^T`` | [`BiorthogonalLieAlgHorMatrix`](@ref) |
+
+In all four, ``\mathfrak{g}^\mathrm{hor}`` is the same subspace of the Lie algebra at every point, which is what makes it a *global* tangent space, and it is invariant under the stabilizer of ``E``.
 
 ## The Global Tangent Space for the Stiefel Manifold
 
-We now discuss the specific form of the global tangent space for the [Stiefel manifold](@ref "The Stiefel Manifold"). We pick as distinct element ``E`` (which build by calling [`StiefelProjection`](@ref)):
+1. **Group and distinct element.** ``O(N)`` acts on ``St(n, N)`` by ``Y\mapsto{}QY``, and ``E`` is the first ``n`` columns of ``\mathbb{I}_N``. For ``n < N`` the subgroup ``SO(N)`` acts transitively as well; for ``n = N`` it does not, because ``St(N, N) = O(N)`` has two components.
+2. **Vertical space.** ``X\in\mathfrak{so}(N)`` with ``XE = \mathbb{O}`` has its first ``n`` columns, and by skew-symmetry its first ``n`` rows, equal to zero: ``\mathfrak{g}^\mathrm{ver} = \{\mathrm{diag}(\mathbb{O}, C) : C\in\mathfrak{so}(N-n)\}``, the Lie algebra of the stabilizer ``\mathrm{diag}(\mathbb{I}_n, SO(N-n))``.
+3. **Horizontal space.** The orthogonal complement in the canonical inner product ``\frac{1}{2}\mathrm{tr}(X^TY)``, the matrices ``\begin{pmatrix} A & -B^T \\ B & \mathbb{O} \end{pmatrix}`` with ``A\in\mathfrak{so}(n)``; [`StiefelLieAlgHorMatrix`](@ref) stores ``(A, B)``.
+4. **Section.** ``\lambda(Y) = [Y\ \ Y_\perp]`` with ``Y_\perp`` an orthonormal basis of the orthogonal complement of the columns of ``Y``; ``\lambda(Y)^{-1} = \lambda(Y)^T``.
+5. **`global_rep`.** ``A = \mathrm{skew}(Y^T\Delta)`` and ``B = Y_\perp^T\Delta``.
+
+The rest of this section works through these steps in code. We pick as distinct element ``E`` (which build by calling [`StiefelProjection`](@ref)):
 
 ```math
 E = \begin{bmatrix}
@@ -161,9 +186,9 @@ So we draw ``(N - n)`` new columns randomly, subtract the part that is spanned b
 
 The last line is there because of rounding. The first projection leaves a rounding error in the span of ``Y``, and the orthonormalization multiplies it by the condition number of the projected draw, which is large now and then; in `Float32` the worst of a few thousand draws has ``\|Y^T\lambda\|`` of order ``10^{-2}``. ``\lambda`` is orthonormal, so projecting and orthonormalizing it again amplifies nothing, and ``Y_\perp`` is orthogonal to ``Y`` to rounding. The proof below is in exact arithmetic, where one pass is enough.
 
-The orthonormalization is **CholeskyQR2** — the Cholesky step shown twice above — and not `LinearAlgebra.qr`. `qr` is the textbook answer, but it is a host factorization for several of the backends supported here: `Metal` implements no `qr` for its array type at all, so a `qr` here would put [`GlobalSection`](@ref) and therefore [`Optimizer`](@ref) out of reach on such a device. CholeskyQR2 is expressible in matrix products, reductions and triangular solves alone, so it runs wherever the point already is, and its ``\|Q^TQ - \mathbb{I}\|`` is measured *smaller* than the host Householder QR's at every size tried. What the two give differs by the sign of each column, because CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
+The orthonormalization is **CholeskyQR2** (the Cholesky step shown twice above) and not `LinearAlgebra.qr`. `qr` is the textbook answer, but it is a host factorization for several of the backends supported here: `Metal` implements no `qr` for its array type at all, so a `qr` here would put [`GlobalSection`](@ref) and therefore [`Optimizer`](@ref) out of reach on such a device. CholeskyQR2 is expressible in matrix products, reductions and triangular solves alone, so it runs wherever the point already is, and its ``\|Q^TQ - \mathbb{I}\|`` is measured *smaller* than the host Householder QR's at every size tried. What the two give differs by the sign of each column, because CholeskyQR2's ``R`` has a positive diagonal and Householder's need not.
 
-The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in a hundred and twenty. Such a draw is *replaced* rather than repaired — it is Gaussian noise and carries no information — which is what [`GeometricOptimizers.orthonormal_columns`](@ref) does. A replacement fails at a somewhat higher rate again, so the redraw is bounded and raises rather than returning a result it did not produce cleanly.
+The price is that forming ``A^TA`` squares the condition number, and ``A`` above is square inside the complement of ``Y``. In `Float32` that breaks the factorization down on about one draw in a hundred and twenty. Such a draw is *replaced* rather than repaired, because it is Gaussian noise and carries no information; this is what [`GeometricOptimizers.orthonormal_columns`](@ref) does. A replacement fails at a somewhat higher rate again, so the redraw is bounded and raises rather than returning a result it did not produce cleanly.
 
 On a device, CholeskyQR2 keeps the point there; it is not the faster route. `scripts/orthonormalization_device_cost.jl` measures it on an M4 Max with Julia 1.13.1, Metal 1.11.1 and the development version of GeometricOptimizers after 0.8.0, in `Float32`, at the ``N\times(N-3)`` shape that [`global_section`](@ref) uses: a cold session, one warm-up, the median of five runs, `Metal.synchronize()` in the timed region, and the host on one BLAS thread.
 
@@ -187,11 +212,11 @@ Main.theorem(raw"The matrix ``Y_\perp`` constructed with the algorithm above sat
 ```
 
 ```@eval
-Main.proof(raw"The orthonormalization writes the drawn matrix as ``QR``, with ``Q`` orthonormal and ``R`` upper triangular — for CholeskyQR2 ``R`` is the product of the two Cholesky factors, and a product of upper triangular matrices is upper triangular. The second property is then trivially satisfied because ``Q`` is orthonormal. For the first property note that ``Y^TQR = \mathbb{O}`` is zero because we have subtracted the ``Y`` component from the matrix ``QR``. The matrix ``R\in\mathbb{R}^{(N-n)\times{}(N-n)}`` further has the property ``[R]_{ij} = 0`` for ``i > j`` and we have that 
+Main.proof(raw"The orthonormalization writes the drawn matrix as ``QR``, with ``Q`` orthonormal and ``R`` upper triangular; for CholeskyQR2 ``R`` is the product of the two Cholesky factors, and a product of upper triangular matrices is upper triangular. The second property is then trivially satisfied because ``Q`` is orthonormal. For the first property note that ``Y^TQR = \mathbb{O}`` is zero because we have subtracted the ``Y`` component from the matrix ``QR``. The matrix ``R\in\mathbb{R}^{(N-n)\times{}(N-n)}`` further has the property ``[R]_{ij} = 0`` for ``i > j`` and we have that 
 " * Main.indentation * raw"```math
 " * Main.indentation * raw"(Y^TQ)R = [r_{11}(Y^TQ)_{1\bullet}, r_{12}(Y^TQ)_{1\bullet} + r_{22}(Y^TQ)_{2\bullet}, \ldots, \sum_{i=1}^{N-n}r_{i(N-n)}(Y^TQ)_{i\bullet}].
 " * Main.indentation * raw"```
-" * Main.indentation * raw"Now all the coefficients ``r_{ii}`` are non-zero because the matrix we factorized has full rank — and for CholeskyQR2 they are in addition positive, which is what makes ``Q`` unique where a Householder ``QR`` leaves the sign of each column free. We can see that if ``(Y^TQ)R`` is zero ``Y^TQ`` also has to be zero.")
+" * Main.indentation * raw"Now all the coefficients ``r_{ii}`` are non-zero because the matrix we factorized has full rank, and for CholeskyQR2 they are in addition positive, which is what makes ``Q`` unique where a Householder ``QR`` leaves the sign of each column free. We can see that if ``(Y^TQ)R`` is zero ``Y^TQ`` also has to be zero.")
 ```
 
 The function `global_rep` furthermore makes use of the following:
@@ -221,7 +246,13 @@ This expression of `global_rep` means we only need ``Y^T\Delta`` and ``\bar{\lam
 
 We now discuss the global tangent space for the Grassmann manifold. This is similar to the Stiefel case.
 
-## Global Tangent Space for the Grassmann Manifold
+## The Global Tangent Space for the Grassmann Manifold
+
+1. **Group and distinct element.** ``O(N)`` acts on ``Gr(n, N)`` by ``\mathrm{span}(Y)\mapsto\mathrm{span}(QY)``, and the distinct element is ``\mathcal{E} = \mathrm{span}(E)``.
+2. **Vertical space.** The stabilizer of ``\mathcal{E}`` is ``S(O(n)\times{}O(N-n))``, so ``\mathfrak{g}^\mathrm{ver} = \{\mathrm{diag}(A, C) : A\in\mathfrak{so}(n), C\in\mathfrak{so}(N-n)\}``.
+3. **Horizontal space.** The orthogonal complement in ``\frac{1}{2}\mathrm{tr}(X^TY)``, the matrices ``\begin{pmatrix} \mathbb{O} & -B^T \\ B & \mathbb{O} \end{pmatrix}``; [`GrassmannLieAlgHorMatrix`](@ref) stores ``B``.
+4. **Section.** As for the Stiefel manifold, ``\lambda(Y) = [Y\ \ Y_\perp]`` for the orthonormal representative ``Y``, and ``\lambda(Y)^{-1} = \lambda(Y)^T``.
+5. **`global_rep`.** ``B = Y_\perp^T\Delta``.
 
 In the case of the Grassmann manifold we construct the global tangent space with respect to the distinct element ``\mathcal{E}=\mathrm{span}(E)\in{}Gr(n,N)``, where ``E`` is again the same matrix.
 
@@ -248,7 +279,13 @@ This representation is based on the identification ``T_\mathcal{E}Gr(n,N)\to{}T_
 
 This is equivalent to the horizontal component of ``\mathfrak{g}`` for the Stiefel manifold for the case when ``A`` is zero. This is a reflection of the rotational invariance of the Grassmann manifold: the skew-symmetric matrices ``A`` are connected to the group of rotations ``O(n)`` which is factored out in the Grassmann manifold ``Gr(n,N)\simeq{}St(n,N)/O(n)``. In `GeometricOptimizers` we thus treat the Grassmann manifold as being embedded in the Stiefel manifold. In [bendokat2020grassmann](@cite) viewing the Grassmann manifold as a quotient space of the Stiefel manifold is important for "feasibility" in "practical computations". 
 
-## Global Tangent Space for the Symplectic Stiefel Manifold
+## The Global Tangent Space for the Symplectic Stiefel Manifold
+
+1. **Group and distinct element.** ``Sp(2N)`` acts on ``Sp(2n, 2N)`` by ``U\mapsto{}MU``, and ``E`` is the first ``2n`` columns of the identity in the basis of the section below.
+2. **Vertical space.** In that basis, ``\mathfrak{g}^\mathrm{ver} = \{\mathrm{diag}(\mathbb{O}, \mathcal{C}) : \mathcal{C}\in\mathfrak{sp}(2N-2n)\}``, the Lie algebra of the stabilizer ``\mathrm{diag}(\mathbb{I}_{2n}, Sp(2N-2n))``.
+3. **Horizontal space.** The complement with respect to the bi-invariant pseudo-Riemannian metric ``h``, the matrices ``\begin{pmatrix} \mathcal{A} & -\mathcal{B}^+ \\ \mathcal{B} & \mathbb{O} \end{pmatrix}`` with ``\mathcal{A}\in\mathfrak{sp}(2n)``; [`SymplecticLieAlgHorMatrix`](@ref) stores ``\mathcal{A}`` and ``\mathcal{B}``.
+4. **Section.** ``\lambda(U) = [U\ \ U^s]`` with ``U^s`` a symplectic completion; ``\lambda(U)^{-1} = \bar{\mathbb{J}}^T\lambda(U)^T\mathbb{J}_{2N}``, the symplectic inverse.
+5. **`global_rep`.** ``\mathcal{A} = U^+\Delta`` and ``\mathcal{B} = (U^s)^+\Delta``.
 
 The [`SymplecticStiefelManifold`](@ref) ``Sp(2n, 2N) = \{U\in\mathbb{R}^{2N\times2n} : U^T\mathbb{J}_{2N}U = \mathbb{J}_{2n}\}`` is a homogeneous space of the symplectic group ``Sp(2N)``, and [bendokat2021real](@cite) give it the same structure as the Stiefel manifold: a projection ``M\mapsto{}ME`` from the group, a vertical space, and, below their (3.4), a horizontal space that is the same subspace of the Lie algebra ``\mathfrak{sp}(2N)`` at every point. It is the complement of the vertical space with respect to the bi-invariant pseudo-Riemannian metric ``h`` of their (2.1). The horizontal space (3.13) of their Riemannian metric ``g``, the one [`metric`](@ref) implements, depends on the point, so only the first gives a global tangent space.
 
@@ -296,10 +333,38 @@ The line search, [`BFGS`](@ref) and [`DFP`](@ref) pair a gradient with a directi
 
 [`GradientMethod`](@ref), [`MomentumMethod`](@ref) and [`Adam`](@ref) build their direction from the gradient itself, and it is [`global_rep`](@ref) of the Riemannian gradient of [`metric`](@ref). Its tangent vector ``\lambda(U)BE`` does not depend on the section, and neither does the retraction ``\lambda(U)\exp(tB)E`` of a horizontal lift: a change ``\lambda\mapsto\lambda h`` with ``h = \mathrm{diag}(\mathbb{I}, S)`` sends ``B`` to ``h^{-1}Bh``, and ``\lambda h\exp(th^{-1}Bh)E = \lambda\exp(tB)E``. The path of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref), at a fixed step size and under a line search, is therefore a property of the point and the metric alone, because [`GeometricOptimizers.step_αmax`](@ref) reads the spectral radius of ``B`` (but [`Adam`](@ref) takes entrywise second moments on ``\mathcal{B}``). That retraction is ``\exp(t\Omega(U,\Delta))U``, the geodesic (3.9) of the pseudo-Riemannian metric (3.8) (Proposition 3.7 of [bendokat2021real](@cite); Proposition 3.8 evaluates it without a section, as (3.11)), and not the geodesic (3.18) of [`metric`](@ref): the two curves agree to first order in ``t`` and differ at second order. So it is a retraction for [`metric`](@ref), not its exponential map. Both Nomizu's canonical connection of the second kind ``\nabla^{(0)}`` (which needs no metric, only a horizontal space stabilized by the isotropy subgroup, Lemma 3.4 of [bendokat2021real](@cite), and carries torsion ``T(X, Y) = -[X, Y]_{\mathfrak{g}^\mathrm{hor}}`` on horizontal vectors) and the canonical connection of the first kind ``\nabla^{(1/2)}`` (the torsion-free Levi-Civita connection of the pseudo-Riemannian metric (3.8)) have ``\exp(t\Omega(U,\Delta))U`` as their geodesic [nomizu1954invariant, schlarb2024covariant](@cite), while it is ``\nabla^{(0)}`` whose parallel transport along ``\exp(t\Omega(U,\Delta))U`` is ``\Delta_2\mapsto\exp(t\Omega(U,\Delta))\Delta_2 = \lambda(U)\exp(tB)B_2E`` — exactly what the optimizers do when they keep a cache ``B_2\in\mathfrak{g}^\mathrm{hor}`` fixed while the section moves to ``\lambda(U)\exp(tB)``, as in [Parallel Transport](@ref "Parallel Transport") for the Stiefel manifold. So retraction and ``\nabla^{(0)}``-transport form one consistent pair, and the metric enters only through the gradient. The geodesic (3.18) of [`metric`](@ref) forms another pair, with the parallel transport of the Levi-Civita connection of [`metric`](@ref), and it costs more. With ``C = \lambda(U)^{-1}Z\lambda(U)``, where ``Z`` is the lift of (3.15), and ``P = \lambda(U)^T\lambda(U)``, (3.18) reads ``\lambda(U)\exp(t(C - P^{-1}C^TP))\exp(tP^{-1}C^TP)E``. Although (3.19) of [bendokat2021real](@cite), their Proposition 3.13, evaluates that same geodesic directly from ``(U, \Delta)`` without a section, through one ``8n\times8n`` and one ``4n\times4n`` matrix exponential, inside the global-tangent-space framework ``C`` is not in ``\mathfrak{g}^\mathrm{hor}`` and ``P`` depends on the section, so the retraction is no longer a map on ``\mathfrak{g}^\mathrm{hor}`` alone and transporting a cache cannot keep ``B_2`` fixed: keeping ``B_2`` fixed while the section follows the horizontal lift of (3.18) changes its norm in [`metric`](@ref) and does not carry the initial velocity to the velocity of (3.18), so the cache has to be recomputed in every step. [#188](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/188) tracks this pair as an option. The steepest descent of ``\frac{1}{2}\mathrm{tr}(X^TY)`` on the dense lifts at the section is not offered: by the statement above, for ``n < N`` that form defines no metric on the manifold, so its step would be steepest descent at one section of the fibre over the point, not at the point, and it would change with a change of the section that leaves the point where it is. In the coordinates of [`global_section`](@ref) the metric is block-diagonal in ``(\mathcal{A}, \mathcal{B})`` at every point, and at an orthosymplectic point it is exactly ``\frac{1}{2}\mathrm{tr}(\mathcal{A}^T\mathcal{A}) + \mathrm{tr}(\mathcal{B}^T\mathcal{B})``, the only place where the two descents agree. `scripts/symplectic_gradient_options.jl` measures these statements.
 
+## The Global Tangent Space for the Biorthogonal Manifold
+
+1. **Group and distinct element.** ``GL(N)`` acts on the [`BiorthogonalManifold`](@ref) ``\mathcal{B}(n, N) = \{(\Phi, \Psi)\in\mathbb{R}^{N\times{}n}\times\mathbb{R}^{N\times{}n} : \Psi^T\Phi = \mathbb{I}_n\}`` by ``g\cdot(\Phi, \Psi) = (g\Phi, g^{-T}\Psi)``, and the distinct element is ``(E, E)``.
+2. **Vertical space.** An ``X\in\mathfrak{gl}(N)`` acts by ``X\cdot(\Phi, \Psi) = (X\Phi, -X^T\Psi)``, at ``(E, E)`` through its first ``n`` columns and its first ``n`` rows. Both vanish exactly on ``\mathfrak{g}^\mathrm{ver} = \{\mathrm{diag}(\mathbb{O}, D) : D\in\mathfrak{gl}(N-n)\}``, the Lie algebra of the stabilizer ``\mathrm{diag}(\mathbb{I}_n, GL(N-n))``.
+3. **Horizontal space.** The matrices that vanish in the lower right block, ``\begin{pmatrix} A & C \\ B & \mathbb{O} \end{pmatrix}`` with ``A``, ``B`` and ``C`` arbitrary; [`BiorthogonalLieAlgHorMatrix`](@ref) stores ``(A, B, C)``.
+4. **Section.** ``\lambda(Y) = [\Phi\ \ K]`` with ``K`` an orthonormal basis of the kernel of ``\Psi^T``, and ``\lambda(Y)^{-T} = [\Psi\ \ \tilde{K}]`` with ``\tilde{K} = (\mathbb{I}_N - \Psi\Phi^T)K``.
+5. **`global_rep`.** ``A = \Psi^T\Delta_\Phi``, ``B = \tilde{K}^T\Delta_\Phi`` and ``C = -\Delta_\Psi^TK``.
+
+The manifold, its metric and its gradient are on the page [The Biorthogonal Manifold](@ref); the steps are worked through here.
+
+**The horizontal space.** No metric is needed to choose it: ``\mathfrak{gl}(N) = \mathfrak{g}^\mathrm{hor}\oplus\mathfrak{g}^\mathrm{ver}`` is a direct sum, and ``X\mapsto(XE, -X^TE)`` is a linear isomorphism from ``\mathfrak{g}^\mathrm{hor}`` onto ``T_{(E, E)}\mathcal{B}(n, N)``: ``XE`` gives ``A`` and ``B``, and ``-X^TE`` gives ``-A^T`` and ``-C^T``. The dimension is ``n^2 + 2(N-n)n = 2Nn - n^2 = \dim\mathcal{B}(n, N)``. For ``h = \mathrm{diag}(\mathbb{I}_n, S)`` in the stabilizer,
+
+```math
+h\begin{pmatrix} A & C \\ B & \mathbb{O} \end{pmatrix}h^{-1} = \begin{pmatrix} A & CS^{-1} \\ SB & \mathbb{O} \end{pmatrix},
+```
+
+so the space is invariant under the stabilizer, as in the other three cases. This lift is the [`StiefelLieAlgHorMatrix`](@ref) without the two constraints of ``\mathfrak{so}(N)``: ``A`` need not be skew-symmetric, and ``C`` need not be ``-B^T``. Under ``X\mapsto\mathrm{diag}(X, -X^T)``, ``\mathfrak{gl}(N)\subset\mathfrak{sp}(2N)``, and in the column order ``[\Phi\ \ \Psi\ \ K\ \ \tilde{K}]`` the lift is the [`SymplecticLieAlgHorMatrix`](@ref) with ``A_1 = A``, ``B_1 = C_1 = \mathbb{O}`` and ``\mathcal{B} = \mathrm{diag}(B, -C^T)``.
+
+**The section.** The group does not act by orthogonal matrices, so ``\lambda(Y)^{-1}`` is not ``\lambda(Y)^T``, and the second half of a pair moves by the inverse transpose of what moves the first. [`global_section`](@ref) therefore returns ``[K\ \ \tilde{K}]``, the completions of the frame and of the dual frame, and a [`GlobalSection`](@ref) stores both. ``[\Phi\ \ K]`` is invertible because ``\Phi a + Kb = 0`` gives ``a = \Psi^T(\Phi a + Kb) = 0`` and then ``b = 0``, and ``\tilde{K}^T\Phi = \mathbb{O}`` and ``\tilde{K}^TK = \mathbb{I}_{N-n}`` are ``\lambda(Y)^{-1}\lambda(Y) = \mathbb{I}_N``. At a Stiefel point ``\Phi = \Psi`` the dual completion is ``\tilde{K} = K`` and the section is the Stiefel one.
+
+**`global_rep`.** A lift ``X`` represents the tangent vector ``\lambda(Y)X\cdot(E, E) = (\Phi A + KB,\ -(\Psi A^T + \tilde{K}C^T))``, and `global_rep` inverts this map, which gives the blocks of step 5. ``A`` is also ``-\Delta_\Psi^T\Phi`` on the tangent space ``\{(\Delta_\Phi, \Delta_\Psi) : \Psi^T\Delta_\Phi + \Delta_\Psi^T\Phi = \mathbb{O}\}``, and the code takes the mean of the two. The element ``\lambda(Y)X\lambda(Y)^{-1}`` of ``\mathfrak{gl}(N)`` at ``Y`` does not depend on the section; it is the horizontal lift [`GeometricOptimizers.Ω`](@ref)
+
+```math
+\Omega(Y, \Delta) = \Delta_\Phi\Psi^T - \Phi\Delta_\Psi^T(\mathbb{I}_N - \Phi\Psi^T),
+```
+
+which at a Stiefel point and a tangent vector ``(\Delta, \Delta)`` is the canonical lift of the Stiefel manifold. [`GeometricOptimizers.gradient_rep!`](@ref), the derivative of the loss with respect to the stored blocks, has the frame and the dual frame exchanged: ``A = \Phi^T\Delta_\Phi - \Delta_\Psi^T\Psi``, ``B = K^T\Delta_\Phi`` and ``C = -\Delta_\Psi^T\tilde{K}``.
+
 ## Library functions
 
 [`AbstractLieAlgHorMatrix`](@ref), [`StiefelLieAlgHorMatrix`](@ref),
-[`GrassmannLieAlgHorMatrix`](@ref), [`SymplecticLieAlgHorMatrix`](@ref), [`StiefelProjection`](@ref), [`GlobalSection`](@ref),
+[`GrassmannLieAlgHorMatrix`](@ref), [`SymplecticLieAlgHorMatrix`](@ref), [`BiorthogonalLieAlgHorMatrix`](@ref), [`StiefelProjection`](@ref), [`GlobalSection`](@ref),
 [`global_section`](@ref), [`global_rep`](@ref) and [`apply_section`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 [`GeometricMachineLearning`](@extref GeometricMachineLearning :doc:`index`) re-exports all of these,

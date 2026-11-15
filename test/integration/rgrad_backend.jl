@@ -70,6 +70,17 @@ const device = get_backend(JLArray(zeros(1)))
     @test_throws "Illegal conversion of a JLArray to a Ptr" rgrad(host_Y, JLArray(host_gradient))
 end
 
+# The Sylvester equation of a biorthogonal `rgrad` is solved on the host. With scalar indexing
+# disallowed, the device path fails if any step of that solve is taken on the device matrices.
+@testset "rgrad at a biorthogonal point on the device, $T" for T in REAL_ELTYPES
+    rng = Random.Xoshiro(14)
+    host_Y = rand(rng, BiorthogonalManifold{T}, 20, 6)
+    host_gradient = randn(rng, T, 20, 6)
+    Δ = rgrad(BiorthogonalManifold(JLArray(host_Y.A)), JLArray(host_gradient))
+    @test Δ isa JLArray{T, 2}
+    @test Array(Δ) ≈ rgrad(host_Y, host_gradient) rtol = √eps(T)
+end
+
 function device_set(rng, ::Type{T}) where {T}
     point() = Matrix{T}(qr(randn(rng, T, N, n)).Q)[:, 1:n]
     host = NetworkParameters((

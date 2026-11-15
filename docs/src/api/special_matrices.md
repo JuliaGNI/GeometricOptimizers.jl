@@ -13,5 +13,6 @@ Pages = ["/special_matrices/skew_symmetric.jl", "/special_matrices/symmetric.jl"
          "/lie_algebras/stiefel_lie_algebra_horizontal.jl",
          "/lie_algebras/grassmann_lie_algebra_horizontal.jl",
          "/lie_algebras/symplectic_lie_algebra_horizontal.jl",
+         "/lie_algebras/biorthogonal_lie_algebra_horizontal.jl",
          "/lie_algebras/lift_families.jl", "/lie_algebras/stiefel_projection.jl"]
 ```
