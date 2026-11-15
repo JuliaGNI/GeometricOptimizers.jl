@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0, so a minor bump is a
 breaking release).
 
+## [Unreleased]
+
+### Fixed
+
+- **The header of `.github/workflows/Metal.yml` names the command that installs `CI.yml`.** It
+  pointed to an installer script that does not exist, and to the directories of a local checkout.
+  The workflow itself is unchanged.
+
 ## [0.10.1] — 2026-11-15
 
 ### Added
