@@ -59,7 +59,7 @@ Q \gets Q - \frac{Q\gamma\gamma^TQ}{\gamma^TQ\gamma} + \frac{\delta\delta^T}{\de
 update itself lives in [`QuasiNewtonCache`](@ref), which symmetrizes ``Q\gamma\gamma^TQ`` explicitly and
 skips the update when the secant pair fails [`curvature_is_usable`](@ref).
 
-Where [`BFGS`](@ref) is the better-conditioned choice and the default, `DFP` is here because it is
+[`BFGS`](@ref) is the default `algorithm` of [`Optimizer`](@ref). `DFP` is here because it is
 the other classical member of the family and because the two differ in exactly the way that shows
 what the line search is doing: DFP's direction is systematically *under*-scaled, so it wants a
 median ``\alpha`` well above 1 and is starved by a search that cannot exceed it. See
@@ -169,8 +169,8 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     Because the direction has magnitude ``\approx{}1`` per component whatever the gradient is,
     a step that does not shrink leaves `Adam` circling the minimiser at that distance rather
     than settling on it. A *searching* line search does not fix that — it picks each step from
-    the merit and has no reason to drive the sequence to zero — it only makes each step a
-    better one: on the two-sphere problem of `test/integration/manifold_linesearch_tests.jl` the searching
+    the merit and has no reason to drive the sequence to zero — it only sets the length of each
+    step: on the two-sphere problem of `test/integration/manifold_linesearch_tests.jl` the searching
     options need 251–331 iterations where [`GradientMethod`](@ref) and [`MomentumMethod`](@ref)
     need 9–64. [`DecayingStatic`](@ref) is the setting under which `Adam` terminates on a
     criterion by construction, because its schedule drives the step to zero itself.
@@ -181,6 +181,29 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
     `linesearch = Static(η)`, and [`default_linesearch`](@ref) is the default. `β₁`, `β₂` and `δ`
     are keyword arguments, so that a positional `Adam(1e-3)` meant as a learning rate fails instead
     of setting `β₁`.
+
+!!! warning "On a manifold, the iterates depend on the section"
+    The moments are taken of the lift in ``\mathfrak{g}^\mathrm{hor}``, and the section
+    ``\lambda(Y)`` that defines the lift is unique only up to ``\lambda\mapsto\lambda{}h`` with ``h``
+    in the isotropy group, under which the lift goes to ``h^{-1}Bh``. ``m_1`` transforms the same way,
+    but the entrywise ``\nabla{}L\odot\nabla{}L``, ``\sqrt{m_2}`` and the division do not, so the
+    direction and the path depend on the section. This holds on every manifold of this package,
+    where those of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref) at a fixed step size do
+    not. Only an ``h`` that permutes coordinates and flips their signs leaves `Adam` alone, which is
+    all a Stiefel point with at most one complementary column (``N - n \leq 1``) admits; a
+    full-width point of the [`SymplecticStiefelManifold`](@ref) (``n = N``) has an empty
+    completion and a trivial isotropy group. On a
+    Grassmann point the isotropy group also rotates the representative, ``Y\mapsto{}YQ``, and for
+    ``n \geq 2`` that moves `Adam` for ``N - n = 1`` too; for ``n = 1`` the rotation is a sign
+    (`scripts/adam_section_exceptions.jl`). On a [`StiefelManifold`](@ref) and a
+    [`GrassmannManifold`](@ref),
+    [`global_section`](@ref) draws the completion at random from the global RNG, so for
+    ``N - n \geq 2`` the iterates of `Adam` depend on that draw (A5 in `KNOWN_ISSUES.md`). On a
+    `SymplecticStiefelManifold` below full width, `global_section` is deterministic, but the
+    iterates of `Adam` still depend on the completion it chooses and on the transported section
+    (K57). Euclidean parameters are not affected. Which
+    section `Adam` should take is open; [Weights on Manifolds](@ref) has the measurement on the
+    Stiefel manifold.
 """
 struct Adam{T} <: OptimizerMethod
     β₁::T
@@ -218,8 +241,9 @@ representation](@ref "Global Tangent Spaces"), and the direction is
 That one scalar is the entire difference from [`Adam`](@ref), and it is what the name says:
 ``\lVert\bar{G}\rVert^2`` is a squared gradient *norm* where Adam's ``m_2`` is a squared *gradient*,
 so the second moment carries no direction and the method assigns one adaptive learning rate to the
-whole matrix instead of one per coordinate. That is a reproduction of a published algorithm and not a
-straw man — on some objectives it will beat [`Adam`](@ref).
+whole matrix instead of one per coordinate. That is a reproduction of a published algorithm, and
+which of it and [`Adam`](@ref) reaches a lower loss depends on the objective, the step size and the
+number of steps.
 
 Only a single `StiefelManifold{T}` solution is supported; ordinary arrays, `NamedTuple`s, Grassmann
 solutions and mixed parameter trees throw a `MethodError`. As for [`Adam`](@ref), the
@@ -348,14 +372,14 @@ rate ``\eta`` is *not* stored here: it is the `α` of the line search, i.e. `lin
 exactly as in [loshchilov2019decoupled](@cite), where the two are decoupled from each other but
 the decay is still scaled by the schedule.
 
-!!! warning "Do not pass a searching line search"
-    For [`Adam`](@ref) a sufficient-decrease search is merely wasted work. Here it is worse than
-    that, because the merit the line search minimizes is the *bare* objective ``f`` and not
-    ``f + \frac{\lambda}{2}||x||^2``: the penalty this method exists to apply is not part of the
-    function whose decrease the search insists on, so the search picks its ``\alpha`` in order to
-    undo the decay's contribution as far as it can. On top of that ``\alpha`` then varies from
-    step to step, and since the decay per step is ``\alpha\lambda``, the regularization strength
-    would be whatever the search happened to choose rather than what was asked for.
+!!! warning "A searching line search changes what `λ` means"
+    The merit the line search minimizes is the *bare* objective ``f`` and not
+    ``f + \frac{\lambda}{2}||x||^2``: the penalty is never assembled anywhere, which is what
+    *decoupled* means. So the search picks its ``\alpha`` to undo the decay's contribution to ``f``
+    as far as it can. The decay per step is ``\alpha\lambda``, so an ``\alpha`` that varies from
+    step to step makes the effective regularization strength whatever the search picked on that
+    step. This holds in addition to what the docstring of [`Adam`](@ref) says about searching
+    along its direction.
 
     A fixed `Static(η)` — the default — is the setting in which ``\lambda`` means what
     [loshchilov2019decoupled](@cite) says it means. [`DecayingStatic`](@ref) is also well defined

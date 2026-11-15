@@ -145,9 +145,7 @@ makedocs(;
         assets = [
             "assets/extra_styles.css",
             asset("https://juliagni.github.io/GeometricFigures.jl/figures.css"; islocal = false)
-        ],
-        # `api.md` is one `@autodocs` over the whole package and is above the default 200 KiB.
-        size_threshold = 2^20
+        ]
     ),
     pages = [
         "Home" => "index.md",
@@ -182,7 +180,21 @@ makedocs(;
             "Weight Decay on Manifolds" => "weight_decay.md"
         ],
         "References" => "references.md",
-        "API" => "api.md"
+        # The docstrings are split into six pages by topic, so that no page reaches Documenter's
+        # default 200 KiB `size_threshold`. Each page's `@autodocs` block lists its source files;
+        # `Pages` matches by `endswith`, so each entry starts with `/` to match at a directory
+        # boundary. A docstring on no page fails the build in `checkdocs`, and one on two pages
+        # fails it as a duplicate. An entry that matches no file, such as one left behind by a
+        # renamed file, fails nothing.
+        "API" => [
+            "Overview" => "api/index.md",
+            "Manifolds" => "api/manifolds.md",
+            "Special Matrices" => "api/special_matrices.md",
+            "Retractions" => "api/retractions.md",
+            "Optimizers" => "api/optimizers.md",
+            "Optimizer Methods" => "api/optimizer_methods.md",
+            "Linesearch" => "api/linesearch.md"
+        ]
     ]
 )
 

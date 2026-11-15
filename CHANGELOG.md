@@ -102,6 +102,14 @@ breaking release).
   states the algorithm on the symplectic Stiefel manifold and why it takes two metrics, the page on
   parallel transport adds the symplectic case, and the citations of (3.19) and (3.9) of Bendokat and
   Zimmermann are corrected (#191). Issues #192 and #193 record two follow-ups.
+- **The exponential algorithms and the result of `solve!` are `public`.** `ScaledSquaring`,
+  `NativePade`, `AugmentedPade`, `ProjectedSkew` and `TaylorSeries` are what a caller passes to
+  `Geodesic(…)` to choose how the exponential is evaluated, and `OptimizerResult` and
+  `OptimizerStatus` are what `solve!` returns and what a caller reads off it. The manual and the
+  docstrings already showed callers using all seven; they are now part of the stable API, covered
+  by semantic versioning. None is exported, so a caller still writes
+  `using GeometricOptimizers: ProjectedSkew` or the qualified name; no existing call changes.
+  `solution`, `status` and `trace`, the accessors of `OptimizerResult`, stay internal.
 
 ### Changed
 
@@ -115,6 +123,27 @@ breaking release).
   most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
   is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
   K24.
+- **The API reference is an overview and six pages, grouped by topic.** It was one `@autodocs`
+  page over the whole package, which had grown past Documenter's 200 KiB `size_threshold`, so
+  `docs/make.jl` raised the threshold to 600 KiB, and every new docstring brought the page closer
+  to that limit. The overview keeps the old URL, `api/`, and holds the module docstring and the
+  index of every docstring. The pages are Manifolds, Special Matrices, Retractions, Optimizers,
+  Optimizer Methods and Linesearch, each listing its source files, and the threshold is
+  Documenter's default again.
+- **The `Adam` docstring and the Weights on Manifolds docs warn that the iterates of `Adam` depend
+  on the section.** The entrywise moments do not commute with a change of the section, so on every
+  manifold the path of `Adam` depends on the section, except on a Stiefel point with at most one
+  complementary column (`N - n ≤ 1`), on `Gr(1, 2)` and on a full-width `SymplecticStiefelManifold`
+  point, whose completion is empty; on a Grassmann point with `n ≥ 2` a change of the
+  representative `Y ↦ YQ` moves it for every `N - n`; `scripts/adam_section_exceptions.jl` checks
+  the Stiefel and Grassmann cases and exits with status 1 when one fails. On `StiefelManifold` and
+  `GrassmannManifold`, `global_section` draws the completion at random, so for `N - n ≥ 2` the path
+  depends on that draw (A5). On `SymplecticStiefelManifold` below full width the completion is
+  deterministic, and the path depends on it and on the transported section (K57).
+  `scripts/stiefel_adam_section.jl` gains a third part that measures what this does to the gap to
+  the minimum on `St(3, 8)` over 32 sections: the largest gap is 1.05 to 4.0 times the smallest
+  while `Adam` still descends, and about 200 times at step size `0.1` after 600 steps. The docs
+  page has the table.
 - **CI runs the tests as the groups `core`, `backends`, `optimizers` and `slow`, one job each.**
   `test/ci-groups.toml` lists them, and empty `ARGS` still runs all four (and `metal` on Apple
   silicon). The tests on another array backend and `device solve!` move to `backends`; the
@@ -122,6 +151,17 @@ breaking release).
   run the `metal` group, and the jobs of the `Metal` workflow become required checks.
   `.github/workflows/CI.yml`, `codecov.yml` and the git hooks in `.githooks/` follow the Harness
   template, which runs one CI job per group and checks the group files.
+- **The docstrings and the docs no longer rank one optimization method above another.** The
+  docstrings of `DFP`, `Adam` and `ScalarMomentAdam` and the pages Linesearches on Manifolds and
+  Weight Decay on Manifolds state what a method does, or which quantity differs and under which
+  conditions, in place of ranking words such as "better", "beat", "weaker", "a poor thing to
+  search along" and "outperforming". `ScalarMomentAdam` now says that which of
+  it and `Adam` reaches a lower loss depends on the objective, the step size and the number of
+  steps. The measured comparisons with their conditions stay as they were. The warning against a
+  searching line search in the docstring of `AdamWithEuclideanDecay` and the matching item of
+  Weight Decay on Manifolds give the same two facts in the same words: the merit of the search is
+  the bare objective, so the search undoes the decay, and an `α` that varies from step to step
+  makes the regularization strength vary with it.
 
 ### Fixed
 

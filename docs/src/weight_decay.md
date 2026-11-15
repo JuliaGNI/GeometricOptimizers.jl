@@ -109,11 +109,13 @@ knob. See [`default_linesearch`](@ref):
 - `Static(η)`, the default, gives the decay of the paper with ``\eta`` fixed.
 - [`DecayingStatic`](@ref) is the schedule case, and equally well defined: ``\lambda`` keeps its
   meaning relative to ``\eta`` while both go to zero.
-- A *searching* line search is not recommended, and not only because [`Adam`](@ref)'s direction is
-  a poor thing to search along. The merit it minimizes is the bare objective ``f``, not
-  ``f + \frac{\lambda}{2}||x||^2`` — the penalty is never assembled anywhere, which is what
-  *decoupled* means — so the search spends its ``\alpha`` undoing the decay's contribution to
-  ``f``, and the effective regularization strength becomes whatever ``\alpha`` it settled on.
+- A *searching* line search changes what ``\lambda`` means. The merit the line search minimizes is
+  the *bare* objective ``f`` and not ``f + \frac{\lambda}{2}||x||^2``: the penalty is never
+  assembled anywhere, which is what *decoupled* means. So the search picks its ``\alpha`` to undo
+  the decay's contribution to ``f`` as far as it can. The decay per step is ``\alpha\lambda``, so
+  an ``\alpha`` that varies from step to step makes the effective regularization strength whatever
+  the search picked on that step. This holds in addition to what the docstring of [`Adam`](@ref)
+  says about searching along its direction.
 
 ## What the argument does and does not depend on
 
@@ -127,8 +129,8 @@ about the iterates, and it has to be asked of each method separately.
 
 That distinction matters because manifold-flavoured optimizers for large language models are an
 active area — Mano ([gu2026mano](@cite)) projects the momentum onto the tangent space of the
-parameters and constrains it on a rotational oblique manifold, and reports outperforming AdamW and
-Muon at lower memory and compute cost. This package takes the other route, following
+parameters and constrains it on a rotational oblique manifold, and the paper compares Mano with
+AdamW and Muon, memory and compute cost included. This package takes the other route, following
 [Brantner:2023](@cite): the constraint is part of the model, maintained at every
 iterate, rather than a projection wrapped around an essentially unconstrained solution. Its cost
 is kept down in the retraction instead — [`cayley`](@ref) needs only a ``2n\times{}2n`` solve, not
