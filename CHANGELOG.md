@@ -82,6 +82,13 @@ breaking release).
   most `0.94` times that of the point over 3000 draws at three sizes, and it is `1` where the point
   is orthosymplectic. `sr!` no longer enters, so the `DomainError` of A22 cannot reach it. Closes
   K24.
+- **The API reference is an overview and six pages, grouped by topic.** It was one `@autodocs`
+  page over the whole package, which had grown past Documenter's 200 KiB `size_threshold`, so
+  `docs/make.jl` raised the threshold to 600 KiB, and every new docstring brought the page closer
+  to that limit. The overview keeps the old URL, `api/`, and holds the module docstring and the
+  index of every docstring. The pages are Manifolds, Special Matrices, Retractions, Optimizers,
+  Optimizer Methods and Linesearch, each listing its source files, and the threshold is
+  Documenter's default again.
 - **The `Adam` docstring and the Weights on Manifolds docs warn that the iterates of `Adam` depend
   on the section.** The entrywise moments do not commute with a change of the section, so on every
   manifold the path of `Adam` depends on the section, except on a Stiefel point with at most one
