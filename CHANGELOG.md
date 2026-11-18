@@ -25,6 +25,8 @@ breaking release).
   and with a memory that holds every accepted pair reproduces the iterates of `BFGS` to round-off,
   which the tests assert on a vector, a Stiefel and a symplectic Stiefel point and a parameter set
   holding all three. `QuasiNewtonCache` holds `nothing` in place of its `d × d` scratch for `LBFGS`.
+  The docs page *Limited-Memory BFGS* states the two-loop recursion and the initial matrix, and
+  compares the iterations and the memory of `LBFGS` and `BFGS` on a Stiefel problem.
 
 ### Fixed
 
