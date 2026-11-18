@@ -11,7 +11,7 @@ using GeometricOptimizers: AdamFamily, FirstOrderMethodWithState, change_precisi
                            default_step_size, direction, gradient, solution,
                            DirectStiefelCache, FactoredStiefelAdamCache,
                            DEFAULT_LEARNING_RATE, DEFAULT_MOMENTUM_α, NoWorkspace,
-                           OptimizerCache
+                           OptimizerCache, AugmentedPade, NativePade, ProjectedSkew
 using NeuralNetworkParameters: NetworkParameters, params
 using LinearAlgebra: LinearAlgebra, I, norm, qr
 using Test
@@ -30,11 +30,15 @@ generator(Y, Δ) = Δ * Y' - Y * Δ' + Y * Δ' * Y * Y'
 
 dense_cayley(Y, Δ) = (I - generator(Y, Δ) / 2) \ ((I + generator(Y, Δ) / 2) * Y)
 
+dense_retract(Y, Δ, ::Cayley) = dense_cayley(Y, Δ)
+dense_retract(Y, Δ, ::Geodesic) = exp(generator(Y, Δ)) * Y
+
 dense_transport(Y_new, Y, Δ, Ξ, ::ProjectionTransport) = proj(Y_new, Ξ)
 function dense_transport(Y_new, Y, Δ, Ξ, ::DifferentiatedCayleyTransport)
     L = I - generator(Y, Δ) / 2
     L \ (generator(Y, proj(Y, Ξ)) * (L \ Y))
 end
+dense_transport(Y_new, Y, Δ, Ξ, ::ExponentialTransport) = exp(generator(Y, Δ)) * proj(Y, Ξ)
 
 dense_rgrad(Y, G, ::CanonicalMetric) = G - Y * G' * Y
 dense_rgrad(Y, G, ::EuclideanMetric) = proj(Y, G)
@@ -55,14 +59,14 @@ dense_memory(::DirectMomentum, M, k) = (p = zeros(M, k),)
 dense_memory(::DirectScalarMomentAdam, M, k) = (B = zeros(M, k), v = 0.0)
 dense_memory(::FactoredStiefelAdam, M, k) = (B = zeros(M, k), V = zeros(k, k), v = zeros(k))
 
-function dense_step(m::DirectMomentum, Y, G, mem, t, η, T)
+function dense_step(m::DirectMomentum, R, Y, G, mem, t, η, T)
     p = m.α * mem.p + dense_rgrad(Y, G, m.metric)
     Δ = -η * p
-    Y_new = dense_cayley(Y, Δ)
+    Y_new = dense_retract(Y, Δ, R)
     Y_new, Δ, (p = dense_transport(Y_new, Y, Δ, p, m.transport),)
 end
 
-function dense_step(m::DirectScalarMomentAdam, Y, G, mem, t, η, T)
+function dense_step(m::DirectScalarMomentAdam, R, Y, G, mem, t, η, T)
     GR = dense_rgrad(Y, G, m.metric)
     c₁₁, c₁₂ = weights(m.β₁, t)
     c₂₁, c₂₂ = weights(m.β₂, t)
@@ -70,13 +74,13 @@ function dense_step(m::DirectScalarMomentAdam, Y, G, mem, t, η, T)
     v = c₂₁ * mem.v + c₂₂ * sum(abs2, GR)
     D = B / (sqrt(v) + m.δ)
     Δ = -min(η, m.α_max / (norm(D) + m.δ)) * D
-    Y_new = dense_cayley(Y, Δ)
+    Y_new = dense_retract(Y, Δ, R)
     Y_new, Δ, (B = dense_transport(Y_new, Y, Δ, B, m.transport), v = v)
 end
 
 # The floor `ε = √eps(T)·σ`, `σ² = Σ V_W + Σ v_K`, sits in both denominators, and each part of the
 # first moment is transported on its own and put back into its own subspace at the new point.
-function dense_step(m::FactoredStiefelAdam, Y, G, mem, t, η, T)
+function dense_step(m::FactoredStiefelAdam, R, Y, G, mem, t, η, T)
     GR = dense_rgrad(Y, G, m.metric)
     c₁₁, c₁₂ = weights(m.β₁, t)
     c₂₁, c₂₂ = weights(m.β₂, t)
@@ -88,8 +92,8 @@ function dense_step(m::FactoredStiefelAdam, Y, G, mem, t, η, T)
     K̃ = horizontal(Y, B) ./ (sqrt.(v') .+ m.δ .+ ε)
     D = Y * Ã + K̃
     Δ = -min(η, m.α_max / (norm(D) + m.δ)) * D
-    Y_new = dense_cayley(Y, Δ)
-    B_V = dense_transport(Y_new, Y, Δ, vertical(Y, B), m.transport)
+    Y_new = dense_retract(Y, Δ, R)
+    B_V =dense_transport(Y_new, Y, Δ, vertical(Y, B), m.transport)
     B_H = dense_transport(Y_new, Y, Δ, horizontal(Y, B), m.transport)
     B = vertical(Y_new, B_V) + horizontal(Y_new, B_H)
     Y_new, Δ, (B = B, V = V, v = v)
@@ -109,7 +113,12 @@ first_moment(state::FactoredStiefelAdamState) = state.x.A * state.A₁ + state.K
 # The whole messages of the refusing guards. A test of a guard matches its whole message, and the
 # patterns are checked against Base's own messages below.
 const HYPERPARAMETER_GUARD = r"^(α|β₁|β₂) must satisfy 0 ≤ (α|β₁|β₂) < 1$|^(δ|α_max) must be positive$"
-const RETRACTION_GUARD = r"^(DirectMomentum|DirectScalarMomentAdam|FactoredStiefelAdam) retracts with the direct Cayley transform and takes `retraction = Cayley\(\)` only$"
+const RETRACTION_GUARD = r"^(DirectMomentum|DirectScalarMomentAdam|FactoredStiefelAdam) retracts with the direct Cayley transform or the direct geodesic and takes `retraction = Cayley\(\)` or `retraction = Geodesic\(\)` only$"
+const PAIR_GUARD = r"^(DirectMomentum|DirectScalarMomentAdam|FactoredStiefelAdam) with `retraction = (Cayley|Geodesic)\(\)` cannot take `transport = (DifferentiatedCayleyTransport|ExponentialTransport)\(\)`, which transports along the other retraction$"
+const PROJECTED_SKEW_GUARD = r"^(DirectMomentum|DirectScalarMomentAdam|FactoredStiefelAdam) cannot take `(Geodesic|ExponentialTransport)\(ProjectedSkew\(\)\)`: the 2k × 2k matrix of a direct geodesic is not skew-symmetric$"
+
+# a retraction that the direct methods do not take
+struct OtherRetraction <: GeometricOptimizers.AbstractRetraction end
 
 function message(f)
     try
@@ -132,6 +141,8 @@ end
         @test m !== nothing
         @test !occursin(HYPERPARAMETER_GUARD, something(m[2], ""))
         @test !occursin(RETRACTION_GUARD, something(m[2], ""))
+        @test !occursin(PAIR_GUARD, something(m[2], ""))
+        @test !occursin(PROJECTED_SKEW_GUARD, something(m[2], ""))
     end
 end
 
@@ -275,24 +286,66 @@ end
     @test (@allocated GlobalSection(Y)) > M^2 * sizeof(T) ÷ 4
 end
 
-@testset "another retraction than Cayley is refused, $T" for T in REAL_ELTYPES
+@testset "the retraction and the transport go together, $T" for T in REAL_ELTYPES
     Y = rand(Random.Xoshiro(3), StiefelManifold{T}, 8, 2)
+    build(method, retraction, transport) =
+        () -> TrainingOptimizer(Y; algorithm = method(; transport), retraction)
     for method in METHODS
-        @test refuses(
-            () -> TrainingOptimizer(Y; algorithm = method(), retraction = Geodesic()),
-            RETRACTION_GUARD)
-        @test message(() -> TrainingOptimizer(Y; algorithm = method(), retraction = Geodesic()))[2] ==
-              "$(nameof(method)) retracts with the direct Cayley transform and takes " *
-              "`retraction = Cayley()` only"
-        @test TrainingOptimizer(Y; algorithm = method(), retraction = Cayley()) isa
-              TrainingOptimizer
+        @test refuses(build(method, OtherRetraction(), ProjectionTransport()), RETRACTION_GUARD)
+        @test message(build(method, OtherRetraction(), ProjectionTransport()))[2] ==
+              "$(nameof(method)) retracts with the direct Cayley transform or the direct " *
+              "geodesic and takes `retraction = Cayley()` or `retraction = Geodesic()` only"
+        @test message(build(method, Cayley(), ExponentialTransport()))[2] ==
+              "$(nameof(method)) with `retraction = Cayley()` cannot take `transport = " *
+              "ExponentialTransport()`, which transports along the other retraction"
+        @test refuses(build(method, Geodesic(), DifferentiatedCayleyTransport()), PAIR_GUARD)
+        @test message(build(method, Geodesic(ProjectedSkew()), ProjectionTransport()))[2] ==
+              "$(nameof(method)) cannot take `Geodesic(ProjectedSkew())`: the 2k × 2k matrix " *
+              "of a direct geodesic is not skew-symmetric"
+        @test refuses(build(method, Geodesic(), ExponentialTransport(ProjectedSkew())),
+            PROJECTED_SKEW_GUARD)
+        for (retraction, transport) in ((Cayley(), ProjectionTransport()),
+            (Cayley(), DifferentiatedCayleyTransport()), (Geodesic(), ProjectionTransport()),
+            (Geodesic(), ExponentialTransport()),
+            (Geodesic(NativePade()), ExponentialTransport(AugmentedPade())))
+            opt = build(method, retraction, transport)()
+            @test opt isa TrainingOptimizer
+            @test opt.retraction === retraction
+            @test opt.workspace isa DirectCayleyWorkspace{T}
+        end
     end
 end
 
-const VARIANTS = ((CanonicalMetric(), ProjectionTransport()),
-    (EuclideanMetric(), ProjectionTransport()),
-    (CanonicalMetric(), DifferentiatedCayleyTransport()),
-    (EuclideanMetric(), DifferentiatedCayleyTransport()))
+# `DirectMomentum` with the geodesic, the exponential transport and the canonical metric is
+# `MomentumMethod` with the geodesic on a global section: the momentum that the section path keeps in
+# `𝔤ʰᵒʳ` while the section moves is the tangent vector that `exp(W)` carries along.
+@testset "DirectMomentum with Geodesic() is MomentumMethod with Geodesic(), $T" for T in REAL_ELTYPES
+    for α in (0.0, 0.5, 0.9)
+        rng = Random.Xoshiro(11)
+        M, k, η = 20, 3, T(0.1)
+        Y_direct = rand(rng, StiefelManifold{T}, M, k)
+        Y_section = StiefelManifold(copy(Y_direct.A))
+        direct = TrainingOptimizer(Y_direct;
+            algorithm = DirectMomentum(; α, transport = ExponentialTransport()),
+            retraction = Geodesic(), linesearch = η)
+        section = TrainingOptimizer(Y_section; algorithm = MomentumMethod(; α),
+            retraction = Geodesic(), linesearch = η)
+        for G in gradients(rng, T, M, k, 5)
+            optimization_step!(Y_direct, direct, G)
+            optimization_step!(Y_section, section, G)
+            @test eltype(Y_direct.A) === T
+            @test norm(Y_direct.A - Y_section.A) ≤ sqrt(eps(T)) * norm(Y_section.A)
+        end
+    end
+end
+
+const VARIANTS = ((CanonicalMetric(), ProjectionTransport(), Cayley()),
+    (EuclideanMetric(), ProjectionTransport(), Cayley()),
+    (CanonicalMetric(), DifferentiatedCayleyTransport(), Cayley()),
+    (EuclideanMetric(), DifferentiatedCayleyTransport(), Cayley()),
+    (CanonicalMetric(), ProjectionTransport(), Geodesic()),
+    (EuclideanMetric(), ExponentialTransport(), Geodesic()),
+    (CanonicalMetric(), ExponentialTransport(), Geodesic(NativePade())))
 
 @testset "five steps of $(nameof(method)) are the dense recursion, $T" for T in REAL_ELTYPES,
     method in METHODS
@@ -301,14 +354,14 @@ const VARIANTS = ((CanonicalMetric(), ProjectionTransport()),
     caps = method === DirectMomentum ? (nothing,) : (1.0, 1.0e-2)
     # at the scale `1e-4` the second moments are of the order of `δ = 1e-8`, so that a `δ` inside
     # the square root differs from a `δ` outside it by far more than the tolerance
-    for (metric, transport) in VARIANTS, α_max in caps, scale in (1, 1.0e-4)
+    for (metric, transport, retraction) in VARIANTS, α_max in caps, scale in (1, 1.0e-4)
         rng = Random.Xoshiro(4)
         M, k, η = 16, 4, T(5.0e-2)
         Y = rand(rng, StiefelManifold{T}, M, k)
         Gs = [T(scale) * G for G in gradients(rng, T, M, k, 5)]
         m = α_max === nothing ? method(; metric, transport) :
             method(; metric, transport, α_max)
-        opt = TrainingOptimizer(Y; algorithm = m, linesearch = η)
+        opt = TrainingOptimizer(Y; algorithm = m, linesearch = η, retraction)
         Yd, mem = Float64.(Y.A), dense_memory(m, M, k)
         for (t, G) in enumerate(Gs)
             Y_before = copy(Y.A)
@@ -318,7 +371,7 @@ const VARIANTS = ((CanonicalMetric(), ProjectionTransport()),
             G_R = dense_rgrad(Float64.(Y_before), Float64.(G), metric)
             @test eltype(gradient(opt.cache)) === T
             @test norm(gradient(opt.cache) - G_R) ≤ sqrt(eps(T)) * norm(G_R)
-            Yd, Δd, mem = dense_step(m, Yd, Float64.(G), mem, t, Float64(η), T)
+            Yd, Δd, mem = dense_step(m, retraction, Yd, Float64.(G), mem, t, Float64(η), T)
             Δ = direction(opt.cache)
             @test eltype(Δ) === T
             @test norm(Δ - Δd) ≤ sqrt(eps(T)) * norm(Δd)
@@ -576,7 +629,7 @@ random_orthogonal(rng, ::Type{T}, M) where {T} = T.(Matrix(qr(randn(rng, M, M)).
 @testset "$(nameof(method)) is left O(M)-equivariant, $T" for T in REAL_ELTYPES,
     method in METHODS
 
-    for (metric, transport) in VARIANTS
+    for (metric, transport, retraction) in VARIANTS
         rng = Random.Xoshiro(7)
         M, k = 16, 4
         Q = random_orthogonal(rng, T, M)
@@ -584,8 +637,8 @@ random_orthogonal(rng, ::Type{T}, M) where {T} = T.(Matrix(qr(randn(rng, M, M)).
         Yq = StiefelManifold(Q * Y.A)
         Gs = gradients(rng, T, M, k, 5)
         m = method(; metric, transport)
-        opt = TrainingOptimizer(Y; algorithm = m, linesearch = T(5.0e-2))
-        optq = TrainingOptimizer(Yq; algorithm = m, linesearch = T(5.0e-2))
+        opt = TrainingOptimizer(Y; algorithm = m, linesearch = T(5.0e-2), retraction)
+        optq = TrainingOptimizer(Yq; algorithm = m, linesearch = T(5.0e-2), retraction)
         for G in Gs
             optimization_step!(Y, opt, G)
             optimization_step!(Yq, optq, Q * G)

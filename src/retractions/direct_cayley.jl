@@ -1,14 +1,17 @@
 @doc raw"""
     DirectCayleyWorkspace(Y::StiefelManifold)
 
-The buffers of [`cayley_direct!`](@ref) and [`transport!`](@ref) at a point of the shape of `Y`.
+The buffers of [`cayley_direct!`](@ref), [`geodesic_direct!`](@ref) and [`transport!`](@ref) at a
+point of the shape of `Y`.
 
 For ``Y \in St(k, M)`` it holds four ``M\times{}2k`` matrices, one ``M\times{}k`` matrix, two
 ``k\times{}k`` matrices, two ``2k\times{}2k`` matrices and three ``2k\times{}k`` matrices, all on the
-backend of `Y.A`: ``O(Mk + k^2)`` storage and no ``M\times{}M`` array. A workspace serves every
-point of its shape and element type.
+backend of `Y.A`, and the scratch of [`GeometricOptimizers.𝔄!`](@ref) for every
+[`AbstractExponentialAlgorithm`](@ref): eleven ``2k\times{}2k`` matrices, a ``1\times{}2k`` matrix
+and a ``4k\times{}4k`` matrix. That is ``O(Mk + k^2)`` storage and no ``M\times{}M`` array. A
+workspace serves every point of its shape and element type.
 """
-struct DirectCayleyWorkspace{T, AT <: AbstractMatrix{T}}
+struct DirectCayleyWorkspace{T, AT <: AbstractMatrix{T}, ST <: NamedTuple}
     # the factors of the generator of the step: `U = [Y K]`, and `Vᵗ = Vᵀ = [YAᵀ - K  Y]`
     U::AT
     Vᵗ::AT
@@ -25,6 +28,9 @@ struct DirectCayleyWorkspace{T, AT <: AbstractMatrix{T}}
     VY::AT
     C::AT
     D::AT
+    # the scratch of `𝔄!` on the `2k × 2k` matrix `VU` of `geodesic_direct!` and of
+    # `ExponentialTransport`, with the fields that every algorithm reads
+    𝔄_scratch::ST
 end
 
 function DirectCayleyWorkspace(Y::StiefelManifold{T}) where {T}
@@ -33,7 +39,18 @@ function DirectCayleyWorkspace(Y::StiefelManifold{T}) where {T}
     buffer(m, n) = KernelAbstractions.allocate(backend, T, m, n)
     DirectCayleyWorkspace(buffer(M, 2k), buffer(M, 2k), buffer(M, 2k), buffer(M, 2k),
         buffer(M, k), buffer(k, k), buffer(k, k), buffer(2k, 2k), buffer(2k, 2k),
-        buffer(2k, k), buffer(2k, k), buffer(2k, k))
+        buffer(2k, k), buffer(2k, k), buffer(2k, k), _direct_𝔄_scratch(backend, T, 2k))
+end
+
+# `augmented` is `[X 𝕀; 𝕆 𝕆]`, and `𝔄!` writes only its `X` block, as in `RetractionWorkspace`.
+function _direct_𝔄_scratch(backend, ::Type{T}, m) where {T}
+    small() = KernelAbstractions.zeros(backend, T, m, m)
+    𝕀_small2 = unit_matrix(backend, T, m)
+    augmented = KernelAbstractions.zeros(backend, T, 2m, 2m)
+    @views augmented[1:m, (m + 1):(2m)] .= 𝕀_small2
+    (𝔄X = small(), 𝕀_small2, colsum = KernelAbstractions.zeros(backend, T, 1, m),
+        s₁ = small(), s₂ = small(), s₃ = small(), s₄ = small(), s₅ = small(), s₆ = small(),
+        s₇ = small(), s₈ = small(), augmented)
 end
 
 function _check_workspace_size(ws::DirectCayleyWorkspace, Y::StiefelManifold)

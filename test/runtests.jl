@@ -15,6 +15,7 @@ if "core" in GROUPS
     @safetestset "Container/section copies     " include("optimizers/container_section_copy.jl")
     @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")
     @safetestset "Direct Cayley and metrics    " include("manifolds/direct_cayley_and_metrics.jl")
+    @safetestset "Direct geodesic              " include("manifolds/direct_geodesic.jl")
     @safetestset "Grassmann Manifold           " include("manifolds/grassmann_manifold.jl")
     @safetestset "Manifold Broadcast           " include("manifolds/broadcast.jl")
     @safetestset "Symplectic Stiefel Manifold  " include("manifolds/symplectic_stiefel_manifold.jl")

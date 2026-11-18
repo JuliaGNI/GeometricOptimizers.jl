@@ -79,9 +79,10 @@ the shape of `x`, with the cache, the state and the buffers of each leaf for the
 [`SimpleSolvers.Static`](@extref) or a [`DecayingStatic`](@ref); the default is
 [`default_step_size`](@ref)`(algorithm)`. `retraction` is an instance of an
 [`AbstractRetraction`](@ref), `Cayley()` or `Geodesic()`. The three direct Stiefel methods retract
-with [`cayley_direct!`](@ref) in a [`DirectCayleyWorkspace`](@ref), and another `retraction` than
-`Cayley()` is an `ArgumentError` for them. They form the Riemannian gradient in their own cache, so
-their leaf has no gradient buffer.
+in a [`DirectCayleyWorkspace`](@ref), with [`cayley_direct!`](@ref) for `Cayley()` and with
+[`geodesic_direct!`](@ref) for `Geodesic()`; another `retraction`, `Geodesic(ProjectedSkew())`, and
+a `transport` of the method that transports along the other retraction are an `ArgumentError` for
+them. They form the Riemannian gradient in their own cache, so their leaf has no gradient buffer.
 
 `observer` is notified of the `:retraction_application` phase of every step, once per leaf for a
 `CompositeMethod`; see [Observing the Phases of an Optimizer Step](@ref).
@@ -144,16 +145,43 @@ function _training_optimizer(x, method::FirstOrderMethod, linesearch, retraction
 end
 
 # The buffers of the retraction and of the Riemannian gradient of a leaf `x` under `method`. A
-# direct Stiefel method retracts with `cayley_direct!` in a `DirectCayleyWorkspace`, `O(Mk + k²)`,
-# and forms the Riemannian gradient in its own cache, so it takes neither a `RetractionWorkspace`,
-# which holds `M × M` matrices, nor a `RiemannianGradientBuffer`.
+# direct Stiefel method retracts with `cayley_direct!` or `geodesic_direct!` in a
+# `DirectCayleyWorkspace`, `O(Mk + k²)`, and forms the Riemannian gradient in its own cache, so it
+# takes neither a `RetractionWorkspace`, which holds `M × M` matrices, nor a
+# `RiemannianGradientBuffer`.
 _training_workspace(x, ::FirstOrderMethod, retraction) = retraction_workspace(x, retraction)
-function _training_workspace(x::StiefelManifold, ::DirectStiefelMethod, ::Cayley)
+function _training_workspace(x::StiefelManifold, method::DirectStiefelMethod,
+        retraction::Union{Cayley, Geodesic})
+    _check_direct_transport(method, retraction, method.transport)
     DirectCayleyWorkspace(x)
 end
 function _training_workspace(::StiefelManifold, method::DirectStiefelMethod, ::AbstractRetraction)
-    throw(ArgumentError("$(nameof(typeof(method))) retracts with the direct Cayley transform " *
-                        "and takes `retraction = Cayley()` only"))
+    throw(ArgumentError("$(nameof(typeof(method))) retracts with the direct Cayley transform or " *
+                        "the direct geodesic and takes `retraction = Cayley()` or " *
+                        "`retraction = Geodesic()` only"))
+end
+function _training_workspace(::StiefelManifold, method::DirectStiefelMethod,
+        ::Geodesic{ProjectedSkew})
+    throw(ArgumentError("$(nameof(typeof(method))) cannot take `Geodesic(ProjectedSkew())`: " *
+                        "the 2k × 2k matrix of a direct geodesic is not skew-symmetric"))
+end
+
+# A transport carries a vector to the tangent space at the point its own retraction reaches, so it is
+# paired with that retraction; `ProjectionTransport` reads only the new point and serves both.
+_check_direct_transport(method, ::Cayley, ::ProjectionTransport) = nothing
+_check_direct_transport(method, ::Cayley, ::DifferentiatedCayleyTransport) = nothing
+_check_direct_transport(method, ::Geodesic, ::ProjectionTransport) = nothing
+_check_direct_transport(method, ::Geodesic, ::ExponentialTransport) = nothing
+function _check_direct_transport(method, ::Geodesic, ::ExponentialTransport{ProjectedSkew})
+    throw(ArgumentError("$(nameof(typeof(method))) cannot take " *
+                        "`ExponentialTransport(ProjectedSkew())`: the 2k × 2k matrix of a direct " *
+                        "geodesic is not skew-symmetric"))
+end
+function _check_direct_transport(method, retraction, transport)
+    throw(ArgumentError("$(nameof(typeof(method))) with `retraction = " *
+                        "$(nameof(typeof(retraction)))()` cannot take `transport = " *
+                        "$(nameof(typeof(transport)))()`, which transports along the other " *
+                        "retraction"))
 end
 
 _gradient_buffer(x, ::FirstOrderMethod) = rgrad_buffer(x)
@@ -180,7 +208,7 @@ The step increments the iteration number `t` of `opt.state`, reads the step size
 [`PrecomputedGradient`](@ref) of `dp`, scales it, retracts it with `opt.retraction` and copies the
 result into `x`. [`advance_state!`](@ref) then carries the state over to the new parameters. A
 [`GeometricOptimizers.DirectStiefelMethod`](@ref) forms the Riemannian gradient of `dp` in its
-cache instead, retracts with [`cayley_direct!`](@ref) and transports its first moment to the new
+cache instead, retracts with [`cayley_direct!`](@ref) or [`geodesic_direct!`](@ref) and transports its first moment to the new
 point with the `transport` of the method. A
 [`CompositeMethod`](@ref) takes this step on every leaf, with the method, the cache and the state of
 that leaf.
@@ -209,10 +237,10 @@ function optimization_step!(x::OptimizerSolution{T},
 end
 
 # The step of a direct Stiefel method, from the point `Y` of the state: the Riemannian gradient and
-# the step `Δ` in the tangent space at `Y`, the retraction `cayley_direct!`, and the transport of the
-# method's first moment from `Y` to the new point. The cache keeps `Y` and `Δ`, the state the new
-# point. `_direct_step!` writes the cache only, and the state, its iteration number and its moments
-# are written after the retraction, so that a step that `cayley_direct!` refuses leaves the state as
+# the step `Δ` in the tangent space at `Y`, the retraction `cayley_direct!` or `geodesic_direct!`,
+# and the transport of the method's first moment from `Y` to the new point. The cache keeps `Y` and
+# `Δ`, the state the new point. `_direct_step!` writes the cache only, and the state, its iteration number and its moments
+# are written after the retraction, so that a step that the retraction refuses leaves the state as
 # it was.
 function optimization_step!(x::StiefelManifold{T},
         opt::TrainingOptimizer{
@@ -227,13 +255,16 @@ function optimization_step!(x::StiefelManifold{T},
     _direct_gradient!(cache, Y, dp, method.metric, workspace)
     _direct_step!(cache, state, method, α)
     observe_optimizer_phase(step_observer(opt), :retraction_application) do
-        cayley_direct!(Y_new, Y, direction(cache), workspace)
+        _retract_direct!(Y_new, Y, direction(cache), opt.retraction, workspace)
         increase_iteration_number!(state)
         _transport_moment!(state, cache, method, Y_new, Y, workspace)
         copyto!(x.A, Y_new.A)
     end
     x
 end
+
+_retract_direct!(Y_new, Y, Δ, ::Cayley, ws) = cayley_direct!(Y_new, Y, Δ, ws)
+_retract_direct!(Y_new, Y, Δ, R::Geodesic, ws) = geodesic_direct!(Y_new, Y, Δ, ws, R.algorithm)
 
 # A non-finite entry of the gradient of a direct Stiefel method enters its moments, and the
 # factorization of every later step then fails, so the gradient is refused before the state moves.

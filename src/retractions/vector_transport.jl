@@ -2,8 +2,10 @@
     AbstractVectorTransport
 
 A vector transport on the Stiefel manifold: it moves a vector ``\Xi`` at ``Y`` to the tangent space
-at ``Y_\mathrm{new}``, the Cayley retraction of a step ``\Delta`` at ``Y``. See [`transport!`](@ref),
-[`ProjectionTransport`](@ref) and [`DifferentiatedCayleyTransport`](@ref).
+at ``Y_\mathrm{new}``, the retraction of a step ``\Delta`` at ``Y``. See [`transport!`](@ref),
+[`ProjectionTransport`](@ref), which serves either retraction, [`DifferentiatedCayleyTransport`](@ref),
+which serves [`cayley_direct!`](@ref), and [`ExponentialTransport`](@ref), which serves
+[`geodesic_direct!`](@ref).
 """
 abstract type AbstractVectorTransport end
 
@@ -50,11 +52,41 @@ W_+ = (\mathbb{I}_M - \tfrac{1}{2}W(\Delta))^{-1}Y = Y + \tfrac{1}{2}UM_{2k}^{-1
 struct DifferentiatedCayleyTransport <: AbstractVectorTransport end
 
 @doc raw"""
+    ExponentialTransport(algorithm = ScaledSquaring()) <: AbstractVectorTransport
+
+The transport by the group element of the geodesic:
+
+```math
+\mathcal{T}_\Delta(\Xi) = \exp(W(\Delta))P_Y\Xi,
+\qquad P_Y\Xi = \Xi - \tfrac{1}{2}Y(Y^T\Xi + \Xi^TY),
+```
+
+with ``W`` the generator of [`geodesic_direct!`](@ref). ``\exp(W)`` is orthogonal and carries ``Y``
+to ``Y_\mathrm{new} = \mathtt{geodesic\_direct}(Y, \Delta)``, so it carries the tangent space at
+``Y`` onto the tangent space at ``Y_\mathrm{new}``. This is the transport along
+``\exp(t\,W)Y`` of the canonical connection ``\nabla^{(0)}``, which the methods on a
+[`GlobalSection`](@ref) apply when they keep a cache in ``\mathfrak{g}^\mathrm{hor}`` while the section
+moves (see [Parallel Transport](@ref "Parallel Transport")). Any ``\Xi`` is accepted, and its part
+off the tangent space at ``Y`` is dropped; at ``\Delta = 0`` the result is ``P_Y\Xi``.
+
+It is computed in ``O(Mk^2)``, with the factors ``W = UV`` of [`geodesic_direct!`](@ref), as
+``P_Y\Xi + U\,\mathfrak{A}(VU)\,VP_Y\Xi``, and ``\mathfrak{A}`` is evaluated with `algorithm`, as
+in [`geodesic_direct!`](@ref). It does not read the entries of ``Y_\mathrm{new}``.
+"""
+struct ExponentialTransport{AT <: AbstractExponentialAlgorithm} <: AbstractVectorTransport
+    algorithm::AT
+end
+
+ExponentialTransport() = ExponentialTransport(ScaledSquaring())
+
+@doc raw"""
     transport!(Ξ_out, Y_new::StiefelManifold, Y::StiefelManifold, Δ, Ξ, tr::AbstractVectorTransport, ws::DirectCayleyWorkspace)
 
-Write the transport `tr` of `Ξ` from `Y` to `Y_new = cayley_direct(Y, Δ)` into `Ξ_out`, and return
-`Ξ_out`. `Ξ_out` may be `Ξ`, and must not be `Y_new.A`. A `Ξ_out`, `Y_new`, `Δ`, `Ξ` or `ws` of
-another size than `Y` raises a `DimensionMismatch` before anything is written.
+Write the transport `tr` of `Ξ` from `Y` to the retraction `Y_new` of `Δ` at `Y` into `Ξ_out`, and
+return `Ξ_out`: `Y_new = cayley_direct(Y, Δ)` for [`DifferentiatedCayleyTransport`](@ref),
+`Y_new = geodesic_direct(Y, Δ)` for [`ExponentialTransport`](@ref), and either for
+[`ProjectionTransport`](@ref). `Ξ_out` may be `Ξ`, and must not be `Y_new.A`. A `Ξ_out`, `Y_new`,
+`Δ`, `Ξ` or `ws` of another size than `Y` raises a `DimensionMismatch` before anything is written.
 """
 function transport!(Ξ_out::AbstractMatrix, Y_new::StiefelManifold, Y::StiefelManifold,
         Δ::AbstractMatrix, Ξ::AbstractMatrix, tr::AbstractVectorTransport,
@@ -95,11 +127,30 @@ function _transport!(Ξ_out, Y_new::StiefelManifold{T}, Y::StiefelManifold{T}, �
     Ξ_out
 end
 
+# `P_YΞ` in the first `k` columns of `U_Ξ`, which this transport does not otherwise use. The
+# factors of the step are formed first, because their scratch is the `YᵀX` and `A` of the
+# projection.
+function _transport!(Ξ_out, Y_new::StiefelManifold{T}, Y::StiefelManifold{T}, Δ, Ξ,
+        tr::ExponentialTransport, ws::DirectCayleyWorkspace{T}) where {T}
+    k = size(Y, 2)
+    𝔄VU = _geodesic_system!(ws, Y.A, Δ, tr.algorithm)
+    PΞ = view(ws.U_Ξ, :, 1:k)
+    mul!(ws.YᵀX, Y.A', Ξ)
+    ws.A .= (ws.YᵀX .+ ws.YᵀX') ./ 2
+    copyto!(PΞ, Ξ)
+    mul!(PΞ, Y.A, ws.A, -one(T), one(T))
+    mul!(ws.C, ws.Vᵗ', PΞ)
+    mul!(ws.D, 𝔄VU, ws.C)
+    copyto!(Ξ_out, PΞ)
+    mul!(Ξ_out, ws.U, ws.D, one(T), one(T))
+    Ξ_out
+end
+
 @doc raw"""
     transport(Y_new::StiefelManifold, Y::StiefelManifold, Δ, Ξ, tr::AbstractVectorTransport)
 
-The transport `tr` of `Ξ` from `Y` to `Y_new = cayley_direct(Y, Δ)`, in a new matrix of the array
-type of `Y.A`. See [`transport!`](@ref).
+The transport `tr` of `Ξ` from `Y` to the retraction `Y_new` of `Δ` at `Y`, in a new matrix of the
+array type of `Y.A`. See [`transport!`](@ref).
 """
 function transport(Y_new::StiefelManifold, Y::StiefelManifold, Δ::AbstractMatrix,
         Ξ::AbstractMatrix, tr::AbstractVectorTransport)

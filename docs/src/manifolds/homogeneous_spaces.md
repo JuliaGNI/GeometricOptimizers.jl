@@ -169,7 +169,20 @@ Y_new = cayley_direct(Y, Δ / (2norm(Δ)))
 norm(Y_new' * Y_new - I)
 ```
 
-[`transport`](@ref) and [`transport!`](@ref) move a vector ``\Xi`` from ``Y`` to the retracted point. An [`AbstractVectorTransport`](@ref) selects how: [`ProjectionTransport`](@ref) projects ``\Xi`` onto the tangent space at the new point, and [`DifferentiatedCayleyTransport`](@ref) applies the differential of the Cayley retraction, through the same ``2n\times{}2n`` matrix.
+[`geodesic_direct`](@ref) and [`geodesic_direct!`](@ref) take the geodesic ``\exp(W)Y`` from the same factors, which is the point [`geodesic`](@ref) reaches through a global section:
+
+```math
+\exp(W)Y = Y + U\mathfrak{A}(VU)VY,
+```
+
+with [`GeometricOptimizers.𝔄`](@ref) on the ``2n\times{}2n`` matrix ``VU``, again in ``O(Nn^2)`` operations.
+
+```@example omega_metric
+@assert norm(geodesic_direct(Y, Δ).A - geodesic(Y, Δ).A) < 1e-14 # hide
+norm(geodesic_direct(Y, Δ).A - geodesic(Y, Δ).A)
+```
+
+[`transport`](@ref) and [`transport!`](@ref) move a vector ``\Xi`` from ``Y`` to the retracted point. An [`AbstractVectorTransport`](@ref) selects how: [`ProjectionTransport`](@ref) projects ``\Xi`` onto the tangent space at the new point, [`DifferentiatedCayleyTransport`](@ref) applies the differential of the Cayley retraction, through the same ``2n\times{}2n`` matrix, and [`ExponentialTransport`](@ref) applies ``\exp(W)``, through ``\mathfrak{A}(VU)``.
 
 # The Grassmann Manifold
 
@@ -243,9 +256,11 @@ Main.proof(raw"In a first step we identify charts on the Grassmann manifold to m
 [`StiefelManifold`](@ref), [`GrassmannManifold`](@ref), [`StiefelProjection`](@ref),
 [`metric`](@ref), [`rgrad`](@ref), [`Ω`](@ref),
 [`StiefelMetric`](@ref), [`CanonicalMetric`](@ref), [`EuclideanMetric`](@ref),
-[`cayley_direct`](@ref), [`cayley_direct!`](@ref), [`DirectCayleyWorkspace`](@ref),
+[`cayley_direct`](@ref), [`cayley_direct!`](@ref), [`geodesic_direct`](@ref),
+[`geodesic_direct!`](@ref), [`DirectCayleyWorkspace`](@ref),
 [`AbstractVectorTransport`](@ref), [`ProjectionTransport`](@ref),
-[`DifferentiatedCayleyTransport`](@ref), [`transport`](@ref) and [`transport!`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
+[`DifferentiatedCayleyTransport`](@ref), [`ExponentialTransport`](@ref), [`transport`](@ref) and
+[`transport!`](@ref). Their docstrings are on the [reference page](@ref GeometricOptimizers), where every docstring in the package is rendered once; the names above link to them.
 
 ```@raw latex
 \begin{comment}
