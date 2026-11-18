@@ -147,15 +147,16 @@ function update!(cache::GradientCache{T}, state::GradientState{T},
     cache
 end
 
-# `solve!`'s `update!(state, opt, x[, f])` for `BFGSState`. Both methods take an `Optimizer`, so they
-# come after `optimizer.jl`, which `bfgs_state.jl` precedes.
-function update!(
-        state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}, f) where {T}
+# `solve!`'s `update!(state, opt, x[, f])` for `BFGSState` and `LBFGSState`. Both methods take an
+# `Optimizer`, so they come after `optimizer.jl`, which `bfgs_state.jl` precedes.
+function update!(state::Union{BFGSState{T}, LBFGSState{T}}, opt::Optimizer{T},
+        x::OptimizerSolution{T}, f) where {T}
     update!(state, direction(cache(opt)), gradient(opt), x, f, opt.retraction,
         step_observer(opt), retraction_workspace(opt))
 end
 
-function update!(state::BFGSState{T}, opt::Optimizer{T}, x::OptimizerSolution{T}) where {T}
+function update!(state::Union{BFGSState{T}, LBFGSState{T}}, opt::Optimizer{T},
+        x::OptimizerSolution{T}) where {T}
     f = observe_optimizer_phase(step_observer(opt), :objective) do
         problem(opt).F(x)
     end

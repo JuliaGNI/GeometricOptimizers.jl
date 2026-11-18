@@ -105,7 +105,8 @@ subspace_tolerance(::Type{T}) where {T} = 100 * sqrt(eps(T))
 
 function algorithms(::Type{T}) where {T}
     (
-        GradientMethod(), MomentumMethod(; α = T(0.1)), Adam(), BFGS(), DFP())
+        GradientMethod(), MomentumMethod(; α = T(0.1)), Adam(), BFGS(), DFP(),
+        LBFGS(; memory = 3))
 end
 
 # In both precisions, with the element type threaded through: a `GrassmannManifold{Float32}` used to

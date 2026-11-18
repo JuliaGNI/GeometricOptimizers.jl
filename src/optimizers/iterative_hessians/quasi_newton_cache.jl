@@ -4,9 +4,9 @@
 """
     QuasiNewtonCache
 
-The [`OptimizerCache`](@ref) of [`BFGS`](@ref) and [`DFP`](@ref). The two methods share every field
-and every step of [`update!`](@ref) but the update of the inverse Hessian, which
-`_update_inverse_hessian!` takes from `method`.
+The [`OptimizerCache`](@ref) of [`BFGS`](@ref), [`DFP`](@ref) and [`LBFGS`](@ref). The first two
+methods share every field and every step of [`update!`](@ref) but the update of the inverse
+Hessian, which `_update_inverse_hessian!` takes from `method`.
 
 `g̃` is the scratch for [`latest_gradient`](@ref) and `g̃_is_current` says whether it is the gradient at
 `x`; see [`GradientCache`](@ref), which carries the same pair for the same reason, and
@@ -14,7 +14,8 @@ and every step of [`update!`](@ref) but the update of the inverse Hessian, which
 [`latest_gradient_norm`](@ref).
 
 `T1`, `T2`, `T3`, `ΔxΔg` and `ΔxΔx` are the ``n \\times n`` scratch of the update, where ``n`` is the
-intrinsic dimension; `DFP` needs four of the five, and builds ``\\gamma\\gamma^T`` in `T3`.
+intrinsic dimension; `DFP` needs four of the five, and builds ``\\gamma\\gamma^T`` in `T3`. They are
+`nothing` for [`LBFGS`](@ref), which forms no ``Q``; its secant pairs are in [`LBFGSState`](@ref).
 """
 struct QuasiNewtonCache{T, M, VT, GT, MT, GS, FT} <: OptimizerCache{T}
     method::M
@@ -51,18 +52,25 @@ struct QuasiNewtonCache{T, M, VT, GT, MT, GS, FT} <: OptimizerCache{T}
         # without building the flat vector.
         n = flatlength(_zero(x))
         # on the backend of `x`, as every buffer of the cache is
-        q = _zeros(_solution_backend(x), T, n, n)
+        Ts = _inverse_hessian_scratch(method, _solution_backend(x), T, n)
         section = GlobalSection(x)
         g = _zero(x)
         # from the same `_zero(x)` as `n` above, and for the same reason
         flat = _flat_scratch(T, g)
-        cache = new{T, M, AT, typeof(g), typeof(q), typeof(section), typeof(flat)}(
-            method, _copy(x), _similar(g), _similar(g), Ref(false), Ref(T(NaN)), _similar(q),
-            similar(q), similar(q), similar(q), similar(q),
+        cache = new{T, M, AT, typeof(g), typeof(first(Ts)), typeof(section), typeof(flat)}(
+            method, _copy(x), _similar(g), _similar(g), Ref(false), Ref(T(NaN)), Ts...,
             _similar(g), _similar(g), _similar(g), section, flat)
         initialize!(cache, x)
         cache
     end
+end
+
+# `T1`, `T2`, `T3`, `ΔxΔg` and `ΔxΔx`: the `n × n` scratch of the update of `Q`. `LBFGS` forms no
+# `Q` and has its own method, which gives none.
+function _inverse_hessian_scratch(::QuasiNewtonOptimizerMethod, backend, ::Type{T},
+        n::Integer) where {T}
+    q = _zeros(backend, T, n, n)
+    (_similar(q), similar(q), similar(q), similar(q), similar(q))
 end
 
 function OptimizerCache(method::QuasiNewtonOptimizerMethod, x::OptimizerSolution)

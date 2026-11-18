@@ -53,7 +53,8 @@ test_obj = OptimizerProblem(F, test_x)
     x₀ = start(rng, T, n)
     distance = 10 * sqrt(eps(T))
 
-    for method in (Newton(), DFP(), BFGS()), _linesearch in linesearches(T)
+    for method in (Newton(), DFP(), BFGS(), LBFGS(; memory = 3)),
+        _linesearch in linesearches(T)
 
         @testset "$(method) & $(_linesearch)" begin
             x = copy(x₀)

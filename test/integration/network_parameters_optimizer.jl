@@ -238,8 +238,10 @@ end
 # rank. The distance is relative to `‖B‖` and a multiple of `√eps(T)`, the accuracy of a minimiser;
 # over the test's seeds and seven others for `Y` and `W`, the worst was `0.099 √eps(T)` (`Float32`)
 # and `0.046 √eps(T)` (`Float64`), in at most 39 iterations, so the cap of 50 is not binding.
+# `LBFGS(; memory = 3)` takes 32 (`Float32`) and 56 (`Float64`) at the test's seed, and has a cap of
+# 100.
 @testset "$(nameof(typeof(algorithm))) runs on a container, $T" for T in REAL_ELTYPES,
-    algorithm in (BFGS(), DFP())
+    algorithm in (BFGS(), DFP(), LBFGS(; memory = 3))
 
     Random.seed!(1234)
     F = test_problem(T)
@@ -252,12 +254,18 @@ end
     σ = svdvals(B .- sum(B; dims = 2) / m)
     @test σ[n + 1] ≤ 10 * eps(T) * σ[1]
 
-    # `Q` is sized by the flattening of the *direction*, i.e. of the horizontal lift
-    @test size(OptimizerState(algorithm, ps).Q) ==
-          (flatlength(_zero(ps)), flatlength(_zero(ps)))
+    # `Q`, and the secant pairs of `LBFGS`, are sized by the flattening of the *direction*, i.e. of
+    # the horizontal lift
+    state = OptimizerState(algorithm, ps)
+    if algorithm isa LBFGS
+        @test length(first(state.S)) == flatlength(_zero(ps))
+    else
+        @test size(state.Q) == (flatlength(_zero(ps)), flatlength(_zero(ps)))
+    end
 
     optimizer = Optimizer(
-        ps, F; mode = :autodiff, algorithm = algorithm, max_iterations = 50)
+        ps, F; mode = :autodiff, algorithm = algorithm,
+        max_iterations = algorithm isa LBFGS ? 100 : 50)
     result = solve!(ps, OptimizerState(algorithm, ps), optimizer)
 
     @test flat_eltype(ps) == eltype(result.f) == T

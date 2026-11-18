@@ -659,6 +659,7 @@ end
 # could not see; see `_metric_inverse!`. Every other state has nothing that depends on the section.
 _start_inverse_hessian!(state::OptimizerState) = state
 _start_inverse_hessian!(state::BFGSState) = _reset_inverse_hessian!(state)
+_start_inverse_hessian!(state::LBFGSState) = _reset_memory!(state)
 
 # The memory a method keeps between steps, as its constructor builds it. The momentum and moment
 # states have their method beside their constructor.
@@ -670,6 +671,7 @@ initialize_state!(state::OptimizerState) = state
 
 # The secant pair and `Q`.
 initialize_state!(state::BFGSState) = _poison!(state)
+initialize_state!(state::LBFGSState) = _poison!(state)
 
 # The gradient at the iterate, which `NewtonState` holds.
 function initialize_state!(state::NewtonState, opt::Optimizer, x::AbstractVector)

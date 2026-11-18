@@ -206,13 +206,13 @@ export Optimizer,
 export EventLog, PhaseTimer, NoStepObserver, observe_optimizer_phase, step_observer
 
 import SimpleSolvers: solve!, solve
-# `Newton`, `BFGS` and `DFP` are the optimizer methods, and `BFGSState`/`DFPState` are the states
-# that go with them -- as `GradientState`, `MomentumState` and `AdamState` are exported with the
-# first-order methods further down, and `NewtonState` above. `OptimizerMethod`, their
-# common supertype, is exported above so that a caller can dispatch on "any method". `DFPState` is
-# an alias for `BFGSState`. Only the *caches* stay internal, for every method alike: they are
+# `Newton`, `BFGS`, `DFP` and `LBFGS` are the optimizer methods, and `BFGSState`/`DFPState` and
+# `LBFGSState` are the states that go with them -- as `GradientState`, `MomentumState` and
+# `AdamState` are exported with the first-order methods further down, and `NewtonState` above.
+# `OptimizerMethod`, their common supertype, is exported above so that a caller can dispatch on "any
+# method". `DFPState` is an alias for `BFGSState`. Only the *caches* stay internal, for every method alike: they are
 # `solver_step!` scratch, and nothing outside a step should be reading one.
-export solve!, solve, Newton, BFGS, DFP, BFGSState, DFPState
+export solve!, solve, Newton, BFGS, DFP, LBFGS, BFGSState, DFPState, LBFGSState
 public value, gradient
 # What `solve!` returns, and the status a caller reads off it. Its accessors `solution`, `status` and
 # `trace` stay internal.
@@ -239,6 +239,7 @@ include("optimizers/iterative_hessians/bfgs/bfgs_state.jl")
 include("optimizers/iterative_hessians/dfp/dfp_state.jl")
 
 include("optimizers/iterative_hessians/quasi_newton_cache.jl")
+include("optimizers/iterative_hessians/lbfgs/lbfgs_state.jl")
 
 include("utils.jl")
 

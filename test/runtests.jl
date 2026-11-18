@@ -51,6 +51,7 @@ if "core" in GROUPS
     @safetestset "Quasi-Newton Secant Pair     " include("optimizers/quasi_newton_secant_tests.jl")
     @safetestset "Trial slope in a workspace   " include("optimizers/linesearch_problem.jl")
     @safetestset "BFGS state update            " include("optimizers/iterative_hessians/bfgs/bfgs_state.jl")
+    @safetestset "L-BFGS                       " include("optimizers/iterative_hessians/lbfgs/lbfgs_state.jl")
     @safetestset "Manifold Optimizers          " include("integration/manifold_optimizers_with_new_interface.jl")
     @safetestset "Optimizer State Init         " include("manifold_optimizers/optimizer_state_initialization.jl")
     @safetestset "Optimizer State Accessors    " include("integration/optimizer_state_accessors.jl")

@@ -75,7 +75,7 @@ end
 # `-global_rep(Δ)`, the one `GradientMethod` takes, and its tangent vector is `-Δ` for every section.
 # The control is the direction `-gradient_rep(Δ)` that `Q = I` would give.
 @testset "$(nameof(typeof(algorithm))) starts with the GradientMethod direction" for algorithm in (
-    BFGS(), DFP())
+    BFGS(), DFP(), LBFGS())
     flat(B) = first(GeometricOptimizers.flatten(B))
     tangent = GeometricOptimizers._section_tangent
     U = start()
@@ -123,7 +123,7 @@ end
 # control is the same pair of solves under a ceiling in `l2norm(δ)` of the section's coordinates,
 # measured at 0.8 apart after 15 steps; without any ceiling the paths agree to 1e-14.
 @testset "the path of $(nameof(typeof(algorithm))) does not depend on the section" for algorithm in (
-    GradientMethod(), BFGS())
+    GradientMethod(), BFGS(), LBFGS())
     k = (N2 - n2) ÷ 2
     d = exp2.(range(-2.5, 2.5; length = k))
     S = cat(Diagonal(d), Diagonal(inv.(d)); dims = (1, 2))
@@ -148,9 +148,9 @@ end
     @test maximum(norm.(a .- b) ./ norm.(a)) < 1e-10
 end
 
-# The two methods with a line search find the minimum, and every iterate stays on the manifold.
+# The methods with a line search find the minimum, and every iterate stays on the manifold.
 @testset "$(nameof(typeof(algorithm))) finds the symplectic eigenvalues, $(nameof(typeof(R)))" for algorithm in (
-        GradientMethod(), BFGS()),
+        GradientMethod(), BFGS(), LBFGS(; memory = 3)),
     R in (Geodesic(), Cayley())
 
     U = start()
@@ -172,7 +172,7 @@ end
 # lift of BFGS and DFP and `global_rep` of the first-order methods have different norms on this
 # manifold, and the latter differs from `rg` by orders of magnitude.
 @testset "rg is the Riemannian norm of the gradient, $(nameof(typeof(algorithm))), $(nameof(typeof(R)))" for algorithm in (
-        GradientMethod(), MomentumMethod(), Adam(), BFGS(), DFP()),
+        GradientMethod(), MomentumMethod(), Adam(), BFGS(), DFP(), LBFGS()),
     R in (Geodesic(), Cayley())
 
     U = start()
