@@ -8,6 +8,25 @@ breaking release).
 
 ## [Unreleased]
 
+### Added
+
+- **The direct geodesic retraction `geodesic_direct(Y, Δ, algorithm = ScaledSquaring())` and
+  `geodesic_direct!(Y_new, Y, Δ, ws, algorithm)`, and the transport `ExponentialTransport`.** They
+  mirror `cayley_direct` and `DifferentiatedCayleyTransport`: from the factors `W = UV` of the
+  direct Cayley retraction, `exp(W)Y = Y + U𝔄(VU)VY`, with the existing `𝔄!` on the `2k × 2k`
+  matrix `VU`, in `O(Mk²)` and with no `M × M` array. The point is the one that `geodesic(Y, Δ)`
+  reaches through a global section. `ExponentialTransport` carries a tangent vector `Ξ` at `Y` to
+  `exp(W)Ξ`, the transport of the canonical connection `∇⁽⁰⁾` along the geodesic. A
+  `DirectCayleyWorkspace` holds the scratch of `𝔄!`, and with `ScaledSquaring` or `NativePade` the
+  retraction and the transport allocate nothing. `ProjectedSkew` is an `ArgumentError`, because
+  `VU` is not skew-symmetric.
+- **`DirectMomentum`, `DirectScalarMomentAdam` and `FactoredStiefelAdam` take
+  `retraction = Geodesic()`** in a `TrainingOptimizer`, with `ProjectionTransport` or
+  `ExponentialTransport`. `DifferentiatedCayleyTransport` goes with `Cayley()` and
+  `ExponentialTransport` with `Geodesic()`; another pair is an `ArgumentError` when the
+  optimizer is built. `DirectMomentum` with `Geodesic()`, `ExponentialTransport` and the canonical
+  metric takes the steps of `MomentumMethod` with `Geodesic()` on a global section.
+
 ### Fixed
 
 - **The header of `.github/workflows/Metal.yml` names the command that installs `CI.yml`.** It

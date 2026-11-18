@@ -188,12 +188,14 @@ include("retractions/retractions.jl")
 include("retractions/retraction_workspace.jl")
 include("retractions/biorthogonal_retractions.jl")
 
-# The Cayley retraction of a Stiefel tangent vector without a global section, and the two vector
-# transports along it: `O(Mk²)` per step, and no `M × M` array.
-export cayley_direct, cayley_direct!, DirectCayleyWorkspace
-export AbstractVectorTransport, ProjectionTransport, DifferentiatedCayleyTransport
+# The Cayley and the geodesic retraction of a Stiefel tangent vector without a global section, and the
+# vector transports along them: `O(Mk²)` per step, and no `M × M` array.
+export cayley_direct, cayley_direct!, geodesic_direct, geodesic_direct!, DirectCayleyWorkspace
+export AbstractVectorTransport, ProjectionTransport, DifferentiatedCayleyTransport,
+       ExponentialTransport
 export transport, transport!
 include("retractions/direct_cayley.jl")
+include("retractions/direct_geodesic.jl")
 include("retractions/vector_transport.jl")
 
 export Optimizer,

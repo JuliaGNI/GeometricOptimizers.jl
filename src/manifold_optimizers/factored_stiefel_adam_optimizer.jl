@@ -175,9 +175,13 @@ function _transport_vertical!(A₁, S, P, ::DifferentiatedCayleyTransport)
     A₁ .= (S .- S') ./ 2
 end
 
+# `exp(W)` carries `Y` to `Y_new`, so `𝒯(YA₁) = Y_newA₁` and `N = A₁`.
+_transport_vertical!(A₁, S, P, ::ExponentialTransport) = A₁
+
 # `𝒯(K₁)` up to a part that `P_H(Y_new)` removes. The projection changes `K₁` by `Y_new` times a
 # matrix, so `P_H(Y_new)` of it is `P_H(Y_new)K₁`, and `K₁` stays.
 _transport_horizontal!(K₁, Y_new, Y, Δ, ::ProjectionTransport, ws) = K₁
-function _transport_horizontal!(K₁, Y_new, Y, Δ, tr::DifferentiatedCayleyTransport, ws)
+function _transport_horizontal!(K₁, Y_new, Y, Δ,
+        tr::Union{DifferentiatedCayleyTransport, ExponentialTransport}, ws)
     transport!(K₁, Y_new, Y, Δ, K₁, tr, ws)
 end

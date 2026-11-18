@@ -440,17 +440,20 @@ With ``G_\mathcal{R} = \mathtt{rgrad}(Y, G, \mathtt{metric})`` for the Euclidean
 the step size ``\eta`` of the line search, a step is
 ```math
 p \gets \alpha\,\mathcal{T}(p) + G_\mathcal{R}, \qquad \Delta = -\eta{}p, \qquad
-Y \gets \mathtt{cayley\_direct}(Y, \Delta),
+Y \gets R(Y, \Delta),
 ```
-where ``\mathcal{T}`` is the vector transport `transport` ([`ProjectionTransport`](@ref) or
-[`DifferentiatedCayleyTransport`](@ref)) that carries the momentum of the previous step to the tangent
-space at ``Y``. `metric` is [`CanonicalMetric`](@ref) or [`EuclideanMetric`](@ref).
+where ``R`` is [`cayley_direct!`](@ref) for the `retraction = Cayley()` of
+[`TrainingOptimizer`](@ref) and [`geodesic_direct!`](@ref) for `retraction = Geodesic()`, and
+``\mathcal{T}`` is the vector transport `transport` ([`ProjectionTransport`](@ref), or
+[`DifferentiatedCayleyTransport`](@ref) with `Cayley()` and [`ExponentialTransport`](@ref) with
+`Geodesic()`) that carries the momentum of the previous step to the tangent space at ``Y``.
+`metric` is [`CanonicalMetric`](@ref) or [`EuclideanMetric`](@ref).
 
 `α` satisfies ``0 \le \alpha < 1``; another value is an `ArgumentError`. As for
 [`MomentumMethod`](@ref), it carries no element type of the parameters, and the step size is not
 stored here: [`TrainingOptimizer`](@ref) converts `α` once, with `change_precision`, and takes
 ``\eta`` as its `linesearch`. Only a single `StiefelManifold` is a leaf of this method, and only
-[`TrainingOptimizer`](@ref) steps it, with the retraction [`cayley_direct!`](@ref).
+[`TrainingOptimizer`](@ref) steps it.
 
 The step has no cap. A finite gradient whose step has ``\lVert\Delta\rVert_F`` above about
 ``\sqrt{\mathrm{floatmax}(T)}``, ``1.8\cdot10^{19}`` in `Float32`, makes the factorization of
@@ -496,9 +499,10 @@ and the step is
 ```math
 D = \frac{B_1}{\sqrt{v} + \delta}, \qquad
 \Delta = -\min\Bigl(\alpha, \frac{\alpha_\mathrm{max}}{\lVert{}D\rVert_F + \delta}\Bigr)D, \qquad
-Y \gets \mathtt{cayley\_direct}(Y, \Delta).
+Y \gets R(Y, \Delta).
 ```
-``\mathcal{T}`` is the vector transport `transport` that carries ``B_1`` from the previous point.
+``R`` is the retraction and ``\mathcal{T}`` the vector transport `transport` that carries ``B_1``
+from the previous point, as for [`DirectMomentum`](@ref).
 The ``\delta`` is outside the square root, as in [`Adam`](@ref) and [`FactoredStiefelAdam`](@ref);
 [`ScalarMomentAdam`](@ref) puts it inside. The cap ``\alpha_\mathrm{max}`` bounds the Frobenius norm
 of the step.
@@ -574,8 +578,9 @@ V_W &\gets c_{21}V_W + c_{22}A\odot{}A, &
 ```math
 D = Y\tilde{A} + \tilde{K}, \qquad
 \Delta = -\min\Bigl(\alpha, \frac{\alpha_\mathrm{max}}{\lVert{}D\rVert_F + \delta}\Bigr)D, \qquad
-Y \gets \mathtt{cayley\_direct}(Y, \Delta).
+Y \gets R(Y, \Delta),
 ```
+with the retraction ``R`` of [`DirectMomentum`](@ref).
 ``\mathcal{T}_s`` carries ``B_1`` from the previous point ``Y_\mathrm{prev}`` with the vector
 transport ``\mathcal{T}`` of `transport`, one part at a time, and puts each part back into its own
 subspace at ``Y``:
@@ -637,7 +642,7 @@ end
 
 """
 The three methods that step a [`StiefelManifold`](@ref) in its tangent space, with
-[`cayley_direct!`](@ref) and a vector transport: [`DirectMomentum`](@ref),
+[`cayley_direct!`](@ref) or [`geodesic_direct!`](@ref) and a vector transport: [`DirectMomentum`](@ref),
 [`DirectScalarMomentAdam`](@ref) and [`FactoredStiefelAdam`](@ref). Their caches, their states and the
 workspace a [`TrainingOptimizer`](@ref) builds for them hold ``O(Mk + k^2)`` numbers.
 """
