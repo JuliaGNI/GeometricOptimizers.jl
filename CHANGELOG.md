@@ -8,6 +8,24 @@ breaking release).
 
 ## [Unreleased]
 
+### Added
+
+- **Limited-memory BFGS, `LBFGS(; memory = 10, initial = :scaled)`, with its state `LBFGSState`.**
+  It runs in the framework of `BFGS`: the same gradient `gradient_rep!`, the same secant pairs in
+  the flattened coordinates of the lift, the same `curvature_is_usable` test that skips a pair, the
+  same line search, retraction, `ensure_descent!` and restart. It never forms the inverse Hessian
+  `Q`: the direction comes from the two-loop recursion over the last `memory` pairs, so it holds
+  `(2memory + 2)d` numbers where `BFGS` holds `Q` and five `d × d` scratch matrices, `6d²`. The
+  initial matrix is `θM⁻¹` for the Gram matrix `M` of the metric in the coordinates of the lift,
+  the identity on a vector space, a Stiefel and a Grassmann manifold. On a
+  `SymplecticStiefelManifold` and a `BiorthogonalManifold` it is applied by the conjugate-gradient
+  method with `_metric_apply!`, so `M` is not formed either. `initial = :scaled` takes
+  `θ = δᵀγ/γᵀM⁻¹γ` of the newest pair and `M` at the current section; `initial = :bfgs` takes
+  `θ = 1` and `M` at the section of the start or of the last restart, the initial `Q` of `BFGS`,
+  and with a memory that holds every accepted pair reproduces the iterates of `BFGS` to round-off,
+  which the tests assert on a vector, a Stiefel and a symplectic Stiefel point and a parameter set
+  holding all three. `QuasiNewtonCache` holds `nothing` in place of its `d × d` scratch for `LBFGS`.
+
 ### Fixed
 
 - **The header of `.github/workflows/Metal.yml` names the command that installs `CI.yml`.** It

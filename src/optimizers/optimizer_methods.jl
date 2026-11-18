@@ -8,7 +8,7 @@ abstract type OptimizerMethod <: SolverMethod end
 """
     QuasiNewtonOptimizerMethod <: OptimizerMethod
 
-Includes [`BFGS`](@ref) and [`DFP`](@ref).
+Includes [`BFGS`](@ref), [`LBFGS`](@ref) and [`DFP`](@ref).
 """
 abstract type QuasiNewtonOptimizerMethod <: OptimizerMethod end
 
@@ -98,6 +98,69 @@ Takes no parameters: like every [`OptimizerMethod`](@ref) it only produces a dir
 the optimizer travels along it is the line search's business.
 """
 struct BFGS <: QuasiNewtonOptimizerMethod end
+
+@doc raw"""
+    LBFGS(; memory = 10, initial = :scaled)
+
+Limited-memory [`BFGS`](@ref) [nocedal2006numerical; Section 7.2](@cite). It runs in the framework
+and the coordinates of `BFGS`: the same gradient [`GeometricOptimizers.gradient_rep!`](@ref), the same
+secant pairs ``(\delta, \gamma)`` in the flattened coordinates of the lift, the same
+[`curvature_is_usable`](@ref) test that skips a pair, the same line search, retraction and restart.
+The one difference is that the inverse Hessian ``Q`` is never formed: the direction ``-Q\nabla{}f``
+comes from the two-loop recursion (Algorithm 7.4 there) over the last `memory` pairs, applied to an
+initial matrix ``H_0``. Its state is [`LBFGSState`](@ref).
+
+# Memory
+
+On parameters whose lift has ``d`` free entries, dense `BFGS` holds ``Q`` and five ``d\times{}d``
+scratch matrices, ``6d^2`` numbers. `LBFGS` holds `memory` pairs of flat vectors and two more
+vectors of length ``d``, ``(2\,\mathtt{memory} + 2)d`` numbers, and ``7d`` more for the
+conjugate-gradient solve below where the metric is not the identity, besides the iterates, the
+gradients and the sections every method holds. For ``d = 4\cdot10^5`` and `memory = 10` that is
+``8.8\cdot10^6`` numbers (70 MB in `Float64`), against ``1.6\cdot10^{11}`` (1.3 TB) for ``Q``
+alone.
+
+# The initial matrix
+
+``H_0 = \theta{}M^{-1}``, where ``M`` is the Gram matrix of the metric in the coordinates of the
+lift; see [`GeometricOptimizers._metric_inverse!`](@ref). ``M^{-1}`` is where `BFGS` starts ``Q``
+and puts it back at a restart. It is the identity on a vector space, a [`StiefelManifold`](@ref) and
+a [`GrassmannManifold`](@ref). On a [`SymplecticStiefelManifold`](@ref) and a
+[`BiorthogonalManifold`](@ref) it depends on the section, and it is applied by the
+conjugate-gradient method with [`GeometricOptimizers._metric_apply!`](@ref), so ``M`` is not
+formed either.
+
+- `initial = :scaled`, the default: ``\theta = \delta^T\gamma/(\gamma^TM^{-1}\gamma)`` from the
+  newest pair, the choice (7.20) of [nocedal2006numerical](@cite) in the metric, and ``\theta = 1``
+  before the first pair, with ``M`` at the section of the current iterate.
+- `initial = :bfgs`: ``\theta = 1`` and ``M`` at the section of the start of the solve or of the
+  last restart, so ``H_0`` is the initial ``Q`` of `BFGS`. With `memory` at least the number of
+  accepted pairs, `LBFGS` then takes the iterates of `BFGS`, up to round-off. On the vector spaces,
+  the Stiefel and the Grassmann manifold ``H_0`` is the identity.
+
+The section matters only where ``M`` depends on it. ``M`` at the start is what `BFGS` corrects with
+every update of ``Q``, and a few pairs cannot: on the problem of
+`test/integration/biorthogonal_optimizer_tests.jl`, `LBFGS(; memory = 10)` converges in 293
+iterations (`Geodesic`) and 279 (`Cayley`), `BFGS` in 222 and 275, and
+`LBFGS(; memory = 10, initial = :bfgs)` in 2535 and not in 5000.
+
+A pair is pushed only where [`curvature_is_usable`](@ref) holds, as `BFGS` updates ``Q`` only there;
+the oldest pair is dropped when `memory` pairs are held. [`restart!(::LBFGSState)`](@ref) empties the
+memory, as `restart!(::BFGSState)` resets ``Q``.
+"""
+struct LBFGS <: QuasiNewtonOptimizerMethod
+    memory::Int
+    initial::Symbol
+
+    function LBFGS(memory::Integer, initial::Symbol)
+        memory ≥ 1 || throw(ArgumentError("LBFGS needs `memory ≥ 1`, got $(memory)."))
+        initial ∈ (:scaled, :bfgs) ||
+            throw(ArgumentError("LBFGS takes `initial = :scaled` or `:bfgs`, got `:$(initial)`."))
+        new(memory, initial)
+    end
+end
+
+LBFGS(; memory::Integer = 10, initial::Symbol = :scaled) = LBFGS(memory, initial)
 
 @doc raw"""
     GradientMethod()
@@ -867,3 +930,6 @@ end
 Base.show(io::IO, alg::Newton) = print(io, "Newton")
 Base.show(io::IO, alg::DFP) = print(io, "DFP")
 Base.show(io::IO, alg::BFGS) = print(io, "BFGS")
+function Base.show(io::IO, alg::LBFGS)
+    print(io, "LBFGS(memory = ", alg.memory, ", initial = :", alg.initial, ")")
+end

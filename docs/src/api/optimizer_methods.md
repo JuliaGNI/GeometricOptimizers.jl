@@ -1,7 +1,7 @@
 # Optimizer Methods API
 
 The optimizer methods, with their states and caches: the first-order methods on manifolds, Newton,
-and the quasi-Newton methods BFGS and DFP.
+and the quasi-Newton methods BFGS, DFP and L-BFGS.
 
 ```@autodocs
 Modules = [GeometricOptimizers]
@@ -16,5 +16,5 @@ Pages = ["/optimizers/optimizer_methods.jl", "/manifold_optimizers/gradient_opti
          "/newton_optimizer/newton_optimizer_cache.jl",
          "/newton_optimizer/newton_optimizer_state.jl",
          "/iterative_hessians/iterative_hessians.jl", "/iterative_hessians/quasi_newton_cache.jl",
-         "/bfgs/bfgs_state.jl", "/dfp/dfp_state.jl"]
+         "/bfgs/bfgs_state.jl", "/dfp/dfp_state.jl", "/lbfgs/lbfgs_state.jl"]
 ```

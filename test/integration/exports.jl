@@ -16,9 +16,9 @@ end
 # export list fails here and not in a downstream package. `Optimizer`'s default `algorithm` is
 # `BFGS()`, which is the reason these in particular are exported rather than internal.
 @testset "the optimizer methods and their states are exported" begin
-    for name in (:Newton, :BFGS, :DFP,
+    for name in (:Newton, :BFGS, :DFP, :LBFGS,
         :GradientMethod, :MomentumMethod, :Adam, :ScalarMomentAdam, :CompositeMethod,
-        :NewtonState, :BFGSState, :DFPState,
+        :NewtonState, :BFGSState, :DFPState, :LBFGSState,
         :GradientState, :MomentumState, :AdamState, :ScalarMomentAdamState)
         @test name in names(GeometricOptimizers)
     end

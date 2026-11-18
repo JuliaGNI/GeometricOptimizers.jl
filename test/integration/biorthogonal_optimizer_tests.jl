@@ -66,13 +66,15 @@ end
     @test ls.D(zero(T), params) < 0
 end
 
-@testset "BFGS finds the Eckart-Young minimum, $(nameof(typeof(R)))" for R in (
-    Geodesic(), Cayley())
+@testset "$(algorithm) finds the Eckart-Young minimum, $(nameof(typeof(R)))" for algorithm in (
+        BFGS(), LBFGS(; memory = 3)),
+    R in (Geodesic(), Cayley())
+
     Y = start()
     Y₀ = copy(Y.A)
-    opt = Optimizer(Y, objective; algorithm = BFGS(), linesearch = Backtracking(T),
+    opt = Optimizer(Y, objective; algorithm = algorithm, linesearch = Backtracking(T),
         retraction = R, max_iterations = 5000)
-    result = solve!(Y, OptimizerState(BFGS(), Y), opt)
+    result = solve!(Y, OptimizerState(algorithm, Y), opt)
     @test Y isa BiorthogonalManifold{T}
     @test Y.A != Y₀
     @test check(Y) < 1e-12
