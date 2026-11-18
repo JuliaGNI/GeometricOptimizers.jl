@@ -21,8 +21,10 @@
 
 using GeometricOptimizers
 using GeometricOptimizers: 𝔄, 𝔄!, RetractionWorkspace, ScaledSquaring, NativePade,
-                           AugmentedPade, TaylorSeries, opnorm₁, geodesic,
-                           StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix, SkewSymMatrix
+                           AugmentedPade, TaylorSeries, opnorm₁, geodesic, lift_factors,
+                           _balance!, StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix,
+                           SkewSymMatrix
+using LinearAlgebra: Diagonal
 using KernelAbstractions: CPU
 using JLArrays: JLArray, JLBackend
 import JLArrays
@@ -74,6 +76,43 @@ end
     @test eltype(opnorm₁(X)) == T
     @test opnorm₁(X) > ScaledSquaring().θ
     @test opnorm₁(X) > NativePade().θ
+end
+
+# The balancing `X′ = D⁻¹XD`, `D = diag(𝕀, t𝕀)`, on the reduced argument of a lift, where it matters:
+# the identity block gives `‖X‖₁ ≥ 1` however small the lift, and the lower-left block is quadratic in
+# the lift. `t` is a power of two, so `X′` is `D⁻¹XD` to the bit; it is within `√2` of balancing the
+# two off-diagonal blocks, so their norms are within a factor of two; and it takes `‖X′‖₁` below `θ`
+# for a small lift, and an order of magnitude below `‖X‖₁` for a large one.
+@testset "the balancing of a reduced argument, $T" for T in REAL_ELTYPES
+    for LT in (StiefelLieAlgHorMatrix, GrassmannLieAlgHorMatrix),
+        (k, scale) in enumerate((1e-3, 1.0, 100.0))
+
+        B = T(scale) * rand(Random.Xoshiro(600 + k), LT{T}, 20, 3)
+        B̂, B̄ = lift_factors(B)
+        X = B̄' * B̂
+        X′ = similar(X)
+        t = _balance!(X′, similar(X, 1, 6), X)
+
+        @test t isa T
+        @test significand(t) == 1
+        @test X′ == Diagonal([1, 1, 1, t, t, t]) \ X * Diagonal([1, 1, 1, t, t, t])
+        a, b = opnorm₁(X′[1:3, 4:6]), opnorm₁(X′[4:6, 1:3])
+        @test 1 / 2 ≤ a / b ≤ 2
+        @test opnorm₁(X) ≥ 1
+        scale < 1 && @test opnorm₁(X′) < ScaledSquaring().θ
+        scale > 1 && @test opnorm₁(X′) < opnorm₁(X) / 10
+    end
+end
+
+@testset "an argument balancing leaves as it is, $T" for T in REAL_ELTYPES
+    odd = argument(T, 3, 40, 700)[1:5, 1:5]
+    zero_block = argument(T, 3, 40, 701)
+    zero_block[4:6, 1:3] .= 0
+    for X in (odd, zero_block)
+        X′ = similar(X)
+        @test _balance!(X′, similar(X, 1, size(X, 2)), X) === one(T)
+        @test X′ == X
+    end
 end
 
 # A second call on the same workspace starts from what the first left in the scratch, so a buffer
@@ -197,6 +236,18 @@ end
         result = 𝔄!(ws, JLArray(X), algorithm)
         @test result isa JLArray{T}
         @test eltype(result) == T
+        @test isapprox(Array(result), reference(X, algorithm); rtol = 100eps(T))
+    end
+
+    # The random arguments above have off-diagonal blocks of one size, where the balancing factor is
+    # one and the block broadcasts are skipped; a reduced argument has a factor far from one.
+    B̂, B̄ = lift_factors(T(30) * rand(Random.Xoshiro(10), StiefelLieAlgHorMatrix{T}, 20, 3))
+    X = B̄' * B̂
+    @test _balance!(similar(X), similar(X, 1, 6), X) != 1
+    for algorithm in (ScaledSquaring(), NativePade())
+        ws = RetractionWorkspace(JLBackend(), T, 6, 3)
+        result = 𝔄!(ws, JLArray(X), algorithm)
+        @test result isa JLArray{T}
         @test isapprox(Array(result), reference(X, algorithm); rtol = 100eps(T))
     end
 end

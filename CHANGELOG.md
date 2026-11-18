@@ -8,6 +8,35 @@ breaking release).
 
 ## [Unreleased]
 
+### Changed
+
+- **`ScaledSquaring` and `NativePade` balance the argument before they count the halvings.** The
+  reduced argument `X = (B'')ᵀB'` of a lift is `[A/2 𝕀; C A/2]`, so `‖X‖₁` is at least one from the
+  identity block however small the lift, and quadratic in the lift for a large one, while the
+  spectral radius is linear. Both now run on `X′ = D⁻¹XD`, `D = diag(𝕀, t𝕀)`, with `t` the power of
+  two that comes closest to giving the two off-diagonal blocks the same one-norm, and return
+  `D𝔄(X′)D⁻¹`, which is `𝔄(X)`. `t` being a power of two makes the balancing exact, and it is block
+  reductions and broadcasts only, so both algorithms stay free of scalar indexing (checked on a
+  `JLArray`). The steps of a symplectic autoencoder trained on the linear wave equation took two
+  halvings each and now take none, and the `𝔄` call of `ScaledSquaring` is `17%`–`26%` faster on
+  them at `2n = 4` to `30`; on a large lift the halving count drops from about `2log₂‖B̄‖` to
+  `log₂‖B̄‖` (`24` to `13` at `‖B̄‖ ≈ 4300`). The accuracy is unchanged within round-off, against
+  `AugmentedPade` on the sweep and against a 256-bit series on the training steps. The results
+  differ from 0.10.1's at round-off wherever `t ≠ 1`. This closes open issue **A6**, that both took
+  about twice the squarings they needed. (#52, #63, #67)
+
+### Added
+
+- **`scripts/exponential_kernels.jl` compares the kernels, the denominators and the balancing of
+  `𝔄`**, on the lift sweep and on arguments recorded from that training run, which
+  `scripts/linear_wave_lifts.jl` records into `scripts/data/`. Its results are in the new section
+  *The kernel, the denominator and the balancing* of the Exponential Algorithms page: the Taylor
+  kernel stays the default because it is the faster one on the steps an optimizer takes (#63), and
+  `NativePade` keeps its Newton–Schulz denominator, because an LU solve of it is at most `31%`
+  faster, CPU-only, and well conditioned either way, `cond₁(q₆) ≤ 1.51` (#67). It also finds that
+  `AugmentedPade`, the reference of the test suite, is two orders of magnitude less accurate than
+  the native algorithms on those steps.
+
 ### Fixed
 
 - **The header of `.github/workflows/Metal.yml` names the command that installs `CI.yml`.** It

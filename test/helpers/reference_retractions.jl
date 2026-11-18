@@ -25,17 +25,31 @@ end
 
 reference_scaled_kernel(X::AbstractMatrix, ::ScaledSquaring) = reference_𝔄(X)
 
+# The balancing `D = diag(𝕀, t𝕀)` of `𝔄!`, with `t` the power of two nearest `√(b/a)` for the
+# one-norms `a` and `b` of the upper-right and lower-left blocks.
+function reference_balancing(X::AbstractMatrix)
+    m = size(X, 1)
+    n = m ÷ 2
+    T = real(eltype(X))
+    a, b = isodd(m) ? (zero(T), zero(T)) :
+           (opnorm₁(X[1:n, (n + 1):m]), opnorm₁(X[(n + 1):m, 1:n]))
+    t = iszero(a) || iszero(b) ? one(T) : exp2(round(log2(b / a) / 2))
+    LinearAlgebra.Diagonal([i ≤ n || isodd(m) ? one(T) : t for i in 1:m])
+end
+
 function reference_𝔄(X::AbstractMatrix, algorithm::Union{ScaledSquaring, NativePade})
-    nrm = opnorm₁(X)
+    D = reference_balancing(X)
+    X′ = D \ X * D
+    nrm = opnorm₁(X′)
     s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
     scale = eltype(X)(2)^s
 
-    W = reference_scaled_kernel(X / scale, algorithm) / scale
+    W = reference_scaled_kernel(X′ / scale, algorithm) / scale
     for _ in 1:s
-        W = 2 * W + W * X * W
+        W = 2 * W + W * X′ * W
     end
 
-    W
+    D * W / D
 end
 
 function reference_native_pade_polynomials(X::AbstractMatrix, 𝕀::AbstractMatrix)

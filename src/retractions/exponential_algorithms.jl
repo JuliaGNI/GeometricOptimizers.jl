@@ -52,10 +52,12 @@ improvement over [`TaylorSeries`](@ref) is that it first scales the argument int
 same Taylor evaluator is accurate, then recovers the original argument with a recurrence specialized
 to the low-rank factorization [skaflestad2009scaling](@cite).
 
-The series for ``\mathfrak{A}`` converges for every argument but is only *accurate* for a small one,
-so the argument is halved the smallest number ``s`` of times with ``\|X\|_1/2^s \leq θ``, the series
-is summed there, and
-each halving is undone by one application of ``W \mapsto 2W + WXW``. That recurrence is the modified
+The series for ``\mathfrak{A}`` converges for every argument but is only *accurate* for a small one.
+The argument is first balanced to ``X' = D^{-1}XD`` with ``D = \operatorname{diag}(\mathbb{I},
+t\mathbb{I})``, which gives its two off-diagonal blocks one-norms within a factor of two of each other
+and leaves ``\mathfrak{A}`` unchanged up to the same similarity; it is then halved the smallest number
+``s`` of times with ``\|X'\|_1/2^s \leq θ``, the series is summed there, and
+each halving is undone by one application of ``W \mapsto 2W + WX'W``. That recurrence is the modified
 squaring of [skaflestad2009scaling](@cite); it stays at ``2n\times{}2n`` because the low-rank form is
 closed under squaring, so nothing is ever squared at ``N\times{}N``. The recovery steps are exact
 identities, so scaling moves where Taylor is evaluated without changing the function computed.
@@ -76,8 +78,12 @@ avoids that.
 !!! note "The argument is worse-conditioned than the lift"
     ``\|X\|_2`` grows like ``\|\bar{B}\|_2^2`` while ``\rho(X) = \|\bar{B}\|_2`` exactly, so ``X`` is
     far from normal. That is why the unscaled series does worse here than it would on ``\bar{B}``
-    itself, and why `s` grows like ``2\log_2\|\bar{B}\|_2`` rather than ``\log_2\|\bar{B}\|_2``.
-    [Why the reduced argument is the hard case](@ref) derives and measures both.
+    itself. The norm of ``X`` is also at least one from an identity block, however small the lift.
+    The balancing removes both from the norm that sets `s`: ``\|X'\|_1`` is linear in
+    ``\|\bar{B}\|_2``, so `s` grows like ``\log_2\|\bar{B}\|_2`` rather than ``2\log_2\|\bar{B}\|_2``,
+    and is zero for the small steps an optimizer takes.
+    [Why the reduced argument is the hard case](@ref) and [Balancing the argument](@ref) derive and
+    measure both.
 
 [2. Scaling and modified squaring](@ref) gives the algorithm step by step, with the identity behind
 the recurrence and the measurements behind every claim above. See
