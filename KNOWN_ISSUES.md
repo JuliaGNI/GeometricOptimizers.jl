@@ -65,33 +65,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   randomness at all), would close it. Either one fixes the draw and leaves the dependence above: a
   completion still chooses the coordinates of `Adam`.
 
-### A6 · `ScaledSquaring` takes about twice the squarings it needs
-
-- location: —
-- kind: defect
-- found: #36
-- evidence:
-
-  **Severity: low**, and a refinement rather than a defect — from the PR #36 review, where it was
-  deliberately left alone because changing it invalidates every table in that PR.
-
-  `ScaledSquaring`'s own docstring states the cause: `X = (B'')ᵀB'` has `‖X‖ ≈ ‖B̄‖²/4` while its
-  spectral radius is only `≈ ‖B̄‖`, because the eigenvalues of `X` are the nonzero (purely imaginary)
-  eigenvalues of the skew `B̄`. The halving count is taken from the norm, `s = ⌈log₂(‖X‖₁/θ)⌉`, so
-  `s ≈ 2log₂‖B̄‖` where `log₂‖B̄‖` would do.
-
-  Each squaring is an error amplification, so this costs both time and accuracy. Measured forward error
-  is `1e-14` in `Float64`, which is why it is not urgent — but `Float32` `check` reaches `2.3e-5` over
-  the sweep, and halving `s` is the obvious lever if that ever becomes the constraint.
-
-  The constraint on any replacement bound is that `ScaledSquaring` is the default *because* it is free
-  of scalar indexing and dense LAPACK, which is what lets it run on a GPU backend (see the `opnorm₁`
-  docstring). That rules out reaching for the spectral radius directly — an eigenvalue computation
-  would give the tighter bound and forfeit the reason the algorithm was chosen.
-
-  `NativePade`, added in [#54], takes `s` from ``\|X\|_1`` in exactly the same way and inherits the
-  whole of this, so the entry now covers two algorithms and a fix would apply to both at once.
-
 ### A12 · The `Cayley` differential is recomputed per `φ'`, and its cost in a solve is unmeasured
 
 - location: `svd_optim.jl`
@@ -851,10 +824,11 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   400 random ``6\times6`` arguments per ``\theta``. Both are forward statements about this family of
   arguments. Neither is a backward-error criterion, and the ``\theta_m`` tables that would supply one
   [higham2005scaling, almohy2010new](@cite) are derived for ``\exp`` rather than ``\varphi_1`` and are
-  stated in ``\|X\|`` — which is precisely the norm A6 records as uninformative here, since ``X``'s
+  stated in ``\|X\|`` — which is precisely the norm that is uninformative here, since ``X``'s
   lower-left block gives ``\|X\| \approx \|\bar{B}\|^2/4`` against a spectral radius of only
-  ``\approx\|\bar{B}\|``. Importing such a table without adapting it is the thing [#52] asked not to
-  do, so it was not done; the honest position is that the threshold is validated and not derived.
+  ``\approx\|\bar{B}\|``, and the reason `𝔄!` balances ``X`` before it takes the norm. Importing
+  such a table without adapting it is the thing [#52] asked not to do, so it was not done; the honest
+  position is that the threshold is validated and not derived.
 
   Two smaller pieces of [#52] are open with it. Its comparison of candidate designs is empirical —
   `NativePade` against `AugmentedPade` on cost, allocations, `check` and forward error — but the
@@ -929,6 +903,24 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `git ls-files docs/inventories` prints nothing, and `git check-ignore` does not ignore the
   paths, so the files were never added. A docs build with no network access therefore has no
   inventory to fall back to, every `@extref` fails, and `makedocs` stops at the external links.
+
+### K64 · `AugmentedPade`, the reference of the accuracy tests, has a relative error of `𝔄(X)` two orders of magnitude above the native algorithms' on the small steps an optimizer takes
+
+- location: `test/retractions/exponential_accuracy.jl:102`
+- kind: missing test
+- found: 2026-11-18
+- evidence: `julia --project=. scripts/exponential_kernels.jl`, the table "recorded arguments: worst
+  relative error against the 256-bit series", on the arguments recorded from the linear-wave training
+  run in `scripts/data/` (`‖X‖₁ = 1`, `‖C‖₁ ≤ 5.5e-4`): every scaled variant, `ScaledSquaring` and
+  `NativePade` among them, is within `3.2e-16` of the series at `2n = 4, 10, 20, 30`, and
+  `AugmentedPade` is at `2.8e-14` (`2n = 4`) and `5.7e-14` (the others), each the relative error of
+  `𝔄(X)`. An error `E` in `𝔄(X)` reaches the retracted point as `B′E(B″)ᵀ`, where only its
+  lower-left block enters without a factor of the lift, so this does not measure the retraction.
+  The accuracy tests measure the native algorithms against `AugmentedPade` on lifts scaled by
+  `NORM_SCALES`, the smallest of them `0.1` times a random lift, so no test covers the regime of an
+  optimizer's steps, and one that did against `AugmentedPade` would be measuring the reference. A
+  test there needs an independent reference of higher precision, such as the series in `BigFloat`
+  that the script sums.
 
 ## D. Upstream
 

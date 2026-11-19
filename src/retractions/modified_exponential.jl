@@ -55,8 +55,9 @@ expressible as `sum` and `maximum`. Accelerator execution still depends on the a
 for those reductions.
 
 The two algorithms do not call `opnorm₁`: [`GeometricOptimizers.𝔄!`](@ref) takes the same reduction
-with the column sums written into its scratch, and uses the value only to pick the number of halvings
-`s = ⌈log₂(‖X‖₁/θ)⌉`. On a real `X` that value is `opnorm₁`'s to the bit; on a complex `X` the two
+with the column sums written into its scratch, of the balanced argument and of its two off-diagonal
+blocks, and uses the values only to pick the balancing and the number of halvings
+`s = ⌈log₂(‖X′‖₁/θ)⌉`. On a real `X` each value is `opnorm₁`'s to the bit; on a complex `X` the two
 can differ in the last bit.
 
 `opnorm₁` and `opnorm1` agree to a few `eps`, not bitwise: `opnorm1` accumulates each column
@@ -170,33 +171,75 @@ function _opnorm₁!(colsum::AbstractMatrix, X::AbstractMatrix)
     isempty(X) ? zero(real(eltype(X))) : maximum(real, sum!(abs, colsum, X))
 end
 
+# `X′ = D⁻¹XD` for `D = diag(𝕀, t𝕀)` with `n × n` blocks, written into `X′`, and `t`. `𝔄` is a power
+# series, so `𝔄(X) = D𝔄(X′)D⁻¹`. A reduced argument is `[A/2 𝕀; C A/2]` with `‖C‖` quadratic in the
+# lift, so its one-norm is at least one however small the lift and quadratic in it for a large one;
+# `t ≈ √(‖C‖₁/‖𝕀‖₁)` gives the two off-diagonal blocks of `X′` the same norm, which is linear in the
+# lift. `t` is rounded to a power of two, so that forming `X′` and undoing it are exact. An argument of
+# odd size, with a zero off-diagonal block, or whose `t` is beyond the largest power of two of its
+# element type, is left as it is.
+function _balance!(X′::AbstractMatrix, colsum::AbstractMatrix, X::AbstractMatrix)
+    copyto!(X′, X)
+    T = real(eltype(X))
+    m = size(X, 1)
+    # the check `sum!` makes on the whole of `colsum`, made before the views of it below
+    size(colsum) == (1, m) ||
+        throw(DimensionMismatch("colsum has size $(size(colsum)), expected (1, $m)"))
+    isodd(m) && return one(T)
+    n = m ÷ 2
+    @views a = _opnorm₁!(colsum[:, 1:n], X[1:n, (n + 1):m])
+    @views b = _opnorm₁!(colsum[:, 1:n], X[(n + 1):m, 1:n])
+    (iszero(a) || iszero(b)) && return one(T)
+    # the difference of the logarithms, since `b / a` overflows or underflows where they are far apart
+    t = exp2(round((log2(b) - log2(a)) / 2))
+    isfinite(t) || return one(T)
+    @views X′[1:n, (n + 1):m] .*= t
+    @views X′[(n + 1):m, 1:n] ./= t
+    t
+end
+
+# `W ↦ DWD⁻¹`, the inverse of `_balance!`, in place.
+function _unbalance!(W::AbstractMatrix, t::Real)
+    isone(t) && return W
+    n = size(W, 1) ÷ 2
+    @views W[1:n, (n + 1):end] ./= t
+    @views W[(n + 1):end, 1:n] .*= t
+    W
+end
+
 function 𝔄!(scratch, X::AbstractMatrix, algorithm::ScaledAlgorithm)
-    # `X` is halved `s` times so that the kernel sees an argument of norm ≤ θ, where it is accurate.
-    # Initially `exp(B̂B̄ᵗ/2^s) = I + B̂(𝔄(X/2^s)/2^s)B̄ᵗ`. Squaring this represented exponential stays
-    # low-rank:
+    # `X` is first balanced to `X′`, then halved `s` times so that the kernel sees an argument of norm
+    # ≤ θ, where it is accurate. Initially `exp(B̂B̄ᵗ/2^s) = I + B̂(𝔄(X/2^s)/2^s)B̄ᵗ`. Squaring this
+    # represented exponential stays low-rank:
     #
     #     (I + B̂WB̄ᵗ)² = I + B̂(2W + WXW)B̄ᵗ,
     #
-    # so each recovery step is `W ↦ 2W + WXW` at 2n × 2n, with the original `X`. After `s` steps
-    # `W = 𝔄(X)`. Nothing is ever squared at N × N.
+    # so each recovery step is `W ↦ 2W + WXW` at 2n × 2n, with the unscaled argument. After `s` steps
+    # `W = 𝔄(X′)`, and undoing the balancing gives `𝔄(X)`. Nothing is ever squared at N × N.
     #
-    # `s₁` holds the scaled argument and `𝔄X` is `W`; the kernel uses `s₂` and `s₃` (`ScaledSquaring`)
-    # or `s₂` to `s₈` (`NativePade`), and the recovery step `s₂` and `s₃` again. `WXW` is `(WX)W`,
-    # the order `W * X * W` takes for three square matrices of one size.
-    nrm = _opnorm₁!(scratch.colsum, X)
+    # `s₁` holds `X′`, scaled for the kernel and unscaled again for the recovery: both are
+    # multiplications by a power of two, so the recovery sees `X′` to the bit unless an entry
+    # underflowed in between. `𝔄X` is `W`; the
+    # kernel uses `s₂` and `s₃` (`ScaledSquaring`) or `s₂` to `s₈` (`NativePade`), and the recovery
+    # step `s₂` and `s₃` again. `WXW` is `(WX)W`, the order `W * X * W` takes for three square
+    # matrices of one size.
+    X′ = scratch.s₁
+    t = _balance!(X′, scratch.colsum, X)
+    nrm = _opnorm₁!(scratch.colsum, X′)
     s = nrm > algorithm.θ ? ceil(Int, log2(nrm / algorithm.θ)) : 0
     scale = eltype(X)(2)^s
 
-    scratch.s₁ .= X ./ scale
-    W = _scaled_kernel!(scratch, scratch.s₁, algorithm)
+    X′ ./= scale
+    W = _scaled_kernel!(scratch, X′, algorithm)
+    X′ .*= scale
     W ./= scale
     for _ in 1:s
-        LinearAlgebra.mul!(scratch.s₂, W, X)
+        LinearAlgebra.mul!(scratch.s₂, W, X′)
         LinearAlgebra.mul!(scratch.s₃, scratch.s₂, W)
         W .= 2 .* W .+ scratch.s₃
     end
 
-    W
+    _unbalance!(W, t)
 end
 
 @doc raw"""
