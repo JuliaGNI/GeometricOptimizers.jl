@@ -477,7 +477,9 @@ linear in ``\|\bar{B}\|_2``, and small for a small lift. ``X'`` has the spectrum
 scaled algorithms therefore run on ``X'`` and return ``D\mathfrak{A}(X')D^{-1}``. The implementation
 does not assume the block structure: it takes ``t`` as the power of two nearest
 ``\sqrt{b/a}``, for ``a`` and ``b`` the one-norms of the upper-right and lower-left ``n\times{}n``
-blocks of whatever argument it is handed. With a power of two, forming ``X'`` and undoing it are exact,
+blocks of whatever argument it is handed, from ``\log_2 b - \log_2 a`` so that a quotient of far-apart
+norms cannot overflow, and it leaves the argument as it is where that power of two is not finite in
+its element type. With a power of two, forming ``X'`` and undoing it are exact,
 so the balancing adds no rounding of its own, at the price of balancing the two blocks only to within
 a factor of two. It is two block reductions and four block broadcasts, so it costs nothing next to the
 products and keeps the algorithms free of scalar indexing.
@@ -500,10 +502,10 @@ table(["‖B̄‖", "‖X‖₁", "s from ‖X‖₁", "‖X′‖₁", "s from 
 ```
 
 Balancing roughly halves the count at a large lift, because it turns ``2\log_2\|\bar{B}\|_2`` into
-``\log_2\|\bar{B}\|_2``, and each halving saved is two ``2n\times{}2n`` products and a factor of two
-less amplification of round-off in the recovery. At a small lift it removes the halvings altogether.
-That is the case an optimizer is in: the steps of the training run measured in
-[The kernel, the denominator and the balancing](@ref) have ``\|X\|_1 = 1`` to three digits and, in
+``\log_2\|\bar{B}\|_2``, and each halving saved is two ``2n\times{}2n`` products. It does not
+measurably change the error: [The kernel, the denominator and the balancing](@ref) finds every
+variant as accurate balanced as unbalanced. At the much smaller steps an optimizer takes it removes the
+halvings altogether: the steps of the training run measured there have ``\|X\|_1 = 1`` to three digits and, in
 the sample kept of them, ``\|X'\|_1 \leq 0.017``, so every one of those took two halvings before
 balancing and takes none after.
 
@@ -922,9 +924,8 @@ q_6(Y)W=p_6(Y).
     `NativePade` departs from that for one reason: Newton–Schulz needs only matrix multiplication and
     addition, so it keeps the algorithm independent of backend-specific factorization support, which
     is the entire point of having a direct implementation next to [`AugmentedPade`](@ref). It is a
-    portability choice and not a faster solver — five matrix products may well cost more than an LU on
-    a CPU, and the measurement that would settle that has not been made. It is
-    [#67](https://github.com/JuliaGNI/GeometricOptimizers.jl/issues/67).
+    portability choice and not a faster solver: on a CPU, LAPACK's LU is faster, by the margin that
+    [The kernel, the denominator and the balancing](@ref) measures.
 
     What makes it *viable*, as opposed to merely portable, is that scaling supplies the
     initial-residual bound derived below, which fixes both the iteration count and the resulting
@@ -1562,9 +1563,12 @@ halvings unbalanced and takes none balanced. In accuracy the combinations cannot
 `Float64` and `Float32`, on both sets, every one is within a small factor of every other, and so is
 the orthogonality of the retracted point. The one outlier is the reference. Against the series summed in
 256-bit arithmetic, every combination is within ``3.2\cdot10^{-16}`` on the recorded arguments, and
-[`AugmentedPade`](@ref) is at ``5.7\cdot10^{-14}``: on the arguments an optimizer produces, the
-reference the test suite measures against is two orders of magnitude less accurate than what it is
-measured against.
+[`AugmentedPade`](@ref) is at ``5.7\cdot10^{-14}``, both as the relative error of
+``\mathfrak{A}(X)``: on the arguments an optimizer produces, the reference the test suite measures
+against has a relative error two orders of magnitude above what it is measured against. How much of
+that reaches the retracted point depends on where it lies: an error ``E`` in ``\mathfrak{A}(X)``
+reaches it as ``B'E(B'')^T``, where only the lower-left block of ``E`` enters without a factor of the
+lift, and the lift is small here.
 
 The cost of one ``\mathfrak{A}``, in μs, minimum of 50, one BLAS thread, ``\theta = 1/2``, the
 sweep lifts at ``\|\bar{B}\| \approx 36`` and ``\approx 1066`` for ``\mathrm{St}(200, 10)`` and at

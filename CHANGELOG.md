@@ -34,8 +34,8 @@ breaking release).
   kernel stays the default because it is the faster one on the steps an optimizer takes (#63), and
   `NativePade` keeps its Newton–Schulz denominator, because an LU solve of it is at most `31%`
   faster, CPU-only, and well conditioned either way, `cond₁(q₆) ≤ 1.51` (#67). It also finds that
-  `AugmentedPade`, the reference of the test suite, is two orders of magnitude less accurate than
-  the native algorithms on those steps.
+  `AugmentedPade`, the reference of the test suite, has a relative error of `𝔄(X)` two orders of
+  magnitude above the native algorithms' on those steps.
 
 ### Fixed
 

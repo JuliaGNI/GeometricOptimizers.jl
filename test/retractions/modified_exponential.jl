@@ -53,7 +53,8 @@ reference(X, ::TaylorSeries) = reference_𝔄(X)
 
 const ALGORITHMS = (ScaledSquaring(), NativePade(), AugmentedPade(), TaylorSeries())
 
-# `0.1` is below every `θ`, so `s = 0`; `40` needs `s = 7` at the default `θ = 1/2`.
+# `0.1` is below every `θ`, so `s = 0`; `40` needs `s = 6` or `7` at the default `θ = 1/2`, after the
+# balancing.
 const NORMS = (0.1, 40.0)
 
 @testset "𝔄! is the allocating 𝔄 to the bit, $T" for T in REAL_ELTYPES
@@ -70,12 +71,17 @@ const NORMS = (0.1, 40.0)
     end
 end
 
-# The fixture of the test above does reach the recovery step: a dropped step would otherwise pass.
+# The fixtures of the test above do reach the recovery step: a dropped step would otherwise pass. The
+# halving count reads the norm of the balanced argument.
 @testset "the large argument needs halving, $T" for T in REAL_ELTYPES
-    X = argument(T, 3, last(NORMS), 302)
-    @test eltype(opnorm₁(X)) == T
-    @test opnorm₁(X) > ScaledSquaring().θ
-    @test opnorm₁(X) > NativePade().θ
+    for n in (1, 3, 10)
+        X = argument(T, n, last(NORMS), 100n + 2)
+        X′ = similar(X)
+        _balance!(X′, similar(X, 1, 2n), X)
+        @test eltype(opnorm₁(X′)) == T
+        @test opnorm₁(X′) > ScaledSquaring().θ
+        @test opnorm₁(X′) > NativePade().θ
+    end
 end
 
 # The balancing `X′ = D⁻¹XD`, `D = diag(𝕀, t𝕀)`, on the reduced argument of a lift, where it matters:
@@ -113,6 +119,46 @@ end
         @test _balance!(X′, similar(X, 1, size(X, 2)), X) === one(T)
         @test X′ == X
     end
+end
+
+# `𝔄` of a `2 × 2` matrix is `c₀𝕀 + c₁X`, the interpolant of `φ(x) = (eˣ - 1)/x` at its two
+# eigenvalues, here in 256-bit arithmetic.
+function two_by_two_𝔄(X)
+    setprecision(BigFloat, 256) do
+        A = big.(X)
+        h = (A[1, 1] + A[2, 2]) / 2
+        r = sqrt(h^2 - (A[1, 1] * A[2, 2] - A[1, 2] * A[2, 1]))
+        μ₁, μ₂ = h + r, h - r
+        φ(x) = expm1(x) / x
+        c₁ = (φ(μ₁) - φ(μ₂)) / (μ₁ - μ₂)
+        c₀ = (μ₁ * φ(μ₂) - μ₂ * φ(μ₁)) / (μ₁ - μ₂)
+        c₀ * [1 0; 0 1] + c₁ * A
+    end
+end
+
+# Off-diagonal blocks so far apart that `b / a` overflows to `Inf` (the first two) or underflows to
+# `0` (the last two) in the element type, which `t` avoids by taking the difference of the
+# logarithms. Every entry is then within `1.9eps(T)` of the closed form above, relative; the test
+# allows `8eps(T)`. `t` overflows only for a block norm below `floatmin`, as in the last argument,
+# and that is left unbalanced. There its subnormal entry underflows to zero when `𝔄!` scales `X′` for
+# the kernel and back, which the reference does not do, so the two are not compared to the bit.
+@testset "the balancing of blocks of very different norms, $(nameof(typeof(algorithm)))" for algorithm in (
+    ScaledSquaring(), NativePade())
+    for X in (Float32[0.1 1.0f-30; 1.0f10 0.2], [0.1 1e-300; 1e10 0.2],
+        Float32[0.1 1.0f30; 1.0f-30 0.2], [0.1 1e300; 1e-300 0.2])
+        T = eltype(X)
+        t = _balance!(similar(X), similar(X, 1, 2), X)
+        @test isfinite(t) && !iszero(t)
+        result = 𝔄(X, algorithm)
+        @test result == reference(X, algorithm)
+        @test all(isapprox.(result, two_by_two_𝔄(X); rtol = 8eps(T)))
+    end
+
+    X = Float32[0.1 nextfloat(0.0f0); 1.0f32 0.2]
+    @test _balance!(similar(X), similar(X, 1, 2), X) === 1.0f0
+    result = 𝔄(X, algorithm)
+    @test all(isfinite, result)
+    @test isapprox(result, two_by_two_𝔄(X); rtol = 8eps(Float32))
 end
 
 # A second call on the same workspace starts from what the first left in the scratch, so a buffer
@@ -240,7 +286,8 @@ end
     end
 
     # The random arguments above have off-diagonal blocks of one size, where the balancing factor is
-    # one and the block broadcasts are skipped; a reduced argument has a factor far from one.
+    # one: `_balance!` multiplies the blocks by one and `_unbalance!` skips them. A reduced argument
+    # has a factor far from one.
     B̂, B̄ = lift_factors(T(30) * rand(Random.Xoshiro(10), StiefelLieAlgHorMatrix{T}, 20, 3))
     X = B̄' * B̂
     @test _balance!(similar(X), similar(X, 1, 6), X) != 1

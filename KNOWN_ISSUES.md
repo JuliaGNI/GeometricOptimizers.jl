@@ -826,8 +826,9 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   [higham2005scaling, almohy2010new](@cite) are derived for ``\exp`` rather than ``\varphi_1`` and are
   stated in ``\|X\|`` — which is precisely the norm that is uninformative here, since ``X``'s
   lower-left block gives ``\|X\| \approx \|\bar{B}\|^2/4`` against a spectral radius of only
-  ``\approx\|\bar{B}\|``, and the reason `𝔄!` balances ``X`` before it takes the norm. Importing such a table without adapting it is the thing [#52] asked not to
-  do, so it was not done; the honest position is that the threshold is validated and not derived.
+  ``\approx\|\bar{B}\|``, and the reason `𝔄!` balances ``X`` before it takes the norm. Importing
+  such a table without adapting it is the thing [#52] asked not to do, so it was not done; the honest
+  position is that the threshold is validated and not derived.
 
   Two smaller pieces of [#52] are open with it. Its comparison of candidate designs is empirical —
   `NativePade` against `AugmentedPade` on cost, allocations, `check` and forward error — but the
@@ -903,7 +904,7 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   paths, so the files were never added. A docs build with no network access therefore has no
   inventory to fall back to, every `@extref` fails, and `makedocs` stops at the external links.
 
-### K64 · `AugmentedPade`, the reference of the accuracy tests, is two orders of magnitude less accurate than the native algorithms on the small steps an optimizer takes
+### K64 · `AugmentedPade`, the reference of the accuracy tests, has a relative error of `𝔄(X)` two orders of magnitude above the native algorithms' on the small steps an optimizer takes
 
 - location: `test/retractions/exponential_accuracy.jl:102`
 - kind: missing test
@@ -912,11 +913,14 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   relative error against the 256-bit series", on the arguments recorded from the linear-wave training
   run in `scripts/data/` (`‖X‖₁ = 1`, `‖C‖₁ ≤ 5.5e-4`): every scaled variant, `ScaledSquaring` and
   `NativePade` among them, is within `3.2e-16` of the series at `2n = 4, 10, 20, 30`, and
-  `AugmentedPade` is at `2.8e-14` (`2n = 4`) and `5.7e-14` (the others). The accuracy tests measure
-  the native algorithms against `AugmentedPade` on lifts scaled by `NORM_SCALES`, the smallest of
-  them `0.1` times a random lift, so no test covers the regime of an optimizer's steps, and one that did against
-  `AugmentedPade` would be measuring the reference. A test there needs an independent reference of
-  higher precision, such as the series in `BigFloat` that the script sums.
+  `AugmentedPade` is at `2.8e-14` (`2n = 4`) and `5.7e-14` (the others), each the relative error of
+  `𝔄(X)`. An error `E` in `𝔄(X)` reaches the retracted point as `B′E(B″)ᵀ`, where only its
+  lower-left block enters without a factor of the lift, so this does not measure the retraction.
+  The accuracy tests measure the native algorithms against `AugmentedPade` on lifts scaled by
+  `NORM_SCALES`, the smallest of them `0.1` times a random lift, so no test covers the regime of an
+  optimizer's steps, and one that did against `AugmentedPade` would be measuring the reference. A
+  test there needs an independent reference of higher precision, such as the series in `BigFloat`
+  that the script sums.
 
 ## D. Upstream
 

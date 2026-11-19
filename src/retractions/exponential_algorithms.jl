@@ -104,9 +104,10 @@ end
 Evaluate ``\mathfrak{A}`` with a native degree-6 diagonal Padé approximant.
 
 **This scales and squares too.** The name distinguishes the *kernel* and not the algorithm's
-relationship to scaling: `NativePade` and [`ScaledSquaring`](@ref) choose `s` by the same rule and undo
-it with the same ``s`` applications of ``W \mapsto 2W + WXW``, and differ only in what they evaluate at
-the scaled argument. The two are not alternatives.
+relationship to scaling: `NativePade` and [`ScaledSquaring`](@ref) balance the argument to ``X'`` and
+choose `s` by the same rule, undo it with the same ``s`` applications of ``W \mapsto 2W + WX'W`` and
+the balancing with the same similarity, and differ only in what they evaluate at the scaled argument.
+The two are not alternatives.
 
 Scaling controls the large-argument cancellation that makes [`TaylorSeries`](@ref) unreliable. At the
 resulting small argument there is still a choice of approximation kernel, and that choice is what this
@@ -130,9 +131,10 @@ is a parameter at all.
 !!! note "The error criterion, and what it is not"
     ``θ = 1/2`` is **not** taken from a backward-error table. The ``\theta_m`` of
     [higham2005scaling, almohy2010new](@cite) are derived for ``\exp`` rather than for
-    ``\mathfrak{A}``, and they bound a backward error in ``\|X\|`` — the least informative norm
-    available here, since ``\|X\|`` is quadratic in ``\|\bar{B}\|_2`` against a spectral radius of
-    exactly ``\|\bar{B}\|_2`` (see the note under [`ScaledSquaring`](@ref)). What justifies this
+    ``\mathfrak{A}``, and they bound a backward error in ``\|X\|``, which is quadratic in
+    ``\|\bar{B}\|_2`` against a spectral radius of exactly ``\|\bar{B}\|_2``. That is why the halving
+    count reads the balanced ``\|X'\|_1`` instead (see the note under [`ScaledSquaring`](@ref)), and
+    no such table is stated in that norm. What justifies this
     threshold is narrower: the Newton--Schulz residual bound above, and the measured forward error. A
     backward-error criterion for ``\mathfrak{A}`` on an argument that far from normal is not settled
     here.

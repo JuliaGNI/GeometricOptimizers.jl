@@ -176,7 +176,8 @@ end
 # lift, so its one-norm is at least one however small the lift and quadratic in it for a large one;
 # `t ≈ √(‖C‖₁/‖𝕀‖₁)` gives the two off-diagonal blocks of `X′` the same norm, which is linear in the
 # lift. `t` is rounded to a power of two, so that forming `X′` and undoing it are exact. An argument of
-# odd size, or with a zero off-diagonal block, is left as it is.
+# odd size, with a zero off-diagonal block, or whose `t` is beyond the largest power of two of its
+# element type, is left as it is.
 function _balance!(X′::AbstractMatrix, colsum::AbstractMatrix, X::AbstractMatrix)
     copyto!(X′, X)
     T = real(eltype(X))
@@ -189,7 +190,9 @@ function _balance!(X′::AbstractMatrix, colsum::AbstractMatrix, X::AbstractMatr
     @views a = _opnorm₁!(colsum[:, 1:n], X[1:n, (n + 1):m])
     @views b = _opnorm₁!(colsum[:, 1:n], X[(n + 1):m, 1:n])
     (iszero(a) || iszero(b)) && return one(T)
-    t = exp2(round(log2(b / a) / 2))
+    # the difference of the logarithms, since `b / a` overflows or underflows where they are far apart
+    t = exp2(round((log2(b) - log2(a)) / 2))
+    isfinite(t) || return one(T)
     @views X′[1:n, (n + 1):m] .*= t
     @views X′[(n + 1):m, 1:n] ./= t
     t

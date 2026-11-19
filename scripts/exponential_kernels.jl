@@ -9,14 +9,16 @@
 #
 # Two input sets, both of the arguments `X = (B'')ᵀB'` that `𝔄` is handed:
 #
-#   * the synthetic `sweep` of `retraction_sweep.jl`, eight lifts from `‖B̄‖ ≈ 0.7` to `≈ 770`, at
-#     `St(20, 3)` and `St(200, 10)`;
+#   * the synthetic `sweep` of `retraction_sweep.jl`, eight lifts at each of `St(20, 3)`,
+#     `St(200, 10)` and `St(500, 50)`, the last for the cost only;
 #   * the arguments recorded while a symplectic autoencoder is trained on the linear wave equation,
 #     at `2n = 4, 10, 20, 30`, which `linear_wave_lifts.jl` wrote to `scripts/data/`.
 #
 # Every variant runs the same framework, `scaled_squaring!` below; it differs from the package's
-# `𝔄!(ws, X, ::ScaledSquaring)` only where a variant asks it to, and the script checks that its
-# unbalanced Taylor variant agrees with the package to the bit. The reference is `AugmentedPade`.
+# `𝔄!(ws, X, algorithm)` only where a variant asks it to, and the script checks that its balanced
+# Taylor and Padé+NS variants agree with `ScaledSquaring` and `NativePade` to the bit. The reference
+# is `AugmentedPade` on the sweep, and the series summed in 256-bit arithmetic on the recorded
+# arguments.
 #
 # The timings are a `minimum` over repetitions with a single BLAS thread, and machine-dependent; the
 # errors, halving counts and allocations are not.
@@ -88,8 +90,8 @@ end
 # `n × n` blocks of `X′` the same one-norm, and returns `D𝔄(X′)D⁻¹`, which is `𝔄(X)` because `𝔄` is a
 # power series. The reduced argument is `[A/2 𝕀; C A/2]` with `‖C‖ ≈ ‖B̄‖²`, so `‖X‖₁` is quadratic in
 # `‖B̄‖` while `‖X′‖₁` is linear in it, and an argument always has `‖X‖₁ ≥ 1` from the identity block
-# however small the lift. This is what the package's `𝔄!` does; `balance = false` is what it did
-# before, kept here as the baseline.
+# however small the lift. `balance = true` is what the package's `𝔄!` does, and `balance = false` is
+# the baseline without it.
 
 function block_norms!(colsum, X)
     m = size(X, 1)
@@ -108,7 +110,8 @@ function scaled_squaring!(
     t = one(T)
     if balance && iseven(m)
         a, b = block_norms!(sc.colsum, X)
-        t = a > 0 && b > 0 ? exp2(round(log2(b / a) / 2)) : one(T)
+        t = a > 0 && b > 0 ? exp2(round((log2(b) - log2(a)) / 2)) : one(T)
+        t = isfinite(t) ? t : one(T)
         @views X′[1:n, (n + 1):m] .*= t
         @views X′[(n + 1):m, 1:n] ./= t
     end

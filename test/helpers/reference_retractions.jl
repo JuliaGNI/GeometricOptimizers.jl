@@ -2,7 +2,8 @@
 # that the in-place forms of `src/` must reproduce. The in-place forms promise the same
 # answer to the bit wherever they keep the product order, and a test that compared them with the
 # allocating methods of `src/` would compare one implementation with itself once those delegate to
-# the in-place forms. These do not move.
+# the in-place forms. These change only where the algorithm changes, such as its balancing, and
+# never to follow a rewrite of the in-place forms.
 
 using GeometricOptimizers: ScaledSquaring, NativePade, AugmentedPade, unit_matrix, opnorm₁,
                            lift_factors, lift_from_columns, StiefelProjection
@@ -26,14 +27,16 @@ end
 reference_scaled_kernel(X::AbstractMatrix, ::ScaledSquaring) = reference_𝔄(X)
 
 # The balancing `D = diag(𝕀, t𝕀)` of `𝔄!`, with `t` the power of two nearest `√(b/a)` for the
-# one-norms `a` and `b` of the upper-right and lower-left blocks.
+# one-norms `a` and `b` of the upper-right and lower-left blocks, and one where either is zero or that
+# power of two is not finite.
 function reference_balancing(X::AbstractMatrix)
     m = size(X, 1)
     n = m ÷ 2
     T = real(eltype(X))
     a, b = isodd(m) ? (zero(T), zero(T)) :
            (opnorm₁(X[1:n, (n + 1):m]), opnorm₁(X[(n + 1):m, 1:n]))
-    t = iszero(a) || iszero(b) ? one(T) : exp2(round(log2(b / a) / 2))
+    t = iszero(a) || iszero(b) ? one(T) : exp2(round((log2(b) - log2(a)) / 2))
+    t = isfinite(t) ? t : one(T)
     LinearAlgebra.Diagonal([i ≤ n || isodd(m) ? one(T) : t for i in 1:m])
 end
 
