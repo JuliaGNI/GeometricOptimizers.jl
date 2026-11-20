@@ -1,9 +1,10 @@
-# The result of `Adam` at a fixed step on a `BiorthogonalManifold` over 50 sections (K60), on the test
+# The result of `Adam` at a fixed step on a `BiorthogonalManifold` over 50 sections, on the test
 # problem of `test/integration/biorthogonal_optimizer_tests.jl`: the reconstruction of `X` by the
 # oblique projector `ΦΨᵀ`. Every run starts from the same point; `Random.seed!(seed)` selects the
 # completion `K` that `global_section` draws, and with it the coordinates Adam's entrywise moments are
-# taken in. The test asserts only what holds for every section, that the iterate moves and stays on
-# the manifold; this script measures what the section changes.
+# taken in, the blocks of `gradient_rep!`. The test asserts that the first step descends for every
+# section and that a fixed-step run decreases the loss; this script measures what the section
+# changes. `scripts/adam_pullback_severity.jl` compares the result with the one of `global_rep`.
 #
 # Two measurements:
 #

@@ -447,8 +447,10 @@ descent check a statement about descent, and it is the gradient [`BFGS`](@ref) a
 hold: their secant pairs and their ``Q`` live in the same coordinates.
 
 The four-argument form writes the gradient that `method` holds. For [`BFGS`](@ref), [`DFP`](@ref)
-and every other method it is the lift above. For [`GradientMethod`](@ref),
-[`MomentumMethod`](@ref) and [`Adam`](@ref) it is [`global_rep`](@ref) of `Δ`.
+and every other method it is the lift above. For [`GradientMethod`](@ref) and
+[`MomentumMethod`](@ref) it is [`global_rep`](@ref) of `Δ`. For [`Adam`](@ref) it is
+[`global_rep`](@ref) of `Δ`, except on a [`BiorthogonalLieAlgHorMatrix`](@ref), where it is the lift
+above; see below.
 
 # The biorthogonal manifold
 
@@ -457,6 +459,15 @@ of ``\nabla{}L`` onto the tangent space and pairs with every tangent vector as `
 lift above is then [`global_rep`](@ref)'s with the frame ``[\Phi\ \ K]`` and the dual frame
 ``[\Psi\ \ \tilde{K}]`` of the section exchanged: ``A = \Phi^T\Delta_\Phi - \Delta_\Psi^T\Psi``,
 ``B = K^T\Delta_\Phi`` and ``C = -\Delta_\Psi^T\tilde{K}``; see [Global Tangent Spaces](@ref "The Global Tangent Space for the Biorthogonal Manifold").
+
+[`Adam`](@ref) holds this lift on the biorthogonal manifold. Its entrywise rescaling ``-Db``, ``D``
+positive diagonal, lowers the loss at the rate ``-b^TDb < 0`` when ``b`` is this lift, for every
+section. When ``b`` is [`global_rep`](@ref) of `Δ`, the rate is ``-b^TMDb`` for the Gram matrix ``M``
+of the metric in the stored blocks, which is negative for every ``b`` and every ``D`` only if ``M``
+is diagonal, and for the ``D`` of Adam, as ``\delta\to0``, only if ``M`` is diagonally dominant by
+rows. For the metric of the manifold, every point with ``\mathrm{span}\,\Phi\neq\mathrm{span}\,\Psi``
+has sections for which it is not; see
+[The Biorthogonal Manifold](@ref "Adam on the biorthogonal manifold").
 
 # The symplectic Stiefel manifold
 

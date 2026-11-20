@@ -106,8 +106,9 @@ The gradient descent algorithm: the steepest descent with respect to the metric 
 The gradient it holds is [`global_rep`](@ref) of the Riemannian gradient [`rgrad`](@ref), whose
 tangent vector ``\lambda(Y)BE`` is the same whatever section ``\lambda(Y)`` is used.
 
-[`MomentumMethod`](@ref) and [`Adam`](@ref) hold the same gradient, and [`BFGS`](@ref) and
-[`DFP`](@ref) start from its direction. On a [`SymplecticStiefelManifold`](@ref) it is the descent of
+[`MomentumMethod`](@ref) holds the same gradient, as does [`Adam`](@ref) everywhere but on a
+[`BiorthogonalManifold`](@ref), and [`BFGS`](@ref) and [`DFP`](@ref) start from its direction. On a
+[`SymplecticStiefelManifold`](@ref) it is the descent of
 the metric [`metric(::SymplecticStiefelManifold, ::AbstractMatrix, ::AbstractMatrix)`](@ref), and the
 path of `GradientMethod` does not depend on the section; see
 [`GeometricOptimizers.gradient_rep!`](@ref). On a [`BiorthogonalManifold`](@ref) it is the descent of
@@ -149,7 +150,11 @@ MomentumMethod(; α = DEFAULT_MOMENTUM_α) = MomentumMethod{typeof(float(α))}(f
 
 The Adam optimizer, with the defaults of the experiments in [Brantner:2023](@cite).
 [kingma2014adam](@cite) and [goodfellow2016deep; Algorithm 8.7](@cite) suggest ``\beta_2 = 0.999``.
-The moments below are taken of the gradient ``\nabla{}L`` of [`GradientMethod`](@ref).
+The moments below are taken of the gradient ``\nabla{}L`` of [`GradientMethod`](@ref), except on a
+[`BiorthogonalManifold`](@ref): there they are taken of
+[`GeometricOptimizers.gradient_rep!`](@ref), the derivative of the loss with respect to the stored
+blocks of the lift, because an entrywise rescaling of the gradient of `GradientMethod` need not
+descend there; see [The Biorthogonal Manifold](@ref "Adam on the biorthogonal manifold").
 
 The cache consists of a first and a second moment, stored in *bias-corrected* form, i.e.
 updated in the ``t``-th iteration (counted from ``t = 1``) as
@@ -185,7 +190,8 @@ parameters they are given. `Adam()` optimizes `Float32` and `Float64` parameters
 !!! warning "On a manifold, the iterates depend on the section"
     The moments are taken of the lift in ``\mathfrak{g}^\mathrm{hor}``, and the section
     ``\lambda(Y)`` that defines the lift is unique only up to ``\lambda\mapsto\lambda{}h`` with ``h``
-    in the isotropy group, under which the lift goes to ``h^{-1}Bh``. ``m_1`` transforms the same way,
+    in the isotropy group, under which the lift goes to ``h^{-1}Bh``, and the derivative `Adam` holds
+    on a [`BiorthogonalManifold`](@ref) to ``h^TBh^{-T}``. ``m_1`` transforms the same way,
     but the entrywise ``\nabla{}L\odot\nabla{}L``, ``\sqrt{m_2}`` and the division do not, so the
     direction and the path depend on the section. This holds on every manifold of this package,
     where those of [`GradientMethod`](@ref) and [`MomentumMethod`](@ref) at a fixed step size do

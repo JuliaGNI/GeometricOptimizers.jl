@@ -10,6 +10,15 @@ breaking release).
 
 ### Fixed
 
+- **`Adam` on a `BiorthogonalManifold` takes its moments of `gradient_rep!`, the derivative of the
+  loss with respect to the stored blocks of the lift, instead of `global_rep` of the Riemannian
+  gradient.** An entrywise rescaling of `global_rep` need not descend there, because the Gram matrix
+  of the metric in its blocks depends on the section and need not be diagonally dominant; on the test
+  problem 4 of 50 sections ended 500 steps above the start. An entrywise rescaling of the derivative
+  descends on its first step for every section. Other manifolds, and the other leaves of a parameter
+  set, are unchanged. The manual page *The Biorthogonal Manifold* has a new section, *Adam on the
+  biorthogonal manifold*, and `scripts/adam_pullback_severity.jl` measures the change. This resolves
+  K60.
 - **The header of `.github/workflows/Metal.yml` names the command that installs `CI.yml`.** It
   pointed to an installer script that does not exist, and to the directories of a local checkout.
   The workflow itself is unchanged.
