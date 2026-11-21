@@ -358,31 +358,6 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   `GradientMethod`, `MomentumMethod`, `BFGS` and `DFP` do not depend on the section in exact
   arithmetic, at a fixed step and under a line search.
 
-### K60 · On a `BiorthogonalManifold` the result of `Adam` depends on the section, and does not always descend
-
-- location: `src/manifold_optimizers/adam_optimizer.jl`, `src/global_sections/biorthogonal_sections.jl`
-- kind: found late
-- found: 2026-11-11
-- evidence: `Adam` holds `global_rep(rgrad)`, as on every manifold, and its entrywise second
-  moments make its step depend on the section, as K57 says for the symplectic case. Its sign-like
-  direction is taken in the coordinates of `global_rep`, which are not the ones the derivative of
-  the loss pairs with, so it need not descend. The tests therefore assert for `Adam` only that the
-  iterate moves and stays on the manifold, and `scripts/biorthogonal_adam_seeds.jl` measures the
-  result over the sections. On the test problem of
-  `test/integration/biorthogonal_optimizer_tests.jl`, from one point and the completions `K` that
-  `Random.seed!(1:50)` draws, 500 steps at `η = 1e-3` under `Geodesic` end between `44.9` and `8982`
-  from `1405` (minimum `19.85`): 4 of the 50 end above the start and 6 above a fifth of it. Over the
-  first 25 of these seeds `Cayley` gives the same figures to 4 digits. No fixed step avoids it: 500
-  steps end above a fifth of the start on 1 of 25 seeds at `3e-3`, 3 of 50 at `5e-3` and 2 of 50
-  at `1e-2`; 200 steps of a `TrainingOptimizer` end above half the start on 4 of 50 seeds at
-  `1e-3`, and at `3e-3` one of 25 seeds ends at 2.66 times the start. The transported section
-  does not explain which seeds fail: the condition number of `[Φ K]` is 77.1 at the start for
-  every seed, because two completions differ by an orthogonal `Q` in `K ↦ KQ`, and its largest value
-  over the 500 steps is 84.7 to 145 on the six failing seeds and up to 112 on the others. So a
-  reset of the section to `global_section(Y)` is not known to help. `GradientMethod`,
-  `MomentumMethod`, `BFGS` and `DFP` do not depend on the section; the tests assert this for
-  `GradientMethod` and `BFGS` under a line search.
-
 ### K62 · `global_section` of a biorthogonal device point whose `Ψ` breaks CholeskyQR2 raises
 
 - location: `src/manifolds/biorthogonal_manifold.jl`, `global_section`
