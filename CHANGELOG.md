@@ -15,8 +15,8 @@ breaking release).
   ParallelTestRunner 2.10 runs each file in a worker process, with no retry. `SafeTestsets` leaves
   the test environment. The file of the group `metal` runs after the others. Two groups are new:
   `quality` (Aqua, JET, ExplicitImports and the docstring-attachment check, from `core`) and
-  `verification` (the optimizer convergence test, from `slow`). No test file moves; one comment
-  that relied on the serial order changes. `test/ci-groups.toml` sets `split = false`, so CI runs
+  `verification` (the optimizer convergence test, from `slow`). No test file moves; two comments
+  that relied on the serial order change. `test/ci-groups.toml` sets `split = false`, so CI runs
   one job per matrix entry with all its groups in place of one job per group, and
   `once = ["quality", "verification"]`, so a pull request and a push to a branch run those two
   groups on Ubuntu with Julia 1 only. The required checks become the four `Julia … - default`

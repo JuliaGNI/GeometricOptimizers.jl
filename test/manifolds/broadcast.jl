@@ -75,8 +75,7 @@ end
     # `allowscalar(false)` is not redundant, for the reason `retractions/exponential_accuracy.jl`
     # gives: `GPUArraysCore`'s default is `ScalarDisallowed` only in a non-interactive session, so
     # from a REPL a scalar index would merely warn and three of the assertions below would pass
-    # whatever the code did. The setting is task-global and left set, as it is there; every file
-    # included between this one and that one is host-only, so none of them consults it.
+    # whatever the code did. The setting is task-global and stays set after this testset.
     allowscalar(false)
 
     Y = StiefelManifold(JLArray(Matrix(rand(Random.Xoshiro(125), StiefelManifold{T}, N, n).A)))
