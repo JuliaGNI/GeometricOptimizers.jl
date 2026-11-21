@@ -1,101 +1,126 @@
-using SafeTestsets
+using ParallelTestRunner
+using GeometricOptimizers
 
-const GROUPS = isempty(ARGS) ?
+const TESTS = [
+    "core" => [
+        "Exports                      " => "integration/exports.jl",
+        "Public surface               " => "integration/public_surface.jl",
+        "Container/section copies     " => "optimizers/container_section_copy.jl",
+        "Stiefel Manifold             " => "manifolds/stiefel_manifold.jl",
+        "Direct Cayley and metrics    " => "manifolds/direct_cayley_and_metrics.jl",
+        "Grassmann Manifold           " => "manifolds/grassmann_manifold.jl",
+        "Manifold Broadcast           " => "manifolds/broadcast.jl",
+        "Symplectic Stiefel Manifold  " => "manifolds/symplectic_stiefel_manifold.jl",
+        "Symplectic on a backend      " => "manifolds/symplectic_backend.jl",
+        "Biorthogonal Manifold        " => "manifolds/biorthogonal_manifold.jl",
+        "Symplectic SR Decomposition  " => "decompositions/symplectic_sr.jl",
+        "Backend default eltype       " => "integration/default_eltype.jl",
+        "Backend eltype check         " => "integration/backend_eltype_check.jl",
+        "Stiefel Projection           " => "special_matrices/stiefel_projection.jl",
+        "Skew-Symmetric Matrix        " => "special_matrices/skew_symmetric.jl",
+        "Symmetric Matrix             " => "special_matrices/symmetric_matrix.jl",
+        "ProjectTo natural cotangent  " => "special_matrices/project_to.jl",
+        "Triangular Matrices          " => "special_matrices/triangular.jl",
+        "Mutating Return Values       " => "special_matrices/scalar_mul_return_value.jl",
+        "Optimizer Primitives         " => "special_matrices/optimizer_primitives.jl",
+        "Elementwise primitives       " => "optimizers/named_tuple_wrapper.jl",
+        "Error-only methods           " => "integration/error_only_methods.jl",
+        "Grassmann Lie Alg Hor        " => "lie_algebras/grassmann_lie_algebra_horizontal.jl",
+        "Stiefel Lie Alg Hor          " => "lie_algebras/stiefel_lie_algebra_horizontal.jl",
+        "Symplectic Lie Alg Hor       " => "lie_algebras/symplectic_lie_algebra_horizontal.jl",
+        "Lift families                " => "lie_algebras/lift_families.jl",
+        "Retractions                  " => "retractions/retractions.jl",
+        "Symplectic retractions       " => "retractions/symplectic_retractions.jl",
+        "Exponential Accuracy         " => "retractions/exponential_accuracy.jl",
+        "In-place 𝔄                   " => "retractions/modified_exponential.jl",
+        "Retraction workspace         " => "retractions/retraction_workspace.jl",
+        "Ω functions                  " => "global_sections/omega_functions.jl",
+        "Global global_sections       " => "global_sections/global_sections.jl",
+        "Optimizer phase observer     " => "integration/optimizer_observer.jl",
+        "Retraction records script    " => "integration/retraction_records.jl",
+        "Optimizer Problems           " => "optimizers/optimizer_problems.jl",
+        "Optimizer Status             " => "optimizers/optimizer_status_tests.jl",
+        "Descent Direction            " => "optimizers/descent_direction_tests.jl",
+        "Quasi-Newton Secant Pair     " => "optimizers/quasi_newton_secant_tests.jl",
+        "Trial slope in a workspace   " => "optimizers/linesearch_problem.jl",
+        "BFGS state update            " => "optimizers/iterative_hessians/bfgs/bfgs_state.jl",
+        "Manifold Optimizers          " => "integration/manifold_optimizers_with_new_interface.jl",
+        "Optimizer State Init         " => "manifold_optimizers/optimizer_state_initialization.jl",
+        "Optimizer State Accessors    " => "integration/optimizer_state_accessors.jl",
+        "Optimizer State Semantics    " => "integration/optimizer_state_semantics.jl",
+        "Optimizer Step Formulas      " => "manifold_optimizers/optimizer_step_formulas.jl",
+        "Adam + Euclidean decay       " => "manifold_optimizers/adam_with_euclidean_decay_optimizer.jl",
+        "Adam + decaying step         " => "optimizers/decaying_static.jl",
+        "Scalar-moment Adam           " => "manifold_optimizers/scalar_moment_adam_optimizer.jl",
+        "Direct Stiefel optimizers    " => "manifold_optimizers/direct_stiefel_optimizers.jl",
+        "Training step                " => "integration/training_optimizer.jl",
+        "Adam step allocations        " => "integration/adam_step_allocations.jl",
+        "Composite optimizer method   " => "optimizers/composite_method.jl",
+        "Flat Parameters              " => "integration/flat_parameters.jl",
+        "NeuralNetworkParameters      " => "integration/neural_network_parameters_protocol.jl",
+        "Container Parameters         " => "integration/network_parameters_optimizer.jl",
+        "Flat Buffer Allocations      " => "integration/flat_buffer_allocations.jl"
+    ],
+    "quality" => [
+        "Aqua: piracy and compat      " => "quality/aqua.jl",
+        "JET                          " => "quality/jet.jl",
+        "ExplicitImports              " => "quality/explicit_imports.jl",
+        "Docstring attachment         " => "quality/docstring_attachment.jl"
+    ],
+    "backends" => [
+        "changebackend                " => "integration/changebackend.jl",
+        "similar keeps the backend    " => "integration/similar_backend.jl",
+        "rgrad and the backend        " => "integration/rgrad_backend.jl",
+        "Default gradient             " => "integration/default_gradient.jl",
+        "Storage gradient             " => "parameter_protocol.jl",
+        "== through the storage       " => "integration/storage_equality.jl",
+        "copyto! crosses backends     " => "integration/device_copyto.jl",
+        "device orthonormalization    " => "integration/device_orthonormalization.jl",
+        "device multiply              " => "integration/device_multiply.jl",
+        "device products and sums     " => "integration/device_products.jl",
+        "mixed-backend refusal        " => "integration/mixed_backend_refusal.jl",
+        "device solve!                " => "integration/device_solve.jl"
+    ],
+    "optimizers" => [
+        "Optimizers                   " => "integration/optimizer_tests.jl",
+        "Manifold Line Search         " => "integration/manifold_linesearch_tests.jl",
+        "Grassmann Optimizers         " => "integration/grassmann_optimizer_tests.jl",
+        "Symplectic Optimizers        " => "integration/symplectic_optimizer_tests.jl",
+        "Biorthogonal Optimizers      " => "integration/biorthogonal_optimizer_tests.jl"
+    ],
+    "verification" => [
+        "Optimizer Convergence        " => "verification/svd_optim.jl"
+    ],
+    "slow" => [
+        "Own-vs-own ambiguities       " => "ambiguities.jl"
+    ],
+    "doctests" => [
+        "Doctests                     " => "quality/doctests.jl"
+    ],
+    "metal" => [
+        "Metal                        " => "devices/metal.jl"
+    ]
+]
+
+const SELECTED = filter(!startswith("--"), ARGS)
+const GROUPS = isempty(SELECTED) ?
                (Sys.isapple() && Sys.ARCH === :aarch64 ?
-                ["core", "backends", "optimizers", "slow", "metal"] :
-                ["core", "backends", "optimizers", "slow"]) : ARGS
+                [
+    "core", "quality", "backends", "optimizers", "verification", "slow", "metal"] :
+                ["core", "quality", "backends", "optimizers", "verification", "slow"]) :
+               SELECTED
+const UNKNOWN = setdiff(SELECTED, first.(TESTS))
+isempty(UNKNOWN) ||
+    error("no test group ", join(UNKNOWN, ", "), " in runtests.jl; its groups are ",
+        join(first.(TESTS), ", "))
 
-if "core" in GROUPS
-    @safetestset "Exports                      " include("integration/exports.jl")
-    @safetestset "Public surface               " include("integration/public_surface.jl")
-    @safetestset "Aqua: piracy and compat      " include("quality/aqua.jl")
-    @safetestset "JET                          " include("quality/jet.jl")
-    @safetestset "ExplicitImports              " include("quality/explicit_imports.jl")
-    @safetestset "Docstring attachment         " include("quality/docstring_attachment.jl")
-    @safetestset "Container/section copies     " include("optimizers/container_section_copy.jl")
-    @safetestset "Stiefel Manifold             " include("manifolds/stiefel_manifold.jl")
-    @safetestset "Direct Cayley and metrics    " include("manifolds/direct_cayley_and_metrics.jl")
-    @safetestset "Grassmann Manifold           " include("manifolds/grassmann_manifold.jl")
-    @safetestset "Manifold Broadcast           " include("manifolds/broadcast.jl")
-    @safetestset "Symplectic Stiefel Manifold  " include("manifolds/symplectic_stiefel_manifold.jl")
-    @safetestset "Symplectic on a backend      " include("manifolds/symplectic_backend.jl")
-    @safetestset "Biorthogonal Manifold        " include("manifolds/biorthogonal_manifold.jl")
-    @safetestset "Symplectic SR Decomposition  " include("decompositions/symplectic_sr.jl")
-    @safetestset "Backend default eltype       " include("integration/default_eltype.jl")
-    @safetestset "Backend eltype check         " include("integration/backend_eltype_check.jl")
-    @safetestset "Stiefel Projection           " include("special_matrices/stiefel_projection.jl")
-    @safetestset "Skew-Symmetric Matrix        " include("special_matrices/skew_symmetric.jl")
-    @safetestset "Symmetric Matrix             " include("special_matrices/symmetric_matrix.jl")
-    @safetestset "ProjectTo natural cotangent  " include("special_matrices/project_to.jl")
-    @safetestset "Triangular Matrices          " include("special_matrices/triangular.jl")
-    @safetestset "Mutating Return Values       " include("special_matrices/scalar_mul_return_value.jl")
-    @safetestset "Optimizer Primitives         " include("special_matrices/optimizer_primitives.jl")
-    @safetestset "Elementwise primitives       " include("optimizers/named_tuple_wrapper.jl")
-    @safetestset "Error-only methods           " include("integration/error_only_methods.jl")
-    @safetestset "Grassmann Lie Alg Hor        " include("lie_algebras/grassmann_lie_algebra_horizontal.jl")
-    @safetestset "Stiefel Lie Alg Hor          " include("lie_algebras/stiefel_lie_algebra_horizontal.jl")
-    @safetestset "Symplectic Lie Alg Hor       " include("lie_algebras/symplectic_lie_algebra_horizontal.jl")
-    @safetestset "Lift families                " include("lie_algebras/lift_families.jl")
-    @safetestset "Retractions                  " include("retractions/retractions.jl")
-    @safetestset "Symplectic retractions       " include("retractions/symplectic_retractions.jl")
-    @safetestset "Exponential Accuracy         " include("retractions/exponential_accuracy.jl")
-    @safetestset "In-place 𝔄                   " include("retractions/modified_exponential.jl")
-    @safetestset "Retraction workspace         " include("retractions/retraction_workspace.jl")
-    @safetestset "Ω functions                  " include("global_sections/omega_functions.jl")
-    @safetestset "Global global_sections       " include("global_sections/global_sections.jl")
-    @safetestset "Optimizer phase observer     " include("integration/optimizer_observer.jl")
-    @safetestset "Retraction records script    " include("integration/retraction_records.jl")
-    @safetestset "Optimizer Problems           " include("optimizers/optimizer_problems.jl")
-    @safetestset "Optimizer Status             " include("optimizers/optimizer_status_tests.jl")
-    @safetestset "Descent Direction            " include("optimizers/descent_direction_tests.jl")
-    @safetestset "Quasi-Newton Secant Pair     " include("optimizers/quasi_newton_secant_tests.jl")
-    @safetestset "Trial slope in a workspace   " include("optimizers/linesearch_problem.jl")
-    @safetestset "BFGS state update            " include("optimizers/iterative_hessians/bfgs/bfgs_state.jl")
-    @safetestset "Manifold Optimizers          " include("integration/manifold_optimizers_with_new_interface.jl")
-    @safetestset "Optimizer State Init         " include("manifold_optimizers/optimizer_state_initialization.jl")
-    @safetestset "Optimizer State Accessors    " include("integration/optimizer_state_accessors.jl")
-    @safetestset "Optimizer State Semantics    " include("integration/optimizer_state_semantics.jl")
-    @safetestset "Optimizer Step Formulas      " include("manifold_optimizers/optimizer_step_formulas.jl")
-    @safetestset "Adam + Euclidean decay       " include("manifold_optimizers/adam_with_euclidean_decay_optimizer.jl")
-    @safetestset "Adam + decaying step         " include("optimizers/decaying_static.jl")
-    @safetestset "Scalar-moment Adam           " include("manifold_optimizers/scalar_moment_adam_optimizer.jl")
-    @safetestset "Direct Stiefel optimizers    " include("manifold_optimizers/direct_stiefel_optimizers.jl")
-    @safetestset "Training step                " include("integration/training_optimizer.jl")
-    @safetestset "Adam step allocations        " include("integration/adam_step_allocations.jl")
-    @safetestset "Composite optimizer method   " include("optimizers/composite_method.jl")
-    @safetestset "Flat Parameters              " include("integration/flat_parameters.jl")
-    @safetestset "NeuralNetworkParameters      " include("integration/neural_network_parameters_protocol.jl")
-    @safetestset "Container Parameters         " include("integration/network_parameters_optimizer.jl")
-    @safetestset "Flat Buffer Allocations      " include("integration/flat_buffer_allocations.jl")
-end
-if "backends" in GROUPS
-    @safetestset "changebackend                " include("integration/changebackend.jl")
-    @safetestset "similar keeps the backend    " include("integration/similar_backend.jl")
-    @safetestset "rgrad and the backend        " include("integration/rgrad_backend.jl")
-    @safetestset "Default gradient             " include("integration/default_gradient.jl")
-    @safetestset "Storage gradient             " include("parameter_protocol.jl")
-    @safetestset "== through the storage       " include("integration/storage_equality.jl")
-    @safetestset "copyto! crosses backends     " include("integration/device_copyto.jl")
-    @safetestset "device orthonormalization    " include("integration/device_orthonormalization.jl")
-    @safetestset "device multiply              " include("integration/device_multiply.jl")
-    @safetestset "device products and sums     " include("integration/device_products.jl")
-    @safetestset "mixed-backend refusal        " include("integration/mixed_backend_refusal.jl")
-    @safetestset "device solve!                " include("integration/device_solve.jl")
-end
-if "optimizers" in GROUPS
-    @safetestset "Optimizers                   " include("integration/optimizer_tests.jl")
-    @safetestset "Manifold Line Search         " include("integration/manifold_linesearch_tests.jl")
-    @safetestset "Grassmann Optimizers         " include("integration/grassmann_optimizer_tests.jl")
-    @safetestset "Symplectic Optimizers        " include("integration/symplectic_optimizer_tests.jl")
-    @safetestset "Biorthogonal Optimizers      " include("integration/biorthogonal_optimizer_tests.jl")
-end
-if "slow" in GROUPS
-    @safetestset "Optimizer Convergence        " include("verification/svd_optim.jl")
-    @safetestset "Own-vs-own ambiguities       " include("ambiguities.jl")
-end
-if "doctests" in GROUPS
-    @safetestset "Doctests                     " include("quality/doctests.jl")
-end
-if "metal" in GROUPS
-    @safetestset "Metal                        " include("devices/metal.jl")
-end
+runtests(GeometricOptimizers, filter(startswith("--"), ARGS);
+    testsuite = Dict(label => :(include($(joinpath(@__DIR__, path))))
+    for (group, files) in TESTS if group in GROUPS for (label, path) in files),
+    serial = [label
+              for (group, files) in TESTS if group in ("metal", "cuda")
+              for (label, _) in files],
+    serial_position = :after,
+    retries = 0,
+    exeflags = ["--threads=$(Threads.nthreads())"],
+    max_default_jobs = max(1, Sys.CPU_THREADS ÷ Threads.nthreads()))
