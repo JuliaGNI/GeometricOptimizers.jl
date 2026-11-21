@@ -136,8 +136,8 @@ GeometricOptimizers.rhs(cache::_LiftCache) = cache.r
     N, n = 6, 3
     # `allowscalar(false)` is what makes this a test rather than a description: outside a
     # non-interactive session the default is `ScalarAllowed`, and a scalar index would merely warn.
-    # It is task-global and left set, as at `retractions/exponential_accuracy.jl`, which `runtests.jl`
-    # runs earlier and which therefore already puts every later test file under the same setting.
+    # This file sets it itself, on the next line; the setting is task-global and stays set after
+    # this testset.
     allowscalar(false)
 
     r = StiefelLieAlgHorMatrix(
