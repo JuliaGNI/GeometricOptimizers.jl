@@ -19,6 +19,11 @@ breaking release).
   set, are unchanged. The manual page *The Biorthogonal Manifold* has a new section, *Adam on the
   biorthogonal manifold*, and `scripts/adam_pullback_severity.jl` measures the change. This resolves
   K60.
+- **`Adam` on a `SymplecticStiefelManifold` takes its moments of `gradient_rep!` too.** There the Gram
+  matrix of the metric in the blocks of `global_rep` is not diagonal where `UᵀU` is not, and at
+  random points the first direction raised the loss in 128 to 164 of 400 draws; with `gradient_rep!`
+  it raises it in none, and no run of 50 ends above its start, against 26 to 48 before. The path of
+  `Adam` still depends on the section (K57).
 - **The header of `.github/workflows/Metal.yml` names the command that installs `CI.yml`.** It
   pointed to an installer script that does not exist, and to the directories of a local checkout.
   The workflow itself is unchanged.

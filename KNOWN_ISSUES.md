@@ -338,7 +338,10 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   where it is and maps the coordinates `(𝒜, ℬ)` of a lift to `(𝒜, S⁻¹ℬ)`. No positive-definite inner
   product on `ℬ` is invariant under the non-compact `Sp(2N − 2n)`, so every operation in these
   coordinates that is not equivariant under this map depends on the section. `Adam`'s entrywise
-  second moments are such an operation, and they change the step. Two others change no step in a
+  second moments are such an operation, and they change the step. `Adam` takes them of
+  `gradient_rep!`, the derivative with respect to the stored entries, so its first direction descends
+  for every section; of `global_rep` it raised the loss in 128 to 164 of 400 draws
+  (`scripts/adam_pullback_severity.jl`). Its path still depends on the section. Two others change no step in a
   generic solve: the tolerance `CURVATURE_TOLERANCE * l2norm(Δx) * l2norm(Δg)` of
   `curvature_is_usable`, which `BFGS` and `DFP` read only near a pair it rejects, and `rxₐ` of
   `OptimizerStatus`. The secant pairs of `BFGS` and `DFP` do not make the step depend on the section:
@@ -1277,6 +1280,19 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   needs the Euclidean gradient at `gradient_rep!`, and with it `BFGS` and `DFP` would also skip the
   `rgrad` they now pay for (twice the time of `gradient_rep!` at `4000 × 40`). That is a change of the
   gradient protocol for every manifold, `TrainingOptimizer` included, which already receives `∇L`.
+
+### K64 · The manual says the symplectic metric is block-diagonal in `(𝒜, ℬ)` at every point, and it is not
+
+- location: `docs/src/global_tangent_spaces.md:334`
+- kind: docs
+- found: 2026-11-22
+- evidence: the page says "In the coordinates of [`global_section`] the metric is block-diagonal in
+  (𝒜, ℬ) at every point". `global_section` takes `Uˢ` in the symplectic complement,
+  `UᵀJUˢ = 𝕆`, which leaves `UᵀUˢ` free, and the metric pairs `Uˢℬ` with `U𝒜` as
+  `tr(Pℬᵀ(Uˢ)ᵀU𝒜)`. `scripts/symplectic_metric_coupling.jl`: over 20 random points each,
+  `‖UᵀUˢ‖/(‖U‖‖Uˢ‖)` reaches 0.986, 0.9999 and 0.99996, and the `𝒜` part of the Gram matrix times the
+  first unit `ℬ` is up to 4.8, 70 and 275 times its `ℬ` part, at `(2N, 2n) = (4, 2), (12, 4), (40, 6)`.
+  The statement after it, about an orthosymplectic point, is not checked here.
 
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40

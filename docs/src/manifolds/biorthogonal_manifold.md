@@ -153,7 +153,7 @@ That Adam depends on the coordinate system is known, in ``\mathbb{R}^d`` as on m
 | the same, ``(N, n) = (6, 2)`` | 4 first steps ascend, 19 runs end above their start | 0, 0 |
 | the same, ``(N, n) = (20, 3)`` | 5 first steps ascend, 48 runs end above their start, 17 off the manifold | 0, 0, 0 |
 
-The [`SymplecticStiefelManifold`](@ref), whose isotropy group is not compact either, is in the same position (K57), and the script measures it too; there [`Adam`](@ref) still holds `global_rep`.
+The [`SymplecticStiefelManifold`](@ref), whose isotropy group is not compact either, is in the same position, and [`Adam`](@ref) holds `gradient_rep!` there too; see [`GeometricOptimizers.gradient_rep!`](@ref). The script measures it at ``(2N, 2n) = (4, 2)``, ``(12, 4)`` and ``(40, 6)``: with `global_rep`, the first direction raises the loss in 128, 152 and 164 of 400 draws, and 26, 46 and 48 of 50 runs end above their start; with `gradient_rep!`, none does.
 
 The section is transported along the path by elements of ``GL(N)``, so, unlike a Stiefel section, it does not stay orthogonal, and the coordinates of the lift are only as well conditioned as it is. [`AdamWithEuclideanDecay`](@ref) refuses the manifold with an `ArgumentError`: it is not compact, so ``\frac{\lambda}{2}\|Y\|_F^2`` is not constant on it, and a horizontal lift cannot subtract ``\lambda{}Y`` entrywise.
 
