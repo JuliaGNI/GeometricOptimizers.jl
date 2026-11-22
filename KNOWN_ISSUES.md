@@ -1281,19 +1281,6 @@ Not a defect in the code; a thing a later reader would otherwise have to redisco
   `rgrad` they now pay for (twice the time of `gradient_rep!` at `4000 × 40`). That is a change of the
   gradient protocol for every manifold, `TrainingOptimizer` included, which already receives `∇L`.
 
-### K64 · The manual says the symplectic metric is block-diagonal in `(𝒜, ℬ)` at every point, and it is not
-
-- location: `docs/src/global_tangent_spaces.md:334`
-- kind: docs
-- found: 2026-11-22
-- evidence: the page says "In the coordinates of [`global_section`] the metric is block-diagonal in
-  (𝒜, ℬ) at every point". `global_section` takes `Uˢ` in the symplectic complement,
-  `UᵀJUˢ = 𝕆`, which leaves `UᵀUˢ` free, and the metric pairs `Uˢℬ` with `U𝒜` as
-  `tr(Pℬᵀ(Uˢ)ᵀU𝒜)`. `scripts/symplectic_metric_coupling.jl`: over 20 random points each,
-  `‖UᵀUˢ‖/(‖U‖‖Uˢ‖)` reaches 0.986, 0.9999 and 0.99996, and the `𝒜` part of the Gram matrix times the
-  first unit `ℬ` is up to 4.8, 70 and 275 times its `ℬ` part, at `(2N, 2n) = (4, 2), (12, 4), (40, 6)`.
-  The statement after it, about an orthosymplectic point, is not checked here.
-
 [#38]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/38
 [#40]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/40
 [#44]: https://github.com/JuliaGNI/GeometricOptimizers.jl/pull/44
