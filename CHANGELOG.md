@@ -8,6 +8,20 @@ breaking release).
 
 ## [Unreleased]
 
+### Changed
+
+- **The test suite runs its files in parallel, with ParallelTestRunner.** `test/runtests.jl`
+  takes the parallel form of the test convention: one table `TESTS` of group, label and path, and
+  ParallelTestRunner 2.10 runs each file in a worker process, with no retry. `SafeTestsets` leaves
+  the test environment. The file of the group `metal` runs after the others. Two groups are new:
+  `quality` (Aqua, JET, ExplicitImports and the docstring-attachment check, from `core`) and
+  `verification` (the optimizer convergence test, from `slow`). No test file moves; two comments
+  that relied on the serial order change. `test/ci-groups.toml` sets `split = false`, so CI runs
+  one job per matrix entry with all its groups in place of one job per group, and
+  `once = ["quality", "verification"]`, so a pull request and a push to a branch run those two
+  groups on Ubuntu with Julia 1 only. The required checks become the four `Julia … - default`
+  jobs, the Doctests job and the two Metal jobs, 7 in place of 19.
+
 ### Fixed
 
 - **The header of `.github/workflows/Metal.yml` names the command that installs `CI.yml`.** It
