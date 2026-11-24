@@ -331,6 +331,23 @@ end
     @test F(ps) < F₀ / 2
 end
 
+# The descent of the test above does not tell the two gradients apart: with `global_rep` on the
+# biorthogonal leaf the parameter set also ends below half its start. So the gradient Adam holds is
+# compared with `gradient_rep!` leaf by leaf, at the section of the optimizer.
+@testset "Adam holds gradient_rep! on the biorthogonal leaf of a parameter set" begin
+    flat(B) = first(flatten(B))
+    Random.seed!(1)
+    ps = NetworkParameters((Y = start(), b = T[1, -2, 3]))
+    opt = TrainingOptimizer(ps; algorithm = Adam(), linesearch = T(1e-3))
+    λ = section(opt.state)
+    Δ = NetworkParameters((Y = rgrad(ps.Y, euclidean_gradient(ps.Y)), b = 2 * ps.b))
+    D = gradient_rep!(deepcopy(GeometricOptimizers.gradient_array(opt.cache)), λ, Δ, Adam())
+    b = flat(gradient_rep!(zero_tangent(ps.Y), λ.Y, Δ.Y))
+    @test flat(D.Y) ≈ b
+    @test !(flat(global_rep(λ.Y, Δ.Y)) ≈ b)
+    @test D.b == Δ.b
+end
+
 # Each leaf takes the method of its kind. The manifold method is `GradientMethod`, whose path does not
 # depend on the section, so the result is the same for every seed: 200 steps at `1e-4` end at 0.053
 # of the start. The array leaf takes Adam, whose step under a gradient of constant sign is `η` per
