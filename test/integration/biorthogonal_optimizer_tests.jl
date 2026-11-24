@@ -164,6 +164,40 @@ end
     @test tangent(section(state), GeometricOptimizers.direction(c)) ≈ -Δ rtol = 1e-9
 end
 
+# Adam holds `gradient_rep!`, the derivative of the loss with respect to the stored blocks, so its
+# first direction `-b/(|b| + δ)` pairs with the derivative as `-Σᵢ bᵢ²/(|bᵢ| + δ) < 0`, whatever the
+# section. With `global_rep` in its place the direction would be the rescaling of `M⁻¹b` for the Gram
+# matrix `M` of the metric, which is not the identity here. The slope is computed from the Euclidean
+# gradient and the tangent vector of the direction, not from the lift.
+@testset "the first direction of Adam descends for every section" begin
+    flat(B) = first(GeometricOptimizers.flatten(B))
+    tangent = GeometricOptimizers._section_tangent
+    Random.seed!(1)
+    Y = start()
+    Δ = rgrad(Y, euclidean_gradient(Y))
+    opt = Optimizer(Y, objective; algorithm = Adam(), linesearch = Static(T(1e-3)))
+    c = cache(opt)
+    for s in (ones(T, N - n), SECTION_SCALES)
+        state = OptimizerState(Adam(), Y)
+        GeometricOptimizers._start_section!(section(state), Y)
+        change_section!(section(state), s)
+        GeometricOptimizers.increase_iteration_number!(state)
+        update!(c, state, gradient(opt), GeometricOptimizers._direction_rule(opt), Y)
+        d = GeometricOptimizers.direction(c)
+        b = flat(gradient_rep!(zero_tangent(Y), section(state), Δ))
+        # the `A` block of `b` is zero up to rounding, because `(ΦA, -ΨAᵀ)` moves along the fibre
+        # `(Φg, Ψg⁻ᵀ)` on which the loss is constant, and the direction divides it by `δ = 1e-8`; so
+        # the held gradient is compared with `b`, and the direction with the held gradient
+        g = flat(GeometricOptimizers.gradient_array(c))
+        @test g ≈ b atol = 64eps(T) * maximum(abs, b)
+        @test flat(d) ≈ -g ./ (abs.(g) .+ Adam().δ) rtol = 64eps(T)
+        slope = sum(euclidean_gradient(Y) .* tangent(section(state), d))
+        @test slope ≈ -sum(b .^ 2 ./ (abs.(b) .+ Adam().δ)) rtol = 1e-10
+        @test slope < 0
+        @test !(flat(global_rep(section(state), Δ)) ≈ b)
+    end
+end
+
 # The path under a line search does not depend on the section: two solves from one point, one at
 # `global_section`'s section and one after the change above. The step ceiling reads the spectral
 # radius of the lift, which the change keeps, and BFGS starts at the inverse of the metric, which
@@ -239,20 +273,22 @@ end
     @test maximum(finals) < objective(start()) / 5
 end
 
-# At a fixed step the result of Adam depends on the section drawn at the start, and need not descend
-# (K60): its sign-like direction is taken entrywise in the coordinates of `global_rep`, which are not
-# the ones the derivative of the loss pairs with. So the test asserts what holds for every section:
-# the iterate moves and stays on the manifold. `scripts/biorthogonal_adam_seeds.jl` measures the
-# result over 50 sections.
-@testset "Adam at a fixed step stays on the manifold, $(nameof(typeof(R)))" for R in (
-    Geodesic(), Cayley())
-    Random.seed!(1)
+# At a fixed step the result of Adam still depends on the section drawn at the start, through its
+# entrywise moments, but it descends: over the 50 sections of `scripts/biorthogonal_adam_seeds.jl`,
+# 500 steps at `1e-3` end between 38.7 and 45.2 from 1405 (`scripts/adam_pullback_severity.jl`).
+# Seeds 15 and 40 are two of the six that end above a fifth of the start when Adam holds
+# `global_rep` instead.
+@testset "Adam at a fixed step decreases the objective, $(nameof(typeof(R))), seed $(seed)" for R in (
+        Geodesic(), Cayley()),
+    seed in (1, 15, 40)
+
+    Random.seed!(seed)
     Y = start()
     opt = Optimizer(Y, objective; algorithm = Adam(), linesearch = Static(T(1e-3)),
         retraction = R, max_iterations = 500, warn_iterations = 1000)
     solve!(Y, OptimizerState(Adam(), Y), opt)
     @test check(Y) < 1e-12
-    @test Y.A != start().A
+    @test objective(Y) < objective(start()) / 5
 end
 
 @testset "Adam at the default settings stays on the manifold" begin
@@ -265,9 +301,8 @@ end
 end
 
 # The training step takes the Euclidean gradient of the leaf, and a parameter set may hold a
-# biorthogonal leaf beside an ordinary one. The result of Adam depends on the section and need not
-# descend (K60), so for Adam the test asserts only that the iterate moves and stays on the manifold;
-# `scripts/biorthogonal_adam_seeds.jl` measures the result over 50 sections.
+# biorthogonal leaf beside an ordinary one, whose Adam holds `gradient_rep!` on the first and the
+# gradient itself on the second.
 @testset "a TrainingOptimizer steps a biorthogonal leaf, $(algorithm)" for (algorithm, η) in (
     (GradientMethod(), 1e-4), (MomentumMethod(), 1e-4), (Adam(), 1e-3))
     Random.seed!(1)
@@ -279,7 +314,7 @@ end
     end
     @test check(Y) < 1e-12
     @test Y.A != start().A
-    algorithm isa Adam || @test objective(Y) < f₀ / 2
+    @test objective(Y) < f₀ / 2
     @test section(opt.state).Y == Y
 
     ps = NetworkParameters((Y = start(), b = T[1, -2, 3]))
@@ -293,7 +328,24 @@ end
     @test ps.Y isa BiorthogonalManifold{T}
     @test check(ps.Y) < 1e-12
     @test ps.Y.A != start().A
-    algorithm isa Adam || @test F(ps) < F₀ / 2
+    @test F(ps) < F₀ / 2
+end
+
+# The descent of the test above does not tell the two gradients apart: with `global_rep` on the
+# biorthogonal leaf the parameter set also ends below half its start. So the gradient Adam holds is
+# compared with `gradient_rep!` leaf by leaf, at the section of the optimizer.
+@testset "Adam holds gradient_rep! on the biorthogonal leaf of a parameter set" begin
+    flat(B) = first(flatten(B))
+    Random.seed!(1)
+    ps = NetworkParameters((Y = start(), b = T[1, -2, 3]))
+    opt = TrainingOptimizer(ps; algorithm = Adam(), linesearch = T(1e-3))
+    λ = section(opt.state)
+    Δ = NetworkParameters((Y = rgrad(ps.Y, euclidean_gradient(ps.Y)), b = 2 * ps.b))
+    D = gradient_rep!(deepcopy(GeometricOptimizers.gradient_array(opt.cache)), λ, Δ, Adam())
+    b = flat(gradient_rep!(zero_tangent(ps.Y), λ.Y, Δ.Y))
+    @test flat(D.Y) ≈ b
+    @test !(flat(global_rep(λ.Y, Δ.Y)) ≈ b)
+    @test D.b == Δ.b
 end
 
 # Each leaf takes the method of its kind. The manifold method is `GradientMethod`, whose path does not
