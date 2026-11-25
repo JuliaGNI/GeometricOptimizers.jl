@@ -449,8 +449,8 @@ hold: their secant pairs and their ``Q`` live in the same coordinates.
 The four-argument form writes the gradient that `method` holds. For [`BFGS`](@ref), [`DFP`](@ref)
 and every other method it is the lift above. For [`GradientMethod`](@ref) and
 [`MomentumMethod`](@ref) it is [`global_rep`](@ref) of `Δ`. For [`Adam`](@ref) it is
-[`global_rep`](@ref) of `Δ`, except on a [`BiorthogonalLieAlgHorMatrix`](@ref), where it is the lift
-above; see below.
+[`global_rep`](@ref) of `Δ`, except on a [`BiorthogonalLieAlgHorMatrix`](@ref) and a
+[`SymplecticLieAlgHorMatrix`](@ref), where it is the lift above; see below.
 
 # The biorthogonal manifold
 
@@ -498,6 +498,14 @@ does not depend on the section ([`Adam`](@ref)'s entrywise second moments and co
 still do). [`BFGS`](@ref) and [`DFP`](@ref) start from this direction; see
 [`GeometricOptimizers._metric_inverse!`](@ref). `scripts/symplectic_gradient_options.jl` measures
 these statements.
+
+[`Adam`](@ref) holds the lift above here too, for the reason given for the biorthogonal manifold:
+its first direction ``-Db`` lowers the loss at the rate ``-b^TDb < 0`` for every section, and with
+[`global_rep`](@ref) of `Δ` in place of ``b`` at the rate ``-b^TMDb``. On ``\mathcal{B}`` the Gram
+matrix ``M`` is ``P\otimes(U^s)^TU^s``, because ``U^T\mathbb{J}_{2N}U^s = \mathbb{O}`` leaves
+``K = U^s\mathcal{B}P`` above. It is not diagonal where ``U^TU`` is not, and
+`scripts/adam_pullback_severity.jl` measures first directions of `Adam` on
+[`global_rep`](@ref) that raise the loss at random points.
 """
 gradient_rep!(D, λY::GlobalSection, Δ) = global_rep!(D, λY, Δ)
 

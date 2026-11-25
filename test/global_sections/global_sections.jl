@@ -329,8 +329,9 @@ end
 # than against the code that computes it. `Δ = rgrad(U, ∇L)` and `⟨∇L, V⟩` is the derivative of the
 # loss along a tangent vector `V`.
 #
-# - A method other than `GradientMethod`, `MomentumMethod` and `Adam` holds the derivative with
-#   respect to the stored entries: the three-argument form.
+# - A method other than `GradientMethod` and `MomentumMethod` holds the derivative with respect to
+#   the stored entries: the three-argument form. `Adam` holds it on this lift, and `global_rep` on the
+#   lifts of the Stiefel and the Grassmann manifold.
 # - `GradientMethod` holds the lift whose tangent vector `λ(U)DE` is the Riesz representative of `∇L`
 #   in metric (3.16), `g_U(λ(U)DE, V) = ⟨∇L, V⟩` for every tangent `V`. It is `Δ` for every section.
 # - The derivative with respect to the stored entries, read as a lift, is not the Riesz
@@ -344,7 +345,7 @@ end
 @testset "the gradient of each descent on a SymplecticStiefelManifold{$T}" for T in REAL_ELTYPES
     rng = Random.Xoshiro(12)
     E = StiefelProjection(T, 10, 4)
-    metric_methods = (GradientMethod(), MomentumMethod(), Adam())
+    metric_methods = (GradientMethod(), MomentumMethod())
     for _ in 1:10
         U = conditioned_point(rng, T, 10, 4)
         λU = GlobalSection(U)
@@ -352,7 +353,7 @@ end
         Δ = rgrad(U, ∇L)
         lift() = fill!(similar(global_rep(λU, Δ)), T(NaN))
         flat = gradient_rep!(lift(), λU, Δ)
-        for method in (BFGS(), DFP())
+        for method in (BFGS(), DFP(), Adam())
             @test gradient_rep!(lift(), λU, Δ, method) == flat
         end
 

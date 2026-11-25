@@ -13,7 +13,7 @@ using GeometricOptimizers
 using GeometricOptimizers: Cayley, Geodesic, check, cache, gradient, problem, initialize!,
                            update!, linesearch_problem, isconverged, section
 using SimpleSolvers: Static, Backtracking
-using NeuralNetworkParameters: NetworkParameters
+using NeuralNetworkParameters: NetworkParameters, unflatten
 using LinearAlgebra: Diagonal, I, cond, eigvals, norm, tr
 using Test
 import Random
@@ -116,6 +116,48 @@ end
     @test tangent(section(state), GeometricOptimizers.direction(c)) ≈ -Δ rtol = 1e-9
 end
 
+# Adam holds `gradient_rep!`, the derivative of the loss with respect to the stored entries, so its
+# first direction `-b/(|b| + δ)` pairs with the derivative as `-Σᵢ bᵢ²/(|bᵢ| + δ) < 0`, whatever the
+# section. With `global_rep` in its place the direction would be the rescaling of `M⁻¹b` for the Gram
+# matrix `M` of the metric, which is not diagonal where `UᵀU` is not; at the drawn point that
+# direction raises the loss at both sections, the second changed by a symplectic `S` with
+# `κ(S) ≈ 33`. It does so on 14 of the seeds 1:20. The slope is computed from the Euclidean gradient and
+# the tangent vector of the direction, not from the lift.
+@testset "the first direction of Adam descends for every section" begin
+    flat(B) = first(GeometricOptimizers.flatten(B))
+    tangent = GeometricOptimizers._section_tangent
+    k = (N2 - n2) ÷ 2
+    H = randn(Random.Xoshiro(5), T, 2k, 2k)
+    S = exp(poisson(T, 2k) * (H + H') / 2)
+    Random.seed!(2)
+    U = rand(SymplecticStiefelManifold{T}, N2, n2)
+    G = randn(Random.Xoshiro(6), T, N2, n2)
+    Δ = rgrad(U, G)
+    opt = Optimizer(U, V -> sum(G .* V.A); algorithm = Adam(), linesearch = Static(T(1e-3)))
+    c = cache(opt)
+    for h in (Matrix{T}(I, 2k, 2k), S)
+        state = OptimizerState(Adam(), U)
+        GeometricOptimizers._start_section!(section(state), U)
+        section(state).λ .= section(state).λ * h
+        GeometricOptimizers.increase_iteration_number!(state)
+        update!(c, state, gradient(opt), GeometricOptimizers._direction_rule(opt), U)
+        d = GeometricOptimizers.direction(c)
+        b = flat(GeometricOptimizers.gradient_rep!(
+            GeometricOptimizers.zero_tangent(U), section(state), Δ))
+        @test flat(GeometricOptimizers.gradient_array(c)) ≈ b rtol = 64eps(T)
+        @test flat(d) ≈ -b ./ (abs.(b) .+ Adam().δ) rtol = 64eps(T)
+        slope = sum(G .* tangent(section(state), d))
+        @test slope ≈ -sum(b .^ 2 ./ (abs.(b) .+ Adam().δ)) rtol = 1e-10
+        @test slope < 0
+        # the control: Adam's first direction on `global_rep` raises the loss here
+        g, layout = GeometricOptimizers.flatten(global_rep(section(state), Δ))
+        @test !(g ≈ b)
+        @test sum(G .*
+                  tangent(section(state), unflatten(layout, -g ./ (abs.(g) .+ Adam().δ)))) >
+              0
+    end
+end
+
 # The path under a line search does not depend on the section. Two solves start at one point, one at
 # `global_section`'s section `λ` and one at `λ diag(𝕀, S)` for a symplectic `S` with `κ(S) ≈ 32`.
 # The step ceiling reads the spectral radius of the lift, which the section change keeps, and BFGS
@@ -169,8 +211,8 @@ end
 
 # The gradient stop reads `rg`, the Riemannian norm `√g(Δ, Δ)` of the gradient at the iterate, which
 # is the same for every method. The control is the norm of the array each method holds: the flat
-# lift of BFGS and DFP and `global_rep` of the first-order methods have different norms on this
-# manifold, and the latter differs from `rg` by orders of magnitude.
+# lift of BFGS, DFP and Adam and `global_rep` of GradientMethod and MomentumMethod have different
+# norms on this manifold, and for the first-order methods neither is within 10 % of `rg`.
 @testset "rg is the Riemannian norm of the gradient, $(nameof(typeof(algorithm))), $(nameof(typeof(R)))" for algorithm in (
         GradientMethod(), MomentumMethod(), Adam(), BFGS(), DFP()),
     R in (Geodesic(), Cayley())

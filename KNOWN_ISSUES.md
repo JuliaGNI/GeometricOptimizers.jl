@@ -338,7 +338,10 @@ file when its fix merges, and the CHANGELOG entry of the fix names its ID. IDs a
   where it is and maps the coordinates `(𝒜, ℬ)` of a lift to `(𝒜, S⁻¹ℬ)`. No positive-definite inner
   product on `ℬ` is invariant under the non-compact `Sp(2N − 2n)`, so every operation in these
   coordinates that is not equivariant under this map depends on the section. `Adam`'s entrywise
-  second moments are such an operation, and they change the step. Two others change no step in a
+  second moments are such an operation, and they change the step. `Adam` takes them of
+  `gradient_rep!`, the derivative with respect to the stored entries, so its first direction descends
+  for every section; of `global_rep` it raised the loss in 128 to 164 of 400 draws
+  (`scripts/adam_pullback_severity.jl`). Its path still depends on the section. Two others change no step in a
   generic solve: the tolerance `CURVATURE_TOLERANCE * l2norm(Δx) * l2norm(Δg)` of
   `curvature_is_usable`, which `BFGS` and `DFP` read only near a pair it rejects, and `rxₐ` of
   `OptimizerStatus`. The secant pairs of `BFGS` and `DFP` do not make the step depend on the section:

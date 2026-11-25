@@ -120,10 +120,10 @@ end
 # The gradient each method holds; see `gradient_rep!`. `GradientMethod` and `MomentumMethod` hold
 # `global_rep` of the Riemannian gradient; every other method holds the derivative with respect to
 # the stored entries, which its algebra pairs under `_dot`. `Adam` holds `global_rep` too, except on
-# a biorthogonal lift: there the Gram matrix of the metric in the coordinates of `global_rep`
-# depends on the section and need not be diagonally dominant, and an entrywise rescaling of it need
-# not descend, while one of the derivative always does. Leaf by leaf, so that a parameter set mixes
-# the two.
+# a biorthogonal and a symplectic lift: there the Gram matrix of the metric in the coordinates of
+# `global_rep` is not the identity and need not be diagonally dominant, and an entrywise rescaling of
+# it need not descend, while one of the derivative always does. Leaf by leaf, so that a parameter
+# set mixes the two.
 gradient_rep!(D, λY, Δ, ::OptimizerMethod) = gradient_rep!(D, λY, Δ)
 function gradient_rep!(D, λY, Δ, ::Union{GradientMethod, MomentumMethod, Adam})
     global_rep!(D, λY, Δ)
@@ -133,7 +133,11 @@ function gradient_rep!(D::Union{NamedTuple, NetworkParameters}, λY::NamedTuple,
     mapparameters!((d, λ, g) -> gradient_rep!(d, λ, g, method), D, λY, Δ)
     D
 end
-gradient_rep!(D::BiorthogonalLieAlgHorMatrix, λY, Δ, ::Adam) = gradient_rep!(D, λY, Δ)
+function gradient_rep!(
+        D::Union{BiorthogonalLieAlgHorMatrix, SymplecticLieAlgHorMatrix}, λY, Δ,
+        ::Adam)
+    gradient_rep!(D, λY, Δ)
+end
 
 @doc raw"""
     latest_gradient_is_current(cache, state, x)
